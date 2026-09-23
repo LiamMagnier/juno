@@ -1256,10 +1256,16 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
         catch { throw NativeChatAPIError.malformedResponse }
         switch envelope.type {
         case "meta":
+            // An empty title is a real answer, not a malformed one:
+            // `/api/generate` sends `title: ""` for every conversation that
+            // already exists (only a new one is named from the prompt), and
+            // refusing it failed every picture and clip asked for in an
+            // existing chat at its first frame. The store ignores an empty
+            // title.
+            let title = envelope.title ?? ""
             guard let conversationID = envelope.conversationId,
-                let title = envelope.title,
                 validText(conversationID, maximum: 256),
-                validText(title, maximum: 1_000)
+                title.isEmpty || validText(title, maximum: 1_000)
             else { throw NativeChatAPIError.malformedResponse }
             return .metadata(
                 conversationID: conversationID,
@@ -1389,7 +1395,11 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             kind: wire.kind,
             size: wire.size,
             width: wire.width.flatMap { $0 > 0 ? $0 : nil },
-            height: wire.height.flatMap { $0 > 0 ? $0 : nil }
+            height: wire.height.flatMap { $0 > 0 ? $0 : nil },
+            // Only the stable `/api/files/<key>` path survives the
+            // initialiser; anything else is dropped rather than trusted.
+            url: wire.url,
+            parserState: wire.parserState.flatMap { validText($0, maximum: 40) ? $0 : nil }
         )
     }
 
@@ -1821,8 +1831,8 @@ private struct AttachmentWire: Decodable {
     let fileName: String
     let mimeType: String
     let size: Int
-    /// The stable `/api/files/<key>` path. Decoded now; the transcript's media
-    /// loader starts reading it in Phase 2, stage 2.
+    /// The stable `/api/files/<key>` path the transcript's media loader
+    /// fetches the file through.
     let url: String?
     let width: Int?
     let height: Int?

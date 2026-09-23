@@ -10,6 +10,7 @@ import JunoStorage
 import JunoSync
 import JunoVoiceKit
 import JunoWorkKit
+import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -330,6 +331,13 @@ struct DesktopChatWorkspace: View {
             toolbar: toolbar
         ) {
             destinationContent
+                // One media loader per signed-in account, for the transcript
+                // and the composer that seeds it. A different account is a
+                // new loader with an empty cache.
+                .modifier(
+                    TranscriptMediaScope(sender: configuration.requestSender, accountID: session.profile.id)
+                )
+                .id(session.profile.id)
         }
     }
 
@@ -895,6 +903,15 @@ struct DesktopConversationView: View {
     /// the first read lands, and nil draws nothing — never a guessed limit.
     @State private var plan: NativeUsagePlan?
     @State private var planReadAt: Date?
+    /// The file Quick Look is showing, or nil. Held **here**, not in the row
+    /// that asked: `.quickLookPreview` on a lazily built row loses its panel
+    /// when the row scrolls away — the same reason the canvas lives here.
+    @State private var quickLookURL: URL?
+    /// The picture the edit sheet is open on.
+    @State private var imageEditTarget: NativeChatAttachment?
+    /// Why a file could not be opened or saved, for the alert.
+    @State private var mediaFailure: String?
+    @Environment(\.junoTranscriptMedia) private var transcriptMedia
 
     var body: some View {
         // Clamped through `Color.clear.overlay { … }`, for the reason
@@ -963,6 +980,144 @@ struct DesktopConversationView: View {
             } message: { reason in
                 Text(reason)
             }
+            .quickLookPreview($quickLookURL)
+            .sheet(item: $imageEditTarget) { target in
+                imageEditSheet(target)
+            }
+            // Opener and action on one line: the targets gate reads a dialog's
+            // buttons as system-drawn only when its brace opens on that line.
+            .alert("Couldn’t open the file", isPresented: mediaFailurePresented, presenting: mediaFailure) { _ in
+                Button("OK") { mediaFailure = nil }
+            } message: { reason in
+                Text(reason)
+            }
+    }
+
+    private var mediaFailurePresented: Binding<Bool> {
+        Binding(
+            get: { mediaFailure != nil },
+            set: { if !$0 { mediaFailure = nil } }
+        )
+    }
+
+    // MARK: Files and pictures
+
+    /// What a tile, a context menu or a picture's hover controls do. Each one
+    /// fetches the file through the transcript's loader first — once; after
+    /// that it is on disk — and the column presents the result.
+    private var mediaActions: TranscriptMediaActions {
+        var actions = TranscriptMediaActions()
+        actions.quickLook = { attachment in
+            withFile(attachment) { url in quickLookURL = url }
+        }
+        actions.openWithDefaultApp = { attachment in
+            withFile(attachment) { url in _ = NSWorkspace.shared.open(url) }
+        }
+        actions.saveAs = { attachment in saveAs(attachment) }
+        if canEditImages {
+            actions.editImage = { attachment in imageEditTarget = attachment }
+        }
+        return actions
+    }
+
+    /// An edit needs a saved conversation to land in, a client to run it and
+    /// an image model that edits — the Library's own test.
+    private var canEditImages: Bool {
+        privateChat == nil
+            && model.selectedConversationID != nil
+            && configuration.requestSender != nil
+            && model.modelCatalog.contains { $0.modality == "image" && $0.imageEditSupport != .none }
+    }
+
+    private func withFile(_ attachment: NativeChatAttachment, _ use: @escaping @MainActor (URL) -> Void) {
+        guard let transcriptMedia else {
+            mediaFailure = NativeTranscriptFileError.signedOut.localizedDescription
+            return
+        }
+        Task {
+            do {
+                use(try await transcriptMedia.fileURL(for: attachment))
+            } catch {
+                mediaFailure = NativeFailureMessage.presentable(error)
+            }
+        }
+    }
+
+    /// Save As…: the panel opens at once, with the download already running
+    /// behind it, and the copy lands when both are done.
+    private func saveAs(_ attachment: NativeChatAttachment) {
+        guard let transcriptMedia else {
+            mediaFailure = NativeTranscriptFileError.signedOut.localizedDescription
+            return
+        }
+        let download = Task { try await transcriptMedia.fileURL(for: attachment) }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = attachment.fileName
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let destination = panel.url else { return }
+            Task { @MainActor in
+                do {
+                    let source = try await download.value
+                    let manager = FileManager.default
+                    if manager.fileExists(atPath: destination.path) {
+                        _ = try manager.replaceItemAt(destination, withItemAt: Self.stagedCopy(of: source))
+                    } else {
+                        try manager.copyItem(at: source, to: destination)
+                    }
+                } catch {
+                    mediaFailure = NativeFailureMessage.presentable(error)
+                }
+            }
+        }
+    }
+
+    /// A copy of a cached file to swap in over an existing one: `replaceItemAt`
+    /// moves its argument, and the cache must keep its own.
+    private static func stagedCopy(of source: URL) throws -> URL {
+        let staged = FileManager.default.temporaryDirectory
+            .appendingPathComponent("juno-save-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent(source.lastPathComponent)
+        try FileManager.default.createDirectory(
+            at: staged.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try FileManager.default.copyItem(at: source, to: staged)
+        return staged
+    }
+
+    /// The region editor, on the picture it was opened from. The edit runs as
+    /// a turn in this conversation — instructions as the reader's question,
+    /// the edited picture streaming in as the answer — as the web's does.
+    @ViewBuilder
+    private func imageEditSheet(_ target: NativeChatAttachment) -> some View {
+        if let sender = configuration.requestSender {
+            NativeImageEditView(
+                attachmentID: target.id,
+                fileName: target.fileName,
+                accountID: session.profile.id,
+                attachments: NativeAttachmentAPIClient(sender: sender),
+                models: model.modelCatalog,
+                submit: { request in startImageEdit(request) },
+                close: { imageEditTarget = nil }
+            )
+            .frame(minWidth: 560, minHeight: 640)
+            // The sheet contract at the presentation site, as the Library
+            // applies it: the warm canvas, not the system's window grey.
+            .junoSheetSurface(.fitted)
+        }
+    }
+
+    private func startImageEdit(_ request: NativeMediaGenerationRequest) {
+        guard let conversationID = model.selectedConversationID, let edit = request.edit else { return }
+        let started = model.sendImageEdit(
+            conversationID: conversationID,
+            prompt: request.prompt,
+            modelID: request.modelID,
+            edit: edit
+        )
+        if !started {
+            mediaFailure = model.chatErrorDescription ?? "Juno couldn’t start the edit. Try again in a moment."
+        }
     }
 
     /// The transcript (or the draft greeting) and the composer.
@@ -1037,7 +1192,7 @@ struct DesktopConversationView: View {
     /// transcript arrives with the bubble — in one animation.
     private func firstTurn(_ event: ChatFirstTurnEvent) {
         switch event {
-        case .began(let content):
+        case .began(let content, let attachments):
             handoffTurn = NativeChatMessage(
                 id: "handoff-\(UUID().uuidString.lowercased())",
                 conversationID: "",
@@ -1047,7 +1202,8 @@ struct DesktopConversationView: View {
                 reasoning: nil,
                 model: nil,
                 createdAt: Date(),
-                revision: 0
+                revision: 0,
+                attachments: attachments
             )
         case .accepted:
             break
@@ -1097,6 +1253,7 @@ struct DesktopConversationView: View {
                     quote: { text in composerRequest = ChatComposerRequest(kind: .quote(text)) },
                     editLastRequest: editLastRequest
                 )
+                .environment(\.junoTranscriptMediaActions, mediaActions)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

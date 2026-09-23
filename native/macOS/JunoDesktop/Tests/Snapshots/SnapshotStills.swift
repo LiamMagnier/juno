@@ -1,6 +1,8 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import ImageIO
+import JunoChatKit
 import JunoPreviewSupport
 import WebKit
 
@@ -15,8 +17,9 @@ import WebKit
 /// is involved.
 ///
 /// **Media.** The preview harness's own drawn PNGs for the two pictures, and
-/// CoreGraphics thumbnails for a PDF page, a spreadsheet and a slide. Stage 2's
-/// `SnapshotMediaProvider` serves these through the transcript's media loader.
+/// CoreGraphics thumbnails for a PDF page, a spreadsheet and a slide.
+/// ``SnapshotMediaProvider`` serves them to the transcript in place of
+/// ``NativeChatMediaLoader``.
 @MainActor
 enum SnapshotStills {
     enum Failure: Error, CustomStringConvertible {
@@ -99,6 +102,37 @@ enum SnapshotStills {
         PreviewImageFixtures.png(for: attachmentID).flatMap(NSImage.init(data:))
     }
 
+    /// The same pictures, decoded as the loader decodes them.
+    static func cgImage(for attachmentID: String) -> CGImage? {
+        guard let data = PreviewImageFixtures.png(for: attachmentID),
+            let source = CGImageSourceCreateWithData(data as CFData, nil)
+        else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    /// A drawn stand-in as a 2× bitmap, the shape a page thumbnail arrives in.
+    static func cgImage(_ image: NSImage, scale: CGFloat = 2) -> CGImage? {
+        let pixels = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(pixels.width),
+            pixelsHigh: Int(pixels.height),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else { return nil }
+        rep.size = image.size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: CGRect(origin: .zero, size: image.size))
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.cgImage
+    }
+
     /// A PDF's first page: a white sheet with a heading and ruled text.
     static func pdfPageThumbnail(size: CGSize = CGSize(width: 288, height: 192)) -> NSImage {
         drawn(size: size) { context, rect in
@@ -172,5 +206,80 @@ enum SnapshotStills {
             draw(context, rect)
             return true
         }
+    }
+}
+
+/// The transcript's pictures and pages without a network: drawn stills for the
+/// two preview pictures and the three document thumbnails, an excerpt for the
+/// deck, and forced states for the loading and failed fixtures. Everything
+/// answers at once, so nothing is pending when the renderer takes its picture.
+@MainActor
+final class SnapshotMediaProvider: TranscriptMediaProviding {
+    enum Pictures { case ready, loading, failed }
+
+    let pictures: Pictures
+    let previews: [String: NativeTranscriptPreviewState]
+
+    init(
+        pictures: Pictures = .ready,
+        previews: [String: NativeTranscriptPreviewState] = SnapshotMediaProvider.standardPreviews
+    ) {
+        self.pictures = pictures
+        self.previews = previews
+    }
+
+    func imageState(for attachment: NativeChatAttachment) -> NativeTranscriptImageState {
+        switch pictures {
+        case .loading: return .loading
+        case .failed: return .failed
+        case .ready: return SnapshotStills.cgImage(for: attachment.id).map { .ready($0) } ?? .failed
+        }
+    }
+
+    func loadImage(_: NativeChatAttachment) async {}
+
+    func previewState(for attachment: NativeChatAttachment) -> NativeTranscriptPreviewState {
+        previews[attachment.id] ?? .ready(NativeTranscriptFilePreview())
+    }
+
+    func loadPreview(_: NativeChatAttachment) async {}
+
+    /// Never answers inside a still: a clip stays at "Preparing video", which
+    /// is the one state of a player an offscreen window can draw.
+    func fileURL(for _: NativeChatAttachment) async throws -> URL {
+        try await Task.sleep(for: .seconds(86_400))
+        throw CancellationError()
+    }
+
+    func seed(_: Data, for _: String) {}
+
+    /// A PDF's first page and a workbook's grid as pictures; a deck as its
+    /// opening lines — the stub has no thumbnail for it, which is what
+    /// exercises the excerpt layer.
+    static var standardPreviews: [String: NativeTranscriptPreviewState] {
+        [
+            "file-pdf-1": .ready(NativeTranscriptFilePreview(
+                thumbnail: SnapshotStills.cgImage(SnapshotStills.pdfPageThumbnail(size: CGSize(width: 240, height: 310)))
+            )),
+            "file-xlsx-1": .ready(NativeTranscriptFilePreview(
+                thumbnail: SnapshotStills.cgImage(SnapshotStills.spreadsheetThumbnail())
+            )),
+            "file-pptx-1": .ready(NativeTranscriptFilePreview(excerpt: """
+                Launch plan
+                Q4 2026 · internal
+
+                1. Why now
+                2. Who it is for
+                3. What ships on day one
+                4. Pricing and packaging
+                5. Timeline and owners
+                """)),
+            "file-docx-1": .ready(NativeTranscriptFilePreview(excerpt: """
+                Brand guidelines
+                Version 3 — September 2026
+
+                The wordmark is set in Newsreader. Leave clear space equal to the height of the J on every side.
+                """)),
+        ]
     }
 }

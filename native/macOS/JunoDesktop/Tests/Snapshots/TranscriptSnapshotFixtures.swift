@@ -120,6 +120,10 @@ enum TranscriptSnapshotFixtures {
             TranscriptFixture(name: "user-unsent", stage: 1) {
                 AnyView(column { row(question, unsent: true) })
             },
+            // Files with no words: the tiles alone, and no empty bubble.
+            TranscriptFixture(name: "user-attachments-only", stage: 2) {
+                AnyView(column { row(filesOnlyQuestion) })
+            },
         ]
     }
 
@@ -134,13 +138,13 @@ enum TranscriptSnapshotFixtures {
                 })
             },
             TranscriptFixture(name: "generated-image-loading", stage: 2) {
-                AnyView(column {
+                AnyView(column(media: SnapshotMediaProvider(pictures: .loading)) {
                     row(posterQuestion)
                     row(generatedImage, newest: true)
                 })
             },
             TranscriptFixture(name: "generated-image-failed", stage: 2) {
-                AnyView(column {
+                AnyView(column(media: SnapshotMediaProvider(pictures: .failed)) {
                     row(posterQuestion)
                     row(generatedImage, newest: true)
                 })
@@ -169,7 +173,17 @@ enum TranscriptSnapshotFixtures {
                 AnyView(column { row(deckReply, newest: true) })
             },
             TranscriptFixture(name: "file-card-pptx-extension-only", stage: 2) {
-                AnyView(column { row(deckReply, newest: true) })
+                AnyView(column(media: SnapshotMediaProvider(previews: [:])) {
+                    row(deckReply, newest: true)
+                })
+            },
+            // A clip, as an offscreen window can draw one: the card and its
+            // footer with the stage still preparing.
+            TranscriptFixture(name: "generated-video", stage: 2) {
+                AnyView(column {
+                    row(clipQuestion)
+                    row(generatedVideo, newest: true)
+                })
             },
         ]
     }
@@ -278,9 +292,14 @@ enum TranscriptSnapshotFixtures {
 
     // MARK: - Building blocks
 
-    /// The transcript's own column and rhythm around the rows.
+    /// The transcript's own column and rhythm around the rows, with the
+    /// harness's pictures standing in for the network and an image model
+    /// that edits, so a hovered picture shows Edit.
     @MainActor
-    static func column<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+    static func column<Content: View>(
+        media: SnapshotMediaProvider = SnapshotMediaProvider(),
+        @ViewBuilder _ content: () -> Content
+    ) -> some View {
         VStack(alignment: .leading, spacing: JunoSpace.section) {
             content()
         }
@@ -289,6 +308,8 @@ enum TranscriptSnapshotFixtures {
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(TranscriptColumn())
         .padding(.vertical, JunoSpace.section)
+        .environment(\.junoTranscriptMedia, media)
+        .environment(\.junoTranscriptMediaActions, TranscriptMediaActions(editImage: { _ in }))
     }
 
     /// A row with every action a saved turn has, each doing nothing.
@@ -426,12 +447,75 @@ enum TranscriptSnapshotFixtures {
             .joined(separator: "\n")
     )
 
-    /// `msg-7` from the preview world, without its photo.
+    /// `msg-7` from the preview world, with its photo: 1200×800, so a
+    /// 216×144 tile above the bubble.
     static let posterQuestion = message(
         "q-poster",
         .user,
         "Here's the view from the office tonight — can you make a poster-style version of it?"
-    )
+    ).with {
+        $0.attachments = [
+            NativeChatAttachment(
+                id: PreviewImageFixtures.userPhotoID,
+                fileName: "IMG_4821.jpg",
+                mimeType: "image/jpeg",
+                kind: "IMAGE",
+                size: 1_830_000,
+                width: 1_200,
+                height: 800,
+                url: "/api/files/u1/img-user-1.jpg"
+            ),
+        ]
+    }
+
+    /// A reader sending three documents with no words: tiles, no bubble.
+    static let filesOnlyQuestion = message("q-files", .user, "").with {
+        $0.attachments = [
+            NativeChatAttachment(
+                id: "file-pdf-1",
+                fileName: "quasar-notes.pdf",
+                mimeType: "application/pdf",
+                kind: "FILE",
+                size: 248_000,
+                width: nil,
+                height: nil
+            ),
+            NativeChatAttachment(
+                id: "file-docx-1",
+                fileName: "Brand guidelines.docx",
+                mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                kind: "FILE",
+                size: 412_300,
+                width: nil,
+                height: nil
+            ),
+            NativeChatAttachment(
+                id: "file-csv-1",
+                fileName: "signups.csv",
+                mimeType: "text/csv",
+                kind: "FILE",
+                size: 3_400,
+                width: nil,
+                height: nil
+            ),
+        ]
+    }
+
+    static let clipQuestion = message("q-clip", .user, "Make a five-second clip of the rings turning.")
+
+    static let generatedVideo = message("a-video", .assistant, "", model: "google:veo-3").with {
+        $0.attachments = [
+            NativeChatAttachment(
+                id: "vid-gen-1",
+                fileName: "Veo 3 — Rings.mp4",
+                mimeType: "video/mp4",
+                kind: "FILE",
+                size: 6_400_000,
+                width: 1_280,
+                height: 720
+            ),
+        ]
+    }
 
     static let generatedImage = message("a-img", .assistant, "", model: "openai:gpt-image-2").with {
         $0.attachments = [

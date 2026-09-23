@@ -253,6 +253,34 @@ struct MessageActionFocusKey: PreferenceKey {
     }
 }
 
+/// The feedback swell: 0.86 → 1.18 → 1 on the out-back curve, over
+/// `--dur-base`. A modifier of its own, so the keyframe closure captures no
+/// generic glyph type.
+struct MessageFeedbackSwell: ViewModifier {
+    let trigger: Int
+
+    func body(content: Content) -> some View {
+        content
+            .keyframeAnimator(initialValue: CGFloat(1), trigger: trigger) { view, scale in
+                view.scaleEffect(scale)
+            } keyframes: { _ in
+                KeyframeTrack {
+                    MoveKeyframe(CGFloat(0.86))
+                    LinearKeyframe(
+                        CGFloat(1.18),
+                        duration: JunoMotion.Duration.base / 2,
+                        timingCurve: JunoMotion.swellCurve
+                    )
+                    LinearKeyframe(
+                        CGFloat(1),
+                        duration: JunoMotion.Duration.base / 2,
+                        timingCurve: JunoMotion.swellCurve
+                    )
+                }
+            }
+    }
+}
+
 /// A plain message action: the button, its tooltip, its label for VoiceOver,
 /// and — for a thumb — the swell and burst that are its only receipt.
 struct MessageActionButton<Glyph: View>: View {
@@ -270,23 +298,7 @@ struct MessageActionButton<Glyph: View>: View {
     var body: some View {
         Button(action: action) {
             glyph()
-                .keyframeAnimator(initialValue: CGFloat(1), trigger: swells) { content, scale in
-                    content.scaleEffect(scale)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        MoveKeyframe(CGFloat(0.86))
-                        LinearKeyframe(
-                            CGFloat(1.18),
-                            duration: JunoMotion.Duration.base / 2,
-                            timingCurve: JunoMotion.swellCurve
-                        )
-                        LinearKeyframe(
-                            CGFloat(1),
-                            duration: JunoMotion.Duration.base / 2,
-                            timingCurve: JunoMotion.swellCurve
-                        )
-                    }
-                }
+                .modifier(MessageFeedbackSwell(trigger: swells))
                 .overlay { MessageFeedbackBurst(trigger: swells) }
         }
         .buttonStyle(MessageActionButtonStyle(isOn: isOn))

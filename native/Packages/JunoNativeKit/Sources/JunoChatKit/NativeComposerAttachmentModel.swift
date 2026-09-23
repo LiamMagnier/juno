@@ -92,6 +92,10 @@ public final class NativeComposerAttachmentModel {
     /// to diff — a 4 MB `Data` in an `@Observable` array is copied on every
     /// read of any field.
     private var payloads: [UUID: Data] = [:]
+    /// What the server said it stored, per attachment: its URL and, for a
+    /// picture, its measured size — what the reader's own turn is drawn from
+    /// before sync delivers the attachment rows.
+    @ObservationIgnored private var uploadedRecords: [UUID: NativeUploadedAttachment] = [:]
 
     public init(client: NativeAttachmentAPIClient) {
         self.client = client
@@ -105,6 +109,7 @@ public final class NativeComposerAttachmentModel {
         for task in tasks.values { task.cancel() }
         tasks.removeAll()
         payloads.removeAll()
+        uploadedRecords.removeAll()
         attachments.removeAll()
         lastErrorDescription = nil
         accountID = nil
@@ -115,6 +120,38 @@ public final class NativeComposerAttachmentModel {
     public var canSend: Bool { !isUploading && !attachments.contains { $0.uploadedID == nil } }
 
     public var uploadedIDs: [String] { attachments.compactMap(\.uploadedID) }
+
+    /// The uploaded files as the sent message carries them, in the order they
+    /// were attached: what the reader's turn shows the moment Return is
+    /// pressed, rather than a bare bubble until sync catches up.
+    public var messageAttachments: [NativeChatAttachment] {
+        attachments.compactMap { attachment in
+            guard let uploadedID = attachment.uploadedID else { return nil }
+            if let record = uploadedRecords[attachment.id], record.id == uploadedID {
+                return record.chatAttachment
+            }
+            return NativeChatAttachment(
+                id: uploadedID,
+                fileName: attachment.fileName,
+                mimeType: attachment.mimeType,
+                kind: attachment.isImage ? "IMAGE" : "FILE",
+                size: attachment.byteCount,
+                width: nil,
+                height: nil
+            )
+        }
+    }
+
+    /// The bytes this Mac already has for an uploaded picture — the file it
+    /// was chosen from — so the sent turn can draw it without fetching back
+    /// what it just uploaded. Nil for a document, and for a Library clone,
+    /// which was never on this device.
+    public func localImageData(forUploadedID uploadedID: String) -> Data? {
+        guard let attachment = attachments.first(where: { $0.uploadedID == uploadedID }),
+            attachment.isImage
+        else { return nil }
+        return payloads[attachment.id] ?? attachment.previewData
+    }
 
     public var hasCapacity: Bool { attachments.count < Self.maximumAttachments }
 
@@ -209,15 +246,15 @@ public final class NativeComposerAttachmentModel {
                     "You can attach up to \(Self.maximumAttachments) files to one message."
                 return
             }
-            attachments.append(
-                NativeComposerAttachment(
-                    fileName: attachment.fileName,
-                    mimeType: attachment.mimeType,
-                    byteCount: attachment.size,
-                    state: .uploaded(id: attachment.id),
-                    isImage: attachment.isImage
-                )
+            let staged = NativeComposerAttachment(
+                fileName: attachment.fileName,
+                mimeType: attachment.mimeType,
+                byteCount: attachment.size,
+                state: .uploaded(id: attachment.id),
+                isImage: attachment.isImage
             )
+            uploadedRecords[staged.id] = attachment
+            attachments.append(staged)
         }
     }
 
@@ -234,6 +271,7 @@ public final class NativeComposerAttachmentModel {
         tasks[id]?.cancel()
         tasks[id] = nil
         payloads[id] = nil
+        uploadedRecords[id] = nil
         attachments.removeAll { $0.id == id }
     }
 
@@ -243,6 +281,7 @@ public final class NativeComposerAttachmentModel {
         for task in tasks.values { task.cancel() }
         tasks.removeAll()
         payloads.removeAll()
+        uploadedRecords.removeAll()
         attachments.removeAll()
     }
 
@@ -266,6 +305,7 @@ public final class NativeComposerAttachmentModel {
                     for: accountID
                 )
                 guard !Task.isCancelled else { return }
+                uploadedRecords[id] = uploaded
                 update(id) { $0.state = .uploaded(id: uploaded.id) }
             } catch is CancellationError {
                 return

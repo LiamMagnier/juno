@@ -31,6 +31,13 @@ The shared checkout at `/Users/liammagnier/Developer/project/juno` belongs to ot
    - the file split of `DesktopChatWorkspace.swift` into `ChatTranscript`, `MessageRow`, `MessageActions`, `InlineArtifactCard`, `SourcesPill`, `ActivityRow` and `FinishNote`
    - wire and store fixes: `regenerateInstruction`; attachments, cost and tokens kept on the finished message; the media placeholder cleared; `resume`, `work` and unknown frames tolerated
    - the offscreen snapshot harness with its test-host guard
+5. `58d12b79` — merge of `origin/main` at `d0997af2` (Juno Code 1.6.0, build 87).
+6. **Phase 2 stage 2, media and files inline** (the commit after `58d12b79`):
+   - the attachment's stable `/api/files/<key>` path kept through sync and the `done` frame; `formatLabel` / `byteLabel` ported from the web
+   - `NativeChatMediaLoader` (JunoChatKit): pictures, page previews, QuickLook/PDFKit page pictures, and whole files cached per account under Caches, purged on sign-out
+   - `App/TranscriptAttachments.swift`: sent image tiles and 144pt page tiles above the bubble, produced-file tiles, generated pictures (fade-in, Edit · Download · Expand, drag out), generated clips, Quick Look and Save As hoisted to the conversation column
+   - image Edit runs in the same conversation (`sendImageEdit`); a picture or video turn no longer stores its question twice, and no longer fails at `/api/generate`'s empty-titled `meta` frame in an existing chat
+   - the generation placeholder's long-wait line, radius and announcements (shared with iOS)
 
 Every stage above built and passed at its commit:
 - Mac build, JunoDesktopTests (175) and the iOS build
@@ -39,18 +46,11 @@ Every stage above built and passed at its commit:
 
 ## Next, in order
 
-1. **Merge `origin/main` again** (it has moved to at least `d0997af2`, the 1.6.0/87 bump). Resolve the conflicts and regenerate:
+1. Before the next stage, merge `origin/main` again if it has moved. Regenerate rather than hand-merge:
    - tokens: `npm run design:tokens`
    - icons: `npm run native:icons`
    - Xcode projects: `native/Scripts/generate-projects.sh`
-
-   Never hand-merge generated files or `pbxproj`.
-2. **Phase 2 stage 2, media and files inline** (brief §4):
-   - keep the URL through sync and stream
-   - `NativeChatMediaLoader`
-   - user images and file page tiles
-   - generated images and video
-   - produced-file cards with Quick Look
+2. *(done — stage 2, above)*
 3. **Phase 2 stage 3, artifacts** (brief §5):
    - the WKWebView runtime
    - the inline artifact card with Preview/Code/Console
@@ -122,5 +122,6 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
   - the §0.5 crash repro: 50 Chat↔Code swaps with a popover open
   - keeping an older reply's action row visible while its menu is open
 - **Version pager.** It pages over regenerated versions only once stage 4 hydrates the thread.
+- **Stage 2 runtime checks not done** (screen control is off): Quick Look opening from a click and from Space, Save As… writing the file, a picture dragging out to the Finder, a real `/api/generate` reply going from placeholder to picture with no blank frame, the edit sheet streaming its result into the same chat, and a generated clip playing once downloaded. A clip is fetched whole (51 MB ceiling); an `AVAssetResourceLoaderDelegate` over `/api/files` Range requests is the follow-up.
 - **Gap under the user bubble.** It is about 60pt. That matches the web, which reserves the hover-action row, so it is kept for parity. The owner may prefer it tighter.
 - **Code-owned leftovers.** Code's own header strip still has a second sidebar toggle, and `DesktopCodeAccountFooter` hard-codes "Pro". They belong to the Code session.

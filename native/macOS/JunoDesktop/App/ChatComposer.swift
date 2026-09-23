@@ -280,6 +280,9 @@ struct ChatComposerTurn {
     let modelID: String
     let effort: NativeReasoningEffort?
     let attachmentIDs: [String]
+    /// The same files as the message carries them, so the reader's turn shows
+    /// them the moment it is sent.
+    var attachments: [NativeChatAttachment] = []
     let deepResearch: Bool
     let webSearch: Bool
     let connectors: [String]
@@ -297,9 +300,10 @@ struct ChatComposerTurn {
 /// a send that had not happened. So the composer says so at once — inside the
 /// handoff's own transaction — and again when the store has answered.
 enum ChatFirstTurnEvent: Equatable {
-    /// Return was pressed on a draft. These are the words that left, for the
-    /// bubble that stands in for them until the store has the real one.
-    case began(String)
+    /// Return was pressed on a draft. These are the words that left, and the
+    /// files that went with them, for the turn that stands in for them until
+    /// the store has the real one.
+    case began(String, attachments: [NativeChatAttachment] = [])
     /// The store took the turn: the transcript carries it from here.
     case accepted
     /// The store refused it. The words are still in the field; hand back.
@@ -754,6 +758,10 @@ struct ChatComposer: View {
     /// The call this composer is inside, published by ``SwiftUI/View/junoVoiceCall(_:)``.
     /// Non-nil routes a send over the socket instead of to `/api/chat`.
     @Environment(\.junoVoiceCall) private var voiceCall
+    /// The transcript's media loader: a sent picture's bytes are handed to it
+    /// here, so the reader's own turn draws the photo at once instead of
+    /// fetching back what this Mac just uploaded.
+    @Environment(\.junoTranscriptMedia) private var transcriptMedia
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: Derived state
@@ -1844,6 +1852,7 @@ struct ChatComposer: View {
         }
         guard canSubmit else { return }
         let turn = composeTurn()
+        seedTranscriptImages(for: turn)
         if isGenerating {
             // Exactly one waits. A second is refused, and its words stay put —
             // nothing is overwritten in silence.
@@ -1866,6 +1875,7 @@ struct ChatComposer: View {
             modelID: projectPreferredModelID ?? selectedModelID,
             effort: reasoningEffort,
             attachmentIDs: attachmentModel?.uploadedIDs ?? [],
+            attachments: attachmentModel?.messageAttachments ?? [],
             deepResearch: deepResearch && researchAvailable,
             webSearch: webSearch && webSearchAvailable,
             connectors: isPrivate ? [] : Array(selectedConnectors.prefix(ComposerPlusMenuModel.connectorLimit)),
@@ -1874,6 +1884,17 @@ struct ChatComposer: View {
             groundDocuments: documentGroundingArmed,
             documentCount: indexedDocumentCount
         )
+    }
+
+    /// Hands the transcript the bytes of every picture in a turn, before the
+    /// draft is cleared and the bytes go with it.
+    private func seedTranscriptImages(for turn: ChatComposerTurn) {
+        guard let transcriptMedia, let attachmentModel else { return }
+        for attachment in turn.attachments where attachment.isImageKind {
+            if let data = attachmentModel.localImageData(forUploadedID: attachment.id) {
+                transcriptMedia.seed(data, for: attachment.id)
+            }
+        }
     }
 
     /// Clears what a turn took with it. Deep research is per-send, on purpose:
@@ -1927,7 +1948,7 @@ struct ChatComposer: View {
         firstTurnError = nil
         if startsChat {
             withAnimation(JunoMotion.handoff(reduceMotion: reduceMotion)) {
-                onFirstTurn?(.began(turn.content))
+                onFirstTurn?(.began(turn.content, attachments: turn.attachments))
             }
         }
         isDispatching = true
@@ -1965,7 +1986,8 @@ struct ChatComposer: View {
                 webSearch: turn.webSearch,
                 connectors: turn.connectors,
                 fastMode: turn.fastMode,
-                proMode: turn.proMode
+                proMode: turn.proMode,
+                attachments: turn.attachments
             )
             guard sent else {
                 if restoreOnRefusal { restore(turn) }

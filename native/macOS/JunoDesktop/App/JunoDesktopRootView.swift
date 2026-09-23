@@ -324,6 +324,9 @@ struct JunoDesktopRootView: View {
     }
 
     private func stopAuthenticatedModels() {
+        // The files the transcript downloaded for Quick Look, Save As and its
+        // page tiles are one person's documents: they go with the session.
+        Task.detached(priority: .utility) { NativeChatMediaLoader.purgeCachedFiles() }
         configuration.syncModel?.stop()
         configuration.attachmentModel?.stop()
         configuration.workAttachmentModel?.stop()

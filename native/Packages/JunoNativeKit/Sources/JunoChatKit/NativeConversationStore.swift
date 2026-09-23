@@ -535,7 +535,9 @@ public actor NativeConversationStore<Repository: AccountScopedRepository> {
                 kind: wire.kind,
                 size: wire.size ?? 0,
                 width: wire.width,
-                height: wire.height
+                height: wire.height,
+                url: wire.url,
+                parserState: wire.parserState
             )
         )
     }
@@ -882,6 +884,9 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     private var lastSynchronizationGeneration = -1
     private var isReconciling = false
     private var transientMessagesByConversation: [String: [NativeChatMessage]] = [:]
+    /// Files a just-finished turn carried, by message id, until the stored row
+    /// carries them. See ``rememberAttachments(_:for:)``.
+    @ObservationIgnored private var rememberedAttachments: [String: [NativeChatAttachment]] = [:]
     private var retryContexts: [String: RetryContext] = [:]
 
     /// What each conversation has cost, keyed by conversation.
@@ -1083,6 +1088,14 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         /// answer rather than retrying a failed one. See
         /// ``NativeConversationModel/regeneratingAssistantIDs``.
         var replacesAssistantID: String? = nil
+        /// The files the reader sent with the question, as the message carries
+        /// them — drawn on their own turn the moment it is sent, not a sync
+        /// later. Display only: `attachmentIDs` is what the server is told.
+        var attachments: [NativeChatAttachment] = []
+        /// Set only on a region edit of a picture (``sendImageEdit``): the
+        /// source attachment and the area, sent to `/api/generate` with the
+        /// instructions.
+        var edit: NativeMediaGenerationRequest.Edit? = nil
     }
 
     /// Where a forked turn belongs in the tree.
@@ -1139,6 +1152,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         branchEditCutoffs = [:]
         regeneratingAssistantIDs = [:]
         transientMessagesByConversation = [:]
+        rememberedAttachments = [:]
         retryContexts = [:]
         chatApprovalsByConversation = [:]
         chatApprovalInFlightID = nil
@@ -1172,7 +1186,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             let snapshot = try await store.load(accountID: storageAccountID)
             guard self.accountID == accountID else { return }
             conversations = snapshot.conversations
-            messagesByConversation = snapshot.messagesByConversation
+            messagesByConversation = withRememberedAttachments(snapshot.messagesByConversation)
             seedSessionCostLedgers(from: snapshot.messagesByConversation)
             rebuildBranchTrees(from: snapshot)
             pruneTransientMessages()
@@ -1664,7 +1678,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         // and the programmatic code-conversation start — keep compiling and keep
         // sending exactly the body they sent before.
         fastMode: Bool = false,
-        proMode: Bool = false
+        proMode: Bool = false,
+        // The files `attachmentIDs` names, as the reader's turn should show
+        // them while it is on its way. Defaulted for the same call sites.
+        attachments: [NativeChatAttachment] = []
     ) -> Bool {
         sendMessage(
             conversationID: conversationID,
@@ -1678,7 +1695,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             connectors: connectors,
             fastMode: fastMode,
             proMode: proMode,
-            branchPlacement: nil
+            branchPlacement: nil,
+            attachments: attachments
         )
     }
 
@@ -1699,7 +1717,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         connectors: [String],
         fastMode: Bool,
         proMode: Bool,
-        branchPlacement: BranchPlacement?
+        branchPlacement: BranchPlacement?,
+        attachments: [NativeChatAttachment] = []
     ) -> Bool {
         guard !chatPhase.isActive, let accountID, chatClient != nil,
             let conversation = conversations.first(where: { $0.id == conversationID }),
@@ -1765,7 +1784,11 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             proMode: proMode,
             branchPlacement: branchPlacement,
             userMessageID: nil,
-            userCreatedAt: now
+            userCreatedAt: now,
+            // Not on a picture or video turn: `/api/generate` takes no files,
+            // so showing them on the question would claim they went with it.
+            attachments: mediaModality(of: modelID) == nil
+                ? attachments.filter { attachmentIDs.contains($0.id) } : []
         )
         retryContexts.removeValue(forKey: conversationID)
         researchActivity = []
@@ -1783,7 +1806,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 model: nil,
                 createdAt: now,
                 revision: 0,
-                isPending: true
+                isPending: true,
+                attachments: context.attachments
             )
         )
         appendAssistantPlaceholder(for: context)
@@ -1791,8 +1815,114 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             conversations[index].model = modelID
             conversations[index].lastMessageAt = now
         }
-        launchGeneration(context, needsAppend: true)
+        // A picture or video model runs through `/api/generate`, which writes
+        // the question itself and reports its id on `meta` — so the question
+        // is not appended first, exactly as the web sends it. Appending it as
+        // well left the question in the conversation twice.
+        launchGeneration(context, needsAppend: !writesItsOwnQuestion(context))
         return true
+    }
+
+    /// Runs a region edit of a picture in this conversation: the web's
+    /// `sendImageEdit` (`hooks/use-chat.ts`). The instructions appear as the
+    /// reader's turn, the reply streams in under them as an ordinary
+    /// `/api/generate` run — placeholder, stages, then the edited picture —
+    /// and the result lands in this conversation rather than a new one.
+    ///
+    /// Refused, with a reason in ``chatErrorDescription``, while a turn is
+    /// running, for a model that is not an image model, and where the
+    /// conversation's assistant may not generate media.
+    @discardableResult
+    public func sendImageEdit(
+        conversationID: String,
+        prompt: String,
+        modelID: String,
+        edit: NativeMediaGenerationRequest.Edit
+    ) -> Bool {
+        guard !chatPhase.isActive, let accountID, chatClient != nil,
+            let conversation = conversations.first(where: { $0.id == conversationID }),
+            !conversation.isPending
+        else {
+            chatErrorDescription = conversationPendingMessage(conversationID)
+            return false
+        }
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            chatErrorDescription = NativeChatAPIError.invalidMessage.localizedDescription
+            return false
+        }
+        guard mediaModality(of: modelID) == .image, validModelSelection(modelID, effort: nil) else {
+            chatErrorDescription = "Choose an image model available to this account."
+            return false
+        }
+        let permitted = permitting(
+            ProjectWorkspaceTurnPermissions(
+                webSearch: false,
+                deepResearch: false,
+                canvasEnabled: nil,
+                connectorIDs: [],
+                mediaGeneration: true,
+                memoryRecall: true
+            ),
+            conversationID: conversationID
+        )
+        guard permitted.mediaGeneration else {
+            chatErrorDescription =
+                "This assistant is not allowed to generate images or video. Choose a different model, or allow it in the project's Assistant settings."
+            return false
+        }
+        let clientID = UUID().uuidString.lowercased()
+        let now = Date()
+        let context = RetryContext(
+            accountID: accountID,
+            conversationID: conversationID,
+            clientID: clientID,
+            prompt: trimmed,
+            modelID: modelID,
+            reasoningEffort: nil,
+            attachmentIDs: [],
+            deepResearch: false,
+            webSearch: false,
+            canvasEnabled: nil,
+            connectors: [],
+            fastMode: false,
+            proMode: false,
+            branchPlacement: nil,
+            userMessageID: nil,
+            userCreatedAt: now,
+            edit: edit
+        )
+        retryContexts.removeValue(forKey: conversationID)
+        researchActivity = []
+        chatErrorDescription = nil
+        activeChatConversationID = conversationID
+        chatPhase = .submitting
+        appendTransient(
+            NativeChatMessage(
+                id: "local-user-\(clientID)",
+                conversationID: conversationID,
+                clientID: clientID,
+                role: .user,
+                content: trimmed,
+                reasoning: nil,
+                model: nil,
+                createdAt: now,
+                revision: 0,
+                isPending: true
+            )
+        )
+        appendAssistantPlaceholder(for: context)
+        if let index = conversations.firstIndex(where: { $0.id == conversationID }) {
+            conversations[index].lastMessageAt = now
+        }
+        launchGeneration(context, needsAppend: false)
+        return true
+    }
+
+    /// Whether this turn's endpoint writes the reader's question itself:
+    /// `/api/generate` does, `/api/chat` is handed one that was appended.
+    private func writesItsOwnQuestion(_ context: RetryContext) -> Bool {
+        context.edit != nil || mediaModality(of: context.modelID) != nil
     }
 
     public func retryLastMessage(conversationID: String) {
@@ -1844,7 +1974,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         chatPhase = context.userMessageID == nil ? .appending : .submitting
         removeTransientAssistant(for: conversationID)
         appendAssistantPlaceholder(for: context)
-        launchGeneration(context, needsAppend: context.userMessageID == nil)
+        launchGeneration(
+            context,
+            needsAppend: context.userMessageID == nil && !writesItsOwnQuestion(context)
+        )
     }
 
     /// The context for regenerating a conversation's settled last answer: the
@@ -1989,7 +2122,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                         conversationID: context.conversationID,
                         prompt: context.prompt,
                         modelID: context.modelID,
-                        modality: modality
+                        modality: modality,
+                        edit: context.edit
                     ),
                     for: context.accountID
                 )
@@ -2026,11 +2160,25 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     activeGenerationID == generationID
                 else { return }
                 switch event {
-                case .metadata(let conversationID, _, let title, let serverGenerationID):
+                case .metadata(let conversationID, let userMessageID, let title, let serverGenerationID):
                     guard conversationID == context.conversationID,
                         serverGenerationID == nil || serverGenerationID == generationID
                     else { throw NativeChatAPIError.malformedResponse }
                     updateTitle(title, conversationID: conversationID)
+                    // `/api/generate` wrote the question itself: the pending
+                    // turn takes the id the server gave it, as the web's does
+                    // on `meta`, so the stored row replaces it rather than
+                    // appearing beside it.
+                    if context.userMessageID == nil, !needsAppend, let userMessageID,
+                        !userMessageID.isEmpty
+                    {
+                        context.userMessageID = userMessageID
+                        adoptServerQuestion(
+                            id: userMessageID,
+                            clientID: context.clientID,
+                            conversationID: conversationID
+                        )
+                    }
                 case .title(let conversationID, let title):
                     guard conversationID == context.conversationID else {
                         throw NativeChatAPIError.malformedResponse
@@ -2219,7 +2367,61 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         // what makes the badge's cache figures possible at all.
         sessionCostLedgers[conversationID, default: SessionCostLedger()]
             .record(message: message)
+        rememberAttachments(message.attachments, for: message.id)
         updateTransientAssistant(for: conversationID) { $0.complete(with: message) }
+        keepAnswerAfterItsQuestion(conversationID: conversationID)
+    }
+
+    /// The finished answer takes the server's clock; a question `/api/generate`
+    /// wrote itself still has this Mac's, because `meta` carries no time. On a
+    /// clock running ahead of the server the answer would sort above its own
+    /// question until the next sync, so the pending question is moved back a
+    /// millisecond instead — the same nudge ``replaceTransientUser`` gives the
+    /// answer when an appended question arrives late.
+    private func keepAnswerAfterItsQuestion(conversationID: String) {
+        guard var messages = transientMessagesByConversation[conversationID],
+            let answer = messages.lastIndex(where: { $0.role == .assistant }),
+            let question = messages[..<answer].lastIndex(where: { $0.role == .user }),
+            messages[question].createdAt >= messages[answer].createdAt
+        else { return }
+        messages[question].createdAt = messages[answer].createdAt.addingTimeInterval(-0.001)
+        transientMessagesByConversation[conversationID] = messages
+    }
+
+    /// Keeps the files a just-finished turn carried until its stored row
+    /// carries them itself.
+    ///
+    /// Sync delivers a message and its attachments as separate entities, and
+    /// not always in the same pass. Without this, the reload that follows a
+    /// `done` swapped the finished row — picture and all — for a stored row
+    /// whose attachment had not arrived yet, and the answer went blank until
+    /// the next sync: the "empty turn" between the placeholder and the image.
+    private func rememberAttachments(_ attachments: [NativeChatAttachment], for messageID: String) {
+        guard !attachments.isEmpty, !messageID.isEmpty else { return }
+        rememberedAttachments[messageID] = attachments
+    }
+
+    /// `rows`, with any remembered files put back on a stored message that
+    /// has none of its own yet. A message whose own attachments have arrived
+    /// wins, and its memory is dropped.
+    private func withRememberedAttachments(
+        _ rows: [String: [NativeChatMessage]]
+    ) -> [String: [NativeChatMessage]] {
+        guard !rememberedAttachments.isEmpty else { return rows }
+        var rows = rows
+        for (conversationID, messages) in rows {
+            rows[conversationID] = messages.map { message in
+                guard let remembered = rememberedAttachments[message.id] else { return message }
+                guard message.attachments.isEmpty else {
+                    rememberedAttachments[message.id] = nil
+                    return message
+                }
+                var message = message
+                message.attachments = remembered
+                return message
+            }
+        }
+        return rows
     }
 
     private func appendAssistantPlaceholder(for context: RetryContext) {
@@ -2335,12 +2537,25 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         messages[index].content = message.content
         messages[index].createdAt = message.createdAt
         messages[index].isPending = false
+        rememberAttachments(messages[index].attachments, for: message.id)
         if let assistantIndex = messages.lastIndex(where: {
             $0.role == .assistant && $0.isPending
         }), messages[assistantIndex].createdAt <= message.createdAt {
             messages[assistantIndex].createdAt = message.createdAt.addingTimeInterval(0.001)
         }
         transientMessagesByConversation[conversationID] = messages
+    }
+
+    /// Gives a pending question the id the server wrote it under, for an
+    /// endpoint that writes the question itself (`/api/generate`).
+    private func adoptServerQuestion(id: String, clientID: String, conversationID: String) {
+        guard var messages = transientMessagesByConversation[conversationID],
+            let index = messages.firstIndex(where: { $0.clientID == clientID && $0.role == .user })
+        else { return }
+        messages[index].id = id
+        messages[index].isPending = false
+        transientMessagesByConversation[conversationID] = messages
+        rememberAttachments(messages[index].attachments, for: id)
     }
 
     private func appendTransient(_ message: NativeChatMessage) {
@@ -2799,6 +3014,10 @@ private struct MessageAttachmentWire: Decodable {
     let size: Int?
     let width: Int?
     let height: Int?
+    /// The stable `/api/files/<key>` path, which sync now keeps
+    /// (`NativeHydratedEntity.persistableData`). Absent on rows synced before.
+    let url: String?
+    let parserState: String?
 }
 
 private struct MessageWire: Decodable {

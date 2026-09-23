@@ -66,6 +66,12 @@ public extension JunoColorToken {
     static let cardShadowLight = JunoGeneratedColors.shadowInk.light.withOpacity(0.07)
     static let cardShadowDark = JunoGeneratedColors.shadowInk.dark.withOpacity(0.42)
 
+    // The web's `--shadow-raised`: `0 1px 2px` in `--shadow-ink` at 4% (light)
+    // and black at 25% (dark). The small lift under a tile, a page in a well,
+    // or a pill over a picture — a step below a card's throw.
+    static let raisedShadowLight = JunoGeneratedColors.shadowInk.light.withOpacity(0.04)
+    static let raisedShadowDark = JunoGeneratedColors.shadowInk.dark.withOpacity(0.25)
+
     // Keyboard focus follows the web's neutral `--ring`, not the account's
     // accent. Every accent palette projects the same pair, so a user can change
     // Juno's action colour without turning every focused field, list and button
@@ -129,6 +135,11 @@ public extension Color {
     static let junoCardShadow = Color.junoAdaptive(
         light: .cardShadowLight, dark: .cardShadowDark
     )
+    /// The web's `--shadow-raised`. Only ever used through
+    /// ``View/junoRaisedShadow(_:)``.
+    static let junoRaisedShadow = Color.junoAdaptive(
+        light: .raisedShadowLight, dark: .raisedShadowDark
+    )
 }
 
 /// How far a surface lifts off the canvas.
@@ -141,6 +152,23 @@ public enum JunoElevation {
     public static let cardBlur: CGFloat = 6
     /// How far that throw falls below the card.
     public static let cardOffsetY: CGFloat = 2
+    /// `--shadow-raised`'s blur: `0 1px 2px`, as a native radius.
+    public static let raisedBlur: CGFloat = 1
+    /// `--shadow-raised`'s fall.
+    public static let raisedOffsetY: CGFloat = 1
+}
+
+public extension View {
+    /// The web's `shadow-raised`: a one-point lift, for a tile under the
+    /// pointer, a page in its well, or a pill over a picture. `isOn` false
+    /// draws nothing, so a hover can animate it in.
+    func junoRaisedShadow(_ isOn: Bool = true) -> some View {
+        shadow(
+            color: isOn ? Color.junoRaisedShadow : Color.clear,
+            radius: JunoElevation.raisedBlur,
+            y: JunoElevation.raisedOffsetY
+        )
+    }
 }
 
 public extension View {

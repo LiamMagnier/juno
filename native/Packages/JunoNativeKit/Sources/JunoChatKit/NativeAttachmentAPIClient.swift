@@ -10,16 +10,37 @@ public struct NativeUploadedAttachment: Equatable, Sendable, Identifiable {
     public let mimeType: String
     public let size: Int
     public let kind: String
+    /// The stable `/api/files/<key>` path the upload was stored under, when the
+    /// server sent one in that shape. Nil otherwise.
+    public let url: String?
+    /// The picture's size in pixels, when the server measured it.
+    public let width: Int?
+    public let height: Int?
 
-    public init(id: String, fileName: String, mimeType: String, size: Int, kind: String) {
+    public init(
+        id: String, fileName: String, mimeType: String, size: Int, kind: String,
+        url: String? = nil, width: Int? = nil, height: Int? = nil
+    ) {
         self.id = id
         self.fileName = fileName
         self.mimeType = mimeType
         self.size = size
         self.kind = kind
+        self.url = NativeAttachmentFilePath.stable(url)
+        self.width = width.flatMap { $0 > 0 ? $0 : nil }
+        self.height = height.flatMap { $0 > 0 ? $0 : nil }
     }
 
     public var isImage: Bool { kind.uppercased() == "IMAGE" }
+
+    /// The upload as a message carries it — what the reader's own turn shows
+    /// the moment it is sent, before sync has delivered the attachment row.
+    public var chatAttachment: NativeChatAttachment {
+        NativeChatAttachment(
+            id: id, fileName: fileName, mimeType: mimeType, kind: kind, size: size,
+            width: width, height: height, url: url
+        )
+    }
 }
 
 public enum NativeAttachmentAPIError: Error, Equatable, LocalizedError, Sendable {
@@ -126,7 +147,10 @@ public struct NativeAttachmentAPIClient: Sendable {
             fileName: decoded.attachment.fileName,
             mimeType: decoded.attachment.mimeType,
             size: decoded.attachment.size,
-            kind: decoded.attachment.kind
+            kind: decoded.attachment.kind,
+            url: decoded.attachment.url,
+            width: decoded.attachment.width,
+            height: decoded.attachment.height
         )
     }
 
@@ -215,5 +239,8 @@ private struct AttachmentEnvelope: Decodable {
         let mimeType: String
         let size: Int
         let kind: String
+        let url: String?
+        let width: Int?
+        let height: Int?
     }
 }

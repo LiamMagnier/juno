@@ -172,6 +172,12 @@ struct DesktopMessageRow: View {
 
     private var userTurn: some View {
         VStack(alignment: .trailing, spacing: 0) {
+            // What came with the question, above it: pictures as themselves,
+            // documents as pages. A turn that is only files has no bubble.
+            if !message.attachments.isEmpty {
+                UserAttachmentStrip(attachments: message.attachments)
+                    .padding(.bottom, editing || hasTextContent ? JunoSpace.snug : 0)
+            }
             if editing {
                 promptEditor
             } else if hasTextContent {
@@ -482,9 +488,9 @@ struct DesktopMessageRow: View {
                     .frame(maxWidth: 520, alignment: .leading)
                 }
 
-                if let progress = message.mediaProgress {
+                if let progress = message.mediaProgress, message.errorDescription == nil {
                     NativeMediaGenerationView(progress: progress)
-                } else if message.content.isEmpty, message.isPending {
+                } else if message.content.isEmpty, message.isPending, message.attachments.isEmpty {
                     HStack(spacing: 10) {
                         JunoThinkingMatrix()
                         JunoAIcssThinkingLabel("Thinking about your request", size: 15)
@@ -493,17 +499,29 @@ struct DesktopMessageRow: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Thinking about your request")
                     .accessibilityAddTraits(.updatesFrequently)
-                } else if !parts.isEmpty {
-                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                        ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
-                            switch part {
-                            case .text(let text):
-                                JunoLessonText(text, streaming: message.isPending)
-                            case .artifact(let artifact):
-                                DesktopInlineArtifactCard(
-                                    artifact: artifact,
-                                    open: artifact.streaming ? nil : { actions.openArtifact(artifact) }
-                                )
+                } else if !parts.isEmpty || !message.attachments.isEmpty {
+                    VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                        // The web's order: documents it produced, then the
+                        // pictures and clips, then the words.
+                        if !message.attachments.isEmpty {
+                            AssistantAttachments(
+                                attachments: message.attachments,
+                                canEditImages: !isPrivate && !isGenerating
+                            )
+                        }
+                        if !parts.isEmpty {
+                            VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                                ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                                    switch part {
+                                    case .text(let text):
+                                        JunoLessonText(text, streaming: message.isPending)
+                                    case .artifact(let artifact):
+                                        DesktopInlineArtifactCard(
+                                            artifact: artifact,
+                                            open: artifact.streaming ? nil : { actions.openArtifact(artifact) }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

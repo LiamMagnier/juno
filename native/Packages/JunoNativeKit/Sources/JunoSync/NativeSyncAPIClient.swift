@@ -76,15 +76,43 @@ public struct NativeHydratedEntity: Equatable, Sendable {
     }
 
     private func persistableData(_ value: NativeJSONValue) -> NativeJSONValue {
-        // Attachment view URLs are short-lived signatures, not entity state.
-        // Persisting them would make identical revisions differ across a
-        // bootstrap/catch-up race. The attachment access flow rehydrates a
-        // fresh URL when the user opens the file.
+        // An attachment's URL is kept only in the one shape the server hands
+        // out today: the stable, authenticated `/api/files/<key>` path
+        // (`getViewUrl`, `src/lib/storage.ts`), which is derived from the
+        // storage key and never changes for a revision. It is what the
+        // transcript fetches a file through, so dropping it left every picture
+        // and document in a reloaded conversation with no address at all.
+        //
+        // Anything else is still dropped. A signed `https://…?sig=` URL — what
+        // an older server, or a CDN in front of one, could send — expires, and
+        // persisting it would make two identical revisions differ across a
+        // bootstrap/catch-up race. A row without a URL falls back to the
+        // entity lookup when its file is opened.
         guard type == "attachment", case .object(var object) = value else {
             return value
         }
+        if case .string(let raw)? = object["url"], NativeAttachmentFilePath.stable(raw) != nil {
+            return .object(object)
+        }
         object.removeValue(forKey: "url")
         return .object(object)
+    }
+}
+
+/// The address of an attachment's bytes, as this client is willing to keep it.
+public enum NativeAttachmentFilePath {
+    /// `raw` when it is the stable `/api/files/<key>` path — `^/api/files/[^?#]+$`
+    /// — and nil for anything else: a signed URL, an absolute URL, a query, a
+    /// fragment, or a path that climbs out of the route.
+    public static func stable(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let prefix = "/api/files/"
+        guard raw.hasPrefix(prefix), raw.count > prefix.count, raw.utf8.count <= 2_048,
+            !raw.contains("?"), !raw.contains("#"), !raw.contains("\\"),
+            !raw.split(separator: "/", omittingEmptySubsequences: false).contains(".."),
+            !raw.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.contains($0) || CharacterSet.controlCharacters.contains($0) })
+        else { return nil }
+        return raw
     }
 }
 

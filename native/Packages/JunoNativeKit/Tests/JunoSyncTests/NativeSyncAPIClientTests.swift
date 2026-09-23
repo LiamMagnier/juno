@@ -81,6 +81,34 @@ final class NativeSyncAPIClientTests: XCTestCase {
         XCTAssertNil(object["url"])
     }
 
+    /// The stable `/api/files/<key>` path is the file's address for as long as
+    /// the revision lives, and the transcript reads the file through it — so
+    /// it is kept, and every other shape still is not.
+    func testAttachmentRecordKeepsTheStableFilePathAndDropsEverythingElse() throws {
+        func persistedURL(_ url: String) throws -> String? {
+            let entity = NativeHydratedEntity(
+                type: "attachment",
+                id: "a1",
+                revision: 2,
+                deletedAt: nil,
+                data: .object(["id": .string("a1"), "url": .string(url)])
+            )
+            let payload = try XCTUnwrap(
+                try entity.storedRecord(accountID: StorageAccountID("account-a")).payload
+            )
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: payload) as? [String: Any])
+            return object["url"] as? String
+        }
+
+        XCTAssertEqual(try persistedURL("/api/files/u1/a1.pdf"), "/api/files/u1/a1.pdf")
+        XCTAssertNil(try persistedURL("https://cdn.example/u1/a1.pdf?sig=abc&expires=1"))
+        XCTAssertNil(try persistedURL("/api/files/u1/a1.pdf?sig=abc"))
+        XCTAssertNil(try persistedURL("/api/files/u1/a1.pdf#page=2"))
+        XCTAssertNil(try persistedURL("/api/files/"))
+        XCTAssertNil(try persistedURL("/api/files/../../etc/passwd"))
+        XCTAssertNil(try persistedURL("/api/attachments/a1"))
+    }
+
     // MARK: - Real-device regression: the tombstone/live invariant
     //
     // The physical iPhone stalled its initial sync on "Juno returned malformed
