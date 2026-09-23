@@ -55,23 +55,26 @@ export const MAX_TOOL_ARGS_CHARS = 2_000;
 export const MAX_TOOL_RESULT_CHARS = 4_000;
 
 /**
- * THE ONLY REAL BOUND. Per-call caps do not bound a run: 6 rounds x parallel
- * calls is realistically 30 calls, i.e. 180,000 chars at the per-call caps
+ * THE ONLY REAL BOUND. Per-call caps do not bound a run: a 24-round turn with
+ * parallel reads is easily 60 calls, i.e. 360,000 chars at the per-call caps
  * alone. This budget is spent in call order; once exhausted every later row
  * carries `argsNote` / `resultNote` = `"over_budget"` and SAYS SO.
  *
- * 32,000 is chosen to sit alongside the 30,000 the model itself already reads
- * for ONE call — one run's visible tool detail should not exceed one tool
- * result's worth of text on the SSE stream or in the `Message.activity` column.
+ * 96,000 (SPEC §2.5): the round budget went from a flat 6 to as many as 24, and
+ * web tools made a dozen calls an ordinary turn, so the old 32,000 ran out on
+ * the fifth page read. It is still small beside the INV-4 ceiling on the `done`
+ * frame (4.5 MiB) and on the `Message.activity` column's typical row.
  *
  * This is not belt-and-braces on top of an existing guard: `enforceStreamBudget`
  * projects micro-USD from token counts, so nothing else on this stream measures
  * bytes at all. Tool detail is the first payload that can grow without one.
  */
-export const MAX_TOOL_DETAIL_CHARS_PER_RUN = 32_000;
+export const MAX_TOOL_DETAIL_CHARS_PER_RUN = 96_000;
 
-export const TOOL_ARGS_NOTES = ["unavailable", "empty", "unparsable", "over_budget"] as const;
-export const TOOL_RESULT_NOTES = ["pending", "unfinished", "empty", "over_budget"] as const;
+// The read side lives with the rest of the persisted run record, which must
+// stay free of this module's `node:crypto` import (redaction borrows the
+// approval card's helper). Re-exported so every existing caller is unchanged.
+export { TOOL_ARGS_NOTES, TOOL_RESULT_NOTES, readToolDetail } from "@/lib/chat/run-record";
 
 /** One generation's remaining allowance. Created by the route, spent in order. */
 export interface ToolDetailBudget {
@@ -275,56 +278,5 @@ export function closeToolDetail(
     // than a ratio between two.
     detail.resultChars = formatted.length;
   }
-  return detail;
-}
-
-function readEnum<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {
-  return typeof value === "string" && (allowed as readonly string[]).includes(value) ? (value as T) : undefined;
-}
-
-function readCount(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-/**
- * Rebuild a persisted tool detail from the `Message.activity` JSON.
- *
- * As tolerant as `serializeActivity` itself, and for the same reason: a row
- * written by a LATER build must still load here. An unrecognised note degrades
- * that one field to `undefined` — never the whole event, and never a thrown
- * conversation load. A row written BEFORE this shipped has no `tool` at all and
- * returns `undefined`, which is what lets replay degrade to the old name-only
- * row with no version check anywhere.
- */
-export function readToolDetail(raw: unknown): ClientToolDetail | undefined {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
-  const record = raw as Record<string, unknown>;
-  const server = typeof record.server === "string" ? record.server : "";
-  const name = typeof record.name === "string" ? record.name : "";
-  if (!server || !name) return undefined;
-
-  const detail: ClientToolDetail = { server, name };
-  if (typeof record.args === "string") detail.args = record.args;
-  const argsNote = readEnum(record.argsNote, TOOL_ARGS_NOTES);
-  if (argsNote) detail.argsNote = argsNote;
-  if (record.argsTruncated === true) detail.argsTruncated = true;
-
-  if (typeof record.result === "string") detail.result = record.result;
-  const resultNote = readEnum(record.resultNote, TOOL_RESULT_NOTES);
-  // "pending" is a claim about the present tense, and it is only ever true
-  // while a stream is open. A run stopped mid-call persists its row as it
-  // stood, so anything read back from the database has a run that is over by
-  // definition — telling someone that last Tuesday's call is "still running"
-  // would be the panel lying with a field rather than with a number.
-  if (resultNote) detail.resultNote = resultNote === "pending" ? "unfinished" : resultNote;
-  if (record.resultTruncated === true) detail.resultTruncated = true;
-  const resultChars = readCount(record.resultChars);
-  if (resultChars !== undefined) detail.resultChars = resultChars;
-
-  const status = readEnum(record.status, ["ok", "failed"] as const);
-  if (status) detail.status = status;
-  const durationMs = readCount(record.durationMs);
-  if (durationMs !== undefined) detail.durationMs = durationMs;
-
   return detail;
 }

@@ -27,6 +27,13 @@ export type CanonicalToolId =
   | "provider_x_search"     // xAI x_search
   | "mcp";                  // any connector tool; see connectorId/toolTitle
 
+/** Every canonical id, for readers that must drop one this build does not know. */
+export const CANONICAL_TOOL_IDS = [
+  "web_search", "web_fetch", "read_document", "inspect_image", "run_code",
+  "search_chats", "current_time", "calculate", "start_task", "suggest_research",
+  "provider_web_search", "provider_x_search", "mcp",
+] as const satisfies readonly CanonicalToolId[];
+
 export interface ToolCallRecord {
   v: 1;
   /** Unique within the generation (SPEC §4.3): the provider's id when it has one and it is unseen,
@@ -75,6 +82,10 @@ export interface ToolFigure {
   value?: string;     // for "value" (calculate result, formatted time) and "exit" ("0")
 }
 
+export const TOOL_FIGURE_KINDS = [
+  "results", "pages", "chars", "files", "matches", "chats", "value", "exit", "items",
+] as const satisfies readonly ToolFigure["kind"][];
+
 export const TOOL_ERROR_CODES = [
   "timeout", "invalid_args", "tool_error", "denied", "expired", "blocked", "not_permitted",
   "unavailable", "cancelled", "rate_limited", "budget", "unknown_tool", "no_results",
@@ -113,6 +124,10 @@ export interface ToolWebDetail {
 export type ChatSourceOrigin =
   | "juno_search" | "juno_fetch" | "provider_search" | "provider_grounding" | "research";
 
+export const CHAT_SOURCE_ORIGINS = [
+  "juno_search", "juno_fetch", "provider_search", "provider_grounding", "research",
+] as const satisfies readonly ChatSourceOrigin[];
+
 /** A reasoning segment starts. `offset` indexes the flat `ClientMessage.reasoning` string (UTF-16). */
 export interface ReasoningSegment { round: number; part?: number; offset: number }
 
@@ -140,6 +155,14 @@ export type RunFact =
 
 export type ConnectorFailure = "auth_expired" | "unreachable" | "misconfigured" | "timeout" | "not_linked";
 
+export const CONNECTOR_FAILURES = [
+  "auth_expired", "unreachable", "misconfigured", "timeout", "not_linked",
+] as const satisfies readonly ConnectorFailure[];
+
+export const RUN_EFFORTS = [
+  "instant", "minimal", "low", "medium", "high", "xhigh", "max",
+] as const satisfies readonly Extract<RunFact, { key: "effort" }>["effort"][];
+
 export const RUN_NOTICE_CODES = [
   "model_changed", "skill_not_applied", "connector_unavailable", "usage_limit", "stall",
   "finish_length", "finish_sensitive", "tool_budget", "web_off_lockdown", "provenance_refused",
@@ -148,3 +171,13 @@ export const RUN_NOTICE_CODES = [
 ] as const;
 export type RunNoticeCode = (typeof RUN_NOTICE_CODES)[number];
 export interface RunNotice { code: RunNoticeCode; params?: Record<string, string | number> }
+
+/**
+ * The only notice codes whose rows use `kind: "warning"` (INV-7). iOS shows the
+ * last warning of a turn as a research-degradation line, so a notice nobody has
+ * to act on rides `kind: "context"` instead; the typed UI reads `notice.code`
+ * whatever the kind (SPEC §2.4).
+ */
+export const MUST_ACT_NOTICE_CODES = [
+  "finish_length", "usage_limit", "connector_unavailable", "hostile_content", "research_skipped",
+] as const satisfies readonly RunNoticeCode[];

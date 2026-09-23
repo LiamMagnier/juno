@@ -29,18 +29,41 @@ export interface ReasoningState {
   /** Ordinal of the part the previous delta belonged to, so a boundary can be
    *  detected without re-reading the accumulated text. */
   lastPart: number | null;
+  /** The model step the previous delta belonged to, when the stream says
+   *  (SPEC §2.11). Optional so a state built before rounds existed still reads. */
+  lastRound?: number | null;
 }
 
-export const emptyReasoning = (): ReasoningState => ({ text: "", parts: [], lastPart: null });
+export const emptyReasoning = (): ReasoningState => ({ text: "", parts: [], lastPart: null, lastRound: null });
 
 /**
  * Fold one delta in. Pure: returns fresh state, so React consumers can use it
  * directly in a setState updater.
+ *
+ * `round` is the model step the delta belongs to. When it changes, the flat
+ * text gets the same blank line a declared part boundary gets: thinking from
+ * before a tool call and thinking after it are two passages, and gluing them
+ * ("…the page.Now that I have it…") is the same lie in prose that gluing two
+ * rounds' answers was. The server and the client fold with this one function
+ * and the same `round`, so the offsets of the `segment` markers the server
+ * writes (SPEC §2.4) index the client's flat string byte for byte.
  */
-export function appendReasoningDelta(state: ReasoningState, text: string, part?: number): ReasoningState {
+export function appendReasoningDelta(
+  state: ReasoningState,
+  text: string,
+  part?: number,
+  round?: number
+): ReasoningState {
+  const lastRound = state.lastRound ?? null;
+  const nextRound = round ?? lastRound;
+  const roundChanged = round != null && lastRound != null && round !== lastRound;
+
   // No boundary on the wire — the provider has no parts. Flat text only, and
   // `parts` deliberately stays empty.
-  if (part == null) return { text: state.text + text, parts: state.parts, lastPart: state.lastPart };
+  if (part == null) {
+    const sep = roundChanged && state.text ? "\n\n" : "";
+    return { text: state.text + sep + text, parts: state.parts, lastPart: state.lastPart, lastRound: nextRound };
+  }
 
   const parts = state.parts.slice();
   // Tolerates a skipped ordinal rather than trusting the sequence to be dense.
@@ -51,8 +74,8 @@ export function appendReasoningDelta(state: ReasoningState, text: string, part?:
   // a blank line goes in AT THE BOUNDARY THE API DECLARED. This is the opposite
   // of guessing: the separator is placed from a known fact, and nothing ever
   // reads it back to recover the structure — `parts` already holds it.
-  const sep = part !== state.lastPart && state.text ? "\n\n" : "";
-  return { text: state.text + sep + text, parts, lastPart: part };
+  const sep = (part !== state.lastPart || roundChanged) && state.text ? "\n\n" : "";
+  return { text: state.text + sep + text, parts, lastPart: part, lastRound: nextRound };
 }
 
 /** A step as the UI shows it: a label to scan, and the part's own prose. */
