@@ -16,10 +16,17 @@ public enum NativeArtifactDisplayMode: String, CaseIterable, Identifiable, Senda
 
 /// How much executable behaviour an artifact preview is allowed to retain.
 ///
-/// Document previews may run inline HTML scripts, but remain network-isolated.
-/// Gallery thumbnails are inert: JavaScript is disabled and motion is frozen so
-/// merely opening the library cannot execute every visible artifact.
+/// * `.inline` is the web's sandbox, ported (``NativeArtifactRuntimeDocument``):
+///   the same builders, the same CDNs and the same policy, so a Tailwind page,
+///   a React component, a Mermaid chart or a Python script runs on the Mac as
+///   it runs on the website. The Mac's transcript card, canvas dock and
+///   library preview use it.
+/// * `.document` runs inline HTML scripts but stays network-isolated — the
+///   posture the phone and the library's Canvas mode keep.
+/// * `.thumbnail` is inert: JavaScript is disabled and motion is frozen so
+///   merely opening the library cannot execute every visible artifact.
 public enum NativeArtifactPreviewPolicy: Sendable, Equatable {
+    case inline
     case document
     case thumbnail
 }
@@ -29,22 +36,44 @@ public struct NativeArtifactPreview: View {
     private let content: String
     private let mode: NativeArtifactDisplayMode
     private let policy: NativeArtifactPreviewPolicy
+    private let language: String?
+    private let runtime: ArtifactRuntimeModel?
 
+    /// - Parameters:
+    ///   - language: the model's language hint, which routes a CODE artifact
+    ///     to a runtime under `.inline` (a Python script runs, a Go file says
+    ///     it cannot). Ignored by the other policies.
+    ///   - runtime: receives the running page's status and console under
+    ///     `.inline`. Nil when nothing is listening.
     public init(
         kind: NativeArtifactKind,
         content: String,
         mode: NativeArtifactDisplayMode,
-        policy: NativeArtifactPreviewPolicy = .document
+        policy: NativeArtifactPreviewPolicy = .document,
+        language: String? = nil,
+        runtime: ArtifactRuntimeModel? = nil
     ) {
         self.kind = kind
         self.content = content
         self.mode = mode
         self.policy = policy
+        self.language = language
+        self.runtime = runtime
+    }
+
+    /// Whether `.inline` runs this artifact: every kind the web runs but
+    /// Markdown (read as prose) and a design (opened in its editor), less the
+    /// runtimes the closed sandbox cannot reach (``NativeArtifactRuntimeInfo/runsOnThisMac``).
+    private var runsInline: Bool {
+        guard policy == .inline, mode == .preview, kind != .markdown, !kind.isDesignDocument else { return false }
+        return NativeArtifactRuntimeInfo.resolve(kind: kind, language: language).runsOnThisMac
     }
 
     public var body: some View {
         Group {
-            if mode == .source || !kind.supportsRenderedPreview {
+            if runsInline {
+                runtimePreview
+            } else if mode == .source || !kind.supportsRenderedPreview {
                 ScrollView([.horizontal, .vertical]) {
                     Text(content)
                         .font(.system(.body, design: .monospaced))
@@ -71,6 +100,32 @@ public struct NativeArtifactPreview: View {
     #if os(macOS)
     @Environment(\.junoWebPreviewStill) private var webPreviewStill
     #endif
+
+    /// The running artifact — or, where the environment supplies one, a still
+    /// of the same document, with what the page said while it was taken
+    /// replayed into ``runtime``.
+    @ViewBuilder
+    private var runtimePreview: some View {
+        let document = NativeArtifactRuntimeDocument.build(kind: kind, content: content, language: language)
+        #if os(macOS)
+        if let still = webPreviewStill?(document) {
+            Image(nsImage: still)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .clipped()
+                .task(id: document) {
+                    guard let runtime, let stills = webPreviewStill else { return }
+                    runtime.reset()
+                    for message in stills.messages(document) { runtime.apply(message) }
+                }
+        } else {
+            NativeArtifactRuntimeWebView(html: document, runtime: runtime)
+        }
+        #else
+        NativeArtifactRuntimeWebView(html: document, runtime: runtime)
+        #endif
+    }
 
     /// The live web view — or, where the environment supplies one, a still of
     /// the same document. See ``SwiftUI/EnvironmentValues/junoWebPreviewStill``.
@@ -147,13 +202,24 @@ public extension EnvironmentValues {
 public struct JunoWebPreviewStills: Equatable, Sendable {
     private let id = UUID()
     private let still: @MainActor @Sendable (String) -> NSImage?
+    private let recorded: @MainActor @Sendable (String) -> [ArtifactRuntimeMessage]
 
-    public init(_ still: @escaping @MainActor @Sendable (String) -> NSImage?) {
+    /// - Parameter messages: what the page posted while its still was taken —
+    ///   its status and console — so a card drawn from a still reports what
+    ///   the running page would have.
+    public init(
+        _ still: @escaping @MainActor @Sendable (String) -> NSImage?,
+        messages: @escaping @MainActor @Sendable (String) -> [ArtifactRuntimeMessage] = { _ in [] }
+    ) {
         self.still = still
+        self.recorded = messages
     }
 
     @MainActor
     public func callAsFunction(_ document: String) -> NSImage? { still(document) }
+
+    @MainActor
+    public func messages(_ document: String) -> [ArtifactRuntimeMessage] { recorded(document) }
 
     public static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
 }
@@ -182,7 +248,10 @@ public enum NativeArtifactSandbox {
         content: String,
         policy: NativeArtifactPreviewPolicy = .document
     ) -> String {
-        switch kind {
+        if policy == .inline {
+            return NativeArtifactRuntimeDocument.build(kind: kind, content: content, language: nil)
+        }
+        return switch kind {
         case .svg:
             svgDocument(content, policy: policy)
         case .html:

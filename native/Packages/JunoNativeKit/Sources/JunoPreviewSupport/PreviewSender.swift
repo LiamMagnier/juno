@@ -43,6 +43,19 @@ public actor PreviewSender: NativeChatRequestSending {
                 body: PreviewWorkFixtures.artifactDownloadBytes
             )
         }
+        // A design's picture, as the transcript's inline design card asks for
+        // it: the server's SVG export of the stored document.
+        if request.path == "/api/design/art-design/export" {
+            let svg = Data(PreviewFixtures.designSVG.utf8)
+            return HTTPResponse(
+                statusCode: 200,
+                headers: try HTTPHeaders([
+                    "content-type": "image/svg+xml",
+                    "content-length": String(svg.count),
+                ]),
+                body: svg
+            )
+        }
         // The transcript's pictures. A real PNG so the row's decode path runs.
         if request.path.hasPrefix("/api/attachments/") {
             let id = String(request.path.dropFirst("/api/attachments/".count))

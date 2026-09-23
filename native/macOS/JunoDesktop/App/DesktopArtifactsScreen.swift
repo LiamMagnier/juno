@@ -871,10 +871,15 @@ struct DesktopArtifactsScreen: View {
     /// No `ScrollView` around it: the web view scrolls itself, and nesting the
     /// two gives the page two scrollers that fight over the wheel.
     private func renderedPreview(_ artifact: NativeArtifact) -> some View {
+        // `.inline`: the web's sandbox, so a page that leans on Tailwind, a
+        // web font or a photograph renders here as it does on the website
+        // (Artifacts & Design audit, mac-artifacts-2). Thumbnails stay inert.
         NativeArtifactPreview(
             kind: artifact.kind,
             content: displayedContent,
-            mode: .preview
+            mode: .preview,
+            policy: .inline,
+            language: artifact.language
         )
         .id(previewReloadID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1986,7 +1991,7 @@ private struct DesktopArtifactWindowContent: View {
                         .junoCard()
                 }
             } else {
-                NativeArtifactPreview(kind: kind, content: content, mode: mode.displayMode)
+                NativeArtifactPreview(kind: kind, content: content, mode: mode.displayMode, policy: .inline)
             }
         }
         .frame(minWidth: 480, minHeight: 360)

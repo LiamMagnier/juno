@@ -93,6 +93,8 @@ struct DesktopMessageRow: View {
     @Environment(\.junoSnapshotHover) private var snapshotHover
     @Environment(\.junoSnapshotCopied) private var snapshotCopied
     @Environment(\.junoMeasure) private var measure
+    /// The stored rows behind the artifacts this reply mentions.
+    @Environment(\.junoArtifactResolver) private var artifactResolver
     /// The pointer is over the turn: the web's `group-hover`.
     @State private var hovered = false
     /// Copy just happened; the copy mark is a check for two seconds.
@@ -107,6 +109,9 @@ struct DesktopMessageRow: View {
     /// The menu trigger under the pointer, and the one whose menu is open.
     @State private var hoveredTrigger: MessageMenuTrigger?
     @State private var openTrigger: MessageMenuTrigger?
+    /// A regenerate waiting on the reader's go-ahead, because this reply's
+    /// artifacts go with it.
+    @State private var pendingRegenerate: MessageRegenerateRequest?
     @FocusState private var focus: Focus?
 
     private enum Focus: Hashable {
@@ -516,9 +521,14 @@ struct DesktopMessageRow: View {
                                     case .text(let text):
                                         JunoLessonText(text, streaming: message.isPending)
                                     case .artifact(let artifact):
+                                        let card = artifactResolver.card(
+                                            for: artifact,
+                                            messageID: message.id,
+                                            messageIsPending: message.isPending
+                                        )
                                         DesktopInlineArtifactCard(
-                                            artifact: artifact,
-                                            open: artifact.streaming ? nil : { actions.openArtifact(artifact) }
+                                            card: card,
+                                            open: card.isStreaming ? nil : { actions.openArtifact(artifact) }
                                         )
                                     }
                                 }
@@ -551,6 +561,40 @@ struct DesktopMessageRow: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityActions { replyAccessibilityActions }
+        // Opener and action on one line: the targets gate reads a dialog's
+        // buttons as system-drawn only when its brace opens on that line.
+        .confirmationDialog("Regenerate this answer?", isPresented: regenerateConfirmation, titleVisibility: .visible, presenting: pendingRegenerate) { request in
+            Button("Regenerate", role: .destructive) {
+                pendingRegenerate = nil
+                actions.regenerate?(request)
+            }
+            Button("Cancel", role: .cancel) { pendingRegenerate = nil }
+        } message: { _ in
+            Text(artifactCount == 1 ? "Its 1 artifact will be replaced." : "Its \(artifactCount) artifacts will be replaced.")
+        }
+    }
+
+    /// The artifacts this reply wrote. Regenerating a reply deletes them on
+    /// the server (the web's regenerate does the same, and is reported to the
+    /// owner), so a Mac regenerate of a reply that carries any asks first —
+    /// Try Again, More Concise, Add Details and Switch Model alike.
+    private var artifactCount: Int {
+        Set(parts.compactMap { part -> String? in
+            if case .artifact(let artifact) = part { return artifact.id }
+            return nil
+        }).count
+    }
+
+    private var regenerateConfirmation: Binding<Bool> {
+        Binding(get: { pendingRegenerate != nil }, set: { if !$0 { pendingRegenerate = nil } })
+    }
+
+    private func requestRegenerate(_ request: MessageRegenerateRequest) {
+        if artifactCount > 0 {
+            pendingRegenerate = request
+        } else {
+            actions.regenerate?(request)
+        }
     }
 
     /// Continue, on the newest reply that stopped part-way with nothing
@@ -629,7 +673,7 @@ struct DesktopMessageRow: View {
                         models: switchableModels,
                         currentModelID: currentModelID,
                         isOpen: openTrigger == .regenerate,
-                        regenerate: { actions.regenerate?($0) }
+                        regenerate: requestRegenerate
                     )
                     .onHover { trackTrigger(.regenerate, hovering: $0) }
                 case .more:
@@ -664,7 +708,7 @@ struct DesktopMessageRow: View {
                 voiceOverAction("Bad response") { actions.setFeedback?(message.feedback == .down ? nil : .down) }
             }
             if model.row.contains(.regenerate) {
-                voiceOverAction("Regenerate") { actions.regenerate?(.again) }
+                voiceOverAction("Regenerate") { requestRegenerate(.again) }
             }
             ForEach(Array(model.more.enumerated()), id: \.offset) { _, item in
                 switch item {

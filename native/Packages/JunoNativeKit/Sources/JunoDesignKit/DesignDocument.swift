@@ -493,6 +493,12 @@ public struct DesignNode: Codable, Hashable, Sendable {
     public var fills: [Paint]
     public var strokes: [Stroke]
     public var cornerRadius: CornerRadius
+    /// Squircle smoothing on the corners, 0…1 (`cornerSmoothing` in the web's
+    /// `BaseNode`). Carried through as the document had it — nil when it had
+    /// none — so a save from the Mac or the phone no longer strips it from
+    /// every node (Artifacts & Design audit, mac-design-1). The website's
+    /// schema defaults an absent value to 0, which is what nil means here.
+    public var cornerSmoothing: Double?
     public var effects: [Effect]
     public var constraints: Constraints
     public var widthMode: SizingMode
@@ -525,7 +531,7 @@ public struct DesignNode: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, type, name, parentId, x, y, width, height, rotation, opacity, visible, locked
-        case blendMode, fills, strokes, cornerRadius, effects, constraints
+        case blendMode, fills, strokes, cornerRadius, cornerSmoothing, effects, constraints
         // Read on the way in only, to fold a pre-`effects` document. Never written.
         case shadows, blur, noise
         case widthMode, heightMode, limits, layoutChild, boundVariables
@@ -554,6 +560,7 @@ public struct DesignNode: Codable, Hashable, Sendable {
         fills = try c.decode([Paint].self, forKey: .fills)
         strokes = try c.decode([Stroke].self, forKey: .strokes)
         cornerRadius = try c.decode(CornerRadius.self, forKey: .cornerRadius)
+        cornerSmoothing = try c.decodeIfPresent(Double.self, forKey: .cornerSmoothing)
         // The effect stack replaced `shadows`, `blur` and `noise`, and documents
         // written before that are on disk in people's accounts. The website
         // folds them on the way in (`foldLegacyEffects` in schema.ts); so does
@@ -660,6 +667,7 @@ public struct DesignNode: Codable, Hashable, Sendable {
         try c.encode(fills, forKey: .fills)
         try c.encode(strokes, forKey: .strokes)
         try c.encode(cornerRadius, forKey: .cornerRadius)
+        try c.encodeIfPresent(cornerSmoothing, forKey: .cornerSmoothing)
         try c.encode(effects, forKey: .effects)
         try c.encode(constraints, forKey: .constraints)
         try c.encode(widthMode, forKey: .widthMode)

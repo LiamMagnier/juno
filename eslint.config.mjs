@@ -54,6 +54,9 @@ const config = [
       // reports thousands of warnings about the minifier's own comma
       // expressions and tells nobody anything.
       "native/macOS/JunoDesktop/Resources/DesignEditor/**",
+      // Third-party runtimes the Mac serves to artifacts over `juno-runtime:`
+      // (Mermaid's minified dist build, vendored unmodified) — not our code.
+      "native/macOS/JunoDesktop/Resources/ArtifactRuntime/**",
       // Local scratch: `.probe/` holds one-off diagnostic scripts and
       // `head-wt/` is a detached checkout used to diff against HEAD. Neither
       // ships, and neither is tracked, so linting them only ever reports on

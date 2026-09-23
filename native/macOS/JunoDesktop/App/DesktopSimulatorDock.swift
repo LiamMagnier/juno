@@ -15,7 +15,7 @@ import AppKit
 /// `updateConstraints` and the process takes SIGTRAP. That window already spends
 /// its one inspector on ``CodeSessionInspector``, attached to the split view.
 /// So the simulator uses the other established shape in this app —
-/// ``DesktopArtifactDock``'s: a trailing inset on the content, with the pane
+/// ``TrailingDock``'s: a trailing inset on the content, with the pane
 /// drawn in the room it reserved. A SwiftUI overlay is a sibling in the same
 /// layout pass, so the constraint machinery never hears about it.
 ///
@@ -81,7 +81,7 @@ struct DesktopSimulatorDock<Content: View>: View {
     }
 
     /// The conversation is hidden, never removed — the same reason
-    /// ``DesktopArtifactDock`` spells out at length: a SwiftUI view that leaves
+    /// ``TrailingDock`` spells out at length: a SwiftUI view that leaves
     /// the hierarchy takes its `@State` with it, and that state is the user's
     /// half-typed message, their model choice, and a live voice dock.
     var body: some View {

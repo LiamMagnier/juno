@@ -40,14 +40,46 @@ enum SnapshotStills {
         size: CGSize = CGSize(width: 720, height: 360),
         timeout: TimeInterval = 6
     ) async throws -> NSImage {
+        try await capture(html: html, size: size, timeout: timeout).image
+    }
+
+    /// A still of `html`, and everything the page posted while it loaded — its
+    /// status and its console — for a card drawn from a still to replay.
+    ///
+    /// The page gets what the real runtime gives it: the `__junoPost` bridge
+    /// at document start and `juno-runtime:` served from the app bundle. What
+    /// it does not get is the network: http(s) is blocked, so a fixture never
+    /// depends on a CDN — a Tailwind `<script>` simply fails to load, which the
+    /// page's status reporter ignores, as the web's does.
+    static func capture(
+        html: String,
+        size: CGSize = CGSize(width: 720, height: 360),
+        timeout: TimeInterval = 6,
+        messageHandler: String = NativeArtifactRuntimeDocument.messageHandlerName,
+        settle: Duration = .milliseconds(400),
+        transparent: Bool = false
+    ) async throws -> (image: NSImage, messages: [ArtifactRuntimeMessage]) {
         SnapshotProbe.pending += 1
         defer { SnapshotProbe.pending -= 1 }
-        let loader = StillLoader()
+        let loader = StillLoader(settle: settle)
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
-        configuration.userContentController.add(loader, name: "juno")
-        defer { configuration.userContentController.removeScriptMessageHandler(forName: "juno") }
+        configuration.setURLSchemeHandler(
+            ArtifactRuntimeSchemeHandler.shared,
+            forURLScheme: NativeArtifactRuntimeDocument.runtimeScheme
+        )
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: NativeArtifactRuntimeDocument.bridgeScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+        configuration.userContentController.add(loader, name: messageHandler)
+        if let rules = await offlineRules() {
+            configuration.userContentController.add(rules)
+        }
+        defer { configuration.userContentController.removeScriptMessageHandler(forName: messageHandler) }
         let webView = WKWebView(frame: CGRect(origin: .zero, size: size), configuration: configuration)
+        if transparent { webView.setValue(false, forKey: "drawsBackground") }
         webView.navigationDelegate = loader
         webView.loadHTMLString(html, baseURL: nil)
 
@@ -57,22 +89,41 @@ enum SnapshotStills {
             try await Task.sleep(for: .milliseconds(50))
         }
         do {
-            return try await webView.takeSnapshot(configuration: WKSnapshotConfiguration())
+            let image = try await webView.takeSnapshot(configuration: WKSnapshotConfiguration())
+            return (image, loader.messages)
         } catch {
             throw Failure.snapshotFailed(error.localizedDescription)
         }
     }
 
-    /// Waits for the page to say it is done — the `juno` bridge posting a
-    /// `status` of done or error — or, for a page with no bridge, for the load
-    /// to finish plus 400ms for its first paint.
+    /// Blocks http(s), once per run.
+    private static var compiledRules: WKContentRuleList?
+    private static func offlineRules() async -> WKContentRuleList? {
+        if let compiledRules { return compiledRules }
+        let rules = try? await WKContentRuleListStore.default().compileContentRuleList(
+            forIdentifier: "com.juno.snapshots.offline",
+            encodedContentRuleList: #"[{"trigger":{"url-filter":"^https?://.*"},"action":{"type":"block"}}]"#
+        )
+        compiledRules = rules
+        return rules
+    }
+
+    /// Waits for the page to say it is done — the bridge posting a status of
+    /// done or error, or a diagram posting its height — or, for a page with no
+    /// bridge, for the load to finish plus the settle time for its first paint.
     @MainActor
     private final class StillLoader: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         private(set) var isReady = false
+        private(set) var messages: [ArtifactRuntimeMessage] = []
+        private let settle: Duration
+
+        init(settle: Duration) {
+            self.settle = settle
+        }
 
         func webView(_: WKWebView, didFinish _: WKNavigation!) {
             Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(400))
+                try? await Task.sleep(for: settle)
                 self.isReady = true
             }
         }
@@ -85,12 +136,28 @@ enum SnapshotStills {
             _: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
-            guard let body = message.body as? [String: Any],
-                body["type"] as? String == "status",
+            if let decoded = ArtifactRuntimeMessage.decode(message.body) {
+                messages.append(decoded)
+            }
+            guard let body = message.body as? [String: Any] else { return }
+            if body["kind"] as? String == "height" || body["kind"] as? String == "error" {
+                // A Mermaid figure has drawn (or given up); let it paint.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(150))
+                    self.isReady = true
+                }
+                return
+            }
+            guard let type = body["type"] as? String,
+                type == "status" || type == "juno:status",
                 let status = body["status"] as? String,
                 status == "done" || status == "error"
             else { return }
-            isReady = true
+            Task { @MainActor in
+                // One more beat, for the console line an error posts after it.
+                try? await Task.sleep(for: .milliseconds(150))
+                self.isReady = true
+            }
         }
     }
 

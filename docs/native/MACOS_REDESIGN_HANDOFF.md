@@ -38,6 +38,13 @@ The shared checkout at `/Users/liammagnier/Developer/project/juno` belongs to ot
    - `App/TranscriptAttachments.swift`: sent image tiles and 144pt page tiles above the bubble, produced-file tiles, generated pictures (fade-in, Edit · Download · Expand, drag out), generated clips, Quick Look and Save As hoisted to the conversation column
    - image Edit runs in the same conversation (`sendImageEdit`); a picture or video turn no longer stores its question twice, and no longer fails at `/api/generate`'s empty-titled `meta` frame in an existing chat
    - the generation placeholder's long-wait line, radius and announcements (shared with iOS)
+7. **Phase 2 stage 3, artifacts, canvas and designs inline** (the commit after `60464ae9`; spec "Phase 2 errata" §6.5/§6.8, register 21–29):
+   - stored rows: `ChatArtifactResolver`, the `done` frame's artifacts merged into the store at once, and unknown kinds or over-long versions skipped instead of blanking the store; designs draw and open only from the stored row (X-11)
+   - the web's builders in a closed sandbox: `NativeArtifactRuntimeDocument` (HTML, CSS, SVG, Mermaid, JS console; React/TS/Python show Code while the network is closed), `NativeArtifactRuntimeWebView` with no network, status and console channels only, and the `juno-runtime:` scheme; policy `.inline`, thumbnails unchanged
+   - a confirmation before regenerating a reply that carries artifacts
+   - `InlineArtifactCard.swift` rewritten (Preview/Code/Console, status, sweep), `InlineDesignPreview.swift` (the server's SVG export, cached), `TrailingDock` replacing `DesktopArtifactDock`, and a canvas that follows the stored row and saves on top of the version it started from
+   - Mermaid 11.12.3 bundled and registered; the figure restyled; `juno-visual` fences drawn (`JunoVisualBlock.swift`)
+   - REACT → `ph.code`, DESIGN → `juno.design`; `DesignNode.cornerSmoothing` kept through a save
 
 Every stage above built and passed at its commit:
 - Mac build, JunoDesktopTests (175) and the iOS build
@@ -51,17 +58,11 @@ Every stage above built and passed at its commit:
    - icons: `npm run native:icons`
    - Xcode projects: `native/Scripts/generate-projects.sh`
 2. *(done — stage 2, above)*
-3. **Phase 2 stage 3, artifacts** (brief §5):
-   - the WKWebView runtime
-   - the inline artifact card with Preview/Code/Console
-   - the trailing canvas dock
-   - inline Juno Design previews
-   - Mermaid
-   - the React and Design icon fixes
+3. *(done — stage 3, above)*
 4. **Phase 2 stage 4, the rest of the transcript** (brief §6):
    - prose at 16/1.7
    - code and tables
-   - the activity row and Thought panel
+   - the activity row and Thought panel (the Thought panel is the second `DesktopDockPanel` case in `TrailingDock`)
    - the sources pill and citations
    - finish notes and errors
    - follow-ups as opaque chips
@@ -123,5 +124,13 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
   - keeping an older reply's action row visible while its menu is open
 - **Version pager.** It pages over regenerated versions only once stage 4 hydrates the thread.
 - **Stage 2 runtime checks not done** (screen control is off): Quick Look opening from a click and from Space, Save As… writing the file, a picture dragging out to the Finder, a real `/api/generate` reply going from placeholder to picture with no blank frame, the edit sheet streaming its result into the same chat, and a generated clip playing once downloaded. A clip is fetched whole (51 MB ceiling); an `AVAssetResourceLoaderDelegate` over `/api/files` Range requests is the follow-up.
+- **Stage 3 runtime checks not done** (screen control is off): a link in a preview opening the browser, `alert()` as a sheet, a page's download through the save panel, the canvas Save producing v2 through `POST /api/artifacts/{id}`, a design editing in the dock, the regenerate confirmation, and a real `/api/design/{id}/export?format=svg` answer. `ArtifactRuntimeSandboxTests` does run scripted pages in the real sandbox (offscreen), and the snapshots draw it from offscreen stills.
+- **Stage 3 follow-ups:**
+  - **React, TypeScript and Python previews need bundled runtimes.** The sandbox has no network (brief addendum), and React 18 UMD, `@babel/standalone` and Pyodide are not in the repo or on this machine; downloading them needs the owner's permission. Serve them over `juno-runtime:` with a sha256 manifest, then let `runsOnThisMac` pass them. A bundled Tailwind would restore Tailwind-class pages the same way. Opening the network instead (`ArtifactRuntimeNetwork.isOpen`) is the web's posture and needs sign-off.
+  - An uncaught error in an HTML artifact reaches the Console as "Script error.": WebKit sanitises it for a document with an opaque (nil-base) origin. Loading with a `juno-runtime://artifact/` base URL gives the real message (tested), at the cost of the opaque origin the brief asked for — for sign-off.
+  - The library's Canvas mode (`ArtifactCanvasView`) still runs in the isolated sandbox; the library itself (list/grid, unsaved-edit guard, delete landing in another artifact) is the audit's, not this stage's.
+  - The hosted design editor's own problems from the audit are untouched: the stale bundle, the missing primitive CSS, the indigo host tokens, the embedded layout, Export and the Image tool (mac-design-4 to -8, -11 to -13).
+  - Mermaid was taken from an unmodified local copy of the upstream `dist/mermaid.min.js` (provenance and hash in `Resources/ArtifactRuntime/README.md`); replace it with the npm tarball's file when it is next updated.
+  - No element inspector or "View last good version" in the canvas yet (the web has both).
 - **Gap under the user bubble.** It is about 60pt. That matches the web, which reserves the hover-action row, so it is kept for parity. The owner may prefer it tighter.
 - **Code-owned leftovers.** Code's own header strip still has a second sidebar toggle, and `DesktopCodeAccountFooter` hard-codes "Pro". They belong to the Code session.

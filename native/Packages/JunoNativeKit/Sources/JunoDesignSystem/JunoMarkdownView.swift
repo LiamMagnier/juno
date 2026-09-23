@@ -101,8 +101,22 @@ private struct JunoMarkdownBlockView: View {
             // then redraw it four times. While the fence is open the block is
             // what it demonstrably is — source — and it becomes a diagram or a
             // chart in one step when the author has finished writing it.
-            if isClosed, JunoMermaidMarkup.isMermaidFence(info: language) {
+            if JunoVisualMarkup.isVisualFence(info: language) {
+                // Drawn from its JSON, or — while the fence is still open —
+                // "Drawing inline visual...", never the half-written JSON.
+                JunoVisualBlockView(source: source, streaming: !isClosed)
+            } else if isClosed, JunoMermaidMarkup.isMermaidFence(info: language) {
                 MermaidDiagramView(source: source)
+            } else if JunoMermaidMarkup.isMermaidFence(info: language) {
+                // The web's streaming Mermaid fence: its source, saying what
+                // it will become.
+                VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                    JunoCodeBlock(language: language, source: source)
+                    Text("Diagram renders when complete…")
+                        .junoFont(size: 12, relativeTo: .caption)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .padding(.horizontal, JunoSpace.hairline)
+                }
             } else if isClosed,
                 let chart = JunoChartMarkup.data(fenceInfo: language, source: source)
             {

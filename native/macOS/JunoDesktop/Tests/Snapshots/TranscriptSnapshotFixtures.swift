@@ -15,6 +15,9 @@ struct TranscriptFixture {
     /// shows up as a difference in a picture that already existed.
     let stage: Int
     let view: @MainActor () -> AnyView
+    /// Work to finish before the picture is taken — the web stills an
+    /// artifact fixture draws from (``SnapshotStillCache``).
+    var prepare: (@MainActor () async throws -> Void)? = nil
 }
 
 /// The transcript fixtures of §2.5 of the Phase 2 brief: `NativeChatMessage`
@@ -25,7 +28,7 @@ struct TranscriptFixture {
 /// names as test arguments; everything that builds a view is.
 enum TranscriptSnapshotFixtures {
     static var all: [TranscriptFixture] {
-        replyActions + userTurns + media + artifacts + prose + notes + activity
+        replyActions + userTurns + media + artifacts + visuals + prose + notes + activity
     }
 
     // MARK: 1. Reply actions
@@ -192,20 +195,122 @@ enum TranscriptSnapshotFixtures {
 
     static var artifacts: [TranscriptFixture] {
         [
-            TranscriptFixture(name: "artifact-html", stage: 3) {
-                AnyView(column { row(artifactReply(streaming: false), newest: true) })
-            },
+            TranscriptFixture(name: "artifact-html", stage: 3, view: {
+                AnyView(column(resolver: pricingResolver) { row(artifactReply(streaming: false), newest: true) })
+            }, prepare: {
+                try await SnapshotStillCache.shared.prepareArtifact(kind: .html, content: pricingCard)
+            }),
             TranscriptFixture(name: "artifact-html-streaming", stage: 3) {
                 AnyView(column { row(artifactReply(streaming: true), newest: true) })
             },
-            TranscriptFixture(name: "artifact-html-code", stage: 3) {
-                AnyView(column { row(artifactReply(streaming: false), newest: true) })
+            TranscriptFixture(name: "artifact-html-code", stage: 3, view: {
+                AnyView(column(resolver: pricingResolver, artifactView: .code) {
+                    row(artifactReply(streaming: false), newest: true)
+                })
+            }, prepare: {
+                try await SnapshotStillCache.shared.prepareArtifact(kind: .html, content: pricingCard)
+            }),
+            TranscriptFixture(name: "artifact-html-console-error", stage: 3, view: {
+                AnyView(column(artifactView: .console) { row(brokenArtifactReply, newest: true) })
+            }, prepare: {
+                try await SnapshotStillCache.shared.prepareArtifact(kind: .html, content: brokenCard)
+            }),
+            TranscriptFixture(name: "artifact-html-console-error-preview", stage: 3, view: {
+                AnyView(column { row(brokenArtifactReply, newest: true) })
+            }, prepare: {
+                try await SnapshotStillCache.shared.prepareArtifact(kind: .html, content: brokenCard)
+            }),
+            TranscriptFixture(name: "artifact-updated", stage: 3, view: {
+                AnyView(column(resolver: pricingResolver) { row(revisedArtifactReply, newest: true) })
+            }, prepare: {
+                try await SnapshotStillCache.shared.prepareArtifact(kind: .html, content: pricingCard)
+            }),
+            TranscriptFixture(name: "artifact-source-unavailable", stage: 3) {
+                AnyView(column {
+                    // A reply that stopped right after opening the tag: the
+                    // card is settled, and there is no source to show.
+                    row(message(
+                        "a-empty",
+                        .assistant,
+                        "Here it is. <juno:artifact identifier=\"parser\" type=\"code\" language=\"swift\" title=\"Parser\">",
+                        model: "anthropic:claude-sonnet-4-6"
+                    ), newest: true)
+                })
             },
-            TranscriptFixture(name: "artifact-html-console-error", stage: 3) {
-                AnyView(column { row(artifactReply(streaming: false), newest: true) })
+            TranscriptFixture(name: "design-output", stage: 3, view: {
+                AnyView(column(resolver: designResolver) { row(designReply, newest: true) })
+            }, prepare: {
+                try await SnapshotStillCache.shared.prepareDesign(svg: PreviewFixtures.designSVG)
+            }),
+            TranscriptFixture(name: "design-output-unavailable", stage: 3) {
+                AnyView(column(resolver: designResolver, designs: SnapshotDesignProvider(state: .unavailable)) {
+                    row(designReply, newest: true)
+                })
             },
-            TranscriptFixture(name: "design-output", stage: 3) {
-                AnyView(column { row(designReply, newest: true) })
+            TranscriptFixture(name: "canvas-dock-html", stage: 3, view: {
+                AnyView(
+                    DesktopArtifactCanvas(
+                        artifact: DesktopChatArtifact(
+                            reference: NativeMessageContent.ArtifactReference(
+                                identifier: "pricing-card",
+                                title: "Pricing card",
+                                kind: "HTML",
+                                language: nil,
+                                streaming: false,
+                                content: pricingCard
+                            ),
+                            stored: pricingArtifact
+                        ),
+                        close: {},
+                        requestEdit: { _ in },
+                        save: { _, _, _ in nil }
+                    )
+                    .frame(width: 520, height: 560)
+                    .environment(\.junoWebPreviewStill, SnapshotStillCache.shared.webStills)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, JunoSpace.section)
+                )
+            }, prepare: {
+                try await SnapshotStillCache.shared.prepareArtifact(kind: .html, content: pricingCard)
+            }),
+        ]
+    }
+
+    // MARK: Mermaid and juno-visual
+
+    static var visuals: [TranscriptFixture] {
+        [
+            TranscriptFixture(name: "mermaid-figure", stage: 3, view: {
+                AnyView(column { row(mermaidReply(closed: true), newest: true) })
+            }, prepare: {
+                try await SnapshotStillCache.shared.prepareMermaid(mermaidSource)
+            }),
+            TranscriptFixture(name: "mermaid-streaming", stage: 3) {
+                AnyView(column { row(mermaidReply(closed: false), newest: true) })
+            },
+            TranscriptFixture(name: "juno-visual-flow", stage: 3) {
+                AnyView(column { row(visualReply(flowVisual), newest: true) })
+            },
+            TranscriptFixture(name: "juno-visual-cards", stage: 3) {
+                AnyView(column { row(visualReply(cardsVisual), newest: true) })
+            },
+            TranscriptFixture(name: "juno-visual-compare", stage: 3) {
+                AnyView(column { row(visualReply(compareVisual), newest: true) })
+            },
+            TranscriptFixture(name: "juno-visual-quiz-timeline", stage: 3) {
+                AnyView(column {
+                    row(visualReply(quizVisual + "\n```\n\nAnd how it got here:\n\n```juno-visual\n" + timelineVisual), newest: true)
+                })
+            },
+            TranscriptFixture(name: "juno-visual-callout-streaming", stage: 3) {
+                AnyView(column {
+                    row(message(
+                        "a-visual-stream",
+                        .assistant,
+                        "The short version:\n\n```juno-visual\n\(calloutVisual)\n```\n\nAnd the long one is on its way:\n\n```juno-visual\n{\"type\":\"cards\",\"items\":[{\"title\":\"Half",
+                        model: "anthropic:claude-sonnet-4-6"
+                    ).with { $0.isPending = true }, newest: true)
+                })
             },
         ]
     }
@@ -298,6 +403,9 @@ enum TranscriptSnapshotFixtures {
     @MainActor
     static func column<Content: View>(
         media: SnapshotMediaProvider = SnapshotMediaProvider(),
+        resolver: ChatArtifactResolver = .empty,
+        designs: SnapshotDesignProvider = SnapshotDesignProvider(),
+        artifactView: InlineArtifactView? = nil,
         @ViewBuilder _ content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: JunoSpace.section) {
@@ -310,6 +418,11 @@ enum TranscriptSnapshotFixtures {
         .padding(.vertical, JunoSpace.section)
         .environment(\.junoTranscriptMedia, media)
         .environment(\.junoTranscriptMediaActions, TranscriptMediaActions(editImage: { _ in }))
+        .environment(\.junoArtifactResolver, resolver)
+        .environment(\.junoDesignPreviews, designs)
+        .environment(\.junoSnapshotArtifactView, artifactView)
+        .environment(\.junoWebPreviewStill, SnapshotStillCache.shared.webStills)
+        .environment(\.junoMermaidStill, SnapshotStillCache.shared.mermaidStills)
     }
 
     /// A row with every action a saved turn has, each doing nothing.
@@ -589,6 +702,123 @@ enum TranscriptSnapshotFixtures {
             model: "anthropic:claude-sonnet-4-6"
         ).with { $0.isPending = streaming }
     }
+
+    /// The pricing card's stored row: version 2, written by this message.
+    static let pricingArtifact = NativeArtifact(
+        id: "art-pricing",
+        conversationID: "conv-1",
+        conversationTitle: "Pricing",
+        messageID: "a-artifact",
+        identifier: "pricing-card",
+        title: "Pricing card",
+        kind: .html,
+        language: nil,
+        currentVersion: 2,
+        versions: [
+            NativeArtifactVersion(id: "art-pricing#1", version: 1, content: "<p>First draft</p>", origin: .generated, createdAt: createdAt),
+            NativeArtifactVersion(id: "art-pricing#2", version: 2, content: pricingCard, origin: .edit, createdAt: createdAt),
+        ],
+        createdAt: createdAt,
+        updatedAt: createdAt,
+        revision: 2
+    )
+
+    static let pricingResolver = ChatArtifactResolver(artifacts: [pricingArtifact], conversationID: "conv-1")
+
+    /// A later reply that rewrote the same identifier: its card says "Updated".
+    static let revisedArtifactReply = message(
+        "a-artifact-2",
+        .assistant,
+        "I tightened the spacing and kept the same plan.\n\n<juno:artifact identifier=\"pricing-card\" type=\"html\" title=\"Pricing card\">\(pricingCard)</juno:artifact>",
+        model: "anthropic:claude-sonnet-4-6"
+    )
+
+    /// A page whose script throws before it loads: status Error, Console 1.
+    static let brokenCard = pricingCard + "\n<script>document.getElementById('plan-total').textContent = '$240';</script>"
+
+    static let brokenArtifactReply = message(
+        "a-artifact-broken",
+        .assistant,
+        "Here's the card with the yearly total.\n\n<juno:artifact identifier=\"pricing-card-yearly\" type=\"html\" title=\"Pricing card (yearly)\">\(brokenCard)</juno:artifact>",
+        model: "anthropic:claude-sonnet-4-6"
+    )
+
+    /// `art-design` from the preview world: the stored, expanded document.
+    static let designResolver = ChatArtifactResolver(
+        artifacts: [
+            NativeArtifact(
+                id: "art-design",
+                conversationID: "conv-1",
+                conversationTitle: "Sign-in",
+                messageID: "msg-6",
+                identifier: "signin-screen",
+                title: "Sign-in screen",
+                kind: .design,
+                language: nil,
+                currentVersion: 1,
+                versions: [NativeArtifactVersion(
+                    id: "artv-design",
+                    version: 1,
+                    content: PreviewFixtures.designDocument,
+                    origin: .generated,
+                    createdAt: createdAt
+                )],
+                createdAt: createdAt,
+                updatedAt: createdAt,
+                revision: 1
+            ),
+        ],
+        conversationID: "conv-1"
+    )
+
+    static let mermaidSource = """
+    flowchart LR
+      Q[Question] --> R{Needs the web?}
+      R -- yes --> S[Search] --> A[Answer]
+      R -- no --> A
+    """
+
+    static func mermaidReply(closed: Bool) -> NativeChatMessage {
+        message(
+            closed ? "a-mermaid" : "a-mermaid-stream",
+            .assistant,
+            "Here's how a question is routed:\n\n```mermaid\n\(mermaidSource)\n" + (closed ? "```\n\nSearch runs only when the answer needs something current." : ""),
+            model: "anthropic:claude-sonnet-4-6"
+        ).with { $0.isPending = !closed }
+    }
+
+    static func visualReply(_ json: String) -> NativeChatMessage {
+        message(
+            "a-visual-\(abs(json.hashValue % 10_000))",
+            .assistant,
+            "Here it is at a glance:\n\n```juno-visual\n\(json)\n```",
+            model: "anthropic:claude-sonnet-4-6"
+        )
+    }
+
+    static let flowVisual = #"""
+    {"type":"flow","title":"How a request reaches the model","subtitle":"Tap a step to read what happens there.","nodes":[{"title":"Composer","body":"The question, its files and the chosen tools."},{"title":"Router","body":"Picks the model and whether to search."},{"title":"Model","body":"Writes the answer, calling tools as it goes."},{"title":"Transcript","body":"Streams the reply and stores it."}],"edges":[{"from":"Composer","to":"Router","label":"POST /api/chat"},{"from":"Model","to":"Transcript","label":"SSE"}]}
+    """#
+
+    static let cardsVisual = #"""
+    {"type":"cards","title":"Three ways to cache","items":[{"label":"A","title":"In memory","body":"Fastest, gone on relaunch.","detail":"Good for decoded pictures."},{"label":"B","title":"On disk","body":"Survives relaunch; purge on sign-out."},{"label":"C","title":"On the server","body":"Shared across devices, costs a round trip."}]}
+    """#
+
+    static let compareVisual = #"""
+    {"type":"comparison","title":"Sync or stream","columns":["Sync","Stream"],"rows":[{"title":"Latency","values":["After the reply","As it is written"]},{"title":"Offline","values":["Reads the local copy","Needs the connection"]},{"title":"Cost","values":["One request","One long request"]}]}
+    """#
+
+    static let quizVisual = #"""
+    {"type":"quiz","question":"Which HTTP method is idempotent?","options":[{"label":"POST","body":"Creates a new resource each time."},{"label":"PUT","body":"Replaces the resource at a path.","correct":true,"explanation":"Sending it twice leaves the same state."}]}
+    """#
+
+    static let timelineVisual = #"""
+    {"type":"timeline","items":[{"label":"2014","title":"Swift announced","body":"At WWDC, as Objective-C without the C."},{"label":"2019","title":"SwiftUI","body":"A declarative UI framework ships with iOS 13."},{"label":"2024","title":"Swift 6","body":"Data-race safety becomes an error."}]}
+    """#
+
+    static let calloutVisual = #"""
+    {"type":"callout","title":"Keep secrets out of the bundle","body":"Anything shipped in the app can be read by anyone who has it.","items":[{"title":"Keychain","body":"for tokens"},{"title":"Server","body":"for API keys"}]}
+    """#
 
     /// `msg-6` from the preview world: a Juno Design document in a tag.
     static let designReply = message(

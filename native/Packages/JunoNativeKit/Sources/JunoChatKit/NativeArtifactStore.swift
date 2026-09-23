@@ -99,7 +99,10 @@ public actor NativeArtifactStore<Repository: AccountScopedRepository> {
                     conversationTitles[record.key.id] = title
                 }
             case "artifact_version":
-                let decoded = try decodeVersion(record)
+                // An over-long version is left out rather than failing every
+                // artifact on the account: the row still lists, and its body
+                // is fetched from the server when it is opened.
+                guard let decoded = try decodeVersion(record) else { continue }
                 versionsByArtifact[decoded.artifactID, default: []].append(decoded.version)
             case "artifact":
                 artifactRecords.append(record)
@@ -108,8 +111,12 @@ public actor NativeArtifactStore<Repository: AccountScopedRepository> {
             }
         }
 
-        let artifacts = try artifactRecords.map { record -> NativeArtifact in
-            let decoded = try decodeArtifact(record)
+        let artifacts = try artifactRecords.compactMap { record -> NativeArtifact? in
+            // A kind this build does not know — a typed artifact a newer
+            // server writes — is skipped, not fatal. Failing closed here
+            // blanked both Artifacts and Design on every older build the day
+            // a new type shipped (Artifacts & Design audit, mac-artifacts-11).
+            guard let decoded = try decodeArtifact(record) else { return nil }
             let versions = (versionsByArtifact[decoded.artifact.id] ?? [])
             return NativeArtifact(
                 id: decoded.artifact.id,
@@ -134,29 +141,34 @@ public actor NativeArtifactStore<Repository: AccountScopedRepository> {
         return NativeArtifactSnapshot(artifacts: artifacts)
     }
 
+    /// The artifact a record holds, nil when its kind is one this build does
+    /// not know, and a thrown `corruptRecord` when it is not an artifact at
+    /// all.
     private func decodeArtifact(
         _ record: StoredRecord
-    ) throws -> (artifact: ArtifactWire, kind: NativeArtifactKind, createdAt: Date, updatedAt: Date) {
+    ) throws -> (artifact: ArtifactWire, kind: NativeArtifactKind, createdAt: Date, updatedAt: Date)? {
         guard let payload = record.payload,
             let wire = try? JSONDecoder().decode(ArtifactWire.self, from: payload),
             wire.id == record.key.id, !wire.conversationId.isEmpty,
             !wire.identifier.isEmpty, !wire.title.isEmpty, wire.currentVersion > 0,
-            let kind = NativeArtifactKind(rawValue: wire.type),
             let createdAt = parseDate(wire.createdAt),
             let updatedAt = parseDate(wire.updatedAt)
         else { throw NativeArtifactStoreError.corruptRecord(record.key) }
+        guard let kind = NativeArtifactKind(rawValue: wire.type) else { return nil }
         return (wire, kind, createdAt, updatedAt)
     }
 
+    /// The version a record holds, nil when its body is over the 200,000
+    /// character ceiling, and a thrown `corruptRecord` when it is malformed.
     private func decodeVersion(
         _ record: StoredRecord
-    ) throws -> (artifactID: String, version: NativeArtifactVersion) {
+    ) throws -> (artifactID: String, version: NativeArtifactVersion)? {
         guard let payload = record.payload,
             let wire = try? JSONDecoder().decode(ArtifactVersionWire.self, from: payload),
             wire.id == record.key.id, !wire.artifactId.isEmpty, wire.version > 0,
-            wire.content.utf16.count <= 200_000,
             let createdAt = parseDate(wire.createdAt)
         else { throw NativeArtifactStoreError.corruptRecord(record.key) }
+        guard wire.content.utf16.count <= 200_000 else { return nil }
         return (
             wire.artifactId,
             NativeArtifactVersion(
@@ -215,6 +227,9 @@ public final class NativeArtifactModel<Repository: AccountScopedRepository> {
     private let apiClient: NativeArtifactAPIClient
     private var accountID: AccountID?
     private var lastSynchronizationGeneration = -1
+    /// Rows a finished turn's `done` frame carried, kept until the synced
+    /// projection has caught up with them (``merge(streamed:conversationID:)``).
+    private var streamed: [String: NativeArtifact] = [:]
 
     public init(
         repository: Repository,
@@ -240,6 +255,7 @@ public final class NativeArtifactModel<Repository: AccountScopedRepository> {
     public func stop() {
         accountID = nil
         artifacts = []
+        streamed = [:]
         selectedArtifactID = nil
         availableExportFormats = []
         lastErrorDescription = nil
@@ -262,7 +278,7 @@ public final class NativeArtifactModel<Repository: AccountScopedRepository> {
                 accountID: StorageAccountID(accountID.rawValue)
             )
             guard self.accountID == accountID else { return }
-            artifacts = snapshot.artifacts
+            artifacts = overlayingStreamed(on: snapshot.artifacts)
             if let selectedArtifactID,
                 !artifacts.contains(where: { $0.id == selectedArtifactID })
             { self.selectedArtifactID = nil }
@@ -324,15 +340,116 @@ public final class NativeArtifactModel<Repository: AccountScopedRepository> {
                 .localizedDescription
             return
         }
-        await performMutation(id: id) { client, accountID in
+        await saveArtifact(id: id, content: content, baseVersion: artifact.currentVersion)
+    }
+
+    /// Saves `content` as a new version **on top of `baseVersion`** — the
+    /// version the editor opened — rather than whatever version sync has
+    /// landed since. A newer version then comes back as a conflict the reader
+    /// sees, instead of being overwritten without a word (Artifacts & Design
+    /// audit, mac-design-2).
+    ///
+    /// Returns whether the save landed.
+    @discardableResult
+    public func saveArtifact(id: String, content: String, baseVersion: Int) async -> Bool {
+        guard artifacts.contains(where: { $0.id == id }) else {
+            lastErrorDescription = NativeArtifactStoreError.artifactNotFound(id)
+                .localizedDescription
+            return false
+        }
+        return await performMutation(id: id) { client, accountID in
             try await client.save(
                 id: id,
                 content: content,
-                baseVersion: artifact.currentVersion,
+                baseVersion: baseVersion,
                 origin: .edit,
                 for: accountID
             )
         }
+    }
+
+    // MARK: Streamed rows
+
+    /// Takes in the artifacts a finished turn's `done` frame carried, so the
+    /// transcript's card and the canvas have a stored row — its version, its
+    /// id for saving — the moment the answer lands rather than on the next
+    /// sync.
+    ///
+    /// Held apart from the synced projection and laid over it on every reload
+    /// until sync delivers the same version or a newer one; a reload in the
+    /// meantime would otherwise take the row away again.
+    public func merge(streamed incoming: [NativeStreamedArtifact], conversationID: String) {
+        guard accountID != nil, !incoming.isEmpty else { return }
+        for wire in incoming {
+            guard let row = Self.artifact(from: wire, conversationID: conversationID) else { continue }
+            streamed[row.id] = row
+        }
+        artifacts = overlayingStreamed(on: artifacts)
+    }
+
+    /// `rows` with every streamed artifact the projection has not caught up
+    /// with laid over it; streamed rows it has caught up with are forgotten.
+    private func overlayingStreamed(on rows: [NativeArtifact]) -> [NativeArtifact] {
+        guard !streamed.isEmpty else { return rows }
+        var rows = rows
+        for (id, row) in streamed {
+            if let index = rows.firstIndex(where: { $0.id == id }) {
+                if rows[index].currentVersion >= row.currentVersion, rows[index].currentContent != nil {
+                    streamed[id] = nil
+                } else {
+                    var merged = row
+                    merged.conversationTitle = rows[index].conversationTitle
+                    rows[index] = merged
+                }
+            } else {
+                rows.append(row)
+            }
+        }
+        return rows.sorted {
+            if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+            return $0.id < $1.id
+        }
+    }
+
+    /// A stored-row value from a `done` frame's artifact, or nil for a kind
+    /// this build does not know.
+    static func artifact(from wire: NativeStreamedArtifact, conversationID: String) -> NativeArtifact? {
+        guard let kind = NativeArtifactKind(rawValue: wire.type.uppercased()) else { return nil }
+        let now = Date()
+        var versions = wire.versions.map { version in
+            NativeArtifactVersion(
+                id: "\(wire.id)#\(version.version)",
+                version: version.version,
+                content: version.content,
+                origin: version.origin.flatMap(NativeArtifactOrigin.init(rawValue:)),
+                createdAt: version.createdAt ?? now
+            )
+        }
+        if !versions.contains(where: { $0.version == wire.currentVersion }) {
+            versions.append(NativeArtifactVersion(
+                id: "\(wire.id)#\(wire.currentVersion)",
+                version: wire.currentVersion,
+                content: wire.content,
+                origin: nil,
+                createdAt: wire.updatedAt ?? now
+            ))
+        }
+        versions.sort { $0.version < $1.version }
+        return NativeArtifact(
+            id: wire.id,
+            conversationID: conversationID,
+            conversationTitle: "Conversation",
+            messageID: wire.messageID,
+            identifier: wire.identifier,
+            title: wire.title,
+            kind: kind,
+            language: wire.language,
+            currentVersion: wire.currentVersion,
+            versions: versions,
+            createdAt: wire.createdAt ?? now,
+            updatedAt: wire.updatedAt ?? now,
+            revision: 0
+        )
     }
 
     public func restoreArtifact(id: String, version: Int) async {
@@ -361,6 +478,7 @@ public final class NativeArtifactModel<Repository: AccountScopedRepository> {
         do {
             try await apiClient.delete(id: id, for: accountID)
             guard self.accountID == accountID else { return }
+            streamed[id] = nil
             artifacts.removeAll { $0.id == id }
             if selectedArtifactID == id { selectedArtifactID = artifacts.first?.id }
             await syncModel.refresh()
@@ -397,36 +515,48 @@ public final class NativeArtifactModel<Repository: AccountScopedRepository> {
         }
     }
 
+    /// Runs one write and folds its result in. Returns whether the write
+    /// landed.
+    @discardableResult
     private func performMutation(
         id: String,
         action: @escaping @Sendable (
             NativeArtifactAPIClient,
             AccountID
         ) async throws -> NativeArtifactDetail
-    ) async {
+    ) async -> Bool {
         guard let accountID,
             artifacts.contains(where: { $0.id == id })
         else {
             lastErrorDescription = NativeArtifactStoreError.artifactNotFound(id)
                 .localizedDescription
-            return
+            return false
         }
         isMutating = true
         defer { isMutating = false }
         do {
             let detail = try await action(apiClient, accountID)
-            guard self.accountID == accountID else { return }
+            guard self.accountID == accountID else { return false }
             merge(detail)
+            // Held over the projection like a streamed row, so the new version
+            // does not vanish from the card and the canvas if the reload
+            // below runs before sync has fetched it.
+            if let saved = artifacts.first(where: { $0.id == detail.id }) {
+                streamed[saved.id] = saved
+            }
             await syncModel.refresh()
             await reload()
+            return true
         } catch NativeArtifactAPIError.stale(let latest) {
-            guard self.accountID == accountID else { return }
+            guard self.accountID == accountID else { return false }
             if let latest { merge(latest) }
             lastErrorDescription = NativeArtifactAPIError.stale(latest).localizedDescription
             phase = .failed
+            return false
         } catch {
-            guard self.accountID == accountID else { return }
+            guard self.accountID == accountID else { return false }
             record(error)
+            return false
         }
     }
 

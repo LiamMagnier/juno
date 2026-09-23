@@ -337,6 +337,11 @@ struct DesktopChatWorkspace: View {
                 .modifier(
                     TranscriptMediaScope(sender: configuration.requestSender, accountID: session.profile.id)
                 )
+                // And one design-preview loader, for the pictures of the
+                // designs replies carry.
+                .modifier(
+                    DesignPreviewScope(sender: configuration.requestSender, accountID: session.profile.id)
+                )
                 .id(session.profile.id)
         }
     }
@@ -1133,15 +1138,56 @@ struct DesktopConversationView: View {
     /// so the dock is simply closed there — and wrapping both phases in it is
     /// what keeps the composer one view across the first send.
     private var conversationContent: some View {
-        DesktopArtifactDock(
-            artifact: openArtifact,
-            close: closeArtifact,
-            requestEdit: { prompt in
-                draftPrompt = prompt
-                closeArtifact()
+        TrailingDock(panel: dockPanel) { panel in
+            switch panel {
+            case .canvas(let artifact):
+                DesktopArtifactCanvas(
+                    artifact: artifact,
+                    close: closeArtifact,
+                    requestEdit: { prompt in
+                        draftPrompt = prompt
+                        closeArtifact()
+                    },
+                    save: saveArtifact
+                )
             }
-        ) {
+        } content: {
             chatColumn
+        }
+        .environment(\.junoArtifactResolver, artifactResolver)
+        .environment(\.junoTranscriptViewportHeight, columnHeight)
+    }
+
+    /// The panel the dock shows: the open artifact, with the stored row behind
+    /// it as the artifact store has it *now* — so a revision a later reply
+    /// wrote, a sync, or the canvas's own Save is what the canvas shows.
+    private var dockPanel: DesktopDockPanel? {
+        openArtifact.map { open in
+            .canvas(DesktopChatArtifact(
+                reference: open.reference,
+                stored: artifactResolver.artifact(for: open.reference) ?? open.stored
+            ))
+        }
+    }
+
+    /// This conversation's stored artifacts, by identifier — the web's
+    /// `artifactsByIdentifier`. Nothing in a draft or a private chat.
+    private var artifactResolver: ChatArtifactResolver {
+        guard privateChat == nil, let artifactModel = configuration.artifactModel else { return .empty }
+        return ChatArtifactResolver(
+            artifacts: artifactModel.artifacts,
+            conversationID: model.selectedConversationID
+        )
+    }
+
+    /// Saves an edit made in the canvas as a new version on top of the version
+    /// it was made against. Nil in a private chat, whose artifacts are never
+    /// stored.
+    private var saveArtifact: DesktopArtifactSave? {
+        guard privateChat == nil, let artifactModel = configuration.artifactModel else { return nil }
+        return { id, content, baseVersion in
+            let landed = await artifactModel.saveArtifact(id: id, content: content, baseVersion: baseVersion)
+            return landed ? nil : (artifactModel.lastErrorDescription ?? "Juno couldn’t save this artifact. Try again in a moment.")
         }
     }
 
@@ -1316,7 +1362,10 @@ struct DesktopConversationView: View {
 
     private func open(artifact: NativeMessageContent.ArtifactReference) {
         withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
-            openArtifact = DesktopChatArtifact(reference: artifact)
+            openArtifact = DesktopChatArtifact(
+                reference: artifact,
+                stored: artifactResolver.artifact(for: artifact)
+            )
         }
     }
 

@@ -40,6 +40,7 @@ targets:
         excludes:
           - Info.plist
           - JunoDesktop.entitlements
+          - "ArtifactRuntime/**"
         buildPhase: resources
       - path: ../../iOS/JunoMobile/Resources/Fonts
         buildPhase: resources
@@ -61,6 +62,13 @@ targets:
       # "DesignEditor/index.html" and the host can scope file read access to
       # that directory alone. Built by `npm run design:editor`.
       - path: Resources/DesignEditor
+        type: folder
+        buildPhase: resources
+      # Files running artifacts load over `juno-runtime://` — the Mermaid
+      # engine today — and the one the transcript's diagram figure registers
+      # at launch. A folder reference so they stay one directory the scheme
+      # handler can serve from and nothing else.
+      - path: Resources/ArtifactRuntime
         type: folder
         buildPhase: resources
     dependencies:

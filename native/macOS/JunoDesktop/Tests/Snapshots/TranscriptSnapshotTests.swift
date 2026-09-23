@@ -32,6 +32,9 @@ struct TranscriptSnapshotTests {
     @Test(arguments: TranscriptSnapshotFixtures.all.map(\.name))
     func fixtureDrawsInBothAppearances(_ name: String) async throws {
         let fixture = try #require(TranscriptSnapshotFixtures.all.first { $0.name == name })
+        if let prepare = fixture.prepare {
+            try await prepare()
+        }
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             let url = try await TranscriptSnapshotRenderer.render(
                 fixture.view(),

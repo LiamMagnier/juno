@@ -102,6 +102,28 @@ final class DesignRoundTripTests: XCTestCase {
         }
     }
 
+    /// The web writes `cornerSmoothing` on every node; a Mac save used to drop
+    /// it from all of them (Artifacts & Design audit, mac-design-1).
+    func testCornerSmoothingSurvivesARoundTrip() throws {
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: fixtureData()) as? [String: Any])
+        var nodes = try XCTUnwrap(object["nodes"] as? [String: Any])
+        var button = try XCTUnwrap(nodes["button"] as? [String: Any])
+        button["cornerSmoothing"] = 0.6
+        nodes["button"] = button
+        object["nodes"] = nodes
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+
+        let document = try DesignDocumentCodec.load(data)
+        XCTAssertEqual(document.nodes["button"]?.cornerSmoothing, 0.6)
+        XCTAssertNil(document.nodes["buttonLabel"]?.cornerSmoothing, "absent stays absent")
+
+        let reencoded = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: DesignDocumentCodec.encode(document)) as? [String: Any]
+        )
+        let saved = try XCTUnwrap((reencoded["nodes"] as? [String: Any])?["button"] as? [String: Any])
+        XCTAssertEqual(saved["cornerSmoothing"] as? Double, 0.6)
+    }
+
     private func fixtureData_orFail() -> Data {
         (try? fixtureData()) ?? Data()
     }

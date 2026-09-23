@@ -812,6 +812,14 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     /// learning from one would file half a sentence.
     public var didFinishTurn: (@MainActor (NativeFinishedTurn) -> Void)?
 
+    /// Called with the artifacts a turn's `done` frame carried — the stored
+    /// rows, versions included — and the conversation they belong to.
+    ///
+    /// The artifact store takes them in (`NativeArtifactModel.merge(streamed:)`)
+    /// so the transcript's card and the canvas have the row the moment the
+    /// answer lands, rather than a sync later.
+    public var didStreamArtifacts: (@MainActor (_ artifacts: [NativeStreamedArtifact], _ conversationID: String) -> Void)?
+
     public var selectedConversation: NativeConversation? {
         conversations.first { $0.id == selectedConversationID }
     }
@@ -2368,6 +2376,9 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         sessionCostLedgers[conversationID, default: SessionCostLedger()]
             .record(message: message)
         rememberAttachments(message.attachments, for: message.id)
+        if !message.artifacts.isEmpty {
+            didStreamArtifacts?(message.artifacts, conversationID)
+        }
         updateTransientAssistant(for: conversationID) { $0.complete(with: message) }
         keepAnswerAfterItsQuestion(conversationID: conversationID)
     }

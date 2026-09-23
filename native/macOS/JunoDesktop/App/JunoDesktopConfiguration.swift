@@ -416,6 +416,13 @@ struct JunoDesktopConfiguration {
             return workspace.permitting(requested)
         }
 
+        // The rows a finished turn's `done` frame carried go straight into the
+        // artifact store, so the transcript's card and the canvas have the
+        // stored row — its version, its id for saving — before sync brings it.
+        conversationModel.didStreamArtifacts = { [weak artifactModel] artifacts, conversationID in
+            artifactModel?.merge(streamed: artifacts, conversationID: conversationID)
+        }
+
         conversationModel.didFinishTurn = { [weak memoryLearningModel] turn in
             guard let memoryLearningModel else { return }
             Task {

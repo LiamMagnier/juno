@@ -170,6 +170,10 @@ struct JunoDesktopApp: App {
     @State private var configuration: JunoDesktopConfiguration?
 
     init() {
+        // The Mermaid engine the transcript's diagram figure draws with, from
+        // the app's own bundle (`Resources/ArtifactRuntime`), so a ```mermaid
+        // fence becomes a diagram without the figure fetching anything.
+        JunoMermaidEngine.register(script: Self.bundledMermaid())
         // Split by `#if` rather than by a ternary on a compile-time-constant
         // flag: in Stable and Next the flag is `false`, so the preview branch is
         // statically dead and the compiler rejects it under warnings-as-errors.
@@ -186,6 +190,17 @@ struct JunoDesktopApp: App {
             initialValue: JunoTestHost.isActive ? nil : JunoDesktopConfiguration.live()
         )
         #endif
+    }
+
+    /// `ArtifactRuntime/mermaid.min.js`, or nil in a build that did not ship
+    /// it — in which case a diagram shows its labelled source.
+    static func bundledMermaid() -> String? {
+        guard let url = Bundle.main.url(
+            forResource: "mermaid.min",
+            withExtension: "js",
+            subdirectory: "ArtifactRuntime"
+        ) else { return nil }
+        return try? String(contentsOf: url, encoding: .utf8)
     }
 
     var body: some Scene {

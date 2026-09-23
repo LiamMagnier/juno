@@ -4,6 +4,32 @@ import SwiftUI
 import WebKit
 #endif
 
+#if os(macOS)
+import AppKit
+
+public extension EnvironmentValues {
+    /// A picture to draw in place of a diagram's web view, keyed by its source
+    /// and appearance — the offscreen snapshot harness's stand-in for a
+    /// `WKWebView` it cannot photograph. Production never sets it.
+    @Entry var junoMermaidStill: JunoMermaidStills? = nil
+}
+
+/// The stills ``SwiftUI/EnvironmentValues/junoMermaidStill`` hands out.
+public struct JunoMermaidStills: Equatable, Sendable {
+    private let id = UUID()
+    private let still: @MainActor @Sendable (String, Bool) -> NSImage?
+
+    public init(_ still: @escaping @MainActor @Sendable (_ source: String, _ isDark: Bool) -> NSImage?) {
+        self.still = still
+    }
+
+    @MainActor
+    public func callAsFunction(_ source: String, _ isDark: Bool) -> NSImage? { still(source, isDark) }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
+}
+#endif
+
 /// The Mermaid engine, supplied by the host application.
 ///
 /// **This package ships no JavaScript and fetches none.** Mermaid is ~3 MB of
@@ -71,7 +97,7 @@ public struct MermaidDiagramView: View {
     /// indistinguishable from a failed one, and collapsing the transcript around
     /// a block that is about to appear produces exactly the scroll jump that
     /// measuring exists to avoid. Absent height is unknown height, not no height.
-    static let placeholderHeight: CGFloat = 220
+    static let placeholderHeight: CGFloat = 288
 
     private let source: String
 
@@ -89,19 +115,46 @@ public struct MermaidDiagramView: View {
         JunoMermaidMarkup.diagramKind(of: source)
     }
 
+    /// The web's figure (`learning/mermaid-block.tsx`): a radius-16 card with
+    /// a 70% hairline, a "Diagram · Mermaid" header with Copy, and a 288pt
+    /// stage that shows a skeleton until the engine has drawn.
     public var body: some View {
         VStack(spacing: 0) {
-            JunoAIcssBlockHeader(icon: kind.icon, label: kind.label) {
+            HStack(spacing: JunoSpace.snug) {
+                JunoIconView(kind.icon, size: 14)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .accessibilityHidden(true)
+                Text("Diagram · Mermaid")
+                    .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                Spacer(minLength: JunoSpace.snug)
                 controls
             }
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.vertical, JunoSpace.snug)
+            Rectangle()
+                .fill(Color.junoBorder.opacity(0.6))
+                .frame(height: 1)
+                .accessibilityHidden(true)
             content
         }
-        .background(Color.junoSurface)
-        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
+        .background(Color.junoCard)
+        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .strokeBorder(Color.junoHairline, lineWidth: 1)
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                .strokeBorder(Color.junoBorder.opacity(0.7), lineWidth: 1)
         )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(kind.label)
+    }
+
+    /// The stage's height: 288 until the diagram has measured itself, then its
+    /// own height within 160…520 — the Mac draws at natural size with zoom and
+    /// pan rather than shrinking to fit, so a tall flowchart is not cropped to
+    /// the web's fixed 288.
+    private var stageHeight: CGFloat {
+        guard let measuredHeight else { return Self.placeholderHeight }
+        return min(max(measuredHeight + 2 * JunoSpace.regular, 160), 520)
     }
 
     // MARK: Chrome
@@ -152,8 +205,32 @@ public struct MermaidDiagramView: View {
         #endif
     }
 
+    #if os(macOS)
+    @Environment(\.junoMermaidStill) private var mermaidStill
+    #endif
+
     @ViewBuilder
     private var content: some View {
+        #if os(macOS)
+        if let still = mermaidStill?(source, colorScheme == .dark) {
+            Image(nsImage: still)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity)
+                .frame(height: Self.placeholderHeight)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(kind.label)
+                .accessibilityValue(source)
+        } else {
+            liveContent
+        }
+        #else
+        liveContent
+        #endif
+    }
+
+    @ViewBuilder
+    private var liveContent: some View {
         #if canImport(WebKit)
         if let engine = JunoMermaidEngine.script, failure == nil {
             JunoMermaidWebView(
@@ -164,8 +241,18 @@ public struct MermaidDiagramView: View {
                 onHeight: { measuredHeight = $0 },
                 onFailure: { failure = $0 }
             )
-            .frame(height: measuredHeight ?? Self.placeholderHeight)
+            .frame(height: stageHeight)
             .frame(maxWidth: .infinity)
+            // A skeleton until the engine has drawn: a blank stage reads as a
+            // diagram that failed.
+            .overlay {
+                if measuredHeight == nil {
+                    JunoSkeleton(height: Self.placeholderHeight - 2 * JunoSpace.regular, cornerRadius: JunoRadius.field)
+                        .padding(JunoSpace.regular)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
             // An SVG says nothing to VoiceOver. The source does — it names every
             // node and every edge, in order — so it is offered as the value
             // rather than leaving the reader with a labelled empty rectangle.
