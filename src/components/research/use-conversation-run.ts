@@ -2,21 +2,27 @@
 
 import * as React from "react";
 import { useResearchRun, type ResearchRunView } from "@/components/research/use-research-run";
+import { currentRunId, watchConversationRuns, type ConversationRunsWatcher } from "@/components/research/research-discovery";
 import { isWorkingResearchState } from "@/lib/research/domain";
+import type { ResearchRunSummary } from "@/types/research";
 
 /**
- * The newest research run attached to a conversation, polled once.
+ * The research runs attached to a conversation, and the newest one kept fresh.
  *
  * Lifted out of `ResearchRunPanel` because the run stopped being the panel's
- * private business: the composer now steers and stops it, and the panel draws
- * it, and those are two components with one row between them. Two callers each
- * running `useResearchRun` would be two pollers, two event cursors and two
- * answers to "is this still going" — and a cursor is exactly the kind of state
- * that must not be duplicated, since each copy would re-fetch from the top
- * whenever the other advanced.
+ * private business: the composer steers it and the panel draws it, and those
+ * are two components with one row between them. The run itself is read through
+ * `useResearchRun`, whose store keeps one poller per run however many
+ * surfaces ask.
  *
- * So the owner is whoever renders both. The panel takes the run as a prop, and
- * the composer takes the two verbs below.
+ * Discovery is one fetch when the conversation opens and one more whenever a
+ * run in it starts or finishes (`research-discovery.ts`), not the 4 s poll it
+ * used to be (research-UI bug 15). `refresh` is there for the one moment the
+ * page learns something first: the chat stream's hand-off frame.
+ *
+ * The return keeps its old shape (`runId`, `history`, `steering`, `run` and the
+ * run hook's fields) until integration switches chat-view over; `runs` and
+ * `refresh` are the additions.
  */
 
 export interface ResearchSteering {
@@ -31,38 +37,29 @@ export interface ResearchSteering {
 }
 
 export function useConversationResearch(conversationId: string | null, selectedRunId?: string) {
-  const [runId, setRunId] = React.useState<string | null>(selectedRunId ?? null);
-  const [history, setHistory] = React.useState<Array<{id: string; createdAt: string}>>([]);
+  const [runs, setRuns] = React.useState<ResearchRunSummary[]>([]);
+  const watcher = React.useRef<ConversationRunsWatcher | null>(null);
 
   React.useEffect(() => {
-    setRunId(selectedRunId ?? null);
-    setHistory([]);
+    setRuns([]);
     if (!conversationId) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const discover = async () => {
-      try {
-        const res = await fetch(`/api/research?conversationId=${encodeURIComponent(conversationId)}`);
-        if (!res.ok) return;
-        const data = (await res.json()) as { runs?: Array<{ id: string; createdAt: string }> };
-        if (!cancelled) {
-          setRunId(selectedRunId ?? data.runs?.[0]?.id ?? null);
-          setHistory(data.runs ?? []);
-        }
-      } catch {
-        // A conversation whose run cannot be found simply has no panel and no
-        // steering. This is an addition to the chat, never a reason to break it.
-      }
-      finally {
-        if (!cancelled) timer = setTimeout(discover, 4000);
-      }
-    };
-    void discover();
+    const watch = watchConversationRuns({
+      fetch: (input, init) => window.fetch(input, init),
+      conversationId,
+      events: window,
+      onRuns: setRuns,
+    });
+    watcher.current = watch;
     return () => {
-      cancelled = true;
-      clearTimeout(timer);
+      watch.dispose();
+      if (watcher.current === watch) watcher.current = null;
     };
-  }, [conversationId, selectedRunId]);
+  }, [conversationId]);
+
+  const refresh = React.useCallback(() => watcher.current?.refresh() ?? Promise.resolve(), []);
+
+  const runId = currentRunId(runs, selectedRunId);
+  const history = React.useMemo(() => runs.map((run) => ({ id: run.id, createdAt: run.createdAt })), [runs]);
 
   const research = useResearchRun(runId);
   const { run, post } = research;
@@ -73,13 +70,13 @@ export function useConversationResearch(conversationId: string | null, selectedR
     return {
       accepting,
       // A URL is a source to read; anything else is a constraint on the whole
-      // report. Guessing beats a mode switch the user has to find before they
-      // can type — the same call the old steering form made, kept.
+      // report. Kept for the composer until it moves to the explicit "Guide
+      // the research" mode (§9.7), which sends `guidance` through `steer`.
       steer: (text: string) =>
         post("/steer", /^https?:\/\//i.test(text.trim()) ? { sourceUrl: text.trim() } : { constraint: text.trim() }),
       stop: () => void post("/control", { action: "cancel" }),
     };
   }, [run, accepting, post]);
 
-  return { ...research, runId, history, steering, run: run as ResearchRunView | null };
+  return { ...research, runId, history, runs, refresh, steering, run: run as ResearchRunView | null };
 }
