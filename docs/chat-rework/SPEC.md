@@ -331,6 +331,18 @@ export const WEB_CLIENT_FEATURES: readonly ClientFeature[] = CLIENT_FEATURES;
   frames logged by an older server is always profile 1 and must render.
 - A request that sends `clientFeatures` but not `timeline` is valid and receives profile-1 frame
   shapes with the declared features.
+- **Advertising (addendum 2026-09-23, for the Mac mirror; WS9a).** The server tells clients what it
+  understands, so a native build can gate on it instead of always sending `clientFeatures`:
+  - `GET /api/v1/bootstrap` gains a top-level `chat: { clientFeatures: ClientFeature[] }`.
+  - `/api/app`'s `features` gains `chatClientFeatures: ClientFeature[]`.
+  - Both are the full `CLIENT_FEATURES` list and are additive: shipped native decoders ignore
+    unknown keys there.
+  - Older servers have neither key, which means "profile 1 only".
+  - The contract YAML entry is the Mac session's regeneration (§1.2). This rework edits no
+    `contracts/**` file.
+  - `chatBodySchema` is a non-strict `z.object`: an old server strips `clientFeatures`, `timeZone`
+    and `locale` rather than rejecting the request. The "this .strict() schema" comment at
+    `request.ts:93` is stale; WS4 corrects it.
 
 ### 2.3 Frame additions (`src/types/chat.ts`, `StreamChunk` at `:333-408`)
 
