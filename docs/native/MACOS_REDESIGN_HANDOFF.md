@@ -92,6 +92,12 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
 - Do **not** send messages to a running workflow agent. That starts a second copy in the same worktree.
 - Give agents the liveness rule already in the script: long commands go in the background, and polling keeps them visibly alive.
 
+## Other sessions' paused work that feeds this one
+
+- **Artifacts & Design audit.** Branch `wip/artifacts-design-audit`, handoff at `docs/design/artifacts-design/HANDOFF.md`. It has a section of verified findings on how the Mac renders artifacts and designs. Read it **before Phase 2 stage 3**.
+- **Tool calls and research features audit.** Local branch `web/tools-thinking-research` in the worktree `/Users/liammagnier/Developer/project/juno-tools`; WIP commit `2056b095`, handoff at `docs/chat-rework/HANDOFF.md`. It covers the web's tool calls, thinking and research. Read it **before Phase 2 stage 4**, which covers the activity row, Thought panel and sources, and **before Phase 5**, which covers research run cards.
+- **Juno Code redesign and audit.** Its work is on `main` (1.6.0). Its records are in `docs/native/code-rework/`.
+
 ## Verification rules
 
 - **No screen capture or screen control** (the owner's rule). Verify visuals with offscreen snapshots only:
