@@ -20,7 +20,7 @@ import { MENU_W } from "@/components/ui/menu-recipe";
 import { IndexStatus } from "@/components/library/index-status";
 import { kindLabel, typeLabel, type LibraryItem, type LibraryUpload, type LibraryView } from "@/components/library/library-types";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
-import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
 import { cn, formatBytes } from "@/lib/utils";
 
@@ -246,6 +246,24 @@ function ItemName({ item, className }: { item: LibraryItem; className?: string }
   );
 }
 
+/**
+ * Where a file in Recently deleted still lives. Only the Library let go of it
+ * (src/lib/library-removal-policy.ts), so a row that looks deleted says, in the
+ * caption voice under its name, that its chat or project still has it.
+ * Named `…_NOTE` so the i18n extractor collects both.
+ */
+const KEPT_IN_NOTE = { chat: "Still in chat", project: "Still in project" } as const;
+
+function KeptInNote({ keptIn, className }: { keptIn: NonNullable<LibraryItem["keptIn"]>; className?: string }) {
+  const Icon = keptIn === "chat" ? MessageCircle : AppIcons.projects;
+  return (
+    <p className={cn("flex min-w-0 items-center gap-1.5", captionClass, className)}>
+      <Icon className="size-3 shrink-0" aria-hidden="true" />
+      <span className="truncate">{KEPT_IN_NOTE[keptIn]}</span>
+    </p>
+  );
+}
+
 /** "PDF · 2.1 MB · 3d ago": the whole row's facts on one line, where there are no columns for them. */
 function MetaLine({ item, className }: { item: LibraryItem; className?: string }) {
   return (
@@ -373,7 +391,11 @@ function LibraryListRow({
         <div className="min-w-0 flex-1">
           <ItemName item={item} />
           <MetaLine item={item} className="mt-0.5 @[40rem]/page:hidden" />
-          {item.knowledge ? (
+          {/* A kept file's index is live and belongs to its chat; in Recently
+              deleted the thing to say is where the file still is. */}
+          {item.keptIn ? (
+            <KeptInNote keptIn={item.keptIn} className="mt-0.5" />
+          ) : item.knowledge ? (
             <IndexStatus status={item.knowledge} className="mt-0.5 max-w-full" />
           ) : item.conversationId && !deleted ? (
             <Link
@@ -658,7 +680,11 @@ function LibraryGridTile({
       <div className="min-w-0 px-0.5 pt-2.5">
         <ItemName item={item} />
         <MetaLine item={item} className="mt-0.5" />
-        {item.knowledge && <IndexStatus status={item.knowledge} className="mt-0.5 max-w-full" />}
+        {item.keptIn ? (
+          <KeptInNote keptIn={item.keptIn} className="mt-0.5" />
+        ) : (
+          item.knowledge && <IndexStatus status={item.knowledge} className="mt-0.5 max-w-full" />
+        )}
       </div>
     </article>
   );

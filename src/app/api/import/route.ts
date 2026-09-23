@@ -15,6 +15,7 @@ import { buildImportObjectKey, deleteObject, putObject } from "@/lib/storage";
 import { isStorageAvailable } from "@/lib/env";
 import { planAttachmentUpload } from "@/lib/attachment-upload";
 import { assertLibraryCapacity, libraryCapacity, lockedLibraryCapacity, LibraryQuotaExceededError } from "@/lib/library";
+import { libraryUse } from "@/lib/library-removal-policy";
 import { scheduleIngest } from "@/lib/knowledge";
 import { cleanupImportRun, IMPORT_RUN_LEASE_MS } from "@/lib/import-recovery";
 import {
@@ -825,14 +826,22 @@ export async function POST(req: Request) {
           ? sourceMessageToConversationId.get(sourceMessageId) ?? null
           : null;
       const deletedAt = dateValue(rawAttachment.deletedAt);
+      const projectId = stringValue(rawAttachment.projectId, 200)
+        ? sourceIdToProjectId.get(stringValue(rawAttachment.projectId, 200)!) ?? null
+        : null;
+      // Taken out of the Library at the source: kept out here as well, but only
+      // while this account has the chat or project that kept it. A row nothing
+      // uses goes back to the Library rather than hiding with nothing to show
+      // it. Archives from before the column simply carry no value.
+      const libraryRemovedAt = !deletedAt && libraryUse({ messageId, projectId })
+        ? dateValue(rawAttachment.libraryRemovedAt)
+        : null;
       const created = await tx.attachment.create({
         data: {
           userId: user.id,
           conversationId,
           messageId,
-          projectId: stringValue(rawAttachment.projectId, 200)
-            ? sourceIdToProjectId.get(stringValue(rawAttachment.projectId, 200)!) ?? null
-            : null,
+          projectId,
           kind: prepared.plan.kind,
           fileName: prepared.plan.fileName,
           mimeType: prepared.plan.storedMime,
@@ -846,6 +855,7 @@ export async function POST(req: Request) {
           origin: "import",
           parserState: deletedAt ? "deleted" : prepared.plan.kind === "FILE" ? "queued" : "skipped",
           deletedAt,
+          libraryRemovedAt,
           versions: { create: prepared.snapshotRows },
         },
         select: { id: true, projectId: true, fileName: true, mimeType: true },

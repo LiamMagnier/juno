@@ -847,6 +847,16 @@ model Attachment {
   deletedAt       DateTime?
   createdAt       DateTime       @default(now())
 
+  /**
+   * Set when the person removed the file from their Library while a chat
+   * message or a project still uses it. Only the Library lets go: the row, its
+   * bytes and its knowledge index stay live for that chat or project, and the
+   * Library (and the composer's library picker) no longer lists it. A file
+   * nothing else uses is deleted instead (`deletedAt`). Both land in Recently
+   * deleted. See src/lib/library-removal-policy.ts.
+   */
+  libraryRemovedAt DateTime?
+
   projectId String?
 
   user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)

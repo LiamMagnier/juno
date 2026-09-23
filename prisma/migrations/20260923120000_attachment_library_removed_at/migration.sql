@@ -1,0 +1,21 @@
+-- When a file was taken out of the Library but left where it is used.
+--
+-- The Library is a view over every "Attachment" row the person owns, the
+-- files they sent in chats and the files in their projects included. Deleting
+-- one there set "deletedAt", and every chat path reads attachments with
+-- "deletedAt" IS NULL, so a file deleted from the Library vanished from the
+-- chat it was sent in and the model could no longer read it. A file a message
+-- or a project still uses is now only taken out of the Library: this column is
+-- set, and the row, its bytes and its knowledge index stay live for that chat
+-- or project. A file nothing else uses is still deleted with "deletedAt". See
+-- src/lib/library-removal-policy.ts.
+--
+-- Expand-only (docs/JUNO.md §20.2b): one nullable column the running release
+-- never selects. Every existing row starts NULL, which is what it already is:
+-- in the Library, or deleted by "deletedAt".
+--
+-- No index. The Library's list already rides
+-- "Attachment_userId_deletedAt_createdAt_idx", and a removed row is rare
+-- enough that filtering it out of that scan costs nothing an index would save;
+-- Recently deleted is a short list read through "Attachment_userId_idx".
+ALTER TABLE "Attachment" ADD COLUMN "libraryRemovedAt" TIMESTAMP(3);

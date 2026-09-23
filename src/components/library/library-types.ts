@@ -1,4 +1,5 @@
 import type { KnowledgeIndexState } from "@/components/library/index-status";
+import type { LibraryUse } from "@/lib/library-removal-policy";
 
 /**
  * The Library's data, as `/api/library` returns it.
@@ -20,7 +21,19 @@ export interface LibraryItem {
   origin: string;
   parserState: string;
   parserVersion: string | null;
+  /**
+   * When the file went to Recently deleted: deleted, or only taken out of the
+   * Library while a chat or project kept it (then `keptIn` says which).
+   */
   deletedAt: string | null;
+  /**
+   * Where a live file is used outside the Library: the chat it was sent in or
+   * the project it belongs to. Deleting it from the Library leaves it there,
+   * and the page can say so before the request lands.
+   */
+  inUse: LibraryUse | null;
+  /** In Recently deleted but still live where it is used: the row's note. */
+  keptIn: LibraryUse | null;
   /** What indexing made of the file; null for files no extractor claims. */
   knowledge: KnowledgeIndexState | null;
 }
@@ -189,4 +202,40 @@ export function insertSorted(
     else if (!hasMore) next.push(row);
   }
   return next;
+}
+
+/**
+ * What a delete's toast says. Named `…_COPY` so the i18n extractor collects
+ * every sentence in it.
+ */
+const REMOVAL_COPY = {
+  deleted: "Moved to Recently deleted",
+  removed: "Removed from your library",
+  keptOne: {
+    chat: "It stays in the chat that uses it.",
+    project: "It stays in the project that uses it.",
+  },
+  keptAll: {
+    chat: "They stay in the chats that use them.",
+    project: "They stay in the projects that use them.",
+  },
+  keptSome: "Chats and projects keep the files they use.",
+} as const;
+
+/**
+ * The toast for deleting `targets` from the Library, told the way the delete
+ * will land. A file a chat or project still uses only leaves the Library (see
+ * src/lib/library-removal-policy.ts), and calling that "deleted" would tell
+ * the reader their chat just lost it, which is the bug the split fixed. Read
+ * from each row's `inUse`, so it is right in the frame the delete is asked
+ * for rather than once the requests come back.
+ */
+export function removalNotice(targets: Pick<LibraryItem, "inUse">[]): { title: string; description?: string } {
+  const kept = targets.flatMap((target) => (target.inUse ? [target.inUse] : []));
+  if (kept.length === 0) return { title: REMOVAL_COPY.deleted };
+  if (targets.length === 1) return { title: REMOVAL_COPY.removed, description: REMOVAL_COPY.keptOne[kept[0]] };
+  // Every file kept, and all in the same kind of place: say which. Anything
+  // mixed gets the sentence that is true of every mix.
+  const same = kept.length === targets.length && kept.every((use) => use === kept[0]);
+  return { title: REMOVAL_COPY.removed, description: same ? REMOVAL_COPY.keptAll[kept[0]] : REMOVAL_COPY.keptSome };
 }

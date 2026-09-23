@@ -28,6 +28,16 @@ const SEARCH_DEBOUNCE_MS = 200;
 /** How long the first page's rows take to be dealt out; after it, rows simply appear. */
 const REVEAL_MS = 600;
 
+/**
+ * The two views' ledes. Recently deleted does not say "files you delete": a
+ * file a chat or project still uses only leaves the Library, and must not read
+ * as gone from there too. Named `…_COPY` so the i18n extractor collects both.
+ */
+const LEDE_COPY = {
+  library: "Everything you upload or share in chats.",
+  deleted: "Files you remove land here and can be restored. Chats and projects keep the ones they use.",
+} as const;
+
 function useDebounced<T>(value: T, ms: number): T {
   const [settled, setSettled] = React.useState(value);
   React.useEffect(() => {
@@ -211,7 +221,7 @@ export default function LibraryPage() {
           // Recently deleted is a MODE, not a filter, so it has to be legible
           // in the heading.
           heading={deletedView ? "Recently deleted" : "Library"}
-          lede={deletedView ? "Files you delete land here and can be restored." : "Everything you upload or share in chats."}
+          lede={deletedView ? LEDE_COPY.deleted : LEDE_COPY.library}
           actions={
             deletedView ? (
               <Button variant="secondary" size="sm" onClick={() => switchView(false)}>

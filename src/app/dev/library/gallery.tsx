@@ -44,6 +44,8 @@ const base = {
   parserState: "ready",
   parserVersion: null,
   deletedAt: null,
+  inUse: null,
+  keptIn: null,
   knowledge: null,
   conversationId: null,
 } satisfies Partial<LibraryItem>;
@@ -59,6 +61,7 @@ const ITEMS: LibraryItem[] = [
     url: picture("#d9c7ae", "#8f7a64", '<circle cx="210" cy="120" r="54" fill="#f4ede3" opacity=".8"/><rect x="40" y="200" width="240" height="80" rx="8" fill="#5b4a3a" opacity=".5"/>'),
     createdAt: ago(0.2),
     conversationId: "c-1",
+    inUse: "chat",
   },
   {
     ...base,
@@ -71,6 +74,7 @@ const ITEMS: LibraryItem[] = [
     createdAt: ago(1),
     versionCount: 2,
     conversationId: "c-2",
+    inUse: "chat",
   },
   {
     ...base,
@@ -109,6 +113,7 @@ const ITEMS: LibraryItem[] = [
     url: "#",
     createdAt: ago(6),
     conversationId: "c-3",
+    inUse: "chat",
   },
   {
     ...base,
@@ -145,6 +150,52 @@ const ITEMS: LibraryItem[] = [
     size: 2_200_000,
     url: "#",
     createdAt: ago(64),
+  },
+];
+
+/**
+ * Recently deleted: a file nothing used (a tombstone, its link withheld) and
+ * two that only left the Library, whose chat and project still have them.
+ */
+const DELETED_ITEMS: LibraryItem[] = [
+  {
+    ...base,
+    id: "fx-d1",
+    kind: "FILE",
+    fileName: "Draft contract v1.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    size: 64_000,
+    url: "",
+    createdAt: ago(4),
+    parserState: "deleted",
+    deletedAt: ago(0.5),
+  },
+  {
+    ...base,
+    id: "fx-d2",
+    kind: "FILE",
+    fileName: "Tenancy renewal letter.pdf",
+    mimeType: "application/pdf",
+    size: 540_000,
+    url: "#",
+    createdAt: ago(5),
+    conversationId: "c-4",
+    deletedAt: ago(0.1),
+    inUse: "chat",
+    keptIn: "chat",
+  },
+  {
+    ...base,
+    id: "fx-d3",
+    kind: "IMAGE",
+    fileName: "Site plan.png",
+    mimeType: "image/png",
+    size: 1_900_000,
+    url: picture("#c4cbb8", "#6b7560", '<rect x="60" y="60" width="200" height="200" fill="none" stroke="#f1f3ec" stroke-width="6"/><rect x="100" y="120" width="70" height="90" fill="#f1f3ec" opacity=".6"/>'),
+    createdAt: ago(12),
+    deletedAt: ago(2),
+    inUse: "project",
+    keptIn: "project",
   },
 ];
 
@@ -198,10 +249,20 @@ function Section({ title, note, children }: { title: string; note: string; child
   );
 }
 
-function useFixtureLibrary() {
-  const [items, setItems] = React.useState(ITEMS);
-  const [uploads, setUploads] = React.useState(UPLOADS);
-  const [selected, setSelected] = React.useState<Set<string>>(() => new Set(["fx-6"]));
+function useFixtureLibrary({
+  initialItems = ITEMS,
+  initialUploads = UPLOADS,
+  initialSelected = ["fx-6"],
+  deletedView = false,
+}: {
+  initialItems?: LibraryItem[];
+  initialUploads?: LibraryUpload[];
+  initialSelected?: string[];
+  deletedView?: boolean;
+} = {}) {
+  const [items, setItems] = React.useState(initialItems);
+  const [uploads, setUploads] = React.useState(initialUploads);
+  const [selected, setSelected] = React.useState<Set<string>>(() => new Set(initialSelected));
   const toggle = (id: string) =>
     setSelected((previous) => {
       const next = new Set(previous);
@@ -213,14 +274,14 @@ function useFixtureLibrary() {
     items,
     uploads,
     selected,
-    deletedView: false,
+    deletedView,
     stagger: false,
     onToggleSelect: toggle,
     onToggleAll: () =>
       setSelected((previous) => (previous.size === items.length ? new Set() : new Set(items.map((item) => item.id)))),
     onRename: () => undefined,
     onDelete: (item: LibraryItem) => setItems((previous) => previous.filter((row) => row.id !== item.id)),
-    onRestore: () => undefined,
+    onRestore: (item: LibraryItem) => setItems((previous) => previous.filter((row) => row.id !== item.id)),
     onVersions: () => undefined,
     onRetryUpload: (localId: string) =>
       setUploads((previous) =>
@@ -295,6 +356,7 @@ function LiveDropZone() {
 
 export function LibraryGallery() {
   const library = useFixtureLibrary();
+  const deleted = useFixtureLibrary({ initialItems: DELETED_ITEMS, initialUploads: [], initialSelected: [], deletedView: true });
   const [query, setQuery] = React.useState("");
   const [kind, setKind] = React.useState<LibraryKind>("all");
   const [sort, setSort] = React.useState<LibrarySort>("newest");
@@ -344,6 +406,16 @@ export function LibraryGallery() {
 
         <Section title="Grid" note="The same rows as tiles: a picture and a caption, no card. The selected tile carries the accent ring.">
           <LibraryGrid {...library} />
+        </Section>
+
+        <Section
+          title="Recently deleted"
+          note="A deleted file has no link. A file a chat or project still uses only left the Library: it says where it still is, and restoring it is instant."
+        >
+          <LibraryList {...deleted} />
+          <div className="mt-8">
+            <LibraryGrid {...deleted} />
+          </div>
         </Section>
 
         <Section title="Drop overlay" note="Shown while files are held over the page. It tracks which elements the drag is inside, so crossing between rows does not blink it.">

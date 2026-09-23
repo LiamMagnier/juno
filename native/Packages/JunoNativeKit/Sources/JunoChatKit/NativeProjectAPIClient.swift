@@ -18,6 +18,15 @@ public protocol NativeFilePreviewResolving: Sendable {
     func accessFile(id: String, for accountID: AccountID) async throws -> NativeProjectFileAccess
 }
 
+/// What taking one file out of the Library did to it.
+public enum NativeLibraryRemoval: Equatable, Sendable {
+    /// Only the Library let go. The chat or project that uses the file keeps it.
+    case hidden(keptIn: NativeLibraryUse)
+    /// Nothing else used the file, so it was deleted, as a Library delete
+    /// always was.
+    case deleted
+}
+
 public struct NativeUploadedProjectFile: Equatable, Sendable {
     public let id: String
     public let fileName: String
@@ -57,9 +66,10 @@ public enum NativeProjectAPIError: Error, Equatable, LocalizedError, Sendable {
     }
 }
 
-/// Reuses the existing bearer project, upload and attachment routes. Stable
-/// entity state still arrives through JunoSync; this client only performs file
-/// actions and refreshes short-lived attachment access URLs on demand.
+/// Reuses the existing bearer project, upload, attachment and Library routes.
+/// Stable entity state still arrives through JunoSync; this client only
+/// performs file actions and refreshes short-lived attachment access URLs on
+/// demand.
 public struct NativeProjectAPIClient: Sendable {
     public static let maximumUploadBytes = 50 * 1_024 * 1_024
 
@@ -149,6 +159,10 @@ public struct NativeProjectAPIClient: Sendable {
         try requireSuccess(response)
     }
 
+    /// Deletes the file wherever it is: `DELETE /api/attachments/{id}`, a
+    /// tombstone every chat path filters out. This is right for a project's
+    /// own Delete and wrong for the Library, which uses
+    /// ``removeFromLibrary(id:for:)``.
     public func deleteFile(id: String, for accountID: AccountID) async throws {
         try requireIdentifier(id)
         let response = try await sender.send(
@@ -160,6 +174,43 @@ public struct NativeProjectAPIClient: Sendable {
             for: accountID
         )
         try requireSuccess(response)
+    }
+
+    /// Takes a file out of the Library: `DELETE /api/library/{id}`.
+    ///
+    /// The server keeps a file that a message or a project still uses, and
+    /// only sets its `libraryRemovedAt`, which the synced `attachment` entity
+    /// carries. It deletes a file nothing uses. A 404 means the file is not in
+    /// the reader's Library any more: it is not theirs, is already deleted, or
+    /// was already removed.
+    ///
+    /// Nil when the request succeeded but the body did not say which happened.
+    /// The file is out of the Library either way, so that is not an error.
+    public func removeFromLibrary(
+        id: String,
+        for accountID: AccountID
+    ) async throws -> NativeLibraryRemoval? {
+        // One path segment. `requireIdentifier` admits "/", and a slash here
+        // would address a different route.
+        try requireIdentifier(id)
+        guard !id.contains("/") else { throw NativeProjectAPIError.invalidIdentifier }
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/library/\(id)",
+                method: .delete,
+                headers: try HTTPHeaders(["accept": "application/json"])
+            ),
+            for: accountID
+        )
+        try requireSuccess(response)
+        guard let wire = try? JSONDecoder().decode(
+            LibraryRemovalWire.self, from: response.body
+        ) else { return nil }
+        switch (wire.mode, wire.keptIn.flatMap(NativeLibraryUse.init(rawValue:))) {
+        case ("hidden", let keptIn?): return .hidden(keptIn: keptIn)
+        case ("deleted", nil): return .deleted
+        default: return nil
+        }
     }
 
     public func accessFile(
@@ -264,6 +315,11 @@ private struct UploadResponseWire: Decodable {
 
 private struct RenameRequestWire: Encodable {
     let fileName: String
+}
+
+private struct LibraryRemovalWire: Decodable {
+    let mode: String
+    let keptIn: String?
 }
 
 /// The project client already resolves an attachment to bytes or a signed URL,

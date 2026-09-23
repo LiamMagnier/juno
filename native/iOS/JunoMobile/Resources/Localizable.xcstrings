@@ -4244,6 +4244,57 @@
         }
       }
     },
+    "library.remove" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from Library"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer de la bibliothèque"
+          }
+        }
+      }
+    },
+    "library.remove.kept-in-chat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It stays in the chat that uses it."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il reste dans la conversation qui l’utilise."
+          }
+        }
+      }
+    },
+    "library.remove.kept-in-project" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It stays in the project that uses it."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il reste dans le projet qui l’utilise."
+          }
+        }
+      }
+    },
     "library.search" : {
       "extractionState" : "manual",
       "localizations" : {

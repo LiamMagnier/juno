@@ -62,7 +62,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         extractedText: prior.extractedText,
         parserState: bytes ? "queued" : "skipped",
         parserVersion: prior.parserVersion,
+        // Restoring a version from Recently deleted brings the file back to
+        // the Library, whichever way it left.
         deletedAt: null,
+        libraryRemovedAt: null,
       },
     });
   });

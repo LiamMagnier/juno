@@ -378,7 +378,9 @@ paths:
     get:
       servers: [{ url: /api }]
       operationId: listNativeLibraryItems
-      description: Existing owner-scoped attachment library, capped at 300 newest items.
+      description: >-
+        Existing owner-scoped attachment library, capped at 300 newest items.
+        Files taken out of the Library (DELETE /library/{id}) are not listed.
       parameters:
         - in: query
           name: kind
@@ -420,6 +422,33 @@ paths:
         '400': { $ref: '#/components/responses/GeneralRouteError' }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /library/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    delete:
+      servers: [{ url: /api }]
+      operationId: removeNativeLibraryItem
+      description: >-
+        Take one file out of the owner's Library. This is not DELETE
+        /api/attachments/{id}, which deletes the file wherever it is, including
+        the chat it was sent in. If a message or a project still uses the file,
+        it only leaves the Library (mode hidden, and keptIn says where it
+        stayed): the row, its bytes and its knowledge index stay live there,
+        and the synced attachment entity carries libraryRemovedAt, which only a
+        Library view filters on. If nothing uses the file, it is deleted (mode
+        deleted). Either way the file lands in the web Library's Recently
+        deleted, and POST /api/attachments/{id}/restore brings it back.
+      responses:
+        '200':
+          description: The file is out of the Library.
+          content: { application/json: { schema: { $ref: '#/components/schemas/LibraryRemovalResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404':
+          description: "Not in the reader's Library: not theirs, already deleted, or already removed."
+          content: { application/json: { schema: { $ref: '#/components/schemas/GeneralRouteErrorEnvelope' } } }
   /artifacts:
     get:
       servers: [{ url: /api }]
@@ -1753,6 +1782,17 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/LibraryAttachment' } }
+    LibraryRemovalResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, mode, keptIn]
+      properties:
+        ok: { const: true }
+        mode: { type: string, enum: [hidden, deleted] }
+        keptIn: { type: [string, 'null'], enum: [chat, project, null] }
+      oneOf:
+        - properties: { mode: { const: hidden }, keptIn: { enum: [chat, project] } }
+        - properties: { mode: { const: deleted }, keptIn: { const: null } }
     MemoryEntryItem:
       type: object
       additionalProperties: false

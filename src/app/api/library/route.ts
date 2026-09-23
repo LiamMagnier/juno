@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { serializeAttachment } from "@/lib/serializers";
 import { getUserPlan } from "@/lib/usage";
 import { libraryQuotaBytes, libraryUsageBytes } from "@/lib/library";
+import { libraryItemPlacement, libraryViewWhere } from "@/lib/library-removal-policy";
 import {
   cursorPositionOf,
   decodeLibraryCursor,
@@ -21,7 +22,8 @@ export const runtime = "nodejs";
 const MAX_QUERY_LENGTH = 200;
 
 /**
- * Every file and image the user has uploaded or sent in chat: the Library.
+ * Every file and image the user has uploaded or sent in chat: the Library,
+ * less what they have taken out of it (src/lib/library-removal-policy.ts).
  *
  * Search, the type filter, the sort and the counts all run HERE rather than in
  * the browser. They used to run over whatever pages the client had loaded
@@ -32,7 +34,8 @@ const MAX_QUERY_LENGTH = 200;
  * Parameters (all optional; the composer's library picker sends none, so the
  * defaults are its contract): `q` (case-insensitive substring of the name),
  * `kind` (IMAGE | FILE), `sort` (newest | oldest | name | size),
- * `includeDeleted` (the Recently deleted view), `limit` and `cursor` (the
+ * `includeDeleted` (the Recently deleted view: deleted files, and files taken
+ * out of the Library that a chat or project kept), `limit` and `cursor` (the
  * `nextCursor` of the page before, under the same sort; see
  * `encodeLibraryCursor` for why it is a position and not a row id).
  */
@@ -57,7 +60,7 @@ export async function GET(req: Request) {
   // tells an empty library from a search that matched nothing.
   const inView: Prisma.AttachmentWhereInput = {
     userId: user.id,
-    deletedAt: includeDeleted ? { not: null } : null,
+    ...libraryViewWhere(includeDeleted ? "deleted" : "library"),
   };
   const matching: Prisma.AttachmentWhereInput = q
     ? { ...inView, fileName: { contains: escapeLike(q), mode: "insensitive" } }
@@ -151,9 +154,11 @@ export async function GET(req: Request) {
   const items = await Promise.all(
     page.map(async (a) => {
       const serialized = await serializeAttachment(a);
+      const placement = libraryItemPlacement(a);
       return {
         ...serialized,
-        ...(a.deletedAt ? { url: "" } : {}),
+        // A tombstone's bytes are withheld; a file a chat kept is live there.
+        ...(placement.withheld ? { url: "" } : {}),
         createdAt: a.createdAt.toISOString(),
         conversationId: a.conversationId,
         version: a.version,
@@ -161,7 +166,11 @@ export async function GET(req: Request) {
         origin: a.origin,
         parserState: a.parserState,
         parserVersion: a.parserVersion,
-        deletedAt: a.deletedAt?.toISOString() ?? null,
+        // When it went to Recently deleted, deleted or only taken out of the
+        // Library: the page files both there.
+        deletedAt: placement.deletedAt,
+        inUse: placement.inUse,
+        keptIn: placement.keptIn,
         // null for anything no extractor claims: a photo is not a document that
         // failed to index, and the UI renders nothing for it.
         knowledge: byAttachment.get(a.id) ?? null,

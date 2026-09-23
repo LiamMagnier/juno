@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { getCurrentUser } from "@/lib/session";
+import { settleLibraryRemovalsBeforeTruncation } from "@/lib/library-removal";
 
 const schema = z.object({ content: z.string().trim().min(1) });
 
@@ -27,22 +28,28 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const [version] = await prisma.$transaction([
+  const version = await prisma.$transaction(async (tx) => {
     // Preserve the pre-edit wording as read-only history.
-    prisma.messageVersion.create({
+    const version = await tx.messageVersion.create({
       data: { messageId: message.id, content: message.content },
-    }),
-    prisma.message.update({ where: { id }, data: { content: encryptMessageText(parsed.data.content) } }),
+    });
+    await tx.message.update({ where: { id }, data: { content: encryptMessageText(parsed.data.content) } });
     // Drop later messages (their artifacts cascade via the later messages' deletion is not automatic
     // for messageId=SetNull, so delete artifacts explicitly below).
-    prisma.artifact.deleteMany({
+    await tx.artifact.deleteMany({
       where: { conversationId: message.conversationId, message: { createdAt: { gt: message.createdAt } } },
-    }),
+    });
+    // Their attachments survive the delete (messageId is SetNull). A file the
+    // reader had taken out of the Library stayed only because one of these
+    // messages used it; with the message gone it is deleted as they asked,
+    // rather than left in Recently deleted with nothing using it.
+    await settleLibraryRemovalsBeforeTruncation(tx, user.id, message.id);
     // Later messages' own MessageVersion rows cascade with them.
-    prisma.message.deleteMany({
+    await tx.message.deleteMany({
       where: { conversationId: message.conversationId, createdAt: { gt: message.createdAt } },
-    }),
-  ]);
+    });
+    return version;
+  });
 
   // Version metadata so the client can grow the pager without a refetch.
   return NextResponse.json({

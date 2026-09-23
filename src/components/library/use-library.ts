@@ -6,6 +6,7 @@ import type { ClientAttachment } from "@/types/chat";
 import {
   insertSorted,
   matchesView,
+  removalNotice,
   type LibraryCounts,
   type LibraryItem,
   type LibraryKind,
@@ -26,7 +27,7 @@ export interface LibraryQuery {
 /** Rows per request. The next page loads as the list's end scrolls into view. */
 const PAGE_SIZE = 60;
 
-/** How long "Moved to Recently deleted" offers Undo. */
+/** How long a delete's toast offers Undo. */
 const UNDO_MS = 6000;
 
 interface LibraryResponse {
@@ -64,6 +65,9 @@ function itemFromUpload(attachment: ClientAttachment): LibraryItem {
     parserState: attachment.parserState ?? "queued",
     parserVersion: null,
     deletedAt: null,
+    // Uploaded here, so nothing else uses it yet.
+    inUse: null,
+    keptIn: null,
     // Indexing has not started yet and may never (an image), so the row says
     // nothing rather than guess; the next load reports what really happened.
     knowledge: null,
@@ -278,12 +282,16 @@ export function useLibrary(query: LibraryQuery) {
     [insertRows, removeRows],
   );
 
-  /** Move files to Recently deleted, with Undo. */
+  /**
+   * Move files to Recently deleted, with Undo. Through the Library's own
+   * delete, not the attachment's: a file a chat or project still uses only
+   * leaves the Library and stays where it is used, and the toast says so.
+   */
   const deleteItems = React.useCallback(
     (targets: LibraryItem[]) => {
       if (targets.length === 0) return;
       removeRows(targets);
-      const settled = settleEach(targets, (target) => fetch(`/api/attachments/${target.id}`, { method: "DELETE" }));
+      const settled = settleEach(targets, (target) => fetch(`/api/library/${target.id}`, { method: "DELETE" }));
 
       // Undo waits for the deletes to land (they have almost always landed by
       // the time anyone reaches the button): a restore sent ahead of its
@@ -307,7 +315,9 @@ export function useLibrary(query: LibraryQuery) {
         }
       };
 
-      const toastId = toast.message("Moved to Recently deleted", {
+      const notice = removalNotice(targets);
+      const toastId = toast.message(notice.title, {
+        description: notice.description,
         duration: UNDO_MS,
         action: { label: "Undo", onClick: () => void undo() },
       });
