@@ -165,7 +165,7 @@ public enum ConversationCompactor {
             let progress = requestInProgress(
                 after: older,
                 previous: previous.currentRequest,
-                recentHasUserMessage: recent.contains { $0.isUserMessage }
+                recentHasReaderMessage: recent.contains { $0.isReaderMessage }
             )
             let summary = summarize(
                 older,
@@ -379,34 +379,31 @@ public enum ConversationCompactor {
         var superseded: String?
     }
 
-    /// The newest folded user message is the request in progress only when
-    /// the retained steps do not start from a user message of their own;
-    /// otherwise every folded message is history. With no user message folded
-    /// and none retained, the earlier compaction's request is still in
-    /// progress.
+    /// The newest folded message the reader sent is the request in progress
+    /// only when the retained steps do not start from one of their own;
+    /// otherwise every folded message is history. With none folded and none
+    /// retained, the earlier compaction's request is still in progress.
+    ///
+    /// "The reader sent" excludes what hooks put in the user role. A stop
+    /// hook's reason is a user-role turn of its own, and `SessionStart` or
+    /// `UserPromptSubmit` output rides at the end of the reader's; both are
+    /// script output, which the anchor would otherwise introduce as the
+    /// reader's own words — and a stop hook would take the slot of the
+    /// prompt it was keeping the agent on. See ``AgentHookContext``.
     private static func requestInProgress(
         after folded: [ModelMessage],
         previous: String?,
-        recentHasUserMessage: Bool
+        recentHasReaderMessage: Bool
     ) -> RequestProgress {
-        let newestUserIndex = recentHasUserMessage ? nil : folded.lastIndex { $0.isUserMessage }
+        let newestIndex = recentHasReaderMessage ? nil : folded.lastIndex { $0.isReaderMessage }
         var progress = RequestProgress(current: previous, foldedIndex: nil, superseded: nil)
-        if let previous, recentHasUserMessage || newestUserIndex != nil {
+        if let previous, recentHasReaderMessage || newestIndex != nil {
             progress.superseded = previous
             progress.current = nil
         }
-        if let newestUserIndex {
-            progress.foldedIndex = newestUserIndex
-            switch folded[newestUserIndex] {
-            case let .user(text):
-                progress.current = text
-            case let .userWithImages(text, images):
-                progress.current = images.isEmpty
-                    ? text
-                    : text + "\n[\(images.count) attached image\(images.count == 1 ? "" : "s") not retained]"
-            default:
-                break
-            }
+        if let newestIndex {
+            progress.foldedIndex = newestIndex
+            progress.current = folded[newestIndex].userTurnAuthorship?.reader
         }
         return progress
     }
@@ -432,16 +429,24 @@ public enum ConversationCompactor {
         if let superseded = progress.superseded {
             notes.append(Note("- " + singleLine("User: " + clip(superseded, userNoteCharacters))))
         }
-        for (index, message) in messages.enumerated() where index != progress.foldedIndex {
+        for (index, message) in messages.enumerated() {
             let line: String
             switch message {
-            case let .user(text):
-                line = "User: " + clip(text, userNoteCharacters)
-            case let .userWithImages(text, images):
-                let attachment = images.isEmpty
-                    ? ""
-                    : " [\(images.count) attached image\(images.count == 1 ? "" : "s")]"
-                line = "User: " + clip(text, userNoteCharacters) + attachment
+            case .user, .userWithImages:
+                // The reader's words and a hook's are noted apart, so a
+                // hook's never sits under "User:" — and never outlasts the
+                // reader's words when the notes run over budget. The request
+                // in progress is quoted whole instead; its hook output is
+                // still a note.
+                guard let authorship = message.userTurnAuthorship else { continue }
+                if index != progress.foldedIndex, let reader = authorship.reader {
+                    notes.append(Note("- " + singleLine("User: " + clip(reader, userNoteCharacters))))
+                }
+                if let hook = authorship.hook {
+                    let label = authorship.hookEvent.map { "\($0) hook: " } ?? "Hook context: "
+                    notes.append(Note("- " + singleLine(label + clip(hook, 1_000))))
+                }
+                continue
             case let .assistant(text):
                 line = "Assistant: " + clip(text, 2_000)
             case .assistantThinking, .assistantRedactedThinking:
@@ -513,14 +518,5 @@ public enum ConversationCompactor {
 
     private static func encodedByteCount(_ messages: [ModelMessage]) -> Int {
         (try? JSONEncoder().encode(messages).count) ?? Int.max
-    }
-}
-
-private extension ModelMessage {
-    var isUserMessage: Bool {
-        switch self {
-        case .user, .userWithImages: true
-        default: false
-        }
     }
 }

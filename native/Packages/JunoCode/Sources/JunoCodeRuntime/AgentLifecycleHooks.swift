@@ -199,13 +199,108 @@ public extension AgentLifecycleHooks {
 ///
 /// Wrapped and labelled so the model can tell the project's automation from
 /// the reader's own words, the way Claude Code marks the same text.
+///
+/// The model history has a single user role, and hooks write into it twice:
+/// `SessionStart` and `UserPromptSubmit` output rides at the end of the
+/// reader's own turn, and a stop hook's reason is a turn of its own. Whatever
+/// reads that history back as the reader's words — compaction quoting the
+/// request in progress, the summary call's `<user>` elements, a rewind
+/// counting the reader's messages — asks ``authorship(of:)`` which part the
+/// reader wrote. Hook output is script output, and may echo files or test
+/// runs; passed off as the reader's, it would be obeyed as the reader.
 public enum AgentHookContext {
+    static let openingTag = "<hook_context>"
+    static let closingTag = "</hook_context>"
+    /// How a stop hook's reason begins, as Claude Code phrases it. Also how
+    /// the message is recognised as a hook's, never the reader's.
+    static let stopFeedbackPrefix = "Stop hook feedback:\n"
+
     public static func appending(_ context: [String], to prompt: String) -> String {
         let blocks = context
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         guard !blocks.isEmpty else { return prompt }
         let body = blocks.joined(separator: "\n\n")
-        return prompt + "\n\n<hook_context>\n" + body + "\n</hook_context>"
+        return prompt + "\n\n" + openingTag + "\n" + body + "\n" + closingTag
+    }
+
+    /// The turn a stop hook sends the agent back to work with.
+    public static func stopFeedback(_ reason: String) -> String {
+        stopFeedbackPrefix + reason
+    }
+
+    /// Whether a user-role message is one a hook wrote whole.
+    static func isHookMessage(_ text: String) -> Bool {
+        text.hasPrefix(stopFeedbackPrefix)
+    }
+
+    /// A user-role message taken apart by who wrote it.
+    ///
+    /// The context block is appended after the reader's words, so everything
+    /// from its first opening marker to its last closing one is the hooks'.
+    /// A reader who types the marker loses the rest of their own message to
+    /// the hook label, which costs them emphasis; the other way round — hook
+    /// output read as the reader's — is what this exists to prevent, and no
+    /// text inside the block can end it early. What follows the closing
+    /// marker is Juno's own note about an attachment, written after the
+    /// block when the message was saved, and stays with the reader's part.
+    static func authorship(of text: String) -> UserTurnAuthorship {
+        if isHookMessage(text) {
+            return UserTurnAuthorship(
+                reader: nil,
+                hook: String(text.dropFirst(stopFeedbackPrefix.count)),
+                hookEvent: "Stop"
+            )
+        }
+        guard let open = text.range(of: "\n\n" + openingTag + "\n"),
+              let close = text.range(of: "\n" + closingTag, options: .backwards),
+              close.lowerBound >= open.upperBound
+        else {
+            return UserTurnAuthorship(reader: text, hook: nil, hookEvent: nil)
+        }
+        return UserTurnAuthorship(
+            reader: String(text[..<open.lowerBound]) + String(text[close.upperBound...]),
+            hook: String(text[open.upperBound..<close.lowerBound]),
+            hookEvent: nil
+        )
+    }
+}
+
+/// Who wrote a user-role message in the model history. See
+/// ``AgentHookContext/authorship(of:)``.
+struct UserTurnAuthorship: Equatable, Sendable {
+    /// What the reader wrote, or nil for a message a hook wrote whole.
+    var reader: String?
+    /// What the project's hooks added, or nil when nothing was.
+    var hook: String?
+    /// The hook event that wrote `hook`, when the message says; context
+    /// blocks carry `SessionStart` and `UserPromptSubmit` output together.
+    var hookEvent: String?
+}
+
+extension ModelMessage {
+    /// A user-role message's text taken apart by who wrote it, or nil for a
+    /// message that is not the user role's. An attachment is noted on the
+    /// reader's part, since the reader attached it.
+    var userTurnAuthorship: UserTurnAuthorship? {
+        switch self {
+        case let .user(text):
+            return AgentHookContext.authorship(of: text)
+        case let .userWithImages(text, images):
+            var authorship = AgentHookContext.authorship(of: text)
+            if !images.isEmpty, let reader = authorship.reader {
+                authorship.reader = reader
+                    + "\n[\(images.count) attached image\(images.count == 1 ? "" : "s") not retained]"
+            }
+            return authorship
+        default:
+            return nil
+        }
+    }
+
+    /// True for a turn the reader took: a prompt, a steer or a queued
+    /// message. Not for the anchor's hook output or a stop hook's reason.
+    var isReaderMessage: Bool {
+        userTurnAuthorship?.reader != nil
     }
 }

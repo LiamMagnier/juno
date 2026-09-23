@@ -300,11 +300,13 @@ private extension Array where Element == SessionEvent {
 }
 
 extension ModelMessage {
-    /// The text of a message the reader sent, or nil for anything else.
+    /// The text of a message the reader sent, or nil for anything else —
+    /// including a stop hook's reason, which is a user-role turn too but not
+    /// one of the reader's, and would throw the count of theirs out.
     var userText: String? {
         switch self {
         case let .user(text), let .userWithImages(text, _):
-            text
+            AgentHookContext.isHookMessage(text) ? nil : text
         default:
             nil
         }

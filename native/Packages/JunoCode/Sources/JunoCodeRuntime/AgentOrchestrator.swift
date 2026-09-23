@@ -1032,13 +1032,15 @@ public actor AgentOrchestrator {
                 }
                 // The agent means to stop. A stop hook may send it back with a
                 // reason, which reaches the model the way Claude Code phrases
-                // it, as the next thing to act on.
+                // it, as the next thing to act on. It is a user-role turn the
+                // reader did not write, and marked as one: compaction must
+                // never quote it as the reader's latest message.
                 if let reason = await stopHookFeedback(
                     lastMessage: lastAssistantText,
                     continuations: stopHookContinuations
                 ) {
                     stopHookContinuations += 1
-                    conversation.append(.user("Stop hook feedback:\n" + reason))
+                    conversation.append(.user(AgentHookContext.stopFeedback(reason)))
                     try? await store.saveConversation(sessionID: sessionID, messages: conversation)
                     continue
                 }
