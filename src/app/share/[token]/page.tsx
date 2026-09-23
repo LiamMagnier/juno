@@ -6,13 +6,20 @@ import { AppPage } from "@/components/ui/app-page";
 import { JunoMark } from "@/components/brand/logo";
 import { SharedChatTranscript } from "@/components/share/shared-chat-transcript";
 import { SharedArtifactViewer } from "@/components/share/shared-artifact-viewer";
+import { ReportShareButton } from "@/components/share/report-share-dialog";
+import { SandboxProfileProvider } from "@/components/canvas/sandbox-document-frame";
 import { getPublicShare, getSharedArtifactSnapshot, getSharedChatSnapshot, peekPublicShare } from "@/lib/share";
 import { cn } from "@/lib/utils";
 
 /*
  * Public share page — no auth, works signed out. Renders the frozen snapshot
- * behind an unguessable token; revoked or unknown tokens 404. Every share
- * page is noindex/nofollow: sharing is link-visibility, never search-visibility.
+ * behind an unguessable token; revoked, taken-down, banned-owner or unknown
+ * tokens 404. Every share page is noindex/nofollow: sharing is link-visibility,
+ * never search-visibility.
+ *
+ * What is on it was written by someone the visitor does not know, so every
+ * preview below runs with the `public` sandbox profile (src/lib/sandbox-policy.ts):
+ * no downloads or dialogs, and images and requests only to allowlisted hosts.
  */
 
 // Never cache a share render: revocation must kill the link on the next request.
@@ -75,39 +82,54 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
         </AppPage>
       </header>
 
-      {chat ? (
-        // The transcript stays flat prose on the page ground, at the reading measure.
-        <AppPage scroll={false} measure="reading" className="flex-1" contentClassName="py-8">
-          <SharedChatTranscript messages={chat.messages} artifacts={chat.artifacts} />
-        </AppPage>
-      ) : artifact ? (
+      <SandboxProfileProvider profile="public">
+        {chat ? (
+          // The transcript stays flat prose on the page ground, at the reading measure.
+          <AppPage scroll={false} measure="reading" className="flex-1" contentClassName="py-8">
+            <SharedChatTranscript messages={chat.messages} artifacts={chat.artifacts} />
+          </AppPage>
+        ) : artifact ? (
+          <AppPage
+            scroll={false}
+            measure="reading"
+            className="flex min-h-0 flex-1 flex-col"
+            contentClassName="flex min-h-0 flex-1 flex-col py-4 sm:py-6"
+          >
+            <SharedArtifactViewer
+              type={artifact.type}
+              language={artifact.language}
+              content={artifact.content}
+              version={artifact.version}
+            />
+          </AppPage>
+        ) : null}
+      </SandboxProfileProvider>
+
+      <footer className="shrink-0 border-t border-border/60">
+        {/* min-h and wrap rather than a fixed h-12: with Report in the row,
+            three items no longer fit one line on a 320px phone, and a wrapped
+            row inside a fixed height would spill out of the bar. From ~360px
+            up it is the same single 48px row it always was. */}
         <AppPage
           scroll={false}
           measure="reading"
-          className="flex min-h-0 flex-1 flex-col"
-          contentClassName="flex min-h-0 flex-1 flex-col py-4 sm:py-6"
+          contentClassName="flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2"
         >
-          <SharedArtifactViewer
-            type={artifact.type}
-            language={artifact.language}
-            content={artifact.content}
-            version={artifact.version}
-          />
-        </AppPage>
-      ) : null}
-
-      <footer className="shrink-0 border-t border-border/60">
-        <AppPage scroll={false} measure="reading" contentClassName="flex h-12 items-center justify-between gap-3 py-0">
           <span className="inline-flex items-center gap-2 font-mono text-caption text-muted-foreground">
             <JunoMark className="size-4" />
             Made with Juno
           </span>
-          <Link
-            href="/sign-up"
-            className="rounded-xs text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground"
-          >
-            Create your own account
-          </Link>
+          {/* The visitor's two ways out, grouped so justify-between keeps them
+              together at the end rather than spacing Report into the middle. */}
+          <div className="flex items-center gap-4">
+            <ReportShareButton token={token} />
+            <Link
+              href="/sign-up"
+              className="rounded-xs text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground"
+            >
+              Create your own account
+            </Link>
+          </div>
         </AppPage>
       </footer>
     </div>

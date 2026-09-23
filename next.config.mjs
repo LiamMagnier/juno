@@ -124,12 +124,23 @@ const nextConfig = {
         source: "/:path*",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "X-Frame-Options", value: "SAMEORIGIN" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           // Voice mode needs the microphone; everything else stays off.
           { key: "Permissions-Policy", value: "camera=(), geolocation=(), payment=(), microphone=(self)" },
           // Ignored over plain http (dev); enforced once served over https.
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+        ],
+      },
+      {
+        // Everything but the artifact preview shell, which sets both of these
+        // itself (src/lib/sandbox-shell.ts) and where a header here would win
+        // over the route's. It is framed by the app from a separate origin
+        // when NEXT_PUBLIC_SANDBOX_ORIGIN is set and names who may frame it in
+        // its own `frame-ancestors`, so SAMEORIGIN would refuse it; and a
+        // preview's CDN requests carry no referrer at all.
+        source: "/:path((?!sandbox/).*)",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         ],
       },
     ];
