@@ -41,7 +41,22 @@
 |---|---|---|
 | `wf_bf8ab8d7-57f` | Audit | Done |
 | `wf_5010c171-35e` | Library fix | Done |
-| `wf_526e95f0-d71` | Spec, `chat-rework-spec` | Running |
+| `wf_526e95f0-d71` | Spec, `chat-rework-spec` | Done. `SPEC.md` is committed (f1badf26, plus addendum 5f89b888) |
+| `wf_d089a5d5-1b4` | WS0 contract scaffold | Done. 8e226dba |
+| `wf_a8130f4a-430` | Wave 1, `rework-wave1` | Running |
+
+**How wave 1 runs:**
+- Nine workstreams (WS1, WS2, WS3a, WS3b, WS4, WS5, WS6, WS7 and WS8) each get their own worktree
+  at `/Users/liammagnier/Developer/project/juno-rework/<ws>`, on a branch `web/rework-<ws>` cut from
+  5f89b888.
+- Each workstream is implemented, gets two reviews, is fixed and committed on its branch. The
+  branches are then merged into `web/tools-thinking-research` in the order ws2 → ws1 → ws3a → ws3b
+  → ws4 → ws7 → ws5 → ws6 → ws8. The full gate reruns after every merge.
+- Heavy commands go through `juno-rework/gate.sh`, which allows at most 3 at once.
+- Resume with `Workflow({scriptPath: …/rework-wave1-wf_a8130f4a-430.js, resumeFromRunId:
+  "wf_a8130f4a-430"})`. It works only from this same Claude session. From a new session, look at
+  each branch's `git log 5f89b888..` and continue by hand.
+- Wave 2 (WS9a and WS9b) and wave 3 (WS9c) follow SPEC §12.5.
 
 The scripts are under
 `~/.claude/projects/-Users-liammagnier-Developer-project-juno/c6dc8e85-4182-4266-8be9-0fe69658b1ff/workflows/scripts/`.
