@@ -69,7 +69,8 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
             allowsNetwork: sandbox.allowsNetwork && overrides.allowsNetwork,
             allowsLocalhost: sandbox.allowsLocalhost,
             additionalWritablePaths: sandbox.additionalWritablePaths + overrides.writablePaths,
-            protectsPolicyFiles: sandbox.protectsPolicyFiles
+            protectsPolicyFiles: sandbox.protectsPolicyFiles,
+            homeDirectory: sandbox.homeDirectory
         )
     }
 
@@ -117,15 +118,31 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
             }
 
             let process = Process()
+            let sandbox = effectiveSandbox
             // Under a profile the kernel enforces the workspace boundary; the
             // shell is still zsh, wrapped rather than replaced, so a command
             // behaves identically right up to the point it tries to leave.
-            let invocation = effectiveSandbox?.wrap(command: commandLine)
+            let invocation = sandbox?.wrap(command: commandLine)
                 ?? (executable: "/bin/zsh", arguments: ["-c", commandLine])
             process.executableURL = URL(fileURLWithPath: invocation.executable)
             process.arguments = invocation.arguments
             process.currentDirectoryURL = workspaceRootURL
             var environment = Self.minimalEnvironment(workspaceRoot: workspaceRootURL.path)
+            if let sandbox, sandbox.grantsCommandCache {
+                // Tools that would write binaries, configuration or extracted
+                // sources into the reader's own folders use Juno's instead,
+                // which the profile leaves writable and the reader's shell
+                // never builds from. Made here, not by the command: the folder
+                // above it is not the command's to write, and a cache cleaner
+                // may have removed it since the last run.
+                try? FileManager.default.createDirectory(
+                    atPath: CommandSandboxProfile.commandCacheRoot(homeDirectory: sandbox.homeDirectory),
+                    withIntermediateDirectories: true
+                )
+                environment.merge(
+                    CommandSandboxProfile.commandCacheEnvironment(homeDirectory: sandbox.homeDirectory)
+                ) { _, juno in juno }
+            }
             // The reader's own variables win over the defaults, except the two
             // that would move the command out of its workspace or its toolchain.
             for (name, value) in overrides?.environment ?? [:]

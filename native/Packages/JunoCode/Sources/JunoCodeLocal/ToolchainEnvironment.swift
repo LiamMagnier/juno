@@ -50,7 +50,11 @@ public enum ToolchainEnvironment: Sendable {
         return paths.joined(separator: ":")
     }
 
-    private static func candidateToolchainDirectories(homeDirectory: String) -> [String] {
+    /// Every folder `resolvedPATH` would put ahead of the system's, whether or
+    /// not it exists yet. The sandbox profile refuses writes to all of them:
+    /// a binary replaced here runs the next time the reader uses the tool
+    /// from their own shell, outside any sandbox.
+    static func candidateToolchainDirectories(homeDirectory: String) -> [String] {
         var candidates: [String] = [
             "\(homeDirectory)/.local/bin",
             "\(homeDirectory)/.local/share/mise/shims",

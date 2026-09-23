@@ -48,6 +48,8 @@ public struct CommandSandboxProfile: Equatable, Sendable {
     /// `git pull` or `git checkout` because it updates a tracked
     /// `.juno/settings.json` would protect nothing.
     public let protectsPolicyFiles: Bool
+    /// The reader's home folder, whose toolchain folders the profile protects.
+    public let homeDirectory: String
 
     public init(
         workspaceRoot: URL,
@@ -55,7 +57,8 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         allowsNetwork: Bool = false,
         allowsLocalhost: Bool = false,
         additionalWritablePaths: [String] = CommandSandboxProfile.defaultWritablePaths,
-        protectsPolicyFiles: Bool = true
+        protectsPolicyFiles: Bool = true,
+        homeDirectory: String = NSHomeDirectory()
     ) {
         self.workspaceRoot = workspaceRoot
         self.filesystem = filesystem
@@ -63,6 +66,7 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         self.allowsLocalhost = allowsLocalhost
         self.additionalWritablePaths = additionalWritablePaths
         self.protectsPolicyFiles = protectsPolicyFiles
+        self.homeDirectory = homeDirectory
     }
 
     /// Paths a real build cannot function without.
@@ -89,20 +93,115 @@ public struct CommandSandboxProfile: Equatable, Sendable {
 
     /// Package-manager and build caches under the home folder.
     ///
-    /// `npm install`, `cargo build`, `swift build` and `pod install` all write
-    /// to a cache outside the project first; without these the first
-    /// dependency install of every session failed inside the sandbox, which
-    /// taught readers to turn containment off. Caches, not config: `~/.ssh`,
-    /// shell profiles and credentials stay unwritable.
+    /// `npm install`, `cargo build` and `pod install` all write to a cache
+    /// outside the project first; without these the first dependency install
+    /// of every session failed inside the sandbox, which taught readers to
+    /// turn containment off.
+    ///
+    /// The test for an entry: nothing written there is later run, or read as
+    /// configuration, by a process outside the sandbox. The list used to
+    /// hold whole tool roots — `~/.bun`, `~/.yarn`, `~/Library/pnpm` — which
+    /// are also where those tools keep their own binaries and global bins,
+    /// all on the reader's PATH. A command could replace one, and the reader's
+    /// next use of that tool from their own shell ran it with full access,
+    /// long after the session. Nor did the broader entries pass:
+    /// `~/Library/Caches` holds app updaters' staging folders and Playwright's
+    /// browsers, `~/.cache` pre-commit's hook environments, `~/.swiftpm` and
+    /// `~/Library/org.swift.swiftpm` SwiftPM's mirror and registry
+    /// configuration, DerivedData the products Xcode runs, `~/.npm` the
+    /// packages `npx` runs, and `~/.cargo` and `~/go/pkg` the extracted
+    /// sources every later build compiles.
+    ///
+    /// What is shared with the reader now is package-manager download caches
+    /// and stores, and never a folder with a binary or a settings file in it
+    /// (`protectedToolchainPaths` holds that line whatever this list says).
+    /// The tools whose shared folders mixed a cache with those things write
+    /// to a cache Juno owns instead (`commandCacheEnvironment`). SwiftPM needs
+    /// none of it: it warns and builds without its user-level caches. Xcode
+    /// needs a `-derivedDataPath` inside the workspace.
     public static var toolchainCachePaths: [String] {
-        let home = NSHomeDirectory()
+        toolchainCachePaths(homeDirectory: NSHomeDirectory())
+    }
+
+    public static func toolchainCachePaths(homeDirectory home: String) -> [String] {
+        [
+            "/.bun/install/cache",
+            "/Library/pnpm/store", "/.pnpm-store", "/Library/Caches/pnpm",
+            "/.yarn/berry/cache", "/Library/Caches/Yarn",
+            // DENO_DIR is ~/Library/Caches/deno unless the reader moved it;
+            // ~/.deno itself holds `deno install`'s scripts.
+            "/Library/Caches/deno",
+            "/.deno/deps", "/.deno/remote", "/.deno/npm", "/.deno/gen", "/.deno/registries",
+            "/.rustup/tmp",
+            // Not yet moved to a cache Juno owns, and short of the test above:
+            // Gradle keeps compiled build scripts here and CocoaPods keeps spec
+            // repositories whose install hooks run. Nothing else lets those
+            // builds work in the sandbox yet.
+            "/.gradle/caches", "/.m2/repository", "/.cocoapods", "/Library/Caches/CocoaPods",
+            "/Library/Developer/CoreSimulator/Caches",
+        ].map { home + $0 } + [commandCacheRoot(homeDirectory: home)]
+    }
+
+    /// Where agent-run tools keep what they would otherwise write into the
+    /// reader's own tool folders. Only sandboxed commands are pointed here, so
+    /// nothing outside the sandbox ever builds from it.
+    public static func commandCacheRoot(homeDirectory: String = NSHomeDirectory()) -> String {
+        homeDirectory + "/Library/Caches/JunoCode/CommandCaches"
+    }
+
+    /// The variables that point those tools at `commandCacheRoot`.
+    ///
+    /// Cargo's home holds its binaries, its `env` script, its configuration
+    /// and the extracted crate sources every build compiles, so it moves as a
+    /// whole. The reader's `~/.cargo/config.toml` is still read for a project
+    /// under their home folder, because Cargo also looks for configuration in
+    /// every parent folder. npm's cache also holds the packages `npx` runs;
+    /// Go's module cache is extracted source and its build cache is compiled
+    /// output; node-gyp's folder holds the headers native modules compile
+    /// against; pip's holds built wheels. `XDG_CACHE_HOME` stands in for
+    /// `~/.cache`.
+    public static func commandCacheEnvironment(homeDirectory: String = NSHomeDirectory()) -> [String: String] {
+        let root = commandCacheRoot(homeDirectory: homeDirectory)
         return [
-            "/Library/Caches", "/.cache", "/.npm", "/.pnpm-store", "/Library/pnpm",
-            "/.yarn", "/.bun", "/.cargo/registry", "/.cargo/git", "/.rustup/tmp",
-            "/.gradle/caches", "/.m2/repository", "/go/pkg", "/.swiftpm",
-            "/Library/org.swift.swiftpm", "/Library/Developer/Xcode/DerivedData",
-            "/Library/Developer/CoreSimulator/Caches", "/.cocoapods", "/.deno",
-        ].map { home + $0 }
+            "CARGO_HOME": root + "/cargo",
+            "npm_config_cache": root + "/npm",
+            "npm_config_devdir": root + "/node-gyp",
+            "GOMODCACHE": root + "/go/mod",
+            "GOCACHE": root + "/go/build",
+            "PIP_CACHE_DIR": root + "/pip",
+            "XDG_CACHE_HOME": root + "/xdg",
+        ]
+    }
+
+    /// Whether commands under this profile may use Juno's own caches.
+    public var grantsCommandCache: Bool {
+        filesystem == .readWrite
+            && additionalWritablePaths.contains(Self.commandCacheRoot(homeDirectory: homeDirectory))
+    }
+
+    /// What no command may write, whatever the allow rules above say.
+    ///
+    /// Every folder on the PATH Juno builds, where a replaced binary would run
+    /// next time the reader typed its name; `~/.deno/bin`, where
+    /// `deno install` puts its scripts; and the configuration files other
+    /// tools read from the home folder. Denied after the allowances, and later
+    /// rules win, so no later change to the allow list, and no folder a
+    /// settings file adds, can re-open one.
+    static func protectedToolchainPaths(homeDirectory home: String) -> [String] {
+        var seen = Set<String>()
+        return (
+            ToolchainEnvironment.candidateToolchainDirectories(homeDirectory: home)
+                + ToolchainEnvironment.defaultBasePaths
+                + [
+                    home + "/.deno/bin", home + "/.cargo/bin",
+                    home + "/.cargo/env", home + "/.cargo/env.fish", home + "/.cargo/env.nu",
+                    home + "/.cargo/config", home + "/.cargo/config.toml",
+                    home + "/.cargo/credentials", home + "/.cargo/credentials.toml",
+                    home + "/.swiftpm/configuration", home + "/Library/org.swift.swiftpm/configuration",
+                    home + "/.cocoapods/config.yaml",
+                    home + "/.yarnrc", home + "/.yarnrc.yml", home + "/.npmrc",
+                ]
+        ).filter { seen.insert($0).inserted }
     }
 
     /// The SBPL profile text.
@@ -149,6 +248,7 @@ public struct CommandSandboxProfile: Equatable, Sendable {
                     lines.append("(deny file-write* (literal \(Self.quote(path))))")
                 }
             }
+            lines += toolchainDenials()
             // ioctl on a tty is what makes interactive-ish tools work at all.
             lines.append("(allow file-ioctl (subpath \"/dev\"))")
         }
@@ -173,6 +273,53 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         }
 
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// The rules refusing writes to `protectedToolchainPaths`, as named and as
+    /// resolved.
+    ///
+    /// One of those folders can hold a cache from `toolchainCachePaths`:
+    /// pnpm keeps its store inside the folder its global binaries live in.
+    /// Only that reviewed list is carved out of a denial. A path that reaches
+    /// the allow list any other way, a settings file's writable folder
+    /// included, stays refused inside a protected folder.
+    ///
+    /// The folders above each one, up to the home folder, are denied as
+    /// entries too, as `.juno` is. Otherwise a grant of `~/.bun` could still
+    /// move the folder aside and put a link or a new folder in its place,
+    /// and the reader's PATH would follow it.
+    private func toolchainDenials() -> [String] {
+        let caches = Self.toolchainCachePaths(homeDirectory: homeDirectory)
+        let cachePaths = Set(caches + caches.map(Self.resolved))
+        let homes: Set<String> = [homeDirectory, Self.resolved(homeDirectory)]
+        var lines: [String] = []
+        var denials = Set<String>()
+        var entries = Set<String>()
+        for path in Self.protectedToolchainPaths(homeDirectory: homeDirectory) {
+            // `~/.swiftpm/configuration` is a link to the other one, so the
+            // same folder can come up twice.
+            for denied in Set([path, Self.resolved(path)]).sorted() where denials.insert(denied).inserted {
+                let kept = cachePaths.filter { $0.hasPrefix(denied + "/") }.sorted()
+                if kept.isEmpty {
+                    lines.append("(deny file-write* (subpath \(Self.quote(denied))))")
+                } else {
+                    let exceptions = kept.map { "(require-not (subpath \(Self.quote($0))))" }
+                    lines.append(
+                        "(deny file-write* (require-all (subpath \(Self.quote(denied))) "
+                            + exceptions.joined(separator: " ") + "))"
+                    )
+                }
+                var parent = (denied as NSString).deletingLastPathComponent
+                while !parent.isEmpty, parent != "/", !homes.contains(parent) {
+                    entries.insert(parent)
+                    parent = (parent as NSString).deletingLastPathComponent
+                }
+            }
+        }
+        for entry in entries.sorted() {
+            lines.append("(deny file-write* (literal \(Self.quote(entry))))")
+        }
+        return lines
     }
 
     /// The path the kernel will actually see, symlinks resolved.

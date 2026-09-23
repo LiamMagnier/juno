@@ -50,12 +50,14 @@ New, because every serious agent has it:
   (`JunoCodeCore/CodeSettings.swift`, `JunoCodeLocal/CodeSettingsStore.swift`)
 - **Permission rules** — `Bash(npm run *)`, `Edit(src/**)`, `Read(.env)`,
   `WebFetch(domain:…)`, `mcp__server` — deny beats ask beats allow, chained
-  commands checked per segment, destructive actions always ask.
+  commands checked per segment, deny and ask rules also check what runs
+  inside `$(…)`, backticks and subshells, and destructive actions always ask.
   (`JunoCodeCore/PermissionRules.swift`)
 - **"Always allow"** on the approval prompt saves the exact rule it shows.
 - **Environment variables, network access and extra writable folders** per
-  scope, applied to the next command without rebuilding the workspace; build
-  and package caches are writable inside the sandbox.
+  scope, applied to the next command without rebuilding the workspace;
+  package download caches are writable inside the sandbox, and the folders
+  that hold tools' binaries and settings never are (see §5).
 - **Personal instructions** in `~/.juno/JUNO.md`; standing instructions in any
   settings file.
 - **Turn limit, compaction threshold, co-author trailer, branch prefix** as
@@ -168,3 +170,36 @@ one branch's change broke another's, fixed after the merges:
 - **Checkpoints × relay.** A rewind holds the session from its checks to the
   reloaded transcript; nothing starts meanwhile, and a running orchestrator
   is never let go.
+
+## 5. Security fixes (23 September)
+
+Four holes in the permission system, each fixed with a regression test:
+
+- **A substitution hid a command from the rules.** `echo $(curl …)` was one
+  segment, `echo`, so a `curl *` deny rule never matched, and Full Access ran
+  the command. The line was `critical`, and Full Access allows `critical`
+  without asking. `ShellSegments` now keeps `$(…)`, backticks, `<(…)`,
+  `>(…)` and subshells whole and returns their bodies at any depth. Deny and
+  ask rules match those bodies too. Allow patterns never vouch for such a
+  line; a bare `Bash` rule still does. The classifier grades each inner
+  command and the line around it instead of stopping at `critical`.
+  (`JunoCodeCore/PermissionRules.swift`, `CommandClassifier.swift`)
+- **Toolchain "caches" held binaries the reader runs.** `~/.bun`, `~/.yarn`
+  and `~/Library/pnpm` were writable whole, and so were `~/Library/Caches`,
+  `~/.cache`, `~/.swiftpm` and DerivedData. Only download caches stay
+  shared. Cargo, npm (which also holds `npx`'s packages), Go, node-gyp, pip
+  and XDG caches go to `~/Library/Caches/JunoCode/CommandCaches`, which only
+  sandboxed commands use. Every folder on the PATH Juno builds, `~/.deno/bin`,
+  and the tools' settings files are denied after every grant, so no later
+  allowance can reopen them. Xcode builds need a `-derivedDataPath` inside
+  the workspace. SwiftPM builds without its user-level caches.
+  Gradle, Maven and CocoaPods caches are still shared.
+  (`JunoCodeLocal/CommandSandboxProfile.swift`)
+- **Approve recorded the file as it was at the click.** It now approves only
+  the bytes the Settings window read, refuses and reloads if the file changed
+  since, and the window reloads whenever it becomes key.
+  (`JunoCodeLocal/CodeSettingsStore.swift`, `JunoCodeUI/Models/CodeSettingsModel.swift`)
+- **`web_fetch` followed redirects anywhere.** A redirect that leaves the
+  approved host, or drops to plain http, now ends the fetch and names the
+  new URL. The model's next call to that URL goes through the rules for that
+  host. (`JunoCodeRuntime/Tools/WebFetchTool.swift`)

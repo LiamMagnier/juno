@@ -135,7 +135,10 @@ public actor PermissionCoordinator {
                 approvalPolicy: approvalPolicy,
                 requestedAt: now,
                 expiresAt: now.addingTimeInterval(Self.approvalTimeToLiveSeconds),
-                suggestedRule: risk == .destructive
+                // Nothing to offer where no saved rule would ever apply:
+                // allow rules never silence a destructive action, nor a
+                // command line whose substitutions they cannot see into.
+                suggestedRule: risk == .destructive || !PermissionRuleSet.patternsCanVouch(for: subject)
                     ? nil
                     : PermissionRuleSet.suggestedRule(toolName: toolName, subject: subject)
             )

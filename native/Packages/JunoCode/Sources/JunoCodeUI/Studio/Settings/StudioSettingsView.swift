@@ -82,6 +82,7 @@ public struct StudioSettingsView: View {
     @State private var scope: CodeSettingsScope = .user
     @State private var projectID: WorkspaceID?
     @Bindable private var settings = CodeSettingsModel.shared
+    @Environment(\.controlActiveState) private var controlActiveState
 
     public init(
         workbench: WorkbenchModel?,
@@ -132,6 +133,13 @@ public struct StudioSettingsView: View {
         .onChange(of: projectID) { _, _ in
             settings.selectProject(project?.access)
             if !settings.isAvailable(scope) { scope = .user }
+        }
+        .onChange(of: controlActiveState) { _, state in
+            // The files change behind the window: a `git pull`, a checkout, the
+            // reader's own editor. Coming back to it shows what they say now,
+            // so an Approve button is never offered for a version the reader
+            // is not looking at.
+            if state == .key { settings.reload() }
         }
     }
 

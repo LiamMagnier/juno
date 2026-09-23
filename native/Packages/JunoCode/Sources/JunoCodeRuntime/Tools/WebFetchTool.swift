@@ -33,7 +33,8 @@ public struct WebFetchTool: CodeTool {
         Fetch a web page over HTTP(S) and return its readable text. Use it for \
         documentation, changelogs, issues and API references the task needs. \
         Pass the full URL. Long pages are cut; pass max_characters to ask for \
-        more or less.
+        more or less. A redirect to another host is not followed: the result \
+        names where it points, and you can fetch that URL next.
         """
 
     public var inputSchema: JSONValue {
@@ -72,14 +73,32 @@ public struct WebFetchTool: CodeTool {
         }
         let limit = min(max(input["max_characters"]?.intValue ?? Self.defaultCharacters, 1_000), 200_000)
 
-        let (bytes, response) = try await session.bytes(from: url)
+        // The guard is per request, not per session, so it holds whatever
+        // session the tool was given.
+        let (bytes, response) = try await session.bytes(from: url, delegate: RedirectGuard(origin: url))
+        let http = response as? HTTPURLResponse
+        let status = http?.statusCode ?? 0
+        if let http, let location = Self.refusedRedirect(http) {
+            // A redirect off the approved host stops here rather than being
+            // followed, and nothing of it is read. The model's next call names
+            // the new URL itself, so the rules and the mode check that host.
+            return ToolResult(
+                content: """
+                    URL: \(url.absoluteString)
+                    Status: \(status)
+
+                    Redirected to \(location.absoluteString). This fetch stopped there because \
+                    the redirect leaves \(url.host ?? "the original host"). Call web_fetch on \
+                    that URL to continue.
+                    """,
+                isError: false
+            )
+        }
         var data = Data()
         for try await byte in bytes {
             data.append(byte)
             if data.count >= Self.maximumDownloadBytes { break }
         }
-        let http = response as? HTTPURLResponse
-        let status = http?.statusCode ?? 0
         let contentType = http?.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
         let body = String(decoding: data, as: UTF8.self)
         let readable = contentType.contains("html") || body.prefix(512).lowercased().contains("<html")
@@ -93,6 +112,63 @@ public struct WebFetchTool: CodeTool {
             content: "URL: \(finalURL)\nStatus: \(status)\n\n" + clipped,
             isError: !(200..<400).contains(status)
         )
+    }
+
+    // MARK: - Redirects
+
+    /// Keeps one fetch on the host its permission check approved.
+    ///
+    /// `ToolRuleSubjects` checks a `WebFetch(domain:…)` rule, and the mode, against
+    /// the host of the URL the model asked for — nothing later. URLSession,
+    /// left alone, follows a 3xx to any host, scheme or address, so an allow
+    /// rule for one site covered wherever that site redirected: an open
+    /// redirect or a shortener carried the query string, and any data in it,
+    /// to a host the reader never approved, loopback and private ranges
+    /// included. It also stepped round a deny rule, since any allowed URL
+    /// that redirected to the denied host reached it.
+    ///
+    /// So a hop is followed only when it stays on the original host and does
+    /// not drop from https to http. Every other one ends the fetch, and the
+    /// model is told where it pointed.
+    final class RedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
+        let origin: URL
+
+        init(origin: URL) {
+            self.origin = origin
+        }
+
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest
+        ) async -> URLRequest? {
+            guard let target = request.url, WebFetchTool.mayFollow(from: origin, to: target) else {
+                return nil
+            }
+            return request
+        }
+    }
+
+    /// Whether a redirect from `origin` to `target` stays inside what the
+    /// permission check approved.
+    static func mayFollow(from origin: URL, to target: URL) -> Bool {
+        guard let from = origin.host?.lowercased(), let to = target.host?.lowercased(), from == to,
+              let fromScheme = origin.scheme?.lowercased(), let toScheme = target.scheme?.lowercased()
+        else { return false }
+        switch (fromScheme, toScheme) {
+        case ("https", "https"), ("http", "http"), ("http", "https"): return true
+        default: return false
+        }
+    }
+
+    /// Where a redirect that was not followed pointed, if this response is one.
+    static func refusedRedirect(_ response: HTTPURLResponse) -> URL? {
+        guard [301, 302, 303, 307, 308].contains(response.statusCode),
+              let location = response.value(forHTTPHeaderField: "Location"),
+              let target = URL(string: location, relativeTo: response.url)?.absoluteURL
+        else { return nil }
+        return target
     }
 
     /// Markup to reading text: scripts, styles and tags out; block elements
