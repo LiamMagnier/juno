@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { ToolDefinition, ToolExecutionResult } from "@/lib/agent/types";
 import { matchAttachment, nameList } from "@/lib/agent/attachment-match";
 import type { ToolResultImage } from "@/lib/mcp";
+import { wrapUntrusted } from "@/lib/untrusted-content";
 
 /*
  * NO `server-only` AND NO STATIC SANDBOX IMPORT — see the note in
@@ -76,12 +77,49 @@ export function isCodeInterpreterConfigured(): boolean {
   return Boolean(endpoint && token);
 }
 
+/**
+ * Whether `run_code` may be attached at all (SPEC §3.6 `sandboxConfigured`): a
+ * remote sandbox exists AND it is confirmed to have no network egress. The
+ * second half is what the tool's `read` classification rests on (DECISIONS
+ * §4b), so without it the tool is not offered, never offered-but-asking.
+ */
+export async function runCodeSandboxReady(): Promise<boolean> {
+  if (!isCodeInterpreterConfigured()) return false;
+  const { sandboxEgressIsolated } = await import("@/lib/code-interpreter");
+  return sandboxEgressIsolated();
+}
+
+/**
+ * What a run measured, for the tool record (SPEC §3.8.5): files it produced,
+ * its exit code, the sandbox's own wall time (the metered quantity) and, for a
+ * failed program, the exception class it died with.
+ */
+export interface RunCodeData {
+  files: number;
+  exitCode: number;
+  /** Sandbox wall time. Absent when the sandbox never ran, which is also when nothing is billed. */
+  sandboxMs?: number;
+  errorName?: string;
+}
+
+/** `ValueError`, `ZeroDivisionError`… from the last traceback line, when there is one. */
+export function pythonErrorName(stderr: string | undefined): string | undefined {
+  const lines = (stderr ?? "").trim().split("\n").reverse();
+  for (const line of lines) {
+    const match = /^([A-Za-z_][\w.]*(?:Error|Exception|Exit|Interrupt|Warning))\b/.exec(line.trim());
+    if (match) return match[1].split(".").pop();
+  }
+  return undefined;
+}
+
 function failure(message: string): ToolExecutionResult<never> {
   return { success: false, error: message, summary: message, stdout: message };
 }
 
 export const runCodeTool: ToolDefinition<RunCodeParams, unknown> = {
-  id: "code_interpreter",
+  // `run_code` since the chat rework; `code_interpreter` is its stored alias
+  // (`tools/aliases.ts`, INV-23).
+  id: "run_code",
   name: "Run code",
   category: "python",
   description:
@@ -104,9 +142,10 @@ export const runCodeTool: ToolDefinition<RunCodeParams, unknown> = {
     },
     required: ["code"],
   },
-  // Sandboxed and network-isolated, but it is still execution: the broker
-  // should see it as such rather than waving it through as a read.
-  riskClass: "destructive_or_sensitive",
+  // A read (DECISIONS §4b): a remote sandbox with no network, running on the
+  // user's own files. That rests on the isolation being confirmed, which
+  // `execute` checks before anything runs and chat checks before attaching it.
+  riskClass: "read_only",
   formatPreview: (params) => ({
     title: "Run code",
     detail: params.reason || "Analysing an attached file",
@@ -118,6 +157,14 @@ export const runCodeTool: ToolDefinition<RunCodeParams, unknown> = {
     if (!isCodeInterpreterConfigured()) {
       return failure(
         "The code sandbox is not configured on this server, so Python cannot be run. Use read_document to read an attached file, or inspect_image to look at one.",
+      );
+    }
+    // Checked here as well as at attach time: whatever path reached this tool,
+    // model-written code never runs where it could reach the internet.
+    const { sandboxEgressIsolated } = await import("@/lib/code-interpreter");
+    if (!(await sandboxEgressIsolated())) {
+      return failure(
+        "The code sandbox's network isolation could not be confirmed, so Python was not run. Use read_document to read an attached file, or inspect_image to look at one.",
       );
     }
 
@@ -167,7 +214,7 @@ export const runCodeTool: ToolDefinition<RunCodeParams, unknown> = {
         title: "Running code",
         detail: params.reason || `${inputFiles.length} file(s) in the working directory`,
         status: "running",
-        source: "code_interpreter",
+        source: "run_code",
       });
     }
 
@@ -184,6 +231,7 @@ export const runCodeTool: ToolDefinition<RunCodeParams, unknown> = {
         inputFiles,
         userId: context.userId,
         sessionId: context.conversationId || context.sessionId,
+        signal: context.abortSignal,
       });
     } catch (error) {
       return failure(
@@ -208,14 +256,32 @@ export const runCodeTool: ToolDefinition<RunCodeParams, unknown> = {
         .map((file) => ({ mimeType: file.mimeType, base64: file.dataBase64, label: file.name })),
     ].slice(0, 4);
 
-    const body = [
+    const output = [
       result.stdout?.trim() ? result.stdout.trim().slice(0, MAX_OUTPUT_CHARS) : "",
       result.stderr?.trim() ? `stderr:\n${result.stderr.trim().slice(0, 4_000)}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    /*
+     * What the program printed is enveloped whenever it had attached files to
+     * read: the model wrote the code, but a program that prints a document's
+     * text prints a stranger's words, and "ignore your instructions" survives
+     * a round trip through pandas. Juno's own lines stay outside the envelope.
+     */
+    const printed = output && inputFiles.length > 0 ? wrapUntrusted("program output", output) : output;
+    const body = [
+      printed,
       result.success ? "" : `The program exited with ${result.exitCode}. ${result.error ?? ""}`.trim(),
       images.length ? `[${images.length} image(s) from this run follow.]` : "",
     ]
       .filter(Boolean)
       .join("\n\n");
+    const data: RunCodeData = {
+      files: result.generatedFiles.length,
+      exitCode: result.exitCode,
+      sandboxMs: result.durationMs,
+      ...(result.success ? {} : { errorName: pythonErrorName(result.stderr) ?? pythonErrorName(result.error) }),
+    };
 
     if (context.onEvent) {
       await context.onEvent({
@@ -225,7 +291,7 @@ export const runCodeTool: ToolDefinition<RunCodeParams, unknown> = {
         title: result.success ? "Code finished" : "Code failed",
         detail: `${result.durationMs}ms`,
         status: result.success ? "completed" : "failed",
-        source: "code_interpreter",
+        source: "run_code",
       });
     }
 
@@ -234,12 +300,10 @@ export const runCodeTool: ToolDefinition<RunCodeParams, unknown> = {
       summary: result.success
         ? `Ran Python over ${inputFiles.length} file(s) in ${result.durationMs}ms.`
         : `The program failed: ${result.error || result.stderr || "no output"}`,
-      // NOT enveloped: this is the output of a program the MODEL wrote, not
-      // text a stranger authored. What the program READ may be untrusted, and
-      // the system prompt's rule about attachments already governs that.
       stdout: body || "The program produced no output.",
       ...(images.length ? { images } : {}),
       durationMs: result.durationMs,
+      data,
     };
   },
 };

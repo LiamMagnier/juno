@@ -30,9 +30,11 @@
  *   5. The run itself, which asks before risky steps (`balanced`).
  */
 
-import type { McpFunctionTool, ToolExecution } from "@/lib/mcp";
+import type { Plan } from "@prisma/client";
+import type { McpFunctionTool, ToolExecuteOptions, ToolExecution } from "@/lib/mcp";
 import type { NativeChatTool } from "@/lib/llm";
-import { ACTION_PREVIEW_STRING_CHARS, type ClientActionApproval } from "@/lib/action-approval";
+import { ACTION_PREVIEW_STRING_CHARS, type ActionReceiptStatus, type ClientActionApproval } from "@/lib/action-approval";
+import { startTaskSpec } from "@/lib/tools/specs/start-task";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ReasoningEffort } from "@/types/chat";
 import { DEFAULT_WORK_PERMISSION_POLICY, WORK_LIVE_STATUSES } from "@/lib/work/domain";
@@ -77,35 +79,16 @@ const MAX_TASK_CONNECTORS = 32;
  * `additionalProperties`, and length limits are enforced here rather than
  * trusted to a provider's schema support. When to call it is the system
  * prompt's job (`# Tasks` in system-prompt.ts); the description says what it
- * does and what each field is for.
+ * does and what each field is for. Both come from the registry's `start_task`
+ * entry (`tools/specs/start-task.ts`), so the registry and the wire cannot
+ * describe two different tools.
  */
 export const START_TASK_TOOL: McpFunctionTool = {
   type: "function",
   function: {
     name: START_TASK_TOOL_ID,
-    description:
-      "Start a background task that works on the user's request on its own for minutes, then reports back in this conversation. It can research many sources, run code, use the files and connected apps from this message, and produce documents. Use it only for requests that need a finished result built over many steps, as described in the Tasks section of your instructions. It returns whether the task started.",
-    parameters: {
-      type: "object",
-      properties: {
-        title: {
-          type: "string",
-          description:
-            "A short name for the task, at most 60 characters, naming the outcome in sentence case. Example: \"Competitor pricing spreadsheet\".",
-        },
-        goal: {
-          type: "string",
-          description:
-            "A self-contained brief for the task: what the user wants, every relevant detail from this conversation (names, links, numbers, preferences), constraints, and what done looks like. The task cannot read this conversation, so include everything it needs.",
-        },
-        deliverable: {
-          type: "string",
-          description:
-            "Optional. What exists when the task is done, in a few words. Example: \"a spreadsheet of 20 vendors with prices\" or \"draft replies in Gmail\".",
-        },
-      },
-      required: ["title", "goal"],
-    },
+    description: startTaskSpec.description,
+    parameters: startTaskSpec.input as unknown as Record<string, unknown>,
   },
 };
 
@@ -143,6 +126,12 @@ export interface TaskToolGate {
   lockdown: boolean;
   /** The plan includes at least one model that can drive a Work run. */
   planHasWorkModel: boolean;
+  /**
+   * The account's plan. FREE never carries the tool (DECISIONS §4c): Work
+   * refuses a FREE run anyway, so offering it only invites a refusal. Optional
+   * while the route is being moved over; absent is read as "not FREE".
+   */
+  plan?: Plan;
 }
 
 /**
@@ -170,7 +159,8 @@ export function chatTaskToolEnabled(gate: TaskToolGate): boolean {
     gate.functionToolsReachModel &&
     gate.skillPermits &&
     !gate.lockdown &&
-    gate.planHasWorkModel
+    gate.planHasWorkModel &&
+    gate.plan !== "FREE"
   );
 }
 
@@ -494,7 +484,14 @@ export interface StartTaskToolContext {
   untrustedContent: boolean;
   /** The generation id: with the approval call id, the broker's idempotency key. */
   generationId: string;
+  /** The toolset-level approval callback. A per-call one (`ToolExecuteOptions`) wins. */
   onApprovalRequest?: (approval: ClientActionApproval) => void;
+  /**
+   * Read at CALL time, when given: whether outside content has reached the
+   * model by now (the turn's dynamic taint, SPEC §6.5) and how bad it was. A
+   * hostile verdict always asks. Absent → `untrustedContent`, fixed at build.
+   */
+  untrustedNow?: () => { untrusted: boolean; hostile: boolean };
   /** Called once per turn, with the session as it stands after its run was dispatched. */
   onStarted?: (session: ClientWorkSession) => void;
 }
@@ -514,11 +511,15 @@ export function createStartTaskTool(ctx: StartTaskToolContext): NativeChatTool {
   let started: Extract<TaskOutcome, { status: "started" }> | null = null;
   let queue: Promise<unknown> = Promise.resolve();
 
-  const run = async (args: Record<string, unknown>, signal?: AbortSignal): Promise<ToolExecution> => {
+  const run = async (
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+    opts?: ToolExecuteOptions
+  ): Promise<ToolExecution> => {
     if (started) return describeTaskOutcome({ ...started, replay: true });
     let outcome: TaskOutcome;
     try {
-      outcome = await startTask(ctx, args, signal);
+      outcome = await startTask(ctx, args, signal, opts);
     } catch (err) {
       console.error("[chat:task] start_task failed", {
         conversationId: ctx.conversation.id,
@@ -541,22 +542,43 @@ export function createStartTaskTool(ctx: StartTaskToolContext): NativeChatTool {
     tool: START_TASK_TOOL,
     label: TASK_TOOL_LABEL,
     access: "write",
-    execute(args, signal) {
-      const next = queue.then(() => run(args, signal));
+    execute(args, signal, opts) {
+      const next = queue.then(() => run(args, signal, opts));
       queue = next.catch(() => undefined);
       return next;
     },
   };
 }
 
+/**
+ * The dispatch's own deadline, started only once the start is authorised.
+ *
+ * `signal` is the TURN signal: an approval wait may run to the receipt's
+ * fifteen minutes and must never be cut short by the tool's timer (SPEC §3.4
+ * item 8). The timer bounds the work after the yes — the preflight re-check and
+ * the dispatch — and a turn without one (older callers) keeps today's
+ * unbounded behaviour.
+ */
+function dispatchSignal(signal: AbortSignal | undefined, timeoutMs: number | undefined): AbortSignal | undefined {
+  if (!timeoutMs || timeoutMs <= 0) return signal;
+  const timer = AbortSignal.timeout(timeoutMs);
+  return signal ? AbortSignal.any([signal, timer]) : timer;
+}
+
 async function startTask(
   ctx: StartTaskToolContext,
   rawArgs: Record<string, unknown>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  opts?: ToolExecuteOptions
 ): Promise<TaskOutcome> {
   const args = parseStartTaskArgs(rawArgs);
   if (!args) return taskRefusal("invalid_arguments");
   if (signal?.aborted) return taskRefusal("stopped");
+  const onApprovalRequest = opts?.onApprovalRequest ?? ctx.onApprovalRequest;
+  // Outside content is read when the call happens, not when the turn began: a
+  // page fetched two rounds ago is in the context this start is asking from.
+  const taint = ctx.untrustedNow?.() ?? { untrusted: ctx.untrustedContent, hostile: false };
+  const untrustedContent = ctx.untrustedContent || taint.untrusted || taint.hostile;
 
   const [{ prisma }, dispatch, protocol, serializers, store] = await Promise.all([
     import("@/lib/prisma"),
@@ -683,7 +705,7 @@ async function startTask(
         return notStarted(taskRefusalFromResponse(preflight.status, preflight.body));
       }
 
-      if (ctx.untrustedContent || estimate.requiresConfirmation) {
+      if (untrustedContent || estimate.requiresConfirmation) {
         const authorization = await store.authorizeExternalAction({
           userId: user.id,
           surface: "chat",
@@ -703,14 +725,14 @@ async function startTask(
           provenance: {
             source: "chat_model",
             sourceKind: "task_handoff",
-            derivedFromUntrusted: ctx.untrustedContent,
+            derivedFromUntrusted: untrustedContent,
           },
           signal,
-          onApprovalRequest: ctx.onApprovalRequest,
+          onApprovalRequest,
         });
         if (authorization.kind === "refused") {
           if (signal?.aborted) return notStarted(taskRefusal("stopped"));
-          return notStarted(taskRefusal(approvalRefusalReason(authorization.reason)));
+          return notStarted(taskRefusal(approvalRefusalReason(authorization.reason, authorization.status)));
         }
         // A replayed receipt is an answer already spent on an earlier start of
         // this message. Reaching here, that start has no run (a run would have
@@ -726,11 +748,18 @@ async function startTask(
         return notStarted(taskRefusal("stopped"));
       }
 
-      const dispatched = await dispatch.startWorkRunForUser(user, session, {
-        ...runBody,
-        // Only ever reached after a person said yes to the estimate on the card.
-        ...(estimate.requiresConfirmation ? { confirmExpensive: true } : {}),
-      });
+      // Authorised (by a person, or because nobody needed asking): the row
+      // shows the task as running from here, and the tool's timer starts.
+      opts?.onAuthorized?.();
+      const bounded = dispatchSignal(signal, opts?.timeoutMs);
+      const dispatched = await abortable(
+        dispatch.startWorkRunForUser(user, session, {
+          ...runBody,
+          // Only ever reached after a person said yes to the estimate on the card.
+          ...(estimate.requiresConfirmation ? { confirmExpensive: true } : {}),
+        }),
+        bounded
+      );
       const refusal = dispatched.run ? null : taskRefusalFromResponse(dispatched.status, dispatched.body);
       await settleReceipt(refusal === null, refusal ? refusal.message : `Started task ${session.id}.`);
       if (refusal) return notStarted(refusal);
@@ -770,15 +799,43 @@ async function startTask(
 }
 
 /**
+ * A promise that rejects when `signal` aborts, so a dispatch that ignores the
+ * tool's deadline still cannot hold the turn past it. The work itself is not
+ * cancelled; its idempotency key makes a later retry land on it.
+ */
+function abortable<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return work;
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      }
+    );
+  });
+}
+
+/**
  * Which of the tool's own refusals a broker refusal is.
  *
- * The broker answers with a sentence rather than a code (`Action denied.`,
- * `Action expired.`, a blocked reason), so it is read for the three outcomes a
- * person can tell apart. Anything else is the approval not going through for a
- * reason on Juno's side, which the model should not dress up as the user's
- * choice.
+ * The receipt's status decides when the broker gives one (SPEC §3.3 item 9):
+ * `denied`, `expired` and `blocked` are the three outcomes a person can tell
+ * apart. Without it the broker's sentence is read (`Action denied.`, `Action
+ * expired.`, a blocked reason). Anything else is the approval not going
+ * through for a reason on Juno's side, which the model should not dress up as
+ * the user's choice.
  */
-export function approvalRefusalReason(brokerReason: string): TaskRefusalReason {
+export function approvalRefusalReason(brokerReason: string, status?: ActionReceiptStatus): TaskRefusalReason {
+  if (status === "denied") return "declined";
+  if (status === "expired") return "approval_expired";
+  if (status === "blocked") return "approval_blocked";
   const reason = brokerReason.toLowerCase();
   if (reason.includes("denied")) return "declined";
   if (reason.includes("expired")) return "approval_expired";

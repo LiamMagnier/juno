@@ -20,12 +20,13 @@ import type { SourceRegistry } from "@/lib/chat/source-registry";
 import type {
   McpFunctionTool,
   McpToolset,
+  ToolExecuteOptions,
   ToolExecution,
   ToolResultImage,
 } from "@/lib/mcp";
 import type { ToolAccess } from "@/lib/tool-access";
 import type { TurnTaint } from "@/lib/web/taint";
-import type { LazyUrlLedger, TurnWebLimits } from "@/lib/web/types";
+import type { LazyUrlLedger, PrivateSpanSet, TurnWebLimits } from "@/lib/web/types";
 import type { ClientSource } from "@/types/chat";
 import type {
   CanonicalToolId,
@@ -80,12 +81,78 @@ export interface ToolSpec<A extends Record<string, unknown> = Record<string, unk
   execute(args: A, ctx: ToolContext): Promise<ToolOutcome>;
 }
 
+/** The only JSON-Schema keywords a portable schema may use (DECISIONS T2). */
+export const PORTABLE_SCHEMA_KEYWORDS: ReadonlySet<string> = new Set([
+  "type", "properties", "required", "items", "enum", "description",
+]);
+
+const PORTABLE_TYPES: ReadonlySet<string> = new Set(["string", "number", "integer", "boolean", "array", "object"]);
+
+/**
+ * Why `schema` is not in the portable subset, or null when it is.
+ *
+ * The subset is what every provider accepts without translation: a keyword
+ * outside it (`additionalProperties`, `oneOf`, `format`, `default`…) is one
+ * that some lab rejects outright, and a tool whose schema one lab refuses takes
+ * the whole request down with it on that lab (RC-4).
+ */
+export function portableSchemaProblem(schema: unknown, path = "input"): string | null {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return `${path} is not an object`;
+  const node = schema as Record<string, unknown>;
+  for (const key of Object.keys(node)) {
+    if (!PORTABLE_SCHEMA_KEYWORDS.has(key)) return `${path} uses "${key}", which is not portable`;
+  }
+  if (typeof node.type !== "string" || !PORTABLE_TYPES.has(node.type)) return `${path}.type is missing or unknown`;
+  if (path !== "input" && typeof node.description !== "string") return `${path} has no description`;
+  if (node.enum !== undefined) {
+    if (node.type !== "string" || !Array.isArray(node.enum) || node.enum.some((v) => typeof v !== "string")) {
+      return `${path}.enum must be a list of strings on a string`;
+    }
+  }
+  if (node.type === "array") {
+    const nested = portableSchemaProblem(node.items, `${path}.items`);
+    if (nested) return nested;
+  } else if (node.items !== undefined) {
+    return `${path}.items is only allowed on an array`;
+  }
+  if (node.type === "object") {
+    const properties = node.properties;
+    if (!properties || typeof properties !== "object" || Array.isArray(properties)) return `${path}.properties is missing`;
+    for (const [name, child] of Object.entries(properties as Record<string, unknown>)) {
+      const nested = portableSchemaProblem(child, `${path}.properties.${name}`);
+      if (nested) return nested;
+    }
+    if (node.required !== undefined) {
+      if (!Array.isArray(node.required)) return `${path}.required must be a list`;
+      for (const name of node.required) {
+        if (typeof name !== "string" || !(name in (properties as Record<string, unknown>))) {
+          return `${path}.required names "${String(name)}", which is not a property`;
+        }
+      }
+    }
+  } else if (node.properties !== undefined || node.required !== undefined) {
+    return `${path}.properties is only allowed on an object`;
+  }
+  return null;
+}
+
+const TOOL_ID = /^[a-z][a-z0-9_]{1,40}$/;
+
 /**
  * Wraps a spec literal so the i18n extractor skips its model-facing
- * `description` and `title` (INV-29, SPEC §10.5). At runtime it is the
- * identity: the marker is the call itself, which the extractor recognises.
+ * `description` and `title` (INV-29, SPEC §10.5). The marker is the call
+ * itself, which the extractor recognises.
+ *
+ * It also refuses a spec that could not be sent to every provider: a function
+ * name outside `/^[a-z][a-z0-9_]{1,40}$/`, or a schema keyword outside the
+ * portable subset. Specs are module-level constants, so a bad one fails at
+ * import — in the registry test — rather than on one lab in production.
  */
 export function defineTool<A extends Record<string, unknown>>(spec: ToolSpec<A>): ToolSpec<A> {
+  if (!TOOL_ID.test(spec.id)) throw new Error(`defineTool: "${spec.id}" is not a valid tool name`);
+  const problem = portableSchemaProblem(spec.input);
+  if (problem) throw new Error(`defineTool(${spec.id}): ${problem}`);
+  if (spec.input.type !== "object") throw new Error(`defineTool(${spec.id}): input must be an object schema`);
   return spec;
 }
 
@@ -112,6 +179,13 @@ export interface ToolContext {
   attachments(): Promise<ConversationAttachment[]>;
   /** For broker "self" tools (start_task): per-call approval callback (SPEC §3.3). */
   onApprovalRequest?: (approval: ClientActionApproval) => void;
+  /**
+   * The texts a `web_search` query must never carry (SPEC §6.3 query hygiene):
+   * attachment and project text, memory entries, the account email. Built by
+   * the route from what it already holds. Absent means nothing is guarded,
+   * which is only right for a turn that holds none of those texts.
+   */
+  privateSpans?: PrivateSpanSet;
 }
 
 export interface ToolOutcome {
@@ -144,6 +218,16 @@ export interface ResolvedTool {
   connectorLabel?: string;
   toolTitle?: string;                // connector's own title (annotations.title) or humanised bare name
   present(args: Record<string, unknown>): ToolPresentArgs;
+  /**
+   * The Juno spec behind a `juno` tool, when the dispatcher runs it itself
+   * (broker `juno_runtime` or `none`). Absent for connector tools and for
+   * `start_task`, whose executor authorises inside `execute` (SPEC §4.2 step 7).
+   */
+  spec?: ToolSpec;
+  /** The portable schema the dispatcher validates Juno arguments against (SPEC §4.2 step 3). */
+  input?: PortableSchema;
+  /** A connector tool's own `inputSchema`, for the shallow `required`/primitive check. */
+  inputSchema?: Record<string, unknown>;
 }
 
 /**
@@ -160,7 +244,13 @@ export interface NativeChatTool {
   /** The name the activity row and the thought-process panel show for it. */
   label: string;
   access: ToolAccess;
-  execute(args: Record<string, unknown>, signal?: AbortSignal): Promise<ToolExecution>;
+  /**
+   * `signal` is the TURN signal. `opts` carries the per-call approval callback,
+   * the tool's timeout and `onAuthorized` (SPEC §3.4 item 8): a tool that asks a
+   * person first calls `onAuthorized()` once the answer is yes, and only then
+   * starts its own timer, so an approval is never cut short by it.
+   */
+  execute(args: Record<string, unknown>, signal?: AbortSignal, opts?: ToolExecuteOptions): Promise<ToolExecution>;
 }
 
 /** The toolset a chat turn runs with (src/lib/tools/toolset.ts). */

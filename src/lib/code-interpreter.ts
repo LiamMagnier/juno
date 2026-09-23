@@ -68,6 +68,12 @@ export interface CodeInterpreterOptions {
   userId?: string;
   sessionId?: string;
   preferredBackend?: "auto" | "microvm" | "container" | "local_isolated";
+  /**
+   * The caller's abort (a chat turn's Stop). The microVM backend forwards it
+   * to the runner request alongside its own deadline, so a stopped turn stops
+   * paying for a sandbox that is still running.
+   */
+  signal?: AbortSignal;
 }
 
 export interface CodeInterpreterBackend {
@@ -220,6 +226,15 @@ export class MicroVMSandboxAdapter implements CodeInterpreterBackend {
       timeoutMs: options.timeoutMs ?? 120_000,
       memoryLimitMb: options.memoryLimitMb ?? 2048,
       env: options.env,
+      /*
+       * Always, and not a preference. Chat classifies `run_code` as a read
+       * (DECISIONS §4b) because the program runs on the user's own data with no
+       * way out; a sandbox that could reach the internet would turn a prompt
+       * injection in an attached file into exfiltration. Chat also refuses to
+       * attach the tool unless the runner confirms it honours this
+       * (`sandboxEgressIsolated`).
+       */
+      network: "none",
       files: options.inputFiles?.map((f) => ({
         name: f.name,
         contentBase64: Buffer.isBuffer(f.content)
@@ -228,6 +243,7 @@ export class MicroVMSandboxAdapter implements CodeInterpreterBackend {
       })),
     };
 
+    const deadline = AbortSignal.timeout((options.timeoutMs ?? 120_000) + 10_000);
     const res = await fetch(`${this.endpoint}/execute`, {
       method: "POST",
       headers: {
@@ -235,7 +251,7 @@ export class MicroVMSandboxAdapter implements CodeInterpreterBackend {
         Authorization: `Bearer ${this.token}`,
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout((options.timeoutMs ?? 120_000) + 10_000),
+      signal: options.signal ? AbortSignal.any([options.signal, deadline]) : deadline,
     });
 
     if (!res.ok) {
@@ -272,6 +288,63 @@ export class MicroVMSandboxAdapter implements CodeInterpreterBackend {
       error: data.error,
     };
   }
+}
+
+/**
+ * How long one answer about the runner's network isolation is trusted. The
+ * probe runs at most once per this window per process, so deciding whether to
+ * attach `run_code` costs no network round trip on almost every turn.
+ */
+export const SANDBOX_EGRESS_PROBE_TTL_MS = 10 * 60_000;
+
+let egressVerdict: { isolated: boolean; at: number } | null = null;
+
+/** For tests: forget the cached probe. */
+export function resetSandboxEgressCache(): void {
+  egressVerdict = null;
+}
+
+/**
+ * Whether the remote sandbox is confirmed to have no network egress (SPEC
+ * §3.8.5). `run_code` is classified `read` on that condition alone, so the
+ * answer is conservative: true only when the deployer says so
+ * (`CODE_INTERPRETER_EGRESS=none`) or the runner's `/health` reports
+ * `egress: "none"`. A failed, slow or silent probe is false, and so is a
+ * configuration with no remote sandbox at all. Never downgrades to "ask":
+ * when isolation is not confirmed, the tool is simply not offered.
+ */
+export async function sandboxEgressIsolated(deps: {
+  fetch?: typeof fetch;
+  now?: () => number;
+  endpoint?: string | null;
+  token?: string | null;
+} = {}): Promise<boolean> {
+  if (process.env.CODE_INTERPRETER_EGRESS?.trim().toLowerCase() === "none") return true;
+  const endpoint = deps.endpoint !== undefined ? deps.endpoint : process.env.CODE_INTERPRETER_URL?.trim() || null;
+  const token =
+    deps.token !== undefined
+      ? deps.token
+      : (process.env.CODE_INTERPRETER_TOKEN || process.env.E2B_API_KEY)?.trim() || null;
+  if (!endpoint || !token) return false;
+
+  const now = (deps.now ?? Date.now)();
+  if (egressVerdict && now - egressVerdict.at < SANDBOX_EGRESS_PROBE_TTL_MS) return egressVerdict.isolated;
+
+  let isolated = false;
+  try {
+    const res = await (deps.fetch ?? fetch)(`${endpoint.replace(/\/$/, "")}/health`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (res.ok) {
+      const body = (await res.json().catch(() => null)) as { egress?: unknown } | null;
+      isolated = body?.egress === "none";
+    }
+  } catch {
+    isolated = false;
+  }
+  egressVerdict = { isolated, at: now };
+  return isolated;
 }
 
 /**
