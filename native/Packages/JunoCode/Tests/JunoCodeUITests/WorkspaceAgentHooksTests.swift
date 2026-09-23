@@ -44,19 +44,47 @@ private final class HookShell: HookCommandExecuting, @unchecked Sendable {
     }
 }
 
-/// Answers every turn at once and remembers what it was sent.
+/// Answers every turn at once and remembers what it was sent. Told to, it
+/// holds the first turn open until released, so that run stays active.
 private final class RecordingModel: AgentModelClient, @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [ModelTurnRequest] = []
+    private var holdingFirstTurn: Bool
+
+    init(holdingFirstTurn: Bool = false) {
+        self.holdingFirstTurn = holdingFirstTurn
+    }
 
     var requests: [ModelTurnRequest] { lock.withLock { storage } }
+    private var isHolding: Bool { lock.withLock { holdingFirstTurn } }
+
+    func releaseFirstTurn() {
+        lock.withLock { holdingFirstTurn = false }
+    }
 
     func streamTurn(_ request: ModelTurnRequest) -> AsyncThrowingStream<ModelStreamEvent, Error> {
-        lock.withLock { storage.append(request) }
+        let held = lock.withLock { () -> Bool in
+            storage.append(request)
+            return storage.count == 1 && holdingFirstTurn
+        }
         return AsyncThrowingStream { continuation in
-            continuation.yield(.textDelta("Done."))
-            continuation.yield(.turnCompleted(.endTurn))
-            continuation.finish()
+            guard held else {
+                continuation.yield(.textDelta("Done."))
+                continuation.yield(.turnCompleted(.endTurn))
+                continuation.finish()
+                return
+            }
+            let answer = Task {
+                while self.isHolding, !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(5))
+                }
+                // Stopped rather than released: the run has gone.
+                guard !Task.isCancelled else { return }
+                continuation.yield(.textDelta("Done."))
+                continuation.yield(.turnCompleted(.endTurn))
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in answer.cancel() }
         }
     }
 }
@@ -427,7 +455,8 @@ final class SessionHookTrustTests: XCTestCase {
     /// `command`, allowed by the reader, in `mode`.
     private func hookedSession(
         _ command: String,
-        mode: PermissionMode
+        mode: PermissionMode,
+        model: RecordingModel = RecordingModel()
     ) async throws -> (SessionController, CodeSessionStore, RecordingModel) {
         let project = root.appendingPathComponent("repo")
         let settings = JSONValue.object([
@@ -463,7 +492,6 @@ final class SessionHookTrustTests: XCTestCase {
             configuration: AgentConfiguration(modelID: "test-model", permissionMode: mode),
             gitBranch: nil
         )
-        let model = RecordingModel()
         let controller = SessionController(session: session, context: context, store: store, modelClient: model)
         await controller.attach()
         return (controller, store, model)
@@ -538,6 +566,91 @@ final class SessionHookTrustTests: XCTestCase {
         XCTAssertTrue(model.requests.isEmpty)
         let status = try await store.session(id: controller.sessionID).status
         XCTAssertFalse(status.isTerminal, "a blocked new session stays idle, which is why the delivery says so")
+    }
+
+    /// The phone's Stop while its steer's hook runs stops the steer too. The
+    /// relay answers a steer once the run takes it, before its hooks decide,
+    /// so that Stop is often the very next command it claims. It used to
+    /// reach the run alone: the hook ran on in the handover, and once the
+    /// stopped run had ended the steer started a turn of its own.
+    func testThePhonesStopWhileItsSteersHookRunsStopsTheSteer() async throws {
+        try XCTSkipUnless(CommandSandboxProfile.isAvailable, "sandbox-exec is unavailable on this machine")
+        let (controller, store, model, gate) = try await runHeldOpen()
+
+        let delivery = try await controller.deliverRemotePrompt("Also fix the tests", as: .steer)
+        XCTAssertFalse(delivery.isSettled, "the hook is still deciding")
+        await controller.stop()
+        // Opened after the Stop, as a hook that took its time would finish.
+        try Data().write(to: gate)
+
+        let refusal = await delivery.outcome()
+        XCTAssertEqual(refusal?.message, "The session was stopped on the Mac before this message was sent.")
+        await controller.awaitRemoteHandover()
+        await controller.awaitCurrentRun()
+        XCTAssertFalse(controller.isSubmitting)
+        XCTAssertEqual(model.requests.count, 1, "the steer started no turn of its own")
+        let events = await store.events(for: controller.sessionID).map(\.payload)
+        XCTAssertFalse(
+            events.contains { if case .userInstruction = $0 { return true }; return false },
+            "the steer was not recorded for a later run to apply"
+        )
+        XCTAssertEqual(prompts(in: events), ["Start"])
+    }
+
+    /// A steer whose run finishes on its own while the steer's hook decides
+    /// still goes, as the next turn. The phone was told it had been taken,
+    /// so turning it away then would lose it without a word.
+    func testASteerFromThePhoneWhoseRunEndsWhileItsHookRunsStartsTheNextTurn() async throws {
+        try XCTSkipUnless(CommandSandboxProfile.isAvailable, "sandbox-exec is unavailable on this machine")
+        let (controller, store, model, gate) = try await runHeldOpen()
+
+        let delivery = try await controller.deliverRemotePrompt("Also fix the tests", as: .steer)
+        model.releaseFirstTurn()
+        await controller.awaitCurrentRun()
+        XCTAssertFalse(delivery.isSettled, "the hook is still deciding")
+        try Data().write(to: gate)
+
+        let refusal = await delivery.outcome()
+        XCTAssertNil(refusal)
+        await controller.awaitRemoteHandover()
+        await controller.awaitCurrentRun()
+        XCTAssertEqual(model.requests.count, 2)
+        XCTAssertTrue(lastPrompt(model).hasPrefix("Also fix the tests"))
+        let events = await store.events(for: controller.sessionID).map(\.payload)
+        XCTAssertFalse(events.contains { if case .userInstruction = $0 { return true }; return false })
+        XCTAssertEqual(prompts(in: events), ["Start", "Also fix the tests"])
+    }
+
+    /// A session whose `UserPromptSubmit` hook waits until the returned gate
+    /// file exists, with a run under way that its model holds open. The gate
+    /// is open for the prompt that started the run and shut again after.
+    private func runHeldOpen() async throws -> (SessionController, CodeSessionStore, RecordingModel, URL) {
+        // Inside the project, which the hook's shell runs in: a path outside
+        // it would make the command one that asks in every mode.
+        let gate = root.appendingPathComponent("repo/hook-gate")
+        let model = RecordingModel(holdingFirstTurn: true)
+        let (controller, store, _) = try await hookedSession(
+            "until [ -e hook-gate ]; do sleep 0.02; done",
+            mode: .fullAccess,
+            model: model
+        )
+        await controller.setHooksEnabled(true)
+        try Data().write(to: gate)
+        controller.composerText = "Start"
+        await controller.send()
+        for _ in 0..<400 where !controller.session.status.isActive || model.requests.isEmpty {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(controller.session.status.isActive, "the run should be under way")
+        try FileManager.default.removeItem(at: gate)
+        return (controller, store, model, gate)
+    }
+
+    private func prompts(in events: [SessionEventPayload]) -> [String] {
+        events.compactMap { payload -> String? in
+            if case let .userPrompt(prompt) = payload { return prompt.text }
+            return nil
+        }
     }
 
     private func lastPrompt(_ model: RecordingModel) -> String {

@@ -123,6 +123,24 @@ private actor ScriptedHooks: AgentLifecycleHooks {
     }
 }
 
+/// A tool that finishes only when released, whatever Stop says, so a stopped
+/// run is still winding down while a test does something else.
+private struct UncancellableTool: CodeTool {
+    static let toolName = "slow_step"
+    let gate: ScriptedModelGate
+    let name = UncancellableTool.toolName
+    let description = "Waits for the test."
+    let inputSchema: JSONValue = ["type": "object", "properties": [:]]
+
+    func assessRisk(input: JSONValue) -> ActionRisk { .read }
+    func summary(input: JSONValue) -> String { "Slow step" }
+
+    func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        await gate.arriveAndWait()
+        return ToolResult(content: "slow step finished")
+    }
+}
+
 final class AgentHookLifecycleTests: XCTestCase {
     private var workspaceURL: URL!
     private var store: CodeSessionStore!
@@ -172,14 +190,15 @@ final class AgentHookLifecycleTests: XCTestCase {
     private func orchestrator(
         _ model: ScriptedModelClient,
         hooks: ScriptedHooks,
-        mode: PermissionMode = .fullAccess
+        mode: PermissionMode = .fullAccess,
+        tools: ToolRegistry? = nil
     ) -> (AgentOrchestrator, PermissionCoordinator) {
         let permissions = PermissionCoordinator(sessionID: session.id, mode: mode)
         return (
             AgentOrchestrator(
                 sessionID: session.id,
                 model: model,
-                registry: registry,
+                registry: tools ?? registry,
                 permissions: permissions,
                 store: store,
                 configuration: AgentOrchestrator.Configuration(systemPrompt: "You are Juno Code."),
@@ -193,6 +212,14 @@ final class AgentHookLifecycleTests: XCTestCase {
 
     private func payloads() async -> [SessionEventPayload] {
         await store.events(for: session.id).map(\.payload)
+    }
+
+    private func waitForStatus(_ status: SessionStatus) async throws {
+        for _ in 0..<400 {
+            if try await store.session(id: session.id).status == status { return }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTFail("the session never became \(status)")
     }
 
     private func hookEvents() async -> [HookActivityEvent] {
@@ -374,6 +401,88 @@ final class AgentHookLifecycleTests: XCTestCase {
             events.contains { if case .userInstruction = $0 { return true }; return false },
             "an instruction no run will apply is not recorded"
         )
+    }
+
+    /// Stop while a steer's hooks decide turns the steer away, as it does a
+    /// prompt. The hooks run in the steer's own task, which Stop does not
+    /// cancel, so they come back as if nothing had happened. Here they come
+    /// back while the stopped run is still winding down, where the steer
+    /// used to be recorded for the next run to apply.
+    func testStopWhileASteersHooksRunTurnsTheSteerAway() async throws {
+        let hooks = ScriptedHooks()
+        let working = ScriptedModelGate()
+        let model = ScriptedModelClient(steps: [
+            .toolCalls([("s1", UncancellableTool.toolName, [:])], text: ""),
+        ])
+        let (runtime, _) = orchestrator(
+            model,
+            hooks: hooks,
+            tools: ToolRegistry(tools: [UncancellableTool(gate: working)])
+        )
+        try await runtime.submit(prompt: "Start")
+        await working.waitUntilArrived()
+
+        let vetting = HookGate()
+        await hooks.gate(prompt: vetting)
+        let steer = Task { try await runtime.steer(prompt: "Also fix the tests") }
+        await vetting.waitUntilHeld()
+        let stopping = Task { await runtime.stop() }
+        try await waitForStatus(.stopping)
+        await vetting.release()
+
+        do {
+            _ = try await steer.value
+            XCTFail("a steer stopped before it was sent must say so")
+        } catch OrchestratorError.stoppedBeforeSending {}
+        await working.release()
+        await stopping.value
+
+        let events = await payloads()
+        XCTAssertFalse(
+            events.contains { if case .userInstruction = $0 { return true }; return false },
+            "a stopped steer is not recorded for a later run to apply"
+        )
+        XCTAssertEqual(model.receivedRequests.count, 1, "the stopped run asked nothing more")
+
+        // Nor is it waiting in memory for the next prompt's run.
+        await hooks.gate()
+        try await runtime.submit(prompt: "Again")
+        await runtime.awaitCompletion()
+        XCTAssertEqual(model.receivedRequests.count, 2)
+        let sent = String(describing: model.receivedRequests.last?.messages ?? [])
+        XCTAssertTrue(sent.contains("Again"))
+        XCTAssertFalse(sent.contains("Also fix the tests"), "the stopped steer reached the model")
+    }
+
+    /// The same Stop, once the run has ended before the steer's hooks come
+    /// back: the steer was stopped, not late for a run that finished, which
+    /// a caller would send again as the next turn.
+    func testASteerStoppedWhileItsHooksRunIsNotLateForAFinishedRun() async throws {
+        let hooks = ScriptedHooks()
+        let turn = ScriptedModelGate()
+        let model = ScriptedModelClient(steps: [
+            .gatedEvents([.textDelta("Done."), .turnCompleted(.endTurn)], gate: turn),
+        ])
+        let (runtime, _) = orchestrator(model, hooks: hooks)
+        try await runtime.submit(prompt: "Start")
+        await turn.waitUntilArrived()
+
+        let vetting = HookGate()
+        await hooks.gate(prompt: vetting)
+        let steer = Task { try await runtime.steer(prompt: "Also fix the tests") }
+        await vetting.waitUntilHeld()
+        await runtime.stop()
+        let running = await runtime.isRunning
+        XCTAssertFalse(running)
+        await vetting.release()
+
+        do {
+            _ = try await steer.value
+            XCTFail("a steer stopped before it was sent must say so")
+        } catch OrchestratorError.stoppedBeforeSending {}
+        let events = await payloads()
+        XCTAssertFalse(events.contains { if case .userInstruction = $0 { return true }; return false })
+        XCTAssertEqual(model.receivedRequests.count, 1)
     }
 
     func testABlockedPromptWhoseHookWaitedForApprovalLeavesTheSessionAsItWas() async throws {

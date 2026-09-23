@@ -1557,7 +1557,12 @@ public final class SessionController {
                 return
             } catch OrchestratorError.sessionNotRunning {
                 // The run finished between the check and the delivery; the
-                // prompt starts the next turn instead of being lost.
+                // prompt starts the next turn instead of being lost — the
+                // phone may already have been told it was taken. Not when
+                // the run ended because it was stopped: Stop cancels this
+                // handover, and a steer must not come back after it as a
+                // turn of its own.
+                guard !Task.isCancelled else { throw OrchestratorError.stoppedBeforeSending }
             }
         }
         try await startTurn(prompt: prompt, modelPrompt: prompt, images: [], live: live, accepted: accepted)
@@ -1646,6 +1651,11 @@ public final class SessionController {
             #endif
             return
         }
+        // A prompt from another device may still be with its hooks, and a
+        // steer's hooks run in the handover's task, not in any run Stop
+        // reaches. Cancelling the handover kills their processes, and the
+        // prompt is turned away rather than delivered after the Stop.
+        remoteHandover?.cancel()
         await orchestrator?.stop()
         liveAssistantText = ""
     }

@@ -102,6 +102,11 @@ public actor AgentOrchestrator {
     private var admission: Task<PromptHookContext, Error>?
     /// `stop()` arrived while `admission` was in flight.
     private var stoppedDuringAdmission = false
+    /// How many times `stop()` has been called. A steer's hooks run in its
+    /// caller's task, which Stop neither owns nor cancels, so an instruction
+    /// reads this before its hooks and again after them: a change is a Stop
+    /// that came while they decided.
+    private var stopGeneration = 0
     private struct PendingInstruction: Sendable {
         let event: UserInstructionEvent
         /// The transcript event the reader sees for this instruction. It names
@@ -368,6 +373,10 @@ public actor AgentOrchestrator {
     /// has proposed tools but none have started, the proposal is discarded and
     /// the correction is sent to the model before any side effect can begin.
     ///
+    /// Throws `stoppedBeforeSending` when `stop()` comes while the
+    /// instruction's hooks decide, as ``submit(prompt:modelPrompt:images:accepted:)``
+    /// does; nothing is then recorded.
+    ///
     /// - Parameter accepted: told once the run has taken the instruction,
     ///   before its hooks run; see ``submit(prompt:modelPrompt:images:accepted:)``.
     @discardableResult
@@ -412,6 +421,9 @@ public actor AgentOrchestrator {
         accepted: (@Sendable () -> Void)?
     ) async throws -> String {
         guard let run = runTask else { throw OrchestratorError.sessionNotRunning }
+        // Read with the run, before the first suspension, so any `stop()`
+        // counted from here on came while this instruction was on its way.
+        let stopsBefore = stopGeneration
         let visible = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !visible.isEmpty || !images.isEmpty else { return "" }
         accepted?()
@@ -420,6 +432,17 @@ public actor AgentOrchestrator {
         // blocked one is never recorded as an instruction, so a restored
         // session cannot pick it back up from the transcript.
         let hookContext = try await promptHookContext(for: prompt)
+        // Stopped while the hooks decided, the instruction is turned away as
+        // a prompt is. Only the count can tell: the hooks run in the caller's
+        // task, which Stop does not cancel, and one whose approval Stop
+        // refused answers as a non-blocking failure, so they return as if
+        // nothing had happened. Recorded, the steer would outlive the Stop —
+        // applied by the next run, or, once this one had ended, starting a
+        // turn of its own.
+        guard stopGeneration == stopsBefore else {
+            pendingHookContext = hookContext.session + pendingHookContext
+            throw OrchestratorError.stoppedBeforeSending
+        }
         // The hooks can outlast the run the instruction was for. Recorded
         // now, it would belong to a run that has ended: nothing would ever
         // apply it, and the reader would be told it had been delivered.
@@ -513,6 +536,10 @@ public actor AgentOrchestrator {
     /// Requests an immediate stop: cancels the loop and denies every pending
     /// approval so suspended tools resume with a denial and exit.
     public func stop() async {
+        // Counted first and in every branch: an instruction whose hooks are
+        // still running learns of this Stop from it, whether or not a run is
+        // left to cancel by the time they return.
+        stopGeneration += 1
         guard let task = runTask else {
             // Between runs Stop can reach two things. A `/compact` waiting on
             // the model: stopping it keeps the structural summary.
