@@ -751,3 +751,35 @@ In the app, create the loader once per session in `DesktopChatWorkspace`: `@Stat
   - System checkmarks instead of the web's coral check.
   - `.help()` tooltip timing.
   - The artifact sandbox now allows network, matching the web.
+---
+
+## Addendum (2026-09-23): the web's new thinking, tool-call and research design, for Stage 4
+
+The Tool calls & research audit session (worktree `/Users/liammagnier/Developer/project/juno-tools`, branch `web/tools-thinking-research`, not merged yet) has decided how the web will show thinking, tool calls and research. Its decisions are in `docs/chat-rework/DECISIONS.md` in that worktree: §1 T6 covers the data and §2 the UI. `docs/chat-rework/SPEC.md` will hold the exact visual spec once it is final. Read both **read-only** before Stage 4. Where they conflict with §6.3–§6.4 of this brief or with spec §6.6–§6.7, **they win**, because the Mac must match what the web is about to ship.
+
+1. **Inline first.** One run block sits above the answer from send until done.
+   - **While live:** a status line (glyph, shimmer on the label only, elapsed time), with live tool rows. Each row shows its own state: running, succeeded, failed, or awaiting approval.
+   - **When the answer starts:** the block folds, without the layout jumping, into one summary line such as "Thought for 12s · 5 sources · ran code ›". One click expands the full chronological timeline inline.
+2. **ThinkingDots goes away.** The 3×3 dot matrix is replaced by one signature: a single 2 s loop in muted ink that animates only transform and opacity. Only the label shimmers.
+   - If SPEC.md is final when Stage 4 runs, build exactly that.
+   - If it isn't, build a minimal version of this description behind a single `JunoRunSignature` view so it can be swapped later.
+   - Never add violet, glow or a matrix.
+3. **The right panel becomes "Activity"**, the TrailingDock's non-canvas panel. It has three parts:
+   - **Timeline:** reasoning interleaved with tool rows, in their real order.
+   - **Sources:** Cited, then Also read.
+   - **Details:** model, effort, context and memory used.
+   - Cost as a headline figure, the filters, and the Research/Think/Write ledger are all removed.
+4. **Wire changes.** All of them are additive; old fields stay so shipped builds keep working.
+   - Activity events gain a server `seq`, and reasoning parts and tool calls gain a `round`.
+   - A tool call becomes a typed record updated in place, with:
+     - a status enum: queued, awaiting_approval, running, succeeded, failed, denied, expired, cancelled
+     - a human title and figure
+     - a persisted approval
+   - Text written before a tool call becomes timeline "commentary" rather than being joined onto the answer.
+   - Decode these fields when present and fall back to today's fields when absent.
+5. **Research has no levels any more.**
+   - Quick, Standard, Deep and Max are removed; the feature is just "Research". Remove the depth second line from the composer's `+` menu row, rename the row "Research", and stop showing depth in marks.
+   - Live progress moves to a "Research" view in the right panel, and the transcript keeps a one-line row.
+   - The server will ignore `researchEffort`, so sending it is harmless, but don't surface it.
+
+The tools session will message this session when SPEC.md is final and before any merge or deploy.
