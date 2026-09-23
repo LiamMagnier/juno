@@ -783,3 +783,24 @@ The Tool calls & research audit session (worktree `/Users/liammagnier/Developer/
    - The server will ignore `researchEffort`, so sending it is harmless, but don't surface it.
 
 The tools session will message this session when SPEC.md is final and before any merge or deploy.
+
+## Addendum (2026-09-23): Artifacts & Design audit findings, for Stage 3
+
+These come from branch `wip/artifacts-design-audit` at `8d4def72`: `docs/design/artifacts-design/HANDOFF.md` ("Update") and `02-AUDIT-MAC.md`. Read them with `git show`.
+
+1. **X-11 (HIGH): designs made in chat cannot open on the Mac.** The design tag's body is the compact authoring form, and `DesignDocumentCodec` rejects it (`DesktopArtifactCanvas.swift:817`, `DesignDocumentCodec.swift:44-50`).
+   - Render and open designs **from the stored artifact row**, which holds the expanded document. Never render from the tag body.
+   - This applies to the inline design preview and to the canvas dock.
+   - Add a regression test that uses a real compact tag body.
+2. **Regenerate deletes artifacts.** The server's regenerate hard-deletes the answer's artifacts (`src/app/api/chat/route.ts:2566-2574`). The Mac offers Regenerate only on the newest settled reply, which matches the web (`MessageActions.swift:151`). As a Mac-only safeguard, when that reply carries artifacts:
+   - Try Again, More Concise, Add Details and Switch Model first ask `.confirmationDialog("Regenerate this answer?")`.
+   - The message is "Its N artifact(s) will be replaced."
+   - The two buttons are "Regenerate" (destructive) and "Cancel".
+   - Record this in the §0.8 register. The server behaviour itself is data-lossy on the web too; it is reported to the owner and not fixed here.
+3. **Don't copy the web's script previews as they are.** Scripted previews are dead in production on the web: the CSP is inherited into the `srcdoc` sandbox. The Mac `WKWebView` runtime must run HTML and React previews in its own sandbox:
+   - no network
+   - a non-persistent data store
+   - no bridge except the explicit console, error and height channel
+   - scripts actually executing
+
+   Verify that with a test that renders a scripted artifact and reads back a value its script wrote.
