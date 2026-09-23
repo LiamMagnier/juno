@@ -33,7 +33,7 @@ import type { SettingsOpenedVia } from "@/components/settings/settings-modal";
  *
  * ON /settings THE PAGE IS THE SETTINGS. An open request there navigates the
  * page to the section instead of stacking the same content in a modal over
- * itself, and ⌘, is left alone.
+ * itself, and ⌘, is swallowed rather than acted on.
  *
  * `MotionConfig reducedMotion="user"` because the layout mounts this beside
  * `AppShell`, not inside it, so the shell's own MotionConfig never reaches the
@@ -77,8 +77,11 @@ export function SettingsModalLazy() {
     const handleOpen = (e: Event) => show(resolveSettingsSection((e as CustomEvent<string>).detail), "pointer");
     const handleKey = (e: KeyboardEvent) => {
       if (e.key !== "," || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
-      if (onSettingsPageRef.current) return;
+      // Claimed on /settings too, where it does nothing: the reader is
+      // already in settings, and a shortcut let through here opened the
+      // BROWSER's settings (Chrome and Firefox both bind ⌘,) in a new tab.
       e.preventDefault();
+      if (onSettingsPageRef.current) return;
       setVia("keyboard");
       setWanted(true);
       setOpen((o) => !o);

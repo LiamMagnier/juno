@@ -3,8 +3,10 @@
 import * as React from "react";
 import { toast } from "sonner";
 import type { ClientWorkSkill, ClientWorkSkillVersion, SkillResource } from "@/lib/work/skills";
+import type { ClientSkillSource } from "@/lib/skills/library-contract";
 import type { SkillDraft } from "@/components/skills/skill-editor";
 import type { SkillUsage } from "@/components/skills/skill-detail-view";
+import { skillUsagePatch } from "@/components/skills/skill-library-model";
 import {
   consentSkillVersion,
   deleteSkill,
@@ -12,6 +14,7 @@ import {
   fetchSkillVersions,
   mintSkillVersion,
   patchSkill,
+  patchSkillSource,
   skillsFailureMessage,
   type PatchSkillInput,
 } from "@/components/skills/skills-transport";
@@ -37,6 +40,7 @@ export function useSkillDetail(id: string) {
   const [version, setVersion] = React.useState<ClientWorkSkillVersion | null>(null);
   const [resources, setResources] = React.useState<SkillResource[]>([]);
   const [projectName, setProjectName] = React.useState<string | null>(null);
+  const [source, setSource] = React.useState<ClientSkillSource | null>(null);
   const [versions, setVersions] = React.useState<ClientWorkSkillVersion[] | null>(null);
   const [versionsFailed, setVersionsFailed] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
@@ -48,6 +52,7 @@ export function useSkillDetail(id: string) {
       setVersion(result.value.version);
       setResources(result.value.resources);
       setProjectName(result.value.projectName);
+      setSource(result.value.source);
       setState("ready");
       return;
     }
@@ -90,12 +95,28 @@ export function useSkillDetail(id: string) {
     });
   };
 
+  /**
+   * The switch of the repository this skill came from, which the page offers
+   * when it is off: the skill's own switch reads On then, and without this the
+   * reader would have to find the folder on the library to learn why it does
+   * not run.
+   */
+  const setSourceEnabled = async (enabled: boolean) => {
+    if (!source) return;
+    setBusy(true);
+    const result = await patchSkillSource(source.id, { enabled });
+    setBusy(false);
+    if (result.kind === "ok") {
+      setSource(result.value ?? { ...source, enabled });
+      return;
+    }
+    toast.error(skillsFailureMessage(result, "Couldn’t change that. The repository is as it was."));
+  };
+
   const setUsage = (usage: SkillUsage) =>
     void patch(
-      // "Automatically" is trust and permission in one write: the server
-      // clamps automatic selection on an untrusted skill, so sending one
-      // without the other would save a choice the row can never hold.
-      usage === "auto" ? { trust: "user_authored", autoSelect: true } : { autoSelect: false },
+      // Trust and automatic selection together; see `skillUsagePatch`.
+      skillUsagePatch(usage, { trust: skill?.trust ?? "untrusted" }, version?.contract.provenance),
       "Couldn’t change how Juno uses this skill. It is as it was."
     );
 
@@ -203,12 +224,14 @@ export function useSkillDetail(id: string) {
     version,
     resources,
     projectName,
+    source,
     versions,
     versionsFailed,
     busy,
     reload: load,
     reloadVersions: loadVersions,
     setEnabled,
+    setSourceEnabled,
     setUsage,
     move,
     save,

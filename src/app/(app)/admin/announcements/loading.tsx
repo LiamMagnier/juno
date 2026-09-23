@@ -16,7 +16,7 @@ export default function AdminAnnouncementsLoading() {
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
     <AppPage measure="wide" contentClassName="flex flex-col gap-6" role="status" aria-label="Loading announcements">
-        <AppPageHeaderSkeleton headingWidth="w-64" actions className="mb-0" />
+        <AppPageHeaderSkeleton nav="eyebrow" headingWidth="w-64" actions className="mb-0" />
 
         {/* The editor and the published list, side by side above lg. */}
         <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">

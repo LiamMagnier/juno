@@ -213,10 +213,12 @@ export function RecapView({
 }
 
 function Tally({ label, value }: { label: string; value: number }) {
+  // The term comes first in the markup, as a definition list requires, and
+  // second on screen, where the number leads: "12 learned".
   return (
     <div className="flex items-baseline gap-1.5">
+      <dt className="order-last text-muted-foreground">{label}</dt>
       <dd className="font-medium tabular-nums text-foreground">{value}</dd>
-      <dt className="text-muted-foreground">{label}</dt>
     </div>
   );
 }

@@ -790,9 +790,9 @@ export interface ReconcileSessionConnectorsResult {
  * reader as something this request took away.
  *
  * NOTE for whoever touches this next: `writeSessionConnectors` in
- * src/app/api/work/sessions/route.ts does the same three writes inline for the
- * create path. It predates this function and should be moved onto it; it was
- * left alone here only because that route was outside the change that added
+ * src/lib/work/dispatch.ts does the same three writes inline for the create
+ * path. It predates this function and should be moved onto it; it was left
+ * alone here only because the create path was outside the change that added
  * this one.
  */
 export async function reconcileSessionConnectors(

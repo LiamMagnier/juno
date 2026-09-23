@@ -12,12 +12,13 @@ import type {
   SkillSourceUpdateRequest,
   SkillSourceUpdateResult,
 } from "@/lib/skills/library-contract";
-import type { ClientWorkSkill } from "@/lib/work/skills";
+import type { ClientWorkSkill, ClientWorkSkillVersion, SkillResource } from "@/lib/work/skills";
 import type {
   GithubSkillPreview,
   GithubSkillProblem,
   WorkBlocked,
   WorkResult,
+  WorkSkillDetail,
   WorkTransportFailure,
 } from "@/components/work/work-transport";
 
@@ -146,6 +147,7 @@ function librarySkills(raw: unknown): LibrarySkill[] {
     ...skill,
     sourceId: typeof skill.sourceId === "string" ? skill.sourceId : null,
     sourcePath: typeof skill.sourcePath === "string" ? skill.sourcePath : null,
+    requiresConsent: skill.requiresConsent === true,
   }));
 }
 
@@ -200,6 +202,7 @@ export function checkSkillSource(id: string): Promise<WorkResult<SkillSourceUpda
     changed: changes(data.changed),
     added: changes(data.added),
     removed: changes(data.removed),
+    more: data.more === true,
   }));
 }
 
@@ -243,6 +246,11 @@ export interface SkillImportPreview {
   problems: GithubSkillProblem[];
   /** The walk stopped before the end of the repository. */
   more: boolean;
+  /**
+   * Every `SKILL.md` in scope, read or not: what "the first 100 of N" says.
+   * Null from a server that does not send it.
+   */
+  total: number | null;
   /** The read used the reader's own GitHub connection. */
   connected: boolean;
 }
@@ -283,6 +291,7 @@ export function previewSkillImport(source: string): Promise<WorkResult<SkillImpo
     skills: candidates(data.skills),
     problems: list<GithubSkillProblem>(data.problems),
     more: data.more === true,
+    total: typeof data.total === "number" ? data.total : null,
     connected: data.connected === true,
   }));
 }
@@ -344,10 +353,29 @@ export {
   consentWorkSkillVersion as consentSkillVersion,
   createWorkSkill as createSkill,
   deleteWorkSkill as deleteSkill,
-  fetchWorkSkill as fetchSkill,
   fetchWorkSkillVersions as fetchSkillVersions,
   mintWorkSkillVersion as mintSkillVersion,
   patchWorkSkill as patchSkill,
   type PatchWorkSkillInput as PatchSkillInput,
-  type WorkSkillDetail as SkillDetail,
 } from "@/components/work/work-transport";
+
+/**
+ * One skill as its page reads it: Work's detail, plus the source it was
+ * installed from.
+ *
+ * Read here rather than through Work's `fetchWorkSkill`, which predates
+ * sources and drops the field: without it the page showed a skill as On while
+ * its repository was switched off, so chat refused it and the composer did not
+ * list it, and nothing on the page said why.
+ */
+export type SkillDetail = WorkSkillDetail & { source: ClientSkillSource | null };
+
+export function fetchSkill(id: string): Promise<WorkResult<SkillDetail>> {
+  return request("GET", `/api/work/skills/${id}`, undefined, (data) => ({
+    skill: data.skill as ClientWorkSkill,
+    version: (data.version as ClientWorkSkillVersion | null) ?? null,
+    resources: list<SkillResource>(data.resources),
+    projectName: typeof data.projectName === "string" ? data.projectName : null,
+    source: record(data.source) ? (data.source as ClientSkillSource) : null,
+  }));
+}

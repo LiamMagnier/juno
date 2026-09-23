@@ -481,11 +481,14 @@ function IconAction({
   active,
   busy,
   celebrate,
+  buttonRef,
 }: {
   label: string;
   onClick: () => void;
   children: React.ReactNode;
   active?: boolean;
+  /** The button itself, for a caller that has to hand focus back to it. */
+  buttonRef?: React.Ref<HTMLButtonElement>;
   /** In flight. Shows a spinner and blocks a second press. */
   busy?: boolean;
   /**
@@ -506,6 +509,7 @@ function IconAction({
     <Tooltip>
       <TooltipTrigger asChild>
         <Pressable
+          ref={buttonRef}
           kind="icon"
           size="md"
           selected={active}
@@ -624,6 +628,12 @@ function CopyGlyph({ copied }: { copied: boolean }) {
   );
 }
 
+/** What holds focus as the bubble editor opens, so it can have it back; not <body>. */
+function focusedOpener(): HTMLElement | null {
+  const el = document.activeElement;
+  return el instanceof HTMLElement && el !== document.body ? el : null;
+}
+
 /**
  * EDITING A SENT MESSAGE HAPPENS IN THE BUBBLE.
  *
@@ -637,7 +647,10 @@ function CopyGlyph({ copied }: { copied: boolean }) {
  *
  * Keys are the composer's: Enter (or ⌘/Ctrl+Enter) sends, Shift+Enter is a
  * new line, Esc puts the message back as it was. An IME composition is left
- * alone, since its Enter confirms a candidate rather than sending.
+ * alone, since its Enter confirms a candidate rather than sending. That takes
+ * the composer's two checks, not one: Safari fires the confirming Enter after
+ * `compositionend`, so `isComposing` is already false on it and only its
+ * keyCode, 229, says it belonged to the IME.
  *
  * Focus is the text field's accent edge and halo (see `Input`), because a
  * bubble with a caret in it is otherwise the same object as the bubble at
@@ -678,7 +691,7 @@ function BubbleEditor({
           aria-label="Edit message"
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return;
+            if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
             if (e.key === "Escape") {
               e.preventDefault();
               onCancel();
@@ -806,6 +819,42 @@ export const MessageItem = React.memo(function MessageItem({
   const [editOpen, setEditOpen] = React.useState(false);
   // The long user bubble, for scrolling it back into view after "Show less".
   const bubbleRef = React.useRef<HTMLDivElement>(null);
+  /*
+   * Where the caret goes when the bubble editor closes. The editor takes focus
+   * as it opens, and unmounting a focused field drops focus on <body>, which
+   * sends a keyboard reader back to the top of the page after every Esc. So it
+   * goes back to what opened the editor: the composer, for ↑ in an empty
+   * field, or this turn's Edit button. The button that was pressed left with
+   * the action row while the editor was open, so it is the new one the row
+   * comes back with; and after a send, while the answer streams and Edit is
+   * withheld, the row's first action takes it instead.
+   *
+   * Only when the editor was closed from the keyboard, though, which is when
+   * focus inside it is `:focus-visible` (the field always is; a clicked
+   * Cancel is not). Handing focus to Edit after a click on Cancel would open
+   * Edit's tooltip over a bubble nobody is pointing at.
+   */
+  const editOpenerRef = React.useRef<HTMLElement | null>(null);
+  const editButtonRef = React.useRef<HTMLButtonElement>(null);
+  const actionRowRef = React.useRef<HTMLDivElement>(null);
+  const restoreFocusRef = React.useRef(false);
+  const closeEditor = () => {
+    restoreFocusRef.current = document.activeElement?.matches(":focus-visible") ?? false;
+    setEditing(false);
+  };
+  React.useEffect(() => {
+    if (editing) return;
+    const restore = restoreFocusRef.current;
+    const opener = editOpenerRef.current;
+    restoreFocusRef.current = false;
+    editOpenerRef.current = null;
+    if (!restore) return;
+    const target =
+      (opener?.isConnected ? opener : null) ??
+      editButtonRef.current ??
+      actionRowRef.current?.querySelector<HTMLElement>("button:not(:disabled)");
+    target?.focus({ preventScroll: true });
+  }, [editing]);
   const isUser = message.role === "USER";
   const isVoice = message.voice === true;
 
@@ -913,12 +962,18 @@ export const MessageItem = React.memo(function MessageItem({
    */
   const quoted = React.useMemo(() => (isUser ? parseQuotedMessage(view.content) : null), [isUser, view.content]);
   const bubbleText = quoted ? quoted.request : view.content;
-  const lineCount = sampleLineCount(bubbleText);
+  // Counted over a sample so a pasted megabyte is not walked on every render,
+  // which makes the count exact only when the sample held the whole text.
+  // "Show more" states it only then, and only when it is more than one line:
+  // one long paragraph is "1 lines" by this count however tall it wraps.
+  const LINE_SAMPLE_CHARS = 4_000;
+  const lineCount = sampleLineCount(bubbleText, LINE_SAMPLE_CHARS);
+  const lineCountShown = bubbleText.length <= LINE_SAMPLE_CHARS && lineCount > 1;
   const isLong = bubbleText.length > 700 || lineCount > 14;
   const isHuge = bubbleText.length > HUGE_PASTE;
   const userDisplayContent =
     isUser && isHuge && !expanded
-      ? `${bubbleText.slice(0, HUGE_PASTE)}\n\n… (${bubbleText.length.toLocaleString()} characters — expand to show all)`
+      ? `${bubbleText.slice(0, HUGE_PASTE)}\n\n… (${bubbleText.length.toLocaleString()} characters, expand to show all)`
       : bubbleText;
 
   /*
@@ -976,6 +1031,7 @@ export const MessageItem = React.memo(function MessageItem({
   React.useEffect(() => {
     if (!editOnRequest || !canEdit) return;
     const handler = () => {
+      editOpenerRef.current = focusedOpener();
       setDraft(view.content);
       setEditing(true);
     };
@@ -1010,14 +1066,14 @@ export const MessageItem = React.memo(function MessageItem({
             value={draft}
             onChange={setDraft}
             onCancel={() => {
-              setEditing(false);
+              closeEditor();
               setDraft(message.content);
             }}
             onSubmit={() => {
               // An unsent turn re-sends even when the words are unchanged:
               // sending a message that never went out IS the edit.
               if (draft.trim() && (message.unsent || draft.trim() !== message.content)) saveEdit(draft.trim());
-              setEditing(false);
+              closeEditor();
             }}
           />
         ) : (
@@ -1061,7 +1117,7 @@ export const MessageItem = React.memo(function MessageItem({
                   // target rather than a line of type.
                   className="-mr-1.5 mt-1 inline-flex h-7 items-center rounded-control px-1.5 text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground coarse:h-11"
                 >
-                  {expanded ? "Show less" : <>Show more · {lineCount} lines</>}
+                  {expanded ? "Show less" : lineCountShown ? <>Show more · {lineCount} lines</> : "Show more"}
                 </button>
               )}
             </div>
@@ -1090,14 +1146,22 @@ export const MessageItem = React.memo(function MessageItem({
             {totalVersions > 1 && (
               <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
             )}
-            <div className="flex opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
+            <div ref={actionRowRef} className="flex opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
               <IconAction label={copied ? "Copied" : "Copy"} onClick={copy}>
                 <CopyGlyph copied={copied} />
               </IconAction>
               {canEdit && (
                 // Prefill from the DISPLAYED version, so paging back and editing
                 // is a one-step "resend an earlier wording".
-                <IconAction label="Edit" onClick={() => { setDraft(view.content); setEditing(true); }}>
+                <IconAction
+                  label="Edit"
+                  buttonRef={editButtonRef}
+                  onClick={() => {
+                    editOpenerRef.current = focusedOpener();
+                    setDraft(view.content);
+                    setEditing(true);
+                  }}
+                >
                   <ActionIcons.edit className="size-4" />
                 </IconAction>
               )}

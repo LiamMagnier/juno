@@ -15,17 +15,16 @@ import {
   type LibrarySkill,
   type LibrarySource,
   type SkillLibrary,
+  type SkillSourceUpdateCheck,
+  type SkillSourceUpdateResult,
 } from "@/lib/skills/library-contract";
+import { normalizeSkillSlug } from "@/lib/work/skills";
 
 /**
- * A row as the list draws it.
- *
- * `requiresConsent` is optional because the library contract does not carry it
- * yet: it lives on the skill's current version, and `GET /api/skills` lists
- * head rows. When the server starts sending it, the consent glyph lights up
- * with no change here.
+ * A row as the list draws it: the library skill as sent, `requiresConsent`
+ * included (`GET /api/skills` reads it off each skill's current version).
  */
-export type SkillRowData = LibrarySkill & { requiresConsent?: boolean };
+export type SkillRowData = LibrarySkill;
 
 /** Repositories offered as one-press starting points in the importer and the empty state. */
 export const POPULAR_SKILL_SOURCES = [
@@ -72,13 +71,13 @@ export function sourceCounts(source: Pick<LibrarySource, "skills">): { total: nu
  */
 export function skillAttention(skill: Pick<SkillRowData, "securityStatus" | "requiresConsent">): "blocked" | "consent" | null {
   if (skill.securityStatus === "blocked") return "blocked";
-  if (skill.requiresConsent === true) return "consent";
+  if (skill.requiresConsent) return "consent";
   return null;
 }
 
 /** Whether any skill in the source needs attention, for the group row's own glyph. */
 export function sourceAttention(source: Pick<LibrarySource, "skills">): boolean {
-  return source.skills.some((skill) => skillAttention(skill as SkillRowData) !== null);
+  return source.skills.some((skill) => skillAttention(skill) !== null);
 }
 
 export interface FilteredSource {
@@ -132,6 +131,124 @@ export function filterLibrary(library: SkillLibrary, rawQuery: string): Filtered
   return { yours, sources, searching: true, empty: yours.length === 0 && sources.length === 0 };
 }
 
+/**
+ * Whether an update check leaves the reader anything to choose.
+ *
+ * Not the server's `upToDate`, which only says no INSTALLED skill differs: a
+ * repository that added skills since is up to date by that measure and still
+ * has something to offer, and a dialog that read `upToDate` as "nothing to
+ * show" could never offer a new skill unless an installed one had also moved.
+ */
+export function updateCheckHasChoices(check: Pick<SkillSourceUpdateCheck, "changed" | "added">): boolean {
+  return check.changed.length > 0 || check.added.length > 0;
+}
+
+/** Each skip code the update route sends, as the end of "N skipped because …". */
+const UPDATE_SKIP_REASONS: Record<string, (many: boolean) => string> = {
+  up_to_date: (many) => (many ? "they were already up to date" : "it was already up to date"),
+  removed_upstream: (many) => (many ? "they’re no longer in the repository" : "it’s no longer in the repository"),
+  unreadable: (many) => (many ? "their SKILL.md files couldn’t be read" : "its SKILL.md couldn’t be read"),
+  not_installed: (many) => (many ? "they aren’t installed from this repository" : "it isn’t installed from this repository"),
+  installed: (many) => (many ? "they were already installed" : "it was already installed"),
+  invalid_slug: (many) =>
+    many ? "Juno couldn’t turn their names into slash names" : "Juno couldn’t turn its name into a slash name",
+  slug_taken: (many) => (many ? "their slash names were taken" : "its slash name was taken"),
+  version_conflict: (many) =>
+    many ? "they were being saved somewhere else at the same moment" : "it was being saved somewhere else at the same moment",
+};
+
+/**
+ * The toast an update ends with: what landed, and why anything did not, in
+ * words. The route sends skip reasons as codes (`up_to_date`), which are for
+ * this function and never for the reader.
+ */
+export function updateOutcomeMessage(
+  result: Pick<SkillSourceUpdateResult, "updated" | "installed" | "skipped">,
+  from: string
+): { ok: boolean; title: string; description?: string } {
+  const updated = result.updated.length;
+  const installed = result.installed.length;
+  const plural = (count: number) => (count === 1 ? "skill" : "skills");
+  const counts = new Map<string, number>();
+  for (const skip of result.skipped) counts.set(skip.reason, (counts.get(skip.reason) ?? 0) + 1);
+  const description = [...counts]
+    .map(([reason, count]) => {
+      const words = UPDATE_SKIP_REASONS[reason]?.(count > 1) ?? (count > 1 ? "Juno couldn’t apply them" : "Juno couldn’t apply it");
+      return `${count} skipped because ${words}.`;
+    })
+    .join(" ");
+  const title =
+    updated > 0 && installed > 0
+      ? `Updated ${updated} and installed ${installed} from ${from}`
+      : updated > 0
+        ? `Updated ${updated} ${plural(updated)} from ${from}`
+        : installed > 0
+          ? `Installed ${installed} ${plural(installed)} from ${from}`
+          : "Nothing was updated.";
+  return { ok: updated + installed > 0, title, ...(description ? { description } : {}) };
+}
+
+/**
+ * The write behind the skill page's Usage choice.
+ *
+ * "Automatically" is trust and permission in one write: the server clamps
+ * automatic selection on an untrusted skill, so sending one without the other
+ * would save a choice the row can never hold. Going back to "Only when I call
+ * it" undoes both for an INSTALLED skill, whose instructions somebody else
+ * wrote: it returns to the untrusted state it was installed in, so its text
+ * reaches the model marked as untrusted again. (The page used to have a
+ * separate "Not trusted" control for this; without this write, trust once
+ * given could never be taken back.) Only the trust this choice grants is taken
+ * back, never a `verified` one, and a skill you wrote stays yours either way.
+ */
+export function skillUsagePatch(
+  usage: "manual" | "auto",
+  skill: { trust: string },
+  provenance: unknown
+): { autoSelect: boolean; trust?: "untrusted" | "user_authored" } {
+  if (usage === "auto") return { trust: "user_authored", autoSelect: true };
+  if (skill.trust === "user_authored" && provenanceSource(provenance) !== null) {
+    return { trust: "untrusted", autoSelect: false };
+  }
+  return { autoSelect: false };
+}
+
+export type RenameProblem = "invalid" | "taken" | "duplicate";
+
+/**
+ * What is wrong with the slash names an import is about to send, per path.
+ *
+ * The server installs the chosen skills one at a time and skips any whose
+ * name is taken by then, so two rows renamed to the same name, or a rename
+ * that collides with another chosen skill's own name, would install one and
+ * quietly skip the other. Caught here instead, where the reader can still
+ * change it. Only a row that is being renamed (its own name is taken) is
+ * flagged; a rename back to that taken name is flagged as taken.
+ */
+export function renameProblems(
+  skills: readonly { path: string; slug: string; installed: boolean; slugTaken: boolean }[],
+  chosen: ReadonlySet<string>,
+  renames: Readonly<Record<string, string>>
+): Map<string, RenameProblem> {
+  const picked = skills.filter((skill) => chosen.has(skill.path) && !skill.installed);
+  const finalSlug = (skill: (typeof picked)[number]) =>
+    skill.slugTaken ? normalizeSkillSlug(renames[skill.path] ?? "") : normalizeSkillSlug(skill.slug);
+  const claims = new Map<string, number>();
+  for (const skill of picked) {
+    const slug = finalSlug(skill);
+    if (slug) claims.set(slug, (claims.get(slug) ?? 0) + 1);
+  }
+  const problems = new Map<string, RenameProblem>();
+  for (const skill of picked) {
+    if (!skill.slugTaken) continue;
+    const slug = finalSlug(skill);
+    if (slug === null) problems.set(skill.path, "invalid");
+    else if (slug === normalizeSkillSlug(skill.slug)) problems.set(skill.path, "taken");
+    else if ((claims.get(slug) ?? 0) > 1) problems.set(skill.path, "duplicate");
+  }
+  return problems;
+}
+
 /** How many skills the response actually listed, for the honest "showing N of M" line. */
 export function listedSkillCount(library: SkillLibrary): number {
   return library.yours.length + library.sources.reduce((sum, source) => sum + source.skills.length, 0);
@@ -172,8 +289,14 @@ export function provenanceSource(provenance: unknown): ProvenanceSource | null {
     ref: read("source.ref"),
     commit: read("source.commit"),
     path: read("source.path"),
-    url: read("source.url"),
+    // Drawn as a "View on GitHub" link, and a contract can arrive from a
+    // request body as well as from the importer, so only a GitHub page counts.
+    url: githubPageUrl(read("source.url")),
   };
+}
+
+function githubPageUrl(url: string | null): string | null {
+  return url !== null && url.startsWith("https://github.com/") ? url : null;
 }
 
 /**

@@ -16,7 +16,7 @@
  */
 
 import { createHash } from "node:crypto";
-import type { Prisma, WorkSkill, WorkSkillSource } from "@prisma/client";
+import type { Prisma, WorkSkill, WorkSkillSource, WorkSkillVersion } from "@prisma/client";
 import {
   githubSourceKey,
   sourceLabel,
@@ -28,7 +28,12 @@ import {
 } from "@/lib/skills/library-contract";
 import { provenanceRecord, type GithubDiscovery, type GithubSkillCandidate } from "@/lib/skills/github";
 import { titleFromSkillName } from "@/lib/skills/skill-md";
-import { permissionExpansion, permissionSurfaceOf } from "@/lib/work/skill-security";
+import {
+  permissionExpansion,
+  permissionSurfaceOf,
+  scanSkillVersion,
+  type SkillSecurityStatus,
+} from "@/lib/work/skill-security";
 import {
   MAX_REQUESTED_TOOLS,
   MAX_SKILL_SLUG_CHARS,
@@ -104,12 +109,27 @@ export function serializeSkillSource(source: WorkSkillSource): ClientSkillSource
 }
 
 /**
+ * A head row, plus the one thing the library reads off its current version.
+ *
+ * `requiresConsent` lives on `WorkSkillVersion`, not on the head, so a caller
+ * has to have read the version to know it. Optional so a caller holding only
+ * head rows can still serialize them, and then it is sent as false: say so
+ * where that matters. `GET /api/skills` joins it (see `buildSkillLibrary`).
+ */
+export type LibrarySkillRow = WorkSkill & { requiresConsent?: boolean };
+
+/**
  * A skill as the library lists it. `serializeSkill` is left exactly as it was:
  * native sync and the Electron wire schema read that shape, and the source
  * belongs to the library view rather than to the skill's own record.
  */
-export function serializeLibrarySkill(skill: WorkSkill): LibrarySkill {
-  return { ...serializeSkill(skill), sourceId: skill.sourceId, sourcePath: skill.sourcePath };
+export function serializeLibrarySkill(skill: LibrarySkillRow): LibrarySkill {
+  return {
+    ...serializeSkill(skill),
+    sourceId: skill.sourceId,
+    sourcePath: skill.sourcePath,
+    requiresConsent: skill.requiresConsent === true,
+  };
 }
 
 const byName = (a: { name: string; slug: string }, b: { name: string; slug: string }) =>
@@ -122,22 +142,33 @@ const byName = (a: { name: string; slug: string }, b: { name: string; slug: stri
  * Every source is listed, including one whose skills all fell past the cap or
  * were deleted one by one, so it can still be checked or removed. `total` is
  * the count before the cap, so a capped response says so.
+ *
+ * `awaitingConsent` is every version of these skills still flagged
+ * `requiresConsent`. Only one that IS its skill's current version counts: a
+ * reader who restored an earlier version is running that one, and the flag
+ * left on the newer row describes text chat will not use.
  */
 export function buildSkillLibrary(input: {
   skills: readonly WorkSkill[];
   sources: readonly WorkSkillSource[];
+  awaitingConsent: readonly Pick<WorkSkillVersion, "skillId" | "version">[];
   total: number;
 }): SkillLibrary {
   const folders = new Map<string, LibrarySource>(
     input.sources.map((source) => [source.id, { ...serializeSkillSource(source), skills: [] }])
   );
+  const waiting = new Set(input.awaitingConsent.map((version) => `${version.skillId}:${version.version}`));
   const yours: LibrarySkill[] = [];
   for (const skill of input.skills) {
+    const entry = serializeLibrarySkill({
+      ...skill,
+      requiresConsent: waiting.has(`${skill.id}:${skill.currentVersion}`),
+    });
     const folder = skill.sourceId ? folders.get(skill.sourceId) : undefined;
     // A pointer with no source row behind it cannot survive the foreign key,
     // but if one ever did, the skill is still the reader's and still listed.
-    if (folder) folder.skills.push(serializeLibrarySkill(skill));
-    else yours.push(serializeLibrarySkill(skill));
+    if (folder) folder.skills.push(entry);
+    else yours.push(entry);
   }
   const sources = [...folders.values()];
   for (const source of sources) source.skills.sort(byName);
@@ -253,6 +284,28 @@ export function githubSkillContract(
     },
   };
   return { contract, requestedTools: tools.carried, droppedTools: tools.dropped };
+}
+
+/**
+ * The scanner's verdict on a skill as an import would write it, for the
+ * preview, so the choose step can leave a blocked skill unticked.
+ *
+ * It scans exactly what the import passes to `createSkillWithFirstVersion`
+ * (the title-cased name, the description, the instructions, the tools Juno
+ * carries and the contract), so the preview and the row it becomes cannot
+ * disagree. Cheap and writes nothing: pattern matches over text the walk
+ * already holds. The import still scans again when it writes; this verdict
+ * only decides what starts ticked.
+ */
+export function importSecurityStatus(candidate: GithubSkillCandidate): SkillSecurityStatus {
+  const { contract, requestedTools } = githubSkillContract(candidate);
+  return scanSkillVersion({
+    name: titleFromSkillName(candidate.skill.name),
+    description: candidate.skill.description,
+    instructions: candidate.skill.instructions,
+    requestedTools,
+    contract,
+  }).status;
 }
 
 /**
@@ -421,18 +474,60 @@ export function sameCommit(reviewed: string, upstream: string): boolean {
 // ---------------------------------------------------------------------------
 
 /**
+ * Where a blocked version's scan keeps the switch the scanner overrode.
+ *
+ * A blocked version lands the skill off whatever its switch said, so by the
+ * time a clean version arrives the head reads `enabled: false` either way and
+ * can no longer say whether that was the scanner or the reader. The blocked
+ * version remembers it instead, in its own `securityScan` (the record of what
+ * the scan did), so a clean version can hand back exactly what was there.
+ */
+export const SWITCH_BEFORE_BLOCK_KEY = "switchBeforeBlock";
+
+/** The switch a blocked version's scan recorded, or null when it recorded none (older rows). */
+export function switchBeforeBlockOf(securityScan: unknown): boolean | null {
+  if (securityScan === null || typeof securityScan !== "object" || Array.isArray(securityScan)) return null;
+  const value = (securityScan as Record<string, unknown>)[SWITCH_BEFORE_BLOCK_KEY];
+  return typeof value === "boolean" ? value : null;
+}
+
+/**
  * Whether a skill is switched on once a new version of it lands.
  *
  * A blocked version always lands off. Otherwise the switch stays where it was:
  * minting a version is an edit, and an edit (or an update pulled from
  * upstream) must never switch back on a skill the reader turned off. The one
- * exception is a skill the SCANNER turned off: a blocked skill cannot be
- * switched on by hand, so the switch was the scanner's, and a clean version is
- * the scanner giving it back.
+ * exception is a skill the SCANNER turned off: a clean version gives back the
+ * switch the block overrode (`switchBeforeBlock`, read off the blocked
+ * version), which is on for a skill that was on and off for one the reader had
+ * already switched off. A blocked row from before that was recorded counts as
+ * on, which is what this function used to assume for every blocked row.
  */
-export function enabledAfterMint(input: { enabled: boolean; previousStatus: string; nextStatus: string }): boolean {
+export function enabledAfterMint(input: {
+  enabled: boolean;
+  previousStatus: string;
+  nextStatus: string;
+  switchBeforeBlock?: boolean | null;
+}): boolean {
   if (input.nextStatus === "blocked") return false;
-  if (input.previousStatus === "blocked") return true;
+  if (input.previousStatus === "blocked") return input.switchBeforeBlock ?? true;
+  return input.enabled;
+}
+
+/**
+ * What a new blocked version records as the switch it overrode, or null for a
+ * version that is not blocked. A block on top of a block carries the first
+ * one's record forward: the head already reads off by then, and that off was
+ * the scanner's.
+ */
+export function switchBeforeBlockAfterMint(input: {
+  enabled: boolean;
+  previousStatus: string;
+  nextStatus: string;
+  switchBeforeBlock?: boolean | null;
+}): boolean | null {
+  if (input.nextStatus !== "blocked") return null;
+  if (input.previousStatus === "blocked") return input.switchBeforeBlock ?? true;
   return input.enabled;
 }
 

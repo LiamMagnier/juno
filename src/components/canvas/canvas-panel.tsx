@@ -1064,12 +1064,13 @@ export function CanvasPanel({
                           line.type === "added" ? "border-success bg-success/10" : line.type === "removed" ? "border-destructive/70 bg-destructive/10 opacity-80" : "border-transparent"
                         )}
                       >
-                        {/* /50 over a black ground composited to ~2.2:1 — the a/b line
-                            numbers that make a diff readable were the least legible thing
-                            in it. /70 clears 4.5:1, and tabular-nums stops the columns
+                        {/* Full muted ink, the house rule for secondary text. These
+                            were /50, which over a black ground composited to ~2.2:1:
+                            the a/b line numbers that make a diff readable were the
+                            least legible thing in it. tabular-nums stops the columns
                             shifting as the digit count changes. */}
-                        <span className="w-9 shrink-0 select-none pr-1 text-right font-mono text-caption leading-relaxed tabular-nums text-muted-foreground/70">{line.aLine ?? ""}</span>
-                        <span className="w-9 shrink-0 select-none pr-2 text-right font-mono text-caption leading-relaxed tabular-nums text-muted-foreground/70">{line.bLine ?? ""}</span>
+                        <span className="w-9 shrink-0 select-none pr-1 text-right font-mono text-caption leading-relaxed tabular-nums text-muted-foreground">{line.aLine ?? ""}</span>
+                        <span className="w-9 shrink-0 select-none pr-2 text-right font-mono text-caption leading-relaxed tabular-nums text-muted-foreground">{line.bLine ?? ""}</span>
                         <span className="whitespace-pre pr-4">{line.text || " "}</span>
                       </div>
                     ))}

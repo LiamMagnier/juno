@@ -409,6 +409,8 @@ export function ModelSelector({
               // The menu rung, not the popover's: this is a list of rows, and
               // a 14px shell with p-1 holds the rows' 10px corners concentric.
               className="w-72 rounded-menu p-1"
+              // Radix makes the content a dialog; a dialog needs a name.
+              aria-label="Model"
               // The menu places focus itself (see `initialFocus`).
               onOpenAutoFocus={(event) => event.preventDefault()}
             >

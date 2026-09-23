@@ -136,34 +136,37 @@ export function SkillSourceGroup({
           >
             <span translate="no">{label}</span>
           </button>
-          <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 text-ui text-muted-foreground">
-            <span>
-              <span className="tabular-nums">{total}</span> {total === 1 ? "skill" : "skills"}
-            </span>
-            <span aria-hidden="true">·</span>
-            {source.enabled ? (
+          <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-3 text-ui text-muted-foreground">
+            {/* The counts are one unit, so a narrow row wraps between them and
+                the update marker, never inside them. */}
+            <span className="inline-flex items-center gap-x-1.5 whitespace-nowrap">
               <span>
-                <span className="tabular-nums">{on}</span> on
+                <span className="tabular-nums">{total}</span> {total === 1 ? "skill" : "skills"}
               </span>
-            ) : (
-              <span>Off</span>
-            )}
+              <span aria-hidden="true">·</span>
+              {source.enabled ? (
+                <span>
+                  <span className="tabular-nums">{on}</span> on
+                </span>
+              ) : (
+                <span>Off</span>
+              )}
+            </span>
             {update ? (
-              <>
-                <span aria-hidden="true">·</span>
-                {/* Static: a dot that pulses would be a loop with no live state
-                    behind it. It is a real button, raised above the row's
-                    disclosure, because it is also the shortest way to the
-                    update. */}
-                <button
-                  type="button"
-                  onClick={onCheckUpdates}
-                  className="relative z-10 inline-flex items-center gap-1.5 rounded-xs font-medium text-primary-ink underline-offset-2 hover:underline"
-                >
-                  <span aria-hidden="true" className="size-1.5 rounded-full bg-primary" />
-                  Update available
-                </button>
-              </>
+              // Static: a dot that pulses would be a loop with no live state
+              // behind it. It is a real button, raised above the row's
+              // disclosure, because it is also the shortest way to the update.
+              // No "·" before it: its own dot is the separator, so on a narrow
+              // row that wraps it to a line of its own nothing dangles at the
+              // end of the line above.
+              <button
+                type="button"
+                onClick={onCheckUpdates}
+                className="relative z-10 inline-flex items-center gap-1.5 whitespace-nowrap rounded-xs font-medium text-primary-ink underline-offset-2 hover:underline"
+              >
+                <span aria-hidden="true" className="size-1.5 rounded-full bg-primary" />
+                Update available
+              </button>
             ) : null}
           </p>
         </div>

@@ -213,7 +213,7 @@ function CodeBlock({ children, streaming }: { children: React.ReactNode; streami
       maxBodyHeight={520}
       action={
         isMermaid ? (
-          <span className="ml-auto px-2 py-1 font-mono text-caption text-muted-foreground/80">
+          <span className="ml-auto px-2 py-1 font-mono text-caption text-muted-foreground">
             Diagram renders when complete…
           </span>
         ) : undefined

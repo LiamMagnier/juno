@@ -2849,7 +2849,13 @@ materializes an immutable candidate, installs/builds it, verifies the migration
 ledger, runs only `prisma migrate deploy`, atomically switches `current`, and
 reloads the complete PM2 ecosystem. It rolls back application pointers and PM2
 when activation or expected-SHA health fails; it never uses `prisma db push` or
-ad-hoc SQL. The `deploy/VM_SETUP_GUIDE.md` (Oracle) and
+ad-hoc SQL. After a reload PM2 runs exactly the apps the active release's
+ecosystem declares: any other `juno-*` app is deleted before `pm2 save`, so a
+rollback cannot leave a newer release's worker running against older code
+(apps outside the `juno-` prefix are left alone). Every deploy and rollback on
+a host holds one lock, `.deploy.lock` beside `current` (`~/juno/.deploy.lock`);
+a second one is refused with the holder's pid and start time. The
+`deploy/VM_SETUP_GUIDE.md` (Oracle) and
 `deploy/GCP_SETUP_GUIDE.md` runbooks cover one-time VM provisioning
 (Node/PM2/nginx/Certbot, swap for the 1 GB build, firewall).
 

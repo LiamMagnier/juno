@@ -86,5 +86,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     latestCommit: discovery.commit,
     upToDate: diff.changed.length === 0,
     ...diff,
+    more: discovery.more,
   } satisfies SkillSourceUpdateCheck);
 }

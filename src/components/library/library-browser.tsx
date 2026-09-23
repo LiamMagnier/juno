@@ -71,14 +71,18 @@ export interface LibraryBrowserProps extends LibraryRowActions, LibraryUploadAct
  * share one template so the columns line up without a table.
  *
  * Stepped on the CONTENT COLUMN (`page`), not the window: the fixed tracks
- * need a 40rem column before the name keeps a readable width, and the size
- * column waits for 64rem. Every per-cell `hidden`/`block` gate below rides the
- * same two queries, or a cell lands in the wrong track.
+ * need a 40rem column before the name keeps a readable width. From there the
+ * row has size and date; type joins at 48rem. Size comes first because the
+ * one-line summary that carries it is phone-only, and when it waited for a
+ * 64rem column a laptop with the sidebar open showed no size anywhere on the
+ * row, even sorted "Largest first"; the type is already printed on the
+ * thumbnail. Every per-cell `hidden`/`block` gate below rides the same two
+ * queries, or a cell lands in the wrong track.
  */
 const listGrid =
   "grid grid-cols-[1.25rem_minmax(0,1fr)_2.5rem] items-center gap-x-3 " +
-  "@[40rem]/page:grid-cols-[1.25rem_minmax(0,1fr)_4.5rem_6rem_7.5rem] " +
-  "@5xl/page:grid-cols-[1.25rem_minmax(0,1fr)_4.5rem_5.5rem_6rem_7.5rem]";
+  "@[40rem]/page:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_6rem_7.5rem] " +
+  "@[48rem]/page:grid-cols-[1.25rem_minmax(0,1fr)_4.5rem_5.5rem_6rem_7.5rem]";
 
 const captionClass = "text-caption tabular-nums text-muted-foreground";
 
@@ -297,8 +301,8 @@ export function LibraryListHeader({
         label={allSelected ? "Deselect all" : "Select all"}
       />
       <span>Name</span>
-      <span className="hidden @[40rem]/page:block">Type</span>
-      <span className="hidden @5xl/page:block">Size</span>
+      <span className="hidden @[48rem]/page:block">Type</span>
+      <span className="hidden @[40rem]/page:block">Size</span>
       <span className="hidden @[40rem]/page:block">Added</span>
       <span className="sr-only">Actions</span>
     </div>
@@ -386,8 +390,8 @@ function LibraryListRow({
         </div>
       </div>
 
-      <span className={cn("hidden truncate @[40rem]/page:block", captionClass)}>{kindLabel(item)}</span>
-      <span className={cn("hidden @5xl/page:block", captionClass)}>{formatBytes(item.size)}</span>
+      <span className={cn("hidden truncate @[48rem]/page:block", captionClass)}>{kindLabel(item)}</span>
+      <span className={cn("hidden @[40rem]/page:block", captionClass)}>{formatBytes(item.size)}</span>
       <time
         dateTime={item.createdAt}
         title={new Date(item.createdAt).toLocaleString()}
@@ -445,26 +449,42 @@ function UploadThumb({ upload, className }: { upload: LibraryUpload; className?:
   );
 }
 
+/**
+ * Past 100% the bytes have all been sent and the server is storing them.
+ * Aborting then only stops the browser listening: the file still lands, so
+ * a Cancel offered at that point would remove the row for a file that is in
+ * the library a moment later.
+ */
+function uploadSettling(upload: LibraryUpload) {
+  return upload.status === "uploading" && upload.progress >= 100;
+}
+
 /** Where an upload is: a bar and a percentage while it moves, the reason once it has failed. */
 function UploadStatus({ upload, onRetry }: { upload: LibraryUpload; onRetry: () => void }) {
   if (upload.status === "failed") {
+    // The reason wraps rather than truncating: it is the one thing the row
+    // has to say, and at phone width a truncated "This file is larger than
+    // your plan…" had no tooltip to finish it.
     return (
-      <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-caption text-destructive-ink">
-        <StatusIcons.error className="size-3 shrink-0" aria-hidden="true" />
-        <span className="truncate">{upload.error ?? "Upload failed."}</span>
-        {upload.retryable !== false && (
-          <button
-            type="button"
-            onClick={onRetry}
-            className="shrink-0 font-medium text-foreground underline-offset-4 hover:underline"
-          >
-            Try again
-          </button>
-        )}
+      <p className="mt-0.5 flex min-w-0 items-start gap-1.5 text-caption text-destructive-ink">
+        <StatusIcons.error className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+        <span className="min-w-0">
+          {upload.error ?? "Upload failed."}
+          {upload.retryable !== false && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="ml-1.5 font-medium text-foreground underline-offset-4 hover:underline"
+            >
+              Try again
+            </button>
+          )}
+        </span>
       </p>
     );
   }
-  const finishing = upload.progress >= 100;
+  // No live region on the figure: a polite region re-read at every percent is
+  // a queue of numbers. The progress bar carries the value for anyone who asks.
   return (
     <div className="mt-1.5 flex items-center gap-2.5">
       <Progress
@@ -473,8 +493,8 @@ function UploadStatus({ upload, onRetry }: { upload: LibraryUpload; onRetry: () 
         aria-label="Upload progress"
         className="h-1 w-full max-w-40"
       />
-      <span className={cn("shrink-0", captionClass)} aria-live="polite">
-        {finishing ? "Saving…" : <>{upload.progress}%</>}
+      <span className={cn("shrink-0", captionClass)}>
+        {uploadSettling(upload) ? "Saving…" : <>{upload.progress}%</>}
       </span>
     </div>
   );
@@ -499,15 +519,17 @@ function LibraryUploadRow({ upload, actions }: { upload: LibraryUpload; actions:
           <UploadStatus upload={upload} onRetry={() => actions.onRetryUpload(upload.localId)} />
         </div>
       </div>
-      <span className={cn("hidden truncate @[40rem]/page:block", captionClass)}>{kindLabel(upload)}</span>
-      <span className={cn("hidden @5xl/page:block", captionClass)}>{formatBytes(upload.size)}</span>
+      <span className={cn("hidden truncate @[48rem]/page:block", captionClass)}>{kindLabel(upload)}</span>
+      <span className={cn("hidden @[40rem]/page:block", captionClass)}>{formatBytes(upload.size)}</span>
       <span className="hidden @[40rem]/page:block" aria-hidden="true" />
       <div className="flex items-center justify-end">
-        <IconAction
-          icon={ActionIcons.dismiss}
-          label={failed ? "Dismiss" : "Cancel upload"}
-          onClick={() => actions.onDismissUpload(upload.localId)}
-        />
+        {!uploadSettling(upload) && (
+          <IconAction
+            icon={ActionIcons.dismiss}
+            label={failed ? "Dismiss" : "Cancel upload"}
+            onClick={() => actions.onDismissUpload(upload.localId)}
+          />
+        )}
       </div>
     </article>
   );
@@ -648,13 +670,15 @@ function LibraryUploadTile({ upload, actions }: { upload: LibraryUpload; actions
     <article role="listitem" aria-label={upload.fileName} aria-busy={!failed} className="flex min-w-0 flex-col motion-safe:animate-rise-in">
       <div className="relative">
         <UploadThumb upload={upload} className="aspect-square w-full rounded-card" />
-        <IconAction
-          icon={ActionIcons.dismiss}
-          label={failed ? "Dismiss" : "Cancel upload"}
-          onClick={() => actions.onDismissUpload(upload.localId)}
-          variant="secondary"
-          className="absolute right-2 top-2"
-        />
+        {!uploadSettling(upload) && (
+          <IconAction
+            icon={ActionIcons.dismiss}
+            label={failed ? "Dismiss" : "Cancel upload"}
+            onClick={() => actions.onDismissUpload(upload.localId)}
+            variant="secondary"
+            className="absolute right-2 top-2"
+          />
+        )}
       </div>
       <div className="min-w-0 px-0.5 pt-2.5">
         <p className="truncate text-ui font-medium text-foreground" translate="no">

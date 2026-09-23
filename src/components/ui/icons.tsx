@@ -80,6 +80,7 @@ import {
   CaretDownIcon,
   CaretLeftIcon,
   CaretRightIcon,
+  CaretUpDownIcon,
   CaretUpIcon,
   ChatCenteredDotsIcon,
   ChatCircleDotsIcon,
@@ -414,6 +415,10 @@ export const ChevronDown = glyph(CaretDownIcon, "chevron-down");
 export const ChevronUp = glyph(CaretUpIcon, "chevron-up");
 export const ChevronLeft = glyph(CaretLeftIcon, "chevron-left");
 export const ChevronRight = glyph(CaretRightIcon, "chevron-right");
+/** Both ways at once: a row that opens a menu (the sidebar's account row)
+ *  without claiming which direction it opens in. Still a state mark, so it
+ *  carries no hover gesture either. */
+export const ChevronsUpDown = glyph(CaretUpDownIcon, "chevrons-up-down");
 
 export const ArrowLeft = glyph(ArrowLeftIcon, "arrow-left", { motion: "nudge-l" });
 export const ArrowRight = glyph(ArrowRightIcon, "arrow-right", { motion: "nudge-r" });

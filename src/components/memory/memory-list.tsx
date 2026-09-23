@@ -25,7 +25,7 @@ import { EntryRow } from "@/components/memory/entry-row";
 import { MemoryIcons } from "@/components/memory/memory-icons";
 import { groupMemoriesByTopic, isRetired, type Memory } from "@/components/memory/memory-model";
 import { DATE_BUCKETS, dateBucket } from "@/components/memory/memory-time";
-import type { ProjectOption } from "@/components/memory/use-project-options";
+import type { ProjectOption, ProjectOptions } from "@/components/memory/use-project-options";
 import type { RemovalKind } from "@/components/memory/use-deferred-removal";
 
 /*
@@ -79,7 +79,7 @@ interface MemoryListProps {
   busyIds: ReadonlySet<string>;
   highlightIds: ReadonlySet<string>;
   restoredIds: ReadonlySet<string>;
-  projects: ProjectOption[] | null;
+  projects: ProjectOptions;
   onWantProjects: () => void;
   onAdd: (content: string) => Promise<boolean>;
   onEdit: (id: string, content: string) => Promise<boolean>;
@@ -113,6 +113,13 @@ export function MemoryList({
   onMove,
 }: MemoryListProps) {
   const [adding, setAdding] = React.useState(false);
+  const addButtonRef = React.useRef<HTMLButtonElement>(null);
+  // The field that had focus folds away with the form, on a save or a cancel;
+  // the button that opened it is where a keyboard reader expects to be.
+  const closeAdd = React.useCallback(() => {
+    setAdding(false);
+    requestAnimationFrame(() => addButtonRef.current?.focus());
+  }, []);
   const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(() => new Set());
   const [showRetired, setShowRetired] = React.useState(false);
 
@@ -183,9 +190,16 @@ export function MemoryList({
   };
 
   return (
-    <section aria-labelledby="memory-list-heading" className="@container/list">
+    // `data-memory-list` is the region a removed row hands focus on within
+    // (see EntryRow), and the heading is where it lands when no row is left.
+    <section aria-labelledby="memory-list-heading" data-memory-list="" className="@container/list">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 id="memory-list-heading" className="mr-auto flex items-baseline gap-2 text-heading">
+        <h2
+          id="memory-list-heading"
+          tabIndex={-1}
+          data-memory-list-anchor=""
+          className="mr-auto flex items-baseline gap-2 text-heading outline-none"
+        >
           <span>Memories</span>
           <span className="text-body font-normal tabular-nums text-muted-foreground">
             <RollingNumber value={totalActive} />
@@ -244,16 +258,29 @@ export function MemoryList({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <AddButton paused={paused} open={adding} onToggle={() => setAdding((open) => !open)} />
+        <AddButton ref={addButtonRef} paused={paused} open={adding} onToggle={() => setAdding((open) => !open)} />
       </div>
 
       <Collapse open={adding && !paused}>
         <AddForm
           project={project}
           onAdd={onAdd}
-          onClose={() => setAdding(false)}
+          onClose={closeAdd}
         />
       </Collapse>
+
+      {/* A search changes the rows under a screen reader without a word; this
+          says how many are left. Always mounted, so the change is announced. */}
+      <p role="status" className="sr-only">
+        {searching &&
+          (matching.length === 1 ? (
+            <span>1 memory matches</span>
+          ) : (
+            <>
+              <span>{matching.length}</span> <span>memories match</span>
+            </>
+          ))}
+      </p>
 
       {facts.length === 0 ? (
         <EmptyState
@@ -385,9 +412,13 @@ export function MemoryList({
   );
 }
 
-function AddButton({ paused, open, onToggle }: { paused: boolean; open: boolean; onToggle: () => void }) {
+const AddButton = React.forwardRef<
+  HTMLButtonElement,
+  { paused: boolean; open: boolean; onToggle: () => void }
+>(function AddButton({ paused, open, onToggle }, ref) {
   const button = (
     <Button
+      ref={ref}
       type="button"
       variant="outline"
       size="sm"
@@ -424,7 +455,7 @@ function AddButton({ paused, open, onToggle }: { paused: boolean; open: boolean;
       <TooltipContent>Turn memory on to add to it</TooltipContent>
     </Tooltip>
   );
-}
+});
 
 function AddForm({
   project,

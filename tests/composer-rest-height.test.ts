@@ -76,3 +76,35 @@ test("both chat skeletons take the composer's height from the shell", () => {
     assert.ok(!/h-\[\d+px\][^"]*rounded-composer/.test(source), `${file} writes no composer height of its own`);
   }
 });
+
+/*
+ * THE NEW-CHAT SKELETON IS IN THE LANDING'S FRAME, NOT THE DOCK'S.
+ *
+ * The composer is one element in two frames (composer.tsx, `frame`): the dock
+ * pads itself with a gutter and a bottom inset, the landing takes neither. The
+ * skeleton once drew the landing's composer in the dock's frame, so it stood
+ * 24px of padding too tall and two gutters too narrow on a phone. And the
+ * greeting row is a grid that also holds the incognito greeting, which is the
+ * taller of the two, so a row sized to the display line alone came up 47px
+ * short. Together the composer landed 38px below its placeholder.
+ */
+test("the new-chat skeleton stands in the landing frame chat-view draws", () => {
+  const skeleton = read("src/app/(app)/chat/loading.tsx");
+  const composer = read("src/components/chat/composer.tsx");
+  const chatView = read("src/components/chat/chat-view.tsx");
+
+  const landing = /frame === "landing" && "([^"]+)"/.exec(composer);
+  assert.ok(landing, "composer.tsx declares the landing frame's classes");
+  assert.ok(skeleton.includes(`"${landing![1]}"`), "the skeleton's composer takes the landing frame's classes");
+
+  const dockPad = /frame === "dock" &&[\s\S]*?"(pb-\[calc\(1rem[^"]+)"/.exec(composer);
+  assert.ok(dockPad, "composer.tsx declares the dock's bottom inset");
+  assert.ok(!skeleton.includes(dockPad![1]), "the skeleton does not pad the landing composer like the dock");
+
+  assert.match(chatView, /<EmptyGreeting \/>[\s\S]*<PrivateGreeting \/>/, "chat-view stacks both greetings in one row");
+  assert.match(skeleton, /<PrivateGreeting \/>/, "the skeleton sizes the greeting row by the incognito greeting too");
+
+  const chips = /<StarterChips className="([^"]+)" \/>/.exec(chatView);
+  assert.ok(chips, "chat-view places StarterChips with a margin of its own");
+  assert.match(skeleton, new RegExp(`className="${chips![1]} flex flex-wrap`), "the chip row sits at chat-view's margin");
+});

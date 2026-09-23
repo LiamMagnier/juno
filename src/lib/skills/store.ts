@@ -51,6 +51,9 @@ import {
   chooseImportSource,
   discoverySourceKey,
   enabledAfterMint,
+  SWITCH_BEFORE_BLOCK_KEY,
+  switchBeforeBlockAfterMint,
+  switchBeforeBlockOf,
   type InstalledSourceSkill,
 } from "@/lib/skills/sources";
 
@@ -101,6 +104,11 @@ export type CreateSkillResult =
  * skills the reader can no longer see. The deleted row keeps its id, and a run
  * recorded the slug it ran under as text, so renaming the tombstone rewrites
  * nothing anybody reads. Returns whether a slug was freed.
+ *
+ * The tombstone's new name is itself a valid slug, so a live skill can already
+ * hold it (somebody named one `pdf-deleted-1a2b3c4d`). That rename then trips
+ * the same unique index; it is answered as "not freed", which the caller
+ * reports as `slug_taken`, rather than thrown as a server error.
  */
 async function releaseDeletedSlug(userId: string, slug: string): Promise<boolean> {
   const holder = await prisma.workSkill.findFirst({
@@ -109,11 +117,16 @@ async function releaseDeletedSlug(userId: string, slug: string): Promise<boolean
   });
   if (!holder) return false;
   const stem = slug.slice(0, 40).replace(/-+$/, "");
-  const freed = await prisma.workSkill.updateMany({
-    where: { id: holder.id, userId, slug, deletedAt: { not: null } },
-    data: { slug: `${stem}-deleted-${holder.id.slice(-8).toLowerCase()}` },
-  });
-  return freed.count > 0;
+  try {
+    const freed = await prisma.workSkill.updateMany({
+      where: { id: holder.id, userId, slug, deletedAt: { not: null } },
+      data: { slug: `${stem}-deleted-${holder.id.slice(-8).toLowerCase()}` },
+    });
+    return freed.count > 0;
+  } catch (err) {
+    if (isUniqueViolation(err)) return false;
+    throw err;
+  }
 }
 
 /**
@@ -263,7 +276,9 @@ export type MintSkillVersionResult =
  * The head's switch follows `enabledAfterMint`: a blocked version lands off,
  * and nothing else here switches a skill back on that the reader turned off.
  * (This route used to write `enabled: status !== "blocked"`, so saving an edit
- * or restoring a version quietly re-enabled a switched-off skill.)
+ * or restoring a version quietly re-enabled a switched-off skill.) A blocked
+ * version records the switch it overrode, so the clean version after it
+ * restores that switch rather than assuming it was on.
  */
 export async function mintSkillVersion(input: MintSkillVersionInput): Promise<MintSkillVersionResult> {
   const { userId, content } = input;
@@ -298,8 +313,25 @@ export async function mintSkillVersion(input: MintSkillVersionInput): Promise<Mi
         });
         const current = await tx.workSkill.findFirstOrThrow({
           where: { id: input.skill.id, userId },
-          select: { enabled: true, securityStatus: true, trust: true, autoSelect: true },
+          select: { enabled: true, securityStatus: true, trust: true, autoSelect: true, currentVersion: true },
         });
+        // A blocked head reads off whoever switched it, so the switch the block
+        // overrode is read off the blocked version it points at (see
+        // `switchBeforeBlockOf`). Only then: every other mint keeps the head's.
+        const blockedVersion =
+          current.securityStatus === "blocked"
+            ? await tx.workSkillVersion.findUnique({
+                where: { skillId_version: { skillId: input.skill.id, version: current.currentVersion } },
+                select: { securityScan: true },
+              })
+            : null;
+        const switches = {
+          enabled: current.enabled,
+          previousStatus: current.securityStatus,
+          nextStatus: securityScan.status,
+          switchBeforeBlock: switchBeforeBlockOf(blockedVersion?.securityScan),
+        };
+        const heldSwitch = switchBeforeBlockAfterMint(switches);
         const version = await tx.workSkillVersion.create({
           data: {
             skillId: input.skill.id,
@@ -309,7 +341,9 @@ export async function mintSkillVersion(input: MintSkillVersionInput): Promise<Mi
             contractVersion: content.contractVersion,
             requestedTools: content.requestedTools,
             securityStatus: securityScan.status,
-            securityScan: securityScan as unknown as Prisma.InputJsonValue,
+            securityScan: (heldSwitch === null
+              ? securityScan
+              : { ...securityScan, [SWITCH_BEFORE_BLOCK_KEY]: heldSwitch }) as unknown as Prisma.InputJsonValue,
             permissionDigest,
             requiresConsent,
           },
@@ -322,11 +356,7 @@ export async function mintSkillVersion(input: MintSkillVersionInput): Promise<Mi
           where: { id: input.skill.id, userId },
           data: {
             currentVersion: version.version,
-            enabled: enabledAfterMint({
-              enabled: current.enabled,
-              previousStatus: current.securityStatus,
-              nextStatus: securityScan.status,
-            }),
+            enabled: enabledAfterMint(switches),
             securityStatus: securityScan.status,
             securityUpdatedAt: new Date(),
             ...(input.head?.description !== undefined ? { description: input.head.description } : {}),
@@ -462,12 +492,21 @@ export async function loadSkillLibrary(userId: string): Promise<SkillLibrary> {
   // Assistants share the table and have a page of their own. Deleted skills
   // survive for the runs that followed them and are nobody's library.
   const where = { userId, deletedAt: null, kind: "skill" } satisfies Prisma.WorkSkillWhereInput;
-  const [skills, total, sources] = await Promise.all([
+  const [skills, total, sources, awaitingConsent] = await Promise.all([
     prisma.workSkill.findMany({ where, orderBy: [{ name: "asc" }, { slug: "asc" }], take: SKILL_LIBRARY_LIMIT }),
     prisma.workSkill.count({ where }),
     prisma.workSkillSource.findMany({ where: { userId } }),
+    // Consent lives on the version, and the list draws a glyph for it. Every
+    // flagged version of the reader's skills, which is a handful, rather than
+    // the current version of all five hundred; `buildSkillLibrary` keeps the
+    // ones that are current. Reached through the head row, the way every
+    // version read here is, because a version has no owner column of its own.
+    prisma.workSkillVersion.findMany({
+      where: { requiresConsent: true, skill: where },
+      select: { skillId: true, version: true },
+    }),
   ]);
-  return buildSkillLibrary({ skills, sources, total });
+  return buildSkillLibrary({ skills, sources, awaitingConsent, total });
 }
 
 /**

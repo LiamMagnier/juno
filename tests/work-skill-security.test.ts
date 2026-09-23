@@ -121,12 +121,22 @@ test("the runner and routes enforce the persisted gate rather than only displayi
     new URL("../src/app/api/work/skills/[id]/versions/[version]/consent/route.ts", import.meta.url),
     "utf8"
   );
+  // The mint gate moved into `mintSkillVersion`, which the versions route and
+  // the source update route both call, so the scan and the consent comparison
+  // are checked where they now run, and each route is checked for the call.
+  const store = readFileSync(new URL("../src/lib/skills/store.ts", import.meta.url), "utf8");
+  const sourceUpdateRoute = readFileSync(
+    new URL("../src/app/api/skills/sources/[id]/update/route.ts", import.meta.url),
+    "utf8"
+  );
 
   assert.match(runner, /row\.securityStatus/);
   assert.match(runner, /row\.requiresConsent/);
   assert.match(runner, /securityStatus === "blocked"/);
-  assert.match(versionRoute, /scanSkillVersion/);
-  assert.match(versionRoute, /permissionExpansion/);
+  assert.match(store, /scanSkillVersion\(/);
+  assert.match(store, /permissionExpansion\(/);
+  assert.match(versionRoute, /mintSkillVersion\(/);
+  assert.match(sourceUpdateRoute, /mintSkillVersion\(/);
   assert.match(consentRoute, /skill_permission_consent/);
 });
 

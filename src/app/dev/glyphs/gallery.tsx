@@ -148,7 +148,7 @@ function NavRow({ icon, label, state = "rest" }: { icon: ReactNode; label: strin
     <div
       data-icon-trigger
       className={cn(
-        "group relative flex h-8 w-full items-center gap-2.5 rounded-control px-2 text-body transition-colors duration-fast ease-out-soft",
+        "group relative flex h-8 w-full items-center gap-2.5 rounded-control px-2 text-nav transition-colors duration-fast ease-out-soft",
         state === "rest" && "text-sidebar-foreground hover:bg-sidebar-hover hover:text-foreground",
         state === "hover" && "bg-sidebar-hover text-foreground",
         state === "selected" && "text-foreground"
@@ -286,7 +286,7 @@ export function GlyphsGallery() {
           <WeightStrip />
         </Section>
 
-        <Section title="Sidebar" note="18px in a 20px box beside a 15px label, the nav row's own recipe.">
+        <Section title="Sidebar" note="18px in a 20px box beside a 14px label, the nav row's own recipe.">
           <div className="flex flex-col gap-6 sm:flex-row sm:flex-wrap sm:items-start">
             <div>
               <Caption>Before</Caption>

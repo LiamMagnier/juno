@@ -31,7 +31,7 @@ export default function CodeCustomizeLoading() {
     // is owed the same "this is loading" the sighted reader gets from the
     // shimmer.
     <AppPage measure="wide" role="status" aria-label="Loading your Juno Code settings">
-      <AppPageHeaderSkeleton headingWidth="w-44" ledeLines={2} />
+      <AppPageHeaderSkeleton nav="eyebrow" headingWidth="w-44" ledeLines={2} />
       <div className="divide-y divide-border/60">
         {[0, 1, 2, 3].map((section) => (
           <div key={section} className="py-6 first:pt-0">

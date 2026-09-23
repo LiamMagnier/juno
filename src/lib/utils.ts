@@ -74,7 +74,8 @@ const merge = extendTailwindMerge({
         {
           text: [
             "hero", "display", "page-title", "title", "heading",
-            "body-lg", "body", "ui", "label", "caption", "micro",
+            "body-lg", "reading", "body", "nav", "ui", "label", "caption",
+            "micro",
           ],
         },
       ],

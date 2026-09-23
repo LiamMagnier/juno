@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,7 +12,6 @@ import { useSaveStates } from "@/components/settings/save-status";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingBlock, SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { PERSONALITIES, DEFAULT_PERSONALITY, isPersonalityId } from "@/lib/personalities";
-import { toast } from "sonner";
 
 /** Reply languages, stored by their English name, which is what the prompt builder reads. */
 const LANGUAGES: { value: string; label: string }[] = [
@@ -49,9 +49,16 @@ export function PersonalizationSection() {
   );
 
   const [name, setName] = React.useState(user.name ?? "");
+  // The name last sent, so the unmount flush below does not send it again
+  // while the refresh that brings `user.name` up to date is still on its way.
+  const nameSent = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    nameSent.current = null;
+  }, [user.name]);
   const saveName = () => {
     const value = name.trim();
-    if (value === (user.name ?? "")) return;
+    if (value === (user.name ?? "") || value === nameSent.current) return;
+    nameSent.current = value;
     void saves.track("name", async () => {
       // Not through useSettingsSave: the name is a User column, not a
       // Settings one, and it is server-rendered into the bootstrap (sidebar,
@@ -62,6 +69,7 @@ export function PersonalizationSection() {
         body: JSON.stringify({ name: value }),
       }).catch(() => null);
       if (!res?.ok) {
+        if (nameSent.current === value) nameSent.current = null;
         toast.error("Couldn’t save your name.");
         return false;
       }
@@ -70,11 +78,35 @@ export function PersonalizationSection() {
     });
   };
 
+  // A language set elsewhere (a native app, an older build) still shows as
+  // itself rather than as an empty select.
+  const languages = LANGUAGES.some((l) => l.value === settings.responseLanguage)
+    ? LANGUAGES
+    : [...LANGUAGES, { value: settings.responseLanguage, label: settings.responseLanguage }];
+
   const [instructions, setInstructions] = React.useState(settings.customInstructions);
   const saveInstructions = () => {
     if (instructions === settings.customInstructions) return;
     void saves.track("customInstructions", () => save({ customInstructions: instructions }));
   };
+
+  // A draft still being typed is saved when the section goes away, not only
+  // on blur. Escape, ⌘, or a navigation unmounts the section with the field
+  // still focused, and React never hears that field's blur (the browser fires
+  // it on a node already detached from the root), so the text was dropped.
+  // Each saver returns early when there is nothing new, so a field that did
+  // blur first is not saved twice.
+  const flushDrafts = React.useRef<() => void>(() => {});
+  React.useLayoutEffect(() => {
+    flushDrafts.current = () => {
+      saveName();
+      saveInstructions();
+    };
+  });
+  React.useEffect(() => {
+    const flush = flushDrafts;
+    return () => flush.current();
+  }, []);
 
   return (
     <>
@@ -82,7 +114,7 @@ export function PersonalizationSection() {
         <SettingRow
           label="What Juno calls you"
           htmlFor="personal-name"
-          description="Used in greetings, and shown on anything you share."
+          description="Used in greetings, and shown in the sidebar."
           wide
           status={saves.status("name")}
           control={
@@ -125,7 +157,7 @@ export function PersonalizationSection() {
           status={saves.status("personality")}
           control={
             <ChoiceMenu
-              ariaLabel="Personality"
+              label="Personality"
               value={activePersonality}
               options={personalityOptions}
               onChange={(personality) => {
@@ -152,7 +184,7 @@ export function PersonalizationSection() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {LANGUAGES.map((l) => (
+                {languages.map((l) => (
                   <SelectItem key={l.value} value={l.value}>
                     {l.label}
                   </SelectItem>

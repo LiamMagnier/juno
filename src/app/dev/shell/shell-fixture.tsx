@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { AppProvider, useApp } from "@/components/app/app-provider";
+import { AppShell } from "@/components/app/app-shell";
 import { AppSidebar } from "@/components/app/app-sidebar";
 import type { AppBootstrap } from "@/types/app";
 import type { ClientConversation } from "@/types/chat";
@@ -57,6 +58,12 @@ const CONVERSATIONS: ClientConversation[] = [
   conversation("k-4", "Port the settings modal to the new tokens", 72, { kind: "code" }),
 ];
 
+/** A hundred older chats for `?many=1`: more than two pages of Recent, so the
+ *  sentinel at the foot of the list has something to load. */
+const MANY: ClientConversation[] = Array.from({ length: 100 }, (_, i) =>
+  conversation(`old-${i + 1}`, `Older chat ${i + 1}`, 300 + i * 6)
+);
+
 const PROJECTS = [
   { id: "p-atlas", name: "Atlas launch", nameSource: "manual", starred: true, updatedAt: ago(2), conversationCount: 3 },
   { id: "p-home", name: "Home renovation", nameSource: "manual", starred: true, updatedAt: ago(48), conversationCount: 0 },
@@ -87,7 +94,7 @@ const WORK_SESSIONS = [
   },
 ];
 
-function bootstrap(nearCap: boolean): AppBootstrap {
+function bootstrap(nearCap: boolean, many: boolean): AppBootstrap {
   return {
     user: { id: "fixture-user", name: "Liam Magnier", email: "liam@example.com", image: null },
     settings: {
@@ -125,7 +132,7 @@ function bootstrap(nearCap: boolean): AppBootstrap {
       },
       billing: { renewsAtMs: null, cancelAtPeriodEnd: false },
     },
-    conversations: CONVERSATIONS,
+    conversations: many ? [...CONVERSATIONS, ...MANY] : CONVERSATIONS,
     folders: [],
     features: {
       billing: true,
@@ -206,7 +213,18 @@ function Frame({
   );
 }
 
-export function ShellFixture({ nearCap }: { nearCap: boolean }) {
+export function ShellFixture({
+  nearCap,
+  many,
+  shell,
+  width,
+}: {
+  nearCap: boolean;
+  many: boolean;
+  shell: boolean;
+  /** The expanded frames' width, 288 unless `?w=` asks for another. */
+  width: number;
+}) {
   const [ready, setReady] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState(false);
 
@@ -216,21 +234,35 @@ export function ShellFixture({ nearCap }: { nearCap: boolean }) {
     return restore;
   }, []);
 
-  const data = React.useMemo(() => bootstrap(nearCap), [nearCap]);
+  const data = React.useMemo(() => bootstrap(nearCap, many), [nearCap, many]);
   if (!ready) return null;
+
+  if (shell) {
+    // The shipping frame: the docked panel and its resize handle at desktop
+    // widths, the rail at md–lg, and the Sheet drawer behind "Open menu" on a
+    // phone, with the drawer's re-based sidebar tokens.
+    return (
+      <AppProvider bootstrap={data}>
+        <SelectConversation id="c-active" />
+        <AppShell>
+          <div className="p-6 text-body text-muted-foreground">Page content.</div>
+        </AppShell>
+      </AppProvider>
+    );
+  }
 
   return (
     <AppProvider bootstrap={data}>
       <SelectConversation id="c-active" />
       <main className="min-h-dvh bg-background p-6">
         <div className="flex flex-wrap items-start gap-8">
-          <Frame label="Chat, expanded (288)" width={collapsed ? 64 : 288} open={288}>
+          <Frame label={`Chat, expanded (${width})`} width={collapsed ? 64 : width} open={width}>
             <AppSidebar product="chat" collapsed={collapsed} onToggleCollapse={() => setCollapsed((v) => !v)} />
           </Frame>
           <Frame label="Rail (64)" width={64}>
             <AppSidebar product="chat" collapsed onToggleCollapse={() => undefined} />
           </Frame>
-          <Frame label="Code, expanded (288)" width={288}>
+          <Frame label={`Code, expanded (${width})`} width={width}>
             <AppSidebar product="code" onToggleCollapse={() => undefined} />
           </Frame>
         </div>

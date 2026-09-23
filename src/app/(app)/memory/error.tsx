@@ -36,7 +36,8 @@ export default function MemoryError({
           tone="error"
           icon={StatusIcons.error}
           title="Couldn’t load your memory"
-          description="Nothing has been forgotten. Memory is unchanged and still in use in your chats."
+          // Not "still in use in your chats": with memory switched off it is not.
+          description="Nothing has been forgotten or changed."
           action={
             <>
               <Button size="sm" onClick={reset}>

@@ -8,9 +8,11 @@ export const SKILLS_GALLERY_VIEWS = [
   "choose",
   "dialog",
   "update",
+  "update-new",
   "detail",
   "detail-own",
   "detail-notices",
+  "composer",
 ] as const;
 
 export type SkillsGalleryView = (typeof SKILLS_GALLERY_VIEWS)[number];

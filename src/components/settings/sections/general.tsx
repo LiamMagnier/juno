@@ -150,15 +150,24 @@ export function GeneralSection() {
   const fontStep = Math.max(0, FONT_SIZES.findIndex((s) => s.id === fontSize));
   const fontPx = FONT_SIZES[fontStep]?.px ?? 16;
 
+  // The painted theme and accent are put back through `onRollback`, not on
+  // every failure: with two changes in flight, the first one's failure must
+  // not repaint the page in a value the second has already replaced, and
+  // when both fail the page goes back to what the server holds rather than
+  // to the first change.
   const setThemePref = (theme: ClientSettings["theme"]) => {
     if (theme === settings.theme) return;
-    const previous = settings.theme;
     setTheme(theme);
-    void saves.track("theme", async () => {
-      const ok = await save({ theme });
-      if (!ok) setTheme(previous);
-      return ok;
-    });
+    void saves.track("theme", () =>
+      save(
+        { theme },
+        {
+          onRollback: (restored) => {
+            if (restored.theme) setTheme(restored.theme);
+          },
+        }
+      )
+    );
   };
 
   // The accent the account held before a custom-colour preview started, so a
@@ -169,11 +178,17 @@ export function GeneralSection() {
     accentBeforePreview.current = null;
     if (accent === previous) return;
     document.documentElement.dataset.accent = accent;
-    void saves.track("accent", async () => {
-      const ok = await save({ accent }, { previous: { accent: previous } });
-      if (!ok) document.documentElement.dataset.accent = previous;
-      return ok;
-    });
+    void saves.track("accent", () =>
+      save(
+        { accent },
+        {
+          previous: { accent: previous },
+          onRollback: (restored) => {
+            if (restored.accent) document.documentElement.dataset.accent = restored.accent;
+          },
+        }
+      )
+    );
   };
   const previewAccent = (accent: string) => {
     if (accentBeforePreview.current === null) accentBeforePreview.current = settings.accent;
@@ -257,6 +272,7 @@ export function GeneralSection() {
           label="Text size"
           description="Scales the whole interface on this device."
           wide
+          status={saves.status("fontSize")}
           control={
             <div className="flex w-full items-center gap-3 @[34rem]/pane:w-60">
               <span className="text-caption text-muted-foreground" aria-hidden="true">
@@ -273,6 +289,9 @@ export function GeneralSection() {
                   setFontSize(next);
                   writeFontSize(next);
                 }}
+                // Confirmed once the thumb is let go, not on every step it
+                // passes while dragged.
+                onValueCommit={() => void saves.track("fontSize", async () => true)}
               />
               <span className="text-body-lg text-muted-foreground" aria-hidden="true">
                 A
@@ -289,7 +308,7 @@ export function GeneralSection() {
       <SettingsGroup title="Language">
         <SettingRow
           label="Interface language"
-          description="Menus and buttons. Replies follow Response language under Personalization."
+          description="Replies follow Response language in Personalization."
           wide
           control={
             <Select value={settings.uiLocale} onValueChange={(v) => void setUiLocale(v)}>

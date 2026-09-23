@@ -136,7 +136,7 @@ export function VoiceSection() {
                   <TooltipContent>{playing ? "Stop" : "Preview"}</TooltipContent>
                 </Tooltip>
                 <ChoiceMenu
-                  ariaLabel="Read-aloud voice"
+                  label="Read-aloud voice"
                   value={activeVoice}
                   options={VOICE_OPTIONS}
                   onChange={(voiceId) => {

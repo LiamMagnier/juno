@@ -55,6 +55,13 @@ export type LibrarySkill = ClientWorkSkill & {
   sourceId: string | null;
   /** Its `SKILL.md` path inside the source's repository. */
   sourcePath: string | null;
+  /**
+   * The current version asks for more than the one before it and waits for
+   * the reader to approve that on the skill's page. Chat and tasks refuse the
+   * skill until then, so the list marks it. Read off the current version, not
+   * the head row, which has no such column.
+   */
+  requiresConsent: boolean;
 };
 
 export type LibrarySource = ClientSkillSource & { skills: LibrarySkill[] };
@@ -104,6 +111,12 @@ export interface SkillSourceUpdateCheck {
   added: SkillSourceChange[];
   /** Installed skills whose `SKILL.md` no longer exists upstream. They are never removed automatically. */
   removed: SkillSourceChange[];
+  /**
+   * The walk hit its read cap. What is installed is always read first, so
+   * `changed` and `removed` are whole, but `added` is only what fitted in the
+   * rest, and the dialog says so rather than presenting it as everything new.
+   */
+  more: boolean;
 }
 
 /** `POST /api/skills/sources/[id]/update` body. */

@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 /**
- * Generates the native asset catalogs' Juno navigation icons from the *web's*
- * icon source, so the two can never drift.
+ * Generates the native asset catalogs' Juno navigation icons, keyed to the
+ * web's own marks so the native rails and the website name each destination
+ * with the same picture.
  *
  * `src/lib/app-icons.ts` is the canonical mapping from a destination (home,
- * projects, artifacts, …) to its glyph. Those glyphs are Lucide icons, not a
- * bespoke Juno set — so "use the website's icons" means shipping the very same
- * Lucide geometry, read out of the installed `lucide-react` rather than
- * redrawn or approximated by an SF Symbol. Lucide is ISC-licensed, which
- * permits redistribution inside the app bundle.
+ * projects, artifacts, …) to its glyph. On the web those glyphs are NOT Lucide:
+ * they are drawn on Phosphor's 256-unit grid through
+ * `src/components/ui/icons.tsx`, and Chat, Code, Design and Library are Juno's
+ * own drawings (`juno-glyphs.tsx`). This script still reads its geometry out of
+ * the installed `lucide-react`, choosing for each key the Lucide glyph that
+ * means what the web's mark means (Models is a cube on both). So the two agree
+ * on which mark stands for a destination rather than on its exact line, and a
+ * key here that names a different object from the web's mark is the drift this
+ * file exists to prevent. Lucide is ISC-licensed, which permits redistribution
+ * inside the app bundle.
  *
  * Output: one `.imageset` per destination containing a 24x24 SVG, registered
  * with `preserves-vector-representation` (so it stays crisp at any Dynamic Type
@@ -91,7 +97,9 @@ const ICONS = {
   appearance: "palette",
   writing: "align-left",
   language: "globe",
-  models: "cpu",
+  // SettingsIcons.models is Phosphor's Cube: a model is a thing you pick off
+  // a shelf, not a processor.
+  models: "box",
   notifications: "bell",
   about: "info",
   user: "user",
@@ -160,8 +168,8 @@ const ICONS = {
   monitor: "monitor",
   home2: "house",
 
-  // Status and state marks — the web's `StatusIcons` plus the Lucide glyphs
-  // its lists draw beside a row's state. Added so every SF Symbol name still
+  // Status and state marks — the web's `StatusIcons` plus the glyphs its
+  // lists draw beside a row's state. Added so every SF Symbol name still
   // crossing a package boundary resolves to a real mark (see the exact table
   // in JunoBrand.swift) instead of a fallback wrench.
   triangleAlert: "triangle-alert",
@@ -324,4 +332,4 @@ for (const target of TARGETS) {
 }
 
 console.log(`Generated ${count} navigation icons across ${TARGETS.length} asset catalogs.`);
-console.log(`Source: lucide-react (ISC), mirroring the marks the web already draws.`);
+console.log(`Source: lucide-react (ISC), matched by meaning to the marks the web draws.`);

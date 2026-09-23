@@ -5,7 +5,6 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { ArrowLeft, Search, Upload } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
@@ -13,7 +12,7 @@ import { useApp } from "@/components/app/app-provider";
 import { LibraryBrowserSkeleton, LibraryGrid, LibraryList } from "@/components/library/library-browser";
 import { FileVersionsDialog, RenameFileDialog } from "@/components/library/library-dialogs";
 import { LibraryDropOverlay, useFileDrop } from "@/components/library/library-drop-zone";
-import { LibraryStorageCaption, LibraryToolbar } from "@/components/library/library-toolbar";
+import { LibraryStorageCaption, LibraryToolbar, LibraryToolbarSkeleton } from "@/components/library/library-toolbar";
 import type { LibraryItem, LibraryKind, LibrarySort, LibraryView } from "@/components/library/library-types";
 import { useLibrary } from "@/components/library/use-library";
 import { useLibraryUploads } from "@/components/library/use-library-uploads";
@@ -130,11 +129,16 @@ export default function LibraryPage() {
 
   // Loading more as the end of the list comes into view. The button under it
   // stays as the fallback, and as the thing a keyboard reaches.
+  //
+  // Re-observed each time a page lands (`loadingMore` in the deps): an
+  // observer only reports CHANGES, so a sentinel still in range after a page
+  // arrived would otherwise never ask for the next one, and a list emptied by
+  // deleting every loaded row would sit there with more on the server.
   const sentinel = React.useRef<HTMLDivElement>(null);
-  const { hasMore, loadMore } = library;
+  const { hasMore, loadMore, loadingMore } = library;
   React.useEffect(() => {
     const node = sentinel.current;
-    if (!node || !hasMore) return;
+    if (!node || !hasMore || loadingMore) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) void loadMore();
@@ -143,14 +147,18 @@ export default function LibraryPage() {
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMore, loadMore]);
+  }, [hasMore, loadMore, loadingMore]);
 
   const items = library.items ?? [];
   const pendingUploads = deletedView ? [] : uploads.uploads;
   const loading = library.items === null && !library.error;
   const filtered = q.length > 0 || kind !== "all";
   const libraryEmpty = !loading && library.total === 0 && pendingUploads.length === 0;
-  const noResults = !loading && !libraryEmpty && items.length === 0 && pendingUploads.length === 0;
+  const listEmpty = !loading && !libraryEmpty && items.length === 0 && pendingUploads.length === 0;
+  // Every loaded row deleted, with more on the server: the next page is on
+  // its way (the sentinel is in view), so this is loading, not "no matches".
+  const refilling = listEmpty && library.hasMore;
+  const noResults = listEmpty && !library.hasMore;
 
   const selectedItems = items.filter((item) => selected.has(item.id));
   const allSelected = items.length > 0 && items.every((item) => selected.has(item.id));
@@ -202,7 +210,7 @@ export default function LibraryPage() {
         <AppPageHeader
           // Recently deleted is a MODE, not a filter, so it has to be legible
           // in the heading.
-          heading={deletedView ? "Recently deleted" : "Files"}
+          heading={deletedView ? "Recently deleted" : "Library"}
           lede={deletedView ? "Files you delete land here and can be restored." : "Everything you upload or share in chats."}
           actions={
             deletedView ? (
@@ -213,7 +221,7 @@ export default function LibraryPage() {
             ) : (
               <>
                 {library.storage && !libraryEmpty && (
-                  <LibraryStorageCaption storage={library.storage} className="hidden sm:block" />
+                  <LibraryStorageCaption storage={library.storage} className="hidden @[40rem]/page:block" />
                 )}
                 <Button variant="secondary" size="sm" onClick={() => switchView(true)}>
                   <ActionIcons.delete className="size-3.5" />
@@ -244,11 +252,13 @@ export default function LibraryPage() {
         {/* Only once there is something to filter: six controls acting on a
             list that does not exist would state the emptiness three more
             times above the empty state. A search that matched nothing keeps
-            its toolbar, because the reader needs the box to clear it. */}
+            its toolbar, because the reader needs the box to clear it, and so
+            does a search that failed: the list it replaced was there, and the
+            query may be the thing to change. */}
         {loading ? (
           <LibraryToolbarSkeleton />
         ) : (
-          !library.error &&
+          (!library.error || library.items !== null) &&
           !libraryEmpty && (
             <LibraryToolbar
               query={query}
@@ -282,7 +292,7 @@ export default function LibraryPage() {
                 </Button>
               }
             />
-          ) : loading ? (
+          ) : loading || refilling ? (
             <LibraryBrowserSkeleton view={view} />
           ) : libraryEmpty && deletedView ? (
             <EmptyState
@@ -343,9 +353,10 @@ export default function LibraryPage() {
           // runs past it, and docks under the list when it does not.
           <div
             className="surface-float sticky bottom-4 z-toolbar mt-5 flex min-h-12 flex-wrap items-center gap-2 rounded-card py-2 pl-4 pr-2 motion-safe:animate-rise-in"
-            aria-live="polite"
           >
-            <span className="text-ui font-medium tabular-nums text-foreground">
+            {/* Only the count is live: on the whole bar, every change re-read
+                the three buttons after it. */}
+            <span className="text-ui font-medium tabular-nums text-foreground" aria-live="polite">
               <span>{selectedItems.length}</span> selected
             </span>
             <div className="ml-auto flex items-center gap-1">
@@ -391,18 +402,6 @@ export default function LibraryPage() {
       </AppPage>
 
       <LibraryDropOverlay open={dragging} />
-    </div>
-  );
-}
-
-/** The toolbar's placeholder, control for control, so the row does not jump when it arrives. */
-function LibraryToolbarSkeleton() {
-  return (
-    <div className="flex flex-wrap items-center gap-2" aria-hidden="true">
-      <Skeleton className="h-9 w-full max-w-xs rounded-field" />
-      <Skeleton className="h-9 w-56 rounded-menu" />
-      <Skeleton className="h-9 w-40 rounded-field" />
-      <Skeleton className="ml-auto h-9 w-36 rounded-menu" />
     </div>
   );
 }

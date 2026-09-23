@@ -32,7 +32,7 @@
 
 import type { McpFunctionTool, ToolExecution } from "@/lib/mcp";
 import type { NativeChatTool } from "@/lib/llm";
-import type { ClientActionApproval } from "@/lib/action-approval";
+import { ACTION_PREVIEW_STRING_CHARS, type ClientActionApproval } from "@/lib/action-approval";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ReasoningEffort } from "@/types/chat";
 import { DEFAULT_WORK_PERMISSION_POLICY, WORK_LIVE_STATUSES } from "@/lib/work/domain";
@@ -55,10 +55,17 @@ export const TASK_TOOL_LABEL = "Juno";
 
 /** Longest title kept. The schema asks for 60; this leaves room for a model that overshoots a little. */
 const MAX_TITLE_CHARS = 80;
-/** `createSessionSchema`'s goal bound, restated because the goal is assembled here. */
-export const MAX_TASK_GOAL_CHARS = 10_000;
-const MAX_REQUEST_CHARS = 3_500;
-const MAX_BRIEF_CHARS = 6_000;
+/**
+ * The most a task's goal holds: what an approval card shows whole
+ * (`ACTION_PREVIEW_STRING_CHARS`), well inside `createSessionSchema`'s own
+ * bound. When a person is asked first, the card is how they check what the
+ * task will be told, and a goal longer than the card would carry text past its
+ * cut that nobody read. That tail is exactly where an instruction planted in a
+ * page the model read would sit.
+ */
+export const MAX_TASK_GOAL_CHARS = ACTION_PREVIEW_STRING_CHARS;
+/** The user's own words, bounded so the brief keeps most of the goal's room. */
+const MAX_REQUEST_CHARS = 2_000;
 const MAX_DELIVERABLE_CHARS = 300;
 /** `createSessionSchema`'s connector bound. More than that is narrowed, never refused. */
 const MAX_TASK_CONNECTORS = 32;
@@ -238,6 +245,10 @@ export function parseStartTaskArgs(args: Record<string, unknown>): StartTaskArgs
  * A skill the message was sent under leads the goal as `/slug`, which is how
  * the Work runner is told to apply a skill (`parseSkillInvocation`), so the task
  * works under the same skill the chat turn did.
+ *
+ * The whole goal fits `MAX_TASK_GOAL_CHARS`, and the brief is what gives way:
+ * the request and the deliverable are bounded first, and the brief takes the
+ * room they leave, so a long message never pushes the brief out entirely.
  */
 export function composeTaskGoal(input: {
   request: string;
@@ -246,14 +257,26 @@ export function composeTaskGoal(input: {
   skillSlug?: string | null;
 }): string {
   const request = clip(input.request.trim(), MAX_REQUEST_CHARS);
-  const brief = clip(input.brief.trim(), MAX_BRIEF_CHARS);
-  const sections: string[] = [];
-  if (request) sections.push(`Request: ${request}`);
-  if (brief && oneLine(brief) !== oneLine(request)) sections.push(`Brief: ${brief}`);
-  if (input.deliverable) sections.push(`Deliverable: ${input.deliverable}`);
-  const goal = sections.join("\n\n");
-  const invoked = input.skillSlug ? `/${input.skillSlug} ${goal}` : goal;
-  return clip(invoked, MAX_TASK_GOAL_CHARS);
+  const invocation = input.skillSlug ? `/${input.skillSlug} ` : "";
+  const assemble = (brief: string) =>
+    invocation +
+    [
+      request ? `Request: ${request}` : "",
+      brief ? `Brief: ${brief}` : "",
+      input.deliverable ? `Deliverable: ${input.deliverable}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+  let brief = input.brief.trim();
+  if (oneLine(brief) === oneLine(request)) brief = "";
+  if (brief) {
+    // Everything but the brief's own text, measured with a one-character
+    // stand-in so the "Brief: " label and its separator are counted.
+    const room = MAX_TASK_GOAL_CHARS - (assemble("x").length - 1);
+    brief = room > 1 ? clip(brief, room) : "";
+  }
+  return clip(assemble(brief), MAX_TASK_GOAL_CHARS);
 }
 
 // ---------------------------------------------------------------------------
@@ -397,7 +420,8 @@ export function formatTaskEstimate(estimatedCostMicroUsd: number): string {
  *
  * The goal is the whole goal the task will be created with, not the model's
  * brief alone: a person approving a task started from content Juno read has to
- * see exactly what the task will be told.
+ * see exactly what the task will be told. `composeTaskGoal` keeps it short
+ * enough that the card shows it uncut.
  */
 export function taskApprovalArgs(input: {
   title: string;
@@ -480,8 +504,11 @@ export interface StartTaskToolContext {
  *
  * Calls are serialised and a started task is remembered, so a second call in
  * the same reply (a model that asks twice, or two calls in one round) answers
- * with the first task rather than racing it. A call that did not start one can
- * be made again with better arguments.
+ * with the first task rather than racing it. A call refused before anything was
+ * created (bad arguments, a task already running) can be made again. One that
+ * created a draft and was then refused or declined cannot: its draft is put
+ * away, and the retry answers `already_tried` rather than asking the person a
+ * second time about the same message.
  */
 export function createStartTaskTool(ctx: StartTaskToolContext): NativeChatTool {
   let started: Extract<TaskOutcome, { status: "started" }> | null = null;
@@ -531,11 +558,12 @@ async function startTask(
   if (!args) return taskRefusal("invalid_arguments");
   if (signal?.aborted) return taskRefusal("stopped");
 
-  const [{ prisma }, dispatch, protocol, serializers] = await Promise.all([
+  const [{ prisma }, dispatch, protocol, serializers, store] = await Promise.all([
     import("@/lib/prisma"),
     import("@/lib/work/dispatch"),
     import("@/app/api/work/protocol"),
     import("@/lib/work/serializers"),
+    import("@/lib/action-approval-store"),
   ]);
   const { user } = ctx;
   const keys = taskIdempotencyKeys(ctx.userMessageId);
@@ -559,6 +587,16 @@ async function startTask(
     select: { title: true },
   });
   if (live) return taskAlreadyRunning(live.title);
+
+  // This message already tried and was refused or declined, and its draft was
+  // put away then. Asked before the create, which would otherwise replay onto
+  // the put-away row and rewrite its file and app grants on the way to the
+  // same answer (or answer a failed rewrite with a sentence about saving it).
+  const previous = await prisma.workSession.findFirst({
+    where: { id: ownSessionId, userId: user.id },
+    select: { deletedAt: true },
+  });
+  if (previous?.deletedAt) return taskRefusal("already_tried");
 
   // Built through the route's own schema, so the task is bounded exactly like
   // one a person creates.
@@ -605,94 +643,130 @@ async function startTask(
   const created = await dispatch.createWorkSessionForUser(user, createBody.data);
   if (!created.session) return notStarted(taskRefusalFromResponse(created.status, created.body));
   const session = created.session;
-  // This message already tried and was refused or declined; its draft was put
-  // away then, and a retry must not bring the same task back unasked.
+  // The same question as `previous` above, for a retry that raced this one.
   if (session.deletedAt) return taskRefusal("already_tried");
 
-  const runBody = protocol.startRunSchema.parse({
-    origin: "manual",
-    requestedTarget: "automatic",
-    idempotencyKey: keys.run,
-  });
+  /*
+   * The approval this start consumed, until it is settled. A consumed receipt
+   * sits at `executing`, and every way out of this function below has to move
+   * it on, or the approvals list shows a start that never finished either way.
+   */
+  let receiptId: string | null = null;
+  const settleReceipt = async (ok: boolean, result: string) => {
+    if (!receiptId) return;
+    const id = receiptId;
+    receiptId = null;
+    await store.completeExternalAction({ userId: user.id, receiptId: id, ok, result }).catch(() => undefined);
+  };
 
-  // Every refusal a person could meet, and the estimate, before anybody is
-  // asked anything: a card for a task that would be refused anyway is a
-  // question with no right answer.
-  const preflight = await dispatch.startWorkRunForUser(user, session, runBody, { preflightOnly: true });
-  // This message's run already exists (a retried turn, or a second call), so
-  // there is nothing to ask and nothing to start: the task is the one it has.
-  const alreadyStarted = preflight.run !== null;
+  let alreadyStarted = false;
   let where: string | null = null;
-
-  if (!alreadyStarted) {
-    const estimate = preflight.preflight;
-    if (!estimate || preflight.status >= 400) {
-      return notStarted(taskRefusalFromResponse(preflight.status, preflight.body));
-    }
-
-    const store = await import("@/lib/action-approval-store");
-    let receiptId: string | null = null;
-    if (ctx.untrustedContent || estimate.requiresConfirmation) {
-      const authorization = await store.authorizeExternalAction({
-        userId: user.id,
-        surface: "chat",
-        sessionId: ctx.generationId,
-        conversationId: ctx.conversation.id,
-        projectId: ctx.conversation.projectId,
-        connectorId: TASK_APPROVAL_CONNECTOR_ID,
-        connectorLabel: TASK_TOOL_LABEL,
-        toolName: START_TASK_TOOL_ID,
-        functionName: START_TASK_TOOL_ID,
-        args: taskApprovalArgs({
-          title: session.title,
-          goal: session.goal,
-          estimatedCostMicroUsd: estimate.estimatedCostMicroUsd,
-        }),
-        callId: keys.approval,
-        provenance: {
-          source: "chat_model",
-          sourceKind: "task_handoff",
-          derivedFromUntrusted: ctx.untrustedContent,
-        },
-        signal,
-        onApprovalRequest: ctx.onApprovalRequest,
-      });
-      if (authorization.kind === "refused") {
-        if (signal?.aborted) return notStarted(taskRefusal("stopped"));
-        return notStarted(taskRefusal(approvalRefusalReason(authorization.reason)));
-      }
-      // A replayed receipt is this exact start, already answered once; the run
-      // key below lands on the run that answer started, if it got that far.
-      receiptId = authorization.kind === "authorized" ? authorization.receiptId : null;
-    }
-
-    if (signal?.aborted) return notStarted(taskRefusal("stopped"));
-
-    const dispatched = await dispatch.startWorkRunForUser(user, session, {
-      ...runBody,
-      // Only ever reached after a person said yes to the estimate on the card.
-      ...(estimate.requiresConfirmation ? { confirmExpensive: true } : {}),
+  try {
+    const runBody = protocol.startRunSchema.parse({
+      origin: "manual",
+      requestedTarget: "automatic",
+      idempotencyKey: keys.run,
     });
-    const refusal = dispatched.run ? null : taskRefusalFromResponse(dispatched.status, dispatched.body);
-    await store
-      .completeExternalAction({
-        userId: user.id,
-        receiptId,
-        ok: refusal === null,
-        result: refusal ? refusal.message : `Started task ${session.id}.`,
-      })
-      .catch(() => undefined);
-    if (refusal) return notStarted(refusal);
-    const selection = dispatched.body.selection as { explanation?: unknown } | undefined;
-    where = typeof selection?.explanation === "string" ? selection.explanation : null;
+
+    // The refusals a person could meet before a run is written (plan, usage
+    // window, executor, model, the concurrency cap) and the estimate, before
+    // anybody is asked anything: a card for a task that would be refused anyway
+    // is a question with no right answer.
+    const preflight = await dispatch.startWorkRunForUser(user, session, runBody, { preflightOnly: true });
+    // This message's run already exists (a retried turn, or a second call), so
+    // there is nothing to ask and nothing to start: the task is the one it has.
+    alreadyStarted = preflight.run !== null;
+
+    if (!alreadyStarted) {
+      const estimate = preflight.preflight;
+      if (!estimate || preflight.status >= 400) {
+        return notStarted(taskRefusalFromResponse(preflight.status, preflight.body));
+      }
+
+      if (ctx.untrustedContent || estimate.requiresConfirmation) {
+        const authorization = await store.authorizeExternalAction({
+          userId: user.id,
+          surface: "chat",
+          sessionId: ctx.generationId,
+          conversationId: ctx.conversation.id,
+          projectId: ctx.conversation.projectId,
+          connectorId: TASK_APPROVAL_CONNECTOR_ID,
+          connectorLabel: TASK_TOOL_LABEL,
+          toolName: START_TASK_TOOL_ID,
+          functionName: START_TASK_TOOL_ID,
+          args: taskApprovalArgs({
+            title: session.title,
+            goal: session.goal,
+            estimatedCostMicroUsd: estimate.estimatedCostMicroUsd,
+          }),
+          callId: keys.approval,
+          provenance: {
+            source: "chat_model",
+            sourceKind: "task_handoff",
+            derivedFromUntrusted: ctx.untrustedContent,
+          },
+          signal,
+          onApprovalRequest: ctx.onApprovalRequest,
+        });
+        if (authorization.kind === "refused") {
+          if (signal?.aborted) return notStarted(taskRefusal("stopped"));
+          return notStarted(taskRefusal(approvalRefusalReason(authorization.reason)));
+        }
+        // A replayed receipt is an answer already spent on an earlier start of
+        // this message. Reaching here, that start has no run (a run would have
+        // been found above), so it was refused after the person said yes, and
+        // dispatching now would start a task on a one-time approval that is
+        // already used.
+        if (authorization.kind === "replay") return notStarted(taskRefusal("already_tried"));
+        receiptId = authorization.receiptId;
+      }
+
+      if (signal?.aborted) {
+        await settleReceipt(false, TASK_REFUSALS.stopped);
+        return notStarted(taskRefusal("stopped"));
+      }
+
+      const dispatched = await dispatch.startWorkRunForUser(user, session, {
+        ...runBody,
+        // Only ever reached after a person said yes to the estimate on the card.
+        ...(estimate.requiresConfirmation ? { confirmExpensive: true } : {}),
+      });
+      const refusal = dispatched.run ? null : taskRefusalFromResponse(dispatched.status, dispatched.body);
+      await settleReceipt(refusal === null, refusal ? refusal.message : `Started task ${session.id}.`);
+      if (refusal) return notStarted(refusal);
+      const selection = dispatched.body.selection as { explanation?: unknown } | undefined;
+      where = typeof selection?.explanation === "string" ? selection.explanation : null;
+    }
+  } catch (err) {
+    /*
+     * A throw can land after the run was written: recording its inputs is the
+     * step after the create. Whether the task started is then a fact in the
+     * database, not in the error, and telling the model "nothing was started"
+     * about a run that is spending would be the one wrong answer here.
+     */
+    const run = await prisma.workRun
+      .findFirst({ where: { userId: user.id, sessionId: session.id, idempotencyKey: keys.run }, select: { id: true } })
+      .catch(() => null);
+    if (!run) {
+      await settleReceipt(false, TASK_REFUSALS.internal_error);
+      await discardDraft();
+      throw err;
+    }
+    await settleReceipt(true, `Started task ${session.id}.`);
+    console.error("[chat:task] the task started, then a later step failed", {
+      conversationId: ctx.conversation.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   // Read back after dispatch, so the client adopts the session as queued rather
-  // than as the draft `createWorkSession` returned.
-  const current =
-    (await prisma.workSession.findFirst({ where: { id: session.id, userId: user.id } })) ?? session;
-  ctx.onStarted?.(serializers.serializeSession(current));
-  return { status: "started", title: current.title, where, replay: alreadyStarted };
+  // than as the draft `createWorkSession` returned. Only a row that has left
+  // `draft` is announced; otherwise the discovery poll finds it a moment later.
+  const current = await prisma.workSession
+    .findFirst({ where: { id: session.id, userId: user.id } })
+    .catch(() => null);
+  if (current && current.status !== "draft") ctx.onStarted?.(serializers.serializeSession(current));
+  return { status: "started", title: current?.title ?? session.title, where, replay: alreadyStarted };
 }
 
 /**

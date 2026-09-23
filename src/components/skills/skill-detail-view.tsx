@@ -27,6 +27,7 @@ import {
   type ClientWorkSkillVersion,
   type SkillResource,
 } from "@/lib/work/skills";
+import { sourceLabel, type ClientSkillSource } from "@/lib/skills/library-contract";
 import { cn } from "@/lib/utils";
 import { SkillEditor, type SkillDraft } from "@/components/skills/skill-editor";
 import { SkillSourceAvatar } from "@/components/skills/skill-source-avatar";
@@ -56,6 +57,8 @@ export type SkillUsage = "manual" | "auto";
 
 export interface SkillDetailActions {
   onToggle: (enabled: boolean) => void;
+  /** Switches on the repository the skill came from, offered only while it is off. */
+  onEnableSource?: () => void;
   onUsageChange: (usage: SkillUsage) => void;
   onConsent: () => void;
   onRestore: (version: number) => void;
@@ -87,11 +90,13 @@ export function skillUsage(skill: Pick<ClientWorkSkill, "autoSelect" | "trust">)
  * "Trust" and the caption explaining how they interact were one question:
  * may Juno use this without being asked. It is asked once now, as Usage.
  * Choosing "Automatically" trusts the skill and lets Juno pick it in the same
- * write, because the server would clamp one without the other.
+ * write, because the server would clamp one without the other; choosing "Only
+ * when I call it" on an installed skill takes that trust back (`skillUsagePatch`).
  *
  * SAID ONLY WHEN IT MATTERS. The security note appears when the scan has
- * something to say, and the consent note only when this version is waiting
- * for approval. A clear skill shows neither.
+ * something to say, the consent note only when this version is waiting for
+ * approval, and the repository note only while the source it came from is
+ * switched off. A clear skill shows none of them.
  */
 export function SkillDetailView({
   skill,
@@ -102,7 +107,7 @@ export function SkillDetailView({
   projectName,
   busy,
   actions,
-  sourceUrl,
+  installedFrom = null,
 }: {
   skill: ClientWorkSkill;
   version: ClientWorkSkillVersion | null;
@@ -113,8 +118,12 @@ export function SkillDetailView({
   projectName: string | null;
   busy: boolean;
   actions: SkillDetailActions;
-  /** The installed source's page on GitHub, when the library knows it. */
-  sourceUrl?: string | null;
+  /**
+   * The source it was installed from, as the library knows it: its page on
+   * GitHub, and its own switch, which can keep a skill that reads On from
+   * running. Null for a skill of your own.
+   */
+  installedFrom?: ClientSkillSource | null;
 }) {
   const [editing, setEditing] = React.useState(false);
   const [tab, setTab] = React.useState("instructions");
@@ -122,7 +131,7 @@ export function SkillDetailView({
   const yours = source === null;
   const status = version?.securityStatus ?? skill.securityStatus;
   const blocked = status === "blocked";
-  const repoUrl = source ? (sourceUrl ?? githubRepoUrl(source.owner, source.repo)) : null;
+  const repoUrl = source ? (installedFrom?.url ?? githubRepoUrl(source.owner, source.repo)) : null;
 
   return (
     <AppPage measure="reading">
@@ -140,7 +149,7 @@ export function SkillDetailView({
                 checked={skill.enabled && !blocked}
                 disabled={busy || blocked}
                 onCheckedChange={actions.onToggle}
-                aria-label="Skill on"
+                aria-label="Use this skill"
               />
             </label>
             <DropdownMenu>
@@ -201,7 +210,14 @@ export function SkillDetailView({
         />
       ) : (
         <div className="space-y-8">
-          <SkillNotices skill={skill} version={version} busy={busy} onConsent={actions.onConsent} />
+          <SkillNotices
+            skill={skill}
+            version={version}
+            installedFrom={installedFrom}
+            busy={busy}
+            onConsent={actions.onConsent}
+            onEnableSource={actions.onEnableSource}
+          />
 
           <UsageChoice
             skill={skill}
@@ -295,15 +311,19 @@ function SkillMeta({
           Yours
         </span>
       )}
-      <span>
-        Type{" "}
-        <span className="font-mono text-foreground" translate="no">
-          /{skill.slug}
+      {/* One unit, so a narrow column wraps it whole instead of leaving the
+          separator at the end of a line. */}
+      <span className="inline-flex max-w-full items-center gap-x-2 whitespace-nowrap">
+        <span className="min-w-0 truncate">
+          Type{" "}
+          <span className="font-mono text-foreground" translate="no">
+            /{skill.slug}
+          </span>
         </span>
-      </span>
-      <span aria-hidden="true">·</span>
-      <span>
-        Version <span className="tabular-nums">{skill.currentVersion}</span>
+        <span aria-hidden="true">·</span>
+        <span>
+          Version <span className="tabular-nums">{skill.currentVersion}</span>
+        </span>
       </span>
     </div>
   );
@@ -312,13 +332,17 @@ function SkillMeta({
 function SkillNotices({
   skill,
   version,
+  installedFrom,
   busy,
   onConsent,
+  onEnableSource,
 }: {
   skill: ClientWorkSkill;
   version: ClientWorkSkillVersion | null;
+  installedFrom: ClientSkillSource | null;
   busy: boolean;
   onConsent: () => void;
+  onEnableSource?: () => void;
 }) {
   const status = version?.securityStatus ?? skill.securityStatus;
   const findings = securityFindingsOf(version?.securityScan);
@@ -331,6 +355,30 @@ function SkillNotices({
       </ul>
     ) : null;
   const notices: React.ReactNode[] = [];
+  // First, because it outranks everything below it: while the repository is
+  // off, nothing about this version runs, however its own switch reads.
+  if (installedFrom && !installedFrom.enabled) {
+    notices.push(
+      <WorkStateNote
+        key="source"
+        tone="info"
+        action={
+          onEnableSource ? (
+            <Button size="sm" variant="outline" onClick={onEnableSource} loading={busy}>
+              Turn on
+            </Button>
+          ) : undefined
+        }
+      >
+        <span className="block font-medium text-foreground">
+          <span translate="no">{sourceLabel(installedFrom)}</span> is switched off
+        </span>
+        <span className="block">
+          This skill won’t run, or show in chat, until the repository it came from is back on.
+        </span>
+      </WorkStateNote>
+    );
+  }
   if (version?.requiresConsent && status !== "blocked") {
     notices.push(
       <WorkStateNote
@@ -404,7 +452,12 @@ function UsageChoice({
     {
       value: "auto",
       label: "Automatically when relevant",
-      description: "Juno picks it when your request matches its description.",
+      // Choosing this trusts the skill in the same write (see `setUsage`), and
+      // for an installed skill that means instructions somebody else wrote no
+      // longer reach the model marked as untrusted. Said before the press.
+      description: trustPermitsAutoSelection(skill.trust)
+        ? "Juno picks it when your request matches its description."
+        : "Juno picks it when your request matches its description. Choosing this trusts its instructions.",
     },
   ];
   return (
@@ -489,7 +542,10 @@ function InstructionsPanel({
       </div>
       <div className="px-5 py-5 sm:px-7 sm:py-6">
         {version.instructions.trim() ? (
-          <Markdown content={version.instructions} />
+          // The page's reading rung rather than the transcript's, and no
+          // leading margin on the first heading: the strip above already opens
+          // the document.
+          <Markdown content={version.instructions} className="text-body [&>:first-child]:mt-0" />
         ) : (
           <p className="text-ui text-muted-foreground">No instructions yet.</p>
         )}

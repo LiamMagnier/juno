@@ -47,15 +47,15 @@ export function ChoiceMenu<T extends string>({
   value,
   options,
   onChange,
-  ariaLabel,
+  label,
   className,
   disabled,
 }: {
   value: T;
   options: readonly ChoiceOption<T>[];
   onChange: (value: T) => void;
-  /** The setting's name, read before the current choice. */
-  ariaLabel: string;
+  /** The setting's name, read before the current choice. Not shown. */
+  label: string;
   className?: string;
   disabled?: boolean;
 }) {
@@ -64,7 +64,7 @@ export function ChoiceMenu<T extends string>({
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={disabled}>
         <button type="button" className={cn(choiceTriggerClass, className)}>
-          <span className="sr-only">{ariaLabel} </span>
+          <span className="sr-only">{label} </span>
           <span className="min-w-0 truncate">{current?.label}</span>
           {/* The same A-to-B rotate the Select chevron makes. */}
           <ChevronDown

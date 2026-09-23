@@ -156,7 +156,7 @@ import {
 import { postGenerationPlan } from "@/lib/chat/post-processing";
 import { appendSkillBlock, composeSystemPrompt } from "@/lib/chat/prompt-sections";
 import { loadChatSkill } from "@/lib/chat/skill-runtime";
-import { narrowRuntimeToolsForSkill, withheldCapabilityCount } from "@/lib/chat/skills";
+import { CHAT_SKILL_REFUSAL_MESSAGES, narrowRuntimeToolsForSkill, withheldCapabilityCount } from "@/lib/chat/skills";
 import { recordWorkAudit } from "@/lib/work/audit";
 import { chatBodySchema } from "@/lib/chat/request";
 import { isAttachmentParserPending, isAttachmentParserUnavailable } from "@/lib/attachment-context";
@@ -1072,6 +1072,16 @@ async function handleChat(req: Request) {
           });
           if (routingWarning) {
             sendActivity({ kind: "warning", title: "Model changed", detail: routingWarning });
+          }
+          // The saved path's refusal row, sent the same way. Here it goes only
+          // to the reader, in the stream and the final message: this branch
+          // stores no activity and writes no audit row, so it leaves no trace.
+          if (privateSkill && !privateSkill.applied) {
+            sendActivity({
+              kind: "warning",
+              title: "Skill not applied",
+              detail: CHAT_SKILL_REFUSAL_MESSAGES[privateSkill.reason],
+            });
           }
           if (activeConnectors.length) {
             // Private chats reach no connector. An approval receipt is a durable
@@ -2714,6 +2724,17 @@ async function handleChat(req: Request) {
       if (routingWarning) {
         sendActivity({ kind: "warning", title: "Model changed", detail: routingWarning });
       }
+      // A refused skill is not an error (see `skillOutcome` above), but the
+      // composer showed it armed, so the reader is owed the reason it did not
+      // run. The audit row above is the security log's copy; this is theirs,
+      // and it is saved with the turn's activity like every other row here.
+      if (skillOutcome && !skillOutcome.applied) {
+        sendActivity({
+          kind: "warning",
+          title: "Skill not applied",
+          detail: CHAT_SKILL_REFUSAL_MESSAGES[skillOutcome.reason],
+        });
+      }
       if (activeConnectors.length) {
         sendActivity({
           kind: "tool",
@@ -2898,7 +2919,12 @@ async function handleChat(req: Request) {
               reasoningEffort: input.reasoningEffort,
               attachmentIds: input.attachmentIds ?? [],
               connectorIds: activeConnectors.map((connector) => connector.id),
-              untrustedContent: untrustedContentInTurn,
+              // Wider than the memory rule's flag: any file in the window
+              // counts, pictures included. A screenshot of an email reaches a
+              // vision model as pixels with no envelope around them, and
+              // starting a task is the one tool whose whole effect is to act
+              // later with nobody watching, so it asks first.
+              untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
               generationId,
               onApprovalRequest: requestApproval,
               // The panel appears as soon as the run exists rather than on the

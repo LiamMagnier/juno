@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { ChoiceMenu, type ChoiceOption } from "@/components/settings/choice-menu";
+import { createSaveLedger } from "@/components/settings/save-ledger";
 import { useSaveStates, type SaveState } from "@/components/settings/save-status";
 import { useSettingsResource } from "@/components/settings/use-settings-resource";
 import { queueSettingsPatch } from "@/components/settings/use-settings-save";
@@ -77,6 +78,15 @@ function parseConnectors(body: unknown): ConnectorStatus[] {
   return (body as { connectors?: ConnectorStatus[] } | null)?.connectors ?? [];
 }
 
+/*
+ * The policy's write ledger, for the life of the page. One key, because every
+ * write sends the whole policy. Module-level because the section remounts on
+ * every switch, and a write can settle after the mount that made it is gone.
+ */
+const policyLedger = createSaveLedger<"policy">();
+/** The outcome of the newest policy write, which an overtaken one reports as its own. */
+let newestPolicyWrite: Promise<boolean> = Promise.resolve(true);
+
 /**
  * The apps Juno can reach, and what it may do in them.
  *
@@ -92,21 +102,32 @@ export function ConnectorsSection() {
   const saves = useSaveStates();
 
   // Several quick changes put several PATCHes in the queue. Only the newest
-  // may roll the controls back: a slow failure of an early one must not undo a
-  // later change the server already accepted.
-  const seq = React.useRef(0);
+  // may roll the controls back, and it rolls them back to what the server
+  // last accepted (see save-ledger.ts), not to what they showed before it:
+  // with two changes in flight that was the first change, so when both
+  // failed an app stayed drawn as blocked that the server never blocked.
+  // Every write carries the whole policy, so a failure a newer write has
+  // overtaken lost nothing: the newer one stores this change too. It says
+  // nothing of its own and reports the newer write's outcome as its row's.
   const write = (key: string, next: ConnectorPolicy) => {
-    const previous = policy.data;
-    if (!previous) return;
-    const mine = ++seq.current;
+    const shown = policy.data;
+    if (!shown) return;
+    const ticket = policyLedger.begin(["policy"], () => shown);
     policy.setData(next);
-    void saves.track(key, async () => {
+    const outcome = (async (): Promise<boolean> => {
       const res = await queueSettingsPatch({ ...next }).catch(() => null);
-      if (res?.ok) return true;
-      if (seq.current === mine) policy.setData(previous);
+      if (res?.ok) {
+        policyLedger.settle(ticket, ["policy"], { ok: true, written: { policy: next } });
+        return true;
+      }
+      const rollback = policyLedger.settle(ticket, ["policy"], { ok: false });
+      if (!rollback) return newestPolicyWrite;
+      policy.setData(rollback.policy as ConnectorPolicy);
       toast.error("Couldn’t save. Your permissions are unchanged.");
       return false;
-    });
+    })();
+    newestPolicyWrite = outcome;
+    void saves.track(key, () => outcome);
   };
 
   return (
@@ -172,7 +193,10 @@ export function ConnectorsView({
       .map((c) => ({ id: c.id, label: c.label, account: c.accountLabel, connected: true }));
     const listed = new Set(list.map((r) => r.id));
     for (const id of policy?.blockedConnectors ?? []) {
-      if (!listed.has(id)) list.push({ id, label: id, account: null, connected: false });
+      if (listed.has(id)) continue;
+      // The directory still knows its name when it is merely disconnected.
+      const known = connectors?.find((c) => c.id === id);
+      list.push({ id, label: known?.label ?? id, account: null, connected: false });
     }
     return list;
   }, [connectors, policy?.blockedConnectors]);
@@ -246,13 +270,17 @@ export function ConnectorsView({
                       : (row.account ?? undefined)
                 }
                 status={status(`app:${row.id}`)}
+                // No switch until the policy is read: a disabled switch drawn
+                // "on" while it loads, or after it failed to, claimed every
+                // app was allowed, including the ones this account blocked.
                 control={
-                  <Switch
-                    id={`connector-${row.id}`}
-                    checked={!blocked}
-                    disabled={!policy}
-                    onCheckedChange={(allowed) => onAllowApp(row.id, allowed)}
-                  />
+                  policy ? (
+                    <Switch
+                      id={`connector-${row.id}`}
+                      checked={!blocked}
+                      onCheckedChange={(allowed) => onAllowApp(row.id, allowed)}
+                    />
+                  ) : undefined
                 }
               />
             );
@@ -297,7 +325,7 @@ export function ConnectorsView({
               status={status("policy")}
               control={
                 <ChoiceMenu
-                  ariaLabel="When Juno acts in an app"
+                  label="When Juno acts in an app"
                   value={policy.actionApprovalPolicy}
                   options={POLICY_OPTIONS}
                   onChange={onPolicy}

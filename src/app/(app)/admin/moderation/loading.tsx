@@ -17,7 +17,7 @@ export default function AdminModerationLoading() {
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
     <AppPage measure="wide" contentClassName="flex flex-col gap-6" role="status" aria-label="Loading moderation queue">
-        <AppPageHeaderSkeleton headingWidth="w-56" actions className="mb-0" />
+        <AppPageHeaderSkeleton nav="eyebrow" headingWidth="w-56" actions className="mb-0" />
 
         <Card className="overflow-hidden p-0">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-4 py-3">

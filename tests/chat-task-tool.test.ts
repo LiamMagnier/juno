@@ -27,7 +27,9 @@ import { createSessionSchema, startRunSchema } from "@/app/api/work/protocol";
 import { parseSkillInvocation } from "@/lib/work/skills";
 import {
   ACTION_PERMISSION_POLICIES,
+  ACTION_PREVIEW_STRING_CHARS,
   actionPreview,
+  actionPreviewDetail,
   classifyExternalAction,
   decideActionPolicy,
   mayCreateStandingApproval,
@@ -189,6 +191,43 @@ test("the goal leads with the user's words and stays inside the Work bound", () 
   assert.equal(createSessionSchema.safeParse({ goal: huge, requestedTarget: "automatic" }).success, true);
 });
 
+test("the whole goal fits on the approval card, so nothing the task is told goes unseen", () => {
+  // The card shows `actionPreviewDetail(args).goal`, which cuts any string past
+  // its bound. A goal longer than that would carry a tail nobody approved, and
+  // a brief written from a hostile page would put its instruction exactly there.
+  assert.equal(MAX_TASK_GOAL_CHARS, ACTION_PREVIEW_STRING_CHARS);
+  const cases = [
+    { request: "r".repeat(50_000), brief: "b".repeat(50_000), deliverable: "d".repeat(300), skillSlug: "deck-style" },
+    { request: "Short ask.", brief: "b".repeat(50_000), deliverable: null },
+    { request: "", brief: "b".repeat(50_000), deliverable: "a sheet" },
+  ];
+  for (const input of cases) {
+    const goal = composeTaskGoal(input);
+    assert.ok(goal.length <= ACTION_PREVIEW_STRING_CHARS, `${goal.length} chars`);
+    const shown = actionPreviewDetail(taskApprovalArgs({ title: "t", goal, estimatedCostMicroUsd: 1 }));
+    assert.equal(shown.goal, goal);
+  }
+});
+
+test("a long message never pushes the brief out of the goal", () => {
+  // The request is bounded first and the brief takes the room that is left,
+  // because the brief is what carries the conversation the task cannot read.
+  const goal = composeTaskGoal({
+    request: "r".repeat(50_000),
+    brief: "Use the vendor list from earlier: Acme, Globex, Initech.",
+    deliverable: "a spreadsheet",
+    skillSlug: "deck-style",
+  });
+  assert.match(goal, /\n\nBrief: Use the vendor list from earlier: Acme, Globex, Initech\.\n\n/);
+  assert.match(goal, /\n\nDeliverable: a spreadsheet$/);
+  assert.equal(parseSkillInvocation(goal)?.slug, "deck-style");
+
+  // A brief too long for what is left is clipped to fill it exactly, not dropped.
+  const full = composeTaskGoal({ request: "r".repeat(50_000), brief: "b".repeat(50_000), deliverable: null });
+  assert.equal(full.length, MAX_TASK_GOAL_CHARS);
+  assert.match(full, /\n\nBrief: b+…$/);
+});
+
 test("a skill the message was sent under is invoked the way the Work runner reads it", () => {
   const goal = composeTaskGoal({
     request: "Tidy the Q3 board deck",
@@ -347,6 +386,15 @@ test("the preview describes a task only for Juno's own connector id", () => {
   assert.equal(isTaskApproval({ connectorId: "linear", toolName: "start_task" }), false);
 });
 
+test("the stored preview is built with the connector id", () => {
+  // The receipt's preview is what push notifications and the approvals list
+  // print. Built from the label alone, a task approval read "Juno wants to
+  // start task." everywhere except the card in the thread.
+  const store = read("../src/lib/action-approval-store.ts");
+  const call = store.slice(store.indexOf("const preview = actionPreview({"));
+  assert.match(call.slice(0, call.indexOf("});")), /connectorId: request\.connectorId,/);
+});
+
 test("the approval card recognises a task by the same two literals", () => {
   // The card cannot import task-tool.ts (its server half would follow it into
   // the client bundle), so it repeats the test. This keeps the copies equal.
@@ -395,6 +443,43 @@ test("the chat route gates the tool and its prompt section on one flag", () => {
   // stream and must never reach the declaration.
   const privateBranch = route.slice(route.indexOf("if (input.privateMode) {"), route.indexOf("const durableFirstSubmission"));
   assert.doesNotMatch(privateBranch, /createStartTaskTool|nativeTools|taskHandoff/);
+});
+
+test("a task started from a turn with any file in it asks first", () => {
+  // The memory rule's flag misses pictures: an image reaches a vision model as
+  // pixels with no envelope, and a screenshot of an email is as much outside
+  // content as the email's text would be.
+  const route = read("../src/app/api/chat/route.ts");
+  const call = route.slice(route.indexOf("createStartTaskTool({"));
+  assert.match(
+    call.slice(0, call.indexOf("})")),
+    /untrustedContent: untrustedContentInTurn \|\| allAttachments\.length > 0,/
+  );
+});
+
+test("a spent approval never starts a task, and every consumed one is settled", () => {
+  const source = read("../src/lib/chat/task-tool.ts");
+  // A replayed receipt reaching the dispatch means an earlier start of this
+  // message was approved and then refused; dispatching on it would reuse a
+  // one-time approval.
+  assert.match(source, /if \(authorization\.kind === "replay"\) return notStarted\(taskRefusal\("already_tried"\)\);/);
+  // Stopped after the approval, refused by the dispatch, or thrown: each moves
+  // the receipt off `executing`.
+  assert.match(source, /if \(signal\?\.aborted\) \{\s*await settleReceipt\(false, TASK_REFUSALS\.stopped\);/);
+  assert.match(source, /await settleReceipt\(refusal === null,/);
+  assert.match(source, /await settleReceipt\(false, TASK_REFUSALS\.internal_error\);\s*await discardDraft\(\);\s*throw err;/);
+  // A throw after the run was written is read back from the database rather
+  // than reported to the model as "nothing was started".
+  assert.match(source, /idempotencyKey: keys\.run \}, select: \{ id: true \} \}\)/);
+});
+
+test("the tool's preflight includes the concurrency cap, so nobody approves a run the cap refuses", () => {
+  const dispatch = read("../src/lib/work/dispatch.ts");
+  const branch = dispatch.slice(dispatch.indexOf("if (options.preflightOnly) {"));
+  const body = branch.slice(0, branch.indexOf("return { status: 200, body: { preflight }"));
+  assert.match(body, /prisma\.workRun\.count\(\{\s*where: \{ userId: user\.id, status: \{ in: \[\.\.\.WORK_LIVE_STATUSES\] \} \},/);
+  assert.match(body, /live >= WORK_RUN_CONCURRENCY_CAP/);
+  assert.match(body, /error: "run_cap_exceeded"/);
 });
 
 test("the Work routes stay thin wrappers over the shared dispatch", () => {

@@ -2007,7 +2007,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             this band does not exist. The Chat ⇄ Work switcher that used to sit
             centred here moved into the sidebar's product switch. */}
         {/* In incognito the band would be a title that is not a title
-            ("Private chat") beside an invisible cluster, above the incognito
+            ("Incognito chat") beside an invisible cluster, above the incognito
             header that already names the mode. Drop it entirely. */}
         {topActionsSlotOwner && !privateMode && (
           <div
@@ -2193,12 +2193,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     // at the colour's 120ms, to a deeper scale than any other
                     // control in the header.
                     className="pressable pointer-events-auto relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground coarse:size-11 motion-reduce:transition-none motion-reduce:active:scale-100"
-                    aria-label={forkedFrom ? "Discard branch" : "Leave private chat"}
+                    aria-label={forkedFrom ? "Discard branch" : "Leave incognito"}
                   >
                     <ActionIcons.dismiss className="size-4" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>{forkedFrom ? "Discard branch" : "Leave private chat"}</TooltipContent>
+                <TooltipContent>{forkedFrom ? "Discard branch" : "Leave incognito"}</TooltipContent>
               </Tooltip>
             </div>
           </div>
@@ -2282,7 +2282,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 onImageEdit={chat.sendImageEdit}
                 onOpenAttachment={privateMode ? undefined : openAttachment}
                 currentModelId={model}
-                conversationTitle={privateMode ? "Private chat" : headerTitle || undefined}
+                conversationTitle={privateMode ? "Incognito chat" : headerTitle || undefined}
                 // The header band above draws the visible h1 from md up,
                 // except in incognito, where the band is dropped — and only
                 // once it has a title. On the first send the messages exist

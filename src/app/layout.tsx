@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
 import { headers } from "next/headers";
 import { Providers } from "@/components/providers";
+import { FONT_SIZE_BOOT_SCRIPT } from "@/components/settings/font-size";
 import { THEME_COLOR } from "@/components/ui/theme-color";
 import { getInitialPreferences } from "@/lib/preferences";
 import { auth } from "@/lib/auth";
@@ -52,7 +53,7 @@ const mono = JetBrains_Mono({
 });
 
 const APP_DESCRIPTION =
-  "Every frontier AI model — Claude, GPT, Gemini and a dozen more labs — in one calm workspace, metered by what answers actually cost.";
+  "Every frontier AI model (Claude, GPT, Gemini and a dozen more labs) in one calm workspace, metered by what answers actually cost.";
 
 export const metadata: Metadata = {
   title: { default: "Juno", template: "%s · Juno" },
@@ -73,7 +74,7 @@ export const metadata: Metadata = {
         url: "/og.png",
         width: 1200,
         height: 630,
-        alt: "Juno — every frontier AI model, one honest subscription",
+        alt: "Juno: every frontier AI model, one honest subscription",
       },
     ],
   },
@@ -120,6 +121,21 @@ export default async function RootLayout({
       suppressHydrationWarning
       className={`${sans.variable} ${serif.variable} ${mono.variable}`}
     >
+      <head>
+        {/* The reader's text size is per device (localStorage), so the server
+            cannot render it. This applies it to the root font-size before the
+            first paint. The app layout's own apply (settings-modal-lazy) runs
+            only after hydration, so on its own it showed the default size
+            first on every load. It
+            carries the request nonce like every inline script under the CSP,
+            and suppressHydrationWarning because the browser hides a nonce
+            attribute's value from the DOM once it has been checked. */}
+        <script
+          nonce={nonce}
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: FONT_SIZE_BOOT_SCRIPT }}
+        />
+      </head>
       <body className="min-h-dvh antialiased">
         <Providers
           defaultTheme={theme}

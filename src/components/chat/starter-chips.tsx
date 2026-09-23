@@ -115,6 +115,10 @@ function useComposerDraftEmpty(): [boolean, (empty: boolean) => void] {
     };
     window.addEventListener("juno:composer-draft", onDraft);
     document.addEventListener("input", onInput, true);
+    // The composer keeps a half-typed draft across a move to a new chat, and
+    // no event fires for a draft that was already there, so read it once.
+    const field = document.getElementById(CHAT_COMPOSER_FIELD_ID);
+    if (field instanceof HTMLTextAreaElement) setEmpty(field.value.trim().length === 0);
     return () => {
       window.removeEventListener("juno:composer-draft", onDraft);
       document.removeEventListener("input", onInput, true);

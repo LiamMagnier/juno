@@ -99,6 +99,15 @@ export function ModelsSection() {
     [chat, settings.favoriteModels]
   );
 
+  // The device-local defaults write to this browser at once and cannot fail,
+  // but they confirm the same way the account's settings do, so a reader
+  // does not have to know which kind of setting they just changed.
+  const keep = (key: string, patch: Parameters<typeof setComposerPrefs>[0]) =>
+    void saves.track(key, async () => {
+      setComposerPrefs(patch);
+      return true;
+    });
+
   const toggleFavorite = (id: string) => {
     const next = favorites.has(id)
       ? settings.favoriteModels.filter((m) => m !== id)
@@ -142,11 +151,12 @@ export function ModelsSection() {
           label="Thinking effort"
           description="How long a model thinks before it answers. Higher is slower and costs more."
           wide
+          status={saves.status("reasoningEffort")}
           control={
             <Select
               value={composerPrefs.reasoningEffort ?? AUTO_EFFORT}
               onValueChange={(v) =>
-                setComposerPrefs({ reasoningEffort: v === AUTO_EFFORT ? null : (v as ReasoningEffort) })
+                keep("reasoningEffort", { reasoningEffort: v === AUTO_EFFORT ? null : (v as ReasoningEffort) })
               }
             >
               <SelectTrigger aria-label="Thinking effort" className="w-full @[34rem]/pane:w-40">
@@ -167,11 +177,12 @@ export function ModelsSection() {
           label="Fast mode"
           htmlFor="fast-mode"
           description="Prefer the quickest capable model and skip extended thinking."
+          status={saves.status("fastMode")}
           control={
             <Switch
               id="fast-mode"
               checked={composerPrefs.fastMode}
-              onCheckedChange={(v) => setComposerPrefs({ fastMode: v })}
+              onCheckedChange={(fastMode) => keep("fastMode", { fastMode })}
             />
           }
         />
@@ -179,11 +190,12 @@ export function ModelsSection() {
           label="Web search"
           htmlFor="web-search"
           description="Let models look things up when a message needs current information."
+          status={saves.status("webSearch")}
           control={
             <Switch
               id="web-search"
               checked={composerPrefs.webSearch}
-              onCheckedChange={(v) => setComposerPrefs({ webSearch: v })}
+              onCheckedChange={(webSearch) => keep("webSearch", { webSearch })}
             />
           }
         />

@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   if (!isStorageAvailable()) {
-    return NextResponse.json({ error: "File uploads are not available — configure a storage bucket." }, { status: 503 });
+    return NextResponse.json({ error: "File uploads aren't available. Configure a storage bucket." }, { status: 503 });
   }
 
   if (!isOwnerEmail(user.email)) {

@@ -148,7 +148,9 @@ export function SkillsLibraryView({
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (isTypingTarget(event.target)) return;
+      // Not while typing somewhere, and not from under a dialog, whose focus
+      // trap would only hand the focus straight back.
+      if (isTypingTarget(event.target) || document.querySelector('[role="dialog"][data-state="open"]')) return;
       event.preventDefault();
       searchRef.current?.focus();
     };
@@ -280,9 +282,11 @@ export function SkillsLibraryView({
           ) : null}
 
           {library.truncated ? (
+            // Not "search to find the rest": the search filters this list in
+            // the browser, so a skill past the cap is past it for search too.
             <p className="mt-4 text-caption text-muted-foreground">
               Showing <span className="tabular-nums">{listedSkillCount(library)}</span> of{" "}
-              <span className="tabular-nums">{library.total}</span> skills. Search to find the rest.
+              <span className="tabular-nums">{library.total}</span> skills, the first by name.
             </p>
           ) : null}
         </>

@@ -19,7 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { SkillDialogContent, SkillDialogFixed, SkillDialogStep } from "@/components/skills/skill-dialog-shell";
 import { SkillSourceAvatar } from "@/components/skills/skill-source-avatar";
-import { shortCommit } from "@/components/skills/skill-library-model";
+import { shortCommit, updateCheckHasChoices } from "@/components/skills/skill-library-model";
 import { checkSkillSource, skillsFailureMessage, updateSkillSource } from "@/components/skills/skills-transport";
 
 export interface UpdateSourceHandlers {
@@ -145,16 +145,28 @@ export function UpdateSourceFlow({
       onDone(result.value);
       return;
     }
+    if (result.kind === "blocked" && result.reason === "source_moved") {
+      // The server refused because the repository moved past the commit this
+      // list was checked at. Checking again is the only way forward, so it is
+      // done here rather than left to the reader to find: close, reopen.
+      await run();
+      setRefusal("The repository changed while you were looking. This is what it holds now.");
+      return;
+    }
     setRefusal(skillsFailureMessage(result, "Couldn’t apply the update. Every skill is as it was."));
   };
 
   const label = sourceLabel(source);
   const toCommit = state.kind === "ready" ? state.check.latestCommit : source.latestCommit;
   const count = picked.size;
-  const nothingToDo =
-    state.kind === "ready" &&
-    (state.check.upToDate ||
-      (state.check.changed.length === 0 && state.check.added.length === 0 && state.check.removed.length === 0));
+  // "Install" when every ticked row is a skill new upstream: nothing already
+  // installed is being replaced, and "Update 1 skill" would say it was.
+  const installsOnly =
+    state.kind === "ready" && count > 0 && !state.check.changed.some((change) => picked.has(change.path));
+  // New upstream skills count as something to do even when every installed
+  // one matches (the server's `upToDate`); see `updateCheckHasChoices`.
+  const nothingToDo = state.kind === "ready" && !updateCheckHasChoices(state.check);
+  const removedCount = state.kind === "ready" ? state.check.removed.length : 0;
 
   return (
     <>
@@ -178,7 +190,7 @@ export function UpdateSourceFlow({
         </div>
       </SkillDialogFixed>
 
-      <AnimatePresence mode="wait" initial={false}>
+      <AnimatePresence mode="popLayout" initial={false}>
         {state.kind === "checking" ? (
           <SkillDialogStep key="checking" className="border-t border-border/70">
             <div role="status" aria-label="Checking for updates" className="divide-y divide-border/70">
@@ -210,6 +222,20 @@ export function UpdateSourceFlow({
               <StatusIcons.success className="size-4 text-success-ink" aria-hidden="true" />
               Up to date. Every installed skill matches the repository.
             </p>
+            {removedCount > 0 ? (
+              // Nothing to choose, but not nothing to say: these are still
+              // installed here and still run, from files that no longer exist.
+              <p className="mt-2 pl-6 text-caption text-muted-foreground">
+                {removedCount === 1 ? (
+                  "One installed skill is no longer in the repository. It stays installed here."
+                ) : (
+                  <>
+                    <span className="tabular-nums">{removedCount}</span> installed skills are no longer in the
+                    repository. They stay installed here.
+                  </>
+                )}
+              </p>
+            ) : null}
             <div className="mt-5 flex justify-end">
               <Button variant="secondary" onClick={onCancel}>
                 Done
@@ -244,6 +270,11 @@ export function UpdateSourceFlow({
                 disabled={applying}
                 note={() => "Not installed yet"}
               />
+              {state.check.more ? (
+                <p className="px-5 pb-3 text-caption text-muted-foreground sm:px-6">
+                  This repository has more skills than Juno reads at once, so some new ones may not be listed.
+                </p>
+              ) : null}
               {state.check.removed.length > 0 ? (
                 <section className="border-t border-border/70 first:border-t-0">
                   <h3 className="px-5 pb-1 pt-3 text-caption font-medium text-muted-foreground sm:px-6">
@@ -252,6 +283,8 @@ export function UpdateSourceFlow({
                   <ul className="pb-2">
                     {state.check.removed.map((change) => (
                       <li key={change.path} className="flex items-baseline gap-3 px-5 py-2 sm:px-6">
+                        {/* The checkbox column the rows above have, left empty. */}
+                        <span aria-hidden="true" className="w-[18px] shrink-0" />
                         <span className="min-w-0 flex-1 truncate text-ui text-foreground">{change.name}</span>
                         <span className="shrink-0 text-caption text-muted-foreground">Kept here</span>
                       </li>
@@ -275,7 +308,8 @@ export function UpdateSourceFlow({
                     "Choose a skill"
                   ) : (
                     <span>
-                      Update <span className="tabular-nums">{count}</span> {count === 1 ? "skill" : "skills"}
+                      {installsOnly ? "Install" : "Update"} <span className="tabular-nums">{count}</span>{" "}
+                      {count === 1 ? "skill" : "skills"}
                     </span>
                   )}
                 </Button>

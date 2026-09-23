@@ -3,6 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { useApp } from "@/components/app/app-provider";
+import { createSaveLedger } from "@/components/settings/save-ledger";
 import type { ClientSettings } from "@/types/app";
 
 type SettingsKey = keyof ClientSettings;
@@ -12,26 +13,17 @@ type SettingsKey = keyof ClientSettings;
  * and the memory page) writing the same account must agree on what the server
  * last accepted and on the order their writes reach it.
  *
- *   queue      every PATCH waits for the one before it, so two quick toggles
- *              of the same array field reach the server in the order they
- *              were made. Without it, "Health on" then "Money on" could land
- *              as [health, money] followed by [health], and the server would
- *              keep the older list while the switches showed the newer one.
- *   latest     the newest write per key. Only that write may roll the key
- *              back; a slow failure of an older write must not undo a newer
- *              change the server already has.
- *   confirmed  the value per key the server last accepted, which is what a
- *              rollback restores. It used to restore the value the calling
- *              component happened to render with, which for an array field
- *              toggled twice in a row was already stale.
- *   pending    writes in flight per key, so `confirmed` is only seeded from
- *              the rendered value while nothing is in flight for it.
+ *   queue    every PATCH waits for the one before it, so two quick toggles of
+ *            the same array field reach the server in the order they were
+ *            made. Without it, "Health on" then "Money on" could land as
+ *            [health, money] followed by [health], and the server would keep
+ *            the older list while the switches showed the newer one.
+ *   ledger   which write owns each field and what the server last accepted
+ *            for it, so only the newest write rolls a field back, and to the
+ *            server's value rather than to an optimistic one (save-ledger.ts).
  */
 let queue: Promise<unknown> = Promise.resolve();
-let sequence = 0;
-const latest = new Map<SettingsKey, number>();
-const confirmed = new Map<SettingsKey, unknown>();
-const pending = new Map<SettingsKey, number>();
+const ledger = createSaveLedger<SettingsKey>();
 
 /**
  * PATCH /api/settings behind every write already queued, for the fields that
@@ -45,6 +37,8 @@ export function queueSettingsPatch(body: Record<string, unknown>): Promise<Respo
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      // A write that never answers must not hold every later one behind it.
+      signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(20_000) : undefined,
     })
   );
   queue = request.catch(() => undefined);
@@ -93,17 +87,21 @@ export function useSettingsSave() {
          * preview.
          */
         previous?: Partial<ClientSettings>;
+        /**
+         * Called with the restored values when this write's failure rolls
+         * fields back, and only then: never for a failure a newer write has
+         * overtaken. For state the settings object does not drive by itself
+         * (next-themes' theme, the root's `data-accent`), which must follow
+         * the same rule or it drifts from the settings it mirrors.
+         */
+        onRollback?: (restored: Partial<ClientSettings>) => void;
       }
     ) => {
       const keys = Object.keys(patch) as SettingsKey[];
-      const seq = ++sequence;
-      for (const key of keys) {
-        if (!pending.get(key)) {
-          confirmed.set(key, options?.previous && key in options.previous ? options.previous[key] : settingsRef.current[key]);
-        }
-        pending.set(key, (pending.get(key) ?? 0) + 1);
-        latest.set(key, seq);
-      }
+      const previous = options?.previous;
+      const ticket = ledger.begin(keys, (key) =>
+        previous && key in previous ? previous[key] : settingsRef.current[key]
+      );
       setSettings(patch);
 
       const request = queueSettingsPatch(patch);
@@ -118,17 +116,16 @@ export function useSettingsSave() {
         reason = UNREACHABLE_MESSAGE;
       }
 
-      for (const key of keys) pending.set(key, Math.max(0, (pending.get(key) ?? 1) - 1));
       if (ok) {
-        for (const key of keys) confirmed.set(key, patch[key]);
+        ledger.settle(ticket, keys, { ok: true, written: patch });
         return true;
       }
 
-      const rollback: Partial<Record<SettingsKey, unknown>> = {};
-      for (const key of keys) {
-        if (latest.get(key) === seq) rollback[key] = confirmed.get(key);
+      const rollback = ledger.settle(ticket, keys, { ok: false }) as Partial<ClientSettings> | null;
+      if (rollback) {
+        setSettings(rollback);
+        options?.onRollback?.(rollback);
       }
-      if (Object.keys(rollback).length > 0) setSettings(rollback as Partial<ClientSettings>);
       toast.error("Couldn’t save settings.", reason ? { description: reason } : undefined);
       return false;
     },

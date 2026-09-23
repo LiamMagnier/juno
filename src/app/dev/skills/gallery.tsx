@@ -4,12 +4,16 @@ import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Dialog } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { chatSkillsFromLibrary } from "@/components/chat/use-chat-skills";
+import { ComposerSkillsPanel } from "@/components/skills/composer-skills-panel";
 import type { LibrarySkill, LibrarySource, SkillLibrary } from "@/lib/skills/library-contract";
 import { ImportSkillsDialog, ImportSkillsFlow } from "@/components/skills/import-skills-dialog";
 import { SkillDetailView, type SkillUsage } from "@/components/skills/skill-detail-view";
 import { SkillsLibraryView, type SkillsLibraryActions } from "@/components/skills/skills-library-view";
 import { RemoveSourceDialog } from "@/components/skills/skills-library-page";
 import { UpdateSourceFlow } from "@/components/skills/update-source-dialog";
+import { skillUsagePatch } from "@/components/skills/skill-library-model";
 import type { ClientWorkSkill, ClientWorkSkillVersion } from "@/lib/work/skills";
 import {
   FIXTURE_DETAIL_SKILL,
@@ -100,6 +104,19 @@ function View({ view }: { view: SkillsGalleryView }) {
           />
         </DialogFrame>
       );
+    case "update-new":
+      // Every installed skill matches (the server's `upToDate`), and the
+      // repository has grown: the new skills must still be offered.
+      return (
+        <DialogFrame>
+          <UpdateSourceFlow
+            source={FIXTURE_LIBRARY.sources[0]}
+            onDone={() => undefined}
+            onCancel={() => undefined}
+            initialCheck={{ ...FIXTURE_UPDATE_CHECK, upToDate: true, changed: [], removed: [], more: true }}
+          />
+        </DialogFrame>
+      );
     case "detail":
       return (
         <DetailFixture skill={FIXTURE_DETAIL_SKILL} version={FIXTURE_DETAIL_VERSION} versions={FIXTURE_DETAIL_VERSIONS} />
@@ -118,6 +135,8 @@ function View({ view }: { view: SkillsGalleryView }) {
           projectId="proj_1"
         />
       );
+    case "composer":
+      return <ComposerFixture />;
     case "detail-notices":
       return (
         <DetailFixture
@@ -134,6 +153,7 @@ function View({ view }: { view: SkillsGalleryView }) {
             },
           }}
           versions={FIXTURE_DETAIL_VERSIONS}
+          installedFrom={{ ...FIXTURE_LIBRARY.sources[0], enabled: false }}
         />
       );
   }
@@ -237,6 +257,7 @@ function DetailFixture({
   resources = [],
   projectName = null,
   projectId = null,
+  installedFrom: initialSource = null,
 }: {
   skill: ClientWorkSkill;
   version: ClientWorkSkillVersion;
@@ -244,8 +265,10 @@ function DetailFixture({
   resources?: { attachmentId: string; fileName: string }[];
   projectName?: string | null;
   projectId?: string | null;
+  installedFrom?: LibrarySource | null;
 }) {
   const [skill, setSkill] = React.useState<ClientWorkSkill>({ ...initialSkill, projectId });
+  const [installedFrom, setInstalledFrom] = React.useState(initialSource);
   return (
     <SkillDetailView
       skill={skill}
@@ -254,15 +277,14 @@ function DetailFixture({
       versionsFailed={false}
       resources={resources}
       projectName={projectName}
+      installedFrom={installedFrom}
       busy={false}
       actions={{
         onToggle: (enabled) => setSkill({ ...skill, enabled }),
+        onEnableSource: () => setInstalledFrom((current) => (current ? { ...current, enabled: true } : current)),
+        // What `useSkillDetail.setUsage` writes.
         onUsageChange: (usage: SkillUsage) =>
-          setSkill({
-            ...skill,
-            autoSelect: usage === "auto",
-            trust: usage === "auto" ? "user_authored" : skill.trust,
-          }),
+          setSkill({ ...skill, ...skillUsagePatch(usage, skill, version.contract.provenance) }),
         onConsent: () => toast.success("Approved. The skill can run again."),
         onRestore: (n) => toast.message(`Would restore version ${n}`),
         onRetryVersions: () => undefined,
@@ -275,5 +297,41 @@ function DetailFixture({
         },
       }}
     />
+  );
+}
+
+/** The composer's "Use a skill" flyout, browsing (grouped) and filtered (flat, labelled). */
+function ComposerFixture() {
+  const skills = chatSkillsFromLibrary({
+    ...FIXTURE_LIBRARY,
+    sources: FIXTURE_LIBRARY.sources.map((source) => ({ ...source, enabled: true })),
+  });
+  const [armed, setArmed] = React.useState<string | null>("pdf");
+  const panel = (initialQuery?: string) => (
+    <ComposerSkillsPanel
+      skills={skills}
+      failed={false}
+      onRetry={() => undefined}
+      armedSlug={armed}
+      onPick={(slug) => setArmed((current) => (current === slug ? null : slug))}
+      onManage={() => toast.message("Would open /skills")}
+      initialQuery={initialQuery}
+    />
+  );
+  return (
+    <div className="flex flex-wrap gap-8 px-8 py-6">
+      {[undefined, "doc"].map((query) => (
+        <div key={query ?? "all"} className="h-[34rem] w-80">
+          <DropdownMenu open modal={false}>
+            <DropdownMenuTrigger className="text-caption text-muted-foreground">
+              {query ? "Filtered" : "Browsing"}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-80" onCloseAutoFocus={(event) => event.preventDefault()}>
+              {panel(query)}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ))}
+    </div>
   );
 }

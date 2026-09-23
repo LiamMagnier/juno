@@ -57,11 +57,28 @@ export function ActivitySheet({
   onDelete,
   loadRecapExtras,
 }: ActivitySheetProps) {
+  const headingRef = React.useRef<HTMLHeadingElement>(null);
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" title="Memory activity" className="flex w-[28rem] max-w-[92vw] flex-col">
+      <SheetContent
+        side="right"
+        title="Memory activity"
+        // Modal at every width (focus trapped, the page scroll-locked), so the
+        // page behind is dimmed at every width too, not only on a phone.
+        scrim="always"
+        className="flex w-[28rem] max-w-[92vw] flex-col"
+        // Radix focuses the first control on open, which here is Close, and
+        // its tooltip would open with it. The heading takes focus instead: a
+        // screen reader lands on the sheet's name, and nothing pops.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          headingRef.current?.focus();
+        }}
+      >
         <div className="flex items-center justify-between gap-3 px-5 pb-3 pt-4">
-          <h2 className="text-heading">Activity</h2>
+          <h2 ref={headingRef} tabIndex={-1} className="text-heading outline-none">
+            Activity
+          </h2>
           <Tooltip>
             <TooltipTrigger asChild>
               <SheetClose asChild>
@@ -143,7 +160,7 @@ function EditHistory({
             <OperationDiff operations={edit.operations} className="mt-2.5" />
             <div className="mt-2 flex items-center justify-between gap-2">
               <span className="text-caption text-muted-foreground">{relativeTime(edit.createdAt)}</span>
-              <div className="-mr-2 flex items-center gap-1">
+              <div className="flex items-center gap-1">
                 {edit.status === "applied" && (
                   <Button variant="ghost" size="sm" loading={busy} onClick={() => void onUndo(edit)} className="gap-1.5">
                     <Undo2 className="size-3.5" aria-hidden="true" />

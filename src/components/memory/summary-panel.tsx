@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChevronDown, History } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Collapse } from "@/components/ui/collapse";
 import { Markdown } from "@/components/chat/markdown";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
@@ -27,7 +28,7 @@ import { relativeTime } from "@/components/memory/memory-time";
  * the panel's 20px ones.
  */
 
-/** Roughly how much prose shows before "Show more": about six lines of the reading column. */
+/** Roughly how much prose shows before "Read the whole summary": about six lines of the reading column. */
 const PREVIEW_CHARS = 520;
 
 interface SummaryPanelProps {
@@ -58,7 +59,7 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
       used += section.body.length;
       count++;
     }
-    // A single short section left over is not worth a "Show more".
+    // A single short section left over is not worth a "Read the whole summary".
     const rest = sections.slice(count).reduce((total, section) => total + section.body.length, 0);
     return rest < 160 ? sections.length : count;
   }, [sections]);
@@ -68,7 +69,7 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
   const hasSummary = !!summary && sections.length > 0;
 
   return (
-    <section aria-labelledby="memory-summary-heading" className="surface-raised rounded-panel">
+    <section aria-labelledby="memory-summary-heading" className="surface-raised @container/summary rounded-panel">
       <div className="px-5 pb-1 pt-4">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h2 id="memory-summary-heading" className="mr-auto text-ui font-medium text-muted-foreground">
@@ -80,20 +81,40 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
                 <span>Updated</span> <span>{relativeTime(summary.updatedAt)}</span>
               </span>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              loading={consolidating}
-              onClick={onRebuild}
-              className="gap-1.5 px-2 text-muted-foreground"
-            >
-              <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
-              {hasSummary ? "Rebuild" : "Write summary"}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={onOpenActivity} className="gap-1.5 px-2 text-muted-foreground">
-              <History className="size-3.5" aria-hidden="true" />
-              Activity
-            </Button>
+            {/* Labelled where there is room, glyphs with tooltips where there
+                is not: on a phone the two labels pushed the row onto a second
+                line under a one-word heading. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  loading={consolidating}
+                  onClick={onRebuild}
+                  aria-label={hasSummary ? "Rebuild the summary" : "Write the summary"}
+                  className="gap-1.5 px-2 text-muted-foreground"
+                >
+                  <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+                  <span className="hidden @[30rem]/summary:inline">{hasSummary ? "Rebuild" : "Write summary"}</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Rewrite it from everything Juno remembers</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onOpenActivity}
+                  aria-label="Activity"
+                  className="gap-1.5 px-2 text-muted-foreground"
+                >
+                  <History className="size-3.5" aria-hidden="true" />
+                  <span className="hidden @[30rem]/summary:inline">Activity</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Your edits and a recap of what changed</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 

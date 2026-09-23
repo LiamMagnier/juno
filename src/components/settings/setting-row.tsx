@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
  * from weight and size, and the only lines are the hairlines between rows.
  *
  * The type ladder, top down: the pane's section name at `text-title`, a
- * group's title at `text-body` semibold, a row's label at `text-body` medium,
+ * group's title at `text-body-lg` semibold, a row's label at `text-body` medium,
  * and every note, group or row, at `text-ui` in muted ink. A group's note is
  * deliberately quieter than the rows under it; it used to be `text-body`, as
  * loud as the labels it introduced. The group title was a 12px mono eyebrow,
@@ -63,12 +63,12 @@ export function SettingsGroup({
       )}
     >
       {hasHeader && (
-        <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1 pb-1">
-          <div className="min-w-0">
-            {title != null && <h3 className="text-body font-semibold text-foreground">{title}</h3>}
-            {description && <p className="mt-0.5 max-w-prose text-ui text-muted-foreground">{description}</p>}
+        <div className="flex items-end justify-between gap-x-6 gap-y-1 pb-1.5">
+          <div className="min-w-0 flex-1">
+            {title != null && <h3 className="text-body-lg font-semibold text-foreground">{title}</h3>}
+            {description && <p className="mt-0.5 text-ui text-muted-foreground">{description}</p>}
           </div>
-          {aside}
+          {aside && <div className="flex shrink-0 items-center gap-3">{aside}</div>}
         </div>
       )}
       <div className="divide-y divide-border/60">{children}</div>
@@ -115,7 +115,10 @@ export function SettingRow({
   children?: React.ReactNode;
   className?: string;
 }) {
-  const Label = htmlFor ? "label" : "p";
+  // A <div>, not a <p>, when there is no field to point at: a label is often
+  // more than words (a lab's mark, an "On" badge), and a badge's <div> inside
+  // a <p> is invalid HTML that React reports as a hydration error.
+  const Label = htmlFor ? "label" : "div";
   return (
     <div className={cn("py-4", className)}>
       <div

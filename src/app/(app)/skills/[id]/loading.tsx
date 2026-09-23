@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function SkillLoading() {
   return (
     <AppPage measure="reading" role="status" aria-label="Loading skill">
-      <AppPageHeaderSkeleton headingWidth="w-44" actions className="mb-0 border-b-0 pb-0" />
+      <AppPageHeaderSkeleton nav headingWidth="w-44" actions className="mb-0 border-b-0 pb-0" />
       <div className="mb-7 mt-3 flex items-center gap-3 border-b border-border pb-5">
         <Skeleton className="h-7 w-44 rounded-full" />
         <Skeleton className="h-4 w-28 rounded-sm" />

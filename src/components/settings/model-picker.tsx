@@ -118,7 +118,13 @@ export function ModelCombobox({
 
   const choose = (row: Row) => {
     if (row.kind === "older") {
+      // The row disappears as it opens, so the highlight moves to the first
+      // model it revealed. Left to the fallback below, it landed on the
+      // list's first option (Auto) and scrolled the list back to the top,
+      // away from everything that had just appeared.
+      const revealed = models.find((m) => m.legacy && !selected.has(m.id) && canUseModel(plan, m.id));
       setShowOlder(true);
+      if (revealed) setActive(revealed.id);
       return;
     }
     if (row.kind === "header" || (row.kind === "model" && row.locked)) return;
@@ -250,8 +256,8 @@ export function ModelCombobox({
               >
                 {row.kind === "auto" && <JunoMark className="size-4 shrink-0" />}
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-foreground" translate="no">
-                    {model ? model.name : "Auto"}
+                  <span className="block truncate text-foreground">
+                    {model ? <span translate="no">{model.name}</span> : "Auto"}
                   </span>
                   {row.kind === "auto" && (
                     <span className="block truncate text-caption text-muted-foreground">
@@ -302,8 +308,8 @@ export const ModelTrigger = React.forwardRef<
       ) : (
         <JunoMark className="size-4 shrink-0" />
       )}
-      <span className="min-w-0 flex-1 truncate" translate="no">
-        {model ? model.name : "Auto"}
+      <span className="min-w-0 flex-1 truncate">
+        {model ? <span translate="no">{model.name}</span> : "Auto"}
       </span>
       <ChevronDown
         className="size-4 shrink-0 opacity-60 transition-transform duration-base ease-in-out motion-reduce:transition-none group-data-[state=open]:rotate-180"

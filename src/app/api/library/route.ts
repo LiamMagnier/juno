@@ -5,23 +5,17 @@ import { getCurrentUser } from "@/lib/session";
 import { serializeAttachment } from "@/lib/serializers";
 import { getUserPlan } from "@/lib/usage";
 import { libraryQuotaBytes, libraryUsageBytes } from "@/lib/library";
+import {
+  cursorPositionOf,
+  decodeLibraryCursor,
+  encodeLibraryCursor,
+  escapeLike,
+  libraryOrderBy,
+  libraryRowsAfter,
+  parseLibrarySort,
+} from "@/components/library/library-query";
 
 export const runtime = "nodejs";
-
-/**
- * The orderings the Library offers. Each ends on `id` so two rows with the same
- * key (two files added in one second, two files with one name) still have a
- * fixed order, which is what lets a cursor resume exactly where the last page
- * stopped under ANY of them, not only under the default.
- */
-const ORDER_BY = {
-  newest: [{ createdAt: "desc" }, { id: "desc" }],
-  oldest: [{ createdAt: "asc" }, { id: "asc" }],
-  name: [{ fileName: "asc" }, { id: "asc" }],
-  size: [{ size: "desc" }, { id: "desc" }],
-} satisfies Record<string, Prisma.AttachmentOrderByWithRelationInput[]>;
-
-type LibrarySort = keyof typeof ORDER_BY;
 
 /** Long enough for any real file name, short enough that a pasted essay is not a query. */
 const MAX_QUERY_LENGTH = 200;
@@ -38,7 +32,9 @@ const MAX_QUERY_LENGTH = 200;
  * Parameters (all optional; the composer's library picker sends none, so the
  * defaults are its contract): `q` (case-insensitive substring of the name),
  * `kind` (IMAGE | FILE), `sort` (newest | oldest | name | size),
- * `includeDeleted` (the Recently deleted view), `limit` and `cursor`.
+ * `includeDeleted` (the Recently deleted view), `limit` and `cursor` (the
+ * `nextCursor` of the page before, under the same sort; see
+ * `encodeLibraryCursor` for why it is a position and not a row id).
  */
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -48,8 +44,7 @@ export async function GET(req: Request) {
   const rawKind = searchParams.get("kind");
   const kind = rawKind === "IMAGE" || rawKind === "FILE" ? rawKind : null;
   const q = (searchParams.get("q") ?? "").trim().slice(0, MAX_QUERY_LENGTH);
-  const rawSort = searchParams.get("sort");
-  const sort: LibrarySort = rawSort && rawSort in ORDER_BY ? (rawSort as LibrarySort) : "newest";
+  const sort = parseLibrarySort(searchParams.get("sort"));
   const includeDeleted = searchParams.get("includeDeleted") === "true";
   const requestedLimit = Number(searchParams.get("limit") ?? "100");
   const limit = Number.isInteger(requestedLimit) ? Math.min(300, Math.max(1, requestedLimit)) : 100;
@@ -65,9 +60,27 @@ export async function GET(req: Request) {
     deletedAt: includeDeleted ? { not: null } : null,
   };
   const matching: Prisma.AttachmentWhereInput = q
-    ? { ...inView, fileName: { contains: q, mode: "insensitive" } }
+    ? { ...inView, fileName: { contains: escapeLike(q), mode: "insensitive" } }
     : inView;
-  const where: Prisma.AttachmentWhereInput = kind ? { ...matching, kind } : matching;
+  const filtered: Prisma.AttachmentWhereInput = kind ? { ...matching, kind } : matching;
+
+  // Where the page before stopped. A cursor this sort did not write is still
+  // accepted as a bare row id, the form it used to take, but only for a row
+  // of the reader's own: its position is read here, scoped to them.
+  let after: Prisma.AttachmentWhereInput | null = null;
+  if (cursor) {
+    let position = decodeLibraryCursor(sort, cursor);
+    if (!position) {
+      const row = await prisma.attachment.findFirst({
+        where: { id: cursor, userId: user.id },
+        select: { id: true, createdAt: true, fileName: true, size: true },
+      });
+      if (row) position = cursorPositionOf(sort, row);
+    }
+    if (!position) return NextResponse.json({ error: "Invalid cursor." }, { status: 400 });
+    after = libraryRowsAfter(position);
+  }
+  const where: Prisma.AttachmentWhereInput = after ? { AND: [filtered, after] } : filtered;
 
   // Counts and storage describe the whole result, not a page of it, so they
   // are computed once, on the first page. A cursor request is "more of the
@@ -76,8 +89,7 @@ export async function GET(req: Request) {
   const [atts, byKind, unfilteredTotal] = await Promise.all([
     prisma.attachment.findMany({
       where,
-      orderBy: ORDER_BY[sort],
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      orderBy: libraryOrderBy(sort),
       take: limit + 1,
       include: { _count: { select: { versions: true } } },
     }),
@@ -157,7 +169,8 @@ export async function GET(req: Request) {
     }),
   );
 
-  const nextCursor = hasMore ? page[page.length - 1]?.id ?? null : null;
+  const last = page[page.length - 1];
+  const nextCursor = hasMore && last ? encodeLibraryCursor(sort, last) : null;
   if (!firstPage || !counts) return NextResponse.json({ items, nextCursor });
 
   const [plan, usedBytes] = await Promise.all([getUserPlan(user.id), libraryUsageBytes(user.id)]);

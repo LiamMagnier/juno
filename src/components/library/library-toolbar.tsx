@@ -8,6 +8,7 @@ import { Pressable } from "@/components/ui/pressable";
 import { IconSwapSet } from "@/components/ui/icon-swap";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type {
   LibraryCounts,
@@ -89,7 +90,7 @@ export function LibraryToolbar({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="relative min-w-0 flex-1 basis-48 sm:max-w-xs">
+      <div className="relative min-w-0 flex-1 basis-48 @[40rem]/page:max-w-xs">
         <span className="pointer-events-none absolute left-3 top-1/2 flex -translate-y-1/2 text-muted-foreground">
           <IconSwapSet glyphs={{ idle: Search, busy: Loader2 }} show={searching ? "busy" : "idle"} spinning="busy" className="size-4" />
         </span>
@@ -159,6 +160,18 @@ export function LibraryToolbar({
         )}
         <SegmentedControl value={view} onChange={onViewChange} options={VIEW_OPTIONS} ariaLabel="View" className="h-9 shrink-0" />
       </div>
+    </div>
+  );
+}
+
+/** The toolbar's placeholder, control for control, so the row does not jump when it arrives. */
+export function LibraryToolbarSkeleton() {
+  return (
+    <div className="flex flex-wrap items-center gap-2" aria-hidden="true">
+      <Skeleton className="h-9 w-full max-w-xs rounded-field" />
+      <Skeleton className="h-9 w-56 rounded-menu" />
+      <Skeleton className="h-9 w-40 rounded-field" />
+      <Skeleton className="ml-auto h-9 w-36 rounded-menu" />
     </div>
   );
 }

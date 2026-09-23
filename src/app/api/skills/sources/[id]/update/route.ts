@@ -165,7 +165,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       skipped.push({ path, reason: "version_conflict" });
       continue;
     }
-    updated.push(serializeLibrarySkill(minted.skill));
+    updated.push(serializeLibrarySkill({ ...minted.skill, requiresConsent: minted.requiresConsent }));
   }
 
   const taken = install.length > 0 ? await takenSkillSlugs(user.id) : new Set<string>();
@@ -212,7 +212,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       continue;
     }
     taken.add(slug);
-    installedNow.push(serializeLibrarySkill(created.skill));
+    installedNow.push(serializeLibrarySkill({ ...created.skill, requiresConsent: created.version.requiresConsent }));
   }
 
   const updatedIds = new Set(updated.map((skill) => skill.id));

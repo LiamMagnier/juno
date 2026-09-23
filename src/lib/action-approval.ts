@@ -356,6 +356,13 @@ export function actionReceiptDigest(binding: ActionReceiptBinding): string {
     .digest("hex");
 }
 
+/**
+ * The longest string an approval shows whole. Anything longer is cut, so a
+ * caller that needs a person to see every character it will act on (the chat
+ * task's goal, src/lib/chat/task-tool.ts) has to fit inside this.
+ */
+export const ACTION_PREVIEW_STRING_CHARS = 4_000;
+
 function redactPreviewValue(value: unknown, depth: number): unknown {
   if (depth > 5) return "[nested value omitted]";
   if (Array.isArray(value)) return value.slice(0, 50).map((item) => redactPreviewValue(item, depth + 1));
@@ -366,7 +373,9 @@ function redactPreviewValue(value: unknown, depth: number): unknown {
         .map(([key, child]) => [key, SECRET_KEY.test(key) ? "[redacted]" : redactPreviewValue(child, depth + 1)])
     );
   }
-  if (typeof value === "string" && value.length > 4_000) return `${value.slice(0, 4_000)}…`;
+  if (typeof value === "string" && value.length > ACTION_PREVIEW_STRING_CHARS) {
+    return `${value.slice(0, ACTION_PREVIEW_STRING_CHARS)}…`;
+  }
   return value;
 }
 

@@ -60,6 +60,38 @@ const ANSWER = message({
   ].join("\n"),
 });
 
+/*
+ * The blocks `.prose-juno` sizes in `em` off the reading rung: inline code, a
+ * fenced block, a table and cited sources. The rung moved from 15px to 16px,
+ * so each of these moved with it, and this is where that shows.
+ */
+const RICH_ANSWER = message({
+  id: "fixture-assistant-rich",
+  role: "ASSISTANT",
+  model: "claude-opus-4-1",
+  content: [
+    "Caching pays off once a prefix is read more than about twice within its lifetime [1]. Set `cache_control` on the last block you want kept [2]:",
+    "",
+    "```ts",
+    "const response = await client.messages.create({",
+    '  model: "claude-opus-4-1",',
+    '  system: [{ type: "text", text: longPolicy, cache_control: { type: "ephemeral" } }],',
+    "  messages,",
+    "});",
+    "```",
+    "",
+    "| Reads per write | Relative cost | Worth it |",
+    "| --- | --- | --- |",
+    "| 1 | 1.25x | No |",
+    "| 3 | 0.55x | Yes |",
+    "| 10 | 0.21x | Clearly |",
+  ].join("\n"),
+  sources: [
+    { title: "Prompt caching", url: "https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching", snippet: "Cache reads cost a tenth of base input.", cited: true },
+    { title: "Messages API", url: "https://docs.anthropic.com/en/api/messages", snippet: "The cache_control parameter.", cited: true },
+  ],
+});
+
 const LONG_QUESTION = message({
   id: "fixture-user-2",
   role: "USER",
@@ -216,6 +248,7 @@ export function PolishGallery() {
           <div className="space-y-6">
             <Turn m={QUESTION} />
             <Turn m={ANSWER} />
+            <Turn m={RICH_ANSWER} />
             <Turn m={LONG_QUESTION} />
           </div>
         </Section>

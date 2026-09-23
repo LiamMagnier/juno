@@ -213,3 +213,18 @@ test("a started task is adopted by the one applier a resumed stream also uses", 
   assert.match(view, /onWorkStarted: \(session\) => \{[\s\S]*?adoptWorkRef\.current\(session\)/);
   assert.match(view, /adoptWorkRef\.current = work\.adopt;/);
 });
+
+test("a discovery answer that left before the task existed cannot take the adopted panel away", () => {
+  // `adoptDiscoveredSession` rightly lets an empty answer clear the panel (the
+  // task was deleted elsewhere). An answer computed before the `work` frame's
+  // session existed is empty for the other reason, so the hook drops any answer
+  // an adoption overtook instead of applying it.
+  const hook = source("src/components/chat/use-conversation-work.ts");
+  const discover = hook.slice(hook.indexOf("const discover = async () => {"));
+  assert.match(
+    discover.slice(0, discover.indexOf("setSession(")),
+    /const asked = adoptions\.current;[\s\S]*?result\.kind === "ok" && asked === adoptions\.current\)/
+  );
+  const adopt = hook.slice(hook.indexOf("const adopt = React.useCallback"));
+  assert.match(adopt.slice(0, adopt.indexOf("}, []);")), /adoptions\.current \+= 1;/);
+});

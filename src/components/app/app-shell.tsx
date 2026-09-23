@@ -35,8 +35,9 @@ const SIDEBAR_MAX = 336;
  * is back to 8px (panel `px-2` plus row `px-2`, glyphs at 16px and labels at
  * 46px) and the rows set their text at the 14px `nav` rung instead of 15px,
  * so a title gets the same words at 288 that it got at 304. The horizontal
- * budget for a conversation title is `width - 16px of text inset - 8px of
- * right padding - the 28px kebab`, and it is spent on the words.
+ * budget for a conversation title is `width - 16px of text inset - 18px of
+ * right inset`: the row's kebab floats over that end on hover instead of
+ * holding a slot at rest, so the budget is spent on the words.
  *
  * Still resizable between SIDEBAR_MIN and SIDEBAR_MAX; this is only where it
  * starts.
