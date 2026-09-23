@@ -256,6 +256,15 @@ const PHOSPHOR = {
   SpeakerX: null,
   CheckSquare: null,
   Graph: null,
+
+  // The transcript (Phase 2): the Regenerate menu, Continue, generated video,
+  // links that leave the app, and a React artifact's brackets.
+  ListDashes: "ListMinus",
+  ListPlus: "ListPlus",
+  ArrowElbowDownRight: "CornerDownRight",
+  VideoCamera: "Video",
+  ArrowSquareOut: "ExternalLink",
+  Code: "Code2",
 };
 
 /** Glyphs with a `.fill` twin: the "on" drawings §8.6 asks for — a pinned row,

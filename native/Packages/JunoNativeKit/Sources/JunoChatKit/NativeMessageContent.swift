@@ -108,6 +108,23 @@ public enum NativeMessageContent {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// The reply as **Copy** puts it on the pasteboard: the Markdown the model
+    /// wrote, with the memory bookkeeping removed and trailing space trimmed.
+    ///
+    /// The web's `stripMemoryTags(view.content).trimEnd()` (`message-item.tsx`),
+    /// ported. Markdown rather than ``plainText(of:)`` because a pasted answer
+    /// should keep its headings, lists, fences and artifact tags — the source
+    /// is the only form that round-trips. What goes is only what the reader
+    /// never saw: `<juno:memory>` and `<juno:forget>` blocks, a tag still open
+    /// at the end of a reply that stopped mid-write, and the few characters of
+    /// an opener that had not finished arriving.
+    public static func copyableMarkdown(of raw: String) -> String {
+        var text = removingBlocks(open: memoryOpen, close: memoryClose, in: raw)
+        text = removingBlocks(open: forgetOpen, close: forgetClose, in: text)
+        text = removingPartialMemoryOpener(in: text)
+        return text.trimmingTrailingWhitespace
+    }
+
     /// The reply as it should be **read aloud**: ``plainText(of:)`` with the
     /// inline learning blocks removed.
     ///
@@ -210,6 +227,8 @@ public enum NativeMessageContent {
 
     private static let memoryOpen = "<juno:memory>"
     private static let memoryClose = "</juno:memory>"
+    private static let forgetOpen = "<juno:forget>"
+    private static let forgetClose = "</juno:forget>"
     private static let artifactOpen = "<juno:artifact"
     private static let artifactClose = "</juno:artifact>"
     private static let wizardFence = ":::clarification-wizard"
@@ -240,6 +259,21 @@ public enum NativeMessageContent {
         }
         result += text[cursor...]
         return result
+    }
+
+    /// A memory or forget opener that stopped part-way — `<juno:mem` at the
+    /// very end of a reply. The web's `OPEN_MEMORY_TAIL_RE`, second branch: a
+    /// bare `<juno:` is left alone, because that is also how an artifact
+    /// begins.
+    private static func removingPartialMemoryOpener(in text: String) -> String {
+        guard let start = text.range(of: "<juno:", options: .backwards) else { return text }
+        let tail = text[start.upperBound...]
+        guard !tail.isEmpty else { return text }
+        let isPrefix = "memory>".hasPrefix(tail) || "forget>".hasPrefix(tail)
+        // A whole opener with nothing after it is the unterminated block the
+        // range pass above already removed; only a truncated word is left here.
+        guard isPrefix, tail != "memory>", tail != "forget>" else { return text }
+        return String(text[..<start.lowerBound])
     }
 
     /// `:::clarification-wizard … :::` — a fenced block, so it is matched by its

@@ -51,6 +51,7 @@ final class JunoColorConsumptionTests: XCTestCase {
         assertResolves(.junoCard, to: JunoGeneratedColors.card, "junoCard")
         assertResolves(.junoSecondary, to: JunoGeneratedColors.secondary, "junoSecondary")
         assertResolves(.junoHover, to: JunoGeneratedColors.accent, "junoHover")
+        assertResolves(.junoSelected, to: JunoGeneratedColors.selected, "junoSelected")
         assertResolves(.junoInput, to: JunoGeneratedColors.input, "junoInput")
     }
 

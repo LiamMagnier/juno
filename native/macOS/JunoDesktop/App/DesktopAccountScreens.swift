@@ -27,6 +27,8 @@ struct DesktopDestinationView: View {
     /// The window's Share, for a reply's action row. Nil without a share
     /// service.
     var shareConversation: (() -> Void)? = nil
+    /// Fork Privately, which the window answers by starting a private chat.
+    var forkPrivately: (([NativePrivateChatModel.Turn]) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -59,7 +61,8 @@ struct DesktopDestinationView: View {
                 openDestination: { destination = $0 },
                 privateChat: isPrivateChat ? configuration.privateChatModel : nil,
                 callActiveChanged: callActiveChanged,
-                shareConversation: shareConversation
+                shareConversation: shareConversation,
+                forkPrivately: forkPrivately
             )
         case .search:
             if let model = configuration.searchModel {

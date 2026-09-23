@@ -249,10 +249,22 @@ struct ChatComposerRequest: Equatable {
         /// A starter chip (§4.3): **replace** the draft with this opening, put
         /// the caret after it and focus the field. Never send.
         case seed(String)
+        /// A reply's Quote in Composer: the reply, quoted — see
+        /// ``ChatComposerRequest/quoted(_:)`` — seeded like a starter chip.
+        case quote(String)
     }
 
     let id = UUID()
     let kind: Kind
+
+    /// The web's quote (`message-item.tsx`): the text trimmed, every line
+    /// prefixed with `> `, and a blank line after it for the reader's own words.
+    static func quoted(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: "\n")
+            .map { "> \($0)" }
+            .joined(separator: "\n") + "\n\n"
+    }
 }
 
 /// One message, composed and snapshotted — what a send is, whether it leaves
@@ -1094,6 +1106,8 @@ struct ChatComposer: View {
                 attach(urls, securityScoped: false)
             case .seed(let opening):
                 seed(opening)
+            case .quote(let text):
+                seed(ChatComposerRequest.quoted(text))
             }
         }
     }

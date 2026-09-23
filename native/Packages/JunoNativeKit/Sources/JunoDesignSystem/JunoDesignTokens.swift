@@ -390,6 +390,30 @@ public enum JunoMotion {
     /// numbers. One ladder, one rung.
     public static let canvasEnter = outExpo(Duration.base)
 
+    /// An icon swap's arriving face — copy becoming a check: `--dur-fast` on
+    /// `--ease-spring`, the web's `IconSwap curve="spring"` arrival.
+    public static let swapArrive = timingCurve(JunoGeneratedEasing.spring, duration: Duration.fast)
+    /// The face it replaces, accelerating away on `--ease-in` over the same
+    /// `--dur-fast`, so the old mark is still going as the new one lands.
+    public static let swapLeave = timingCurve(JunoGeneratedEasing.in, duration: Duration.fast)
+
+    /// The feedback swell's keyframe curve: `--ease-out-back`, the web's
+    /// `swellTransition` (`lib/micro.ts`). A rated thumb dips to 0.86, swells
+    /// past 1 to 1.18 and settles, over `--dur-base` split across the two legs.
+    public static let swellCurve = unitCurve(JunoGeneratedEasing.outBack)
+    /// The feedback burst's curve: `--ease-out-expo` over `--dur-slow`, the
+    /// web's `Burst`. Six particles leave the thumb once as it turns on.
+    public static let burstCurve = unitCurve(JunoGeneratedEasing.outExpo)
+
+    /// A projected cubic-bezier quadruple as a keyframe curve, for the few
+    /// motions that are keyframed rather than animated between two states.
+    static func unitCurve(_ curve: (x1: CGFloat, y1: CGFloat, x2: CGFloat, y2: CGFloat)) -> UnitCurve {
+        .bezier(
+            startControlPoint: UnitPoint(x: curve.x1, y: curve.y1),
+            endControlPoint: UnitPoint(x: curve.x2, y: curve.y2)
+        )
+    }
+
     /// The web's `rise-in`: opacity 0→1 over a ``riseDistance`` lift, on
     /// `--dur-base` and `--ease-out-soft` — `animate-rise-in` in
     /// `tailwind.config.ts`, which is ``base`` exactly.

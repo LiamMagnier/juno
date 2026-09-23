@@ -78,6 +78,13 @@ public extension JunoColorToken {
     static let hoverLight = JunoGeneratedColors.accent.light
     static let hoverDark = JunoGeneratedColors.accent.dark
 
+    /// `--selected`: #EBE8E0 / #403D3A. The ground under a control that is
+    /// *on* — a rated thumb — so the state reads in a fill as well as in ink.
+    /// Not the sidebar's selection (``selectedFillLight``), which is its own
+    /// token on the web too.
+    static let selectedLight = JunoGeneratedColors.selected.light
+    static let selectedDark = JunoGeneratedColors.selected.dark
+
     /// `--border`: #E1DFD8 / #3C3937, opaque. Hairlines on content, drawn at
     /// ``JunoHairline/opacity(increaseContrast:)``.
     ///
@@ -275,6 +282,11 @@ public extension Color {
     /// `--accent`, the web's neutral hover: the hover fill on opaque content.
     /// Inside glass use ``junoGlassHover``.
     static let junoHover = Color.junoAdaptive(light: .hoverLight, dark: .hoverDark)
+
+    /// `--selected`: the ground under a toggled-on control — a rated thumb in
+    /// the message actions. Never the accent, and never the sidebar's
+    /// ``junoSelectedFill``.
+    static let junoSelected = Color.junoAdaptive(light: .selectedLight, dark: .selectedDark)
 
     /// `--border`: hairlines on content. Draw it at
     /// ``JunoHairline/opacity(increaseContrast:)``.

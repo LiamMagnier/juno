@@ -170,6 +170,34 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
 
     /// The pictures on this message, in the order they were attached.
     public var imageAttachments: [NativeChatAttachment] { attachments.filter(\.isImage) }
+
+    /// Turns a streaming placeholder into the finished answer a `done` frame
+    /// describes.
+    ///
+    /// The finished row is the **whole** answer, not the placeholder with its
+    /// text filled in. `/api/generate` puts the generated file on this frame
+    /// and nowhere else until sync, so a row that kept only the text kept its
+    /// placeholder too: the progress value left behind held the "Generating"
+    /// canvas on screen over a picture that already existed, and the receipt
+    /// the More menu reads — tokens and cost — was blank until a reload.
+    mutating func complete(with message: NativeCompletedChatMessage) {
+        id = message.id
+        content = message.content
+        reasoning = message.reasoning
+        model = message.model
+        createdAt = message.createdAt
+        sources = message.sources
+        finishReason = message.finishReason
+        isPending = false
+        errorDescription = nil
+        mediaProgress = nil
+        attachments = message.attachments
+        costUSD = message.costUsd
+        promptTokens = message.promptTokens
+        completionTokens = message.completionTokens
+        cacheReadTokens = message.cacheReadTokens
+        cacheWriteTokens = message.cacheWriteTokens
+    }
 }
 
 public struct NativeConversationSnapshot: Equatable, Sendable {
@@ -796,6 +824,20 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         selectedConversationID.flatMap { retryContexts[$0] } != nil
     }
 
+    /// Whether `messageID` is a question that never reached the server: the
+    /// append failed, so the turn exists only on this screen and its retry
+    /// context has no stored id for it. The web's `message.unsent` — the
+    /// transcript says "Not sent" under it and offers Retry send, which is
+    /// ``retryLastMessage(conversationID:)``.
+    public func isUnsentMessage(_ messageID: String, in conversationID: String) -> Bool {
+        guard !chatPhase.isActive,
+            let context = retryContexts[conversationID],
+            context.accountID == accountID,
+            context.userMessageID == nil
+        else { return false }
+        return messageID == "local-user-\(context.clientID)"
+    }
+
     /// Whether the last response ended at a recoverable boundary rather than a
     /// terminal error. The web offers this as "Continue" for the two cases
     /// where the reader has a useful partial answer; native used to expose only
@@ -943,6 +985,16 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     /// Keyed by conversation and cleared by that reload.
     private var branchEditCutoffs: [String: Set<String>] = [:]
 
+    /// While a settled reply is being regenerated, the id of the stored row it
+    /// replaces, keyed by conversation.
+    ///
+    /// The server overwrites that row in place once the new answer is written
+    /// (the old text becomes a `MessageVersion`), so for the length of the
+    /// stream the screen would otherwise show the old answer *and* the new one
+    /// arriving under it. Hidden, not deleted: a failed regenerate hands the
+    /// old answer straight back. Cleared by the reload that follows the turn.
+    private var regeneratingAssistantIDs: [String: String] = [:]
+
     /// Steps the server has reported for the generation in flight, newest last.
     ///
     /// Deep research runs PLAN → SEARCH → READ for tens of seconds before a
@@ -1022,6 +1074,15 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         let branchPlacement: BranchPlacement?
         var userMessageID: String?
         var userCreatedAt: Date
+        /// A regenerate's one-shot steering — the Regenerate menu's More
+        /// Concise and Add Details. Set for the one run it was asked for and
+        /// overwritten by every retry, so "Try again" after a failed More
+        /// Concise is a plain retry, as it is on the web.
+        var regenerateInstruction: String? = nil
+        /// The stored reply this run replaces, when it regenerates a settled
+        /// answer rather than retrying a failed one. See
+        /// ``NativeConversationModel/regeneratingAssistantIDs``.
+        var replacesAssistantID: String? = nil
     }
 
     /// Where a forked turn belongs in the tree.
@@ -1076,6 +1137,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         messagesByConversation = [:]
         branchTreesByConversation = [:]
         branchEditCutoffs = [:]
+        regeneratingAssistantIDs = [:]
         transientMessagesByConversation = [:]
         retryContexts = [:]
         chatApprovalsByConversation = [:]
@@ -1734,20 +1796,37 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     }
 
     public func retryLastMessage(conversationID: String) {
-        retryLastMessage(conversationID: conversationID, modelID: nil)
+        retryLastMessage(conversationID: conversationID, modelID: nil, instruction: nil)
     }
 
-    /// Re-asks the last prompt, optionally of a different model.
+    /// Re-asks the last prompt, optionally of a different model, optionally
+    /// steered.
     ///
-    /// The web's regenerate menu — "Try again" and a "Switch model" submenu —
-    /// both land here. A model that is not in the account's catalog is refused
-    /// the same way ``sendMessage`` refuses it, so the row cannot re-ask a
-    /// question of something the account cannot use. The new model is written
-    /// back into the retry context, so a *further* retry keeps the switch.
-    public func retryLastMessage(conversationID: String, modelID: String?) {
-        guard !chatPhase.isActive, var context = retryContexts[conversationID],
-            accountID == context.accountID
-        else { return }
+    /// The web's Regenerate menu lands here whole: Try Again (nothing), Switch
+    /// Model (`modelID`), More Concise and Add Details (`instruction`, sent as
+    /// `regenerateInstruction` for this run only). A model that is not in the
+    /// account's catalog is refused the same way ``sendMessage`` refuses it, so
+    /// the row cannot re-ask a question of something the account cannot use.
+    /// The new model is written back into the retry context, so a *further*
+    /// retry keeps the switch.
+    ///
+    /// Two starting points. A turn that failed left its retry context behind,
+    /// and that is re-run as it was asked. A turn that **finished** left none —
+    /// completion drops it — so the context is rebuilt from the stored question
+    /// and the server is asked to regenerate the stored answer, which it
+    /// versions and overwrites in place. Without that second path the whole
+    /// Regenerate menu did nothing on any reply that had succeeded, which is
+    /// every reply it is shown on.
+    public func retryLastMessage(conversationID: String, modelID: String?, instruction: String? = nil) {
+        guard !chatPhase.isActive else { return }
+        var context: RetryContext
+        if let pending = retryContexts[conversationID], accountID == pending.accountID {
+            context = pending
+        } else if let rebuilt = regenerationContext(for: conversationID) {
+            context = rebuilt
+        } else {
+            return
+        }
         if let modelID, modelID != context.modelID {
             guard validModelSelection(modelID, effort: context.reasoningEffort) else { return }
             context.modelID = modelID
@@ -1756,12 +1835,65 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 conversations[index].model = modelID
             }
         }
+        context.regenerateInstruction = NativeChatGenerationRequest.normalizedInstruction(instruction)
+        if let replaced = context.replacesAssistantID {
+            regeneratingAssistantIDs[conversationID] = replaced
+        }
         chatErrorDescription = nil
         activeChatConversationID = conversationID
         chatPhase = context.userMessageID == nil ? .appending : .submitting
         removeTransientAssistant(for: conversationID)
         appendAssistantPlaceholder(for: context)
         launchGeneration(context, needsAppend: context.userMessageID == nil)
+    }
+
+    /// The context for regenerating a conversation's settled last answer: the
+    /// stored question it answered, asked again of the conversation's model.
+    ///
+    /// Nil unless the transcript ends in a stored, finished reply to a stored
+    /// question — a pending or unsent turn is the retry path's, and a
+    /// transcript that ends on a question has no answer to regenerate. The
+    /// turn's original tool switches are not stored anywhere to recover, so a
+    /// regenerate asks plainly, as the web's does from a fresh page.
+    private func regenerationContext(for conversationID: String) -> RetryContext? {
+        guard let accountID,
+            let conversation = conversations.first(where: { $0.id == conversationID }),
+            !conversation.isPending
+        else { return nil }
+        let persistedIDs = Set((messagesByConversation[conversationID] ?? []).map(\.id))
+        let timeline = visibleMessages(for: conversationID)
+        guard let reply = timeline.last,
+            reply.role == .assistant,
+            !reply.isPending,
+            persistedIDs.contains(reply.id),
+            let question = timeline.last(where: { $0.role == .user }),
+            persistedIDs.contains(question.id),
+            question.createdAt <= reply.createdAt
+        else { return nil }
+        let modelID = conversation.model.isEmpty ? (reply.model ?? "") : conversation.model
+        guard validModelSelection(modelID, effort: nil) else {
+            chatErrorDescription = "Choose a model and reasoning level available to this account."
+            return nil
+        }
+        return RetryContext(
+            accountID: accountID,
+            conversationID: conversationID,
+            clientID: question.clientID ?? UUID().uuidString.lowercased(),
+            prompt: question.content,
+            modelID: modelID,
+            reasoningEffort: nil,
+            attachmentIDs: [],
+            deepResearch: false,
+            webSearch: false,
+            canvasEnabled: nil,
+            connectors: [],
+            fastMode: false,
+            proMode: false,
+            branchPlacement: nil,
+            userMessageID: question.id,
+            userCreatedAt: question.createdAt,
+            replacesAssistantID: reply.id
+        )
     }
 
     /// Starts a fresh turn that asks the model to continue a response it ended
@@ -1881,7 +2013,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                         canvasEnabled: context.canvasEnabled,
                         connectors: context.connectors,
                         fastMode: context.fastMode,
-                        proMode: context.proMode
+                        proMode: context.proMode,
+                        regenerateInstruction: context.regenerateInstruction
                     ),
                     for: context.accountID
                 )
@@ -1936,6 +2069,11 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                         context: context
                     )
                     terminal = true
+                case .resume:
+                    // Bookkeeping for a reconnect this client does not make
+                    // yet (Phase 2, stage 4). Not terminal: the answer keeps
+                    // streaming around it.
+                    break
                 case .ping:
                     break
                 }
@@ -1950,6 +2088,9 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             if chatPhase != .failed { chatPhase = .idle }
             await syncModel.refresh()
             await reload()
+            // The regenerated row is the stored one again: the reload has
+            // brought back its new content under the same id.
+            regeneratingAssistantIDs.removeValue(forKey: context.conversationID)
             // The refining pass, after the reload so the answer it names the chat
             // from is actually in `visibleMessages`. The first-user pass ran when
             // the question was sent; this is the one that renames "Sidebar
@@ -2006,6 +2147,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             await reload()
             if persistedAssistantExists(after: context.userCreatedAt, in: context.conversationID) {
                 removeTransientAssistant(for: context.conversationID)
+                regeneratingAssistantIDs.removeValue(forKey: context.conversationID)
                 retryContexts.removeValue(forKey: context.conversationID)
                 activeGenerationID = nil
                 generationTask = nil
@@ -2056,7 +2198,11 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             $0.isPending = false
             $0.errorDescription = message
             $0.finishReason = reason
+            $0.mediaProgress = nil
         }
+        // A failed regenerate hands the answer it was replacing straight back
+        // — the server only overwrites it once the new one has been written.
+        regeneratingAssistantIDs.removeValue(forKey: context.conversationID)
         retryContexts[context.conversationID] = context
         chatErrorDescription = message
         chatPhase = .failed
@@ -2073,17 +2219,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         // what makes the badge's cache figures possible at all.
         sessionCostLedgers[conversationID, default: SessionCostLedger()]
             .record(message: message)
-        updateTransientAssistant(for: conversationID) {
-            $0.id = message.id
-            $0.content = message.content
-            $0.reasoning = message.reasoning
-            $0.model = message.model
-            $0.createdAt = message.createdAt
-            $0.sources = message.sources
-            $0.finishReason = message.finishReason
-            $0.isPending = false
-            $0.errorDescription = nil
-        }
+        updateTransientAssistant(for: conversationID) { $0.complete(with: message) }
     }
 
     private func appendAssistantPlaceholder(for context: RetryContext) {
@@ -2429,6 +2565,12 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         if let hidden = branchEditCutoffs[conversationID], !hidden.isEmpty {
             result.removeAll { hidden.contains($0.id) }
         }
+        // The stored answer a regenerate is replacing. Its replacement is the
+        // transient below — which, once `done` lands, carries this same id.
+        let replaced = regeneratingAssistantIDs[conversationID]
+        if let replaced {
+            result.removeAll { $0.id == replaced }
+        }
         // Deduplication reads the *whole* persisted transcript, not the
         // projected slice: a transient whose server row landed on a branch this
         // timeline is not showing has still landed, and appending it here would
@@ -2437,7 +2579,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         let persistedIDs = Set(persisted.map(\.id))
         let persistedClientIDs = Set(persisted.compactMap(\.clientID))
         for transient in transientMessagesByConversation[conversationID] ?? []
-        where !persistedIDs.contains(transient.id)
+        where (!persistedIDs.contains(transient.id) || transient.id == replaced)
             && (transient.clientID == nil || !persistedClientIDs.contains(transient.clientID!))
         {
             result.append(transient)

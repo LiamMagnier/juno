@@ -114,3 +114,7 @@ prisma/dev.db-journal
 test-results/
 playwright-report/
 e2e/.auth/
+
+# The Mac transcript's offscreen snapshots (`npm run native:snapshots:transcript`)
+# are review evidence, regenerated on demand, never committed.
+/.snapshots/

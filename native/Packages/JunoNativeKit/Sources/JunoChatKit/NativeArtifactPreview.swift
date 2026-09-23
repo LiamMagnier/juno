@@ -62,17 +62,44 @@ public struct NativeArtifactPreview: View {
                         .padding(20)
                 }
             } else {
-                NativeArtifactWebPreview(
-                    html: NativeArtifactSandbox.document(
-                        kind: kind,
-                        content: content,
-                        policy: policy
-                    ),
-                    allowsJavaScript: kind == .html && policy == .document
-                )
+                webPreview
             }
         }
         .accessibilityIdentifier("juno.artifact-preview")
+    }
+
+    #if os(macOS)
+    @Environment(\.junoWebPreviewStill) private var webPreviewStill
+    #endif
+
+    /// The live web view — or, where the environment supplies one, a still of
+    /// the same document. See ``SwiftUI/EnvironmentValues/junoWebPreviewStill``.
+    @ViewBuilder
+    private var webPreview: some View {
+        let document = NativeArtifactSandbox.document(
+            kind: kind,
+            content: content,
+            policy: policy
+        )
+        #if os(macOS)
+        if let still = webPreviewStill?(document) {
+            Image(nsImage: still)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .clipped()
+        } else {
+            NativeArtifactWebPreview(
+                html: document,
+                allowsJavaScript: kind == .html && policy == .document
+            )
+        }
+        #else
+        NativeArtifactWebPreview(
+            html: document,
+            allowsJavaScript: kind == .html && policy == .document
+        )
+        #endif
     }
 
     private var markdown: AttributedString {
@@ -98,6 +125,39 @@ public struct NativeArtifactPreview: View {
         #endif
     }
 }
+
+#if os(macOS)
+public extension EnvironmentValues {
+    /// A picture to draw in place of an artifact's web view, keyed by the exact
+    /// document the web view would have loaded — or nil to load it for real.
+    ///
+    /// For the offscreen snapshot harness only. A `WKWebView` renders out of
+    /// process, so neither `cacheDisplay` nor `ImageRenderer` can capture one;
+    /// the harness renders each document in a WebView of its own, photographs
+    /// it with `takeSnapshot`, and hands the stills back through this value.
+    /// Production never sets it.
+    @Entry var junoWebPreviewStill: JunoWebPreviewStills? = nil
+}
+
+/// The stills ``SwiftUI/EnvironmentValues/junoWebPreviewStill`` hands out: a
+/// lookup from a document to its picture.
+///
+/// A struct with an identity rather than a bare closure, so the environment
+/// can tell one set of stills from another without comparing closures.
+public struct JunoWebPreviewStills: Equatable, Sendable {
+    private let id = UUID()
+    private let still: @MainActor @Sendable (String) -> NSImage?
+
+    public init(_ still: @escaping @MainActor @Sendable (String) -> NSImage?) {
+        self.still = still
+    }
+
+    @MainActor
+    public func callAsFunction(_ document: String) -> NSImage? { still(document) }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
+}
+#endif
 
 public enum NativeArtifactSandbox {
     /// A WebKit content-rule list that blocks every URL with a hierarchical

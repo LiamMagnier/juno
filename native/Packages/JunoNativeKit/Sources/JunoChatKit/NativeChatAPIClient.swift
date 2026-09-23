@@ -251,6 +251,12 @@ public struct NativeChatSource: Equatable, Sendable {
     public let title: String
     public let url: URL
     public let snippet: String
+
+    public init(title: String, url: URL, snippet: String) {
+        self.title = title
+        self.url = url
+        self.snippet = snippet
+    }
 }
 
 public enum NativeChatFinishReason: String, Equatable, Sendable {
@@ -300,6 +306,17 @@ public struct NativeCompletedChatMessage: Equatable, Sendable {
     /// `sessionCostLedgers` in `NativeConversationStore`.
     public let cacheReadTokens: Int?
     public let cacheWriteTokens: Int?
+    /// The files the finished answer carries — a generated picture or video,
+    /// a document it produced — exactly as the `done` frame serialised them.
+    ///
+    /// `/api/generate` puts the result here and nowhere else, so dropping it
+    /// (which native did) left the finished row showing its placeholder until
+    /// the next reload brought the attachment back through sync.
+    public let attachments: [NativeChatAttachment]
+    /// The artifacts the turn wrote, stored rows included, as the `done` frame
+    /// carries them. The transcript reads them from the artifact store once
+    /// they merge there; until then this is the only copy on the device.
+    public let artifacts: [NativeStreamedArtifact]
 
     /// The share of this turn's input that was served from cache, or nil when
     /// the split is unknown. Guards the divide: a turn with no prompt tokens
@@ -321,7 +338,9 @@ public struct NativeCompletedChatMessage: Equatable, Sendable {
         completionTokens: Int? = nil,
         costUsd: Double? = nil,
         cacheReadTokens: Int? = nil,
-        cacheWriteTokens: Int? = nil
+        cacheWriteTokens: Int? = nil,
+        attachments: [NativeChatAttachment] = [],
+        artifacts: [NativeStreamedArtifact] = []
     ) {
         self.id = id
         self.content = content
@@ -335,6 +354,72 @@ public struct NativeCompletedChatMessage: Equatable, Sendable {
         self.costUsd = costUsd
         self.cacheReadTokens = cacheReadTokens
         self.cacheWriteTokens = cacheWriteTokens
+        self.attachments = attachments
+        self.artifacts = artifacts
+    }
+}
+
+/// An artifact as the `done` frame serialises it — the web's `ClientArtifact`
+/// (`src/types/chat.ts`).
+///
+/// Decoded now so nothing on the wire is thrown away; the transcript's card
+/// starts preferring it over the tag body once the artifact store merges it
+/// (Phase 2, stage 3).
+public struct NativeStreamedArtifact: Equatable, Sendable, Identifiable {
+    public struct Version: Equatable, Sendable {
+        public let version: Int
+        public let content: String
+        /// `generated`, `edit` or `restore`; nil on rows older than the column.
+        public let origin: String?
+        public let createdAt: Date?
+
+        public init(version: Int, content: String, origin: String?, createdAt: Date?) {
+            self.version = version
+            self.content = content
+            self.origin = origin
+            self.createdAt = createdAt
+        }
+    }
+
+    public let id: String
+    /// The tag's `identifier`, stable across versions of one artifact.
+    public let identifier: String
+    /// The server's `ArtifactType`: `HTML`, `REACT`, `CODE`, `SVG`, …
+    public let type: String
+    public let title: String
+    public let language: String?
+    public let currentVersion: Int
+    /// The latest version's source.
+    public let content: String
+    public let versions: [Version]
+    public let messageID: String?
+    public let createdAt: Date?
+    public let updatedAt: Date?
+
+    public init(
+        id: String,
+        identifier: String,
+        type: String,
+        title: String,
+        language: String?,
+        currentVersion: Int,
+        content: String,
+        versions: [Version] = [],
+        messageID: String?,
+        createdAt: Date?,
+        updatedAt: Date?
+    ) {
+        self.id = id
+        self.identifier = identifier
+        self.type = type
+        self.title = title
+        self.language = language
+        self.currentVersion = currentVersion
+        self.content = content
+        self.versions = versions
+        self.messageID = messageID
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
     }
 }
 
@@ -394,6 +479,12 @@ public enum NativeChatServerEvent: Equatable, Sendable {
     )
     /// Media generation moved a stage. Only `/api/generate` sends these.
     case mediaProgress(NativeMediaProgress)
+    /// Resume bookkeeping (`src/types/chat.ts`). `available: false` mid-stream
+    /// means the frame log for this generation stopped, so a reconnect would
+    /// find nothing to replay; `refetch: true` comes from the resume route when
+    /// the generation is over but its end is not in the log. Neither is
+    /// terminal: the stream carries on (or has already ended) around it.
+    case resume(available: Bool?, refetch: Bool?)
     case ping
 }
 
@@ -523,6 +614,28 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
     /// GPT-5.6 pro execution for this turn — the same rate, spent on more
     /// tokens. Independent of `reasoningEffort`: a turn can be pro at Low.
     public let proMode: Bool
+    /// A regenerate's one-shot steering — the Regenerate menu's More Concise
+    /// and Add Details — appended to the system prompt for this run only.
+    ///
+    /// Already normalised the way the route's schema demands
+    /// (`lib/chat/request.ts`: trimmed, 1…400 characters): blank is nil, and a
+    /// longer string is cut rather than sent to a strict schema that would
+    /// refuse the whole request over it. Nil is not encoded at all.
+    public let regenerateInstruction: String?
+
+    /// The route's cap on ``regenerateInstruction``, in characters.
+    public static let regenerateInstructionLimit = 400
+
+    /// Trims, drops a blank instruction, and caps it at
+    /// ``regenerateInstructionLimit`` characters.
+    public static func normalizedInstruction(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard trimmed.count > regenerateInstructionLimit else { return trimmed }
+        return String(trimmed.prefix(regenerateInstructionLimit))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     public init(
         conversationID: String,
@@ -534,7 +647,8 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
         canvasEnabled: Bool? = nil,
         connectors: [String] = [],
         fastMode: Bool = false,
-        proMode: Bool = false
+        proMode: Bool = false,
+        regenerateInstruction: String? = nil
     ) {
         self.conversationID = conversationID
         self.modelID = modelID
@@ -546,6 +660,7 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
         self.connectors = connectors
         self.fastMode = fastMode
         self.proMode = proMode
+        self.regenerateInstruction = Self.normalizedInstruction(regenerateInstruction)
     }
 }
 
@@ -977,7 +1092,8 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             canvasEnabled: request.canvasEnabled,
             connectors: request.connectors.isEmpty ? nil : request.connectors,
             fastMode: request.fastMode ? true : nil,
-            proMode: request.proMode ? true : nil
+            proMode: request.proMode ? true : nil,
+            regenerateInstruction: request.regenerateInstruction
         )
         return try await streamEvents(body: try JSONEncoder().encode(body), for: accountID)
     }
@@ -1126,6 +1242,15 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
         _ payload: Data,
         mediaModality: NativeMediaProgress.Modality = .image
     ) throws -> NativeChatServerEvent {
+        // The frame's type is read on its own first. A frame this build does
+        // not describe — `work` (a hand-off to a background task), or anything
+        // the server adds later — is skipped before its body is decoded at all:
+        // its fields may share a name with one of ours and not its shape, and a
+        // decode failure there would end a stream that is still writing.
+        guard let frame = try? JSONDecoder().decode(FrameTypeWire.self, from: payload) else {
+            throw NativeChatAPIError.malformedResponse
+        }
+        guard Self.decodedFrameTypes.contains(frame.type) else { return .ping }
         let envelope: EventEnvelopeWire
         do { envelope = try JSONDecoder().decode(EventEnvelopeWire.self, from: payload) }
         catch { throw NativeChatAPIError.malformedResponse }
@@ -1186,7 +1311,9 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                 completionTokens: message.completionTokens,
                 costUsd: message.costUsd,
                 cacheReadTokens: message.cacheReadTokens,
-                cacheWriteTokens: message.cacheWriteTokens
+                cacheWriteTokens: message.cacheWriteTokens,
+                attachments: (message.attachments?.elements ?? []).compactMap(decodeAttachment),
+                artifacts: (envelope.artifacts?.elements ?? []).compactMap(decodeArtifact)
             ))
         case "error":
             guard let message = envelope.messageText ?? envelope.error,
@@ -1225,11 +1352,80 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                     pct: envelope.pct
                 )
             )
+        case "resume":
+            return .resume(available: envelope.available, refetch: envelope.refetch)
         case "ping":
             return .ping
         default:
-            throw NativeChatAPIError.malformedResponse
+            // Unreachable past the guard at the top, and kept as the same
+            // answer: a frame that does not describe the answer being written
+            // is not a reason to end the stream — which is what the `throw`
+            // here used to do, failing a reply the server was still producing.
+            return .ping
         }
+    }
+
+    /// The frame types ``decodeEvent(_:mediaModality:)`` reads. Every other
+    /// type is skipped as a ``NativeChatServerEvent/ping``.
+    private static let decodedFrameTypes: Set<String> = [
+        "meta", "title", "delta", "reasoning", "sources", "done", "error",
+        "activity", "approval", "progress", "resume", "ping",
+    ]
+
+    /// One `done`-frame attachment, or nil when it is not one this client can
+    /// name. Lossy on purpose: a malformed file entry must not take the
+    /// finished answer down with it.
+    private func decodeAttachment(_ wire: AttachmentWire) -> NativeChatAttachment? {
+        guard validText(wire.id, maximum: 256),
+            validText(wire.kind, maximum: 40),
+            validText(wire.fileName, maximum: 1_024),
+            validText(wire.mimeType, maximum: 255),
+            wire.size >= 0
+        else { return nil }
+        return NativeChatAttachment(
+            id: wire.id,
+            fileName: wire.fileName,
+            mimeType: wire.mimeType,
+            kind: wire.kind,
+            size: wire.size,
+            width: wire.width.flatMap { $0 > 0 ? $0 : nil },
+            height: wire.height.flatMap { $0 > 0 ? $0 : nil }
+        )
+    }
+
+    /// One `done`-frame artifact, or nil when it is malformed. Lossy for the
+    /// same reason as ``decodeAttachment(_:)``.
+    private func decodeArtifact(_ wire: ArtifactWire) -> NativeStreamedArtifact? {
+        guard validText(wire.id, maximum: 256),
+            validText(wire.identifier, maximum: 256),
+            validText(wire.type, maximum: 40),
+            wire.title.utf8.count <= 1_000,
+            wire.content.utf8.count <= 4 * 1_024 * 1_024,
+            wire.currentVersion >= 1
+        else { return nil }
+        return NativeStreamedArtifact(
+            id: wire.id,
+            identifier: wire.identifier,
+            type: wire.type,
+            title: wire.title,
+            language: nonEmpty(wire.language, maximum: 80),
+            currentVersion: wire.currentVersion,
+            content: wire.content,
+            versions: (wire.versions?.elements ?? []).compactMap { version in
+                guard version.version >= 1,
+                    version.content.utf8.count <= 4 * 1_024 * 1_024
+                else { return nil }
+                return NativeStreamedArtifact.Version(
+                    version: version.version,
+                    content: version.content,
+                    origin: nonEmpty(version.origin, maximum: 40),
+                    createdAt: version.createdAt.flatMap(parseDate)
+                )
+            },
+            messageID: nonEmpty(wire.messageId, maximum: 256),
+            createdAt: wire.createdAt.flatMap(parseDate),
+            updatedAt: wire.updatedAt.flatMap(parseDate)
+        )
     }
 
     private func decodeSource(_ wire: SourceWire) throws -> NativeChatSource {
@@ -1527,6 +1723,9 @@ private struct GenerationRequestWire: Encodable {
     let connectors: [String]?
     let fastMode: Bool?
     let proMode: Bool?
+    /// Omitted when nil, like the flags above: the route only reads it on a
+    /// regenerate, and a plain turn's body stays byte-identical.
+    let regenerateInstruction: String?
 }
 /// The private branch's body. `conversationId` and `regenerate` are ABSENT rather
 /// than nil-encoded: the server rejects `regenerate` outright in this mode, and an
@@ -1589,6 +1788,74 @@ private struct ApprovalDecisionResponseWire: Decodable {
     let approval: ApprovalWire
 }
 
+/// An array whose malformed elements are skipped rather than failing the
+/// whole decode. For the parts of a frame that decorate the answer — its
+/// files, its artifacts — where one bad entry must not cost the reader the
+/// answer itself.
+private struct LossyList<Element: Decodable>: Decodable {
+    let elements: [Element]
+
+    init(from decoder: any Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var elements: [Element] = []
+        while !container.isAtEnd {
+            let before = container.currentIndex
+            if let element = try? container.decode(Element.self) {
+                elements.append(element)
+            } else {
+                // A failed decode does not advance the container, so the bad
+                // element is consumed as whatever JSON it is.
+                _ = try? container.decode(JunoJSONValue.self)
+            }
+            // Nothing could step over it: stop rather than spin.
+            if container.currentIndex == before { break }
+        }
+        self.elements = elements
+    }
+}
+
+/// The web's `ClientAttachment`.
+private struct AttachmentWire: Decodable {
+    let id: String
+    let kind: String
+    let fileName: String
+    let mimeType: String
+    let size: Int
+    /// The stable `/api/files/<key>` path. Decoded now; the transcript's media
+    /// loader starts reading it in Phase 2, stage 2.
+    let url: String?
+    let width: Int?
+    let height: Int?
+    let parserState: String?
+}
+
+/// The web's `ClientArtifact`.
+private struct ArtifactWire: Decodable {
+    struct VersionWire: Decodable {
+        let version: Int
+        let content: String
+        let origin: String?
+        let createdAt: String?
+    }
+
+    let id: String
+    let identifier: String
+    let type: String
+    let title: String
+    let language: String?
+    let currentVersion: Int
+    let content: String
+    let versions: LossyList<VersionWire>?
+    let messageId: String?
+    let createdAt: String?
+    let updatedAt: String?
+}
+
+/// Only a frame's `type`, decoded before anything else in it.
+private struct FrameTypeWire: Decodable {
+    let type: String
+}
+
 private struct EventEnvelopeWire: Decodable {
     struct ActivityWire: Decodable {
         let id: String
@@ -1613,6 +1880,33 @@ private struct EventEnvelopeWire: Decodable {
         /// column for them, so they stay optional rather than defaulting to 0.
         let cacheReadTokens: Int?
         let cacheWriteTokens: Int?
+        /// Lossy, so one malformed file entry cannot fail the whole message —
+        /// which would fail the `done` frame, and with it the answer.
+        let attachments: LossyList<AttachmentWire>?
+
+        private enum CodingKeys: String, CodingKey {
+            case id, role, content, reasoning, model, createdAt, sources, finishReason,
+                 promptTokens, completionTokens, costUsd, cacheReadTokens, cacheWriteTokens,
+                 attachments
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            role = try container.decode(String.self, forKey: .role)
+            content = try container.decode(String.self, forKey: .content)
+            reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
+            model = try container.decodeIfPresent(String.self, forKey: .model)
+            createdAt = try container.decode(String.self, forKey: .createdAt)
+            sources = try container.decodeIfPresent([SourceWire].self, forKey: .sources)
+            finishReason = try container.decodeIfPresent(String.self, forKey: .finishReason)
+            promptTokens = try container.decodeIfPresent(Int.self, forKey: .promptTokens)
+            completionTokens = try container.decodeIfPresent(Int.self, forKey: .completionTokens)
+            costUsd = try container.decodeIfPresent(Double.self, forKey: .costUsd)
+            cacheReadTokens = try container.decodeIfPresent(Int.self, forKey: .cacheReadTokens)
+            cacheWriteTokens = try container.decodeIfPresent(Int.self, forKey: .cacheWriteTokens)
+            attachments = try? container.decodeIfPresent(LossyList<AttachmentWire>.self, forKey: .attachments)
+        }
     }
     let type: String
     let conversationId: String?
@@ -1630,10 +1924,16 @@ private struct EventEnvelopeWire: Decodable {
     /// `progress` frames only.
     let stage: String?
     let pct: Double?
+    /// `done` frames only. Lossy, like the message's attachments.
+    let artifacts: LossyList<ArtifactWire>?
+    /// `resume` frames only.
+    let available: Bool?
+    let refetch: Bool?
 
     private enum CodingKeys: String, CodingKey {
         case type, conversationId, userMessageId, title, generationId, text,
-             sources, message, event, approval, error, finishReason, stage, pct
+             sources, message, event, approval, error, finishReason, stage, pct,
+             artifacts, available, refetch
     }
 
     init(from decoder: any Decoder) throws {
@@ -1657,6 +1957,9 @@ private struct EventEnvelopeWire: Decodable {
         approval = try? container.decodeIfPresent(ApprovalWire.self, forKey: .approval)
         error = try container.decodeIfPresent(String.self, forKey: .error)
         finishReason = try container.decodeIfPresent(String.self, forKey: .finishReason)
+        artifacts = try? container.decodeIfPresent(LossyList<ArtifactWire>.self, forKey: .artifacts)
+        available = try? container.decodeIfPresent(Bool.self, forKey: .available)
+        refetch = try? container.decodeIfPresent(Bool.self, forKey: .refetch)
     }
 }
 

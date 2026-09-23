@@ -245,6 +245,7 @@ final class JunoDesignTokensTests: XCTestCase {
             .hoverLight, .hoverDark,
             .inputLight, .inputDark,
             .selectedFillLight, .selectedFillDark,
+            .selectedLight, .selectedDark,
         ]
         for token in tokens {
             XCTAssertGreaterThan(token.red, token.blue, "expected a warm neutral")

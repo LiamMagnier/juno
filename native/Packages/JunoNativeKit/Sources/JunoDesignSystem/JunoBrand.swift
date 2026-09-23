@@ -190,6 +190,14 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// long answer can find the sequence diagram without reading its label.
     case squareCheck, square, arrowLeftRight, workflow, chartPie, chartGantt, waypoints
 
+    /// The transcript's own vocabulary (Phase 2): Switch Model's cube, the
+    /// Regenerate menu's More Concise (`ListMinus`, drawn as dashes) and Add
+    /// Details, Continue's elbow, a generated video, a link that leaves the
+    /// app (`ExternalLink`, a square with an arrow out of it — ``external`` is
+    /// the bare arrow), and a React artifact's brackets (`Code2`, which is not
+    /// the Juno Code mark ``code`` wears).
+    case cube, listDashes, listPlus, cornerDownRight, video, externalLink, codeBrackets
+
     /// The generated symbol this case wears, without a cut suffix: `ph.<name>`
     /// for Phosphor's drawings, `juno.<name>` for Juno's own.
     ///
@@ -272,7 +280,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
 
         // SettingsIcons.
         case .personalization: "ph.usergear"
-        case .models: "ph.cube"
+        case .models, .cube: "ph.cube"
         case .data: "ph.database"
         case .account, .user: "ph.user"
         case .billing: "ph.creditcard"
@@ -389,6 +397,14 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .volumeX: "ph.speakerx"
         case .squareCheck: "ph.checksquare"
         case .waypoints: "ph.graph"
+
+        // The transcript's menus and cards.
+        case .listDashes: "ph.listdashes"
+        case .listPlus: "ph.listplus"
+        case .cornerDownRight: "ph.arrowelbowdownright"
+        case .video: "ph.videocamera"
+        case .externalLink: "ph.arrowsquareout"
+        case .codeBrackets: "ph.code"
         }
     }
 

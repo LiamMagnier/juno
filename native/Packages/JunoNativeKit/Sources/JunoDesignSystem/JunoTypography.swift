@@ -183,7 +183,11 @@ public struct JunoType: Equatable, Sendable {
     public static let heading = JunoType(JunoGeneratedType.heading, textStyle: .title3)
     /// SF 17, ×1.6. Ledes, the search field, empty-state titles.
     public static let bodyLarge = JunoType(JunoGeneratedType.bodyLg, textStyle: .body)
-    /// SF 15, ×1.6. The bubble, the composer field, anything read in flow.
+    /// SF 16, ×1.7 — the web's `text-reading`, which the transcript moved to:
+    /// the reader's bubble and its editor (`USER_BUBBLE_CLASS`), and the prose
+    /// of an answer once the Phase 2 prose pass lands.
+    public static let reading = JunoType(JunoGeneratedType.reading, textStyle: .body)
+    /// SF 15, ×1.6. The composer field, anything read in flow.
     public static let body = JunoType(JunoGeneratedType.body, textStyle: .body)
     /// ``body`` at the assistant's reading leading, ×1.65 — the web's
     /// `.prose-juno`, which states `line-height: 1.65` itself (in `globals.css`,

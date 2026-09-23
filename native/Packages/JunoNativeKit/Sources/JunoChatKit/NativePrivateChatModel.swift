@@ -93,6 +93,26 @@ public final class NativePrivateChatModel {
         lastErrorDescription = nil
     }
 
+    /// Starts this private chat from turns that already happened elsewhere —
+    /// the transcript up to a message, for Fork Privately.
+    ///
+    /// The web's `applyFork` (`chat-view.tsx`): only turns with words in them
+    /// carry over, and the next send takes them as its history like any other
+    /// turns. Refused — and false returned — unless the chat is empty and idle
+    /// and there is something to carry, so a fork can never splice itself into
+    /// a private conversation the reader is already having.
+    @discardableResult
+    public func seed(_ seeded: [Turn]) -> Bool {
+        guard turns.isEmpty, phase == .idle else { return false }
+        let kept = seeded.filter {
+            !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard !kept.isEmpty else { return false }
+        turns = kept
+        lastErrorDescription = nil
+        return true
+    }
+
     public func send(
         prompt: String,
         modelID: String,

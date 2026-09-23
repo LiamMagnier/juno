@@ -6,6 +6,19 @@ import SwiftUI
 import JunoPreviewSupport
 #endif
 
+/// Whether this process is a unit-test host rather than the app a person
+/// launched.
+///
+/// `JunoDesktopTests` runs inside the app (its `TEST_HOST`), so without this
+/// the suite launched the real thing: a window, a Dock icon, the menu-bar
+/// item, the updater's poll, the global hotkey — and, worst, the production
+/// encrypted store, whose Keychain prompt no test can answer. Under a test
+/// host the app composes nothing and presents nothing; the tests build the
+/// views they need themselves (the offscreen snapshot harness, for one).
+enum JunoTestHost {
+    static let isActive = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+}
+
 enum JunoDesktopWindow {
     static let mainID = "juno.main"
     /// The ⌘/ list of every shortcut the app answers.
@@ -60,7 +73,18 @@ enum JunoDesktopWindow {
 /// moment a staged update can be swapped in without interrupting anyone, which
 /// is the whole reason the updater does not restart the app on its own.
 private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // A test host is an accessory: no Dock icon, no menu bar of its own,
+        // and nothing that steals focus from the person running the suite.
+        guard JunoTestHost.isActive else { return }
+        MainActor.assumeIsolated {
+            _ = NSApp.setActivationPolicy(.accessory)
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Nothing a test host should start: no window, no updater, no hotkey.
+        guard !JunoTestHost.isActive else { return }
         MainActor.assumeIsolated {
             DispatchQueue.main.async { Self.presentMainWindowIfWithheld() }
             #if DEBUG
@@ -149,14 +173,18 @@ struct JunoDesktopApp: App {
         // Split by `#if` rather than by a ternary on a compile-time-constant
         // flag: in Stable and Next the flag is `false`, so the preview branch is
         // statically dead and the compiler rejects it under warnings-as-errors.
+        // A test host composes nothing: opening the encrypted store is what
+        // raises the Keychain prompt no test can answer.
         #if DEBUG
         _configuration = State(
-            initialValue: JunoPreviewEnvironment.isActive
+            initialValue: JunoPreviewEnvironment.isActive || JunoTestHost.isActive
                 ? nil
                 : JunoDesktopConfiguration.live()
         )
         #else
-        _configuration = State(initialValue: JunoDesktopConfiguration.live())
+        _configuration = State(
+            initialValue: JunoTestHost.isActive ? nil : JunoDesktopConfiguration.live()
+        )
         #endif
     }
 
@@ -185,6 +213,8 @@ struct JunoDesktopApp: App {
         }
         .defaultSize(width: 1240, height: 800)
         .windowResizability(.contentMinSize)
+        // Under a test host the main window never opens on its own.
+        .defaultLaunchBehavior(JunoTestHost.isActive ? .suppressed : .automatic)
         // No `.hiddenTitleBar`. The window has a real title — the chat's, "New
         // chat" on a draft, or the page's — so the Window menu, Mission
         // Control and ⌘` name it, and the toolbar shows it (§1.3).
@@ -257,7 +287,7 @@ struct JunoDesktopApp: App {
 
         // The menu bar item: New Chat, live Code sessions, Open Juno (§7.10).
         // Read off the shared registry, so it is right with no window open.
-        MenuBarExtra {
+        MenuBarExtra(isInserted: .constant(!JunoTestHost.isActive)) {
             DesktopMenuBarExtraContent()
                 .junoAccentTint()
         } label: {

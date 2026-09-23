@@ -1,0 +1,681 @@
+import AppKit
+import Foundation
+import JunoAuth
+import JunoChatKit
+import JunoCore
+import JunoDesignSystem
+import JunoStorage
+import JunoSync
+import SwiftUI
+
+/// The chat column's reading measure — **one number, read by both halves of it**.
+///
+/// The transcript clamped to 768 and the composer to 720. Because the composer
+/// also insets its field by `JunoSpace.snug`, the two text edges landed 32pt
+/// apart on every window wider than about 830pt: a reader's own sentence and the
+/// reply to it were typeset to two different columns, with the composer's the
+/// narrower of the two, so the eye had to reset its line start every time it
+/// moved between them. Nothing chose those numbers against each other — 768 is
+/// the web's `max-w-3xl` and 720 was freehand — which is exactly why they had to
+/// stop being two numbers.
+///
+/// The 8pt that remains between the composer's *field* and the transcript's text
+/// is the composer's own chrome inset, and that one is deliberate: the composer
+/// is a bordered control on a glass platter, so its text sits inside its rim the
+/// way any control's does. A measure and a control's padding are different
+/// things; only the measure was ever in disagreement.
+enum DesktopChatMeasure {
+    /// The web's `max-w-3xl` — the one reading measure every product shares.
+    static let reading: CGFloat = JunoReadingMeasure.reading
+    /// The gutter the column keeps from the window edge before the measure binds.
+    static let gutter: CGFloat = JunoSpace.region
+}
+
+extension EnvironmentValues {
+    /// The transcript's reading measure, as the transcript measured it: the
+    /// width its rows are laid out in, never more than
+    /// ``DesktopChatMeasure/reading``. The reader's bubble is at most 85% of it.
+    @Entry var junoMeasure: CGFloat = DesktopChatMeasure.reading
+    /// Forces a turn's hover on — its action cluster, and later its media's
+    /// hover controls. The offscreen snapshot harness's stand-in for a pointer
+    /// it cannot move; production never sets it.
+    @Entry var junoSnapshotHover = false
+    /// Forces a turn's Copy into its confirming check, for the same harness:
+    /// the two seconds a real copy holds it are not a state a still can catch.
+    @Entry var junoSnapshotCopied = false
+}
+
+/// The transcript's reading column: the web's `max-w-3xl` (768pt), centred,
+/// with the gutter the column keeps from the window edge — and the width it
+/// actually got, handed down as ``SwiftUI/EnvironmentValues/junoMeasure``.
+///
+/// One modifier for the transcript and for the snapshot fixtures, so a fixture
+/// is laid out in exactly the column a conversation is (832 = 768 + 2 × 32).
+struct TranscriptColumn: ViewModifier {
+    @State private var measure: CGFloat = DesktopChatMeasure.reading
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: DesktopChatMeasure.reading)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                if width > 0 { measure = width }
+            }
+            .environment(\.junoMeasure, measure)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, DesktopChatMeasure.gutter)
+    }
+}
+
+struct DesktopTranscript: View {
+    @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
+    /// Turns this column shows that have no row in the store: a private chat's
+    /// (§5.8), or the stand-in for a new chat's first turn while the store is
+    /// still creating it (§10.1). Drawn by the same row as everything else.
+    var localMessages: [NativeChatMessage] = []
+    /// Whether ``localMessages`` are a private chat's turns — which can be
+    /// copied, read aloud and quoted — rather than a first turn's stand-in,
+    /// which has nothing behind it to act on yet.
+    var localTurnsArePrivate = false
+    /// A private chat's failure, where its reply would have been.
+    var localError: String? = nil
+    /// Whether the store's own state — approvals, follow-ups, research, its
+    /// errors — belongs to this column. Not in a private chat, which has no
+    /// conversation for any of them to describe.
+    var showsStoreState = true
+    /// The live spoken turns, if a call is running. Kept apart from
+    /// `model.selectedMessages` rather than merged into the store: these belong
+    /// to the call, not to the conversation, and a store that held them would
+    /// have to decide when to take them out again.
+    let voiceMessages: [NativeChatMessage]
+    let messageActions: NativeMessageActionsClient?
+    /// Suggests what to ask next, under a finished reply.
+    let followUpClient: NativeFollowUpClient?
+    /// Picking a suggestion seeds the composer through the same binding the
+    /// sidebar's "start from this" already uses, rather than a second path into
+    /// the same text field.
+    @Binding var draftPrompt: String?
+    let accountID: AccountID
+    let syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    /// Asks the conversation column to dock the canvas. A row cannot own that
+    /// panel — see ``DesktopConversationView/openArtifact``.
+    let openArtifact: (NativeMessageContent.ArtifactReference) -> Void
+    /// The window's Share — publish, copy, and say so in the Share popover;
+    /// nil when the account has no share service. Reached from every reply's
+    /// More menu, as on the web, not only from the toolbar.
+    let share: (() -> Void)?
+    /// Starts a private chat from the transcript up to a message — Fork
+    /// Privately. Nil where there is no private chat to start.
+    var forkPrivately: (([NativePrivateChatModel.Turn]) -> Void)? = nil
+    /// Seeds the composer with a reply, quoted — Quote in Composer.
+    var quote: ((String) -> Void)? = nil
+    /// A new value asks the last message you sent to open for editing — ↑ in
+    /// the composer's empty field (§5.9). The row owns its editor; this only
+    /// says "now".
+    var editLastRequest: UUID? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var actionError: String?
+    @State private var speechPlayback = DesktopSpeechPlayback()
+    /// The reply a Branch ▸ Into a New Saved Chat is on its way from.
+    @State private var branchingMessageID: String?
+    /// The index from which rows rise in, so opening a conversation does not
+    /// replay every entrance it ever had. See ``noteMessages(from:to:)``.
+    @State private var animateFrom = Int.max
+    /// The conversation whose count `animateFrom` was last seeded against.
+    @State private var settledConversationID: String?
+    /// The same gate for ``localMessages``. It starts at zero, because the
+    /// transcript is only ever built with local turns in it at the handoff —
+    /// and those are the turns that rise, a beat after the greeting leaves.
+    @State private var localAnimateFrom = 0
+
+    /// The web's `max-w-3xl` reading column. See ``DesktopChatMeasure``.
+    static let readingWidth: CGFloat = DesktopChatMeasure.reading
+
+    /// The reply whose actions stay visible and which alone can be
+    /// regenerated: the transcript's last turn, when it is an answer.
+    private var newestReplyID: String? {
+        guard let last = model.selectedMessages.last, last.role == .assistant else { return nil }
+        return last.id
+    }
+
+    private var lastUserMessageID: String? {
+        model.selectedMessages.last(where: { $0.role == .user && !$0.isPending })?.id
+    }
+
+    /// The account catalog's name for a canonical model id.
+    ///
+    /// Falls back to the shared humanizer when the catalog has no entry, which
+    /// happens for a model the account has since lost access to — "Claude
+    /// Sonnet 4.6", never "anthropic:claude-sonnet-4-6".
+    private func displayName(forModelID id: String) -> String {
+        model.model(withID: id)?.displayName ?? junoDisplayModelName(id)
+    }
+
+    /// The Regenerate menu's Switch Model list: every chat model this account
+    /// can send to, grouped by provider.
+    private var switchableModels: [DesktopRegenerateModel] {
+        DesktopRegenerateModel.switchable(from: model.selectableModels)
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                // The web's reading column, metric for metric: `max-w-3xl`
+                // (768pt) at `space-y-6` (24pt) — see `message-list.tsx`.
+                LazyVStack(alignment: .leading, spacing: JunoSpace.section) {
+                    ForEach(Array(model.selectedMessages.enumerated()), id: \.element.id) {
+                        index, message in
+                        storeRow(message)
+                            .modifier(DesktopMessageRise(rises: index >= animateFrom))
+                            .id(message.id)
+                    }
+
+                    // A private chat's turns, or a first turn on its way to
+                    // the store. Those present when the transcript is built are
+                    // the handoff's (§10.1), and rise a beat after it starts.
+                    ForEach(Array(localMessages.enumerated()), id: \.element.id) { index, message in
+                        localRow(message, isNewest: localTurnsArePrivate && message.id == localMessages.last?.id
+                            && message.role == .assistant)
+                            .modifier(
+                                DesktopMessageRise(
+                                    rises: index >= localAnimateFrom,
+                                    delay: localAnimateFrom == 0 ? DesktopChoreography.firstTurnBeat : 0
+                                )
+                            )
+                            .id(message.id)
+                    }
+
+                    if let localError {
+                        DesktopChatError(message: localError, canRetry: false, retry: {})
+                    }
+
+                    // Connector approvals are not prose and must stay above the
+                    // pending answer they block. The receipt is recovered from
+                    // `/api/approvals` as well as from the live stream, so this
+                    // card remains answerable after a cold launch or a missed
+                    // SSE frame.
+                    if showsStoreState, let conversationID = model.selectedConversationID {
+                        ForEach(model.chatApprovals(for: conversationID)) { approval in
+                            NativeChatApprovalCard(
+                                approval: approval,
+                                isBusy: model.chatApprovalInFlightID == approval.id,
+                                errorMessage: model.chatApprovalError(for: approval.id),
+                                canAllowScope: model.canAllowChatApprovalScope(approval),
+                                decide: { decision in
+                                    Task {
+                                        await model.decideChatApproval(approval, decision: decision)
+                                    }
+                                }
+                            )
+                            .frame(maxWidth: Self.readingWidth, alignment: .leading)
+                        }
+                    }
+
+                    // The call, in the transcript it belongs to. Same rows, same
+                    // reading column, appended after the persisted turns — the
+                    // web's arrangement, and the reason it has no transcript
+                    // pane: a spoken conversation is the conversation, not a
+                    // second view of one.
+                    ForEach(voiceMessages) { message in
+                        DesktopMessageRow(
+                            message: message,
+                            isVoice: true,
+                            isNewest: false,
+                            modelDisplayName: nil,
+                            switchableModels: [],
+                            // A spoken turn has no row anywhere until the call
+                            // is hung up and filed: nothing to act on yet.
+                            actions: MessageRowActions(),
+                            branchPosition: nil,
+                            isGenerating: model.isGenerating
+                        )
+                        // A line the recognizer has not finalized is a
+                        // hypothesis it is still rewriting several times a
+                        // second, and it is frequently wrong. Dimmed, it reads
+                        // as something being heard; at full strength it reads as
+                        // something that was said.
+                        .opacity(message.isPending ? 0.55 : 1)
+                        .id(message.id)
+                    }
+
+                    if showsStoreState, model.isGenerating, !model.researchActivity.isEmpty {
+                        DesktopResearchActivity(items: model.researchActivity)
+                    }
+
+                    // Under the last reply, once it has settled. Inside the stack
+                    // so it scrolls with the transcript rather than floating over
+                    // it, and clamped to the reading column like everything else.
+                    if showsStoreState, let conversationID = model.selectedConversationID {
+                        NativeFollowUpStrip(
+                            conversationID: conversationID,
+                            accountID: accountID,
+                            client: followUpClient,
+                            ready: !model.isGenerating
+                                && model.selectedMessages.last?.role == .assistant,
+                            onPick: { draftPrompt = $0 }
+                        )
+                        .frame(maxWidth: Self.readingWidth, alignment: .leading)
+                    }
+
+                    if showsStoreState, let error = model.chatErrorDescription {
+                        DesktopChatError(
+                            message: error,
+                            canRetry: model.canRetrySelectedConversation,
+                            retry: {
+                                guard let id = model.selectedConversationID else { return }
+                                model.retryLastMessage(conversationID: id)
+                            }
+                        )
+                    }
+
+                    if let actionError {
+                        DesktopChatError(
+                            message: actionError,
+                            canRetry: false,
+                            retry: {}
+                        )
+                    }
+
+                    Color.clear
+                        .frame(height: 1)
+                        .id("transcript-bottom")
+                }
+                .modifier(TranscriptColumn())
+                .padding(.vertical, JunoSpace.section)
+            }
+            // `initial: true` so a conversation opens at its latest turn even when
+            // the messages were already in hand — which is the case every time the
+            // canvas takes the whole column on a narrow window and gives it back.
+            .onChange(of: model.selectedMessages, initial: true) { previous, current in
+                noteMessages(from: previous.count, to: current.count)
+                // Animated only when a turn actually arrived. The other two cases
+                // are the transcript being drawn for the first time and a reply
+                // growing token by token — travelling from a position the reader
+                // never saw reads as the page moving on its own, and an animated
+                // scroll restarted several times a second never arrives anywhere.
+                guard current.count != previous.count else {
+                    proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                    return
+                }
+                withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                    proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                }
+            }
+            // Unanimated, unlike a sent message: a partial transcript lands
+            // several times a second, and an animated scroll restarted that
+            // often never arrives anywhere.
+            .onChange(of: voiceMessages) { _, _ in
+                proxy.scrollTo("transcript-bottom", anchor: .bottom)
+            }
+            // A private turn arriving, or a private reply growing: the same
+            // two cases as the store's messages above.
+            .onChange(of: localMessages) { previous, current in
+                if current.count != previous.count {
+                    localAnimateFrom = current.count < previous.count ? current.count : previous.count
+                    withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                        proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                    }
+                } else {
+                    proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                }
+            }
+            .onChange(of: model.chatPhase) { _, _ in
+                proxy.scrollTo("transcript-bottom", anchor: .bottom)
+            }
+            .onDisappear { speechPlayback.stop() }
+        }
+    }
+
+    // MARK: Rows
+
+    private func storeRow(_ message: NativeChatMessage) -> some View {
+        DesktopMessageRow(
+            message: message,
+            isVoice: false,
+            isNewest: message.id == newestReplyID,
+            modelDisplayName: message.model.map(displayName(forModelID:)),
+            currentModelID: message.model ?? model.selectedConversation?.model,
+            switchableModels: message.id == newestReplyID ? switchableModels : [],
+            actions: storeActions(for: message),
+            branchPosition: branchPosition(for: message),
+            isGenerating: model.isGenerating,
+            isSpeaking: speechPlayback.playingMessageID == message.id,
+            isBranching: branchingMessageID == message.id,
+            isUnsent: model.isUnsentMessage(message.id, in: message.conversationID),
+            editRequest: message.id == lastUserMessageID ? editLastRequest : nil
+        )
+    }
+
+    private func localRow(_ message: NativeChatMessage, isNewest: Bool) -> some View {
+        DesktopMessageRow(
+            message: message,
+            // The first turn's stand-in has nothing behind it yet; a private
+            // turn has words to copy, read and quote.
+            isVoice: !localTurnsArePrivate,
+            isPrivate: localTurnsArePrivate,
+            isNewest: isNewest,
+            modelDisplayName: message.model.map(displayName(forModelID:)),
+            switchableModels: [],
+            actions: localTurnsArePrivate ? privateActions(for: message) : MessageRowActions(),
+            branchPosition: nil,
+            isGenerating: message.isPending,
+            isSpeaking: speechPlayback.playingMessageID == message.id
+        )
+    }
+
+    /// Whether a store row is the server's, rather than a turn still on its
+    /// way there: the only rows that can be rated, branched, shared or linked.
+    private func isSaved(_ message: NativeChatMessage) -> Bool {
+        !message.conversationID.isEmpty && !message.id.hasPrefix("local-")
+    }
+
+    private func storeActions(for message: NativeChatMessage) -> MessageRowActions {
+        let saved = isSaved(message)
+        let isNewest = message.id == newestReplyID
+        var actions = MessageRowActions()
+        actions.copy = { Self.copyToPasteboard(NativeMessageContent.copyableMarkdown(of: message.content)) }
+        if messageActions != nil {
+            actions.readAloud = { readAloud(message) }
+            actions.stopReading = { speechPlayback.stop() }
+            if saved {
+                actions.setFeedback = { setFeedback($0, for: message) }
+                actions.branch = { branch(from: message) }
+            }
+        }
+        if isNewest, message.role == .assistant {
+            actions.regenerate = { request in regenerate(request) }
+            if model.canContinueSelectedConversation {
+                actions.continueResponse = {
+                    guard let conversationID = model.selectedConversationID else { return }
+                    _ = model.continueLastResponse(conversationID: conversationID)
+                }
+            }
+        }
+        if forkPrivately != nil {
+            actions.forkPrivately = { forkPrivately(through: message) }
+        }
+        if saved {
+            actions.share = share
+            actions.copyLink = { copyLink(to: message) }
+        }
+        if let quote {
+            actions.quote = { quote(NativeMessageContent.copyableMarkdown(of: message.content)) }
+        }
+        if model.isUnsentMessage(message.id, in: message.conversationID) {
+            actions.retrySend = {
+                model.retryLastMessage(conversationID: message.conversationID)
+            }
+        }
+        actions.stepBranch = { offset in stepBranch(from: message, offset: offset) }
+        if message.role == .user, !message.isPending, saved {
+            actions.editMessage = { newContent in editMessage(message, newContent: newContent) }
+        }
+        actions.openArtifact = openArtifact
+        return actions
+    }
+
+    /// A private turn: words to copy, read and quote, and nothing else.
+    private func privateActions(for message: NativeChatMessage) -> MessageRowActions {
+        var actions = MessageRowActions()
+        actions.copy = { Self.copyToPasteboard(NativeMessageContent.copyableMarkdown(of: message.content)) }
+        if messageActions != nil {
+            actions.readAloud = { readAloud(message) }
+            actions.stopReading = { speechPlayback.stop() }
+        }
+        if let quote {
+            actions.quote = { quote(NativeMessageContent.copyableMarkdown(of: message.content)) }
+        }
+        return actions
+    }
+
+    /// Decides which rows are new enough to rise in.
+    ///
+    /// The web seeds the same index at mount and calls it `animateFrom`
+    /// (`message-list.tsx`) — it gets away with one line because its list mounts
+    /// with the messages already in hand. A store that loads asynchronously does
+    /// not: selecting a conversation sets the id first and the transcript arrives
+    /// a moment later, so "everything that appeared since the last render" would
+    /// mean the entire history every time a chat is opened.
+    private func noteMessages(from previous: Int, to current: Int) {
+        guard settledConversationID == model.selectedConversationID else {
+            // A conversation that has only just been selected has not loaded yet,
+            // so whatever arrives first is its history — however short — and
+            // history must not replay. It is not recorded as settled until
+            // something actually lands, or an empty first pass would count as the
+            // load and the real one would animate.
+            if current > 0 { settledConversationID = model.selectedConversationID }
+            animateFrom = current
+            return
+        }
+        // A send appends the reader's own turn and then the reply's placeholder,
+        // one at a time. Anything larger is a block landing — a sync catching up,
+        // a branch being read — and that is history again.
+        animateFrom = current - previous > 2 ? current : previous
+    }
+
+    // MARK: Actions
+
+    private static func copyToPasteboard(_ content: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(content, forType: .string)
+    }
+
+    /// Try Again, Switch Model, More Concise and Add Details, all through the
+    /// store's one regenerate path.
+    private func regenerate(_ request: MessageRegenerateRequest) {
+        guard let conversationID = model.selectedConversationID else { return }
+        switch request {
+        case .again:
+            model.retryLastMessage(conversationID: conversationID, modelID: nil, instruction: nil)
+        case .model(let id):
+            model.retryLastMessage(conversationID: conversationID, modelID: id, instruction: nil)
+        case .instruction(let instruction):
+            model.retryLastMessage(conversationID: conversationID, modelID: nil, instruction: instruction)
+        }
+    }
+
+    /// An optimistic thumb: set at once, rolled back if the server refuses.
+    private func setFeedback(
+        _ feedback: NativeChatFeedback?,
+        for message: NativeChatMessage
+    ) {
+        guard let messageActions else { return }
+        let previous = message.feedback
+        model.applyFeedback(
+            feedback,
+            messageID: message.id,
+            conversationID: message.conversationID
+        )
+        actionError = nil
+        Task {
+            do {
+                try await messageActions.setFeedback(
+                    messageID: message.id,
+                    feedback: feedback.map {
+                        $0 == .up ? .up : .down
+                    },
+                    for: accountID
+                )
+            } catch {
+                model.applyFeedback(
+                    previous,
+                    messageID: message.id,
+                    conversationID: message.conversationID
+                )
+                actionError = "Could not save your feedback."
+            }
+        }
+    }
+
+    /// Where `message` sits among its revisions, or nil when it has none.
+    ///
+    /// Asked of the store per row rather than cached on the message: a position
+    /// is a fact about the tree, and one copied onto a message would keep
+    /// reading `2 / 3` after the reader's next edit made it `2 / 4`.
+    private func branchPosition(
+        for message: NativeChatMessage
+    ) -> NativeMessageBranchPosition? {
+        model.branchPosition(for: message.id, in: message.conversationID)
+    }
+
+    private func stepBranch(from message: NativeChatMessage, offset: Int) {
+        Task {
+            await model.stepBranch(
+                from: message.id,
+                in: message.conversationID,
+                offset: offset
+            )
+        }
+    }
+
+    /// Re-asks a prompt as a new branch beside the original.
+    ///
+    /// The model is resolved the same way the composer resolves its own on
+    /// opening a conversation — the account's pick for this conversation,
+    /// falling back to the first model it can still use.
+    private func editMessage(_ message: NativeChatMessage, newContent: String) {
+        let modelID = DesktopChatSelection.resolvedModelID(
+            current: "",
+            conversationModel: model.selectedConversation?.model ?? "",
+            selectable: model.selectableModels
+        )
+        guard !modelID.isEmpty else { return }
+        Task {
+            await model.editUserMessage(
+                messageID: message.id,
+                conversationID: message.conversationID,
+                newContent: newContent,
+                modelID: modelID
+            )
+        }
+    }
+
+    /// Branch ▸ Into a New Saved Chat. The More trigger wears the wait, and is
+    /// disabled, until the server answers.
+    private func branch(from message: NativeChatMessage) {
+        guard let messageActions, branchingMessageID == nil else { return }
+        actionError = nil
+        branchingMessageID = message.id
+        Task {
+            defer { branchingMessageID = nil }
+            do {
+                let id = try await messageActions.branch(
+                    conversationID: message.conversationID,
+                    atMessageID: message.id,
+                    for: accountID
+                )
+                await syncModel?.refresh()
+                await model.reload()
+                model.isDraftingNewConversation = false
+                model.selectedConversationID = id
+                Self.announce("Branched into a new chat.")
+            } catch {
+                actionError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Branch ▸ Fork Privately: the transcript up to this message, carried into
+    /// a new private chat — the web's `handleFork` (`chat-view.tsx`). Only
+    /// settled turns with words in them travel.
+    private func forkPrivately(through message: NativeChatMessage) {
+        guard let forkPrivately, !model.isGenerating,
+            let index = model.selectedMessages.firstIndex(where: { $0.id == message.id })
+        else { return }
+        let turns = model.selectedMessages[...index].compactMap { turn -> NativePrivateChatModel.Turn? in
+            guard turn.errorDescription == nil, !turn.isPending,
+                turn.role == .user || turn.role == .assistant
+            else { return nil }
+            let content = NativeMessageContent.copyableMarkdown(of: turn.content)
+            guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return NativePrivateChatModel.Turn(
+                role: turn.role == .user ? .user : .assistant,
+                content: content,
+                model: turn.model
+            )
+        }
+        guard !turns.isEmpty else { return }
+        forkPrivately(turns)
+        Self.announce("Forked from message \(index + 1)")
+    }
+
+    /// Copy Link: the web's own address for this message,
+    /// `{origin}/chat/{conversation}?m={message}`.
+    private func copyLink(to message: NativeChatMessage) {
+        var components = URLComponents(url: JunoBackend.productionURL, resolvingAgainstBaseURL: false)
+        components?.path = "/chat/\(message.conversationID)"
+        components?.queryItems = [URLQueryItem(name: "m", value: message.id)]
+        guard let link = components?.url?.absoluteString else {
+            Self.announce("Couldn’t copy the link.")
+            return
+        }
+        Self.copyToPasteboard(link)
+        Self.announce("Link copied.")
+    }
+
+    private func readAloud(_ message: NativeChatMessage) {
+        guard let messageActions else { return }
+        let content = NativeMessageContent.spoken(of: message.content)
+        actionError = nil
+        Task {
+            do {
+                let audio = try await messageActions.speech(
+                    text: content,
+                    voiceID: nil,
+                    for: accountID
+                )
+                try speechPlayback.play(audio: audio, fallbackText: content, messageID: message.id)
+            } catch {
+                actionError = error.localizedDescription
+            }
+        }
+    }
+
+    /// A confirmation with nowhere to show yet. The window's toast host lands
+    /// in Phase 3 (§7.7); until then VoiceOver hears it, and the result — a new
+    /// chat, a link on the pasteboard — is its own evidence for everyone else.
+    private static func announce(_ text: String) {
+        AccessibilityNotification.Announcement(text).post()
+    }
+}
+
+/// The web's `rise-in`, applied to a message that has just arrived.
+///
+/// `rises` is what keeps a scrolled history still. A `LazyVStack` builds a row
+/// the moment it comes into view and destroys it again when it leaves, so a
+/// transition driven by appearance alone replays for every old message the reader
+/// scrolls back to — the row genuinely *is* appearing, it is simply not new. The
+/// index gate answers the question appearance cannot.
+struct DesktopMessageRise: ViewModifier {
+    let rises: Bool
+    /// How long to wait before rising, in seconds. The handoff's first bubble
+    /// waits a beat, so the greeting is visibly leaving before it arrives.
+    var delay: TimeInterval = 0
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var risen: Bool
+
+    /// A row that is not rising starts *already* risen rather than being set
+    /// there by `onAppear`. Seeded the other way it spent its first frame at zero
+    /// opacity, which on a lazily-built stack means every old message flickers as
+    /// the reader scrolls back through the conversation.
+    init(rises: Bool, delay: TimeInterval = 0) {
+        self.rises = rises
+        self.delay = delay
+        _risen = State(initialValue: !rises)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(risen ? 1 : 0)
+            // Under Reduce Motion the travel is dropped and the fade keeps its
+            // timing — the tint tier — so a new turn still arrives rather than
+            // appearing.
+            .offset(y: risen ? 0 : JunoMotion.shift(DesktopChoreography.riseDistance, reduceMotion: reduceMotion))
+            .onAppear {
+                guard rises else { return }
+                withAnimation(JunoMotion.reduced(JunoMotion.riseIn, when: reduceMotion, tier: .tint)?.delay(delay)) {
+                    risen = true
+                }
+            }
+    }
+}

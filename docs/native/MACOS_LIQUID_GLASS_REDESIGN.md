@@ -1859,3 +1859,21 @@ An independent pass checked 28 claims against the code and the macOS 27 SDK. Mos
 - **Gates.** Re-baseline `native:design:type` and `native:design:motion` when the ladders change. Add new copy and the Title Case variants to the shared `Localizable.xcstrings`.
 - **Web.** Settings also exists as a page (`settings/page.tsx`). Map `/profile` to Settings › Account. `/knowledge/documents/[id]` becomes a Library detail. Compare and Roadmap are deferred.
 - **Coordination.** A parallel Code rework is in progress (`docs/native/code-rework/`). This redesign owns the shared shell (window, product switch, sidebar chrome, tokens, icons) and Chat. It leaves `DesktopCode*.swift`, `JunoCodeUI` and `DesktopCodeAccountFooter.swift` to that work, apart from mechanical token or icon renames that are needed to keep Code building.
+
+## Phase 2 errata (from `MACOS_PHASE2_TRANSCRIPT_BRIEF.md` §0; apply over §6)
+
+The Phase 2 brief re-read the live web (`juno/src` on main) against §6. Where the two disagree, the brief wins; these are the corrections, recorded as the stages land.
+
+- **§6.2 User turn.** The bubble is the web's `USER_BUBBLE_CLASS`: `text-reading` 16pt at 1.7 (`JunoType.reading`), padding 16 × 10, `junoSecondary` with no stroke, `UnevenRoundedRectangle(16, 16, 8, 16)`, at most 85% of the measure the transcript measured (`junoMeasure`). Long prompts clamp at 240pt (over 700 characters or 14 lines) with a 64pt fade; only the fade animates. "Show more · N lines" is 11pt medium SF, not mono. The hover cluster is Copy · Edit · Fork privately, always hover- or focus-revealed; Edit is hidden, not greyed, while a reply is being written. The editor sends on Return (⇧Return breaks the line, ⌘Return sends, Esc cancels). A question that never reached the server shows "Not sent" and Retry send at rest. Sent attachments (Stage 2) are 144pt-tall image tiles and 144 × 144 file tiles, not 160pt thumbnails or chips.
+- **§6.4 Prose.** 16pt at 1.7 with a 0.85em block gap and a 75ch paragraph measure, not 15 at 1.65 (Stage 4).
+- **§6.8 Inline artifact card.** Radius 16 with no outer inset; body `min(44vh, 360)` with a 240 minimum; a 32pt icon tile at radius 12; the button reads "Open" with the help text "Open in canvas" (Stage 3).
+- **§6.10 Message actions.** Plain 28pt circles (the web's are 32; deliberate difference #10), 16pt Phosphor regular glyphs in `junoSecondaryInk`, a neutral `junoHover` circle under the pointer, no container, glass or tint. Five at rest on the newest reply — Copy · Good response · Bad response · Regenerate ▾ · More ▾ — and nothing on an older reply until hover or focus. The version pager's arrows are **24pt** (the web's 28 less the same 4) and its count is 11pt mono. A rated thumb wears its fill cut in `junoAccentInk` on the `--selected` ground (`Color.junoSelected`), as the web's `text-primary` on `selected`. The model, tokens and cost moved from a caption under every answer into More's info section; Read Aloud, Branch from Here ▸ (Into a New Saved Chat · Fork Privately), Share Chat…, Quote in Composer and Copy Link live in More, with the web's words in Title Case. Continue moved to the finish note. Regenerate's More Concise and Add Details send the web's `regenerateInstruction` strings verbatim.
+- **§6.11 Error box.** A 40% `junoDestructive` hairline over a 5% (light) or 14% (dark) fill, not 35% and 7% (Stage 4).
+
+**§0.8 register, additions.**
+
+14. Designs are drawn inline on the Mac; the web shows the document's JSON.
+15. Images add Download and Expand to the web's Edit, and a click opens Quick Look rather than a new tab.
+16. The More menu's info item is greyed by the system; the web keeps it at full ink.
+17. Switch Model marks the current model with the system checkmark, not the web's coral check.
+18. Tooltips use `.help()`, so they appear on the system's delay rather than the web's.
