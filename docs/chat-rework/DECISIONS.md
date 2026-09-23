@@ -118,17 +118,43 @@ replaces the `StreamStatus`→strip handoff.
   two.
 - **Nothing that was visible while streaming unmounts without a collapse** (bug B2).
 
-**U2. The thinking indicator.**
+**U2. The thinking indicator.** This follows the motion audit's recommendation (§3.3,
+"Concept A").
 
-- One new signature replaces the 3×3 dot matrix and the other working vocabularies the audit counted
-  on a single turn.
-- One loop period (2 s, `breathe` curve) and one muted ink. Coral is never decoration.
-- It animates only `transform` and `opacity`. The label shimmer is the single documented exception,
-  on one short label.
-- One looping element per turn.
-- Phase changes (Thinking → Searching → Reading → Running code → Waiting for you → Writing)
-  cross-fade the copy once. Clock ticks never restart an animation.
-- Under reduced motion there is no shimmer and no travel; the state is carried in words.
+- **One signature for every working state.** It replaces the old dot matrix's paint-heavy loop and
+  the other working vocabularies the audit counted on a single turn (shine, sweep, globe, spinners,
+  pulsing dots).
+- **The glyph is a phase-typed matrix.**
+  - An 18 px 3×3 grid. Only the opacity of each dot's lit layer loops.
+  - Each phase has its own pattern:
+    - Thinking: a travelling point.
+    - Searching: a column sweep.
+    - Reading: a row sweep.
+    - Tool: an orbit.
+    - Writing: the bottom row types.
+  - Waiting and failed do not move.
+  - At done the dots gather into the 6 px resting dot.
+- **The label** carries a compositor-only shimmer.
+- **Timing.**
+  - Every loop runs on one period, `--loop` = 2.4 s, the `breathe` family, locked to the page clock.
+  - After 20 s of continuous work the run goes calm: no shimmer, and a 4.8 s glyph.
+- **Ink and paint.**
+  - One muted ink. The accent appears only for "waiting for you". Coral is never decoration.
+  - Only `transform` and `opacity` animate. There is no `box-shadow` trail and no `height` in the
+    transcript.
+- **Pacing.**
+  - No label for the first 400 ms, so a fast answer never flashes "Thinking".
+  - A shown label stays at least 600 ms.
+  - Label changes are at least 700 ms apart, and the newest phase wins.
+  - Clock ticks never restart an animation.
+- **One loop owner on screen.** It is the transcript line, or the panel's running row when the
+  panel is open.
+- **Reduced motion.** Each phase has a static signature, an opacity breath shows the run is live,
+  and labels cross-fade. There is no shimmer and no travel.
+- **Inline steps.** Under the live line there is a fixed 2-slot "peek" of the latest steps: tool
+  rows with their own state. It grows by translating, never by resizing. It collapses at the first
+  answer token, scroll-anchored, before any answer text renders. That keeps U1's "live steps"
+  without the layout jump.
 
 **U3. The right panel ("Activity") is the detail surface.** Reading the thinking does not require it.
 
@@ -143,8 +169,10 @@ replaces the `StreamStatus`→strip handoff.
 - **Identity.** The panel is keyed by the message's stable client key, so it no longer closes when an
   answer completes (bug B1). It enters and exits *with* its content.
 
-**U4. One right-column shell** for the Activity panel, the Research panel, the canvas and the file
-viewer:
+**U4. One right-column shell**, used in this rework by the Activity and Research panels. The canvas
+and the file viewer adopt it later. The Artifacts & Design session (branch
+`wip/artifacts-design-audit`) is reworking the canvas, so this rework changes nothing in
+`CanvasPanel` or `DocumentViewer` beyond the shared coexistence rule in `chat-view`. The shell:
 
 - the same header height, fill and 16 px gutter;
 - close, and back on narrow screens;
@@ -247,6 +275,110 @@ A Library delete hides the file from the Library only (`Attachment.libraryRemove
 project that uses the file keeps it. A file nothing else uses is tombstoned as before.
 
 Backfilling files deleted before the fix changes production data, so it waits for the owner's go.
+
+## 4b. Resolutions of the audit critic's contradictions (2026-09-23)
+
+- **Wire compatibility is a hard constraint.** Shipped native builds reject any SSE frame `type`
+  they don't know: `NativeChatAPIClient.swift` hits `default: throw malformedResponse`, and the
+  OpenAPI `ChatSSEEvent` is a closed `oneOf`. Therefore:
+  - **No new SSE frame types.** Everything in T6 rides on existing frames as *added optional
+    fields*: `seq`, `round`, the tool record, `commentary`, and so on.
+  - Existing fields keep their meaning.
+  - Activity titles that native parses stay as they are, or are duplicated into typed fields while
+    the old title remains.
+  - A web-only frame is allowed only if the server sends it solely to clients that declare support,
+    through a request flag. The web client sets the flag and native clients don't.
+- **Where the thinking lives.** U1 and U2 as amended above:
+  - The live line plus a fixed 2-slot peek of the latest steps.
+  - The peek collapses at the first answer token, before any answer text, with scroll anchoring. It
+    is the only automatic height change in the transcript.
+  - The full timeline expands inline **only on the user's click**.
+  - The Activity panel holds the details.
+  - "Writing" is shown only in Research. A chat turn settles at its first answer token, and if a
+    tool starts after text has begun, it re-enters a working phase.
+- **Round budgets.** 4 / 10 / 16 / 24 for low / default / high / max. Final.
+- **The ordering in RC-1.** `browser_agent` leaves chat (T3) *before* the broker trusts declared
+  risk. Only `read_document`, `inspect_image`, `web_fetch`, `web_search`, `search_chats`,
+  `current_time` and `calculate` are auto-allowed reads. `run_code` runs in a remote sandbox on the
+  user's own data, so it is `read`. A connector without annotations stays `external`.
+- **Research report writer.** The named research-lead model writes the report, and the provenance
+  line says which model. The persisted chat summary is written by the same model in the same pass.
+- **Native Research path.** Shipped native clients keep today's in-chat path: `deepResearch: true`,
+  auto-confirm, and the chat model streams the report. The web moves to the background engine with
+  a persisted summary message. The Mac session adopts the new contract later. This is a transitional
+  split, recorded in the handoff.
+- **Estimate line.** Time and pages only: "About 12 min · reads up to ~150 pages". Spend shows in
+  the panel's details, in the plan's currency (EUR).
+- **i18n.** Argument-bearing copy is rendered as a fixed, translatable phrase plus separate argument
+  nodes: `<span>Searching the web for</span> <q>query</q>`. That way the exact-match AutoTranslate
+  catalog still matches the fixed part. Plurals use distinct whole phrases ("1 source" / "5 sources"
+  → the key "sources" with a number node) and never concatenation. The `gap-dynamic-copy-i18n`
+  report is the authority on the mechanism.
+
+## 4c. Defaults for the owner questions in the gap reports (conservative; the owner can override)
+
+These defaults unblock implementation. The handoff lists each one for the owner to confirm. The
+cost choices lean toward spending less.
+
+- **Search engines in chat.** `web_search` uses one primary keyed engine: the first of Tavily,
+  Serper, Brave and Exa that is configured. It falls back to one other only on failure.
+  - No public SearXNG, DuckDuckGo scrape or Wikipedia in chat. If no keyed engine exists, chat
+    `web_search` is not offered.
+  - Research keeps its own fan-out for now.
+  - Every search is metered at the engine's real per-query cost, from now on only. There is no
+    backfill.
+- **FREE.** No web search or fetch, `run_code`, connectors or `start_task`, which today is always
+  refused anyway. FREE gets `current_time`, `calculate`, `read_document`, `inspect_image` and
+  `search_chats`. No Research.
+- **Private chats.** `current_time` and `calculate` are always available. `web_search` and
+  `web_fetch` are available only when web is toggled on *in that chat*.
+  - No `search_chats`, connectors, code or tasks.
+  - The read tools here bypass the broker, so a private chat leaves no durable receipt.
+- **Lockdown.** Only `current_time` and `calculate` are allowed. Lockdown now also stops
+  provider-native search and Research, to match its Settings copy ("reading included").
+- **Voice.** Unchanged in this rework.
+- **Workspace keys.** No new keys, because a new key is a native contract change.
+  - `web_search` and `web_fetch` follow `webSearch`.
+  - `search_chats` follows `memoryRecall`, scoped to the project inside a project.
+  - `run_code` follows the closest existing key. If none fits, it is off inside a workspace that
+    restricts tools.
+- **Skills.** A skill that lists tools also narrows native search and the new tools.
+- **`run_code`.** Only on paid plans, and only when a remote sandbox is configured. It is metered
+  per call.
+- **Research money.**
+  - `researchBudgetFor` sizes the run within a per-plan cap, taken from the entitlements gap report
+    §6.5 as the starting table.
+  - It checks the monthly budget, not the 5-hour and weekly windows. Research has its own capped
+    share of the month.
+  - `RESEARCH_CHAT_BUDGET_USD` stays only as an owner override clamp.
+  - `POST /api/research` stops accepting a client-set or `null` ceiling.
+  - The estimate line shows no amount.
+  - Research spend is unified under `kind: "research"`.
+- **Ledger.** Juno tool fees are recorded as `kind: "chat"` with model `juno-tool:<id>`. There is no
+  enum migration.
+- **Frontier turn cost.** The budget guard is enforced on tool events mid-loop. It checks the
+  binding usage window, not only the month. When the budget would be exceeded, the loop ends in the
+  final answer round instead of failing.
+- **Gemini grounding** beyond the free quota is recorded at its real cost.
+- **Memory on turns tainted by untrusted content.** Strict, as today: no write.
+- **Anthropic fetch.** Juno's `web_fetch` everywhere, for one sources and UI path.
+- **Fetch identity.** An honest User-Agent that names Juno and says the fetch is user-initiated.
+  One-off user-initiated fetches do not enforce `robots.txt`; the Research crawler keeps its
+  current policy.
+- **Provenance "ancestor paths".** A site root is allowed for any URL already on the ledger for that
+  host.
+- **i18n.**
+  - This rework uses the pragmatic rule in §4b: fixed phrases and argument nodes, whole-phrase
+    plurals, and durations and numbers through `Intl` in the UI locale.
+  - Streaming regions are marked `data-no-auto-translate`, and AutoTranslate skips mutations inside
+    them.
+  - The full ICU MessageFormat pipeline and receipt v2 are follow-ups.
+  - Content language (D-1) is option C: the explicit setting, else the question's language, else
+    the UI locale, frozen per run.
+  - Non-English UIs show a localised phase label in the status line (D-5 ii).
+- **Already fixed on this branch.** The Node 24 pinned-DNS failure is c899d6f7: every pinned fetch
+  threw `ERR_INVALID_IP_ADDRESS`, so Research page reads and Work fetches were failing. It can ship
+  on its own.
 
 ## 5. What this rework does not do
 
