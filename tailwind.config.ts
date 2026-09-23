@@ -535,24 +535,13 @@ const config: Config = {
           "30%": { transform: "translateY(-4px)", opacity: "1" },
         },
         // A dark point travels through a still 3×3 matrix. Adjacent staggered
-        // peaks overlap just enough to leave a soft trail.
+        // peaks overlap just enough to leave a soft trail. Opacity only: the
+        // box-shadow stops it used to carry repainted every dot on every frame.
         "thinking-matrix": {
-          "0%, 100%": {
-            opacity: "0",
-            boxShadow: "0 0 0 hsl(var(--foreground) / 0)",
-          },
-          "8%": {
-            opacity: "0.28",
-            boxShadow: "0 0 2px hsl(var(--foreground) / 0.05)",
-          },
-          "15%": {
-            opacity: "0.95",
-            boxShadow: "0 0 5px hsl(var(--foreground) / 0.12)",
-          },
-          "30%": {
-            opacity: "0",
-            boxShadow: "0 0 0 hsl(var(--foreground) / 0)",
-          },
+          "0%, 100%": { opacity: "0" },
+          "8%": { opacity: "0.28" },
+          "15%": { opacity: "0.95" },
+          "30%": { opacity: "0" },
         },
         // The reduced-motion substitute for the matrix above, and it did not
         // exist. `thinking-dots.tsx` has always applied

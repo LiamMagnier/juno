@@ -8,12 +8,12 @@ import type { AgentExecutionContext, AgentMode } from "@/lib/agent/types";
 import { NO_RUNTIME_TOOLS } from "@/lib/chat/tool-policy";
 import {
   type ActiveConnector,
-  type McpFunctionTool,
   type McpToolset,
   type McpToolsetContext,
-  type ToolExecution,
 } from "@/lib/mcp";
-import type { ToolAccess } from "@/lib/tool-access";
+import type { AdapterRequest } from "@/lib/llm/types";
+import type { LoopController } from "@/lib/llm/loop";
+import type { ChatToolset, NativeChatTool } from "@/lib/tools/types";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { normalizeProviderError, type ErrorSubject } from "@/lib/provider-error";
 import { noteModelNotServed } from "@/lib/model-capability";
@@ -28,21 +28,11 @@ export { clampMaxTokens };
 /**
  * A tool the chat route builds for one turn and runs itself.
  *
- * Not a registry tool, and deliberately so. `UnifiedAgentRegistry` tools run
- * through `executeToolCall`, which puts every call that is not a read in front
- * of the generic approval broker, and their `execute` sees only the arguments.
- * A native tool is a closure over the turn it belongs to (the account, the
- * conversation, the user message it answers) and decides for itself when a
- * person has to be asked. `start_task` (src/lib/chat/task-tool.ts) is the one
- * that exists.
+ * Declared in `src/lib/tools/types.ts` now, beside the rest of the tool
+ * contract, so modules that must stay free of `server-only` can name it.
+ * Re-exported here for the callers that already import it from this file.
  */
-export interface NativeChatTool {
-  tool: McpFunctionTool;
-  /** The name the activity row and the thought-process panel show for it. */
-  label: string;
-  access: ToolAccess;
-  execute(args: Record<string, unknown>, signal?: AbortSignal): Promise<ToolExecution>;
-}
+export type { NativeChatTool };
 
 /**
  * The turn's toolset with the native tools added after everything it already
@@ -129,6 +119,19 @@ export async function* streamChat(opts: {
    * decides whether a turn may carry one, and private turns never do.
    */
   nativeTools?: readonly NativeChatTool[];
+  /*
+   * The reworked tool loop's options (SPEC §5.0). Declared now so callers can
+   * be written against the final signature; the adapters wire them in WS3,
+   * and until then they are not read. Nothing passes them yet.
+   */
+  /** The turn's opened toolset; replaces `connectors`/`allowedTools`/`audit`/`nativeTools` (WS9a). */
+  toolset?: ChatToolset;
+  /** Present iff `toolset` is. */
+  batch?: AdapterRequest["batch"];
+  /** Defaults to `createLoopController({ budget: toolset ? 10 : 1 })`. */
+  loop?: LoopController;
+  /** Structured output for a tool-less call (the research planner). */
+  responseSchema?: AdapterRequest["responseSchema"];
 }): AsyncGenerator<LlmEvent> {
   const { model, system, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey, fastMode } = opts;
   const proMode = !!opts.proMode && supportsProMode(model);

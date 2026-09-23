@@ -13,6 +13,8 @@ import { classifyToolAccess, type ToolAccess, type ToolAccessHints } from "@/lib
 import { recordToolInvocation, settleToolInvocation } from "@/lib/tool-audit";
 import { authorizeExternalAction, completeExternalAction } from "@/lib/action-approval-store";
 import type { ClientActionApproval } from "@/lib/action-approval";
+import type { ClientSource } from "@/types/chat";
+import type { ConnectorFailure, ToolErrorCode, ToolFigure, ToolWebDetail } from "@/types/run";
 import type { Connection } from "@prisma/client";
 
 /*
@@ -131,6 +133,21 @@ export async function getActiveConnectors(userId: string, requestedIds?: string[
 }
 
 /**
+ * `getActiveConnectors` with the connectors it had to skip, and why (RC-3).
+ *
+ * Beside it rather than instead of it: Work calls `getActiveConnectors` and
+ * keeps its array return. Chat reads `skipped` to say which linked connector is
+ * unavailable this turn instead of dropping it silently (SPEC §3.4 item 1).
+ * WS0 lands the signature; WS1 implements it.
+ */
+export async function resolveConnectorsWithStatus(
+  _userId: string,
+  _ids: string[]
+): Promise<{ active: ActiveConnector[]; skipped: Array<{ id: string; label: string; reason: ConnectorFailure }> }> {
+  throw new Error("not implemented: WS1");
+}
+
+/**
  * Read/write metadata a server declares on its tools, carried on our own tool
  * objects so callers can tell a read from a write.
  *
@@ -200,6 +217,29 @@ export interface ToolExecution {
   durationMs?: number;
   /** Pixels to hand back with the text. Empty and absent mean the same thing. */
   images?: readonly ToolResultImage[];
+  // Added by the chat rework (SPEC §3.1); every one optional, so Work's
+  // executions keep compiling and meaning what they meant.
+  /** Absent → `ok ? "succeeded" : "failed"`. */
+  status?: "succeeded" | "failed" | "denied" | "expired" | "cancelled";
+  error?: { code: ToolErrorCode };
+  figure?: ToolFigure;
+  web?: ToolWebDetail;
+  sources?: ClientSource[];
+  feeMicroUsd?: number;
+}
+
+/** Per-call options the chat dispatcher passes to `execute` (SPEC §3.1, §4.2). Absent (Work) → today's behaviour. */
+export interface ToolExecuteOptions {
+  /** Per-call approval callback; overrides the toolset-level one. */
+  onApprovalRequest?: (approval: ClientActionApproval) => void;
+  /** The per-tool bound. The executor starts `AbortSignal.timeout(timeoutMs)` only AFTER
+   *  authorisation, around the network sink (`client.callTool`, the task dispatch). The `signal`
+   *  passed to `execute` is the TURN signal, which is what authorisation waits on, so an approval
+   *  is never cut short by the tool timer. */
+  timeoutMs?: number;
+  /** Called once, right after a successful authorisation and before the sink runs. The dispatcher
+   *  yields `status: "running"` from it. */
+  onAuthorized?: () => void;
 }
 
 export interface McpToolset {
@@ -219,7 +259,8 @@ export interface McpToolset {
     toolName: string,
     args: Record<string, unknown>,
     signal?: AbortSignal,
-    callId?: string
+    callId?: string,
+    opts?: ToolExecuteOptions
   ): Promise<ToolExecution>;
   close(): Promise<void>;
 }

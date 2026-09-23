@@ -347,6 +347,21 @@
        run finishing while they were reading something else. Long enough to be
        noticed without reading as a page transition. */
     --dur-emphasis: 560ms;
+    /* Run UI: one loop family. Every loop period is a multiple of the beat. */
+    --loop-beat: 1.2s;
+    --loop: 2.4s;
+    --loop-calm: 4.8s;
+    /* Travel, always multiplied by --motion-shift (0 under reduced motion). */
+    --shift-row: 4px;
+    --shift-label: 0.4em;
+    --shift-dock: 24px;
+    --stagger-row: 30ms;
+    --stagger-fav: 50ms;
+    /* CSS springs from the framer presets (scale/translate only; never opacity or colour). */
+    --spring-standard-dur: 250ms;
+    --spring-standard: linear(0, 0.078, 0.235, 0.404, 0.555, 0.679, 0.775, 0.845, 0.895, 0.931, 0.955, 0.972, 0.982, 0.989, 0.994, 0.996, 1);
+    --spring-pop-dur: 370ms;
+    --spring-pop: linear(0, 0.094, 0.289, 0.502, 0.686, 0.826, 0.922, 0.981, 1.013, 1.026, 1.028, 1.024, 1.018, 1.013, 1.008, 1.004, 1);
 
     /* Dot/ASCII signature atom. */
     --dot-size: 5px;
@@ -433,6 +448,9 @@
        with the dialog's own panel and resolved on DOM order. Radix portals both
        to <body>, so which one wins was an accident of mount order. The menu has
        to clear the surface that opened it. */
+    /* The right-column shell in sheet mode: over the transcript, under the
+       sidebar, the aura, popovers and dialogs. The column itself is in flow. */
+    --z-panel: 30;
     /* The ambient aura: over the interface, under anything that takes input.
        It TIES with the floating sidebar and the mobile top bar (both z-40) and
        wins on DOM order, because the layer is portalled last into <body>. That
@@ -3703,6 +3721,169 @@
   }
   .research-tab-body { @apply min-w-0 pt-6; }
 }
+/*
+ * THE RUN UI AND THE RIGHT-COLUMN SHELL (docs/chat-rework/SPEC.md §7.9, §8.2).
+ *
+ * Landed verbatim from the spec. One loop family (--loop, --loop-beat,
+ * --loop-calm), opacity-only loops, travel multiplied by --motion-shift, and a
+ * `data-loop="off"` state that shows each phase's static signature for every
+ * element that does not own the one loop on screen. The reduced-motion rules
+ * are unlayered, at the end of this file, beside the other decorative loops.
+ */
+@layer components {
+  /* ── Run glyph (Concept A) ───────────────────────────────────────────── */
+  .run-glyph {
+    --dot: 4px; --gap: 3px;
+    display: inline-grid; grid-template-columns: repeat(3, var(--dot)); gap: var(--gap);
+    direction: ltr;   /* an icon: under dir="rtl" the grid must not mirror, or the gather moves outward */
+    flex-shrink: 0; color: hsl(var(--foreground));
+    transition: color var(--dur-base) var(--ease-out-soft);
+  }
+  .run-glyph[data-size="sm"] { --dot: 3px; --gap: 2.5px; }
+  .run-glyph[data-swapping] { color: transparent; transition: color var(--dur-fast) var(--ease-in); }
+  .run-glyph > i {
+    position: relative; inline-size: var(--dot); block-size: var(--dot); border-radius: 999px;
+    background: hsl(var(--muted-foreground) / 0.25);
+    transition: translate var(--dur-slow) var(--ease-out-strong), scale var(--dur-slow) var(--ease-out-strong),
+      opacity var(--dur-base) var(--ease-out-soft), background-color var(--dur-base) var(--ease-out-soft);
+  }
+  .run-glyph > i::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; background: currentColor; opacity: 0;
+    animation: var(--lit-name, none) var(--lit-period, var(--loop)) linear infinite;
+    animation-delay: calc(var(--loop-phase, 0ms) + var(--lit-delay, 0ms));
+  }
+  .run-glyph:is([data-phase="queued"], [data-phase="thinking"]) > i { --lit-name: run-lit; --lit-delay: calc(var(--s) * 266ms); }
+  .run-glyph[data-phase="searching"] > i { --lit-name: run-lit-bar; --lit-delay: calc(var(--c) * 200ms); }
+  .run-glyph[data-phase="reading"]   > i { --lit-name: run-lit-bar; --lit-delay: calc(var(--r) * 200ms); }
+  .run-glyph[data-phase="tool"]      > i { --lit-name: run-lit; --lit-period: var(--loop-beat); --lit-delay: calc(var(--s) * 150ms); }
+  .run-glyph[data-phase="tool"]      > i[data-centre]::after { animation: none; opacity: 0.6; }
+  .run-glyph[data-phase="writing"]   > i[data-r="2"] { --lit-name: run-lit-type; --lit-delay: calc(var(--c) * 200ms); }
+  .run-glyph[data-calm] > i { --lit-period: var(--loop-calm); }
+  .run-glyph[data-phase="waiting"] > i[data-centre] { background: hsl(var(--primary)); }
+  .run-glyph[data-phase="failed"]  > i[data-centre] { background: hsl(var(--warning)); }
+  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i:not([data-centre]) {
+    opacity: 0; scale: 0.4;
+    translate: calc((1 - var(--c)) * 7px * var(--motion-shift, 1)) calc((1 - var(--r)) * 7px * var(--motion-shift, 1));
+  }
+  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i[data-centre] {
+    scale: 1.5; background: hsl(var(--muted-foreground) / 0.45);
+  }
+  .run-glyph[data-offscreen] > i::after,
+  .run-glyph[data-offscreen] { animation-play-state: paused; }
+  /* Not the loop owner (§7.9.1): the phase's static signature, exactly as under reduced motion. */
+  .run-glyph[data-loop="off"] > i::after { animation: none; }
+  .run-glyph[data-loop="off"]:is([data-phase="queued"], [data-phase="thinking"]) > i[data-centre]::after,
+  .run-glyph[data-loop="off"][data-phase="searching"] > i[data-c="1"]::after,
+  .run-glyph[data-loop="off"][data-phase="reading"]   > i[data-r="1"]::after,
+  .run-glyph[data-loop="off"][data-phase="tool"]      > i:is([data-r="0"], [data-r="2"]):is([data-c="0"], [data-c="2"])::after,
+  .run-glyph[data-loop="off"][data-phase="writing"]   > i[data-r="2"]::after { opacity: 1; }
+  /* paused (Research): resting grid only */
+  .run-glyph[data-phase="paused"] > i::after { animation: none; opacity: 0; }
+  @keyframes run-lit      { 0% { opacity: 0 } 6% { opacity: 1 } 30% { opacity: .3 } 42%, 100% { opacity: 0 } }
+  @keyframes run-lit-bar  { 0% { opacity: 0 } 8% { opacity: 1 } 28% { opacity: .25 } 40%, 100% { opacity: 0 } }
+  @keyframes run-lit-type { 0% { opacity: 0 } 4% { opacity: 1 } 60% { opacity: .7 } 80%, 100% { opacity: 0 } }
+
+  /* ── Compositor-only shimmer for the live label ─────────────────────── */
+  .run-sweep { position: relative; display: inline-block; max-inline-size: 100%; overflow: hidden; contain: paint; vertical-align: bottom; }
+  .run-sweep__text { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: hsl(var(--muted-foreground)); }
+  .run-sweep__window {
+    position: absolute; inset: 0; pointer-events: none; user-select: none;
+    -webkit-mask-image: linear-gradient(90deg, transparent 35%, #000 50%, transparent 65%);
+            mask-image: linear-gradient(90deg, transparent 35%, #000 50%, transparent 65%);
+    animation: run-sweep-window var(--loop) linear infinite; animation-delay: var(--loop-phase, 0ms);
+  }
+  .run-sweep__text--hi { color: hsl(var(--foreground)); animation: run-sweep-counter var(--loop) linear infinite; animation-delay: var(--loop-phase, 0ms); }
+  .run-sweep:dir(rtl) :is(.run-sweep__window, .run-sweep__text--hi) { animation-direction: reverse; }
+  .run-sweep:is([data-settled="true"], [data-calm], [data-loop="off"]) .run-sweep__window { display: none; }
+  .run-sweep[data-loop="off"] .run-sweep__text--hi { animation: none; }
+  .run-sweep[data-offscreen] :is(.run-sweep__window, .run-sweep__text--hi) { animation-play-state: paused; }
+  @keyframes run-sweep-window  { 0% { transform: translateX(-65%); } 75%, 100% { transform: translateX(65%); } }
+  @keyframes run-sweep-counter { 0% { transform: translateX(65%); } 75%, 100% { transform: translateX(-65%); } }
+
+  /* ── Phase-label swap (mount-only entrance) ─────────────────────────── */
+  .run-label { display: grid; min-inline-size: 0; }
+  .run-label__item {
+    grid-area: 1 / 1; min-inline-size: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    transition: opacity var(--dur-base) var(--ease-out-soft) 40ms, translate var(--dur-base) var(--ease-out-soft) 40ms;
+  }
+  @starting-style { .run-label__item { opacity: 0; translate: 0 calc(var(--shift-label) * var(--motion-shift, 1)); } }
+  .run-label__item[data-leaving] {
+    opacity: 0; translate: 0 calc(var(--shift-label) * -1 * var(--motion-shift, 1));
+    transition-duration: var(--dur-fast); transition-timing-function: var(--ease-in); transition-delay: 0ms;
+  }
+
+  /* ── Height-auto disclosure (peek, whole-block collapse; the inline timeline uses <Collapse>) ─ */
+  .run-collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--dur-base) var(--ease-in-out); }
+  .run-collapse[data-open="true"] { grid-template-rows: 1fr; }
+  .run-collapse > .run-collapse__inner { min-block-size: 0; overflow: hidden;
+    transition: opacity var(--dur-fast) var(--ease-out-soft), visibility 0s linear var(--dur-base); }
+  .run-collapse:not([data-open="true"]) > .run-collapse__inner { opacity: 0; visibility: hidden; }
+  .run-collapse[data-open="true"] > .run-collapse__inner { transition-delay: 0s; }
+  /* JS toggles `inert` on .run-collapse__inner together with data-open (§7.8). */
+
+  /* ── The 2-slot peek (rem: follows the reader text size) ─────────────── */
+  .run-peek { block-size: 4rem; padding-block-start: 0.5rem; overflow: clip; }
+  .run-peek__list { display: flex; flex-direction: column; justify-content: flex-end; block-size: 3.5rem;
+    transition: translate var(--dur-base) var(--ease-out-soft); }
+  .run-peek__slot { block-size: 1.75rem; flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem; }
+
+  /* ── Step rows: entrance plays once, on insertion only ──────────────── */
+  .run-step { transition: opacity var(--dur-base) var(--ease-out-soft), translate var(--dur-base) var(--ease-out-soft);
+    transition-delay: calc(min(var(--i, 0), 4) * var(--stagger-row)); }
+  @starting-style { .run-step:not([data-instant]) { opacity: 0; translate: 0 calc(var(--shift-row) * var(--motion-shift, 1)); } }
+  .run-step[data-settled] { transition-delay: 0ms; }
+
+  /* ── Running marker (panel rows; peek rows are always data-loop="off"): a ring, never the icon ─ */
+  .run-marker { position: relative; }
+  .run-marker[data-state="running"]::before {
+    content: ""; position: absolute; inset: -3px; border-radius: 999px;
+    box-shadow: inset 0 0 0 1.5px hsl(var(--foreground) / 0.5);   /* static geometry; opacity/scale move */
+    animation: run-breathe var(--loop) var(--ease-breathe) infinite; animation-delay: var(--loop-phase, 0ms);
+  }
+  /* A running marker that does not own the loop is a static open ring. */
+  .run-marker[data-state="running"]:is([data-loop="off"], [data-offscreen])::before { animation: none; opacity: 0.8; scale: 1; }
+  .run-marker[data-state="waiting"]::before { content: ""; position: absolute; inset: -3px; border-radius: 999px;
+    box-shadow: inset 0 0 0 1.5px hsl(var(--primary)); }
+  @keyframes run-breathe { 0%, 100% { opacity: 0.45; scale: calc(1 - 0.2 * var(--motion-shift, 1)); } 50% { opacity: 1; scale: 1; } }
+
+  /* ── Favicon stack ──────────────────────────────────────────────────── */
+  .run-favs { display: inline-flex; align-items: center; }
+  /* The separation ring matches the ground the stack sits on: the transcript sets
+     --fav-ring: var(--background); the panel and cards set var(--card). */
+  .run-fav { position: relative; display: grid; place-items: center; inline-size: 16px; block-size: 16px;
+    border-radius: 999px; overflow: hidden; background: hsl(var(--secondary)); box-shadow: 0 0 0 1.5px hsl(var(--fav-ring, var(--background)));
+    margin-inline-start: -4px;
+    transition: opacity var(--dur-base) var(--ease-out-soft), scale var(--spring-pop-dur) var(--spring-pop);
+    transition-delay: calc(min(var(--i, 0), 2) * var(--stagger-fav)); }
+  .run-fav:first-child { margin-inline-start: 0; }
+  @starting-style { .run-fav { opacity: 0; scale: var(--motion-scale-from, 0.6); } }
+  .run-fav > img { inline-size: 100%; block-size: 100%; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out-soft); }
+  .run-fav > img[data-loaded] { opacity: 1; }
+
+  /* ── Clock ──────────────────────────────────────────────────────────── */
+  .run-clock { min-inline-size: 5ch; text-align: end; font-variant-numeric: tabular-nums; }
+
+  /* ── Right-column shell (§8.2): content stays mounted through the exit ─ */
+  /* --dir flips physical x travel under RTL, so the panel always enters from the outer edge. */
+  .right-shell { --dir: 1; }
+  .right-shell:dir(rtl) { --dir: -1; }
+  .right-shell {
+    transition-property: translate, opacity, display;
+    transition-duration: var(--dur-slow), var(--dur-base), var(--dur-slow);
+    transition-timing-function: var(--ease-drawer), var(--ease-out-soft), linear;
+    transition-behavior: allow-discrete;
+  }
+  .right-shell:not([data-open]) {
+    display: none; opacity: 0; translate: calc(var(--shift-dock) * var(--motion-shift, 1) * var(--dir)) 0;
+    transition-duration: var(--dur-exit), var(--dur-exit), var(--dur-exit);
+    transition-timing-function: var(--ease-in), var(--ease-in), linear;
+  }
+  @starting-style { .right-shell[data-open] { opacity: 0; translate: calc(var(--shift-dock) * var(--motion-shift, 1) * var(--dir)) 0; } }
+  .right-shell[data-resizing] { transition: none; }
+  .right-shell__scroller { scrollbar-gutter: stable; overscroll-behavior: contain; }
+  .right-shell[data-mode="sheet"]:not([data-open]) { translate: 0 calc(100% * var(--motion-shift, 1)); }
+  @starting-style { .right-shell[data-mode="sheet"][data-open] { translate: 0 calc(40px * var(--motion-shift, 1)); } }
+}
 @media (prefers-reduced-motion: no-preference) {
   /* On the ladder: the exit rung and the soft decelerate, where this had a raw
      180ms and the `ease-out` keyword — the only bare keyword easing left. */
@@ -3720,6 +3901,8 @@
   body:has([data-print-document]) > :not(:has([data-print-document])) { display: none; }
   html:has([data-print-document]), body:has([data-print-document]) { height: auto; overflow: visible !important; }
 }
+/* A printed report has no hover: every outside link carries its address. */
+@media print { [data-print-document] a[href^="http"]::after { content: " (" attr(href) ")"; } }
 
 /*
  * ——— TIER C: THE DECORATIVE LOOPS, STOPPED ———
@@ -3796,3 +3979,83 @@
   0%, 100% { opacity: 0.45; }
   50% { opacity: 1; }
 }
+
+/*
+ * The run UI's loops under the preference (SPEC §7.9). Unlayered, for the
+ * reason the kill list above is: an in-layer media rule loses to the layered
+ * loops it is meant to stop.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .run-sweep__window { display: none; }
+  .run-glyph > i::after { animation: none; }
+  .run-glyph:is([data-phase="queued"], [data-phase="thinking"]) > i[data-centre]::after,
+  .run-glyph[data-phase="searching"] > i[data-c="1"]::after,
+  .run-glyph[data-phase="reading"]   > i[data-r="1"]::after,
+  .run-glyph[data-phase="tool"]      > i:is([data-r="0"], [data-r="2"]):is([data-c="0"], [data-c="2"])::after,
+  .run-glyph[data-phase="writing"]   > i[data-r="2"]::after { opacity: 1; }
+  /* The opacity breath only on the loop owner, and only while it is on screen; phase-locked like every loop. */
+  .run-glyph:not([data-loop="off"]):not([data-offscreen]):is([data-phase="queued"], [data-phase="thinking"], [data-phase="searching"],
+                [data-phase="reading"], [data-phase="tool"], [data-phase="writing"]) {
+    animation: run-breathe-opacity var(--loop-calm) var(--ease-breathe) infinite; animation-delay: var(--loop-phase, 0ms); }
+  .run-glyph > i { transition-duration: var(--dur-fast); }
+  /* Gather: cross-fade only, no travel or scale; the resting dot is drawn at 6 px. */
+  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i:not([data-centre]) { scale: 1; translate: none; }
+  .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i[data-centre] {
+    scale: 1; inline-size: 6px; block-size: 6px; margin: -1px; }
+  .run-marker[data-state="running"]:not([data-loop="off"]):not([data-offscreen])::before {
+    animation-name: run-breathe-opacity; animation-duration: var(--loop-calm); animation-delay: var(--loop-phase, 0ms); }
+  .run-step, .run-fav { transition-delay: 0ms !important; }
+  .run-peek__list { transition: none; }
+  /* Instant collapse, but the content still fades (motion audit: "instant + content fade"). */
+  .run-collapse { transition: none; }
+}
+@keyframes run-breathe-opacity { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@media (forced-colors: active) {
+  .run-sweep__window { display: none; }
+  .run-glyph > i { forced-color-adjust: none; background: GrayText; }
+  .run-glyph > i::after { background: CanvasText; }
+  .run-glyph[data-phase="waiting"] > i[data-centre] { background: Highlight; }
+  .run-glyph[data-phase="failed"]  > i[data-centre] { background: Mark; }
+  /* box-shadow is removed in forced colours: draw the rings with outline. */
+  .run-marker::before { box-shadow: none; outline: 1.5px solid CanvasText; outline-offset: -1.5px; }
+  .run-marker[data-state="waiting"]::before { outline-color: Highlight; }
+}
+
+/*
+ * The same rules for the dev galleries' "Simulate reduced motion" toggle,
+ * which sets data-motion="reduce" on the gallery root: the browser pane cannot
+ * emulate the media query. The two copies must stay identical but for the
+ * prefix, and the root overrides must match the reduced `:root` block in the
+ * base layer (tests/run-css-reduced.test.ts).
+ */
+[data-motion="reduce"] {
+  --motion-shift: 0;
+  --motion-scale-from: 1;
+  --ease-out-strong: var(--ease-out-soft);
+  --ease-out-expo: var(--ease-out-soft);
+  --ease-spring: var(--ease-out-soft);
+  --ease-drawer: var(--ease-out-soft);
+  --dur-slow: var(--dur-base);
+}
+[data-motion="reduce"] .run-sweep__window { display: none; }
+[data-motion="reduce"] .run-glyph > i::after { animation: none; }
+[data-motion="reduce"] .run-glyph:is([data-phase="queued"], [data-phase="thinking"]) > i[data-centre]::after,
+[data-motion="reduce"] .run-glyph[data-phase="searching"] > i[data-c="1"]::after,
+[data-motion="reduce"] .run-glyph[data-phase="reading"]   > i[data-r="1"]::after,
+[data-motion="reduce"] .run-glyph[data-phase="tool"]      > i:is([data-r="0"], [data-r="2"]):is([data-c="0"], [data-c="2"])::after,
+[data-motion="reduce"] .run-glyph[data-phase="writing"]   > i[data-r="2"]::after { opacity: 1; }
+/* The opacity breath only on the loop owner, and only while it is on screen; phase-locked like every loop. */
+[data-motion="reduce"] .run-glyph:not([data-loop="off"]):not([data-offscreen]):is([data-phase="queued"], [data-phase="thinking"], [data-phase="searching"],
+              [data-phase="reading"], [data-phase="tool"], [data-phase="writing"]) {
+  animation: run-breathe-opacity var(--loop-calm) var(--ease-breathe) infinite; animation-delay: var(--loop-phase, 0ms); }
+[data-motion="reduce"] .run-glyph > i { transition-duration: var(--dur-fast); }
+/* Gather: cross-fade only, no travel or scale; the resting dot is drawn at 6 px. */
+[data-motion="reduce"] .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i:not([data-centre]) { scale: 1; translate: none; }
+[data-motion="reduce"] .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i[data-centre] {
+  scale: 1; inline-size: 6px; block-size: 6px; margin: -1px; }
+[data-motion="reduce"] .run-marker[data-state="running"]:not([data-loop="off"]):not([data-offscreen])::before {
+  animation-name: run-breathe-opacity; animation-duration: var(--loop-calm); animation-delay: var(--loop-phase, 0ms); }
+[data-motion="reduce"] .run-step, [data-motion="reduce"] .run-fav { transition-delay: 0ms !important; }
+[data-motion="reduce"] .run-peek__list { transition: none; }
+/* Instant collapse, but the content still fades (motion audit: "instant + content fade"). */
+[data-motion="reduce"] .run-collapse { transition: none; }

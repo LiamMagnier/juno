@@ -178,6 +178,9 @@ export class GenerationAccumulator {
         // Results are no longer swallowed. They carry the only record of what a
         // connector actually answered, and dropping them here is what used to
         // make "Using Linear" the entire truth the panel could tell.
+        // Dispatcher status acts (queued/running/awaiting_approval) have no
+        // producer yet; the turn stream reads them once it exists (WS4).
+        if (event.phase === "status") return { kind: "none" };
         return event.phase === "call"
           ? { kind: "tool_call", server: event.server, name: event.name, callId: event.callId, args: event.args }
           : {

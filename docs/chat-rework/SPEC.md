@@ -77,6 +77,12 @@ In scope (DECISIONS §1–§3, §4b, §4c):
    - adds no `--dur-*` or `--ease-*` CSS custom properties (the token generator projects exactly
      those prefixes into Swift, `scripts/generate-design-tokens.ts:186-200`). New motion tokens use
      other prefixes (§7.9).
+   - **Token digest (addendum 2026-09-23, WS0; the owner confirms).** The `// tokens-digest:`
+     line of both generated token files hashes the whole of `globals.css`, so *any* edit there
+     (WS0's run CSS, every later WS5 edit) failed `design:tokens:check` although no projected
+     value changed. `--check` now compares both files with that one line masked: every colour,
+     duration, easing and radius is still compared byte for byte, and the digest refreshes the
+     next time the Mac session runs `npm run design:tokens`. No `native/**` file is edited.
 2. No interactive browser in chat (that belongs in Work). `browser_agent` is removed from chat.
 3. No memory tools (`<juno:memory>` stays), no `ask_user` card, no image-generation tool, no
    scheduled tasks, no report share links, no `tool_search`/deferred loading, no "Answer now"
@@ -3403,8 +3409,8 @@ For messages with no `seq` on any event:
   .run-glyph[data-phase="reading"]   > i[data-r="1"]::after,
   .run-glyph[data-phase="tool"]      > i:is([data-r="0"], [data-r="2"]):is([data-c="0"], [data-c="2"])::after,
   .run-glyph[data-phase="writing"]   > i[data-r="2"]::after { opacity: 1; }
-  /* The opacity breath only on the loop owner; phase-locked like every loop. */
-  .run-glyph:not([data-loop="off"]):is([data-phase="queued"], [data-phase="thinking"], [data-phase="searching"],
+  /* The opacity breath only on the loop owner, and only while it is on screen; phase-locked like every loop. */
+  .run-glyph:not([data-loop="off"]):not([data-offscreen]):is([data-phase="queued"], [data-phase="thinking"], [data-phase="searching"],
                 [data-phase="reading"], [data-phase="tool"], [data-phase="writing"]) {
     animation: run-breathe-opacity var(--loop-calm) var(--ease-breathe) infinite; animation-delay: var(--loop-phase, 0ms); }
   .run-glyph > i { transition-duration: var(--dur-fast); }
@@ -3412,7 +3418,7 @@ For messages with no `seq` on any event:
   .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i:not([data-centre]) { scale: 1; translate: none; }
   .run-glyph:is([data-phase="answering"], [data-phase="done"], [data-phase="stopped"]) > i[data-centre] {
     scale: 1; inline-size: 6px; block-size: 6px; margin: -1px; }
-  .run-marker[data-state="running"]:not([data-loop="off"])::before {
+  .run-marker[data-state="running"]:not([data-loop="off"]):not([data-offscreen])::before {
     animation-name: run-breathe-opacity; animation-duration: var(--loop-calm); animation-delay: var(--loop-phase, 0ms); }
   .run-step, .run-fav { transition-delay: 0ms !important; }
   .run-peek__list { transition: none; }
@@ -3432,11 +3438,19 @@ For messages with no `seq` on any event:
 }
 ```
 
+Both breath rules exclude `[data-offscreen]`: they are unlayered, so they beat the layered
+offscreen pause, and the glyph's `animation` shorthand would also reset `animation-play-state` to
+`running`. An offscreen owner therefore shows its static signature (§7.9.1, U5).
+
 **Gallery reduced-motion toggle.** The browser pane cannot emulate `prefers-reduced-motion`, so WS0
 also writes the reduced-motion block a second time with every selector prefixed by
 `[data-motion="reduce"] ` (the `/dev/*` gallery root sets that attribute from its "Simulate reduced
-motion" toggle), and sets `--motion-shift: 0` on `[data-motion="reduce"]`. The two copies must stay
-identical; `tests/run-css-reduced.test.ts` (WS5) reads `globals.css` as text and asserts it.
+motion" toggle), and gives `[data-motion="reduce"]` the same token overrides as the real reduced
+`:root` block in `@layer base` (`--motion-shift: 0`, `--motion-scale-from: 1`, `--ease-out-strong`,
+`--ease-out-expo`, `--ease-spring` and `--ease-drawer` → `var(--ease-out-soft)`, `--dur-slow` →
+`var(--dur-base)`), so a simulated pass shows what reduced-motion users see. The two copies must stay
+identical, and the overrides must match that block; `tests/run-css-reduced.test.ts` (WS5) reads
+`globals.css` as text and asserts both.
 
 The glyph markup (from `run-glyph.tsx`; `--s` is the thinking sequence: perimeter clockwise 0–7,
 centre 8):
@@ -3982,7 +3996,9 @@ chatFloor = €0.25
 5. `judgeCalls = clamp(ceil(targetClaims × 0.6), 8, 40)` where `targetClaims = 10 × questions`.
 6. `estimate.minutesUpTo = ceil(fixedMinutes + rounds × (pagesPerRound × secondsPerPage / 60) /
    workers)` clamped to the plan clock; `pagesUpTo = pages`. Initial `secondsPerPage = 9`,
-   `fixedMinutes = 3` (calibration is an open item, §14).
+   `fixedMinutes = 2` (calibration is an open item, §14). Not 3: with 3, a one-question focused
+   scope estimates `ceil(3 + 4 × 9 / 60) = 4` minutes, so DECISIONS R2's tiny scope ("1 question
+   and at most 3 min", §9.5) could never skip the card; with 2 it estimates 3.
 
 **Freezing (INV-22):** at confirmation the envelope is stored as `plan.envelope` and
 `ResearchRun.budgetMicroUsd = ceilingMicroUsd`. The engine reads every limit from
@@ -4731,7 +4747,10 @@ engine), `panel-states.tsx` (WS6).
   `LlmEvent[]` script per fixture; WS4 and WS5 extend it), and `fixtures.ts` produces the frames
   by running the script through `TurnStream` with a recording sender. `turn-stream.test.ts` (WS4)
   asserts the same, so the gallery can never pass against a wire the server does not produce. The
-  same scripts feed `native-stream-conformance` and `adapter-parity` (§13).
+  same scripts feed `native-stream-conformance` and `adapter-parity` (§13). Fixture 19 is the
+  exception: a pre-rework message never streams again, so its script has no steps and carries the
+  persisted row instead (`legacy`: glued content and seq-less activity built from the `d0997af2`
+  emitters), which the gallery renders at rest through the legacy adapter (§7.7).
 - **Mount.** The player feeds frames through `applyStreamChunk` (`src/lib/chat/live-message.ts`,
   the same pure reducer `use-chat` uses, WS5). In wave 1 it renders `RunBlock` directly under a
   minimal transcript stub (WS5); WS9b adds the "real `MessageList`" mode with real `MessageItem`s,
@@ -4917,12 +4936,22 @@ final props), `src/components/chat/panel/right-column-shell.tsx` (stub with fina
 8. CSS verbatim from §7.9 (tokens, the `@layer components` block, the unlayered blocks, the
    duplicated `[data-motion="reduce"]` block, the print rule), `--z-panel: 30;` (§8.2);
    `thinking-matrix` without `boxShadow`; `RUN_PACING` in `motion.ts`.
-9. `tests/fixtures/turn-scripts.ts`: one `LlmEvent[]` script per `/dev/run` fixture (§11.1), typed.
+9. `tests/fixtures/turn-scripts.ts`: one `LlmEvent[]` script per `/dev/run` fixture (§11.1), typed
+   (fixture 19 is a persisted pre-rework row, §11.1).
 10. Compile-only edits anywhere needed to keep `typecheck` green after the union additions (e.g. a
     `case "round_end": break;` in `route.ts`), listed in the commit message.
 
 **Done when:** the full offline gate (§12.1) and `tests/contract-scaffold.test.ts` pass (it
 imports every §12.7 symbol); runtime behaviour is unchanged (nothing calls the stubs).
+
+`contract-scaffold.test.ts` asserts nothing a later owner replaces or tunes, so every wave-1
+branch passes it unchanged: symbol presence and types (server-bound functions — `streamChat`,
+`resolveConnectorsWithStatus`, `openChatToolset`, `fetchPageForChat`, the research lease and
+completion functions — through `import type`, since their final bodies need `server-only`
+modules), the spec's fixed constants, and the §13.1 WS0 behaviour. WS0's checks of its interim
+bodies and values live in the owners' own files, which those workstreams rewrite:
+`tool-dispatch` (the minimal dispatcher, WS1), `model-tool-capabilities` (WS3b),
+`i18n-phrase`/`i18n-format` and `run-css-reduced` (WS5).
 
 ### 12.4 Wave 1
 
@@ -5452,7 +5481,7 @@ Each has a default the workstreams implement now; the owner confirms or override
 | O-3 | `worker_threads` pool for extraction | not built; single-pass scanners with yields (§6.4 item 1) |
 | O-4 | Runner SSRF classifier update | runner untouched; drift test only (§6.4 item 2) |
 | O-5 | Research plan caps, share of month, lead classes | §9.2 table (gap-entitlements §6.5) |
-| O-6 | Research estimate calibration (`secondsPerPage` 9, `fixedMinutes` 3) | fixed constants; log actuals per run (`research.estimate.actual`) for later fitting |
+| O-6 | Research estimate calibration (`secondsPerPage` 9, `fixedMinutes` 2) | fixed constants; log actuals per run (`research.estimate.actual`) for later fitting. `fixedMinutes` was 3 until 2026-09-23, which made R2's tiny-scope skip unreachable (§9.2 step 6); if actuals push it back above 2.4, the §9.5 skip predicate becomes `scope.quick && questions === 1` instead, independent of the estimate |
 | O-7 | Research counted against the 5-hour/weekly windows | no: the windows neither bind Research nor include its spend (§9.2); the month does both |
 | O-8 | Gemini `url_context` as the fetch on Gemini | not used; Juno `web_fetch` everywhere (§4c) |
 | O-9 | Probe results P1–P6 (§5.7) | code ships with the conservative branch of each; probes run by the owner with keys |

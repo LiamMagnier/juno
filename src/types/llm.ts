@@ -1,13 +1,48 @@
 import type { Attachment, Role } from "@prisma/client";
 import type { ClientActionApproval } from "@/lib/action-approval";
 import type { ChatFinishReason, ClientSource } from "@/types/chat";
+import type {
+  ChatSourceOrigin,
+  ToolErrorCode,
+  ToolFigure,
+  ToolPresentArgs,
+  ToolWebDetail,
+} from "@/types/run";
 
 /** A persisted message reduced to what model adapters need. */
-export type MessageForModel = { role: Role; content: string; attachments: Attachment[] };
+export type MessageForModel = {
+  role: Role;
+  content: string;
+  attachments: Attachment[];
+  /** ASSISTANT rows only: the turn's reasoning text, for the compat labs that
+   *  must replay it on later tool turns (DeepSeek, MiMo, Kimi; SPEC §5.4). */
+  reasoning?: string | null;
+  /** ASSISTANT rows only: the model that wrote the row, so a replay rule can
+   *  tell its own lab's turns from a foreign one's. */
+  model?: string | null;
+};
+
+/*
+ * THE CHAT REWORK'S ADDITIONS (SPEC §2.9) land in two steps. Every field added
+ * to an EXISTING member below is optional for now — `round?`, `index?`,
+ * `status?`… — so no producer has to change in the same commit. The adapters
+ * make the adapter-side fields required when the last one is converted, and
+ * the route drops its defaults after that. Members that are new outright
+ * (`round_end`, the `tool` status act, `server_tool`) have no producer yet and
+ * so carry their final shape from the start.
+ */
 
 /** Events yielded by a provider stream. */
 export type LlmEvent =
-  | { type: "text"; text: string }
+  | {
+      type: "text";
+      text: string;
+      /** The model step this text belongs to: 0-based, +1 every time the model
+       *  resumes after tool results, whoever ran the tools. */
+      round?: number;
+      /** OpenAI Responses only: the message item's declared phase. */
+      phase?: "commentary" | "answer";
+    }
   /**
    * Visible chain-of-thought / thinking.
    *
@@ -23,8 +58,21 @@ export type LlmEvent =
    * "this provider has no steps" a fact carried by the pipeline rather than a
    * guess made by the UI.
    */
-  | { type: "reasoning"; text: string; part?: number }
-  | { type: "sources"; sources: ClientSource[] }
+  | { type: "reasoning"; text: string; part?: number; round?: number }
+  | {
+      type: "sources";
+      sources: ClientSource[];
+      /** Where they came from; drives the provenance ledger and is persisted on each source. */
+      origin?: ChatSourceOrigin;
+    }
+  /**
+   * A model step ended. `tools` counts the CLIENT tool calls (Juno, connector,
+   * native) that ended the request — 0 when the step ended with the answer, a
+   * stop, or a provider server-tool call inside the response. `serverTools`
+   * counts provider server-tool calls in this step. `final` = this step's
+   * request was the tools-off final request.
+   */
+  | { type: "round_end"; round: number; tools: number; serverTools: number; final: boolean; stop: string | null }
   /**
    * One connector tool call, in two acts.
    *
@@ -62,6 +110,30 @@ export type LlmEvent =
       detail?: string;
       /** Raw JSON string exactly as the provider sent it, unparsed. */
       args?: string;
+      /** The provider's own id when `callId` had to be suffixed or synthesized (SPEC §4.3). */
+      providerCallId?: string;
+      round?: number;
+      /** Position of the call within its round, 0-based. */
+      index?: number;
+    }
+  /**
+   * The dispatcher's view of a call between `call` and `result`.
+   *
+   * `awaiting_approval` carries the redacted client projection the approval
+   * frame sends; `running` is emitted only after authorisation succeeded, never
+   * before an approval wait. The first `queued` carries the presentation args
+   * and the full argument text, so a row can show its query or domain before
+   * the result arrives (Anthropic's `call` fires before its arguments stream).
+   */
+  | {
+      type: "tool";
+      phase: "status";
+      callId: string;
+      status: "queued" | "running" | "awaiting_approval";
+      approval?: ClientActionApproval;
+      timeoutMs?: number;
+      present?: ToolPresentArgs;
+      argsText?: string;
     }
   | {
       type: "tool";
@@ -89,6 +161,32 @@ export type LlmEvent =
        *  the text the panel's own cut was taken from. tool-detail.ts measures
        *  it there rather than carrying a second, subtly different number. */
       durationMs?: number;
+      round?: number;
+      index?: number;
+      /** The typed outcome; `ok` stays and equals `status === "succeeded"`. */
+      status?: "succeeded" | "failed" | "denied" | "expired" | "cancelled";
+      error?: { code: ToolErrorCode };
+      figure?: ToolFigure;
+      web?: ToolWebDetail;
+      /** Served from the turn's duplicate cache. */
+      cached?: boolean;
+      /** Juno's own fee for this call in micro-USD; 0 or absent = tokens only. */
+      feeMicroUsd?: number;
+    }
+  /** A provider-run (server-side) tool: Anthropic web_search, OpenAI/xAI hosted search, xAI x_search. */
+  | {
+      type: "server_tool";
+      phase: "call" | "result";
+      tool: "provider_web_search" | "provider_x_search";
+      /** The provider's id (srvtoolu_…, ws_…) or `ps_${round}_${n}`. */
+      callId: string;
+      round: number;
+      /** call: the query as streamed. */
+      query?: string;
+      /** result: how many results came back. */
+      results?: number;
+      /** result */
+      ok?: boolean;
     }
   /**
    * A connector action is waiting for the person to answer.
@@ -129,6 +227,10 @@ export type LlmEvent =
        *  honored, false = it fell back to (or ran at) standard speed. Lets the
        *  route bill the real rate even when a fast request degrades. */
       fast?: boolean;
+      /** Present on per-round cumulative usage (every adapter, after every request). */
+      round?: number;
+      /** Gemini only: grounding queries so far, before the free-quota split. */
+      groundingQueries?: number;
     }
   | {
       type: "finish";

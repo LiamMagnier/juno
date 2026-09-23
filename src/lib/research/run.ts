@@ -46,6 +46,7 @@ import { recordCitationAudit } from "@/lib/research/claims";
 import { researchLeadModel, researchWorkerModel, runResearchWorker } from "@/lib/research/agents/worker";
 import { reviewResearchRound } from "@/lib/research/agents/lead";
 import { canonicalUrl } from "@/lib/search/url-safety";
+import type { ResearchRunViewAdditions } from "@/types/research";
 
 /**
  * The durable research job, wired to Postgres and to the real search backend.
@@ -669,7 +670,13 @@ export function gatheringOnlyEngine(): ResearchEngine {
 // What the API routes read
 // ---------------------------------------------------------------------------
 
-export interface ResearchRunView {
+/**
+ * The run as the API returns it. The rework's additions (`title`, `scope`,
+ * `phase`, `counts`…) are declared once in `src/types/research.ts` and are all
+ * optional: a run written before them has none, and until the engine writes
+ * them nothing here fills them in.
+ */
+export interface ResearchRunView extends ResearchRunViewAdditions {
   id: string;
   conversationId: string | null;
   goal: string;
