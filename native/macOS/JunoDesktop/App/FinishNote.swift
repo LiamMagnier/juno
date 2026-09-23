@@ -56,6 +56,10 @@ struct DesktopTurnNote: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                // The web's outline button: neutral. The column's accent tint
+                // would otherwise turn a bordered button coral, and coral is
+                // the send disc's and the one prominent button's (§0.4).
+                .tint(nil)
                 .contentShape(.rect)
                 .accessibilityIdentifier("juno.desktop.chat.message-continue")
             }

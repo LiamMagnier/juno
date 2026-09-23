@@ -91,6 +91,13 @@ enum TranscriptSnapshotFixtures {
                     }
                 })
             },
+            // A regenerated reply: the server keeps two earlier versions, and
+            // the live row is the last of three pages.
+            TranscriptFixture(name: "reply-actions-versions", stage: 5) {
+                AnyView(column {
+                    row(reply.with { $0.versionCount = 2 }, newest: true)
+                })
+            },
             TranscriptFixture(name: "reply-actions-pager", stage: 1) {
                 AnyView(column {
                     row(
@@ -120,6 +127,15 @@ enum TranscriptSnapshotFixtures {
             TranscriptFixture(name: "user-long-collapsed", stage: 1) {
                 AnyView(column { row(longQuestion) }
                     .environment(\.junoSnapshotHover, true))
+            },
+            // The bubble opened for rewriting: the editor's lines should sit
+            // on the bubble's 1.7 rhythm, with Cancel and Send under it.
+            TranscriptFixture(name: "user-editing", stage: 5) {
+                AnyView(column {
+                    SnapshotEditingRow(message: question.with {
+                        $0.content = "What makes a good README for a Swift package?\nAnd how long should it be before it stops being read?"
+                    })
+                })
             },
             TranscriptFixture(name: "user-unsent", stage: 1) {
                 AnyView(column { row(question, unsent: true) })
@@ -552,18 +568,20 @@ enum TranscriptSnapshotFixtures {
         continues: Bool = false,
         generating: Bool = false,
         retries: Bool = false,
-        approvals: MessageRowApprovals = MessageRowApprovals()
+        approvals: MessageRowApprovals = MessageRowApprovals(),
+        editRequest: UUID? = nil
     ) -> some View {
         var actions = MessageRowActions()
-        actions.copy = {}
+        actions.copy = { _ in }
         actions.setFeedback = { _ in }
-        actions.readAloud = {}
+        actions.readAloud = { _ in }
         actions.stopReading = {}
         actions.branch = {}
         actions.forkPrivately = {}
         actions.share = {}
-        actions.quote = {}
+        actions.quote = { _ in }
         actions.copyLink = {}
+        if message.versionCount > 0 { actions.loadVersions = { [] } }
         actions.stepBranch = { _ in }
         if newest, message.role == .assistant { actions.regenerate = { _ in } }
         if continues { actions.continueResponse = {} }
@@ -582,6 +600,7 @@ enum TranscriptSnapshotFixtures {
             branchPosition: branch,
             isGenerating: generating,
             isUnsent: unsent,
+            editRequest: editRequest,
             approvals: approvals
         )
     }
@@ -1204,5 +1223,18 @@ extension NativeChatMessage {
         var copy = self
         change(&copy)
         return copy
+    }
+}
+
+/// A reader's turn with its editor open — the one state a still cannot reach
+/// by clicking. The request arrives after the row appears, as ↑ in the
+/// composer sends it.
+struct SnapshotEditingRow: View {
+    let message: NativeChatMessage
+    @State private var request: UUID?
+
+    var body: some View {
+        TranscriptSnapshotFixtures.row(message, editRequest: request)
+            .task { request = UUID() }
     }
 }

@@ -45,7 +45,7 @@ struct InlineDesignPreviewBody: View {
                     .accessibilityLabel("Design preview")
             case .loading:
                 ZStack {
-                    Color.white
+                    Self.deskColor
                     Text("Preparing design")
                         .junoFont(size: 13, relativeTo: .callout)
                         .foregroundStyle(Color(white: 0.45))
@@ -64,9 +64,21 @@ struct InlineDesignPreviewBody: View {
     /// page's pixel size (`width="375" height="812"`), which the thumbnail
     /// sheet would draw at 1:1 and crop; `auto` lets its own `max-width` and
     /// `max-height` scale it down, aspect kept.
+    ///
+    /// The frame sits on a desk, as it does in the editor, with a hairline
+    /// and a small shadow: most frames are white, and a white frame on the
+    /// white sheet had no edge at all — a phone screen read as a card
+    /// floating in nothing.
     static func fitted(_ svg: String) -> String {
-        "<style>svg{width:auto;height:auto}</style>" + svg
+        "<style>body{background:\(desk)}svg{width:auto;height:auto;"
+            + "box-shadow:0 0 0 1px rgba(29,29,27,.08),0 1px 3px rgba(29,29,27,.10)}</style>"
+            + svg
     }
+
+    /// The ground a design is drawn on: a warm grey a step below the canvas,
+    /// light in both appearances, like the sheet it replaces.
+    static let desk = "#EEEDE9"
+    private static let deskColor = Color(red: 0xEE / 255, green: 0xED / 255, blue: 0xE9 / 255)
 
     /// The server could not draw it — a missing Library image (422) or an
     /// export failure — or it could not be reached. The document itself is

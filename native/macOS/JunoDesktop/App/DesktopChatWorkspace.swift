@@ -1413,7 +1413,7 @@ struct DesktopConversationView: View {
                     focusRequest: find.focusRequest
                 )
                 .padding(.top, JunoSpace.snug)
-                .padding(.horizontal, DesktopChatMeasure.gutter)
+                .padding(.horizontal, DesktopChatMeasure.gutter(forColumnWidth: columnWidth))
                 .frame(maxWidth: .infinity)
                 .transition(.opacity)
             }
@@ -1421,7 +1421,7 @@ struct DesktopConversationView: View {
         .safeAreaBar(edge: .bottom, spacing: 0) {
             ChatComposerDock(
                 lift: composerLift,
-                gutter: DesktopChatMeasure.gutter,
+                gutter: DesktopChatMeasure.gutter(forColumnWidth: columnWidth),
                 groupHeightChanged: { dockGroupHeight = $0 },
                 footerHeightChanged: { dockFooterHeight = $0 }
             ) {

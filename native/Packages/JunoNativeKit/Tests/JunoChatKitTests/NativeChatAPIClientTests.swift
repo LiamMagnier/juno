@@ -418,6 +418,76 @@ final class NativeChatAPIClientTests: XCTestCase {
         XCTAssertEqual(asked.first?.path, "/api/conversations/conv_12345678")
     }
 
+    /// The version pager's read: earlier versions, oldest first, with their
+    /// own words, model, tokens and sources.
+    func testEarlierVersionsAreReadInOrder() async throws {
+        let sender = ChatQueueSender(responses: [response(#"""
+        {"versions":[
+          {"id":"v1","content":"First try","reasoning":"thought","model":"openai:gpt-5","promptTokens":120,"completionTokens":40,"sources":[{"title":"Swift","url":"https://swift.org","snippet":""},{"title":"Bad","url":"javascript:alert(1)","snippet":""}],"createdAt":"2026-09-23T09:00:00.000Z"},
+          {"id":"v2","content":"Second try","reasoning":null,"model":null,"promptTokens":null,"completionTokens":null,"sources":null,"createdAt":"2026-09-23T09:30:00.000Z"}
+        ]}
+        """#)])
+        let client = NativeChatAPIClient(sender: sender, streamer: EmptyChatStreamer())
+        let versions = try await client.messageVersions(messageID: "msg_12345678", for: accountID)
+
+        XCTAssertEqual(versions.map(\.id), ["v1", "v2"])
+        XCTAssertEqual(versions[0].content, "First try")
+        XCTAssertEqual(versions[0].model, "openai:gpt-5")
+        XCTAssertEqual(versions[0].promptTokens, 120)
+        XCTAssertEqual(versions[0].sources.map(\.url.absoluteString), ["https://swift.org"])
+        XCTAssertNil(versions[1].model)
+        XCTAssertEqual(versions[1].sources, [])
+        let asked = await sender.requests
+        XCTAssertEqual(asked.first?.path, "/api/messages/msg_12345678/versions")
+    }
+
+    /// A page is its index, so one unreadable version fails the read rather
+    /// than shifting every later page onto the wrong words.
+    func testAnUnreadableVersionFailsTheRead() async throws {
+        let sender = ChatQueueSender(responses: [response(#"""
+        {"versions":[{"id":"v1","content":"First"},{"id":"v2"}]}
+        """#)])
+        let client = NativeChatAPIClient(sender: sender, streamer: EmptyChatStreamer())
+        do {
+            _ = try await client.messageVersions(messageID: "msg_12345678", for: accountID)
+            XCTFail("expected a malformed response")
+        } catch let error as NativeChatAPIError {
+            XCTAssertEqual(error, .malformedResponse)
+        }
+    }
+
+    /// An earlier version shows its own words, model, tokens and sources, and
+    /// none of the live answer's run, cost, finish or error.
+    func testAnEarlierVersionShowsOnlyWhatItKept() {
+        var live = NativeChatMessage(
+            id: "msg-2", conversationID: "conv-1", clientID: nil, role: .assistant,
+            content: "Live answer", reasoning: "live thought", model: "anthropic:claude-sonnet-4-6",
+            createdAt: Date(timeIntervalSince1970: 0), revision: 1,
+            sources: [NativeChatSource(title: "Live", url: URL(string: "https://example.com")!, snippet: "")],
+            finishReason: .length, costUSD: 0.02, promptTokens: 900, completionTokens: 300,
+            activity: [NativeChatActivity(id: "a", kind: .write, title: "Writing", detail: nil, url: nil)],
+            reasoningParts: ["live"], versionCount: 1
+        )
+        live.feedback = .up
+        let shown = live.showing(NativeMessageVersion(
+            id: "v1", content: "Old answer", reasoning: nil, model: "openai:gpt-5",
+            promptTokens: 100, completionTokens: 20, sources: []
+        ))
+
+        XCTAssertEqual(shown.id, "msg-2")
+        XCTAssertEqual(shown.content, "Old answer")
+        XCTAssertEqual(shown.model, "openai:gpt-5")
+        XCTAssertNil(shown.reasoning)
+        XCTAssertNil(shown.reasoningParts)
+        XCTAssertEqual(shown.sources, [])
+        XCTAssertEqual(shown.promptTokens, 100)
+        XCTAssertNil(shown.costUSD)
+        XCTAssertNil(shown.finishReason)
+        XCTAssertEqual(shown.activity, [])
+        XCTAssertEqual(shown.feedback, .up)
+        XCTAssertEqual(shown.versionCount, 1)
+    }
+
     private func streamResponse(_ body: String, statusCode: Int = 200)
         -> HTTPByteStreamResponse
     {

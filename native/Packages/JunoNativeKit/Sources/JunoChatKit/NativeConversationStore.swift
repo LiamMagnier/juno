@@ -2701,6 +2701,21 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         messageDetails[messageID] = details
     }
 
+    /// The earlier versions of a message, oldest first, for its version pager
+    /// (`GET /api/messages/{id}/versions`). Presentational only: paging never
+    /// changes the row, and a regenerate always continues from the live thread.
+    public func messageVersions(messageID: String) async throws -> [NativeMessageVersion] {
+        guard let chatClient, let accountID else {
+            throw NativeChatAPIError.server(
+                statusCode: 0,
+                code: nil,
+                message: "Couldn’t load that version.",
+                retryable: false
+            )
+        }
+        return try await chatClient.messageVersions(messageID: messageID, for: accountID)
+    }
+
     /// Lays the conversation's thread over its synced rows: each message's
     /// sources (with `cited`), run and reasoning parts, and the artifacts,
     /// which go to the artifact store as the `done` frame's do.

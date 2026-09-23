@@ -119,13 +119,30 @@ struct DesktopMessageRow: View {
     /// artifacts go with it.
     @State private var pendingRegenerate: MessageRegenerateRequest?
     @FocusState private var focus: Focus?
+    /// The earlier version on screen — an index into ``versions`` — or nil
+    /// for the live row, which is always the newest page.
+    @State private var versionIndex: Int?
+    /// The earlier versions, read on the first step back and dropped whenever
+    /// the server's count moves (a regenerate or an edit added one).
+    @State private var versions: [NativeMessageVersion]?
+    @State private var versionsLoading = false
 
     private enum Focus: Hashable {
         case editor, editButton
     }
 
+    /// What the turn shows: the live row, or the earlier version the reader
+    /// paged back to (the web's `view`). Everything drawn reads this; ids,
+    /// the rating and the pending state are the live row's either way.
+    private var shown: NativeChatMessage {
+        guard let versionIndex, let versions, versionIndex < message.versionCount,
+            versions.indices.contains(versionIndex)
+        else { return message }
+        return message.showing(versions[versionIndex])
+    }
+
     private var parts: [NativeMessageContent.Part] {
-        Self.parts(of: message)
+        Self.parts(of: shown)
     }
 
     /// A reply's parts as the row draws them: its words without the trailing
@@ -155,11 +172,11 @@ struct DesktopMessageRow: View {
     }
 
     private var plainText: String {
-        NativeMessageContent.plainText(of: message.content)
+        NativeMessageContent.plainText(of: shown.content)
     }
 
     private var isLongPrompt: Bool {
-        message.role == .user && NativePromptLimits.isLongMessage(plainText)
+        shown.role == .user && NativePromptLimits.isLongMessage(plainText)
     }
 
     private var hasTextContent: Bool {
@@ -168,7 +185,7 @@ struct DesktopMessageRow: View {
 
     /// An answer that is only a picture or a file: no Copy and no Regenerate.
     private var isMediaOnly: Bool {
-        !hasTextContent && !message.attachments.isEmpty
+        !hasTextContent && !shown.attachments.isEmpty
     }
 
     private var isTurnHovered: Bool { hovered || snapshotHover }
@@ -177,17 +194,23 @@ struct DesktopMessageRow: View {
 
     var body: some View {
         Group {
-            switch message.role {
+            switch shown.role {
             case .user: userTurn
             case .assistant: assistantTurn
             case .system, .tool:
-                Text(message.content)
+                Text(shown.content)
                     .junoFont(size: 13, relativeTo: .callout)
                     .junoSecondaryInk()
                     .textSelection(.enabled)
             }
         }
         .onHover { hovered = $0 }
+        .onChange(of: message.versionCount) {
+            // A regenerate or an edit appended a version under the same id:
+            // back to the newest page, and history is read again on demand.
+            versionIndex = nil
+            versions = nil
+        }
         .onChange(of: editRequest) { _, request in
             guard request != nil, actions.editMessage != nil, !isGenerating, !editing else { return }
             openEditor(returningFocusToEdit: false)
@@ -200,8 +223,8 @@ struct DesktopMessageRow: View {
         VStack(alignment: .trailing, spacing: 0) {
             // What came with the question, above it: pictures as themselves,
             // documents as pages. A turn that is only files has no bubble.
-            if !message.attachments.isEmpty {
-                UserAttachmentStrip(attachments: message.attachments)
+            if !shown.attachments.isEmpty {
+                UserAttachmentStrip(attachments: shown.attachments)
                     .padding(.bottom, editing || hasTextContent ? JunoSpace.snug : 0)
             }
             if editing {
@@ -220,7 +243,7 @@ struct DesktopMessageRow: View {
             if !editing, isUnsent {
                 unsentRow.padding(.top, 6)
             }
-            if !editing, !isVoice, !message.isPending {
+            if !editing, !isVoice, !shown.isPending {
                 userActions.padding(.top, JunoSpace.hairline)
             }
         }
@@ -345,8 +368,10 @@ struct DesktopMessageRow: View {
     /// words are still here, and this is the one control that sends them.
     private var unsentRow: some View {
         HStack(spacing: JunoSpace.close) {
+            // A state, so the interface face: mono is for code, ids, counts
+            // and costs (§10.2 rule 6). The web sets it in its mono voice.
             Text("Not sent")
-                .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(Color.junoDestructiveInk)
             if let retrySend = actions.retrySend {
                 Button(action: retrySend) {
@@ -358,20 +383,64 @@ struct DesktopMessageRow: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                // The web's outline: neutral, never the column's coral tint.
+                .tint(nil)
                 .disabled(isGenerating)
                 .contentShape(.rect)
             }
         }
     }
 
+    /// ‹ 2/3 ›: the versions the server keeps of this turn (regenerate, edit
+    /// and resend), the live row as the last page — or, on a turn with none,
+    /// its place among its branches.
     @ViewBuilder
     private var pager: some View {
-        if let branchPosition, branchPosition.hasAlternatives, let stepBranch = actions.stepBranch {
+        if message.versionCount > 0, actions.loadVersions != nil {
+            MessageVersionPager(
+                index: versionIndex ?? message.versionCount,
+                total: message.versionCount + 1,
+                isEnabled: !isGenerating,
+                isLoading: versionsLoading,
+                step: stepVersion
+            )
+        } else if let branchPosition, branchPosition.hasAlternatives, let stepBranch = actions.stepBranch {
             MessageVersionPager(
                 position: branchPosition,
                 isEnabled: !isGenerating,
                 step: stepBranch
             )
+        }
+    }
+
+    /// One page back or forward. The earlier versions are read on the first
+    /// step back; a count the server and this Mac disagree on stays put, as
+    /// the web's pager does. Presentational only: the row is untouched, and a
+    /// regenerate always continues from the live thread.
+    private func stepVersion(_ direction: Int) {
+        let count = message.versionCount
+        let current = versionIndex ?? count
+        let next = min(max(current + direction, 0), count)
+        guard next != current else { return }
+        if next == count {
+            versionIndex = nil
+            return
+        }
+        if let versions {
+            if versions.indices.contains(next) { versionIndex = next }
+            return
+        }
+        guard !versionsLoading, let loadVersions = actions.loadVersions else { return }
+        versionsLoading = true
+        Task { @MainActor in
+            defer { versionsLoading = false }
+            do {
+                let loaded = try await loadVersions()
+                versions = loaded
+                if loaded.indices.contains(next) { versionIndex = next }
+            } catch {
+                actions.reportFailure?("Couldn’t load that version.")
+            }
         }
     }
 
@@ -490,10 +559,15 @@ struct DesktopMessageRow: View {
     }
 
     /// Unchanged words just close the editor; changed ones branch.
+    ///
+    /// "Unchanged" is against the **live** question, as on the web: the
+    /// editor opens on the page shown, so paging back to an earlier wording
+    /// and sending it as it stands is a one-step resend of that wording.
     private func submitEdit() {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let unchanged = trimmed == plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let unchanged = trimmed == NativeMessageContent.plainText(of: message.content)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         closeEditor()
         guard !unchanged, !isGenerating, let editMessage = actions.editMessage else { return }
         editMessage(trimmed)
@@ -509,8 +583,8 @@ struct DesktopMessageRow: View {
             VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 if !isVoice {
                     DesktopRunBlock(
-                        message: message,
-                        live: message.isPending,
+                        message: shown,
+                        live: shown.isPending,
                         recovering: isRecovering,
                         awaitingApproval: approvals.approvals.contains(where: \.isPending),
                         openPanel: actions.openActivity
@@ -529,30 +603,30 @@ struct DesktopMessageRow: View {
                     )
                 }
 
-                if let progress = message.mediaProgress, message.errorDescription == nil {
+                if let progress = shown.mediaProgress, shown.errorDescription == nil {
                     NativeMediaGenerationView(progress: progress)
                 } else if let error = standaloneError {
                     DesktopTurnError(message: error, retry: showsRetry ? actions.retry : nil)
-                } else if !parts.isEmpty || !message.attachments.isEmpty {
+                } else if !parts.isEmpty || !shown.attachments.isEmpty {
                     answerBody
                 }
 
                 if let note = noteSentence {
                     DesktopTurnNote(
                         sentence: note,
-                        isFailure: message.errorDescription != nil,
+                        isFailure: shown.errorDescription != nil,
                         continueResponse: showsContinue ? actions.continueResponse : nil
                     )
                 }
 
-                if !message.sources.isEmpty {
-                    DesktopMessageSources(sources: message.sources)
+                if !shown.sources.isEmpty {
+                    DesktopMessageSources(sources: shown.sources)
                 }
             }
 
             // As on the web, a turn that errored gets no row: its only action
             // is Try again, on the error itself.
-            if !isVoice, !message.isPending, message.errorDescription == nil {
+            if !isVoice, !shown.isPending, shown.errorDescription == nil {
                 replyActions.padding(.top, 6)
             }
         }
@@ -574,14 +648,14 @@ struct DesktopMessageRow: View {
     /// The words, the files it produced and the artifacts it wrote — in the
     /// reading style, with the tail fading while it is written.
     private var answerBody: some View {
-        let citations = Self.citationCount(of: message)
+        let citations = Self.citationCount(of: shown)
         let bases = partFindBases(citations: citations)
         return VStack(alignment: .leading, spacing: JunoSpace.hairline) {
             // The web's order: documents it produced, then the pictures and
             // clips, then the words.
-            if !message.attachments.isEmpty {
+            if !shown.attachments.isEmpty {
                 AssistantAttachments(
-                    attachments: message.attachments,
+                    attachments: shown.attachments,
                     canEditImages: !isPrivate && !isGenerating
                 )
             }
@@ -590,13 +664,13 @@ struct DesktopMessageRow: View {
                     ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
                         switch part {
                         case .text(let text):
-                            JunoLessonText(text, streaming: message.isPending)
+                            JunoLessonText(text, streaming: shown.isPending)
                                 .environment(\.junoFindHighlight, findHighlight?.shifted(by: bases.indices.contains(index) ? bases[index] : 0))
                         case .artifact(let artifact):
                             let card = artifactResolver.card(
                                 for: artifact,
-                                messageID: message.id,
-                                messageIsPending: message.isPending
+                                messageID: shown.id,
+                                messageIsPending: shown.isPending
                             )
                             DesktopInlineArtifactCard(
                                 card: card,
@@ -605,7 +679,7 @@ struct DesktopMessageRow: View {
                         }
                     }
                 }
-                .junoStreamingTail(message.isPending && message.content.count > JunoProseMetrics.tailFadeCharacters)
+                .junoStreamingTail(shown.isPending && shown.content.count > JunoProseMetrics.tailFadeCharacters)
             }
         }
         .environment(\.junoProseStyle, .reading)
@@ -629,7 +703,7 @@ struct DesktopMessageRow: View {
 
     /// A citation's source, by its number.
     private var citationPopover: JunoCitationPopover {
-        let sources = message.sources
+        let sources = shown.sources
         return JunoCitationPopover { number in
             guard sources.indices.contains(number - 1) else { return AnyView(EmptyView()) }
             return AnyView(SourceCitationPopover(source: sources[number - 1], number: number))
@@ -639,9 +713,9 @@ struct DesktopMessageRow: View {
     /// A reply that failed with nothing to show for it: the error takes the
     /// answer's place. With a partial answer, the failure is its note instead.
     private var standaloneError: String? {
-        guard let error = message.errorDescription, message.mediaProgress == nil else { return nil }
-        let hasPartial = hasTextContent && message.content != error
-        return hasPartial || !message.attachments.isEmpty ? nil : error
+        guard let error = shown.errorDescription, shown.mediaProgress == nil else { return nil }
+        let hasPartial = hasTextContent && shown.content != error
+        return hasPartial || !shown.attachments.isEmpty ? nil : error
     }
 
     /// Try Again, on the newest reply with nothing running.
@@ -652,11 +726,11 @@ struct DesktopMessageRow: View {
     /// The note under the answer: a partial answer's failure, or why it ended
     /// short of its end.
     private var noteSentence: String? {
-        guard !message.isPending, message.mediaProgress == nil else { return nil }
-        if let error = message.errorDescription {
+        guard !shown.isPending, shown.mediaProgress == nil else { return nil }
+        if let error = shown.errorDescription {
             return standaloneError == nil ? error : nil
         }
-        return DesktopFinishCopy.sentence(for: message.finishReason)
+        return DesktopFinishCopy.sentence(for: shown.finishReason)
     }
 
     /// The artifacts this reply wrote. Regenerating a reply deletes them on
@@ -685,8 +759,8 @@ struct DesktopMessageRow: View {
     /// Continue, on the newest reply that stopped part-way with nothing
     /// running. It lives in the finish note, never in the action row.
     private var showsContinue: Bool {
-        isNewest && !isGenerating && !message.isPending
-            && (message.finishReason == .length || message.finishReason == .networkError)
+        isNewest && !isGenerating && !shown.isPending
+            && (shown.finishReason == .length || shown.finishReason == .networkError)
     }
 
     private var menuModel: MessageMenuModel {
@@ -708,9 +782,9 @@ struct DesktopMessageRow: View {
                 canQuote: actions.quote != nil,
                 modelName: modelDisplayName,
                 meta: NativeMessageInfoFormat.meta(
-                    promptTokens: message.promptTokens,
-                    completionTokens: message.completionTokens,
-                    costUSD: message.costUSD
+                    promptTokens: shown.promptTokens,
+                    completionTokens: shown.completionTokens,
+                    costUSD: shown.costUSD
                 )
             )
         )
@@ -738,19 +812,19 @@ struct DesktopMessageRow: View {
                     MessageActionButton(
                         "Good response",
                         icon: .thumbsUp,
-                        isOn: message.feedback == .up,
+                        isOn: shown.feedback == .up,
                         celebrates: true
                     ) {
-                        actions.setFeedback?(message.feedback == .up ? nil : .up)
+                        actions.setFeedback?(shown.feedback == .up ? nil : .up)
                     }
                 case .badResponse:
                     MessageActionButton(
                         "Bad response",
                         icon: .thumbsDown,
-                        isOn: message.feedback == .down,
+                        isOn: shown.feedback == .down,
                         celebrates: true
                     ) {
-                        actions.setFeedback?(message.feedback == .down ? nil : .down)
+                        actions.setFeedback?(shown.feedback == .down ? nil : .down)
                     }
                 case .regenerate:
                     MessageRegenerateMenu(
@@ -765,6 +839,7 @@ struct DesktopMessageRow: View {
                     MessageMoreMenu(
                         items: model.more,
                         actions: actions,
+                        content: shown.content,
                         isOpen: openTrigger == .more,
                         isBranching: isBranching
                     )
@@ -785,19 +860,19 @@ struct DesktopMessageRow: View {
     /// Every action, reachable by VoiceOver whether or not the row is showing.
     @ViewBuilder
     private var replyAccessibilityActions: some View {
-        if !isVoice, !message.isPending, message.errorDescription == nil {
+        if !isVoice, !shown.isPending, shown.errorDescription == nil {
             let model = menuModel
             if model.row.contains(.copy) { voiceOverAction("Copy", copyMessage) }
             if model.row.contains(.goodResponse) {
-                voiceOverAction("Good response") { actions.setFeedback?(message.feedback == .up ? nil : .up) }
-                voiceOverAction("Bad response") { actions.setFeedback?(message.feedback == .down ? nil : .down) }
+                voiceOverAction("Good response") { actions.setFeedback?(shown.feedback == .up ? nil : .up) }
+                voiceOverAction("Bad response") { actions.setFeedback?(shown.feedback == .down ? nil : .down) }
             }
             if model.row.contains(.regenerate) {
                 voiceOverAction("Regenerate") { requestRegenerate(.again) }
             }
             ForEach(Array(model.more.enumerated()), id: \.offset) { _, item in
                 switch item {
-                case .readAloud: voiceOverAction("Read aloud") { actions.readAloud?() }
+                case .readAloud: voiceOverAction("Read aloud") { actions.readAloud?(shown.content) }
                 case .stopReading: voiceOverAction("Stop reading") { actions.stopReading?() }
                 case .branch(let destinations):
                     if destinations.contains(.intoNewChat) {
@@ -807,7 +882,7 @@ struct DesktopMessageRow: View {
                         voiceOverAction("Fork privately") { actions.forkPrivately?() }
                     }
                 case .shareChat: voiceOverAction("Share chat") { actions.share?() }
-                case .quote: voiceOverAction("Quote in composer") { actions.quote?() }
+                case .quote: voiceOverAction("Quote in composer") { actions.quote?(shown.content) }
                 case .copyLink: voiceOverAction("Copy link") { actions.copyLink?() }
                 case .divider, .info: EmptyView()
                 }
@@ -827,7 +902,7 @@ struct DesktopMessageRow: View {
     /// Copy, with the check cross-fading in as the confirmation — no toast:
     /// the mark is the whole feedback. It reverts after two seconds.
     private func copyMessage() {
-        actions.copy?()
+        actions.copy?(shown.content)
         copiedReset?.cancel()
         copiedNow = true
         copiedReset = Task { @MainActor in

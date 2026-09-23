@@ -109,6 +109,8 @@ enum DesktopOfflineState: Equatable {
 struct DesktopOfflineCaption: View {
     let state: DesktopOfflineState
     let retry: () -> Void
+    /// The column's width, which picks the gutter the transcript keeps.
+    @State private var columnWidth: CGFloat = 0
 
     var body: some View {
         HStack(spacing: JunoSpace.snug) {
@@ -140,7 +142,8 @@ struct DesktopOfflineCaption: View {
         .frame(height: 28)
         .frame(maxWidth: DesktopChatMeasure.reading, alignment: .leading)
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, DesktopChatMeasure.gutter)
+        .padding(.horizontal, DesktopChatMeasure.gutter(forColumnWidth: columnWidth))
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnWidth = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("juno.desktop.offline-caption")
     }

@@ -95,6 +95,7 @@ public struct JunoComposerShell<
     private let captionBelow: CaptionBelow
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.junoSnapshotOpaqueGlass) private var snapshotOpaqueGlass
     @Environment(\.colorSchemeContrast) private var contrast
 
     public init(
@@ -168,7 +169,7 @@ public struct JunoComposerShell<
         .containerShape(.rect(cornerRadius: JunoComposerMetrics.cornerRadius))
         .modifier(
             JunoComposerSurface(
-                reduceTransparency: reduceTransparency,
+                reduceTransparency: reduceTransparency || snapshotOpaqueGlass,
                 increaseContrast: contrast == .increased
             )
         )
@@ -202,6 +203,14 @@ where Accessory == EmptyView, Disclosure == EmptyView {
             captionBelow: captionBelow
         )
     }
+}
+
+public extension EnvironmentValues {
+    /// Draws the composer's glass as its Reduce Transparency recipe — the
+    /// web's opaque card and hairline. For the offscreen snapshot harness
+    /// only: Liquid Glass is composited by the window server, so a view drawn
+    /// with `cacheDisplay` shows no shell at all. Production never sets it.
+    @Entry var junoSnapshotOpaqueGlass = false
 }
 
 /// The shell's material: Liquid Glass, or the opaque card that stands in for it.

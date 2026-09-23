@@ -110,6 +110,7 @@ enum TranscriptSnapshotRenderer {
             bitsPerPixel: 0
         ) else { throw Failure.bitmap(name) }
         rep.size = size
+        if let layer = host.layer { circularCapsules(in: layer) }
         host.cacheDisplay(in: host.bounds, to: rep)
         window.close()
 
@@ -124,6 +125,22 @@ enum TranscriptSnapshotRenderer {
         let fraction = differingFraction(of: rep, from: canvas(for: appearance))
         guard fraction >= 0.005 else { throw Failure.blank(name, fraction) }
         return url
+    }
+
+    /// Works around one flaw of `CALayer.render(in:)`, which `cacheDisplay`
+    /// uses: a layer with *continuous* corners whose radius is half its height
+    /// or more — every capsule SwiftUI draws as a bordered layer — renders with
+    /// a stray vertical tick at each end, which the window server never draws.
+    /// The path itself is a clean stadium (stroked into a `CGContext` it has
+    /// no tick), so the harness draws those layers with circular corners — the
+    /// same stadium to the eye — rather than show a defect the app does not
+    /// have.
+    static func circularCapsules(in layer: CALayer) {
+        let short = min(layer.bounds.width, layer.bounds.height)
+        if layer.cornerCurve == .continuous, short > 0, layer.cornerRadius >= short / 2 - 1.5 {
+            layer.cornerCurve = .circular
+        }
+        for sublayer in layer.sublayers ?? [] { circularCapsules(in: sublayer) }
     }
 
     /// The canvas colour as the given appearance resolves it, in device RGB.

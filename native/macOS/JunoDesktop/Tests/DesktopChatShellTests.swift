@@ -12,6 +12,22 @@ import Testing
 /// in Chat's Recent, "Pro" printed for an account at its limit, a network
 /// outage offered a Retry that cannot help — so each is asserted here.
 struct DesktopChatShellTests {
+    // MARK: - The column's gutter
+
+    /// §6.1: the transcript's gutter narrows with its column — 16 below
+    /// 640pt, 24 from 640, 32 from 1024 — and a column not measured yet takes
+    /// the widest rung.
+    @Test
+    func theGutterNarrowsWithTheColumn() {
+        #expect(DesktopChatMeasure.gutter(forColumnWidth: 0) == 32)
+        #expect(DesktopChatMeasure.gutter(forColumnWidth: 480) == 16)
+        #expect(DesktopChatMeasure.gutter(forColumnWidth: 639.5) == 16)
+        #expect(DesktopChatMeasure.gutter(forColumnWidth: 640) == 24)
+        #expect(DesktopChatMeasure.gutter(forColumnWidth: 1023) == 24)
+        #expect(DesktopChatMeasure.gutter(forColumnWidth: 1024) == 32)
+        #expect(DesktopChatMeasure.gutter(forColumnWidth: 1600) == 32)
+    }
+
     // MARK: - The column's data
 
     /// Errata 6: Code's conversations stay in the store — `sendMessage`

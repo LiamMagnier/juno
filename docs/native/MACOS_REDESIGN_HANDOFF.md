@@ -56,6 +56,13 @@ The shared checkout at `/Users/liammagnier/Developer/project/juno` belongs to ot
    - stream resume (`/api/chat/stream/{id}?after=seq`, and `/active` on open and on reconnect)
    - the Mac approval card above the answer, refusal first, nothing on `.defaultAction`
 
+9. **Phase 2 review** (the commit after `0f5281cd`; spec "Phase 2 errata", "Phase 2 review", register 39): a conformance pass over the brief's acceptance lists and spec §6 / §10.2.
+   - outline buttons (Continue, Retry send, "Allow this action for this connector") no longer inherit the column's coral tint; "Not sent" is SF, not mono
+   - the transcript gutter follows the column (16 / 24 / 32 at 640 and 1024), as §6.1 asks
+   - the version pager pages a turn's earlier versions (`GET /api/messages/{id}/versions`), showing each one's own words, model, tokens and sources; Copy, Quote, Read Aloud and Edit act on the page shown
+   - a design is drawn on a desk tone with a frame edge, so a white frame no longer vanishes into the white sheet
+   - harness: capsules draw without the `render(in:)` end ticks; `FinalSnapshotTests` (`JUNO_FINAL_SNAPSHOT_DIR`) renders window compositions over the preview world, the composer's glass as its Reduce Transparency recipe (`junoSnapshotOpaqueGlass`) and the sidebar on `--sidebar`
+
 Every stage above built and passed at its commit:
 - Mac build, JunoDesktopTests (175) and the iOS build
 - the JunoNativeKit and JunoCode package tests
@@ -70,7 +77,7 @@ Every stage above built and passed at its commit:
 2. *(done — stage 2, above)*
 3. *(done — stage 3, above)*
 4. *(done — stage 4, above)*. When the tools session's `SPEC.md` is final, swap `JunoRunSignature` / the run line for its exact spec, and start sending `clientFeatures: ["timeline", "resume"]` once the server ships the typed timeline (the Mac already decodes it).
-5. **Phase 2 review**, plus the final snapshot set in `/tmp/juno-glass-snapshots/final/`.
+5. *(done — Phase 2 review, above; the final snapshot set is in `/tmp/juno-glass-snapshots/final/`, the transcript suite under `final/transcript/`)*.
 6. **Phase 5, Work merged into Chat** (spec §11 Phase 5; runs before 3 and 4, per the errata). Covers `conversationID` on work sessions, "Do This as a Task", run cards, the Needs-you fold, notifications, and deleting `DesktopWorkWorkspace`.
 7. **Phase 3:** popovers, menus, sheets and Settings. This includes the ⌘K panel, the share popover, the toast host and the menu bar.
 8. **Phase 4:** secondary pages on the `JunoPage` template, plus Skills, Automations, Permissions and Assistants.
@@ -103,7 +110,7 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
 
 - **No screen capture or screen control** (the owner's rule). Verify visuals with offscreen snapshots only:
   - `npm run native:snapshots:transcript`, which writes to `/tmp/juno-glass-snapshots/…`
-  - or JunoDesktopTests with `JUNO_SNAPSHOT_DIR` set
+  - or JunoDesktopTests with `JUNO_SNAPSHOT_DIR` set (the transcript fixtures) and/or `JUNO_FINAL_SNAPSHOT_DIR` (the window compositions: transcript beside the sidebar, the empty chat, the sidebar), each passed through xcodebuild as `TEST_RUNNER_…`
 - Never run the UITests target.
 - **To let the owner try a build:**
   1. `git archive <commit> native | tar -x -C /tmp/jg-preview`
@@ -122,7 +129,6 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
   - the Blue-accent sweep: switch, sidebar selection, Quick Entry, the Private toggle
   - the §0.5 crash repro: 50 Chat↔Code swaps with a popover open
   - keeping an older reply's action row visible while its menu is open
-- **Version pager.** It pages over regenerated versions only once stage 4 hydrates the thread.
 - **Stage 2 runtime checks not done** (screen control is off): Quick Look opening from a click and from Space, Save As… writing the file, a picture dragging out to the Finder, a real `/api/generate` reply going from placeholder to picture with no blank frame, the edit sheet streaming its result into the same chat, and a generated clip playing once downloaded. A clip is fetched whole (51 MB ceiling); an `AVAssetResourceLoaderDelegate` over `/api/files` Range requests is the follow-up.
 - **Stage 3 runtime checks not done** (screen control is off): a link in a preview opening the browser, `alert()` as a sheet, a page's download through the save panel, the canvas Save producing v2 through `POST /api/artifacts/{id}`, a design editing in the dock, the regenerate confirmation, and a real `/api/design/{id}/export?format=svg` answer. `ArtifactRuntimeSandboxTests` does run scripted pages in the real sandbox (offscreen), and the snapshots draw it from offscreen stills.
 - **Stage 3 follow-ups:**
@@ -135,11 +141,15 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
 - **Stage 4 runtime checks not done** (screen control is off): scrolling up mid-stream stopping the follow and showing Scroll to latest (and its glass, which the offscreen harness cannot draw), ⌘F / ⌘G from the menu with a real transcript, a citation popover opening at the click, a favicon arriving, a follow-up chip sending, killing the network mid-stream and watching `after=seq` resume, reopening the app mid-answer, the Activity panel following a reply as its id changes, and an approval card's buttons.
 - **Stage 4 follow-ups:**
   - **The rework's final spec.** `SPEC.md` had no reviews when the stage ran; the run UI follows `DECISIONS.md` and the draft, behind `JunoRunSignature`. The tools session will message when it is final. `clientFeatures` is not sent yet.
-  - **The version pager** still pages branches only: the thread's `versions` are now decoded (`versionCount`) but paging an answer's earlier versions (`GET /api/messages/{id}/versions`) is not built.
   - **Toasts.** A failed action on a reply shows the error box for six seconds until the toast host (Phase 3).
   - **Memory used** is listed in the Activity panel without the web's Forget.
   - **Citations** draw the number without the source's logo (a `Text` run cannot hold an image that arrives later); the logo is in the popover.
-  - **Offscreen stroke artifact.** `cacheDisplay` draws a stroked capsule with a short vertical tick at each end (reproduced with a bare `Capsule().strokeBorder` outside the app); the sources pill, chips and risk pill in the snapshots show it. It is the harness, not the app.
+  - **Offscreen stroke artifact** — fixed in the harness (Phase 2 review): `CALayer.render(in:)` drew continuous-corner capsules with a tick at each end; the renderer draws those layers with circular corners before photographing.
   - **New copy** is not in `Localizable.xcstrings`.
+- **Phase 2 review, still open:**
+  - React, TypeScript and Python previews and Tailwind-styled pages (brief §5.6) — the runtimes must be bundled (downloading needs the owner's permission) or the network opened (needs sign-off).
+  - The version pager is unit-tested (client, decoding, the page's view) and drawn at rest (`reply-actions-versions`); stepping back through it against the live server is a runtime check still to do.
+  - The sidebar's glass, the toolbar and the composer's glass are not in any offscreen picture; the final set says what stands in for each.
+  - **The brief's "tools SPEC is final" update** (`0f7d7e13`, `31b26ef0`, landed while the review ran) is not built: always sending `clientFeatures` / `timeZone` / `locale`, decoding both grammars (the `handoff` frame, `ToolCallRecord`'s full field set, `fact`, `origin` on sources, the five warning notice codes), the Swift presentation-copy table for canonical tool ids (SPEC §3.8), and `chat.clientFeatures` on bootstrap. It is the next Stage 4 follow-up, against `juno-tools` `SPEC.md` at `f1badf26`.
 - **Gap under the user bubble.** It is about 60pt. That matches the web, which reserves the hover-action row, so it is kept for parity. The owner may prefer it tighter.
 - **Code-owned leftovers.** Code's own header strip still has a second sidebar toggle, and `DesktopCodeAccountFooter` hard-codes "Pro". They belong to the Code session.

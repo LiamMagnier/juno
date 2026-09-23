@@ -27,10 +27,13 @@ enum MessageRegenerateRequest: Equatable {
 /// nil closure is an action this turn does not have — the row asks
 /// ``MessageMenuModel`` what to draw from which ones are present.
 struct MessageRowActions {
-    var copy: (() -> Void)? = nil
+    /// Copy, Quote in Composer and Read Aloud take the words **shown** — the
+    /// raw Markdown of the version on screen, which is the live row's unless
+    /// the reader has paged back to an earlier one.
+    var copy: ((String) -> Void)? = nil
     var setFeedback: ((NativeChatFeedback?) -> Void)? = nil
     var regenerate: ((MessageRegenerateRequest) -> Void)? = nil
-    var readAloud: (() -> Void)? = nil
+    var readAloud: ((String) -> Void)? = nil
     var stopReading: (() -> Void)? = nil
     /// Branch ▸ Into a New Saved Chat: `POST /api/conversations/{id}/fork`.
     var branch: (() -> Void)? = nil
@@ -38,7 +41,7 @@ struct MessageRowActions {
     var forkPrivately: (() -> Void)? = nil
     /// Share Chat…, which opens the window's Share popover.
     var share: (() -> Void)? = nil
-    var quote: (() -> Void)? = nil
+    var quote: ((String) -> Void)? = nil
     var copyLink: (() -> Void)? = nil
     /// Continue, from the finish note of a reply that stopped part-way.
     var continueResponse: (() -> Void)? = nil
@@ -50,6 +53,13 @@ struct MessageRowActions {
     /// Retry Send, under a question that never reached the server.
     var retrySend: (() -> Void)? = nil
     var stepBranch: ((Int) -> Void)? = nil
+    /// The earlier versions of this message, oldest first
+    /// (`GET /api/messages/{id}/versions`), for its version pager. Nil on a
+    /// turn with no row on the server.
+    var loadVersions: (() async throws -> [NativeMessageVersion])? = nil
+    /// Says that something asked of this turn failed, until the toast host
+    /// lands (Phase 3): the transcript's six-second failure box.
+    var reportFailure: ((String) -> Void)? = nil
     /// Re-asks this question with new wording, as a new branch. Nil on answers
     /// and on turns with no row on the server.
     var editMessage: ((String) -> Void)? = nil
@@ -577,6 +587,8 @@ struct MessageRegenerateMenu: View {
 struct MessageMoreMenu: View {
     let items: [MessageMenuModel.MoreItem]
     let actions: MessageRowActions
+    /// The raw words on screen — what Read Aloud reads and Quote quotes.
+    var content = ""
     let isOpen: Bool
     /// A branch is on its way to the server: the trigger wears the wait.
     var isBranching = false
@@ -586,7 +598,7 @@ struct MessageMoreMenu: View {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 switch item {
                 case .readAloud:
-                    Button { actions.readAloud?() } label: {
+                    Button { actions.readAloud?(content) } label: {
                         Label { Text("Read Aloud") } icon: { JunoIconView(.volume, size: 16) }
                     }
                 case .stopReading:
@@ -617,7 +629,7 @@ struct MessageMoreMenu: View {
                 case .divider:
                     Divider()
                 case .quote:
-                    Button { actions.quote?() } label: {
+                    Button { actions.quote?(content) } label: {
                         Label { Text("Quote in Composer") } icon: { JunoIconView(.quote, size: 16) }
                     }
                 case .copyLink:
@@ -668,25 +680,41 @@ struct MessageMoreMenu: View {
 /// the same 4 the actions give up), the count 11pt mono in secondary ink. A
 /// disabled arrow names nothing: a control that cannot act needs no tooltip.
 struct MessageVersionPager: View {
-    let position: NativeMessageBranchPosition
+    /// The page shown, from zero, and how many there are.
+    let index: Int
+    let total: Int
     let isEnabled: Bool
+    /// The earlier versions are on their way: both arrows wait.
+    var isLoading = false
     let step: (Int) -> Void
 
-    private var total: Int { position.siblingsCount }
-    private var canGoBack: Bool { isEnabled && position.index > 0 }
-    private var canGoForward: Bool { isEnabled && position.index < total - 1 }
+    init(index: Int, total: Int, isEnabled: Bool, isLoading: Bool = false, step: @escaping (Int) -> Void) {
+        self.index = index
+        self.total = total
+        self.isEnabled = isEnabled
+        self.isLoading = isLoading
+        self.step = step
+    }
+
+    /// A branch's pager: its place among its siblings.
+    init(position: NativeMessageBranchPosition, isEnabled: Bool, step: @escaping (Int) -> Void) {
+        self.init(index: position.index, total: position.siblingsCount, isEnabled: isEnabled, step: step)
+    }
+
+    private var canGoBack: Bool { isEnabled && !isLoading && index > 0 }
+    private var canGoForward: Bool { isEnabled && !isLoading && index < total - 1 }
 
     var body: some View {
         HStack(spacing: 0) {
             arrow(.chevronLeft, label: "Previous version", enabled: canGoBack) { step(-1) }
-            Text(verbatim: "\(position.index + 1)/\(total)")
+            Text(verbatim: "\(index + 1)/\(total)")
                 .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
                 .monospacedDigit()
                 .foregroundStyle(Color.junoSecondaryInk)
                 .frame(minWidth: 21)
                 .multilineTextAlignment(.center)
                 .accessibilityLabel("Version")
-                .accessibilityValue("\(position.index + 1) of \(total)")
+                .accessibilityValue("\(index + 1) of \(total)")
             arrow(.chevronRight, label: "Next version", enabled: canGoForward) { step(1) }
         }
         .padding(.trailing, 4)

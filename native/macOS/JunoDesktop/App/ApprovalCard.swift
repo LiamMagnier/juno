@@ -279,6 +279,8 @@ struct DesktopApprovalCard: View {
                 Text("Allow this action for this connector").frame(minHeight: 28)
             }
             .buttonStyle(.bordered)
+            // Neutral: Allow once is the card's one coral button (§0.4).
+            .tint(nil)
             .contentShape(.rect)
             .accessibilityIdentifier("juno.chat.approval.allow-scope")
         }

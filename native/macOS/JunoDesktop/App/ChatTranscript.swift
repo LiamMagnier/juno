@@ -27,8 +27,19 @@ import SwiftUI
 enum DesktopChatMeasure {
     /// The web's `max-w-3xl` — the one reading measure every product shares.
     static let reading: CGFloat = JunoReadingMeasure.reading
-    /// The gutter the column keeps from the window edge before the measure binds.
+    /// The gutter the column keeps from the window edge before the measure
+    /// binds, at a column wide enough for the widest rung.
     static let gutter: CGFloat = JunoSpace.region
+
+    /// §6.1: the gutter narrows with the column — 16 below 640pt, 24 from
+    /// 640, 32 from 1024 — so a column squeezed by the canvas dock or a narrow
+    /// window gives its words the room rather than its margins. A width not
+    /// measured yet (zero) takes the widest rung, as the column did before.
+    static func gutter(forColumnWidth width: CGFloat) -> CGFloat {
+        if width <= 0 || width >= 1024 { return JunoSpace.region }
+        if width >= 640 { return JunoSpace.section }
+        return JunoSpace.regular
+    }
 }
 
 extension EnvironmentValues {
@@ -50,9 +61,13 @@ extension EnvironmentValues {
 /// actually got, handed down as ``SwiftUI/EnvironmentValues/junoMeasure``.
 ///
 /// One modifier for the transcript and for the snapshot fixtures, so a fixture
-/// is laid out in exactly the column a conversation is (832 = 768 + 2 × 32).
+/// is laid out in exactly the column a conversation is (at 832 the 768pt
+/// measure binds inside a 24pt gutter). The gutter follows the column's own
+/// width (``DesktopChatMeasure/gutter(forColumnWidth:)``).
 struct TranscriptColumn: ViewModifier {
     @State private var measure: CGFloat = DesktopChatMeasure.reading
+    /// The whole column, gutters included — what picks the gutter's rung.
+    @State private var columnWidth: CGFloat = 0
 
     func body(content: Content) -> some View {
         content
@@ -62,7 +77,10 @@ struct TranscriptColumn: ViewModifier {
             }
             .environment(\.junoMeasure, measure)
             .frame(maxWidth: .infinity)
-            .padding(.horizontal, DesktopChatMeasure.gutter)
+            .padding(.horizontal, DesktopChatMeasure.gutter(forColumnWidth: columnWidth))
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                columnWidth = width
+            }
     }
 }
 
@@ -458,9 +476,9 @@ struct DesktopTranscript: View {
         let saved = isSaved(message)
         let isNewest = message.id == newestReplyID
         var actions = MessageRowActions()
-        actions.copy = { Self.copyToPasteboard(NativeMessageContent.copyableMarkdown(of: message.content)) }
+        actions.copy = { content in Self.copyToPasteboard(NativeMessageContent.copyableMarkdown(of: content)) }
         if messageActions != nil {
-            actions.readAloud = { readAloud(message) }
+            actions.readAloud = { content in readAloud(message, content: content) }
             actions.stopReading = { speechPlayback.stop() }
             if saved {
                 actions.setFeedback = { setFeedback($0, for: message) }
@@ -495,8 +513,13 @@ struct DesktopTranscript: View {
             actions.copyLink = { copyLink(to: message) }
         }
         if let quote {
-            actions.quote = { quote(NativeMessageContent.copyableMarkdown(of: message.content)) }
+            actions.quote = { content in quote(NativeMessageContent.copyableMarkdown(of: content)) }
         }
+        if saved, message.versionCount > 0 {
+            let messageID = message.id
+            actions.loadVersions = { try await model.messageVersions(messageID: messageID) }
+        }
+        actions.reportFailure = { actionError = $0 }
         if model.isUnsentMessage(message.id, in: message.conversationID) {
             actions.retrySend = {
                 model.retryLastMessage(conversationID: message.conversationID)
@@ -513,13 +536,13 @@ struct DesktopTranscript: View {
     /// A private turn: words to copy, read and quote, and nothing else.
     private func privateActions(for message: NativeChatMessage) -> MessageRowActions {
         var actions = MessageRowActions()
-        actions.copy = { Self.copyToPasteboard(NativeMessageContent.copyableMarkdown(of: message.content)) }
+        actions.copy = { content in Self.copyToPasteboard(NativeMessageContent.copyableMarkdown(of: content)) }
         if messageActions != nil {
-            actions.readAloud = { readAloud(message) }
+            actions.readAloud = { content in readAloud(message, content: content) }
             actions.stopReading = { speechPlayback.stop() }
         }
         if let quote {
-            actions.quote = { quote(NativeMessageContent.copyableMarkdown(of: message.content)) }
+            actions.quote = { content in quote(NativeMessageContent.copyableMarkdown(of: content)) }
         }
         return actions
     }
@@ -709,9 +732,11 @@ struct DesktopTranscript: View {
         Self.announce("Link copied.")
     }
 
-    private func readAloud(_ message: NativeChatMessage) {
+    /// Reads `content` — the words the turn is showing, which may be an
+    /// earlier version's — aloud, as this message's playback.
+    private func readAloud(_ message: NativeChatMessage, content raw: String) {
         guard let messageActions else { return }
-        let content = NativeMessageContent.spoken(of: message.content)
+        let content = NativeMessageContent.spoken(of: raw)
         actionError = nil
         Task {
             do {
