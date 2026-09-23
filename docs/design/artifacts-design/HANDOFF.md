@@ -38,7 +38,7 @@ How the merge plan was judged: product and design picked claude-faithful (48 vs 
    **A new session:** run one agent with the `write:backlog` brief (it is in that script). Point it at `04-MERGE-PLAN.md`, `wip/merge/backlog.clean.json` and `00-AUDIT-OVERVIEW.md` §7.
 2. Write `00-README.md`.
 3. Snapshot to `wip/artifacts-design-audit` again, then ping the juno-glass session ("macOS app installation and upgrade"), which reads this branch.
-4. **Pass to the X-01 session ("Fix dead script previews under enforcing CSP"; nobody has messaged it yet).** `04` §9.5 and §13.6 add requirements for the preview origin:
+4. **Check the X-01 fix against `04`'s preview requirements.** X-01 is fixed on branch `claude/sharp-aryabhata-79fb4b` (commit `b7946ff5`; handoff `docs/security/PREVIEW-ORIGIN-HANDOFF.md`). That fix adds a sandbox shell with its own CSP, egress allowlists, ban propagation, admin takedown and a Report link. It is not merged. Nobody has told that session about these requirements yet. `04` §9.5 and §13.6 add requirements for the preview origin:
    - every preview response carries a CSP `sandbox` header;
    - it refuses a non-iframe `Sec-Fetch-Dest`;
    - it sends `nosniff`;
@@ -51,7 +51,8 @@ How the merge plan was judged: product and design picked claude-faithful (48 vs 
 ## Related work in other sessions (status at pause)
 - **X-03 and X-04** (edit or regenerate deletes artifacts): fixed on branch `claude/agitated-elion-a15fe9`, commit `7243613f`. Not merged or deployed. Session "Stop edit/regenerate from deleting artifacts".
 - **X-01** (CSP-dead previews): session "Fix dead script previews under enforcing CSP".
-- **X-02** (Canvas design editor remount): session "Fix chat Canvas design editor breaking on first edit".
+- **X-02** (Canvas design editor remount): work in progress at `cd2c3ac2` on branch `claude/suspicious-borg-f3e3b4`. Not merged. Its handoff is `docs/design/artifacts-design/X-02-HANDOFF.md` on that branch. It needs a signed-in check.
+- **X-01:** see step 4 above. Branch `claude/sharp-aryabhata-79fb4b` (`b7946ff5`), not deployed. The migration `20260923180000_share_governance` still has to be deployed.
 - **Mac Liquid Glass Phase 2 stage 3:** branch `mac/liquid-glass-chat` (worktree juno-glass), commit `2b1049c5`, "Run artifacts, designs and diagrams inline in the Mac transcript". It carries X-11, the regenerate confirm and the Mac preview sandbox. Leave that worktree alone.
 
 ## Earlier history of this run
