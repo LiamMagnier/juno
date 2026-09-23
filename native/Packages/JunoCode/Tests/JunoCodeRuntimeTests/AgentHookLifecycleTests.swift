@@ -653,15 +653,32 @@ final class AgentHookLifecycleTests: XCTestCase {
             _ risk: ActionRisk,
             policy: ApprovalPolicy = .byRisk,
             rule: PermissionRuleDecision? = nil,
-            hook: AgentHookPermission?
+            hook: AgentHookPermission?,
+            tool: String? = nil
         ) -> PermissionRuling {
-            PermissionCoordinator.ruling(mode: mode, risk: risk, approvalPolicy: policy, rule: rule, hook: hook)
+            PermissionCoordinator.ruling(
+                mode: mode, risk: risk, approvalPolicy: policy, rule: rule, hook: hook, toolName: tool
+            )
         }
         let rule = PermissionRule(tool: "Edit")
 
         // Within the mode, allow removes the prompt the mode would have shown.
         XCTAssertEqual(ruling(.askBeforeChanges, .write, hook: .allow), .allow)
         XCTAssertEqual(ruling(.workspaceWrite, .critical, hook: .allow), .allow)
+        // Except for screen input: only the reader's own settings file may
+        // let a click or a keystroke run unasked, and a hook is so often the
+        // repository's that its allow does not count there. It still asks
+        // and blocks like any other.
+        for tool in ComputerUseToolName.input {
+            XCTAssertEqual(ruling(.workspaceWrite, .critical, hook: .allow, tool: tool), .requireApproval, tool)
+            XCTAssertEqual(ruling(.askBeforeChanges, .critical, hook: .allow, tool: tool), .requireApproval, tool)
+            XCTAssertEqual(ruling(.fullAccess, .critical, hook: .ask, tool: tool), .requireApproval, tool)
+        }
+        XCTAssertEqual(
+            ruling(.workspaceWrite, .critical, hook: .allow, tool: ComputerUseToolName.click),
+            .requireApproval
+        )
+        XCTAssertEqual(ruling(.workspaceWrite, .critical, hook: .allow, tool: "run_command"), .allow)
         // It cannot lift a read-only session, beat a deny or ask rule, silence
         // a destructive action, or pass a tool pinned to always asking.
         guard case .deny = ruling(.readOnly, .write, hook: .allow) else {

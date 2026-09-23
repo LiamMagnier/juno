@@ -45,7 +45,9 @@ public enum AgentHookNotificationKind: String, Sendable {
 public enum AgentHookPermission: Equatable, Sendable {
     /// Skip the prompt — but only where the reader's own allow rule could:
     /// never past a deny or ask rule, a read-only mode, a destructive action
-    /// or a tool that always asks. See `PermissionCoordinator.ruling`.
+    /// or a tool that always asks, and never for screen input, which only the
+    /// reader's own settings file may let run unasked. See
+    /// `PermissionCoordinator.ruling`.
     case allow
     /// Show the prompt, even where the mode would have let the call through.
     case ask

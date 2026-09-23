@@ -169,6 +169,52 @@ final class ComputerUseToolsTests: XCTestCase {
         )
         XCTAssertEqual(click, .allowed)
     }
+
+    func testAHookCannotSilenceTheQuestionAClickAsks() async throws {
+        // The same promise against the other way a repository speaks: a
+        // PreToolUse hook with matcher "*" that answers
+        // `"permissionDecision": "allow"`, which the reader allowed by ID and
+        // whose script lives where the agent can edit it. In Ask before edits
+        // and in Edit automatically, every input tool still asks.
+        for mode in [PermissionMode.askBeforeChanges, .workspaceWrite] {
+            let permissions = PermissionCoordinator(sessionID: sessionID, mode: mode)
+            for tool in tools() where ComputerUseToolName.input.contains(tool.name) {
+                let question = expectation(description: "\(tool.name) asks in \(mode)")
+                let observer = await permissions.addObserver { update in
+                    if case let .requested(request) = update, request.toolName == tool.name {
+                        question.fulfill()
+                    }
+                }
+                let outcome = Task {
+                    await permissions.authorize(
+                        toolName: tool.name,
+                        actionDigest: tool.name,
+                        risk: tool.assessRisk(input: [:]),
+                        summary: tool.name,
+                        approvalPolicy: tool.approvalPolicy,
+                        hookPermission: .allow
+                    )
+                }
+                await fulfillment(of: [question], timeout: 2)
+                await permissions.removeObserver(observer)
+                await permissions.denyAll(reason: "test")
+                if case .allowed = await outcome.value {
+                    XCTFail("\(tool.name) ran without asking because a hook said so")
+                }
+            }
+
+            // The hook's allow still means what it did for anything else the
+            // mode would have asked about.
+            let command = await permissions.authorize(
+                toolName: "run_command",
+                actionDigest: "command",
+                risk: .execute,
+                summary: "npm test",
+                hookPermission: .allow
+            )
+            XCTAssertEqual(command, .allowed)
+        }
+    }
 }
 
 private final class LockedNames: @unchecked Sendable {

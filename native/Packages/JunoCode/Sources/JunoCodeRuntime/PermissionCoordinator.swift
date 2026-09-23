@@ -106,7 +106,8 @@ public actor PermissionCoordinator {
             risk: risk,
             approvalPolicy: approvalPolicy,
             rule: rules.evaluate(toolName: toolName, subject: subject),
-            hook: hookPermission
+            hook: hookPermission,
+            toolName: toolName
         )
         switch ruling {
         case .allow:
@@ -180,12 +181,16 @@ public actor PermissionCoordinator {
     /// - An allow rule proceeds without asking, including past a pinned tool,
     ///   because saving the rule *was* the reader seeing it. It never silences
     ///   a destructive action: leaving the granted folder always asks.
+    ///
+    /// - Parameter toolName: the tool being ruled on, which decides how much
+    ///   a hook's word counts (see ``hookRuling(_:hook:risk:approvalPolicy:toolName:)``).
     static func ruling(
         mode: PermissionMode,
         risk: ActionRisk,
         approvalPolicy: ApprovalPolicy,
         rule: PermissionRuleDecision?,
-        hook: AgentHookPermission? = nil
+        hook: AgentHookPermission? = nil,
+        toolName: String? = nil
     ) -> PermissionRuling {
         let ladder = PermissionPolicy.ruling(mode: mode, risk: risk, approvalPolicy: approvalPolicy)
         let ruled: PermissionRuling
@@ -201,7 +206,7 @@ public actor PermissionCoordinator {
             if case .deny = ladder { return ladder }
             ruled = risk == .destructive ? .requireApproval : .allow
         }
-        return hookRuling(ruled, hook: hook, risk: risk, approvalPolicy: approvalPolicy)
+        return hookRuling(ruled, hook: hook, risk: risk, approvalPolicy: approvalPolicy, toolName: toolName)
     }
 
     /// A hook's word on the prompt, applied after the reader's own rules.
@@ -213,17 +218,29 @@ public actor PermissionCoordinator {
     /// a read-only mode still refuses, a destructive action still asks, and
     /// so does a tool pinned to always asking — pinning means the reader sees
     /// that exact call, and a hook is not the reader.
+    ///
+    /// Nor does a hook's `allow` reach screen input. Clicks, keystrokes and
+    /// scrolls act on the reader's whole Mac, and only the reader's own
+    /// `~/.juno/settings.json` may let them run without asking — a project
+    /// file cannot, even approved (see `CodeSettings`). A hook is very often
+    /// a project file's: a repository entry the reader allowed by ID, running
+    /// a script in the workspace the agent can edit, and its command may be
+    /// covered by a Bash rule saved in the project. Honouring its `allow`
+    /// would hand every click to the repository the settings layer keeps them
+    /// from. It may still ask, and still block.
     private static func hookRuling(
         _ ruling: PermissionRuling,
         hook: AgentHookPermission?,
         risk: ActionRisk,
-        approvalPolicy: ApprovalPolicy
+        approvalPolicy: ApprovalPolicy,
+        toolName: String?
     ) -> PermissionRuling {
+        let actsOnTheScreen = toolName.map(ComputerUseToolName.input.contains) ?? false
         switch (hook, ruling) {
         case (.ask?, .allow):
             return .requireApproval
         case (.allow?, .requireApproval)
-            where risk != .destructive && approvalPolicy == .byRisk:
+            where risk != .destructive && approvalPolicy == .byRisk && !actsOnTheScreen:
             return .allow
         default:
             return ruling
