@@ -1586,9 +1586,13 @@ async function fetchPinnedWebPage(
       },
       // The callback returns the already-approved answer instead of allowing
       // the client to perform a second DNS lookup at connection time.
-      lookup: (_hostname, _options, callback) => {
-        callback(null, selected.address, selected.family);
-      },
+      // It must honour `options.all`: since Node 20 the socket asks for an
+      // array, and a bare (address, family) answer fails every hostname URL
+      // with ERR_INVALID_IP_ADDRESS.
+      lookup: ((_hostname: string, lookupOptions: { all?: boolean }, callback: (...args: unknown[]) => void) => {
+        if (lookupOptions?.all) callback(null, [{ address: selected.address, family: selected.family }]);
+        else callback(null, selected.address, selected.family);
+      }) as NonNullable<http.RequestOptions["lookup"]>,
       signal,
     };
 

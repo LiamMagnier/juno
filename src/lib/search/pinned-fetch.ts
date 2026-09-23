@@ -8,6 +8,21 @@ import { isDisallowedAddress, isDisallowedHost } from "./url-safety";
 export const MAX_PINNED_FETCH_BYTES = 10 * 1024 * 1024;
 
 /**
+ * A socket `lookup` that answers with the address already validated.
+ *
+ * It must honour `options.all`. Since Node 20, `net.connect` asks with
+ * `{ all: true }` (happy-eyeballs autoSelectFamily) and expects an array; a
+ * bare `(address, family)` answer then fails every hostname URL with
+ * ERR_INVALID_IP_ADDRESS, which is how every pinned fetch broke on Node 24.
+ */
+export function pinnedLookup(address: string, family: number): NonNullable<http.RequestOptions["lookup"]> {
+  return ((_hostname: string, options: { all?: boolean }, callback: (...args: unknown[]) => void) => {
+    if (options?.all) callback(null, [{ address, family }]);
+    else callback(null, address, family);
+  }) as NonNullable<http.RequestOptions["lookup"]>;
+}
+
+/**
  * Fetch one public HTTP(S) URL with the validated DNS answer pinned to the
  * socket. Resolving, validating, and then calling ordinary fetch() is still a
  * DNS-rebinding race because the connection performs a second lookup.
@@ -52,7 +67,7 @@ export async function fetchPinnedPublicUrl(
       path: `${parsed.pathname || "/"}${parsed.search}`,
       method: init.method ?? "GET",
       headers: Object.fromEntries(headers.entries()),
-      lookup: (_hostname, _options, callback) => callback(null, selected.address, selected.family),
+      lookup: pinnedLookup(selected.address, selected.family),
     };
 
     const onResponse = (incoming: http.IncomingMessage) => {
