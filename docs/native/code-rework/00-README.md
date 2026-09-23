@@ -148,3 +148,23 @@ conflicts and how both sides were kept.
   asking only from the reader's own settings file.
 - **The release feed** (`rework/feed`) is served from the now-private
   repository through signed asset URLs.
+
+### Where the branches met
+
+Each branch kept its own promises; the review of the integration found where
+one branch's change broke another's, fixed after the merges:
+
+- **Hooks × compaction.** A stop hook's reason is a user-role turn, and other
+  hooks' output rides at the end of the reader's turn. Neither is the
+  reader's: compaction never quotes them as the request in progress, notes
+  them apart from "User:", and shows them to the summary call as `<hook>`.
+- **Hooks × screen.** A `PreToolUse` hook's `allow` never lets screen input
+  run unasked; only the reader's own settings file can.
+- **Hooks × relay.** A phone's prompt is answered once the session takes
+  it, before its hooks decide, so an approval a hook raises can be answered
+  from the phone rather than blocking every command until someone is at the
+  Mac. Queued device tasks start the same way, and fail when a hook blocks
+  them rather than showing as running forever.
+- **Checkpoints × relay.** A rewind holds the session from its checks to the
+  reloaded transcript; nothing starts meanwhile, and a running orchestrator
+  is never let go.
