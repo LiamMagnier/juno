@@ -49,14 +49,17 @@ enum TranscriptSnapshotFixtures {
                 }
                 .environment(\.junoSnapshotCopied, true))
             },
-            // An older reply shows nothing until it is hovered; this is it
-            // hovered, next to the same reply at rest.
+            // The three states in one transcript, top to bottom: an older
+            // reply under the pointer (its row faded in), an older reply at
+            // rest (no row), and the newest reply, whose row is always there.
             TranscriptFixture(name: "reply-actions-older-hover", stage: 1) {
                 AnyView(column {
-                    row(reply)
+                    row(shortReply.with { $0.id = "a-1" })
                         .environment(\.junoSnapshotHover, true)
                     row(question.with { $0.id = "q-2"; $0.content = "And for an app?" })
-                    row(reply.with { $0.id = "a-2" }, newest: false)
+                    row(shortReply.with { $0.id = "a-2" })
+                    row(question.with { $0.id = "q-3"; $0.content = "Which of those matters most?" })
+                    row(shortReply.with { $0.id = "a-3" }, newest: true)
                 })
             },
             // The menu triggers as they look while their menu is open (a
@@ -380,6 +383,17 @@ enum TranscriptSnapshotFixtures {
         $0.promptTokens = 8_421
         $0.completionTokens = 612
         $0.costUSD = 0.0214
+    }
+
+    static let shortReply = message(
+        "a-short",
+        .assistant,
+        "Lead with what it does and the smallest example that runs; everything else is reference.",
+        model: "anthropic:claude-sonnet-4-6"
+    ).with {
+        $0.promptTokens = 1_204
+        $0.completionTokens = 38
+        $0.costUSD = 0.0041
     }
 
     static let comparisonQuestion = message("q-img", .user, "Can you compare these?").with {
