@@ -4,201 +4,201 @@
    "id": "motion-1",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "reasoning": "I traced this in the code; I did not run it. src/components/canvas/canvas-panel.tsx:1237 mounts `<div key={selectedVersion}>` around DesignEditor. onCommitted (1243-1255) appends `{version, content: \"\", origin: \"edit\"}`. The effect at 313-315 sets selectedVersion from artifact.currentVersion. versionContent at 369-370 is `find(...)?.content ?? artifact.content`, and \"\" is not nullish, so the editor remounts with content \"\". use-design-document.ts:167-180 then calls parseStoredDesignDocument(\"\"), which throws 'Design document is not valid JSON' (migrations.ts:91-97), and design-editor.tsx:520-535 shows 'This design can\u2019t be opened'. The path is reachable. Model output is stored with origin \"generated\" (artifacts-store.ts:59,86,117), and allocatesCheckpoint returns true when latest.origin !== \"edit\" (operations.ts:535), so the first user edit on a chat design always creates v2 and the route returns the new currentVersion (transactions/route.ts:52-53). It is worse than claimed. chat-view.tsx:1254-1262 stores the fake empty version in chat state, and nothing re-fetches the artifact on open (grep for /api/artifacts in chat-view and canvas-panel finds only export and save calls). Closing and reopening the Canvas therefore shows the same error until the conversation reloads. The version rail also offers a v2 that cannot be viewed. /design/[artifactId] is unaffected (design-workspace.tsx:215 passes setCurrentVersion)."
+   "reasoning": "I traced it in the code. At canvas-panel.tsx:1237 the editor is keyed on selectedVersion. onCommitted (1243-1253) appends a version whose content is \"\" and bumps currentVersion. The effect at 313-315 then moves selectedVersion to that version. versionContent (369-370) finds the \"\" row, and `??` does not fall through on an empty string. The remount passes \"\" to useDesignDocument. Its effect (use-design-document.ts:170-188) calls parseStoredDesignDocument(\"\"), which throws 'Design document is not valid JSON' (migrations.ts:94-96), and the editor shows the load-error card (design-editor.tsx:520-534). The version really does bump on the first user edit of model output: allocatesCheckpoint (operations.ts:529-538) returns true whenever latest.origin !== 'edit', and the http transport forwards data.artifact.currentVersion (use-design-document.ts:104). Later edits inside the checkpoint window rewrite the same version, so they do not remount. handleArtifactUpdated (chat-view.tsx:1254-1263) only stores the object, with no refetch, and code-session-view.tsx:1320 uses the same CanvasPanel, so Code is affected too. A side effect of the same root cause: artifact.content is never updated, so the transcript card keeps reading the v1 body. Not reproduced in a browser."
   },
   {
    "id": "motion-2",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "export.ts:1195-1203: fire() only toggles `hidden` on roots. The interaction loop at 1075-1112 never reads interaction.transition, and grep of export.ts finds `transition` only in the handoff bundle (1710, 1804-1809). No unsupported.push mentions a transition. The default for every new interaction is dissolve 220ms (interactions-panel.tsx:54-60), so every exported navigation silently drops an authored transition. The panel note (179-182) says only that 'triggers' reach the export. Severity holds. As listed under missed, the HTML download drops even the unsupported notes the exporter does write."
+   "reasoning": "exportHtmlPrototype (export.ts:1048-1233) never reads interaction.transition. fire() only toggles `hidden` (1198-1201). The only places transition is read outside the panel are the handoff bundle (1804-1810) and ai.ts. No unsupported note mentions transitions. grep of src and native finds no prototype player. The panel's default for a new interaction is 'dissolve 220ms' (interactions-panel.tsx:54-60), so almost every exported navigation silently turns an authored transition into a cut. The panel does say it has no player (20-25, 179-182), but it never says that export drops transitions."
   },
   {
    "id": "motion-3",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "export.ts:1204-1233 binds every node once at load. The delay branch (1216-1218) calls window.setTimeout immediately. The key branch (1211-1215) adds a document keydown listener, and fire() (1191-1203) navigates regardless of whether the source's .juno-root is hidden. Non-first roots are emitted hidden (1164). A delay on Screen 2 therefore fires while Screen 1 is showing, and it is never re-armed when Screen 2 is shown later. Scroll-into-view is fine, because a hidden root does not intersect."
+   "reasoning": "Every node with data-navigate, data-open-url or data-play-animation is bound once at load (export.ts:1204-1233). 'delay' calls setTimeout immediately (1216-1218), and 'key' adds a document-level keydown listener (1211-1215). Neither checks whether the node's .juno-root is hidden (non-first roots are emitted with `hidden`, 1164). fire() navigates no matter where the source node is. tests/design-export.test.ts:246-249 only string-matches setTimeout. scroll-into-view is fine, because IntersectionObserver does not report display:none elements."
   },
   {
    "id": "motion-4",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "The mapping is real. The labels say 'While hovering' and 'While pressed' (interactions-panel.tsx:64-65). press is counted as bindable (export.ts:1082-1088) and falls through to 'click' (1230-1231). hover is mouseenter only (1209-1210), and nothing reverts either one. The failure scenario is wrong, though: set-variant and open-overlay are not exported at all. They hit `unsupported.push(... interaction not represented)` and `continue` (1104-1106). The real impact is limited to navigate, open-url and play-animation. A hover\u2192navigate never returns, a hover\u2192open-url calls window.open on mouseenter (no user activation, so popup blockers refuse it), and a press\u2192play fires on release and never reverses. That is a narrower fidelity gap than claimed, so I rate it low."
+   "reasoning": "The core claim is correct. 'press' is in the bindable list (export.ts:1084), so it gets no unsupported note. At runtime hover maps to mouseenter only (1209-1210), and press falls through to 'click' (1230-1231). Nothing listens for mouseleave, pointerdown or pointerup. The auditor's example scenarios are wrong, though. 'open-overlay' and 'set-variant' are not exported at all: they hit `unsupported.push(... interaction not represented); continue` at 1101-1103 and are reported. The real failures are with navigate and play-animation: 'While hovering \u2192 navigate' switches screens on mouseenter and never switches back, and 'While pressed \u2192 play animation' fires on release and never reverts. Severity is lowered to match."
   },
   {
    "id": "motion-5",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "export.ts:1184-1188: `if (reverse) el.style.animationDirection = 'reverse';` has no else branch. The animationName reset (1184-1186) does not clear the inline direction, so every later forward play runs reversed. animationPlayState='running' is also written inline for every animation on the element (1188). That overrides the paused/:hover rules from buildMotionCss (1008-1025), so a hover-state animation on the same layer then runs without hover. The only test (tests/design-motion-export.test.ts:191-217) checks for the attribute string. Open/close with forward and reverse is the canonical use, so medium holds."
+   "reasoning": "play() sets `el.style.animationDirection = 'reverse'` when reverse is true and has no else branch (export.ts:1187). The inline style therefore stays 'reverse' for every later forward play of any token on that element. The test (design-motion-export.test.ts ~191-217) only checks the data attribute. An open/close pair built on one animation is exactly what the reverse flag exists for."
   },
   {
    "id": "motion-6",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "REPRODUCED with a scratch probe on the sign-in fixture. With an x track 0\u2192100 on 'email' (an in-flow child of auto-layout 'card', layoutChild.absolute=false), the preview layout box stays at x=48 at t=1000. The export emits `0% { left: 24px } 100% { left: 124px }`. Cause: layout.ts:229-235 places in-flow children by the stack, while applyMotionValue writes node.x (motion-model.ts:374-377). The export positions everything absolutely (export.ts:512-513), and motionBase (728-737) deliberately applies the delta. propertyApplies (109-120) and the panel (536, 559-565) show no warning for this case."
+   "reasoning": "I reproduced it with a scratch probe. An x track 0\u2192100 on 'email' inside the auto-layout 'card' gives layoutPage email box x = 48 at t = 0, 500 and 1000. The export emits `0% { left: 24px } 100% { left: 124px }`, and its unsupported list is empty. applyMotionValue writes node.x (motion-model.ts:365-368). layout.ts:229-235 excludes flow children from positioning by x/y. motionBase (export.ts:722-733) deliberately computes a delta for auto-laid-out children. propertyApplies returns true for x and y (109-121), so the panel shows no warning."
   },
   {
    "id": "motion-7",
    "verdict": "confirmed",
-   "corrected_severity": "medium",
-   "reasoning": "REPRODUCED on 'card' (x=24, width 327). Tracks [x=0, scale 0.5] give x=81.75, width 163.5. Tracks [scale 0.5, x=0] give x=0, width 163.5. derivePreviewDocument applies tracks in array order (motion-model.ts:485-499). The scale case centres on the current geometry (400-416), and a later x track overwrites that centring. The export writes left plus `transform: scale()` about the centre, so its result is independent of track order and matches only the first ordering. setKeyframes appends new tracks (operations.ts:1551-1552)."
+   "corrected_severity": "low",
+   "reasoning": "Reproduced: tracks [x, scale 0.5] give email x = 69.75, while [scale 0.5, x] give x = 0, both with width 139.5. derivePreviewDocument applies tracks one after another (motion-model.ts:485-500). The scale case writes a centred x/y (400-416), and a later absolute x/y track overwrites it. setKeyframes appends new tracks (operations.ts:1551-1552). The claim is real but the mismatch only appears when scale and position/size tracks sit on the same layer, and for a 0.96\u21921 press it is a few points. Lowered to low."
   },
   {
    "id": "motion-8",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "REPRODUCED. Scale 2 on text 'title' gives width 279\u2192558 but fontSize 16\u219216. The scale case in applyMotionValue (400-416) does not touch typography, and scaleSubtree (452-480) runs only for containers. Scale 2 on the 'button' frame gives label font 16\u219232 but cornerRadius stays 8. Stroke width and effects are not scaled either. The export uses `transform: scale()` (export.ts:915-925), which scales everything."
+   "reasoning": "Reproduced: scale 2 on the text layer 'title' changes width 279\u2192558 while fontSize stays 16. Scale 2 on the 'button' frame doubles its label font (16\u219232) but keeps cornerRadius 8. The scale case changes only geometry (motion-model.ts:400-416). scaleSubtree only runs for containers and scales descendants' x/y/size/fontSize (452-480), never radius, stroke or effects, and never the root text's own font. The export uses a CSS transform, which scales everything."
   },
   {
    "id": "motion-9",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "REPRODUCED. Keyframes 0\u21920, 1000\u21921, 1500\u21920.2 with durationMs 1000 export as `100% { opacity: 1; opacity: 0.2; ... }` with unsupported=[]. The preview reads 0.2 at 1500 because animationSpanMs is max(duration, last keyframe) (motion-model.ts:506-512), while percentOf clamps to [0,1] (export.ts:836). The Duration field lets you go below existing keyframes (motion-panel.tsx:410-418), and the keyframe Time field allows up to 600000 (745-753)."
+   "reasoning": "Reproduced: keyframes 0\u21920, 1000\u21921, 1500\u21920.2 with durationMs 1000. The preview span is 1500 (animationSpanMs, motion-model.ts:506-512) and reads 0.2 at 1500. The export emits `100% { opacity: 1; opacity: 0.2; }` with a 1000ms duration and an empty unsupported list. The claimed percentOf clamp at export.ts:836 is consistent with that output (not re-read line by line)."
   },
   {
    "id": "motion-10",
    "verdict": "confirmed",
-   "corrected_severity": "medium",
-   "reasoning": "Computed with the real easedProgress. The default spring 180/20/1 reaches 0.706 at 150ms, 0.882 at 200ms and 1.020 at 300ms. 100/60/1 reaches 0.481 at 400ms. sampleTrack hands over to the next keyframe's value exactly at its time (motion-model.ts:329-343), and that is pinned by tests/design-motion.test.ts:122-133. A short spring segment therefore snaps 12-29% in one frame. The snap is a documented, tested design choice, but it is still visible on the button-press case. The export substitutes ease-out (export.ts:791-797). That note goes into `unsupported`, which for the HTML download never reaches the user (see missed). It survives only inside the handoff bundle JSON."
+   "corrected_severity": "low",
+   "reasoning": "The preview discontinuity is real. springProgress is solved in real time (motion-model.ts:226-258), and sampleTrack hands over to the next keyframe's value exactly at its time (329-343). The default spring 180/20/1 reaches about 0.707 at 150ms (I checked the closed form by hand), so a short segment snaps the rest of the way in one frame. The code comment and test (design-motion.test.ts:122-133) show this is a deliberate trade-off. The export half of the claim is overstated: export.ts:791-797 substitutes ease-out and does report it. That note can still be hidden, because the editor toasts only the first note (see missed). Lowered to low."
   },
   {
    "id": "motion-11",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "The window keydown handler (design-editor.tsx:410-421) passes whenever document.activeElement is inside rootRef, and MotionPanel is rendered inside that root (553, 812). Backspace/Delete then applies deleteNodes on the layer selection (476-482). The diamond is a <button> with only pointer handlers: it stops pointer propagation but has no onKeyDown (motion-panel.tsx:683-722). Only the playhead slider (630) and the number fields (918) stop key propagation. Clicking the diamond does not change the layer selection. deleteNodes also drops the layer's tracks (operations.ts:835-844). The auditor's two focus paths (Chromium focuses the clicked button; WKWebView keeps focus on the canvas) are inferred, not observed, but both end at deleteNodes. Keyboard focus reached via Tab (ux-4) does the same."
+   "reasoning": "The window keydown handler (design-editor.tsx:410-482) runs whenever document.activeElement is inside rootRef. Root opens at 553 and closes at 875, and MotionPanel sits inside it at 812. Backspace/Delete then run deleteNodes on the layer selection. The keyframe diamond is a <button> with only pointer handlers (motion-panel.tsx:683-722). It does not stop keydown propagation and has no key handling. A keyframe can only be deleted with the footer button (791). In Chromium a clicked button takes focus, which is inside the root. In WebKit focus stays wherever it was, typically the canvas, which also qualifies. Undo restores the layer."
   },
   {
    "id": "motion-12",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "The per-frame chain is real. rAF setTimeMs (motion-panel.tsx:190-209) feeds onPreview (178-181), then setMotionPreview and a new previewDocument (design-editor.tsx:249-255). design-canvas.tsx:177 and 190-193 then re-run layoutPage and renderPageSvg and re-inject the SVG through dangerouslySetInnerHTML (1078). No design component is memoised. The failure scenario is inflated, though. On the web a document is capped at 200,000 serialized characters (store.ts:63). The sign-in fixture serializes at about 670 bytes per node, so a saveable document holds a few hundred nodes, not a few thousand. At that size the auditor's own measurement is about 1ms of compute plus an ~80KB innerHTML. It is an architectural inefficiency; stutter on reachable documents is unproven."
+   "reasoning": "The structure is as described. Each rAF tick sets MotionPanel state (motion-panel.tsx:190-211), which becomes setMotionPreview in DesignEditor (design-editor.tsx:229, 271) and a new previewDocument (249-255). That reruns layoutPage and renderPageSvg memos keyed on doc (design-canvas.tsx:177, 190-193), and the SVG string is re-injected through dangerouslySetInnerHTML (1078). No design component is memoised. The failure scenario is not reachable on the web, though. Documents are capped at 200,000 characters (store.ts:63, 118), and a serialised node is about 490-680 characters (measured on the sign-in fixture). That limits a document to roughly 300-400 nodes, which the auditor's own measurement puts at about 1ms. Jank is plausible only from React reconciliation or WKWebView parse cost, which I could not observe."
   },
   {
    "id": "motion-13",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "REPRODUCED. After add, tracks are [[title, opacity, 1]]. After applying the inverse from invertTransaction, they are [[title, opacity, 0]]. operations.ts:1555-1559 inverts a new track to `{...track, keyframes: []}`, not a removal. addTracks skips an existing nodeId+property (motion-panel.tsx:244-249). The row's own remove and add-keyframe controls can recover it, so low is right."
+   "reasoning": "The inverse for a new track is setKeyframes with `keyframes: []` (operations.ts:1555-1559), which replaces the track instead of removing it. addTracks skips any existing nodeId+property pair (motion-panel.tsx:244-249). The empty row is not a dead end, though: its own per-row + button (addKeyframe, 577-586) seeds a keyframe from readNodeProperty. Only the header + silently does nothing. The export ignores tracks with fewer than 2 keyframes (export.ts:971), but the handoff bundle and stored document keep them."
   },
   {
    "id": "motion-14",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "RAN `node scripts/build-design-editor.mjs --check` (read-only branch at 190-203): 'bundle is stale (expected 1.0.0+9cc1cfa8d4fe)', exit 1, with a clean git status. The committed index.html is stamped 1.0.0+2b86e5baaf9d. The last bundle commit is 2fa09d35 (2026-09-17), and 11 later commits touch src/components/design or src/lib/design. The Mac 1.6.0 release commit (0a3087fe, 2026-09-23) contains those commits but not a rebuilt bundle, and native/Scripts/release-macos.sh and .github/workflows/release-macos.yml neither build nor check the bundle. Only release-ios.yml:76 runs the check. The hash gap is wider than claimed. EDITOR_SHARED_SOURCES is only icon-swap.tsx (78), yet the editor also imports ui/button, collapse, dialog, dropdown-menu, icons, kbd, menu-recipe, popover, select and tooltip, plus lib/app-icons, lib/motion and lib/utils. None of those are hashed."
+   "reasoning": "I ran `node scripts/build-design-editor.mjs --check`, which is read-only. Output: 'bundle is stale (expected 1.0.0+9cc1cfa8d4fe)', exit 1. index.html is stamped 1.0.0+2b86e5baaf9d, `git status` shows no local changes to the bundle, and the last bundle commit is 2fa09d35 (2026-09-17). There are 11 commits to src/components/design and src/lib/design since then. EDITOR_SHARED_SOURCES is only icon-swap.tsx (line 78). The editor also imports ui/collapse, lib/motion, ui/button, dropdown-menu, menu-recipe, tooltip, popover, dialog, select, kbd and icons, none of which are hashed. The gap is wider than the auditor stated."
   },
   {
    "id": "motion-15",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "artifact-inline-card.tsx:181: inlinePreview is true for DESIGN because runtimeFor returns mode 'design' (artifact-runtime.ts:97), which is not 'none'. RuntimePreview sends non-Markdown types to SandboxFrame (131-146). buildSandboxDoc has no 'design' case and falls through to a <pre> built with withChrome(..., true) (sandbox-frame.tsx:786-802). STATUS_LITE then posts 'done' on load (441-452), which maps to label 'Live' in text-success (artifact-inline-card.tsx:238). message-item.tsx:1366-1376 renders this card for every artifact part, and system-prompt.ts:251-291 tells the model to emit DESIGN artifacts."
+   "reasoning": "runtimeFor('DESIGN') returns mode 'design' (artifact-runtime.ts:98), so inlinePreview is true (artifact-inline-card.tsx:181). RuntimePreview sends non-Markdown types to SandboxFrame (124-146). buildSandboxDoc has no 'design' case, so the default branch emits an escaped <pre> (sandbox-frame.tsx:786-802) wrapped in STATUS_LITE, which posts 'done' on load (452). status 'done' with mode !== 'console' is labelled 'Live' (236-237). message-item.tsx:1366-1375 renders this card for every artifact part."
   },
   {
    "id": "motion-16",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "chat-view.tsx:2452, 2506 and 2553 use an unguarded `animate-out fade-out slide-out-to-right-4`. The entrance branches pair motion-safe slide with motion-reduce fade. globals.css's reduced-motion blocks (874-893, 3746-3777) only reset the --motion-shift and --motion-scale-from vars and kill named loops. tailwind.config.ts does not override the tailwindcss-animate exit keyframe, and slide-out-to-right-4 hardcodes --tw-exit-translate-x. So the 16px exit travel survives Reduce Motion."
+   "reasoning": "The exit branches at chat-view.tsx:2452, 2506 and 2553 are 'duration-exit ease-in animate-out fade-out slide-out-to-right-4' with no motion-safe or motion-reduce guard, while the entry branches have them. globals.css has no reduced-motion rule for animate-out or slide-out. The only unlayered kill switch (around 3746-3754) covers skeleton, shimmer, icon-breathe and gen/ultra loops. tailwind.config.ts does not redefine the slide utilities."
   },
   {
    "id": "motion-17",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "DesktopArtifactCanvas.swift:433-439 inserts with `.offset(x: DesktopChoreography.canvasSlide).combined(with: .opacity)` and has no reduceMotion reference anywhere in the file (grep). DesktopChatWorkspace.swift:636 uses JunoMotion.reduced(..., when: reduceMotion), whose .travel tier returns .easeOut(duration: Duration.exit) (JunoDesignTokens.swift:398-409). That still animates the 16pt offset. On the liquid-glass branch only comments change in this file."
+   "reasoning": "The insertion transition `.offset(x: DesktopChoreography.canvasSlide).combined(with: .opacity)` has no reduceMotion branch (DesktopArtifactCanvas.swift:433-439). canvasSlide is 16 (DesktopChatAura.swift:21). DesktopChatWorkspace.swift:636 uses JunoMotion.reduced(..., tier .travel), which returns `.easeOut(duration: Duration.exit)` (JunoDesignTokens.swift:398-407), so the 16pt offset still animates. The liquid-glass branch has the same code (Canvas line 435, Workspace line 1161)."
   },
   {
    "id": "motion-18",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "JunoDesignTokens.swift:343: `canvasEnter = outExpo(Duration.base)`, with a comment claiming web parity. The web canvas enters on `duration-base ease-drawer` (chat-view.tsx:2505), and its comment rejects ease-out-expo (2493-2496). The Mac already has the drawer curve as a generated token (Generated/JunoGeneratedTokens.swift:404-405) but does not use it. On the liquid-glass branch the line is unchanged, at 391."
+   "reasoning": "`public static let canvasEnter = outExpo(Duration.base)` (JunoDesignTokens.swift:343; line 391 on mac/liquid-glass-chat). The web canvas entry uses `duration-base ease-drawer`, and its comment says ease-out-expo 'made it read as a lurch that then hung' (chat-view.tsx:2493-2496, 2505)."
   },
   {
    "id": "motion-19",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "artifact-inline-card.tsx:290 uses `motion-safe:animate-pulse`. canvas-panel.tsx:830-834 uses `motion-safe:animate-status-glow`, with a comment saying animate-pulse is off the ladder. The two live dots are inconsistent, as claimed."
+   "reasoning": "artifact-inline-card.tsx:290 uses `motion-safe:animate-pulse`. canvas-panel.tsx:831-834 uses `motion-safe:animate-status-glow` and explains why animate-pulse is off-ladder. tailwind.config.ts does not redefine 'pulse', so the card gets Tailwind's stock 2s cubic-bezier(.4,0,.6,1)."
   },
   {
    "id": "motion-20",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "grep finds 10 `.buttonStyle(.plain)` and 0 `junoPress` across DesktopArtifactsScreen.swift (413, 537, 998, 1156), DesktopDesignScreen.swift (449, 653, 716, 873) and DesktopArtifactCanvas.swift (613, 657). The artifact grid cards (488-537, LazyVGrid, not a selectable List) have no onHover. The repo's own JunoPressButtonStyle doc (JunoDesignTokens.swift ~444-446) says `.plain` on macOS gives no press feedback. DesktopDesignScreen does have hover (656, 741, 874), so the missing hover applies to the artifacts library only."
+   "reasoning": "grep finds `.buttonStyle(.plain)` at DesktopArtifactsScreen 413/537/998/1156, DesktopDesignScreen 449/653/716/873 and DesktopArtifactCanvas 613/657. None of these files use .junoPress, and DesktopArtifactsScreen has no onHover. JunoDesignTokens.swift:444-446 documents that `.plain` on macOS gives no press feedback. DesktopDesignScreen rows do have hover (656, 741, 874), so the 'no hover' part applies only to the artifacts screen."
   },
   {
    "id": "motion-21",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "DesktopDesignScreen.swift:735-742 strokes `Color.junoAccent.opacity(0.4)` on hover, and 622-624 turns the preset mark accent on hover. The web row at src/app/(app)/design/page.tsx:229-233 explicitly replaced this with a neutral edge. The liquid-glass branch keeps both (lines 624 and 738 there)."
+   "reasoning": "DesktopDesignScreen.swift:735-742 strokes `Color.junoAccent.opacity(0.4)` on hover, animated on JunoMotion.fast, and the preset mark turns junoAccent on hover (621-624). The web row uses a neutral `hover:border-foreground/15`, with a comment explaining the accent edge was removed (design/page.tsx:229-233). The liquid-glass diff does not touch these lines."
   },
   {
    "id": "motion-22",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "src/app/(app)/artifacts/page.tsx:459 applies style={staggerDelay(i, \"tight\")} to an <li> with no animation class. staggerDelay only sets animationDelay (lib/motion.ts:262-270), and the Skeleton children's breathe animation does not inherit it. artifacts/loading.tsx:26-30 pairs the same delay with motion-safe:animate-rise-in, so the route skeleton and the in-page skeleton move differently."
+   "reasoning": "artifacts/page.tsx:459 puts staggerDelay(i,'tight') on an <li> with no animation class. staggerDelay only returns {animationDelay} (lib/motion.ts:262-270), and animation-delay is not inherited by the .skeleton children. loading.tsx:29-30 pairs the same delay with motion-safe:animate-rise-in. Dead style, and the two loading states behave differently."
   },
   {
    "id": "motion-23",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "DesktopDesignNotice declares `.transition(.opacity)` (DesktopDesignScreen.swift:782). The insertion `if let notice` (320-322) derives from startErrorDescription (338-342), which is assigned at 551, 563 and 570 without withAnimation. The only `.animation(_:value:)` modifiers in the file (657, 742, 875-876) are row-local hover and active states. The transition never runs."
+   "reasoning": "`if let notice { DesktopDesignNotice(...) }` (DesktopDesignScreen.swift:320-322) is driven by startErrorDescription, which is set at 546, 551, 564 and 570 without withAnimation. The only .animation modifiers in the file are scoped to hover and active values on rows (657, 742, 875-876). The `.transition(.opacity)` at 782 therefore never plays."
   },
   {
    "id": "motion-24",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "globals.css:1072-1074 sets `.pressable:active { transform: scale(0.97) }`, and no reduced-motion rule mentions .pressable (grep). --motion-scale-from is not used there. Nearby controls do reset (for example .control-primary:active has transform: none under reduce, around globals.css:1211-1217). host/editor.css:148-155 does reset it. tests/design-host-motion-tokens.test.ts:100-104 compares only the first `.pressable` and `.pressable:active` rules, so the divergence passes."
+   "reasoning": "This is real but overstated. `.pressable:active { transform: scale(0.97) }` is in @layer components (globals.css ~1072-1074) with no reduced-motion reset, while host/editor.css:145-155 adds one. However, the shared Button carries `motion-reduce:transition-none motion-reduce:active:scale-100` (ui/button.tsx:43). That utility sits in a later layer with equal specificity, so Button-based editor controls (undo, redo, align, Ask Juno) do collapse on the web. The divergence is limited to the roughly 20 raw `.pressable` controls in the design panels: the canvas toolbar keys (design-canvas.tsx:1972), motion-panel 439/469/488/792, inspector, effects and layers. The host editor.css comment (lines ~124-130) admits this. The parity test compares only .pressable and .pressable:active (design-host-motion-tokens.test.ts:100-104)."
   },
   {
    "id": "ux-0",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "reasoning": "interactions-panel.tsx:20-25 and 179-182 state that the editor does not play prototypes. grep of src/components/design finds no player or present mode; the only runnable form is the 'HTML prototype' download (design-editor.tsx:101, 297-339). One nuance: a play-animation's animation can be watched in the timeline, just not triggered from the canvas. On Mac and iPhone even the HTML download fails (see missed), so there is no runnable prototype there at all."
+   "reasoning": "interactions-panel.tsx:20-25 and 179-182 say outright that the editor does not play prototypes. The only runnable form is the HTML export, which is a blob download (design-editor.tsx:329-332) and is never previewed in-app. grep finds no Present or player mode in src/components/design or the /design routes. The timeline can play play-animation targets only."
   },
   {
    "id": "ux-1",
    "verdict": "confirmed",
-   "corrected_severity": "medium",
-   "reasoning": "design-canvas.tsx:941-943 says it outright: 'Live preview of an in-flight drag, drawn as an outline only \u2014 the scene itself is not re-rendered per frame'. The ghost boxes (959-969) move only the chrome. The scene is the memoised whole-page SVG (190-193, 1078), so the artwork moves when the drag is committed."
+   "corrected_severity": "high",
+   "reasoning": "design-canvas.tsx:941-944 says a drag preview is 'drawn as an outline only \u2014 the scene itself is not re-rendered per frame'. The ghost boxes (962-970) feed only the selection <rect>s (1099-1101). The scene <g> at 1078 is the committed renderPageSvg output, so the artwork jumps on release. The code comment supports the cost rationale."
   },
   {
    "id": "ux-2",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "EasingEditor (motion-panel.tsx:963-1035) is a SmallSelect plus bare InlineNumber fields: stiffness/damping/mass for a spring, x1/y1/x2/y2 for a custom curve. There is no plot, no preview, no presets and no duration/bounce parameterisation. lib/motion.ts:110-118 does use duration+bounce springs."
+   "reasoning": "EasingEditor (motion-panel.tsx:962-1030) is a SmallSelect plus 3 spring number fields or 4 bezier number fields. It has no curve plot, no spring preview and no duration/bounce parameterisation, while lib/motion.ts:110 uses duration+bounce. One overstatement: the linear, ease-in, ease-out and ease-in-out options are presets. What is missing is spring presets like Figma's Gentle, Quick, Bouncy and Slow."
   },
   {
    "id": "ux-3",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "grep of motion-panel.tsx finds no zoom, snap, marquee, copy/paste, record/auto-key or loop-region code. timeFromPointer and offsetFor (307-319) map the full span to the lane width, rounded to 1ms, with no snapping. A spring segment differs only by bg-primary/50 vs /25 (671-674). rulerTicks loops `t < span` (840-847), so for span 1000 the ticks are 0-800 and there is no end tick."
+   "reasoning": "grep of motion-panel.tsx finds no zoom, snap, marquee, copy, paste, record or loop-region code. timeFromPointer maps linearly across the whole lane and only rounds to 1ms (307-312). Only one keyframe can be selected (setSelectedKeyframe). The only segment glyph is the bg-primary/50 vs /25 line (671-674). rulerTicks loops `t < span`, so the end time is never labelled: span 1000 gives ticks 0, 200, 400, 600 and 800 (840-847)."
   },
   {
    "id": "ux-4",
    "verdict": "confirmed",
-   "corrected_severity": "high",
-   "reasoning": "The keyframe <button> (motion-panel.tsx:681-722) has only pointer handlers. Enter or Space fires a click that nothing handles, so keyboard users cannot select a keyframe, and the footer editor opens only for a selected one (742+). The aria-label is `Keyframe at ${ms} ms`, with no track or property. Worse, a Tab-focused diamond is inside the editor root, so Delete reaches the editor's deleteNodes handler (design-editor.tsx:476-482) and removes the selected layers."
+   "corrected_severity": "medium",
+   "reasoning": "The diamond <button> has only onPointerDown, onPointerMove and onPointerUp (motion-panel.tsx:696-720). There is no onClick, so a keyboard Enter or Space triggers a click that nothing handles. aria-label is `Keyframe at ${ms} ms` (687) and names no track or property. The partial workaround is the row's add-keyframe button, which selects the new keyframe (addKeyframe, 285), so keyboard users can create keyframes and edit them but cannot select existing ones."
   },
   {
    "id": "ux-5",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "This is the same finding as motion-15, confirmed there. The Mac fixed the equivalent library problem with DesktopDesignSurface (DesktopArtifactCanvas.swift:953-972, whose doc names the JSON-dump bug it fixed), but the web inline card still sends DESIGN to the sandbox's <pre> fallback."
+   "reasoning": "Same root cause as motion-15, confirmed. On the Mac, DesktopArtifactCanvas.swift:953-972 documents that the library once dumped DesignDocument JSON and now routes to DesktopDesignSurface. The web inline card has no equivalent design branch: RuntimePreview \u2192 SandboxFrame \u2192 <pre>."
   }
  ],
  "missed": [
   {
    "id": "missed-1",
-   "title": "HTML prototype download drops its unsupported notes, so every limitation the exporter records is hidden from the user",
+   "title": "The Mac/iPhone design-editor stylesheet never contains the shared UI primitives' utility classes: Tailwind scans only src/components/design plus icon-swap",
    "severity": "medium",
-   "file": "src/app/api/design/[artifactId]/export/route.ts",
-   "line": 221,
-   "evidence": "READ: the html case returns `download(result.content, result.fileName, result.mimeType)` (218-221). The download() helper (173-181) sets only Content-Type, Content-Disposition and Cache-Control. Only the PDF branch adds `X-Juno-Export-Notes` (213). The editor reads that header after the blob download (design-editor.tsx:335-339), so for HTML it is always null. exportHtmlPrototype's `unsupported` (export.ts:1244) reaches the user only inside the handoff bundle JSON (export.ts buildHandoffBundle, `unsupported: [...html.unsupported]`).",
-   "failure_scenario": "The exporter records several notes in `unsupported`: a spring substituted by ease-out (export.ts:791-797), a drag trigger (1089-1091), back/overlay/set-variant/set-variable actions that are not represented (1104-1106), timing conflicts, and rotation/scale filled in linearly. A designer who downloads the HTML prototype sees none of them; there is no toast. They believe the file is faithful, which undercuts the product's stated principle of 'reported rather than quietly approximated' (export.ts:707-709)."
+   "file": "scripts/build-design-editor.mjs",
+   "line": 172,
+   "evidence": "READ: the host build runs Tailwind with `--content ./src/components/design/**/*.{ts,tsx}` plus EDITOR_SHARED_SOURCES (only src/components/ui/icon-swap.tsx), lines 163-174. At the bundle's build commit 35a2031f it was only `./src/components/design/**/*.{ts,tsx}`. The editor renders ui/button (design-editor.tsx:41, ask-juno-bar.tsx:22, design-adjustments.tsx:21), whose cva classes are only in ui/button.tsx (line 43 base plus the variants and sizes). RAN greps on the committed native/macOS/JunoDesktop/Resources/DesignEditor/editor.css: `.inline-flex{`, `.whitespace-nowrap{`, `.size-8{`, `.size-9{`, `.h-8{`, `.h-9{`, `.text-primary-foreground{`, `control-primary` and `ui-button` are absent, while `.justify-center{`, `.gap-2{` and `.px-3{` (also used in design sources) are present. host/editor.css also defines no `.control-primary`/`.control-neu`, which are globals.css component classes (globals.css ~1109-1113). A rebuild would not fix this, because the scan and the host stylesheet are structural. INFERRED (not observed in the running app): in the WKWebView editor, icon-sm toolbar Buttons (undo, redo, align, the Ask Juno submit) get no box size and no inline-flex, and the default-variant Ask Juno submit loses its accent fill.",
+   "failure_scenario": "On the Mac or iPhone, the design editor's Buttons render without their size, display and primary-fill classes, so toolbar and Ask Juno controls look collapsed or unstyled compared with the web. `design:editor:check` cannot catch this, because it compares a source hash and never inspects class coverage."
   },
   {
    "id": "missed-2",
-   "title": "Export menu in the Mac and iPhone hosted editor cannot work: it fetches /api from a file:// page whose CSP is connect-src 'none'",
-   "severity": "medium",
+   "title": "Export surfaces only the first unsupported note, so the motion caveats the exporter carefully records are mostly unseen",
+   "severity": "low",
    "file": "src/components/design/design-editor.tsx",
-   "line": 304,
-   "evidence": "READ: exportAs calls `fetch(`/api/design/${artifactId}/export?${query}`)` (298-304). The Export dropdown (656-681) is rendered unconditionally; it is not gated on transport or host. The host entry (src/components/design/host/main.tsx) passes a bridge transport but does not override export or fetch. The Mac loads the bundle with `loadFileURL` (DesktopDesignEditorHost.swift:121), and the bundle's index.html sets `connect-src 'none'` (scripts/build-design-editor.mjs INDEX_HTML). grep finds no WKUserScript or fetch shim in either native host, and no design export in the Mac app (grep of native/macOS/JunoDesktop/App).",
-   "failure_scenario": "On the Mac, the user opens a design, chooses Export \u2192 HTML prototype (or PNG, SVG, PDF, React, SwiftUI or the handoff bundle) and gets only an error toast (the fetch is refused). The same menu shows in the read-only iPhone editor. Since the HTML export is the only way to run a prototype (ux-0), Mac and iPhone users have no runnable prototype at all. I inferred this from CSP and origin rules; I did not run the app."
+   "line": 336,
+   "evidence": "READ: for JSON formats, `if (notes.length) toast.info(`Exported. ${notes[0]}`)` (325-326). For blob formats, including the HTML prototype, the X-Juno-Export-Notes header is parsed and only `parsed[0]` is toasted (334-338). buildMotionCss and exportHtmlPrototype can push many notes, for example the spring \u2192 ease-out substitution (export.ts:791-797), 'playing one animation on this layer restarts the others' (1031-1033) and unsupported triggers or actions (1086-1087, 1101-1102).",
+   "failure_scenario": "A prototype with a hover-drag trigger and a spring keyframe exports with one toast about the drag trigger. The spring's substitution to ease-out, and every other caveat after the first, are never shown, so the designer assumes the motion shipped as authored."
   }
  ]
 }

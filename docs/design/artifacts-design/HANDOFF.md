@@ -30,6 +30,15 @@ That ref was made with plumbing (commit-tree on a temporary index), so no checko
    Include one "others" lens. Local primary evidence for Figma's current API lives under `~/.claude/plugins/synced/*/figma/skills/` (figma-use-motion, figma-shaders, figma-use-slides, figma-generative-plugins, figma-use/references/plugin-api-standalone.d.ts). Pipeline: research → fact-check → gap analysis against the Juno audit. Output: `03-COMPETITIVE-AUDIT.md` plus `research/*.md`.
 4. Run Workflow 3, the merge design. Three independent proposals (Claude-faithful typed artifacts in the conversation; Figma-like one library of typed files; risk-first incremental), then judges, then a synthesis. Output: `04-MERGE-PLAN.md` and a prioritised `05-IMPROVEMENTS.md`. Then write `00-README.md` in the style of `docs/native/code-rework/00-README.md`.
 
+## Update — resumed 2026-09-23 evening: step 1 COMPLETE
+Workflow 1 finished: 15 areas, 34 agents. `00-AUDIT-OVERVIEW.md`, `01-AUDIT-WEB.md` and `02-AUDIT-MAC.md` are in this folder, with all raw JSON in `wip/raw/`.
+The findings below still stand. The final synthesis **adds** three that matter for Mac rendering; see 02-AUDIT-MAC §8 and 00-AUDIT-OVERVIEW §7 and §11.
+- **X-11 (HIGH, found by a verifier):** the Mac chat dock and the iPhone inline viewer cannot open ANY chat-made design. The message carries the compact authoring form, and `DesignDocumentCodec` rejects it. See `chat-artifact-verification.ts:114-116,144-158`, `DesktopArtifactCanvas.swift:817`, `DesignDocumentCodec.swift:44-50` and `JunoMobileInlineArtifact.swift:62-65`. The dock must render from the stored row (the expanded document), not from the tag body.
+- **Liquid Glass branch:** `NativeConversationStore` regenerate is extended to settled answers, which widens exposure to X-04 (server-side regenerate hard-deletes the answer's artifacts) until the server rule changes.
+- **Liquid Glass branch:** the new `InlineArtifactCard.swift` is a static tile, unlike the web's live card. No auditor diffed it, because it doesn't exist on main.
+
+Step 2 (the Claude + Figma audit) started next.
+
 ## Findings that affect Mac artifact & design rendering (for the paused Liquid Glass Phase 2)
 All of these were verified against code (confirmed, or found by the verifier). Full detail is in `wip/raw/audit__mac-*.json` and `wip/raw/verify__mac-*.json`.
 

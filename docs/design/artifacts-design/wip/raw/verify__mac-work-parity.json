@@ -4,140 +4,140 @@
    "id": "mac-work-parity-1",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "reasoning": "READ: DesktopWorkWorkspace.swift:4956-4976 reads string(event.payload, \"artifactId\",\"id\",\"identifier\"), \"kind\", \"title\" and \"version\" off the RAW payload. visible() (4599-4606) only filters by kind and visibility, and the private string() helper (4548-4555) does no lifting. The cloud runner's emit (scripts/work-runner.ts:3549-3569 -> 2885-2923) stores the runtime event object verbatim, and recordArtifact emits {kind:'artifact_created', artifact} (runner/agent-core/src/work/session.ts:580-589; types.ts:534-541, 727-728). WorkEventPayload.fields (WorkEventPayload.swift:46-81) would lift 'artifact', but this reader never calls it. The iPhone twin is identical (JunoMobileWorkView.swift:2237-2257). The web reader lifts (work-detail-panels.tsx:181-201, readEvent). The Mac's own run host (DesktopWorkRunHost.swift) never emits artifact_created (its emits are at 133, 157, 168, 181, 235, 295, 302, 354-415, 543, 559), so the only real producer is the enveloped one. That means the reader never matches any real event, and only the flat preview fixture (PreviewWorkFixtures.swift:443-449) satisfies it. Nuance: the Activity timeline DOES lift (describe(), 5083-5091, 5175-5184), so the Mac and iPhone Activity show 'Created Q3 forecast' while the Made section on the same screen says 'No documents yet'. 'Never appear from the stream' therefore applies to the Made list, not to the whole screen. The iPhone Made section has no other source (JunoMobileWorkView.swift:913-947)."
+   "reasoning": "READ: DesktopWorkLog.artifacts (DesktopWorkWorkspace.swift:4956-4977) reads string(event.payload, \"artifactId\",\"id\",\"identifier\") on the raw payload. The iPhone twin does the same (JunoMobileWorkView.swift:2237-2257). The only emitter of artifact_created/updated in the repo is the cloud runtime: session.ts:580-589 emits {kind, artifact:{id,kind,title,version,byteSize}}. work-runner.ts:3565-3569 persists the whole event as the payload, and serializeEvent (src/lib/work/serializers.ts:375-388) passes payload through unchanged. So the top level has no id and the guard drops every row. Neither DesktopWorkRunHost.swift nor DesktopWorkExecutorAdapter.swift emits artifact events, so no executor writes the flat shape. Only PreviewWorkFixtures.swift:443-465 does. WorkEventPayload.fields (WorkEventPayload.swift:51-52, 70-81) would lift it, and the same file's timeline reader uses it (5091, 5175-5184). The result is that the Activity tab says 'Created <title>' while Made says 'No documents yet'. WorkEventPayloadTests has no artifact case (grep 'artifact' is empty). iPhone: the Made section renders only JunoMobileWorkLog.artifacts (JunoMobileWorkView.swift:913-947) and never openArtifacts, so every cloud deliverable is invisible on the phone. The ref id is the WorkArtifact DB id (work-runner.ts:2088-2094), so once lifted, the Mac's dedupe against durable rows would work."
   },
   {
    "id": "mac-work-parity-2",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "reasoning": "READ: the only callers of refreshOpenArtifacts are loadOpenSession (NativeWorkModel.swift:1038) and the error-row Retry (DesktopWorkWorkspace.swift:3113). git grep finds no others in native/. loadOpenSession runs once, at the top of the follow() task (963-973). The stream loop's apply(update) (1051-1059), the .done branch (986-994), reconnects and refresh() (450-473) never re-read artifacts. open() returns early for the same session while streamTask is non-nil (617). The .done path returns without nil-ing streamTask, so re-clicking the same finished task does nothing. Recovery needs a different selection: Overview calls closeOpenSession (DesktopWorkWorkspace.swift:587-593), or selecting another task and coming back works too. The web refetches on produced-count change (work-documents.tsx:98-101). Combined with parity-1, a watched cloud run's deliverable does not reach Made until the task is reopened."
+   "reasoning": "READ: refreshOpenArtifacts has exactly two callers: loadOpenSession (NativeWorkModel.swift:1038) and the error-row Retry (DesktopWorkWorkspace.swift:3113). follow() calls loadOpenSession once, before the reconnect loop (963). SSE reconnects inside the while-loop never call it again. apply(_ update:) (1051-1059) only appends events and approvals, and refresh() (450-473) reads only sessions and hosts. open() has the guard `openSession?.sessionID != session.sessionID || streamTask == nil` (617). streamTask is never nil'd when the loop returns on a terminal status, so re-selecting the same task is a no-op. The workaround is selecting Overview (closeOpenSession via followSelection, 587-593) or another task. The runner writes the durable row before emitting the event (work-runner.ts:1835-1843), so the index is stale for exactly the watched-run case. With parity-1 the event fallback is empty too, and the Made section shows its empty state (3048-3053). By contrast the web refetches on the produced count (work-documents.tsx:97-100). No test covers artifact refresh (no JunoWorkKitTests reference openArtifacts)."
   },
   {
    "id": "mac-work-parity-3",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "reasoning": "READ: the createSession body (NativeWorkClient.swift:361-405) has no conversationId or projectId, and WorkSessionSummary has no conversation field (WorkContracts.swift:169-195). createWorkSessionForUser only validates a supplied conversationId and stores conversationId ?? null (src/lib/work/dispatch.ts:356, 412-417, 555); it never creates a conversation. workRecentHref returns null when there is no conversation (src/lib/work/recents.ts:173-179). /work/<id> redirects to chatPathForSession(null) = '/chat' ('src/app/(app)/work/[[...segments]]/page.tsx' final line; src/lib/work-url-migration.ts:185-187). Search hits use the same href (src/lib/search/engine.ts:489, 509). The only web consumers of the sessions list are conversation-keyed (app-sidebar via use-needs-you-count byConversation) plus the project page, and native creates no projectId either. prisma.workArtifact is read only by /api/work/artifacts routes, so no web library lists WorkArtifacts. iOS has no download code (git grep downloadArtifact in native/iOS is empty)."
+   "reasoning": "READ: NativeWorkClient.createSession builds its body without conversationId (NativeWorkClient.swift:361-405). The server stores `conversationId ?? null` (src/lib/work/dispatch.ts:555). WorkSessionSummary has no conversation field (WorkContracts.swift:168-197). On the web, workRecentHref returns null for a session with no conversation (src/lib/work/recents.ts:173-179). The sidebar's run tracking is keyed by conversationId (use-needs-you-count.ts header; the only other fetchWorkSessions caller is use-conversation-work.ts:179, scoped to a conversation). /work/<id> redirects to chatPathForSession(null) = '/chat' (work/[[...segments]]/page.tsx; work-url-migration.ts:185-187). Search hits use the same href (src/lib/search/engine.ts:489, 509). No web page lists WorkArtifacts outside the conversation run panel (grep of src/app/(app) and src/components for WorkArtifact). The iPhone has no deliverable download (no openArtifacts or downloadArtifact use under native/iOS). Mitigation: TWO_PRODUCTS.md \u00a72 says 'the Mac and the iPhone keep the product they have', so native Work continuing is intentional. The resulting web unreachability of new native-created tasks and their files is not addressed anywhere I found."
   },
   {
    "id": "mac-work-parity-4",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "corrected_location": "src/components/work/detail/work-deliverable-stage.tsx:74-77 (the 'more files under Outputs' line); src/components/chat/work-run-panel.tsx:356-358",
-   "reasoning": "READ: git grep WorkDocuments finds only its definition (work-documents.tsx:111), with no importers in src or tests. work-run-panel.tsx imports only WorkDeliverableStage for deliverables (14, 357). The stage filters to canPreviewArtifact (site/report/spreadsheet, work-site-preview.tsx:164-166), picks the newest one (work-deliverable-stage.tsx:33-39) and returns null otherwise (43). It prints 'N more files under Outputs.' (74-77), and no Outputs rail exists in the chat panel. WorkOutcomeDigest and the timeline helpers imported by the panel have no download links. A run producing only docx or pdf therefore gets no web download surface in chat."
+   "corrected_location": "src/components/work/detail/work-deliverable-stage.tsx:33-44,74-77; src/components/chat/work-run-panel.tsx:356-358",
+   "reasoning": "READ: `git grep WorkDocuments` finds only its definition (work-documents.tsx:111), so it is mounted nowhere. The only producers of workArtifactDownloadUrl links are work-deliverable-stage.tsx:58 and the unmounted work-documents.tsx (297, 310, 380); work-site-preview only fetches for inline preview. stagedArtifact filters on canPreviewArtifact (site, report or spreadsheet only: work-site-preview.tsx:164-166) and returns null otherwise. So a run with only docx/pptx/pdf renders nothing in the run panel (work-run-panel.tsx:356-358), and no per-version download exists at all. The chat does have a real 'Outputs' popover (src/components/chat/session-outputs.tsx:225-290, mounted at chat-view.tsx:1924), but it lists only chat Artifacts and attachments (readSession, 97-106), not WorkArtifacts. So '{n} more files under Outputs.' sends the reader to a panel that exists and does not contain those files, which is worse than a dead reference. The cited line 73 is the preview element; the sentence is at 74-77."
   },
   {
    "id": "mac-work-parity-5",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "reasoning": "READ: load() uses try decodeVersion / try decodeArtifact per record (NativeArtifactStore.swift:101-103, 111-113). decodeVersion throws on content.utf16.count > 200_000 (157-159) and decodeArtifact throws on an unknown type (144-147). NativeArtifactStoreTests.swift:78 pins this fail-closed behaviour on purpose. reload() catch sets phase .failed and leaves `artifacts` untouched (283-287). On a cold start, which is every launch once the bad row is in the encrypted local DB, the list is empty. Mid-session, the last good list stays frozen because every later reload throws. Server paths over the limit are real: DESIGN is length-checked pre-expansion (chat-artifact-verification.ts:61-70, 86-99) and stored post-expansion (artifacts-store.ts:16-25, 46) with no re-check, and route.ts:3592 calls persistArtifacts(parseArtifacts(audit.report)) without verification. The PUT route caps at 200_000 (src/app/api/artifacts/[id]/route.ts:8). CORRECTION: the Mac Design launcher does not show 'Artifacts unavailable'. It filters model.artifacts (DesktopDesignScreen.swift:229-231) and shows 'No designs yet' (373-378), which is misleading (see missed). The iPhone shows its failure view only when artifacts is empty (JunoMobileWorkspaceViews.swift:779). INFER: whether an oversized row exists in production is unverified. The new-type path is exactly what a Claude-style DOC/SLIDES merge would add, and older installed builds would blank."
+   "reasoning": "READ: load() uses `try decodeVersion` and `try decodeArtifact` for every record (NativeArtifactStore.swift:101-103, 111-113). Either throws corruptRecord on a content.utf16.count > 200_000 (157) or an unknown type (144). reload() catches, sets .failed and leaves `artifacts` as it was (283-286). On a cold launch or account start it is empty. Mac Artifacts shows 'Artifacts unavailable' only when artifacts is empty (DesktopArtifactsScreen.swift:705-736). iPhone does the same, `.failed where model.artifacts.isEmpty` (JunoMobileWorkspaceViews.swift:778-792). Within a running session the stale list stays but stops updating. Try Again re-reads the same local rows. Server paths to an oversized row: persistArtifacts expands DESIGN via normalizeDesignArtifact (artifacts-store.ts:16-25) after the 200K pre-expansion check (chat-artifact-verification.ts:61-70) with no re-check, and the research-audit path persists without verification (chat/route.ts:3592). Other routes cap at 200K (api/artifacts/[id]/route.ts:8, artifact-edit.ts:137, design/store.ts:63). Today every Prisma ArtifactType, DESIGN included, decodes (NativeArtifactAPIClient.swift:13-22), so the unknown-type trigger is future only. It is certain, though, for installed builds once a typed artifact such as DOC or SLIDES ships as part of the planned merge. Correction: the Design launcher does not show 'Artifacts unavailable'. It ignores phase entirely (see missed). Whether an oversized row exists in production is unobservable here."
   },
   {
    "id": "mac-work-parity-6",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "READ with od -c: line 3142 is `CharacterSet(charactersIn: \"/\\\\:\\\\0\")`. The bytes are / \\ \\ : \\ \\ 0, so the Swift string is '/', '\\', ':', '\\', '0' and the set is {/, \\, :, 0}; NUL is not in it. Titles are split on this set and joined with '-' (3143-3146), and the result is passed as nameFieldStringValue (3447) for both the validated and unvalidated paths (3122-3129, 2528-2529). Every '0' in a title becomes '-'."
+   "reasoning": "READ: od -c of DesktopWorkWorkspace.swift:3142 gives `\" / \\ \\ : \\ \\ 0 \"`. In Swift, `\\\\0` is an escaped backslash followed by the digit 0, not NUL, so the set is {'/', '\\\\', ':', '0'}. components(separatedBy:) plus joined(\"-\") (3143-3146) turns every '0' into '-'. It is used for both the validated path (3136) and the 'Save anyway' path (3130), and it is the only filename sanitizer in native (grep). The line comes from commit 7c533bea3 (2026-08-13). The panel's name is editable, but dates and version numbers with 0 are routine in deliverable titles, so medium is fair."
   },
   {
    "id": "mac-work-parity-7",
    "verdict": "confirmed",
-   "corrected_severity": "high",
-   "reasoning": "READ: plan(from:) reads event.payload[\"steps\"] raw (DesktopWorkWorkspace.swift:4665-4666), and references reads url/title raw for sourceCited (4851-4853). The iPhone twin does the same (JunoMobileWorkView.swift:2028-2029, 2138-2140). Cloud plan events are {kind, plan:{version, steps}} (types.ts:385-388, 692-693; session.ts:601, 639) and citations sit under `citation` (session.ts:592-595). The doc comment at 4712-4715 claims every reader lifts, which is false. UPGRADE: the claim understates the scope. No native executor emits a flat plan: DesktopWorkRunHost emits no plan_created or source_cited at all. So the Plan section is empty for EVERY real run, not just cloud runs. plan_created/plan_updated are also excluded from the Activity timeline as 'renderedElsewhere' (DesktopWorkWorkspace.swift:5015-5019; iPhone 2289-2293), so the plan appears nowhere on Mac or iPhone. The Overview tab, the default surface, always shows the 'hasn't written a plan' copy (2957-2961)."
+   "corrected_severity": "medium",
+   "reasoning": "READ: plan(from:) guards on `event.payload[\"steps\"]` (DesktopWorkWorkspace.swift:4666). The cloud runtime emits {kind, plan:{version, steps}} (types.ts:692-693; session.ts:601, 639), which the runner persists verbatim. DesktopWorkRunHost emits no plan events at all (it emits only resumed, paused, run_finished, question_answered, error, assistant_message and similar: RunHost.swift:133-415). So the Plan section (2954-2961) is empty for every real run on the Mac, and on iPhone (JunoMobileWorkView.swift:2029). references reads source_cited title/url raw (4850-4858; iPhone 2139-2148), while the runtime nests it under `citation` (session.ts:593-596). WorkCitation also has `source`, not `url`/`publisher` (types.ts:543-550), so even after lifting, the detail line needs the `source` key. The doc comment at 4712-4715 says 'every other reader here' uses WorkEventPayload.fields, which is false for plan, references and artifacts. The Liquid Glass branch does not change these readers (git diff main mac/liquid-glass-chat touches only sidebar, greeting and comments in this file)."
   },
   {
    "id": "mac-work-parity-8",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: loadArtifactDetail and downloadArtifact both write the shared artifactErrorDescription (NativeWorkModel.swift:714-719, 742-749). Retry calls refreshOpenArtifacts (DesktopWorkWorkspace.swift:3112-3114), which clears the error on success (NativeWorkModel.swift:692-693) without retrying the failed operation. With detail == nil the expanded row shows the spinner 'Reading version history\u2026' (DesktopWorkWorkspace.swift:3425-3430) until it is collapsed and re-expanded (the expand closure reloads only on expand, 3062-3069). Severity lowered: the error text is visible until Retry is pressed and Save can simply be pressed again, so this is misleading recovery, not data loss."
+   "reasoning": "READ: loadArtifactDetail and downloadArtifact write the shared artifactErrorDescription (NativeWorkModel.swift:719, 748). The Retry button calls refreshOpenArtifacts (DesktopWorkWorkspace.swift:3112-3114), which on success clears it (692-693) without retrying the failed action. An expanded row with a nil detail renders the 'Reading version history\u2026' spinner (3425-3430) until it is collapsed and re-expanded (the expand closure reloads when the detail is nil, 3062-3068). This is real, but it happens only on the failure path, and the red error line is visible until Retry, so medium is inflated."
   },
   {
    "id": "mac-work-parity-9",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: DesktopWorkArtifactSavePanel.save catches the bytes.write error and returns nil (DesktopWorkWorkspace.swift:3450-3456). saveArtifact treats nil as a cancel (3131-3136). No error surface exists."
+   "reasoning": "READ: DesktopWorkArtifactSavePanel.save catches the bytes.write error and returns nil (DesktopWorkWorkspace.swift:3451-3456). saveArtifact returns silently on nil (3134-3136), the same result as a cancel. No message, and savedArtifactName is not set."
   },
   {
    "id": "mac-work-parity-10",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: artifactDownloadID is one optional (NativeWorkModel.swift:50), set and cleared with defer (733-734). Each row disables only its own Save (isDownloading = artifactDownloadID == artifact.artifactID, DesktopWorkWorkspace.swift:3060, 3363, 3416), so a second row can start a download concurrently. The first completion's defer then nils the flag while the second is still in flight."
+   "reasoning": "READ: artifactDownloadID is a single optional (NativeWorkModel.swift:50). Each download sets it and clears it in a defer (733-734). Rows compare by ID (DesktopWorkWorkspace.swift:3060; row Save disabled via isDownloading 3363, 3416). Starting B while A is in flight moves the flag to B, so A's Save re-enables. A's completion then nils the flag while B is still loading. A duplicate download and a second save panel are reachable. Low."
   },
   {
    "id": "mac-work-parity-11",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: the artifact_version sync loader serialises id, artifactId, version, content and createdAt only (src/lib/sync-entities.ts:244-259), though ArtifactVersion.origin exists (prisma/schema.prisma ArtifactVersion model). decodeVersion sets origin: nil (NativeArtifactStore.swift:160-167). openArtifact merges REST versions that carry origins (290-313, 433-445), but synchronizationDidAdvance -> reload replaces `artifacts` wholesale (252-265), and it fires from JunoDesktopRootView.swift:74-82. The origin labels at DesktopArtifactsScreen.swift:854-855 and 1089-1090 then disappear."
+   "reasoning": "READ: the artifact_version sync loader emits id, artifactId, version, content and createdAt, but no origin (src/lib/sync-entities.ts:244-259), although the column exists (prisma/schema.prisma:1147-1154). The store hard-codes origin: nil (NativeArtifactStore.swift:166). openArtifact merges REST versions that carry origin (295-297, 433-444). It runs only when the selection changes (DesktopArtifactsScreen.swift:246-247). synchronizationDidAdvance, called from JunoDesktopRootView.swift:74-82, calls reload(), which replaces artifacts with the snapshot (265). The badges (854-855, 1089-1090) then drop. The screen's own comment at 1084-1086 admits origin is 'only known once openArtifact has run'."
   },
   {
    "id": "mac-work-parity-12",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: contracts/openapi/juno-native-v1.yaml:1866-1868 enum is [HTML, REACT, CODE, MARKDOWN, SVG, MERMAID], referenced at 1885 and 1917. Prisma ArtifactType includes DESIGN and native NativeArtifactKind includes design (NativeArtifactAPIClient.swift:13-22). tests/native-contract.test.ts has no ArtifactKind/ArtifactType/DESIGN reference, and the Swift generator does not emit ArtifactKind (it is hand-written). The impact is documentation and contract drift only, because no generated client consumes it."
+   "reasoning": "READ: juno-native-v1.yaml:1866-1868 lists [HTML, REACT, CODE, MARKDOWN, SVG, MERMAID], referenced at 1885 and 1917. Prisma ArtifactType includes DESIGN (schema.prisma:1344-1356). tests/native-contract.test.ts has no ArtifactKind or DESIGN assertion. scripts/generate-native-swift-contract.mjs does not generate from this schema (grep), so no shipped client is broken today. This is documentation and validation drift only, so low."
   },
   {
    "id": "ux-0",
    "verdict": "confirmed",
-   "corrected_severity": "n/a",
-   "corrected_location": "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:2367-2381 (segment order), 2516-2518 (reset), 2654-2666 (files surface)",
-   "reasoning": "READ: segments are Overview, Context, Activity, Files & cost (2367-2381), so Files & cost is the FOURTH segment, not the third. The surface resets to .overview on session change (2516-2518). The .files surface renders changes, then artifacts, then budget (2662-2665). Overview is currentAction + plan (2656-2658), and per parity-7 the plan is always empty. The web stage renders the deliverable inline in the chat run panel (work-run-panel.tsx:356-358). It sits below the digest and the run's words, not literally at the top, but the Cowork-style arrangement point stands."
+   "corrected_severity": "medium",
+   "corrected_location": "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:2367-2381, 2415-2421, 2466-2471, 2516-2518, 2651-2665",
+   "reasoning": "READ: the surface defaults to .overview (2415-2421) and resets on a session change (2516-2518). The page order is header, conversation, segmented picker, surface (2466-2471). Made is under the fourth segment, not the third: Overview, Context, Activity, 'Files & cost' (2367-2381). It sits below 'Read and written' (2661-2664). The web stages the newest previewable deliverable at the top of the run panel (work-deliverable-stage.tsx:13-30; work-run-panel.tsx:356-358), but only for site, report and spreadsheet."
   },
   {
    "id": "ux-1",
    "verdict": "confirmed",
-   "corrected_severity": "n/a",
-   "reasoning": "READ: DesktopWorkArtifactRow (DesktopWorkWorkspace.swift:3315-3440) offers only Save and History. git grep for QuickLook/QLPreview/preview in DesktopWorkWorkspace.swift and JunoWorkKit is empty, so no preview endpoint is called. After saving, the file is revealed in Finder (3135), where Quick Look is outside Juno. The web previews site/report/spreadsheet inline (work-site-preview.tsx:164-166; work-deliverable-stage.tsx:68-73)."
+   "corrected_severity": "medium",
+   "reasoning": "READ: DesktopWorkArtifactRow offers only Save and History (DesktopWorkWorkspace.swift:3348-3380). There is no QuickLook, WebView or preview code in the Mac Work files (grep for quicklook, QLPreview, /preview and previewArtifact is empty). After saving, the file is revealed in Finder (3137). The web renders site, report and spreadsheet inline (work-site-preview.tsx:164-166). Presentation, docx and pdf have no inline preview on the web either."
   },
   {
    "id": "ux-2",
    "verdict": "confirmed",
-   "corrected_severity": "n/a",
-   "reasoning": "READ: the Mac empty state renders when both produced and durable are empty (DesktopWorkWorkspace.swift:3045-3053). The iPhone renders it whenever event-derived produced is empty (JunoMobileWorkView.swift:915-919). The event-derived list never matches real events (parity-1), and the Mac's durable list is read once per open (parity-2). Scope: on Mac the false empty state affects tasks watched live (or opened before their first deliverable) until reopened, since a finished task opened fresh gets the durable list. On iPhone it affects every run, and the same screen's Activity timeline says 'Created \u2026' at the same time."
+   "corrected_severity": "high",
+   "reasoning": "READ: follows from parity-1 and parity-2. Mac: the copy at 3048-3053 shows when both produced and durable are empty, which is exactly the watched-cloud-run case. The same screen's Activity tab lifts the envelope and prints 'Created <title>' (5175-5179), so the page contradicts itself. iPhone: 913-920 shows it for every cloud run, because it never renders the durable index its shared model already fetches."
   },
   {
    "id": "ux-3",
    "verdict": "confirmed",
-   "corrected_severity": "n/a",
-   "reasoning": "Same evidence as mac-work-parity-4: the stage renders only previewable kinds, returns null otherwise (work-deliverable-stage.tsx:33-43) and points to a non-existent 'Outputs' (74-77). WorkDocuments, which had Download and per-version history, is unused."
+   "corrected_severity": "high",
+   "reasoning": "READ: same evidence as parity-4. With only Office or PDF kinds, stagedArtifact returns null and nothing renders (work-deliverable-stage.tsx:33-43). 'N more files under Outputs.' (74-77) points the reader to the chat's real Outputs popover (session-outputs.tsx), which does not list WorkArtifacts."
   },
   {
    "id": "ux-4",
    "verdict": "confirmed",
-   "corrected_severity": "n/a",
-   "reasoning": "READ: Try Again / Retry call model.reload() (DesktopArtifactsScreen.swift:728-736; JunoMobileWorkspaceViews.swift:787), which re-reads the same local snapshot and throws again (NativeArtifactStore.swift:89-135). CORRECTION: the Mac Design launcher shows no 'unavailable' state. It shows 'No designs yet' (DesktopDesignScreen.swift:373-378), and starting a design reports 'It will appear here as soon as this Mac finishes syncing' because the post-create reload fails (557-566). The iPhone shows the failure only when artifacts is empty (779). Mid-session the old list stays but is frozen."
+   "corrected_severity": "high",
+   "reasoning": "READ: same code as parity-5. Retry calls model.reload() (DesktopArtifactsScreen.swift:735; JunoMobileWorkspaceViews.swift:788), which re-runs the same throwing decode over the same local rows. Corrections: the 'unavailable' state appears only while artifacts is empty (cold launch or account start). In a running session the stale list stays but freezes. The Design launcher never shows 'unavailable'. It shows the false 'No designs yet' empty state (DesktopDesignScreen.swift:373-378); see missed."
   },
   {
    "id": "ux-5",
    "verdict": "confirmed",
-   "corrected_severity": "n/a",
-   "reasoning": "READ: WorkSessionSummary carries no conversation id (WorkContracts.swift:169-195). git grep in native/ for start_task, workHandoff or conversation-linked work finds nothing. DesktopChatWorkspace passes workModel to DesktopChatSidebar (168), where it is declared (DesktopChatSidebar.swift:20) and never used. The web finds a chat's task by polling ?conversationId= (use-conversation-work.ts:38-75), and the Mac has no equivalent. INFER: the Mac chat transcript shows only the persisted assistant text for such a turn, and the task appears only in the separate Work product with no link back."
+   "corrected_severity": "medium",
+   "reasoning": "READ: no native file references start_task, juno_work or workHandoff (grep of native). DesktopChatWorkspace has no work-run card. WorkSessionSummary has no conversation field (WorkContracts.swift:168-197), so the Mac Work thread cannot link back to the chat. Mac Work lists all sessions via an unscoped GET /api/work/sessions, so the task appears there with no tie to its chat. The web renders the run card via use-conversation-work.ts (discovery by ?conversationId). INFER: whether the Mac transcript also shows an approval or tool-activity row for start_task was not traced. The claim's 'only a one-line reply' may slightly understate what is drawn, but no run state, deliverables or link are present."
   }
  ],
  "missed": [
   {
    "id": "missed-1",
-   "title": "Mac Design launcher reports 'No designs yet' and a false 'will appear after sync' when the artifact store fails to load",
+   "title": "Mac Design launcher ignores the artifact model's phase: it says 'No designs yet' while loading or after a load failure, and a new design 'will appear \u2026 as soon as this Mac finishes syncing' forever",
    "severity": "medium",
    "file": "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift",
    "line": 373,
-   "evidence": "READ: designs = model.artifacts.filter{isDesignDocument} (229-231). launcherContent shows JunoEmptyState('No designs yet', \u2026) whenever designs is empty (373-378) and never consults model.phase or lastErrorDescription. start(_:) creates the design server-side, then calls model.reload(). If the store throws (NativeArtifactStore.swift:157, 144), the id is missing and the launcher says 'Juno started the design. It will appear here as soon as this Mac finishes syncing.' (557-566).",
-   "failure_scenario": "One oversized or unknown-type artifact row is in the local DB. The Design page says the user has no designs. Each preset click creates another server-side design and promises it will appear after sync, which never happens, so the user piles up invisible 'Untitled design' rows."
+   "evidence": "READ: DesktopDesignScreen has no reference to model.phase (grep 'model.phase' is empty). launcherContent shows JunoEmptyState('No designs yet', 'Pick a size above to start one\u2026') whenever designs, which is model.artifacts filtered to design kinds (228-230), is empty (373-378). start() calls model.reload(). If the created id is not in model.artifacts, it sets 'Juno started the design. It will appear here as soon as this Mac finishes syncing.' (553-563). When NativeArtifactStore.load throws (parity-5), reload never populates artifacts.",
+   "failure_scenario": "On a cold launch with one oversized or unknown-type artifact row, the Design launcher tells a user who has 20 designs that they have none. Pressing a preset creates a server-side design each time, and each shows the 'will appear once synced' notice, which never comes true. Repeated presses create orphan designs. The same false empty state flashes during every normal initial load."
   },
   {
    "id": "missed-2",
-   "title": "Web chat deliverable stage never refetches when an existing deliverable gets a new version",
-   "severity": "low",
+   "title": "Web chat deliverable stage never refetches on artifact_updated, so it keeps showing and previewing the old version",
+   "severity": "medium",
    "file": "src/components/chat/use-conversation-work.ts",
    "line": 244,
-   "evidence": "READ: documents = useWorkArtifactList(sessionId, artifacts.length, run !== null). artifacts = deriveArtifacts(events) (233), which keys by id so artifact_updated replaces rather than adds (work-detail-panels.tsx:181-201). useWorkArtifactList refetches only when `produced` changes (work-documents.tsx:98-101), and nothing calls documents.reload in src/components/chat or work/detail. The stage renders v{currentVersion} and previews version={artifact.currentVersion} (work-deliverable-stage.tsx:53, 68-73).",
-   "failure_scenario": "A run writes report v1, then revises it to v2 (artifact_updated). The chat stage keeps showing 'v1' and previewing the v1 body, and Download fetches the latest while the preview shows the old text, until the page is reloaded."
+   "evidence": "READ: useWorkArtifactList(sessionId, artifacts.length, \u2026), where artifacts = deriveArtifacts(events). deriveArtifacts dedupes by id, so an artifact_updated replaces a row rather than adding one (work-detail-panels.tsx:177-199). The effect's only data dependency is that count (work-documents.tsx:97-100), and nothing else calls reload (git grep of '.reload()' under src/components/chat and src/components/work is empty). The stage renders list.currentVersion and previews that version (work-deliverable-stage.tsx:53, 68-72). The runtime emits artifact_updated when a deliverable with an existing id is re-stored (session.ts:580-588).",
+   "failure_scenario": "A run writes 'Forecast' v1, then revises it to v2. The chat panel keeps saying 'v1' and renders v1's bytes inline until the page is reloaded or a different new artifact appears. The reader reviews and downloads a superseded draft."
   },
   {
    "id": "missed-3",
-   "title": "Plan events are hidden from the Mac/iPhone Activity timeline while the Plan section can never render them",
-   "severity": "medium",
-   "file": "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift",
-   "line": 5015,
-   "evidence": "READ: renderedElsewhere = [.planCreated, .planUpdated] filters plan events out of entries(in:) (5015-5019; iPhone JunoMobileWorkView.swift:2289-2293) on the premise that the Plan section shows them. plan(from:) reads raw payload['steps'] (4666), and the only executor that emits plan events is the cloud runner with a {plan:{\u2026}} envelope (session.ts:601, 639). DesktopWorkRunHost emits no plan events.",
-   "failure_scenario": "For every run, the plan is shown nowhere on Mac or iPhone: not in Overview (empty-state copy) and not in Activity (filtered). Only the individual step_started rows appear. Fixing the timeline filter alone would not help; plan(from:) must read WorkEventPayload.fields(of:)."
+   "title": "iPhone downloads the durable deliverable index on every task open and never shows it",
+   "severity": "low",
+   "file": "native/iOS/JunoMobile/App/JunoMobileWorkView.swift",
+   "line": 913,
+   "evidence": "READ: the shared NativeWorkModel.loadOpenSession always awaits refreshOpenArtifacts() (NativeWorkModel.swift:1038), and the iPhone opens tasks through the same model (JunoMobileWorkView.swift:521). The iPhone Made section renders only JunoMobileWorkLog.artifacts(in: events) (913-947). No iOS file references openArtifacts, artifactDetails or downloadArtifact (grep).",
+   "failure_scenario": "A finished cloud task opened on the phone makes a GET /api/work/artifacts?sessionId=\u2026 that returns the deck. The screen still says 'No documents yet\u2026', because the view reads only the envelope-broken event list. The data needed to fix parity-1 on the phone is already in memory."
   }
  ]
 }

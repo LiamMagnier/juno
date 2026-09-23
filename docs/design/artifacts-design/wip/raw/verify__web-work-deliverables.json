@@ -4,179 +4,196 @@
    "id": "web-work-deliverables-1",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "corrected_location": "src/components/work/detail/work-deliverable-stage.tsx:34,74-77; src/components/chat/work-run-panel.tsx:356-358",
-   "reasoning": "READ: stagedArtifact keeps only canPreviewArtifact kinds, which are site, report and spreadsheet (work-site-preview.tsx:164-166). WorkDeliverableStage is the only deliverable UI mounted in chat (rg finds its one importer at work-run-panel.tsx:14/357). WorkDocuments/DocumentCard have no importer (rg over src and tests). /work/* now just redirects to the chat (src/app/(app)/work/[[...segments]]/page.tsx:37-58). No other client code calls /api/work/artifacts. SessionOutputs builds tiles only from chat Artifacts and assistant IMAGE attachments (session-outputs.tsx:98-107,137-147). So the text '{n} more files under Outputs.' (stage:76) points at a popover that never holds Work files. One correction: the runner cannot make a PDF. create_deliverable accepts five spec kinds (tools.ts:966-978: document, report, spreadsheet, presentation, site), so the kinds that disappear today are .docx and .pptx, not PDF. The header comment (stage:25-29) still describes the retired rail's Outputs section, which is where the stale copy comes from."
+   "corrected_location": "src/components/work/detail/work-deliverable-stage.tsx:33-44,74-77 (stale fallback promise in its header comment at 25-29)",
+   "reasoning": "READ: stagedArtifact keeps only canPreviewArtifact kinds (stage:34), and canPreviewArtifact is site|report|spreadsheet (work-site-preview.tsx:164-166). The stage is mounted only in TerminalRun (work-run-panel.tsx:356-358). rg for WorkDocuments/DocumentCard finds only the definition (work-documents.tsx:111,243) and no importer. SessionOutputs builds tiles from chat `artifacts` only (session-outputs.tsx:97-106) and has no Work reference at all. /artifacts and /library have no WorkArtifact reads either: rg for workArtifact.findMany in src finds only the API route and sync-entities. The runner does not post a chat message with links (no message.create in work-runner.ts). Run notifications carry no download links (rg in src/lib/work/notify). The stage's own comment (25-29) says Office kinds 'have a card in the rail's Outputs section', and that rail no longer exists. Correction: PDF is not in the runner's generated kinds. The deliverable spec union is document/spreadsheet/presentation/report/site (deliverables/index.ts:107-113), so the affected kinds are .docx and .pptx. .xlsx is staged. Merge impact: this is the core gap a unified artifact surface must close."
   },
   {
    "id": "web-work-deliverables-2",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "reasoning": "READ: deleteAccountPermanently collects keys only from prisma.attachment plus their thumbnails and the avatar (delete-account.ts:43-53), then deletes the user (72). The runner writes `work-artifacts/<userId>/...` (work-runner.ts:1988). The route writes `uploads/<userId>/...` through buildObjectKey (route.ts:311; storage.ts:49-51). Cloud files go to `work/<userId>/<sessionId>/<name>` (work-runner.ts:1474-1476,1916-1921). WorkArtifact and WorkArtifactVersion cascade (schema.prisma:2628-2631,2660), so the rows go and the keys are lost. rg for deleteObject across src and scripts finds no caller that touches these prefixes, and no sweeper exists. One small overstatement: the DeletionReport counts attachments only and never claims Work objects were purged. The erasure gap itself is real."
+   "corrected_location": "src/app/api/account/delete-account.ts:41-53 (user.delete at :72, not :68)",
+   "reasoning": "READ: the purge collects only prisma.attachment storageKeys plus thumbnails and the avatar (41-53), then prisma.user.delete runs (72). WorkArtifact cascades from User (schema.prisma:2630) and WorkArtifactVersion cascades from WorkArtifact (2660), so the rows vanish. Runner objects live at `work-artifacts/<userId>/...` (work-runner.ts:1988) and cloud files at `work/<userId>/<sessionId>/<name>` (work-runner.ts:1474-1476). Route-written objects use buildObjectKey, which gives `uploads/<userId>/...` (storage.ts:49-51). rg for deleteObject call sites shows none that touch these keys, and no prefix-delete or ListObjects helper exists outside backup/restore scripts. This is a GDPR erasure failure, so the severity is justified."
   },
   {
    "id": "web-work-deliverables-3",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "READ: UNSAFE_MARKUP (validate.ts:643-654) runs over the whole text of every .html and .css entry (696-700), including escaped body text. VERIFIED with my own scratch probe through generateDeliverable. 'Set the flag one = true\u2026' gives an inline-event-handler problem, 'Read javascript: the good parts.' gives a javascript: URL, 'We fetch (and cache)\u2026' and 'Call fetch() to load it' give a browser network call, and '@import' gives a CSS @import. Each returns ok=false. 'Plain text only.' passes. A code block showing `fetch(url)`, which any JS docs site would contain, trips the same rule. The runner then sets validatedAt null and tells the model to say the file is unconfirmed (work-runner.ts:2021,2063,2083-2085)."
+   "corrected_location": "src/lib/work/deliverables/validate.ts:642-653 (rules), 698-700 (applied to whole page text)",
+   "reasoning": "READ: the UNSAFE_MARKUP regexes are tested against the full page text, including escaped prose. escapeHtml does not touch letters, '=', ':', '(' or '@'. VERIFIED by my own scratch probe through generateDeliverable. Each of these paragraphs gave ok=false: 'Set the flag one = true\u2026' (inline event handler), 'Read javascript: the good parts.' (javascript: URL), 'We fetch (and cache)\u2026' (browser network call) and 'Use @import\u2026' (CSS @import). A plain sentence gave ok=true. INFERRED: code blocks such as `button.onclick = f` or `fetch(url)` in any JS docs site trip the same rules. The runner then tells the model the validator could not re-open the file and to say so (work-runner.ts:2081-2083), and it stores validatedAt=null. The inline preview renders the site anyway, because previewDoc does not rescan (work-site-preview.tsx:254-276)."
   },
   {
    "id": "web-work-deliverables-4",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "READ: the list refetches only when load (sessionId), produced (artifacts.length) or enabled (run !== null) change (work-documents.tsx:100-103; use-conversation-work.ts:244). deriveArtifacts keys a Map by artifactId, so artifact_updated replaces the row and the count stays the same (work-detail-panels.tsx:181-201). agent-core emits artifact_updated for a known id (runner/agent-core/src/work/session.ts:580-588), and the runner reuses the DB artifact id across versions (work-runner.ts:2087-2094). Nothing calls reload (rg). The stage previews `version={artifact.currentVersion}` from the stale row (stage:68-73), but Download has no version param (stage:58), and the download route serves currentVersion (download/route.ts:64). So preview and download can disagree until the page reloads. This is reachable because the tool description invites re-publishing under the same identifier (tools.ts:1012)."
+   "reasoning": "READ: useWorkArtifactList refetches only on [load, produced, enabled] (work-documents.tsx:100-103). produced = deriveArtifacts(events).length (use-conversation-work.ts:233,244), and deriveArtifacts is a Map keyed by artifact id, so artifact_updated replaces the entry (work-detail-panels.tsx:181-202). The session emits artifact_updated for a reused id (runner/agent-core/src/work/session.ts:580-588), and the runner reuses the id across versions (work-runner.ts:1996-2028). `enabled` stays true through the end of the run, and nothing calls reload. The stage previews version={artifact.currentVersion} (stage:68-73), while Download has no version param (stage:58; work-transport.tsx:1603-1606) and serves the current version. INFERRED: the mismatch lasts until the conversation is reopened or the run writes a different artifact."
   },
   {
    "id": "web-work-deliverables-5",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "READ: WorkDeliverableStage never reads validatedAt (stage:41-80). The download route only adds X-Juno-Validated and X-Juno-Validation-Warning headers (download/route.ts:156-157), which a plain anchor navigation never shows. The inline site and report previews render unvalidated bytes too. VerdictLine and the 'not confirmed to open' copy live only in the unmounted DocumentCard (work-documents.tsx:281). Combined with defect 3, ordinary sites are presented as fine."
+   "reasoning": "READ: WorkDeliverableStage (stage:41-80) never reads validatedAt. ClientWorkArtifact carries it (serializers.ts:444,458). The download route signals an unvalidated file only through X-Juno-Validated/X-Juno-Validation-Warning headers (download/route.ts:155-156), which a plain <a href> never surfaces. The inline site preview has no validation handling (rg 'validat' in work-site-preview.tsx finds only comments). VerdictLine and the 'not confirmed to open' label live only in the unmounted DocumentCard (work-documents.tsx:279). This contradicts schema.prisma:2621-2623. It overlaps with ux-3."
   },
   {
    "id": "web-work-deliverables-6",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "READ: discovery asks fetchWorkSessions({conversationId, limit: 1}) and adopts the newest (use-conversation-work.ts:179-186; delegation.ts:99-106). ChatView adds one WorkRunPanel (chat-view.tsx:2267), while research also maps history (2263). A second task in one conversation is reachable: start_task is idempotent per user message, not per conversation (task-tool.ts:190-203), and chatTaskToolEnabled has no 'conversation already has a task' condition (157-174). Automation rows link /work/<sessionId>, which redirects to the conversation and so shows only the newest task. rg found no other web surface that lists a session's artifacts."
+   "reasoning": "READ: discovery calls fetchWorkSessions({conversationId, limit: 1}) and adopts only result[0] (use-conversation-work.ts:179-186). ChatView inserts one WorkRunPanel, while research also maps history into HistoricalResearchRunPanel (chat-view.tsx:2262-2266). The limitation is acknowledged at 63-70. It is worse than stated: /work/<sessionId> still resolves a task to its conversation (src/app/(app)/work/[[...segments]]/page.tsx:49-58), and notification emails and schedule rows link through that path (commit ff3963ec message). A link to the older task A therefore lands on a chat that draws the newer task B. No other web surface lists a session's artifacts (see defect 1)."
   },
   {
    "id": "web-work-deliverables-7",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "READ: the runner parses `{ spec: request.spec }` only (work-runner.ts:1826), and the tool's deps and inputSchema carry just identifier and spec (tools.ts:949-952,1015-1029). So generated.provenance is always [] and provenanceForStorage([]) is stored (2043). sourcesMarkdown and sourcesHtml return nothing for empty provenance (report.ts:337-351). Citations go only to source_cited events (work-runner.ts:1821). The route accepts provenance, but no client POSTs to it. Nuance: the model can still hand-write a 'Sources' heading in its blocks, but the structured, reviewable provenance is always empty."
+   "reasoning": "READ: the runner parses {spec: request.spec} with no provenance (work-runner.ts:1826). The tool deps type has only identifier and spec (runner/agent-core/src/work/tools.ts:949-952), and the inputSchema declares only those two (1017-1030). generateDeliverable defaults provenance to [] (deliverables/index.ts:181), so buildReport's sourcesMarkdown returns [] (report.ts:337-340) and the stored provenance is []. Citations exist only as source_cited events (session.ts:591-594). Caveat, which lowers practical impact but not correctness: the model can still write its own 'Sources' blocks as text, so 'cannot see where any figure came from' holds only when it does not. What is guaranteed dead in production is the structured provenance and the automatic Sources section."
   },
   {
    "id": "web-work-deliverables-8",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "READ: the limits are 20 bullets of 500 chars, 10 paragraphs of 2,000 chars, and table 20 rows x 10 cols x 300 chars (presentation.ts:30-39). Bullets and body go into a fixed 9x3.6in box at 16pt with no fit or shrink (177-192). addTable has no h and no autoPage (194-206). VERIFIED by probe: a 20-row table writes 21 `<a:tr h=\"0\">` rows at y offset 1280160 EMU (1.4in), with cell marT and marB of 45720 EMU (0.05in). At 12pt that is at least about 0.3in per row, about 6.3in against the 4.2in left on a 5.625in slide. The row heights are inferred geometry, but the conclusion holds even with one-line cells. The validator counts slides only."
+   "reasoning": "READ: the bounds allow 20x500-char bullets, 10x2000-char paragraphs and 20x10 tables (presentation.ts:30-39). Text goes into fixed BODY_HEIGHT boxes at 16pt with no fit/autoFit option (~178-192). addTable has no h cap and no autoPage (~194-206). The header claims closed layouts prevent 'text running off the slide' (14-18). VERIFIED with my own probe: a 20-row table slide writes 21 <a:tr h=\"0\"> rows in a frame at y=1280160 EMU (1.4in), and validation.ok is true. The row-height overflow math is INFERRED but plausible. The 10x2000-char body obviously cannot fit a ~3.6in box at 16pt."
   },
   {
    "id": "web-work-deliverables-9",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: the replay path compares head.contentHash (route.ts:287-305). The test file itself says the OOXML kinds embed a timestamp (tests/work-deliverables.test.ts:268-270), and spreadsheet.ts sets workbook.created = new Date(). VERIFIED by probe: xlsx, docx and pptx hashes differ between two generations about 1.1s apart, while report hashes match. The problem is latent. Native only GETs (NativeWorkClient.swift:433-474), no web code POSTs, and the runner has its own write path with no replay check."
+   "corrected_location": "src/app/api/work/artifacts/route.ts:282-300",
+   "reasoning": "READ: the replay short-circuits only on an equal contentHash with the head version (route.ts:282-300). VERIFIED with my own probe: generating the same document, spreadsheet or presentation spec twice 1.1s apart gives different hashes, while report and site are stable. It is latent, because no client POSTs: web transport has no POST to this path, native uses GET only (NativeWorkClient.swift:433-474), and the runner writes directly via storeDeliverable. Low is right."
   },
   {
    "id": "web-work-deliverables-10",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: document.ts:243-253 skips the title when blocks[0] is an H1 but always pushes the subtitle first. VERIFIED by probe: the w:t order is ['Sub','Body H1','p']."
+   "corrected_location": "src/lib/work/deliverables/document.ts:249-253",
+   "reasoning": "READ: the title is skipped when blocks[0] is an H1 (242-248), but the subtitle is pushed unconditionally before the blocks (249-253). VERIFIED with my own probe: the w:t order is [\"Sub\",\"Body H1\",\"p\"]."
   },
   {
    "id": "web-work-deliverables-11",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: paragraphs use escapeMarkdownLineStart (report.ts:172), but list items (175-177) and quotes (181) use inlineMarkdown only. MARKDOWN_INLINE does not escape '#', '-' or digits followed by '.'. VERIFIED by probe: the output is '- 3. Third step\\n- - dash lead\\n- # not a heading\\n\\n> # quoted hash', while a paragraph correctly becomes '\\\\# para hash'. Under CommonMark these parse as nested lists or headings."
+   "corrected_location": "src/lib/work/deliverables/report.ts:174-181",
+   "reasoning": "READ: paragraphs go through escapeMarkdownLineStart (172), but list items (175-177) and quotes (181) use inlineMarkdown only. VERIFIED with my own probe: the output is '- 3. Third step\\n- - dash lead\\n- # not a heading\\n\\n> # quoted hash', while the paragraph '# para hash' is correctly escaped to '\\# para hash'. Under CommonMark the list items become a nested list, a nested bullet and a heading, and the quote contains a heading."
   },
   {
    "id": "web-work-deliverables-12",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: `z.object({ date: z.string().datetime() })` (spreadsheet.ts:66), while the tool guide says '<ISO 8601>' (tools.ts:972). VERIFIED by probe: '2026-03-04' fails with 'Invalid ISO datetime'. It is worse than claimed: '2026-03-04T00:00:00+01:00' is also rejected, because only the Z form is accepted."
+   "reasoning": "READ: `z.object({ date: z.string().datetime() })` (spreadsheet.ts:66), while the tool guide says '{ date: \"<ISO 8601>\" }' (runner/agent-core/src/work/tools.ts:971). A bare date is valid ISO 8601. VERIFIED with my own probe: {date:'2026-03-04'} fails with 'Invalid ISO datetime'. The zod message is returned verbatim to the model (work-runner.ts:1827-1831), so one retry recovers it."
   },
   {
    "id": "web-work-deliverables-13",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: NUMBER_FORMATS.currency = '\"$\"#,##0.00' (spreadsheet.ts:85), and spreadsheetColumnSchema has no currency or locale field (90-95)."
+   "reasoning": "READ: currency is '\"$\"#,##0.00' (spreadsheet.ts:85). The column schema has no currency-code field (88-93), and the tool guide offers only 'currency' (tools.ts:971). A non-USD budget always shows $."
   },
   {
    "id": "web-work-deliverables-14",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: cellText returns String(value) for numbers and never reads numFmt (spreadsheet-preview.ts:79-96). The preview shape carries no format either. VERIFIED by probe: the rows are [\"1234.5\",\"0.256\",\"1234567\"] for the currency, percent and integer columns. This contradicts the header's 'nothing lost that a reviewer was going to check' (5-13)."
+   "corrected_location": "src/lib/work/deliverables/spreadsheet-preview.ts:79-96",
+   "reasoning": "READ: cellText returns String(value) for numbers and never reads numFmt. VERIFIED with my own probe: currency 1234.5, percent 0.256 and integer 1234567 preview as \"1234.5\",\"0.256\",\"1234567\". Spreadsheets are the one Office kind that is staged inline in chat, so this is reachable today."
   },
   {
    "id": "web-work-deliverables-15",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: WorkDeliverablePreview returns WorkReportPreview for report and WorkSitePreview for every other previewable kind (work-site-preview.tsx:353-357). No dialog exists for spreadsheets (the only spreadsheet shell is the inline one at 388-393). DocumentCard shows Preview and mounts WorkDeliverablePreview for any canPreviewArtifact kind (work-documents.tsx:284-293,419-428). Latent only, because WorkDocuments has no importer."
+   "reasoning": "READ: WorkDeliverablePreview returns WorkReportPreview for report, and WorkSitePreview for every other previewable kind (work-site-preview.tsx:353-357). The file has no spreadsheet dialog; the function list shows only SpreadsheetPreviewBody, which is used inline (855). DocumentCard shows Preview whenever canPreviewArtifact (work-documents.tsx:284-293, 419-428), and that includes spreadsheet. It is latent, because DocumentCard is unmounted, but it is exactly the misrouting the guard comment (342-352) warns about. It would bite any merged surface that re-mounts the cards."
   },
   {
    "id": "web-work-deliverables-16",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: putObject runs at work-runner.ts:1989-1994. The deleted-identifier and kind-conflict checks throw inside the later transaction (1996-2007) with no deleteObject. The route does these checks before its putObject (route.ts:257-285), so the runner is the path that leaks. rg for sweep, orphan and ListObjects finds only the import-run sweeper, and nothing covers the work-artifacts/ or work/ prefixes. Other upload routes do clean up (upload/route.ts:135)."
+   "corrected_location": "scripts/work-runner.ts:1988-2006",
+   "reasoning": "READ: putObject runs before the transaction, and the transaction throws DeliverableError for a soft-deleted identifier or a kind conflict (1996-2006) with no deleteObject. The HTTP route runs the same two checks BEFORE its putObject (route.ts:247-280), so only the runner orphans on these refusals. No sweeper exists: rg for sweep/orphan and for work-artifacts keys in scripts and src/lib finds no collector. Other upload routes clean up on failure (upload/route.ts:135, attachments/[id]/versions/route.ts:125)."
   },
   {
    "id": "web-work-deliverables-17",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: the route enforces IDENTIFIER and a max of 120 (route.ts:56,72). The tool only trims (tools.ts:1038-1039), and the runner uses the identifier in the unique key and the object key (work-runner.ts:1988,1998). Its description promises 'Letters, digits, dot, dash and underscore' but nothing enforces that. REFUTED PART of the failure scenario: a non-DeliverableError does not 'escape the tool'. WorkSession catches every execute() throw and returns 'Tool crashed: <message>' as an error result (runner/agent-core/src/work/session.ts:933-939). Content-Disposition is sanitised (deliverables/index.ts:302-313). What remains: identifiers diverge between the two write paths, local-disk storage throws on '..', and an over-long key produces an opaque S3 error."
+   "reasoning": "READ: the route enforces the IDENTIFIER regex and max length (route.ts:56,72). The tool only trims (tools.ts:1039-1040), even though its description promises 'Letters, digits, dot, dash and underscore' (1021). The runner uses the raw string in the unique key and the object key (work-runner.ts:1988,1997). One part of the claim is REFUTED: the error does not 'escape the tool'. WorkSession wraps tool.execute in try/catch and returns 'Tool crashed: <message>' with isError=true (runner/agent-core/src/work/session.ts:933-940), so the model does get a (poor) correctable message. What remains is parity drift plus odd S3 keys, and on S3 'Q3 report/v1..final' is just a literal nested key rather than a traversal."
   },
   {
    "id": "web-work-deliverables-18",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: the runner's stored validation omits details (work-runner.ts:2044-2052), and the route stores them (route.ts:89-104). Impact is latent. rg finds no current web or native consumer of validation.details, so nothing is broken today beyond losing data a future card would want."
+   "corrected_location": "scripts/work-runner.ts:2041-2049",
+   "reasoning": "READ: the runner's stored validation object has no `details` key, whereas the route's validationForStorage writes details (route.ts:89-104). Impact today is nil: no consumer reads validation.details (serializers.ts has no 'details'; native reads only validation.ok at NativeWorkClient.swift:1135-1136). This is a latent inconsistency that matters only for a future card, so low is right."
   },
   {
    "id": "web-work-deliverables-19",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: DELIVERABLE_VALIDATOR is still 'juno.work.deliverables.validate.v1' (validate.ts:255). `git log -S` shows it introduced only in f66876db (2026-08-05). f490ff0e (2026-08-08) added packageBudgetProblems, relationship checks, formula, named-range and overflow problems, and 546808a9 (same day) reordered the budget gating. Neither bumped the stamp, although its own comment says tightening must not silently relabel old verdicts."
+   "reasoning": "READ: DELIVERABLE_VALIDATOR is still 'juno.work.deliverables.validate.v1' (validate.ts:255), and its comment (247-254) says it exists so that tightening rules does not relabel old verdicts. `git log -S validate.v1` shows it introduced only in f66876db (2026-08-05). f490ff0e (2026-08-08, +146 lines in validate.ts) added packageBudgetProblems, relationship checks, formula and overflow counts and new problems.push rules without changing the stamp."
   },
   {
    "id": "web-work-deliverables-20",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "corrected_location": "src/components/work/work-documents.tsx:83-103 (state never reset on sessionId change); src/components/chat/use-conversation-work.ts:168-195,244",
-   "reasoning": "READ: the auditor's failure-dependent scenario holds. Worse, no failure is needed. The codebase states that App Router preserves ChatView across /chat/A \u2192 /chat/B (chat-view.tsx:~2233), so useConversationWork, and the useWorkArtifactList state inside it, survives a conversation switch. On a switch, discovery sets run to null, so enabled is false, but `artifacts` keeps A's list. When B's finished session is discovered (179-186), WorkRunPanel renders TerminalRun at once, and WorkDeliverableStage stages A's document under B's title, with a live Download link to A's artifact and an inline preview that starts fetching A's bytes. This lasts until B's SSE snapshot sets run and the new list fetch lands. If that single fetch fails, A's file stays staged under B for good, since `failed` is ignored by the stage. Raised to medium because the common path shows the wrong conversation's file with no failure at all."
+   "corrected_location": "src/components/work/work-documents.tsx:83-103 with src/components/chat/use-conversation-work.ts:168-172,244",
+   "reasoning": "READ: `artifacts` state is never reset when sessionId changes, and a failed load keeps the old value (work-documents.tsx:83-98). The auditor's same-conversation path is weaker than stated. After adopt, run becomes null so enabled=false. When task B's first run frame arrives, a fetch fires and normally replaces A's list with B's (usually empty). A's file would then survive only if every B fetch failed. The same root cause has a more common trigger the auditor missed: ChatView is preserved across /chat/A to /chat/B (READ: chat-view.tsx:2233-2236 'App Router preserves this ChatView'). useConversationWork resets session, run and events on a conversation change (168-172) but not the artifact list. INFERRED: opening a chat whose task has already finished renders TerminalRun in the same batch that sets run (use-conversation-work.ts:206-207), before the list effect fetches. So the previous conversation's staged deliverable, with its title, Download link and rise-in animation, paints under the new task. Its inline preview also starts downloading, which can be a whole site zip. This happens on every switch between two task-bearing chats, and it persists if the fetch fails. That is why the severity is raised to medium."
   },
   {
    "id": "web-work-deliverables-21",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "READ: the inline preview is always active (work-site-preview.tsx:384,391,397). useSitePreview downloads the whole zip on every activation (440-460), and the route answers with Cache-Control private, no-store (download/route.ts:147). The spreadsheet preview route buffers, hashes and fully loads the workbook (preview/route.ts:78-110; spreadsheet-preview.ts:129). No visibility or on-demand gate exists. The magnitude in the scenario is inflated. Every production deliverable comes from one model tool call whose whole spec, including base64 site assets and every spreadsheet row, the model must emit inline (tools.ts:1015-1030). A 40 MB site or a 50 MB workbook is therefore not realistically reachable, and real re-downloads are KB to low-MB per conversation open."
+   "reasoning": "READ: the inline preview passes active always true (work-site-preview.tsx:384,391,397). useSitePreview fetches the full zip via the download URL on every activation (445-457), and the download route sends Cache-Control 'private, no-store' (download/route.ts:147). The spreadsheet preview route buffers the whole object, hashes it and runs exceljs load (preview/route.ts:78-110; spreadsheet-preview.ts:129). There is no visibility or on-demand gating. It is mitigated because it mounts only for the newest task's terminal panel, and generated sites are usually small (typed blocks, with base64 assets capped per asset). So low is right, and the 40 MB scenario is an edge case."
   },
   {
    "id": "ux-0",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "reasoning": "Auditor rated this major. READ: the stage appears only in TerminalRun (work-run-panel.tsx:356-358) and returns null for non-previewable kinds (stage:42-43). `empty:hidden` removes the slot, and the 'N more files under Outputs' line points at SessionOutputs, which contains only chat artifacts and images (session-outputs.tsx:98-107,137-147). Correction: the invisible kinds are .docx and .pptx. PDF is not a create_deliverable kind (tools.ts:966-978)."
+   "reasoning": "READ: stagedArtifact returns null for non-previewable kinds (stage:33-43), and the slot uses empty:hidden (work-run-panel.tsx:356). The stage appears only in TerminalRun, and the 'under Outputs' line (stage:74-77) points to SessionOutputs, which builds tiles only from chat Artifacts (session-outputs.tsx:97-106) and contains no Work reference. Correction: .pdf is not a runner-generated kind (deliverables/index.ts:107-113), so the affected kinds are .docx and .pptx. Same root cause as defect 1."
   },
   {
    "id": "ux-1",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "reasoning": "Auditor rated this major. READ: LiveRun renders WorkCurrentAction, Plan, WorkLiveMeter, RunWords, questions and approvals, and nothing reads work.documents (work-run-panel.tsx:212-307). The only trace of a file while a task runs is WorkCurrentAction's passing 'Produce the presentation \"X\"' line, built from the tool summary (work-timeline.tsx:232-237; tools.ts:1031-1035), which disappears on the next tool. 'Created X' events reach derivePerformedActions only for the terminal digest, and only on incomplete runs (work-run-panel.tsx:343-347)."
+   "reasoning": "READ: LiveRun renders WorkCurrentAction, Plan, WorkLiveMeter, RunWords and questions/approvals, with no documents (work-run-panel.tsx:212-307). WorkDeliverableStage is mounted only in TerminalRun (356-358). The stage's own comment, 'Rises in when the run first writes something worth staging' (stage:47-48), shows it was designed to appear mid-run on the old task page. The list is still fetched during the run (use-conversation-work.ts:244), just never drawn."
   },
   {
    "id": "ux-2",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "reasoning": "Auditor rated this major. READ: the stage header has only title, extension, version, age and Download (stage:50-67). SitePreviewBody is a bare iframe with loading and error states (work-site-preview.tsx:562-605). There is no page list, back or forward, open-in-tab, full-screen, version picker, share, rename, delete, comment or 'ask Juno to change' control. Links inside the site do navigate through the postMessage bridge (223-235,541-552), and a missing page offers 'Back to the first page' (576-582), but no navigation chrome exists."
+   "reasoning": "READ: the stage renders title, extension, version, age and one Download anchor (stage:46-79). It has no open-in-canvas, full-screen, version picker, copy, share, rename, delete, edit, ask-to-change or comment control. For sites, SitePreviewBody is a bare sandboxed iframe (work-site-preview.tsx:562-605). Navigation happens only through in-page links via the postMessage bridge. It has no page list, back or forward, or open-in-tab; 'Back to the first page' appears only on a page error (579-585). The dialog variant is also unmounted. For the merge goal this is the main feature gap."
   },
   {
    "id": "ux-3",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "reasoning": "Auditor rated this major. Same evidence as web-work-deliverables-5. validatedAt is never read by the stage (stage:41-80), which contradicts schema.prisma:2621-2623. The only verdict UI (work-documents.tsx:281 and VerdictLine) is unmounted."
+   "reasoning": "Same evidence as defect 5. The stage never reads validatedAt (stage:41-80), and the schema comment at schema.prisma:2621-2623 promises the opposite. Combined with defect 3's false negatives, the verdict is also often wrong when it is recorded, but that argues for a fixed validator plus a shown verdict, not for hiding it."
   },
   {
    "id": "ux-4",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "reasoning": "Auditor rated this major. Same evidence as web-work-deliverables-6. The newest-only discovery is limit 1 (use-conversation-work.ts:179). ChatView mounts a single WorkRunPanel beside research's HistoricalResearchRunPanel list (chat-view.tsx:2262-2267). The limitation is acknowledged in the hook header (63-70). A second task per conversation is reachable because start_task is keyed per user message (task-tool.ts:190-203)."
+   "reasoning": "Same evidence as defect 6. The limit:1 discovery is at use-conversation-work.ts:179-186, and one WorkRunPanel versus research history is at chat-view.tsx:2262-2266. It is aggravated by /work/<sessionId> links for older tasks resolving to the conversation, which then draws a different task (work/[[...segments]]/page.tsx:49-58)."
   }
  ],
  "missed": [
   {
    "id": "missed-1",
-   "title": "Stage ignores a failed or pending artifact list: no error, no retry, no fallback to event-derived rows",
+   "title": "Archiving a task (e.g. from the Mac inbox) removes it and its deliverables from its web conversation",
    "severity": "low",
-   "file": "src/components/work/detail/work-deliverable-stage.tsx",
-   "line": 42,
-   "evidence": "READ: WorkDeliverableStage reads only list.artifacts (stage:33-44). useWorkArtifactList exposes `failed` and `reload` (work-documents.tsx:61-66,105-108), but rg finds no reader of documents.failed or documents.reload in src/components/chat or work/detail. The event-derived fallback (`fromEvents`) and the WorkLoadError retry lived only in the unmounted WorkDocuments (work-documents.tsx:111-135). While the list is null, the stage shows nothing, then pops in with animate-rise-in.",
-   "failure_scenario": "A user opens a conversation whose task finished with a report. The single /api/work/artifacts request fails, a transient 5xx for example. The panel shows status, words and meter but no deliverable, with no error and no retry. The stream already knows a file was created (artifact_created events), and the user is told nothing."
+   "file": "src/app/api/work/protocol.ts",
+   "line": 935,
+   "evidence": "READ: parseSessionListQuery defaults `archived: archived ?? false` (protocol.ts:935), and GET /api/work/sessions filters by it (sessions/route.ts:25-40). Conversation discovery calls fetchWorkSessions({conversationId, limit: 1}) without `archived` (use-conversation-work.ts:179; work-transport.tsx:455-458). adoptDiscoveredSession returns the discovered row or null (delegation.ts:99-106). Native can PATCH archived=true (NativeWorkClient.swift:505).",
+   "failure_scenario": "The user archives a finished task on the Mac to tidy the inbox. The next web discovery poll (4s) returns either nothing or an older non-archived task. The task panel, its staged report and its Download vanish from the chat that started it, with no way to reach them on web. Archiving acts as 'remove from the conversation', which is not what the user meant."
   },
   {
    "id": "missed-2",
+   "title": "/work/<sessionId> redirect ignores soft-deleted tasks despite its comment promising a 404",
+   "severity": "low",
+   "file": "src/app/(app)/work/[[...segments]]/page.tsx",
+   "line": 49,
+   "evidence": "READ: `prisma.workSession.findFirst({ where: { id: target.sessionId, userId: user.id } })` has no `deletedAt: null` (49-52). The comment at 53-56 says 'A task that was deleted \u2026 gets the 404'. WorkSession deletion is soft: `data: { deletedAt: new Date() }` (src/app/api/work/sessions/[id]/route.ts:107). Every other session read filters deletedAt (sessions/route.ts:31).",
+   "failure_scenario": "The user deletes a task and later clicks its link in a notification email. Instead of the promised 404, they are redirected into the conversation, which (because the list filters deleted rows) shows no task or a different one. The link reads as 'your work is here' and then shows nothing."
+  },
+  {
+   "id": "missed-3",
    "title": "Deliverable title is an <h2> nested inside the task panel's <h3>",
    "severity": "low",
    "file": "src/components/work/detail/work-deliverable-stage.tsx",
    "line": 51,
-   "evidence": "READ: WorkRunPanel titles itself with `<h3 id={titleId}>` (work-run-panel.tsx:124) and uses h4 for 'Plan' (230). The stage it contains renders the artifact title as `<h2 className=\"\u2026 text-heading\">` (stage:51). That was right for the retired task page's main column, where the stage was top level, but wrong inside the chat panel.",
-   "failure_scenario": "A screen-reader user navigating by headings meets the deliverable (h2) as a new top-level section that ends the 'Task' (h3) section, and it lists above the transcript's own structure. The document outline no longer shows the file as part of the task that produced it."
+   "evidence": "READ: the stage renders `<h2 \u2026>{artifact.title}</h2>` (stage:51) inside WorkRunPanel, whose title is `<h3 id={titleId}>` (work-run-panel.tsx:124). The panel's Plan heading is `<h4>` (230). The markup was written for the retired task page, where the stage sat at page level.",
+   "failure_scenario": "A screen-reader user navigating by headings in the chat hears the deliverable as a higher-level section than the task that contains it. The outline shows the file as a sibling of the conversation's main sections rather than as part of the task."
   }
  ]
 }

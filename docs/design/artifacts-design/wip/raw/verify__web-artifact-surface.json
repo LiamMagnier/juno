@@ -4,189 +4,207 @@
    "id": "web-artifact-surface-1",
    "verdict": "confirmed",
    "corrected_severity": "high",
-   "reasoning": "I traced every step. The chat persists generated versions with origin \"generated\" (artifacts-store.ts:57,85). allocatesCheckpoint therefore returns true for the first user edit, because latest.origin is not \"edit\" (operations.ts:530-538), and appendVersion writes v2 (store.ts:122-127,152-174). The transactions route returns artifact.currentVersion=2 (transactions/route.ts:54; store.ts:207-214). httpTransport passes that version back (use-design-document.ts:104), and drain calls onCommitted(2) (use-design-document.ts:276). The canvas-panel onCommitted then pushes a synthetic version with content \"\" (canvas-panel.tsx:1243-1255). handleArtifactUpdated writes it into chat.artifacts (chat-view.tsx:1254-1262). The effect at canvas-panel.tsx:313-315 sets selectedVersion=2. versionContent resolves to \"\" because the ?? does not replace an empty string (369-370). The key={selectedVersion} wrapper (1237) remounts the editor, the parse effect in use-design-document.ts:170-188 calls parseStoredDesignDocument(\"\"), and that throws 'Design document is not valid JSON' (migrations.ts:91-97). design-editor.tsx:520-535 then renders 'This design can\u2019t be opened'. No refetch or self-heal path exists: chat-view never refreshes after this, and the openArtifact memo (871-873) re-derives from the poisoned chat.artifacts. The line was introduced in 7c344b96 (2026-08-05). The DB row is correct, so only a reload recovers. Severity stays high: the first edit on any chat-made design breaks the in-chat editor."
+   "reasoning": "I traced the path end to end. canvas-panel.tsx:1243-1255 appends `{version, content: \"\", origin: \"edit\"}` and calls onArtifactUpdated. chat-view.tsx:1254-1263 writes that into chat.artifacts. The effect at canvas-panel.tsx:313-315 then sets selectedVersion to the new currentVersion. versionContent at canvas-panel.tsx:369-370 comes out as \"\", because `?? artifact.content` does not catch an empty string. The wrapper keyed by selectedVersion (1237) remounts DesignEditor. useDesignDocument's effect (use-design-document.ts:170-189) parses \"\", parseStoredDesignDocument throws 'Design document is not valid JSON' (migrations.ts:91-97), and design-editor.tsx:520-531 shows 'This design can't be opened'. The first user edit always reaches this path: allocatesCheckpoint (operations.ts:529-539) returns true whenever the latest row's origin is not 'edit', so generated output is never folded. store.ts:122-126 then calls appendVersion, httpTransport returns the bumped currentVersion (use-design-document.ts:104), and onCommitted fires (276). A folded edit returns the same version and is ignored by the `<=` guard, so the bug triggers on the first new checkpoint. git show 7c344b96 contains the same code (lines 296, 1034, 1049), and blame on HEAD points to 983dc2ad9 only because that commit re-touched the block. Copy, Download and History all read the same \"\" content. Also, `...artifact` keeps the old v1 `content`, so the transcript card stays stale after edits."
   },
   {
    "id": "web-artifact-surface-2",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "A tsx probe of splitMessageContent on a closed tag followed by prose returned {type:'artifact',identifier:'pomo'} with no content, title, type or streaming flag. use-chat has no mid-stream artifact frame: the only cases are meta/title/activity/approval/sources/work/reasoning/delta/progress/done/error/resume (use-chat.ts:512-717), and mergeArtifacts runs only on done (678) and in recovery (455). The route persists artifacts before done (route.ts ~3110-3113). For a new identifier the card therefore gets content undefined and streaming false, so hasContent is false and the destructive EmptyState 'Source unavailable' renders (artifact-inline-card.tsx:178-179,438-454). The title also drops to 'Artifact' and the icon to CODE, because part.title and part.artifactType are undefined (message-item.tsx:1369-1370). This happens even with no trailing prose, from the closing tag until done."
+   "reasoning": "A tsx probe of splitMessageContent on a closed tag returned `{type:'artifact', identifier:'t'}` with no content or streaming flag (message-content.ts:256-261). message-item.tsx:1366-1373 passes `streaming={part.streaming && message.streaming}`, which is false, and `content={artifact?.content ?? part.content}`, which is undefined for a new identifier. use-chat.ts handles only activity, approval, sources, work, reasoning and delta frames before `done`, and mergeArtifacts runs only in `done` (use-chat.ts:678) or in recovery. The server sends `done` only after persistAssistantTurn, persistArtifacts, memory writes and the activity update (route.ts:3095-3185). For that whole window artifact-inline-card.tsx:441-454 renders the tone=error 'Source unavailable' EmptyState."
   },
   {
    "id": "web-artifact-surface-3",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "message-item.tsx:1369-1372 prefers artifact?.title, artifact?.type and artifact?.content over part.* whenever artifactsByIdentifier already has the identifier. A same-identifier re-emit, which is full regeneration and which the system prompt instructs (system-prompt.ts 'REUSE its identifier'), therefore streams deltas that the card never shows. streaming=part.streaming&&message.streaming is true, so the header says 'Writing' (artifact-inline-card.tsx:230-231) and the code view shows the stale v(n) text until done swaps it in. Targeted 'modify' edits suppress deltas entirely (route.ts:3016), so this defect is limited to full regenerations."
+   "reasoning": "message-item.tsx:1369-1372 prefers the persisted artifact for title, type and content. On a same-identifier rewrite, artifactsByIdentifier already holds the previous version, so part.content (the live stream from OPEN_ARTIFACT_RE, message-content.ts:268-279) is never shown. streaming is true, so the header reads 'Writing' with the gen-sweep, and the view is forced to 'code' (artifact-inline-card.tsx:196-202), where CodeSurface shows the old source. This applies to normal full rewrites. Modify/artifactEdit turns send no deltas at all (route.ts:3016)."
   },
   {
    "id": "web-artifact-surface-4",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "runtimeFor('DESIGN') returns mode 'design' and lang 'design' (artifact-runtime.ts:98). In the card, inlinePreview = hasContent && rt.mode !== 'none', which is true (artifact-inline-card.tsx:181), and the view defaults to 'preview' (185,200). RuntimePreview special-cases only MARKDOWN (\u2248line 128) before it renders SandboxFrame. buildSandboxDoc has no 'design' case and falls through to an escaped <pre> wrapped with statusLite=true (sandbox-frame.tsx:789-803,481-484). STATUS_LITE posts done, so the header says 'Live' (artifact-inline-card.tsx:236-237). No DESIGN handling exists in sandbox-frame.tsx or the chat components (grep). The tab label is 'Preview' because the mode is not 'console'."
+   "reasoning": "runtimeFor('DESIGN') returns mode 'design' (artifact-runtime.ts:98). The inline card sets inlinePreview = hasContent && mode !== 'none', which is true (artifact-inline-card.tsx:181), and the view defaults to 'preview'. RuntimePreview special-cases only MARKDOWN (inline-card:125-131). buildSandboxDoc (sandbox-frame.tsx:787-803) has no 'design' case and falls through to an escaped <pre> wrapped with statusLite=true, so the status reads 'Live'. The system prompt steers 'design/mock up a screen' requests to DESIGN (system-prompt.ts:269). Because the Canvas never auto-opens (ux-0), this JSON sheet is what users see by default."
   },
   {
    "id": "web-artifact-surface-5",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "CanvasPanel mounts DesignEditor without a surface prop, so the default is 'embedded' (design-editor.tsx:169). The rails use the viewport classes 'hidden md:flex' and 'hidden lg:flex' (549-550). They are shrink-0 at the stored or default widths 208 and 256 (panel-layout.tsx:37-38; design-editor.tsx:719-720,829-830), start uncollapsed (panel-layout.tsx:124), and the canvas column is 'min-w-0 flex-1' (771). With a 1280px window and the 304px sidebar the container is 976px, which is at least the 800px split, and the Canvas resets to 46% \u2248 449px (chat-view.tsx:1150-1151; split-layout.ts:30). The rails need at least 464px, so the design canvas gets roughly 0px. split-layout.test.ts:70-77 checks only chat-view, thought-process-panel and canvas-panel, not design-editor.tsx. Persisted collapse state in localStorage can mitigate this for returning users only."
+   "reasoning": "design-editor.tsx:549-550 keys the embedded rails to viewport md/lg, and the doc comment at 187-196 confirms this is deliberate and keyed to the viewport. Rails are shrink-0 with inline widths from PANE_BOUNDS, 208 and 256 initially (panel-layout.tsx:37-38). The centre column is `min-w-0 flex-1` (design-editor.tsx:~771), so it collapses to about 0. The canvas default is 46% of the container (chat-view.tsx:1150) with a 420 minimum (split-layout.ts:30). At 1280px with a 256-304px sidebar, the canvas is about 449-471px, against 464px of rails. tests/split-layout.test.ts:69-80 checks only chat-view, thought-process-panel and canvas-panel. CanvasPanel does not pass `surface`, so it gets the default 'embedded'. Stored pane sizes or collapse state in localStorage can change the exact numbers."
   },
   {
    "id": "web-artifact-surface-6",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "openArtifactByIdentifier is a plain arrow function (chat-view.tsx:969) passed to MessageList (2272) and forwarded to every MessageItem (message-list.tsx:353). MessageItem uses the default shallow memo and states that every handler must be stable (message-item.tsx:762-788). The project has no React Compiler (next.config.mjs and package.json have no compiler entry). ChatView re-renders on every delta because useChat's setMessages lives in it. The auditor missed that handleSpeak is ALSO a plain function (chat-view.tsx:1503) forwarded as onSpeak. Memoizing onOpenArtifact alone would not restore the bail-out (see missed)."
+   "reasoning": "chat-view.tsx:969 is a plain arrow function recreated on every render. It is passed at 2272 and forwarded as-is at message-list.tsx:353 to every memoised MessageItem (message-item.tsx:788), whose doc comment (762-786) says every handler must be stable. It is worse than the auditor states: `handleSpeak` (chat-view.tsx:1503) is also a plain function, passed at 2279 and forwarded at message-list.tsx:363. Memoising onOpenArtifact alone will not restore the bail-out (see missed item)."
   },
   {
    "id": "web-artifact-surface-7",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "The entrance classes are gated on !canvas.resizing (chat-view.tsx:2504-2505). use-split-pane sets resizing true on pointerdown (use-split-pane.ts:414) and false in stop (368). Removing animate-in cancels the animation, and re-adding the class starts a new one. The thought dock avoids this with animateDock, which onUserResize flips off (chat-view.tsx:1176,2440-2448). The canvas and file-viewer wrappers have no equivalent (2505, 2552). A plain click on the grip, with no movement, also replays the animation."
+   "reasoning": "chat-view.tsx:2503-2506 drops the `animate-in fade-in slide-in-from-right-4` classes while canvas.resizing is true. use-split-pane.ts:414 sets it true on pointerdown and :368 sets it false in stop(). Re-adding animation-name restarts the enter animation, so the panel replays its entrance after every release, and even after a plain click on the grip. The thought dock avoids this with animateDock (chat-view.tsx:1176-1182, 2440-2450). The file-viewer wrapper at 2548-2553 has the same pattern."
   },
   {
    "id": "web-artifact-surface-8",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "The exit branch uses bare 'animate-out fade-out slide-out-to-right-4' with no motion-safe or motion-reduce split (chat-view.tsx:2506, 2553). tailwindcss-animate's exit translate does not read --motion-shift. globals.css reduced-motion blocks cover only --motion-shift/scale vars, icons, meters and an explicit kill list (skeleton, shimmer, animate-gen-, animate-icon-breathe, animate-ultra-, spin/ping/pulse). None of them targets animate-out or --tw-exit-translate-x (grep). The thought dock's exit (2452) has the same issue."
+   "reasoning": "The exit branch at chat-view.tsx:2506 (and 2553 for files) is an unconditional `animate-out fade-out slide-out-to-right-4`. The comment at 2483-2486 says the tailwindcss-animate translate cannot be reached by --motion-shift. globals.css reduced-motion blocks (874-886, 3510-3519, 3746-3792) have no rule neutralising the exit translate or `.animate-out`. ICONS_AND_MOTION.md:223-225 (\u00a72.2 item 10) requires travel to collapse under reduced motion."
   },
   {
    "id": "web-artifact-surface-9",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "The draft is local CanvasPanel state (252-254), and dirty is computed at 525 but used only to show the save bar and gate code selection (1356,1362). The close button calls onClose directly (935). openAttachment clears both openArtifactId AND closingArtifact (chat-view.tsx:1025-1028), so the panel unmounts at once. openThoughtPanel and voice paths also close the canvas, and an artifact.id change resets the draft (296-311). grep found no confirm(), beforeunload or dirty check on any of these paths."
+   "reasoning": "The draft is local state (canvas-panel.tsx:252-254). openAttachment (chat-view.tsx:1020-1032) sets openArtifactId and closingArtifact to null, which unmounts CanvasPanel at once. closeArtifact (951-955) and openVoice (1570-1572) also close it, and the artifact.id effect (canvas-panel.tsx:296-311) clears the draft. `dirty` (525) is used only for the save bar and the selection gate, and neither file has a beforeunload handler or confirm. grep found no session or local storage persistence of the draft."
   },
   {
    "id": "web-artifact-surface-10",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "canInspect (707) has no isLatest check. handleElementSelected sends baseVersion: selectedVersion with mode 'modify' (711-723), and the composer turns a modify quote into artifactEdit (composer.tsx:803-806). The route returns 409 with 'This canvas changed after you made the selection\u2026' whenever currentVersion !== baseVersion (route.ts:1468-1473). The path is reachable only through the failure banner's 'View vN' (1231), since the only selectedVersion setters are 314, 1142 and 1231. That keeps it low. The code-selection path is gated on isLatest (1356), so the two paths are inconsistent. Reselecting after returning to latest works, so the claim that it 'fails again' holds only while the user stays on the old version."
+   "reasoning": "canInspect (canvas-panel.tsx:707) and captureSelection (570-602) do not check isLatest. handleElementSelected and quoteSelection send `baseVersion: selectedVersion` (668, 717). For mode 'modify', composer.tsx:802-807 turns this into artifactEditRequestFromQuote (quote-context.ts:91-101). route.ts:1469-1473 answers 409 'This canvas changed after you made the selection' when baseVersion is not currentVersion. The code-selection path, by contrast, is gated on isLatest (canvas-panel.tsx:1356). Old versions are reachable through 'View vN' (1231). The Markdown preview selection path has the same gap."
   },
   {
    "id": "web-artifact-surface-11",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "The toolbar is portalled to document.body with onPointerDown preventDefault, and there is no focus hand-off or shortcut (canvas-panel.tsx:1393-1420). grep found quoteSelection referenced only by the two buttons. In CodeSurface, plain Tab inserts spaces on the editable latest version (code-surface.tsx:256-265). Escape calls onSelect(null) and blur (266-273), and onBlur calls onSelect(null) (342), so leaving the textarea by any key path dismisses the bar before it can be reached. The Markdown preview div has no tabIndex (1258-1264)."
+   "reasoning": "The toolbar is portalled to the end of body (canvas-panel.tsx:1393-1420). No shortcut calls quoteSelection (grep finds only the two onClick handlers), and there is no focus hand-off. In CodeSurface, Tab indents (code-surface.tsx:256-265), Escape clears and blurs (266-273), and blur clears the bar (342). For a Markdown preview selection, the bar sits at the very end of the tab order, and the non-focusable container needs caret browsing to select anything. There is no practical keyboard path."
   },
   {
    "id": "web-artifact-surface-12",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "openArtifactByIdentifier only sets state (969-993). Below the split the chat column gets 'hidden' while a side panel is open (chat-view.tsx:1996-2000), which hides the focused card button, so focus falls back to body. grep of canvas-panel.tsx and chat-view.tsx found no .focus(), autoFocus, FocusScope or focus trap for the canvas. The only inert usages are composer chips (2350-2395). Fullscreen sets role=dialog and aria-modal on a fixed overlay (786-789). With the split engaged the chat column stays display:flex beneath it, so Tab reaches hidden controls. Close does not restore focus."
+   "reasoning": "openArtifactByIdentifier (chat-view.tsx:969-993) only sets state. Below the split, the chat column that holds the focused Open button becomes `hidden` (1996-2000), so focus is lost. canvas-panel.tsx has no focus() or autoFocus call, and its only tabIndex is on the diff region (1052). Fullscreen sets role=dialog and aria-modal (786-788) with no FocusScope or inert on the chat, and grep finds inert only on composer sub-parts (chat-view.tsx:2350-2395). Closing does not return focus to the card."
   },
   {
    "id": "web-artifact-surface-13",
    "verdict": "confirmed",
    "corrected_severity": "medium",
-   "reasoning": "Console mode gives inlinePreview true and view 'preview' whenever the card is not streaming (artifact-inline-card.tsx:181,185,196-202). RuntimePreview mounts SandboxFrame, which has no IntersectionObserver or lazy mount (grep). MessageList renders every message with messages.map, without virtualisation (message-list.tsx:339). consoleDoc evals JS at load or boots Pyodide from the CDN (sandbox-frame.tsx:637-714), and SANDBOX_ALLOW includes allow-modals (85-86). The public viewer deliberately skips console runtimes (shared-artifact-viewer.tsx:31-32). One claim is overstated: the auto-run is intentional per the card's doc comment ('a program's output streams'). Another is wrong: 'writes files' touches only Pyodide's in-memory FS, which is discarded, so there is no persistent side effect. Whether prompt() actually shows depends on the browser's cross-origin iframe dialog policy, which I could not observe."
+   "reasoning": "Console mode makes inlinePreview true, and the view defaults to preview (artifact-inline-card.tsx:181, 185, 196-202). The iframe is created eagerly with srcDoc (sandbox-frame.tsx:849-931), with no loading=lazy, IntersectionObserver or virtualisation (grep over message-list, card and sandbox). consoleDoc evals JS at load (699-714) or boots Pyodide from jsdelivr (637-697). SANDBOX_ALLOW includes allow-modals (85-86). The share viewer deliberately does not run console runtimes (shared-artifact-viewer.tsx:31-32). One overstatement: files a script 'writes' go only to Pyodide's in-memory FS and are offered as download links, so nothing reaches the user's disk."
   },
   {
    "id": "web-artifact-surface-14",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "message-item.tsx:1370-1375 uses artifact.content and artifact.currentVersion, which are the latest values, on every card for an identifier. onOpen opens by identifier, and the canvas selects currentVersion (canvas-panel.tsx:313-315). ArtifactVersion has no messageId (schema.prisma:1146-1160), and Artifact.messageId is deliberately pinned to the creating message (artifacts-store.ts:68-70), so a per-turn mapping is not stored."
+   "reasoning": "message-item.tsx:1370-1375 uses artifact.content, artifact.currentVersion and an identifier-based onOpen for every message, and the Canvas selects currentVersion (canvas-panel.tsx:313-315). ArtifactVersion has no messageId (schema.prisma:1146-1160). Correction: the mapping is recoverable. The persisted message text keeps each turn's (verified or repaired) artifact body, via rewriteArtifactMarkup at route.ts:447, but splitMessageContent throws the body of closed tags away (message-content.ts:256-261)."
   },
   {
    "id": "web-artifact-surface-15",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "runtimeFor's default branch returns mode 'console' with engine 'unsupported' (artifact-runtime.ts:124-125), and no branch returns 'none'. The card therefore defaults to the 'Output' preview (artifact-inline-card.tsx:181,185,204). The Canvas tab defaults to 'preview', labelled 'Output' (canvas-panel.tsx:246,1117-1118). consoleDoc prints the not-available warning and posts status('done','Ready') (sandbox-frame.tsx:632-636), so the card shows 'Done' (artifact-inline-card.tsx:236-237)."
+   "reasoning": "The default branch of runtimeFor returns mode 'console' with engine 'unsupported' (artifact-runtime.ts:124-125), and nothing ever returns 'none'. So inlinePreview is true and the card and Canvas default to Output (artifact-inline-card.tsx:181-185; canvas-panel.tsx:246). consoleDoc prints the 'not available' warning and posts status('done','Ready') (sandbox-frame.tsx:632-636), which the card labels 'Done' for console mode (artifact-inline-card.tsx:230-231). No test pins this as intended."
   },
   {
    "id": "web-artifact-surface-16",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "The __JunoLucideShapes table has 17 named icons plus a default circle-plus glyph, and unknown names fall back to it (sandbox-frame.tsx:188-225). stripImports removes every import (129-134). The only shim is the lucide preamble: grep found no recharts, framer-motion or shadcn handling. Imported non-React identifiers are therefore undefined at runtime and throw ReferenceError."
+   "reasoning": "__JunoLucideShapes holds 17 named icons plus a default (sandbox-frame.tsx:188-207), and unknown names fall back to default (225). stripImports removes every import (129-134). The sandbox loads only React, ReactDOM and Babel from unpkg (8-10) and has no recharts, framer-motion or shadcn (grep). The system prompt says 'no imports needed beyond react' (system-prompt.ts:258)."
   },
   {
    "id": "web-artifact-surface-17",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "LINK_BRIDGE forwards any http(s) href resolved through a.href (sandbox-frame.tsx:292-306). The parent revalidates only the protocol and then calls window.open (878-896), with no check that the URL points at Juno's own origin. The CSP sets base-uri 'none' (67). The rest is inferred from the HTML spec, not observed at runtime: an iframe srcdoc document takes its base URL from its container document, so '/about' resolves to the Juno host. I could not run a browser to confirm."
+   "reasoning": "LINK_BRIDGE (sandbox-frame.tsx:293-310) resolves a.href, which the DOM has already made absolute, and forwards any http(s) URL. The parent then calls window.open (878-896). Inferred from the HTML spec: the fallback base URL of an about:srcdoc document is its container or initiator document's URL, so '/about' resolves to the Juno origin. base-uri 'none' (67) blocks the author's <base> fix. This is spec-based and not observed at runtime, but it is well established."
   },
   {
    "id": "web-artifact-surface-18",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "The core issue is real. createShare returns the newest unrevoked share for the artifact (share.ts:91-95), snapshotAt is set only on create (104), and the public page serves the version with createdAt \u2264 snapshotAt (share.ts:257-265). The dialog creates or reuses the link on open (share-dialog.tsx:77-85) and says 'as it is now. Later edits stay private.' (120-122). The auditor's evidence is partly wrong, though. The dialog DOES show the snapshot date: 'Snapshot \u00b7 {date} \u00b7 N views' (share-dialog.tsx:187-190). It shows the date only, not a version number. A refresh path also exists: Revoke \u2192 'Create a new link' (150-163). The copy is still misleading, but the visible date and the workaround lower the severity to low."
+   "reasoning": "createShare returns the newest unrevoked share (share.ts:91-95), and snapshotAt is set only on create (104). getSharedArtifactSnapshot serves the version with createdAt \u2264 snapshotAt (257-265). The dialog creates or reuses the link on open (share-dialog.tsx:77-85) and says 'as it is now' (120-122). One evidence error: the dialog does show the snapshot date ('Snapshot \u00b7 {date}', share-dialog.tsx:189-191), and Revoke then 'Create a new link' produces a fresh snapshot. That partly mitigates the bug, hence low. The copy is still wrong for a reused link, and there is no in-place refresh."
   },
   {
    "id": "web-artifact-surface-19",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "rewriteVersion updates only content via compare-and-swap and never touches the row's createdAt (store.ts:179-190). Folding applies to user 'edit' rows younger than 30s (operations.ts:511,529-539; store.ts:122-127). getSharedArtifactSnapshot picks the highest version with createdAt \u2264 snapshotAt (share.ts:257-260), so it serves the rewritten body. The window is narrow (30s)."
+   "reasoning": "rewriteVersion changes only `content` (store.ts:179-190), so createdAt stays. Folding applies to user 'edit' rows younger than 30s (operations.ts:511, 529-539). The share snapshot selects by createdAt \u2264 snapshotAt (share.ts:257-260), so post-share folded edits appear on the public link. In practice they appear as raw JSON, because the share viewer does not render DESIGN (see missed item)."
   },
   {
    "id": "web-artifact-surface-20",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "serializeQuote writes quote.text between raw \"\"\" fences without escaping (quote-context.ts:220-228), and readFence closes on the first line equal to \"\"\" (256-262). A tsx probe quoting '\"\"\"\\nModule doc\\n\"\"\"\\nimport os' with request 'Explain' gave parseQuotedMessage \u2192 text '' and request 'Module doc\\n\"\"\"\\nimport os\\n\"\"\"\\n\\nExplain'."
+   "reasoning": "I reproduced it with a tsx probe. Quoting the text '\"\"\"\\nA calculator module.\\n\"\"\"\\nimport math\\nx = 1' through serializeQuote \u2192 parseQuotedMessage returns text '' and a request containing the code plus 'Explain'. readFence closes on the first line equal to \"\"\" (quote-context.ts:256-262), and serializeQuote (208-227) does not escape the text."
   },
   {
    "id": "web-artifact-surface-21",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "copy swallows the rejection and then always flashes and toasts success (canvas-panel.tsx:461-465). copyDiff does the same (412-417), and so does ShareDialog.copy (share-dialog.tsx:88-93). copy is also reachable from DropdownMenuItem onSelect (canvas-panel.tsx:870). A real failure is uncommon because the calls are user-activated, but when one happens the user is told the copy succeeded."
+   "reasoning": "canvas-panel.tsx:461-465 swallows the writeText rejection and then flashes success and 'Source copied.'. copyDiff (412-417) and ShareDialog.copy (share-dialog.tsx:88-93) do the same."
   },
   {
    "id": "web-artifact-surface-22",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "Quiz options, cards and flow nodes all call setSelected or setActive on onPointerDown as well as onClick (inline-visual-block.tsx:271-272, 323-324, 446-447). Touch pointerdown fires before the browser decides to pan. One correction: the quiz does not 'lock'. There is no disabled state, and a later tap re-selects (QuizBlock 427-470). It does, however, immediately reveal 'Correct.'/'Not quite.' feedback for the touched option. The component is used through markdown.tsx:23."
+   "reasoning": "onPointerDown sets state on the step items, flow nodes and quiz options (inline-visual-block.tsx:271, 323, 446). A touch pointerdown fires before the browser decides to pan. Correction: the quiz does not lock. QuizBlock has no disabled or answered guard (426-436), so the user can reselect. The impact is premature 'Correct.'/'Not quite.' feedback and a revealed explanation, not a locked answer."
   },
   {
    "id": "web-artifact-surface-23",
    "verdict": "confirmed",
    "corrected_severity": "low",
-   "reasoning": "Supersede-regenerate deletes artifacts whose messageId equals the stale message (route.ts:2573). mergeArtifacts only sets entries by identifier (use-chat.ts:344-354). regenerate (1613-1690) never calls setArtifacts. onDone in chat-view does no router.refresh (388-411). The reconcile effect at use-chat.ts:318-335 runs only when initialMessages changes through an external sync, which regenerate does not trigger. The stale entry therefore stays in chat.artifacts, and so in the Outputs list and the open canvas, until the next server sync. Same-identifier regenerations are unaffected because the new row replaces the old by identifier."
+   "reasoning": "The server deletes artifacts whose messageId is the regenerated message (route.ts:2573), and mergeArtifacts only upserts (use-chat.ts:344-354). Mitigation the auditor missed: DB triggers record Artifact and Message changes (migration 20260716200000:113-117). AppProvider's sync EventSource calls router.refresh (app-provider.tsx:184-203), and use-chat reconciles `setArtifacts(opts.initialArtifacts)` when the transcript JSON changes and status is idle (use-chat.ts:318-335). That removes the stale row within about 2s for conversations opened by route. The refresh is deferred while on a soft route (app-provider.tsx:197-200; chat-view sets __junoSoftRoutePath for chats started in this page, 369/408/441/1673). So the bug persists in the common 'new chat \u2192 regenerate' flow, or when sync is disconnected."
   },
   {
    "id": "ux-0",
    "verdict": "confirmed",
-   "corrected_severity": "medium",
-   "reasoning": "setOpenArtifactId is called only on explicit Open (chat-view.tsx:976) and on the deep-link initialArtifactIdentifier (911-917). Nothing opens the canvas on artifact creation or on done. The inline card body is h-[min(44vh,360px)] min-h-[240px] (artifact-inline-card.tsx:378) and contains its own scrollers, CodeSurface overflow-auto or the iframe. The system prompt (system-prompt.ts:247) forbids the model from mentioning panels; it is not a UI rule, but it does confirm the product's intent that the tag drives the surface. This is a product gap relative to Claude, not a bug, so medium."
+   "corrected_severity": "n/a",
+   "reasoning": "setOpenArtifactId is called only from the user open path (chat-view.tsx:976), the ?artifact deep link (915), handleArtifactUpdated when the canvas is already open (1262), and close/reset paths. Nothing opens the canvas on creation or streams into it. The card is a fixed `h-[min(44vh,360px)] min-h-[240px]` scroll box (artifact-inline-card.tsx:378). The system prompt forbids mentioning panels (system-prompt.ts:247). This is an accurate UX observation; severity is a product judgement."
   },
   {
    "id": "ux-1",
    "verdict": "confirmed",
-   "corrected_severity": "medium",
-   "reasoning": "selectTarget sets only compareTarget and compareBase (canvas-panel.tsx:407-410). The history pane renders only a text diff plus Restore (1015-1100). The only setters of selectedVersion are the currentVersion sync effect (314), the back-to-latest pill (1142) and the failure banner's 'View vN' (1231). A rendered old version is therefore reachable only after a preview failure. Restore exists, so a user can bring an old version back but cannot look at it first."
+   "corrected_severity": "n/a",
+   "reasoning": "setSelectedVersion is called only at canvas-panel.tsx:314 (the sync effect), 1142 (back-to-latest pill) and 1231 (failure 'View vN'). Version rows call selectTarget (989 \u2192 407-410), which sets only compareTarget and compareBase for the diff. The only other way to see an old version rendered is Restore (1097-1103), which writes a new version."
   },
   {
    "id": "ux-2",
    "verdict": "confirmed",
-   "corrected_severity": "medium",
-   "reasoning": "serializeDesignDocument is JSON.stringify without indentation (migrations.ts:111-113), so a design is one line, and the canvas history is diffLines over whole contents (canvas-panel.tsx:388-391,1057-1089). A DESIGN diff is therefore one removed line and one added line. There is no visual or side-by-side mode (grep). One nuance the auditor missed: the design editor has its own 'History' rail tab listing transaction summaries (design-editor.tsx:723-760, HistoryList ~1018). It is readable, but it is hidden with the layers rail below md and is not a version diff."
+   "corrected_severity": "n/a",
+   "reasoning": "serializeDesignDocument emits single-line JSON (migrations.ts:111-113). The Canvas History view diffs whole lines (canvas-panel.tsx:388-391, 1057-1089) and is not gated off for DESIGN (802, 893). A design diff is therefore one removed line and one added line, and with the defect-1 synthetic rows it compares against \"\". The embedded editor does have its own 'History' rail (design-editor.tsx:723, 760: HistoryList), but it lists the in-session undo history, not stored versions. Neither offers a visual comparison."
   },
   {
    "id": "ux-3",
    "verdict": "confirmed",
-   "corrected_severity": "medium",
-   "reasoning": "The failure banner offers only 'Console' for web runtimes and 'View v{lastGood}' (canvas-panel.tsx:1223-1235). A grep for fix-related affordances across canvas-panel, artifact-inline-card and sandbox-frame found none. Getting the error to the model means copying it manually from the Console tab into the composer."
+   "corrected_severity": "n/a",
+   "reasoning": "The failure banner (canvas-panel.tsx:1223-1235) offers only Console (web mode) and 'View v{lastGood}'. grep for fix or 'ask juno' in canvas-panel and the inline card finds nothing, and there is no action that seeds the composer with the error."
   },
   {
    "id": "ux-4",
    "verdict": "confirmed",
-   "corrected_severity": "medium",
-   "reasoning": "CanvasPanel's props carry no busy or streaming signal (canvas-panel.tsx:218-236), and the artifact prop changes only when chat.artifacts does, which is on done (use-chat.ts:678). For targeted modifies the route withholds all deltas (route.ts:3016), and for full rewrites the deltas reach only the transcript card (where defect 3 applies). The new version then appears through the version-keyed motion-safe:animate-fade-in container (1237/1260/1284) once the currentVersion sync effect runs (313-315). The only progress signal is outside the canvas, in the transcript activity row ('Preparing targeted changes', route.ts:3008-3011)."
+   "corrected_severity": "n/a",
+   "reasoning": "canvas-panel.tsx has no streaming or busy input (grep finds no 'streaming', 'busy' or 'writing'). It follows chat.artifacts, which changes only on `done`, then swaps versions with a fade (313-315 and keyed containers). For Modify, route.ts:3016 withholds all deltas, and the progress activity ('Preparing targeted changes', 3006-3011) appears only in the transcript's activity log."
   }
  ],
  "missed": [
   {
    "id": "missed-1",
-   "title": "handleSpeak is also an unstable function, so fixing onOpenArtifact alone would not restore MessageItem's memo",
+   "title": "handleSpeak is also a non-memoized handler passed to every MessageItem, so fixing onOpenArtifact alone will not restore the memo",
    "severity": "medium",
    "file": "src/components/chat/chat-view.tsx",
    "line": 1503,
-   "evidence": "`const handleSpeak = (id: string, text: string) => {\u2026}` is a plain function recreated every ChatView render (chat-view.tsx:1503-1511), passed as `onSpeak={handleSpeak}` (2279), and forwarded to every row as `onSpeak={props.onSpeak}` (message-list.tsx:362). MessageItem relies on default shallow memo with every handler stable (message-item.tsx:762-788).",
-   "failure_scenario": "Even after openArtifactByIdentifier is wrapped in useCallback, every SSE delta still re-renders all MessageItems because onSpeak changes identity each render. The long-conversation jank the memo was meant to remove stays."
+   "evidence": "`const handleSpeak = (id: string, text: string) => {\u2026}` is a plain function (chat-view.tsx:1503-1511). It is passed as `onSpeak={handleSpeak}` (2279) and forwarded unchanged to each row (message-list.tsx:363). MessageItem's memo requires every handler to be a useCallback (message-item.tsx:778-779).",
+   "failure_scenario": "Even after openArtifactByIdentifier is wrapped in useCallback, every stream chunk still gives MessageItem a new onSpeak identity. All rows in a long transcript keep re-rendering 30-60 times a second."
   },
   {
    "id": "missed-2",
-   "title": "Share is offered for DESIGN artifacts, but the public link shows only raw document JSON",
+   "title": "Tab with a selection in the Canvas code editor deletes the selected text instead of indenting it, with no native undo",
+   "severity": "medium",
+   "file": "src/components/canvas/code-surface.tsx",
+   "line": 256,
+   "evidence": "On plain Tab the handler builds `ta.value.slice(0, selectionStart) + \"  \" + ta.value.slice(selectionEnd)` and calls onChange(next) (code-surface.tsx:256-265). A multi-line selection is therefore replaced by two spaces. The value is set programmatically through React state (canvas-panel.tsx:1354 handleDraftChange), which bypasses the textarea's native undo stack. code-surface.tsx has no undo handling (grep for undo, execCommand and insertText finds nothing).",
+   "failure_scenario": "On the latest version, select lines 10-20 in the Code tab and press Tab to indent them. The eleven lines vanish and two spaces take their place. Cmd+Z does not bring them back. The only recovery is Discard, which also throws away every other unsaved edit."
+  },
+  {
+   "id": "missed-3",
+   "title": "Shared DESIGN artifacts render as raw JSON source on the public share page",
    "severity": "medium",
    "file": "src/components/share/shared-artifact-viewer.tsx",
-   "line": 31,
-   "evidence": "The viewer sets `hasPreview = isMarkdown || rt.mode === \"web\"` (shared-artifact-viewer.tsx:31). runtimeFor('DESIGN') gives mode 'design' (artifact-runtime.ts:98), so a shared design gets only the Code tab with CodeSurface over the JSON (\u2248line 77). The Canvas shows the Share button for every artifact type whenever `shareable` is set (canvas-panel.tsx:842-847).",
-   "failure_scenario": "A user designs a sign-in screen in chat and clicks Share. The recipient opens the link and sees a minified JSON blob in a code viewer instead of the screen. This directly blocks the 'one shareable link per typed artifact' goal of the merge."
+   "line": 32,
+   "evidence": "`const hasPreview = isMarkdown || rt.mode === \"web\"` (shared-artifact-viewer.tsx:32). runtimeFor('DESIGN') returns mode 'design' (artifact-runtime.ts:98), so the page opens on the Code tab with no Preview trigger (33, 50). The share page has no DESIGN branch (src/app/share/[token]/page.tsx:8, 90).",
+   "failure_scenario": "Share a chat-made sign-in screen design from the Canvas and send the link. The recipient sees minified document JSON, not the design. This blocks the 'typed artifacts at one shareable link' goal of the Artifacts+Design merge."
+  },
+  {
+   "id": "missed-4",
+   "title": "React and TypeScript previews load an unpinned @babel/standalone and React development builds from unpkg",
+   "severity": "low",
+   "file": "src/components/canvas/sandbox-frame.tsx",
+   "line": 10,
+   "evidence": "BABEL_CDN = \"https://unpkg.com/@babel/standalone/babel.min.js\" has no version (sandbox-frame.tsx:10), while React is pinned but uses react.development.js and react-dom.development.js (8-9). Every React card and Canvas preview loads these (513-515).",
+   "failure_scenario": "A new major release of @babel/standalone with changed preset behaviour (for example availablePresets or the TypeScript preset options used at sandbox-frame.tsx:712) silently breaks every REACT and TS artifact preview for all users at once, with no code change in Juno. Development builds also slow every inline preview."
   }
  ]
 }
