@@ -159,6 +159,10 @@ public protocol CodeRemoteSessionBridging: Sendable {
         permissionMode: PermissionMode
     ) async throws -> String
 
+    /// Returns once the session has taken the message, not once it is sent:
+    /// the message's hooks may wait on an approval, and the phone's answer
+    /// to it is a later command the host cannot claim until this one is
+    /// acknowledged. Throws when the message was not taken.
     func sendMessage(sessionID: String, text: String) async throws
     func stopAgent(sessionID: String) async throws
     func retryTurn(sessionID: String) async throws

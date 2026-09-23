@@ -284,10 +284,17 @@ public actor AgentOrchestrator {
 
     /// Starts one agent run for a user prompt. Throws when a run is already
     /// in flight.
+    ///
+    /// - Parameter accepted: told once the session is taken for this prompt,
+    ///   before its hooks run. What follows can wait on the reader — a hook
+    ///   may need an approval — so a caller that must not wait that long, a
+    ///   remote command loop that also carries the approval's answer, learns
+    ///   here that the prompt is in hand.
     public func submit(
         prompt: String,
         modelPrompt: String? = nil,
-        images: [ModelImage] = []
+        images: [ModelImage] = [],
+        accepted: (@Sendable () -> Void)? = nil
     ) async throws {
         // A `/compact` still being written would replace the history this
         // prompt is about to join; the prompt goes in after the fold instead.
@@ -307,6 +314,7 @@ public actor AgentOrchestrator {
             return try await self.promptHookContext(for: prompt)
         }
         self.admission = admission
+        accepted?()
         defer { self.admission = nil }
         let statusBefore = try? await store.session(id: sessionID).status
         let hookContext: PromptHookContext
@@ -359,17 +367,22 @@ public actor AgentOrchestrator {
     /// Amends the active execution at the next safe boundary. If a model turn
     /// has proposed tools but none have started, the proposal is discarded and
     /// the correction is sent to the model before any side effect can begin.
+    ///
+    /// - Parameter accepted: told once the run has taken the instruction,
+    ///   before its hooks run; see ``submit(prompt:modelPrompt:images:accepted:)``.
     @discardableResult
     public func steer(
         prompt: String,
         modelPrompt: String? = nil,
-        images: [ModelImage] = []
+        images: [ModelImage] = [],
+        accepted: (@Sendable () -> Void)? = nil
     ) async throws -> String {
         try await acceptInstruction(
             prompt: prompt,
             modelPrompt: modelPrompt,
             images: images,
-            kind: .steer
+            kind: .steer,
+            accepted: accepted
         )
     }
 
@@ -379,13 +392,15 @@ public actor AgentOrchestrator {
     public func queue(
         prompt: String,
         modelPrompt: String? = nil,
-        images: [ModelImage] = []
+        images: [ModelImage] = [],
+        accepted: (@Sendable () -> Void)? = nil
     ) async throws -> String {
         try await acceptInstruction(
             prompt: prompt,
             modelPrompt: modelPrompt,
             images: images,
-            kind: .queue
+            kind: .queue,
+            accepted: accepted
         )
     }
 
@@ -393,11 +408,13 @@ public actor AgentOrchestrator {
         prompt: String,
         modelPrompt: String?,
         images: [ModelImage],
-        kind: UserInstructionKind
+        kind: UserInstructionKind,
+        accepted: (@Sendable () -> Void)?
     ) async throws -> String {
         guard let run = runTask else { throw OrchestratorError.sessionNotRunning }
         let visible = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !visible.isEmpty || !images.isEmpty else { return "" }
+        accepted?()
         try await prepare()
         // A steer is a prompt too, and a hook that vets prompts vets it. A
         // blocked one is never recorded as an instruction, so a restored

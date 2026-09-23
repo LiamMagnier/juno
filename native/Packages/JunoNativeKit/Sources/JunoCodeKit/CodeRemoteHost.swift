@@ -208,6 +208,11 @@ public actor CodeRemoteHost {
                 if Task.isCancelled { return }
                 guard let command = claimed else { continue }
 
+                // One command at a time, so the executor must never wait on
+                // something a later command carries. A prompt's hooks can
+                // wait on an approval whose answer — or a Stop — is the next
+                // command, which is why a prompt is answered once the session
+                // has taken it rather than once it has been sent.
                 await handle(command)
             } catch is CancellationError {
                 return

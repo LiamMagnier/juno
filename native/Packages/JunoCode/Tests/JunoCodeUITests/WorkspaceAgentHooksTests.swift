@@ -423,6 +423,123 @@ final class SessionHookTrustTests: XCTestCase {
         XCTAssertFalse(lastPrompt(model).contains("from-the-hook"))
     }
 
+    /// A session in a cloned repository whose `UserPromptSubmit` hook is
+    /// `command`, allowed by the reader, in `mode`.
+    private func hookedSession(
+        _ command: String,
+        mode: PermissionMode
+    ) async throws -> (SessionController, CodeSessionStore, RecordingModel) {
+        let project = root.appendingPathComponent("repo")
+        let settings = JSONValue.object([
+            "hooks": .object([
+                "UserPromptSubmit": .array([
+                    .object(["hooks": .array([.object(["type": "command", "command": .string(command)])])]),
+                ]),
+            ]),
+        ])
+        try settings.canonicalJSONString()
+            .write(to: project.appendingPathComponent(".claude/settings.json"), atomically: true, encoding: .utf8)
+        let workspaceID = WorkspaceID()
+        let context = WorkspaceContext(
+            record: WorkspaceRecord(
+                descriptor: WorkspaceDescriptor(
+                    id: workspaceID,
+                    displayName: "Cloned",
+                    localPathHint: project.path,
+                    isGitRepository: false,
+                    lastOpenedAt: Date()
+                ),
+                bookmarkData: Data()
+            ),
+            access: try WorkspaceAccess(workspaceID: workspaceID, grantedURL: project),
+            storageRoot: root.appendingPathComponent("storage"),
+            userSettingsDirectory: nil
+        )
+        let store = CodeSessionStore(directoryURL: root.appendingPathComponent("sessions"))
+        let session = try await store.createSession(
+            workspaceID: workspaceID,
+            workspaceName: "Cloned",
+            title: "Remote",
+            configuration: AgentConfiguration(modelID: "test-model", permissionMode: mode),
+            gitBranch: nil
+        )
+        let model = RecordingModel()
+        let controller = SessionController(session: session, context: context, store: store, modelClient: model)
+        await controller.attach()
+        return (controller, store, model)
+    }
+
+    /// The relay runs one command at a time, and the answer to a hook's
+    /// approval is itself a command. A prompt from the phone is therefore
+    /// taken — and its command answered — before its hooks decide, or the
+    /// phone's Approve and Stop wait behind it until someone at the Mac
+    /// answers. The session stays held while the hook waits: a rewind, or
+    /// a second prompt, is refused.
+    func testAPromptFromThePhoneIsTakenBeforeItsHookAsks() async throws {
+        try XCTSkipUnless(CommandSandboxProfile.isAvailable, "sandbox-exec is unavailable on this machine")
+        let (controller, store, model) = try await hookedSession("echo from-the-hook", mode: .workspaceWrite)
+        try await controller.deliverRemotePrompt("first")
+        await controller.awaitRemoteHandover()
+        try await waitForIdle(store, controller.sessionID)
+        let first = try XCTUnwrap(controller.rewindTurns.first)
+
+        await controller.setHooksEnabled(true)
+        let delivery = try await controller.deliverRemotePrompt("from the phone")
+        XCTAssertFalse(delivery.isSettled, "the hook has not been answered yet")
+        let pending = try await waitForApproval(controller)
+        let request = try XCTUnwrap(pending, "the hook must ask first")
+        XCTAssertEqual(request.toolName, "hook")
+        XCTAssertTrue(controller.isRunning, "the session reads as taken while the hook waits")
+
+        // Held against everything that would start or cut a run meanwhile.
+        let rewound = await controller.rewind(to: first.id, restoring: .conversation)
+        XCTAssertEqual(rewound, .failed(message: RewindCopy.running))
+        do {
+            try await controller.deliverRemotePrompt("and another")
+            XCTFail("a second prompt was taken while the first one's hook decided")
+        } catch let refusal as SessionController.RemotePromptRefusal {
+            XCTAssertEqual(refusal.message, "The agent is already running in this session.")
+        }
+
+        // The phone's answer, as the next command would carry it.
+        await controller.approve(request.id)
+        let refusal = await delivery.outcome()
+        XCTAssertNil(refusal)
+        try await waitForIdle(store, controller.sessionID)
+        XCTAssertTrue(lastPrompt(model).contains("from-the-hook"))
+        let prompts = await store.events(for: controller.sessionID).compactMap { event -> String? in
+            if case let .userPrompt(prompt) = event.payload { return prompt.text }
+            return nil
+        }
+        XCTAssertEqual(prompts, ["first", "from the phone"])
+    }
+
+    /// A prompt a hook turns away after the session took it says so on its
+    /// delivery, which is how a queued task knows its turn never started.
+    func testAPromptFromThePhoneAHookBlocksSaysSoOnItsDelivery() async throws {
+        try XCTSkipUnless(CommandSandboxProfile.isAvailable, "sandbox-exec is unavailable on this machine")
+        let (controller, store, model) = try await hookedSession(
+            "echo 'no prompts from phones' >&2; exit 2",
+            mode: .fullAccess
+        )
+        await controller.setHooksEnabled(true)
+
+        var refusal: SessionController.RemotePromptRefusal?
+        do {
+            let delivery = try await controller.deliverRemotePrompt("from the phone")
+            refusal = await delivery.outcome()
+        } catch let turnedAway as SessionController.RemotePromptRefusal {
+            // The hook can finish before the wait for the handover does.
+            refusal = turnedAway
+        }
+        XCTAssertEqual(refusal?.message, "A hook on the Mac stopped this message: no prompts from phones")
+        await controller.awaitRemoteHandover()
+        XCTAssertFalse(controller.isSubmitting)
+        XCTAssertTrue(model.requests.isEmpty)
+        let status = try await store.session(id: controller.sessionID).status
+        XCTAssertFalse(status.isTerminal, "a blocked new session stays idle, which is why the delivery says so")
+    }
+
     private func lastPrompt(_ model: RecordingModel) -> String {
         guard case let .user(text)? = model.requests.last?.messages.last else { return "" }
         return text

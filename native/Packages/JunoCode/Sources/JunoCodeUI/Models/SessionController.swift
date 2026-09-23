@@ -1313,24 +1313,34 @@ public final class SessionController {
     /// Everything it sends arrives as an argument, so a caller other than the
     /// composer, such as a redirect typed into an approval, never reads or
     /// clears the reader's draft, its images or its file references.
+    ///
+    /// - Parameter accepted: told once the agent has taken the message, before
+    ///   its hooks run; see `AgentOrchestrator.submit`.
     private func deliver(
         prompt: String,
         modelPrompt: String,
         images: [ModelImage],
         kind: UserInstructionKind,
-        live: Live
+        live: Live,
+        accepted: (@Sendable () -> Void)? = nil
     ) async throws {
         if session.status.isActive {
             let current = await currentOrchestrator(live)
             switch kind {
             case .steer:
-                try await current.steer(prompt: prompt, modelPrompt: modelPrompt, images: images)
+                try await current.steer(
+                    prompt: prompt, modelPrompt: modelPrompt, images: images, accepted: accepted
+                )
             case .queue:
-                try await current.queue(prompt: prompt, modelPrompt: modelPrompt, images: images)
+                try await current.queue(
+                    prompt: prompt, modelPrompt: modelPrompt, images: images, accepted: accepted
+                )
             }
             return
         }
-        try await startTurn(prompt: prompt, modelPrompt: modelPrompt, images: images, live: live)
+        try await startTurn(
+            prompt: prompt, modelPrompt: modelPrompt, images: images, live: live, accepted: accepted
+        )
     }
 
     /// Starts a turn: the turn's contract, then the prompt.
@@ -1338,7 +1348,8 @@ public final class SessionController {
         prompt: String,
         modelPrompt: String,
         images: [ModelImage],
-        live: Live
+        live: Live,
+        accepted: (@Sendable () -> Void)? = nil
     ) async throws {
         liveAssistantText = ""
         let configuration = session.configuration
@@ -1356,7 +1367,9 @@ public final class SessionController {
                 )
             )
         )
-        try await currentOrchestrator(live).submit(prompt: prompt, modelPrompt: modelPrompt, images: images)
+        try await currentOrchestrator(live).submit(
+            prompt: prompt, modelPrompt: modelPrompt, images: images, accepted: accepted
+        )
         runStartedAt = Date()
     }
 
@@ -1364,6 +1377,45 @@ public final class SessionController {
     public struct RemotePromptRefusal: LocalizedError, Equatable, Sendable {
         public let message: String
         public var errorDescription: String? { message }
+    }
+
+    /// A prompt from another device the session has taken, whose hooks may
+    /// still be deciding whether it is sent.
+    ///
+    /// Returned by ``deliverRemotePrompt(_:as:)`` as soon as the agent has
+    /// the prompt in hand. What becomes of it after that is settled here: a
+    /// caller that has to know whether a turn started — a queued task that
+    /// reports its own outcome — reads it; the relay does not, since the
+    /// thread it uploads already says which hook refused the prompt and why.
+    @MainActor
+    public final class RemotePromptDelivery {
+        /// Why the prompt was turned away after it was taken — a hook
+        /// blocked it, or the session was stopped while its hooks ran — or
+        /// nil while it is on its way and once it has been sent.
+        public private(set) var refusal: RemotePromptRefusal?
+        /// False while the prompt's hooks are still deciding.
+        public private(set) var isSettled = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        init() {}
+
+        func settle(_ refusal: RemotePromptRefusal?) {
+            guard !isSettled else { return }
+            self.refusal = refusal
+            isSettled = true
+            let waiting = waiters
+            waiters.removeAll()
+            waiting.forEach { $0.resume() }
+        }
+
+        /// Waits until the prompt has been sent or turned away, and says
+        /// which: nil when it was sent.
+        public func outcome() async -> RemotePromptRefusal? {
+            if !isSettled {
+                await withCheckedContinuation { waiters.append($0) }
+            }
+            return refusal
+        }
     }
 
     /// Delivers a prompt that arrived from another device, leaving the
@@ -1375,18 +1427,28 @@ public final class SessionController {
     /// wrote, and reported success when the send had failed. This takes the
     /// same path as `send()` — `deliver`, so the same turn contract, the same
     /// orchestrator, the same hooks and approvals — with nothing of the local
-    /// draft, and throws when the prompt did not arrive.
+    /// draft, and throws when the prompt was not taken.
     ///
-    /// It holds the session while it hands the prompt over, as `send()` does:
-    /// the prompt's hooks run before any run exists, and until one does
-    /// nothing else would mark the session as taken.
+    /// It returns once the agent has the prompt in hand, before the prompt's
+    /// hooks have decided on it. The relay runs one command at a time and
+    /// claims the next only once this returns, and the next is often what
+    /// the hooks are waiting for: a hook that needs approval raises it on the
+    /// phone, whose answer — or Stop — arrives as another command. Waiting
+    /// for the hooks here left every command for this Mac stuck until someone
+    /// answered at the desk. What the hooks then decide is on the returned
+    /// ``RemotePromptDelivery``, and in the thread.
+    ///
+    /// It holds the session while it hands the prompt over, as `send()` does,
+    /// until the hooks have decided: they run before any run exists, and
+    /// until one does nothing else would mark the session as taken.
     ///
     /// - Parameter instruction: how to deliver it while a run is active; nil
     ///   follows the reader's own choice for follow-ups.
+    @discardableResult
     public func deliverRemotePrompt(
         _ text: String,
         as instruction: UserInstructionKind? = nil
-    ) async throws {
+    ) async throws -> RemotePromptDelivery {
         let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else {
             throw RemotePromptRefusal(message: "The message was empty.")
@@ -1405,30 +1467,85 @@ public final class SessionController {
             throw RemotePromptRefusal(message: "The agent is already running in this session.")
         }
         isSubmitting = true
-        defer { isSubmitting = false }
-        do {
-            if session.status.isActive {
-                do {
-                    try await deliver(
-                        prompt: prompt,
-                        modelPrompt: prompt,
-                        images: [],
-                        kind: instruction ?? activeInstructionKind,
-                        live: live
-                    )
-                    return
-                } catch OrchestratorError.sessionNotRunning {
-                    // The run finished between the check and the delivery; the
-                    // prompt starts the next turn instead of being lost.
-                }
+        let delivery = RemotePromptDelivery()
+        // Yielded when the agent takes the prompt, finished when the handover
+        // ends however it ends; whichever comes first ends the wait below.
+        let (taken, signal) = AsyncStream<Void>.makeStream()
+        let handover = Task { [weak self] in
+            defer { signal.finish() }
+            guard let self else {
+                delivery.settle(RemotePromptRefusal(message: "This session was closed on the Mac."))
+                return
             }
-            try await startTurn(prompt: prompt, modelPrompt: prompt, images: [], live: live)
-        } catch OrchestratorError.sessionAlreadyRunning {
-            throw RemotePromptRefusal(message: "The agent is already running in this session.")
-        } catch let OrchestratorError.promptBlocked(reason) {
-            throw RemotePromptRefusal(message: "A hook on the Mac stopped this message: \(reason)")
-        } catch OrchestratorError.stoppedBeforeSending {
-            throw RemotePromptRefusal(message: "The session was stopped on the Mac before this message was sent.")
+            defer { self.isSubmitting = false }
+            do {
+                try await self.handOverRemotePrompt(
+                    prompt,
+                    as: instruction,
+                    live: live,
+                    accepted: { signal.yield() }
+                )
+                delivery.settle(nil)
+            } catch {
+                delivery.settle(Self.remoteRefusal(for: error))
+            }
+        }
+        remoteHandover = handover
+        for await _ in taken { break }
+        // Turned away before the agent took it: the phone is told why.
+        if let refusal = delivery.refusal {
+            throw refusal
+        }
+        return delivery
+    }
+
+    /// The handover of a prompt from another device, while its hooks decide.
+    private var remoteHandover: Task<Void, Never>?
+
+    /// Waits until the last prompt from another device has been sent or
+    /// turned away. Test and shutdown support, like ``awaitCurrentRun()``.
+    func awaitRemoteHandover() async {
+        await remoteHandover?.value
+    }
+
+    private func handOverRemotePrompt(
+        _ prompt: String,
+        as instruction: UserInstructionKind?,
+        live: Live,
+        accepted: @escaping @Sendable () -> Void
+    ) async throws {
+        if session.status.isActive {
+            do {
+                try await deliver(
+                    prompt: prompt,
+                    modelPrompt: prompt,
+                    images: [],
+                    kind: instruction ?? activeInstructionKind,
+                    live: live,
+                    accepted: accepted
+                )
+                return
+            } catch OrchestratorError.sessionNotRunning {
+                // The run finished between the check and the delivery; the
+                // prompt starts the next turn instead of being lost.
+            }
+        }
+        try await startTurn(prompt: prompt, modelPrompt: prompt, images: [], live: live, accepted: accepted)
+    }
+
+    /// What the phone is told about a prompt that did not go.
+    private static func remoteRefusal(for error: any Error) -> RemotePromptRefusal {
+        switch error {
+        case let refusal as RemotePromptRefusal:
+            refusal
+        case OrchestratorError.sessionAlreadyRunning:
+            RemotePromptRefusal(message: "The agent is already running in this session.")
+        case let OrchestratorError.promptBlocked(reason):
+            RemotePromptRefusal(message: "A hook on the Mac stopped this message: \(reason)")
+        case OrchestratorError.stoppedBeforeSending:
+            RemotePromptRefusal(message: "The session was stopped on the Mac before this message was sent.")
+        default:
+            RemotePromptRefusal(message: "The message could not be delivered on the Mac: \(error.localizedDescription)")
         }
     }
 

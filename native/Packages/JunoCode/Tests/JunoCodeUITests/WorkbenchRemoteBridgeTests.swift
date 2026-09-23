@@ -77,6 +77,9 @@ final class WorkbenchRemoteBridgeTests: XCTestCase {
         let bridge = makeBridge(shared: [record.id.value])
 
         try await bridge.sendMessage(sessionID: session.id.value, text: "Run the tests")
+        // The command is answered once the session has the prompt; its hooks
+        // — none here — decide after.
+        await controller.awaitRemoteHandover()
 
         XCTAssertEqual(controller.composerText, "half-written thought")
         let events = await model.sessionStore.events(for: session.id)
