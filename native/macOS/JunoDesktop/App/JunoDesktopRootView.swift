@@ -16,25 +16,27 @@ struct JunoDesktopRootView: View {
     @State private var workbenchModel: WorkbenchModel?
     /// The main window is a launch surface, not a resume surface. Keep this
     /// pending until the Chat workspace has consumed the one-shot route so a
-    /// stored Code or Work product, or a stored Chat destination, cannot win the
-    /// first frame.
+    /// stored Code or legacy-tasks product, or a stored Chat destination,
+    /// cannot win the first frame.
     @State private var startupRoutePending = true
 
-    /// The launch policy is deliberately unchanged for Juno Work.
+    /// The window always opens on Chat, whatever product it was left on.
     ///
-    /// Work is the product most likely to be mid-flight when the app opens — a
-    /// task running on this Mac, a task waiting on an approval — and that is
-    /// exactly the argument for *not* opening on it. Restoring straight into a
-    /// thread means the first thing a new window presents is an approval card
-    /// for an action the reader has no context for yet, decided in the second
-    /// after launch. Chat is where the app opens; one click on the switcher is
-    /// the whole cost of getting to Work, and the sidebar's attention section
-    /// is what says something is waiting.
+    /// The legacy tasks workspace is the one most likely to be mid-flight when
+    /// the app opens — a task running on this Mac, a task waiting on an
+    /// approval — and that is exactly the argument for *not* opening on it.
+    /// Restoring straight into a thread means the first thing a new window
+    /// presents is an approval card for an action the reader has no context
+    /// for yet, decided in the second after launch. And since Phase 1 of the
+    /// Liquid Glass redesign it is not a product at all: Window › Tasks
+    /// (Legacy) is its only door, and a launch that restored into it would be
+    /// Work reappearing after it was taken out of everything else.
     private var productBinding: Binding<DesktopProductMode> {
         Binding(
             get: {
-                // Do not let a restored Code or Work selection paint even one
-                // launch frame. The route is released only after Chat appears.
+                // Do not let a restored Code or legacy-tasks selection paint
+                // even one launch frame. The route is released only after
+                // Chat appears.
                 guard !startupRoutePending else { return .chat }
                 return DesktopProductMode(rawValue: storedProduct) ?? .chat
             },
@@ -53,6 +55,11 @@ struct JunoDesktopRootView: View {
     var body: some View {
         phaseContent
             .preferredColorScheme(preferredColorScheme)
+            // Quick Entry is an AppKit panel outside every scene, so the
+            // theme is handed to it rather than inherited.
+            .onChange(of: preferredColorScheme, initial: true) { _, scheme in
+                DesktopQuickEntryController.shared.setColorScheme(scheme)
+            }
             .task {
                 applyStartupRouteIfNeeded()
                 await configuration.authModel.restore()
@@ -114,11 +121,16 @@ struct JunoDesktopRootView: View {
         switch configuration.authModel.phase {
         case .signedIn(let session):
             VStack(spacing: 0) {
-                // Shown when the session was restored from the Keychain without
-                // the server confirming it. The workspace below is real, local
-                // and usable; only its freshness is unknown.
-                if case .unreachable(let cause) = configuration.authModel.connectivity {
-                    JunoDesktopOfflineBanner(cause: cause) {
+                // A session restored from the Keychain that the server has not
+                // confirmed: the workspace is real, local and usable; only its
+                // freshness is unknown. Chat says so in its own column (§1.5).
+                // Code and the legacy workspace are not redesigned yet, so they
+                // get the same one-line caption — with its Retry — above them,
+                // in place of the full-window banner this replaced.
+                if productBinding.wrappedValue != .chat,
+                   case .unreachable(let cause) = configuration.authModel.connectivity
+                {
+                    DesktopOfflineCaption(state: .unreachable(cause: cause)) {
                         Task { await configuration.authModel.retryRestore() }
                     }
                 }
@@ -372,43 +384,6 @@ private struct JunoDesktopLoadingView: View {
 /// silently fell back to the system sans, so the one place the editorial voice
 /// had to appear was the one place it did not. ``JunoSerif`` exists to make that
 /// unrepeatable.
-/// A strip above the workspace saying the obvious out loud: this is your data,
-/// but Juno has not been reachable, so nothing here has been checked against the
-/// server. Non-blocking on purpose — the previous behaviour was to sign the user
-/// out entirely, which threw away a working local workspace to show a sign-in
-/// screen that could not succeed either.
-private struct JunoDesktopOfflineBanner: View {
-    let cause: String
-    let retry: () -> Void
-
-    var body: some View {
-        HStack(spacing: JunoSpace.cozy) {
-            JunoIconView(.connections, size: 16)
-                .junoSecondaryInk()
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Juno is unreachable — showing your local copy")
-                    .font(.callout)
-                Text(cause)
-                    .junoCaption()
-                    .lineLimit(2)
-                    .textSelection(.enabled)
-            }
-            Spacer(minLength: JunoSpace.cozy)
-            Button("Try again", action: retry)
-                .junoGlassButton()
-                .controlSize(.small)
-        }
-        .padding(.horizontal, JunoSpace.roomy)
-        .padding(.vertical, JunoSpace.cozy)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.junoCanvasWarm)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.junoHairline).frame(height: 1)
-        }
-        .accessibilityIdentifier("juno.desktop.offline-banner")
-    }
-}
-
 private struct JunoDesktopSignInView: View {
     /// The web's `max-w-sm` card column, and its `h-12 w-12` mark.
     private static let columnWidth: CGFloat = 360
@@ -508,7 +483,11 @@ private struct JunoDesktopSignInView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .junoProminentGlassButton()
+            // The card's one coral action, as the system's prominent button:
+            // the card is opaque content, and glass laid on it would be a
+            // second material on the first (§0.1).
+            .buttonStyle(.borderedProminent)
+            .junoAccentTint()
             .controlSize(.large)
             .disabled(!canSubmitPassword)
             .accessibilityIdentifier("Sign in")
@@ -521,7 +500,7 @@ private struct JunoDesktopSignInView: View {
                 Text("Continue in browser")
                     .frame(maxWidth: .infinity)
             }
-            .junoGlassButton()
+            .buttonStyle(.bordered)
             .controlSize(.large)
             .disabled(isBusy || authModel.phase == .unavailable)
             .accessibilityIdentifier("Sign in to Juno")
@@ -640,7 +619,7 @@ private struct JunoDesktopLocalStoreRecoveryNotice: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .junoGlassButton()
+            .buttonStyle(.bordered)
             .disabled(isRunning)
             .accessibilityIdentifier("juno.desktop.recover-local-store")
 

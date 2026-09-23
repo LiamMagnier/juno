@@ -160,7 +160,7 @@ struct JunoMobileThoughtProcessRow: View {
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Thought process")
-                        .font(JunoSerif.font(size: 13, relativeTo: .footnote, face: .medium))
+                        .font(JunoType.ui.weight(.medium).font())
                         .kerning(0.13)
                         .foregroundStyle(Color.junoMutedForeground)
                     Text("See how this response was made")
@@ -324,11 +324,11 @@ private struct JunoMobileThoughtProcessPanel: View {
             HStack(alignment: .top, spacing: JunoSpace.regular) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Run summary")
-                        .font(JunoSerif.font(size: 13, relativeTo: .footnote, face: .medium))
+                        .font(JunoType.ui.weight(.medium).font())
                         .kerning(0.13)
                         .foregroundStyle(Color.junoMutedForeground)
                     Text("Response complete")
-                        .font(JunoSerif.font(size: 18, relativeTo: .headline, face: .semibold))
+                        .font(JunoType.heading.font())
                         .foregroundStyle(Color.primary.opacity(0.9))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -370,10 +370,11 @@ private struct JunoMobileThoughtProcessPanel: View {
             }
 
             JunoCard(padding: JunoSpace.regular) {
-                // The serif, at reading size, because this is the model's own
-                // prose rather than product chrome — the same call the web makes.
+                // The body rung, at reading size, because this is the model's
+                // own prose rather than product chrome — the same call the web
+                // makes, where `.prose-juno` is set in the interface face.
                 Text(reasoning)
-                    .font(JunoSerif.font(size: 14, relativeTo: .subheadline))
+                    .font(JunoType.body.font())
                     .lineSpacing(5)
                     .foregroundStyle(Color.primary.opacity(0.72))
                     .textSelection(.enabled)

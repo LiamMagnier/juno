@@ -178,12 +178,13 @@ struct DesktopDesignStartClient: Sendable {
 /// it rather than a second design view: the same complaint the website's own
 /// `design/page.tsx` opens with, answered the same way.
 ///
-/// **Not a product mode.** Chat, Code and Work each own a whole window — their
-/// own source list, their own toolbar, their own `NavigationSplitView` — and
-/// Design owns none of that. On the web it is a destination in the sidebar
-/// footer for exactly that reason, and the Mac's ``DesktopProductMode`` stays
-/// three cases wide. This is a page inside a product's detail column, opened
-/// from ``DesktopSidebarDesignRow``.
+/// **Not a product mode.** Chat and Code each own a whole window — their own
+/// source list, their own toolbar, their own `NavigationSplitView` — and Design
+/// owns none of that, so ``DesktopProductMode`` never grows a Design case. This
+/// is a page inside a product's detail column: in Chat, the Design row among the
+/// navigation rows under New chat, as on the web (§2.1 of the Liquid Glass
+/// redesign); in Code and the legacy tasks workspace, still
+/// ``DesktopSidebarDesignRow`` in the column's footer until their own reworks.
 ///
 /// **One page, two states, the artifacts library's own shape.** A library and
 /// then the document, swapped in place rather than pushed, because this view is
@@ -807,36 +808,28 @@ private enum DesktopDesignMetrics {
 
 // MARK: - The door
 
-/// The way into Design, at the bottom of every navigation column.
+/// The way into Design at the foot of Code's and the legacy tasks workspace's
+/// navigation columns.
 ///
-/// **Where the web put it, and why.** `app-sidebar.tsx` draws exactly this row
-/// in its own block above the account row — not as a fourth mode segment, and
-/// not among the destinations at the top. A mode owns the whole column (its nav
-/// rows, its list, its collapsed rail) and Design has none of that; as a fourth
-/// segment it only routed away and left Home's column standing. It is a
-/// destination, so it lives with the account row at the bottom.
+/// **Not Chat's any more.** The web moved Design up among the navigation rows,
+/// and Chat followed in Phase 1 of the Liquid Glass redesign (§2.1): its column
+/// has a Design row under Library, Projects and Artifacts, and its footer is
+/// about the account alone. This footer row stays for the two columns that have
+/// not been reworked yet, and goes with them.
 ///
-/// **One row, three columns.** Chat, Code and Work each compose their own
-/// footer — Code stacks a workspace notice above the account block, Work has no
-/// account block at all — so the shared thing is this row rather than a shared
-/// footer. Its anatomy is ``DesktopSidebarAccountRow``'s to the point: the same
+/// **One row, two columns.** Code and the legacy workspace each compose their
+/// own footer — Code stacks a workspace notice above the account block, the
+/// legacy workspace has no account block at all — so the shared thing is this
+/// row rather than a shared footer. Its anatomy is ``DesktopSidebarAccountRow``'s to the point: the same
 /// insets, the same ``JunoRadius/row`` hover shape, the same
 /// `Color.junoSidebarSelection` fill, so the two read as one footer instead of
 /// as a button sitting on top of one.
 ///
-/// **The mark is an SF Symbol, and that is a known gap.** The website draws
-/// Lucide's `pen-tool` here (`AppIcons.design`), and ``JunoIcon`` has no case for
-/// it because the asset generator has never been asked for one. This is the same
-/// state `DesktopDestination.usage` is in and it is handled the same way — the
-/// system glyph until the Juno mark is generated — rather than borrowing a
-/// near-miss from another set, which is the drift ``JunoIcon`` exists to prevent.
-///
-/// `pencil.tip` and not `pencil.and.outline`, `pencil.and.ruler` or
-/// `square.and.pencil`, and each rejection was made by rendering all four at this
-/// row's 15pt rather than by reading their names. The first draws a pencil across
-/// an *ellipse* and reads as a prohibition sign; the second's ruler hatching turns
-/// to noise; the third is already this window's New Chat toolbar button. A nib is
-/// one clean shape at 15pt and is the thing Lucide's pen-tool is a drawing of.
+/// The mark is the web's own (`AppIcons.design`, Juno's `JunoDesign`): a
+/// square in front of a circle, stacked like cut paper. This row drew a pencil
+/// while the icon set had no Design mark — the SF Symbol `pencil.tip` before
+/// that — and both named a tool rather than the place, which is the reason the
+/// web gave up its own pen nib for this destination.
 struct DesktopSidebarDesignRow: View {
     /// Whether the Design page is the one on screen. The web's `NavRow` takes the
     /// same flag and lifts its ink for it; a footer row that never shows it is
@@ -849,7 +842,7 @@ struct DesktopSidebarDesignRow: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: JunoSpace.cozy) {
-                JunoIconView(.pencil, size: 16)
+                JunoIconView(.design, size: 16)
                     .foregroundStyle(ink)
                     .frame(width: 26, height: 26)
                     .accessibilityHidden(true)

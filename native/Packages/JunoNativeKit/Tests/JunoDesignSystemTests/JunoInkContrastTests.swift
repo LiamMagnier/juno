@@ -120,6 +120,67 @@ final class JunoInkContrastTests: XCTestCase {
         )
     }
 
+    /// The tertiary ink is the web's `text-muted-foreground/70`, composited
+    /// over the ground it sits on — and it is **not** AA text. This pins the
+    /// number the accessibility rule is written against (errata: 2.89:1 on the
+    /// light canvas), so the rule "only non-essential text of 13pt and up;
+    /// keycaps and timers take the secondary ink" is checked against the colour
+    /// it describes rather than against a number someone once measured.
+    func testTertiaryInkContrastIsTheDocumentedFloor() {
+        func composite(_ ink: JunoColorToken, over ground: JunoColorToken) -> JunoColorToken {
+            let a = ink.opacity
+            return JunoColorToken(
+                unchecked: ink.red * a + ground.red * (1 - a),
+                ink.green * a + ground.green * (1 - a),
+                ink.blue * a + ground.blue * (1 - a)
+            )
+        }
+        let light = contrast(composite(.tertiaryInkLight, over: .canvasLight), on: .canvasLight)
+        XCTAssertEqual(light, 2.89, accuracy: 0.01)
+        XCTAssertLessThan(light, 4.5, "tertiary ink is not body text; the doc comment says so")
+
+        #if os(macOS)
+        // On the Mac's charcoal it measures 4.25:1 — still under AA, so the
+        // same rule holds in both appearances.
+        let dark = contrast(composite(.tertiaryInkDark, over: .canvasDark), on: .canvasDark)
+        XCTAssertEqual(dark, 4.25, accuracy: 0.02)
+        XCTAssertLessThan(dark, 4.5)
+        #endif
+
+        // And it is quieter than the secondary ink it is derived from.
+        XCTAssertLessThan(light, contrast(.mutedForegroundLight, on: .canvasLight))
+    }
+
+    /// The redesign's status inks and the accent ink are the web's AA text
+    /// ramps; they are read as text, so they answer to the text floor.
+    func testTheGeneratedInksClearAAOnTheCanvas() {
+        let inks: [(String, JunoColorToken, JunoColorToken)] = [
+            ("success-ink", .successInkLight, .successInkDark),
+            ("warning-ink", .warningInkLight, .warningInkDark),
+            ("destructive-ink", .destructiveInkLight, .destructiveInkDark),
+            ("sidebar ink", .sidebarForegroundLight, .sidebarForegroundDark),
+        ]
+        for (name, light, dark) in inks {
+            XCTAssertGreaterThanOrEqual(
+                contrast(light, on: .canvasLight), 4.5, "\(name) on canvas (light)"
+            )
+            XCTAssertGreaterThanOrEqual(
+                contrast(dark, on: .canvasDark), 4.5, "\(name) on canvas (dark)"
+            )
+        }
+        let coralInk = JunoAccent.coral.generatedPalette.ink
+        XCTAssertGreaterThanOrEqual(contrast(coralInk.light, on: .canvasLight), 4.5)
+        XCTAssertGreaterThanOrEqual(contrast(coralInk.dark, on: .canvasDark), 4.5)
+    }
+
+    /// The focus ring is a graphical object: 3:1 against the canvas it
+    /// outlines, in both appearances.
+    func testTheRingClearsTheNonTextFloor() {
+        let ring = JunoAccent.coral.generatedPalette.ring
+        XCTAssertGreaterThanOrEqual(contrast(ring.light, on: .canvasLight), 3)
+        XCTAssertGreaterThanOrEqual(contrast(ring.dark, on: .canvasDark), 3)
+    }
+
     /// The status ramp is read as text — "3 failed", stderr, a denial — so it
     /// answers to the text floor and not to the 3:1 one for graphical objects.
     func testStatusInkClearsAAOnTheReadingGrounds() {

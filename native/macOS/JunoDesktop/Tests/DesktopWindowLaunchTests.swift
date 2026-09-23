@@ -20,10 +20,11 @@ struct DesktopWindowLaunchTests {
         #expect(JunoDesktopWindow.newWindowMenuTitle == "New Window")
     }
 
+    /// The incognito window's id is gone with the window: private chat is a
+    /// mode of the chat route now (§1.1 of the Liquid Glass redesign).
     @Test
     func windowIDsAreStable() {
         #expect(JunoDesktopWindow.mainID == "juno.main")
-        #expect(JunoDesktopWindow.incognitoID == "juno.incognito")
         #expect(JunoDesktopWindow.shortcutsID == "juno.shortcuts")
     }
 }

@@ -16,11 +16,18 @@ struct DesktopDestinationView: View {
     @Binding var draftProjectID: String?
     @Binding var draftPrompt: String?
     @Binding var requestedProjectID: String?
+    /// ⌘U and drops, on their way to the chat route's composer.
+    @Binding var composerRequest: ChatComposerRequest?
+    /// The draft is private: nothing is saved, synced or remembered. The chat
+    /// route then sends to the in-memory private chat instead of the store.
+    var isPrivateChat = false
+    /// Whether a call is live on the chat route, for the toolbar's Private
+    /// toggle.
+    var callActiveChanged: (Bool) -> Void = { _ in }
+    /// The window's Share, for a reply's action row. Nil without a share
+    /// service.
+    var shareConversation: (() -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// A sheet needs a false → true presentation transition. This is separate
-    /// from `destination` so `--juno-preview-tab settings` works when Settings
-    /// is the initial destination, rather than only after a sidebar tap.
-    @State private var presentsSettings = false
 
     var body: some View {
         // One identity per destination, so a change of page is a real
@@ -36,6 +43,10 @@ struct DesktopDestinationView: View {
     private var page: some View {
         switch destination {
         case .chat:
+            // One view for an ordinary chat and a private one (§5.8): private
+            // mode is the same column and the same composer with the in-memory
+            // model behind them, so turning it on or off keeps the composer —
+            // its words, its focus — where it is.
             DesktopConversationView(
                 model: conversationModel,
                 attachmentModel: configuration.attachmentModel,
@@ -43,7 +54,12 @@ struct DesktopDestinationView: View {
                 configuration: configuration,
                 session: session,
                 draftProjectID: $draftProjectID,
-                draftPrompt: $draftPrompt
+                draftPrompt: $draftPrompt,
+                composerRequest: $composerRequest,
+                openDestination: { destination = $0 },
+                privateChat: isPrivateChat ? configuration.privateChatModel : nil,
+                callActiveChanged: callActiveChanged,
+                shareConversation: shareConversation
             )
         case .search:
             if let model = configuration.searchModel {
@@ -107,16 +123,6 @@ struct DesktopDestinationView: View {
             } else {
                 unavailable("Connections", "The connector service is unavailable.")
             }
-        case .tasks:
-            if let model = configuration.scheduledTaskModel {
-                DesktopTasksScreen(
-                    model: model,
-                    modelOptions: conversationModel.selectableModels,
-                    openConversation: openConversation
-                )
-            } else {
-                unavailable("Tasks", "The scheduled-task service is unavailable.")
-            }
         case .design:
             // The artifact store is the hard dependency, not the transport: the
             // page lists the designs this account already has, and those are
@@ -133,52 +139,15 @@ struct DesktopDestinationView: View {
             } else {
                 unavailable("Design", "The synchronized artifact store is unavailable.")
             }
-        case .usage:
-            DesktopUsageScreen(
-                session: session,
-                requestSender: configuration.requestSender,
-                modelCatalog: conversationModel.selectableModels
-            )
         case .memory:
             if let model = configuration.memorySettingsModel {
-                DesktopMemoryScreen(model: model, back: { destination = .chat })
+                // No back control: the column's More menu opened this page and
+                // is the way away from it. The one it would draw is labelled
+                // "Back to settings" — Settings' own route in — and would have
+                // sent the reader to Chat.
+                DesktopMemoryScreen(model: model, back: nil)
             } else {
                 unavailable("Memory", "The synchronized settings store is unavailable.")
-            }
-        case .settings:
-            // The sheet the account menu presents, presented from here instead
-            // of drawn into the column. Settings is a `NavigationSplitView` of
-            // its own now, and one split view nested in another's detail is
-            // not a shape macOS draws well — so the destination is the empty
-            // canvas with the same sheet over it, and closing the sheet goes
-            // back to Chat. This is the path the preview harness's `settings`
-            // tab takes; the sidebar's footer presents the sheet directly.
-            if let model = configuration.memorySettingsModel {
-                Color.clear
-                    .onAppear { presentsSettings = true }
-                    .sheet(isPresented: $presentsSettings, onDismiss: {
-                        if destination == .settings { destination = .chat }
-                    }) {
-                        DesktopSettingsModal(
-                            model: model,
-                            authModel: configuration.authModel,
-                            session: session,
-                            configuration: configuration,
-                            accountDataClient: configuration.accountDataClient,
-                            shareClient: configuration.shareClient,
-                            modelCatalog: conversationModel.selectableModels,
-                            avatarData: configuration.avatarModel?.imageData,
-                            syncModel: configuration.syncModel,
-                            outbox: configuration.outbox,
-                            openUsage: { destination = .usage },
-                            codeHostModel: configuration.codeHostModel,
-                            workHostModel: configuration.workHostModel,
-                            learningModel: configuration.memoryLearningModel,
-                            onDismiss: { destination = .chat }
-                        )
-                    }
-            } else {
-                unavailable("Settings", "Account settings could not be loaded.")
             }
         }
     }
@@ -303,13 +272,13 @@ struct DesktopMemoryScreen: View {
                 .accessibilityLabel("Back to settings")
                 .accessibilityIdentifier("juno.desktop.memory.back")
             }
+            // No "MEMORY" eyebrow above the title: an uppercase monospaced
+            // label is the one voice the redesign retires everywhere (§10.2
+            // #6), and the window's title already names the page.
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                Text("Memory")
-                    .junoCodeSmall()
-                    .junoSecondaryInk()
-                    .textCase(.uppercase)
                 Text("What Juno remembers")
                     .font(JunoSerif.pageHeading())
+                    .accessibilityAddTraits(.isHeader)
                 Text("Distilled from your chats, projects and connections, and used as context whenever you talk to Juno. Always yours to edit, in plain language.")
                     .junoCaption()
                     .fixedSize(horizontal: false, vertical: true)

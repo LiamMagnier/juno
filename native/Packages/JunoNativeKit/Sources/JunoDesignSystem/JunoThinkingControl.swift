@@ -22,7 +22,7 @@ import SwiftUI
 /// element for VoiceOver, arrow-key commands for keyboard control, and a value
 /// that always names the tier. Everything that communicates the value — label,
 /// ticks, thumb position, accessibility value — is duplicated outside the
-/// gradient, so the reading never depends on colour.
+/// fill, so the reading never depends on colour.
 public struct JunoThinkingTrack: View {
     private let ladder: JunoThinkingLadder
     @Binding private var stopID: String?
@@ -109,14 +109,12 @@ public struct JunoThinkingTrack: View {
             RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .fill(Color.junoRowSelected)
 
+            // One flat accent fill: a slider's on-track is inside the accent
+            // budget (§0.4), a coral-to-violet gradient is not — "no gradient
+            // meters, no violet" (§10.2) — and the depth is already carried by
+            // the thumb, the detents and the label, never by the colour.
             RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: Self.gradientColours,
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+                .fill(Color.junoAccent)
                 .frame(width: thumbWidth / 2 + travel * fraction)
                 .padding(pad)
                 .opacity(reduceTransparency ? 1 : 0.92)
@@ -177,11 +175,6 @@ public struct JunoThinkingTrack: View {
         stopID = stop.id
     }
 
-    public static let gradientColours: [Color] = [
-        Color.junoAccent,
-        Color(red: 0.90, green: 0.42, blue: 0.52),
-        Color(red: 0.53, green: 0.42, blue: 0.86),
-    ]
 }
 
 /// The Thinking popover's content: section label, current value, the discrete
@@ -230,9 +223,11 @@ public struct JunoThinkingPanel: View {
                 Text("Effort")
                     .junoFont(size: 12.5, relativeTo: .subheadline, weight: .medium)
                     .junoSecondaryInk()
+                // Accent *text* is the ink rung, which holds its contrast on the
+                // popover in both appearances; the fill colour does not.
                 Text(ladder.label(for: stopID))
                     .junoFont(size: 12.5, relativeTo: .subheadline, weight: .semibold)
-                    .foregroundStyle(Color.junoAccent)
+                    .foregroundStyle(Color.junoAccentInk)
                     .accessibilityHidden(true)
                 Spacer(minLength: JunoSpace.cozy)
                 if showsFast, let fastMode {

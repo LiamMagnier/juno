@@ -7,22 +7,24 @@ import SwiftUI
 /// The window's contents for the current product, and the one moment of motion
 /// between them.
 ///
-/// **Why the two workspaces are never on screen together.** Chat, Code and Work
-/// are each a `NavigationSplitView`, and a SwiftUI transition between two of
-/// them keeps both alive for the length of the animation — two split views,
-/// two AppKit split-view controllers, negotiating sizes against the same window
-/// at the same time. That is precisely the shape that produced the documented
-/// update-constraints crash (`docs/native/MACOS_CRASH_ROOT_CAUSE.md`), and a
-/// nicer-feeling switch is not worth reintroducing it.
+/// **Why the workspaces are never on screen together.** Chat, Code and the
+/// legacy Work workspace are each a `NavigationSplitView`, and a SwiftUI
+/// transition between two of them keeps both alive for the length of the
+/// animation — two split views, two AppKit split-view controllers, negotiating
+/// sizes against the same window at the same time. That is precisely the shape
+/// that produced the documented update-constraints crash
+/// (`docs/native/MACOS_CRASH_ROOT_CAUSE.md`, rule 1), and a nicer-feeling
+/// switch is not worth reintroducing it.
 ///
 /// So the swap itself stays instantaneous — only one workspace is ever
 /// instantiated — and what animates is the arriving workspace *settling in*:
 /// it appears fully transparent six points low and rises into place on
 /// `JunoMotion.standard`, the same curve and the same distance the rest of the
-/// app uses for something small arriving. Read alongside the product switch's
-/// own thumb sliding in the sidebar, the two read as one gesture — the thumb
-/// moves, the window follows — where a hard swap read as the window being
-/// replaced.
+/// app uses for something small arriving.
+///
+/// **Two products.** The switch offers Chat and Code (§1.4). Work is no longer
+/// a product: its old workspace is reachable only from Window › Tasks (Legacy)
+/// (§1.6), and an errand handed over from Quick Entry opens a chat instead.
 struct JunoDesktopWorkspaceView: View {
     let configuration: JunoDesktopConfiguration
     let session: NativeAuthenticatedSession
@@ -36,10 +38,10 @@ struct JunoDesktopWorkspaceView: View {
     /// from the live app's launch policy.
     var consumeInitialDestination: (() -> Void)? = nil
 
-    /// A "New chat" raised from Code or Work is deliberately not a session with
-    /// no folder or a task with no goal. It is an ordinary Juno conversation, so
-    /// it crosses the product boundary and is consumed exactly once by the Chat
-    /// workspace.
+    /// A "New chat" raised from Code, the legacy workspace, the menu bar or
+    /// Quick Entry is deliberately not a session with no folder or a task with
+    /// no goal. It is an ordinary Juno conversation, so it crosses the product
+    /// boundary and is consumed exactly once by the Chat workspace.
     ///
     /// A token rather than a Bool means two consecutive requests can never be
     /// coalesced into one by SwiftUI's state batching.
@@ -47,11 +49,8 @@ struct JunoDesktopWorkspaceView: View {
     /// The text a quick-entry or menu bar request asked the new chat to open
     /// with. Consumed with the request.
     @State private var unscopedChatPrompt: String?
-    /// An errand handed to Work from the quick-entry panel, consumed once by
-    /// the Work home composer. Same token shape as the chat request, for the
-    /// same reason.
-    @State private var workErrandRequestID: UUID?
-    @State private var workErrandPrompt: String?
+    /// Whether the request is for a private draft (⇧⌘N). Consumed with it.
+    @State private var unscopedChatIsPrivate = false
     @State private var registry = DesktopWorkbenchRegistry.shared
 
     var body: some View {
@@ -69,22 +68,31 @@ struct JunoDesktopWorkspaceView: View {
             .onChange(of: registry.pendingRequest, initial: true) { _, request in
                 guard let request else { return }
                 switch request.kind {
-                case .newChat(let prompt):
-                    unscopedChatPrompt = prompt
-                    unscopedChatRequestID = UUID()
-                    product = .chat
+                case .newChat(let prompt, let isPrivate):
+                    requestChat(prompt: prompt, isPrivate: isPrivate)
                     registry.consume(request)
                 case .newCodeTask, .openSession:
                     product = .code
                 }
             }
-            .onChange(of: registry.pendingWorkErrand, initial: true) { _, errand in
-                guard let errand else { return }
-                workErrandPrompt = errand.prompt
-                workErrandRequestID = UUID()
-                product = .work
-                registry.consume(errand)
-            }
+            // What the menu bar reaches in *every* product: a new private chat
+            // (⇧⌘N, which lives in Chat whatever the window was showing) and
+            // the legacy tasks workspace.
+            .focusedSceneValue(
+                \.junoShellActions,
+                DesktopShellActions(
+                    newPrivateChat: { requestChat(prompt: nil, isPrivate: true) },
+                    openLegacyTasks: { product = .legacyWork },
+                    isShowingLegacyTasks: product == .legacyWork
+                )
+            )
+    }
+
+    private func requestChat(prompt: String?, isPrivate: Bool) {
+        unscopedChatPrompt = prompt
+        unscopedChatIsPrivate = isPrivate
+        unscopedChatRequestID = UUID()
+        product = .chat
     }
 
     @ViewBuilder
@@ -101,9 +109,11 @@ struct JunoDesktopWorkspaceView: View {
                     consumeInitialDestination: consumeInitialDestination,
                     unscopedChatRequestID: unscopedChatRequestID,
                     unscopedChatPrompt: unscopedChatPrompt,
+                    unscopedChatIsPrivate: unscopedChatIsPrivate,
                     consumeUnscopedChatRequest: {
                         unscopedChatRequestID = nil
                         unscopedChatPrompt = nil
+                        unscopedChatIsPrivate = false
                     }
                 )
             } else {
@@ -128,10 +138,7 @@ struct JunoDesktopWorkspaceView: View {
                     configuration: configuration,
                     session: session,
                     product: $product,
-                    newChat: {
-                        unscopedChatRequestID = UUID()
-                        product = .chat
-                    }
+                    newChat: { requestChat(prompt: nil, isPrivate: false) }
                 )
             } else {
                 JunoEmptyState(
@@ -141,7 +148,10 @@ struct JunoDesktopWorkspaceView: View {
                 )
             }
 
-        case .work:
+        case .legacyWork:
+            // Kept only so that tasks already running can still be answered
+            // (§1.6); Phase 5 deletes this branch with the workspace. No errand
+            // routing reaches it any more — an errand opens a chat.
             if let workModel = configuration.workModel {
                 DesktopWorkWorkspace(
                     model: workModel,
@@ -149,20 +159,11 @@ struct JunoDesktopWorkspaceView: View {
                     configuration: configuration,
                     session: session,
                     product: $product,
-                    newChat: {
-                        unscopedChatRequestID = UUID()
-                        product = .chat
-                    },
-                    errandRequestID: workErrandRequestID,
-                    errandPrompt: workErrandPrompt,
-                    consumeErrandRequest: {
-                        workErrandRequestID = nil
-                        workErrandPrompt = nil
-                    }
+                    newChat: { requestChat(prompt: nil, isPrivate: false) }
                 )
             } else {
                 JunoEmptyState(
-                    title: "Juno Work unavailable",
+                    title: "Tasks unavailable",
                     message: "The authenticated Work transport could not be composed.",
                     icon: .error
                 )

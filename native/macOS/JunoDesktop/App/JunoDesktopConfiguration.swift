@@ -521,11 +521,11 @@ final class JunoDesktopLocalStoreRecovery {
     ///
     /// Restarted rather than recomposed in place. `JunoDesktopConfiguration` is a
     /// struct of twenty-eight immutable dependencies built once in
-    /// `JunoDesktopApp.init` and handed to three separate scenes — the workspace,
-    /// the incognito window and ⌘,. Swapping the copy this view holds would leave
-    /// the other two wired to the dead configuration, so settings would insist
-    /// nobody was signed in while the window behind it showed a signed-in
-    /// account. One relaunch costs a second and leaves every scene composed
+    /// `JunoDesktopApp.init` and handed to separate scenes — the workspace and
+    /// ⌘,. Swapping the copy this view holds would leave the other wired to the
+    /// dead configuration, so settings would insist nobody was signed in while
+    /// the window behind it showed a signed-in account. One relaunch costs a
+    /// second and leaves every scene composed
     /// against the same store.
     ///
     /// The new store is opened and closed here rather than left to the next

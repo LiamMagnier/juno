@@ -587,10 +587,6 @@ enum DesktopSettingsMetrics {
     /// column at its narrowest; the ideal is what a fresh window opens at.
     static let windowMinimum = CGSize(width: 820, height: 560)
     static let windowIdeal = CGSize(width: 960, height: 680)
-    /// The in-window sheet: a fixed frame, because a presented surface that
-    /// negotiates its own size re-lays out the window underneath it, and this
-    /// shell has fallen into a constraint loop over exactly that.
-    static let modalSize = CGSize(width: 960, height: 640)
     /// The signed-in account's photo in the Account section.
     static let avatarSize: CGFloat = 44
     /// A presented surface's size. Explicit — see ``DesktopSettingsSheetHost``.

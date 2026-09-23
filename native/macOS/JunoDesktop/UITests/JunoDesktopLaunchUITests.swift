@@ -507,16 +507,17 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         )
     }
 
-    /// Every product's column starts under the window chrome, and the product
-    /// switch at its head reaches every other product.
+    /// The Chat/Code switch sits in the sidebar's segment of the toolbar and
+    /// reaches the other product; the legacy tasks workspace is reached only
+    /// from Window › Tasks (Legacy).
     ///
-    /// Two regressions this pins. The sidebar strip used to ignore the top
-    /// safe area and pad a constant, which put Code's search field over the
-    /// product switch and — on a window whose titlebar measured differently —
-    /// the column's first rows under the traffic lights. And Work's column
-    /// shipped with no product switch at all, so a window that had switched
-    /// into Work could not switch back out from the sidebar.
-    func testEveryProductColumnStartsBelowTheToolbarAndSwitchesToTheOthers() {
+    /// The switch used to head each column in a strip of its own under the
+    /// toolbar, labelled "Juno product", with Work as a third segment. Phase 1
+    /// of the Liquid Glass redesign made it a toolbar item (§1.4) and took
+    /// Work out of it (§1.6), so this pins the new shape: the switch shares the
+    /// traffic lights' band and sits beside them, Work has no segment, and the
+    /// old workspace is one Window-menu item away.
+    func testProductSwitchSitsInTheToolbarAndLegacyTasksAreInTheWindowMenu() {
         let app = XCUIApplication()
         app.launchArguments = [
             "-ApplePersistenceIgnoreState", "YES",
@@ -531,13 +532,20 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         openMainWindowIfNeeded(in: app)
 
         let productSwitch = app.descendants(matching: .any)["Juno product"]
-        XCTAssertTrue(productSwitch.waitForExistence(timeout: 12), "Work's column has no product switch.")
-        assertColumnHeadBelowChrome(in: app, product: "work")
+        XCTAssertTrue(productSwitch.waitForExistence(timeout: 12), "The legacy workspace has no product switch.")
+        assertSwitchInToolbar(in: app, product: "legacy tasks")
         XCTAssertTrue(app.buttons["juno.work.new-task"].exists)
+        XCTAssertFalse(
+            app.descendants(matching: .any)["juno.product-brand.work"].exists,
+            "Work is not a product any more; it has no segment."
+        )
 
         app.descendants(matching: .any)["juno.product-brand.chat"].click()
-        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 8), "Work → Chat")
-        assertColumnHeadBelowChrome(in: app, product: "chat")
+        XCTAssertTrue(
+            app.buttons.matching(labelBeginsWith("New chat")).firstMatch.waitForExistence(timeout: 8),
+            "Legacy tasks → Chat"
+        )
+        assertSwitchInToolbar(in: app, product: "chat")
 
         app.descendants(matching: .any)["juno.product-brand.code"].click()
         // The filter row, not "Add project…": that button is the last row of
@@ -547,9 +555,9 @@ final class JunoDesktopLaunchUITests: XCTestCase {
             app.descendants(matching: .any)["juno.code.sidebar-filter"].waitForExistence(timeout: 8),
             "Chat → Code"
         )
-        assertColumnHeadBelowChrome(in: app, product: "code")
+        assertSwitchInToolbar(in: app, product: "code")
         // Code pins a search field under its brand row; it must sit below the
-        // strip, not across it.
+        // toolbar's switch, not across it.
         let search = app.searchFields["juno.code.sidebar-search-field"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         XCTAssertGreaterThanOrEqual(
@@ -557,11 +565,17 @@ final class JunoDesktopLaunchUITests: XCTestCase {
             "The Code column's search field overlaps the product switch."
         )
 
-        app.descendants(matching: .any)["juno.product-brand.work"].click()
-        XCTAssertTrue(app.buttons["juno.work.new-task"].waitForExistence(timeout: 8), "Code → Work")
+        // The one door back to the old workspace, until Phase 5 retires it.
+        app.menuBarItems["Window"].click()
+        let legacyTasks = app.menuItems["Tasks (Legacy)"]
+        XCTAssertTrue(legacyTasks.waitForExistence(timeout: 3), "Window › Tasks (Legacy) is missing.")
+        legacyTasks.click()
+        XCTAssertTrue(app.buttons["juno.work.new-task"].waitForExistence(timeout: 8), "Window › Tasks (Legacy)")
     }
 
-    private func assertColumnHeadBelowChrome(in app: XCUIApplication, product: String) {
+    /// The switch is a toolbar item: inside the toolbar's band, and to the
+    /// right of the traffic lights rather than under them.
+    private func assertSwitchInToolbar(in app: XCUIApplication, product: String) {
         let toolbar = app.toolbars.firstMatch
         let productSwitch = app.descendants(matching: .any)["Juno product"]
         XCTAssertTrue(productSwitch.waitForExistence(timeout: 8), product)
@@ -577,16 +591,16 @@ final class JunoDesktopLaunchUITests: XCTestCase {
             NSStringFromRect(toolbar.frame),
             NSStringFromRect(productSwitch.frame)
         )
-        XCTAssertGreaterThanOrEqual(
-            productSwitch.frame.minY, toolbar.frame.maxY - 1,
-            "\(product): the product switch is drawn under the window's toolbar."
+        XCTAssertTrue(
+            productSwitch.frame.midY >= toolbar.frame.minY && productSwitch.frame.midY <= toolbar.frame.maxY,
+            "\(product): the product switch is not in the window's toolbar."
         )
         let closeButton = app.windows.firstMatch.buttons.matching(
             NSPredicate(format: "label == %@ OR identifier == %@", "close button", "_XCUI:CloseWindow")
         ).firstMatch
         if closeButton.exists {
             XCTAssertGreaterThanOrEqual(
-                productSwitch.frame.minY, closeButton.frame.maxY,
+                productSwitch.frame.minX, closeButton.frame.maxX,
                 "\(product): the product switch collides with the traffic lights."
             )
         }
@@ -734,7 +748,7 @@ final class JunoDesktopLaunchUITests: XCTestCase {
             openMainWindowIfNeeded(in: app)
             XCTAssertTrue(
                 app.descendants(matching: .any)["Juno product"].waitForExistence(timeout: 15),
-                "\(capture.name): the product switch should head the sidebar"
+                "\(capture.name): the product switch should be in the sidebar's toolbar"
             )
             // Let the preview world settle and the arrival animation finish.
             _ = app.descendants(matching: .any)["juno.never.exists"].waitForExistence(timeout: 2)

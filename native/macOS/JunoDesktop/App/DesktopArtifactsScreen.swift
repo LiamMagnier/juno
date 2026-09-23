@@ -706,8 +706,8 @@ struct DesktopArtifactsScreen: View {
             emptyState
         } else {
             // The destination's own mark. `square.stack.3d.up` is SF's idea of a
-            // stack; the website's artifact glyph is Lucide's `Layers3`, and it
-            // is already in the asset catalog as the sidebar row this page sits
+            // stack; the website's artifact glyph is `Layers3` (Phosphor's
+            // Stack), and it is already in the icon set as the sidebar row this page sits
             // behind — so drawing a different stack here named a different thing.
             JunoEmptyState(
                 title: "No artifact selected",

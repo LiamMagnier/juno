@@ -116,6 +116,49 @@ final class JunoDesignTokensTests: XCTestCase {
         XCTAssertEqual(JunoRadius.composer, 20)
     }
 
+    /// The redesign's radius names (§8.4 plus errata 9) are the web's own
+    /// ladder names at the web's own values, so a port reads `rounded-panel`
+    /// and writes `JunoRadius.panel` and gets the same corner.
+    func testTheWebsRadiusNamesMeanTheWebsSizes() {
+        let pairs: [(CGFloat, CGFloat, CGFloat, String)] = [
+            (JunoRadius.micro, JunoGeneratedRadius.micro, 2, "micro"),
+            (JunoRadius.sm, JunoGeneratedRadius.sm, 4, "sm"),
+            (JunoRadius.xs, JunoGeneratedRadius.xs, 6, "xs"),
+            (JunoRadius.md, JunoGeneratedRadius.md, 8, "md"),
+            (JunoRadius.control, JunoGeneratedRadius.control, 10, "control"),
+            (JunoRadius.field, JunoGeneratedRadius.field, 12, "field"),
+            (JunoRadius.menu, JunoGeneratedRadius.menu, 14, "menu"),
+            (JunoRadius.card, JunoGeneratedRadius.card, 16, "card"),
+            (JunoRadius.panel, JunoGeneratedRadius.panel, 20, "panel"),
+        ]
+        for (value, generated, number, name) in pairs {
+            XCTAssertEqual(value, generated, "\(name) must alias the generated rung")
+            XCTAssertEqual(value, number, "\(name) moved on the web; check the Mac still wants it")
+        }
+        // Errata 9: the dashed empty-state well is a field, a toast is a card.
+        XCTAssertEqual(JunoRadius.field, 12)
+        XCTAssertEqual(JunoRadius.card, 16)
+    }
+
+    /// The concentric helper is a uniform concentric rectangle with a floor, the
+    /// SDK's `.rect(corners: .concentric(minimum:))` — never a fixed radius.
+    func testConcentricChildrenTakeTheContainersShape() {
+        let rect = CGRect(x: 0, y: 0, width: 120, height: 40)
+        XCTAssertEqual(
+            JunoRadius.concentric().path(in: rect),
+            ConcentricRectangle(corners: .concentric(minimum: .fixed(JunoRadius.control)), isUniform: true)
+                .path(in: rect)
+        )
+        XCTAssertEqual(
+            JunoRadius.concentric(minimum: JunoRadius.xs).path(in: rect),
+            ConcentricRectangle(corners: .concentric(minimum: .fixed(6)), isUniform: true)
+                .path(in: rect)
+        )
+        // With no container declared, a concentric child falls back to its
+        // floor — it never draws square.
+        XCTAssertNotEqual(JunoRadius.concentric().path(in: rect), Rectangle().path(in: rect))
+    }
+
     /// The three names that used to mean different sizes on the two platforms.
     ///
     /// `control` and `panel` were renamed precisely because the web owns those
@@ -197,6 +240,11 @@ final class JunoDesignTokensTests: XCTestCase {
             // only guards what someone remembered to add, so any NEW neutral
             // surface token belongs here on the day it is written.
             .terminalLight, .terminalDark,
+            // The redesign's neutrals (§8.1).
+            .secondaryLight, .secondaryDark,
+            .hoverLight, .hoverDark,
+            .inputLight, .inputDark,
+            .selectedFillLight, .selectedFillDark,
         ]
         for token in tokens {
             XCTAssertGreaterThan(token.red, token.blue, "expected a warm neutral")
@@ -215,10 +263,34 @@ final class JunoDesignTokensTests: XCTestCase {
         XCTAssertEqual(Color.junoRaised, Color.junoSurface)
     }
 
+    /// Elevation must read as lighter in dark mode, or cards vanish: canvas
+    /// (11.5%) < card (14%) < popover (16.5%), in HSL lightness, the unit the
+    /// web writes the ramp in (§8.1).
+    ///
+    /// Measured on the ground the Mac paints. The phone keeps its 4% ground
+    /// for now (see `JunoColorToken.canvasDark`), which satisfies the same
+    /// order with more room.
     func testDarkCanvasIsDarkerThanEverySurfaceAboveIt() {
-        // Elevation must read as lighter in dark mode, or cards vanish.
-        XCTAssertLessThan(JunoColorToken.canvasDark.red, JunoColorToken.surfaceDark.red)
-        XCTAssertLessThan(JunoColorToken.surfaceDark.red, JunoColorToken.popoverDark.red)
+        func lightness(_ token: JunoColorToken) -> Double {
+            (max(token.red, token.green, token.blue) + min(token.red, token.green, token.blue)) / 2
+        }
+        let canvas = lightness(.canvasDark)
+        let card = lightness(.surfaceDark)
+        let popover = lightness(.popoverDark)
+        XCTAssertLessThan(canvas, card)
+        XCTAssertLessThan(card, popover)
+        XCTAssertEqual(canvas, 0.115, accuracy: 0.001, "the Mac canvas is the web's warm charcoal")
+        XCTAssertEqual(card, 0.14, accuracy: 0.001)
+        XCTAssertEqual(popover, 0.165, accuracy: 0.001)
+    }
+
+    /// The Mac canvas is `--background` itself: #FAF9F6 / #1F1D1C. The old
+    /// hand-kept `warmBlack` (4%) is gone from the Mac.
+    func testTheMacCanvasIsTheGeneratedBackground() {
+        XCTAssertEqual(JunoColorToken.canvasLight, JunoGeneratedColors.background.light)
+        #if os(macOS)
+        XCTAssertEqual(JunoColorToken.canvasDark, JunoGeneratedColors.background.dark)
+        #endif
     }
 
     /// The surviving scales are ordered.
@@ -229,16 +301,24 @@ final class JunoDesignTokensTests: XCTestCase {
     /// on two contradictory ladders as on one.
     func testTheSurvivingScalesAreMonotonic() {
         let spacing = [
-            JunoSpace.hairline, JunoSpace.tight, JunoSpace.snug, JunoSpace.cozy,
-            JunoSpace.regular, JunoSpace.roomy, JunoSpace.section, JunoSpace.region,
+            JunoSpace.micro, JunoSpace.hairline, JunoSpace.tight, JunoSpace.snug,
+            JunoSpace.close, JunoSpace.cozy, JunoSpace.comfy, JunoSpace.regular,
+            JunoSpace.ample, JunoSpace.roomy, JunoSpace.section, JunoSpace.wide,
+            JunoSpace.region, JunoSpace.expanse, JunoSpace.vast,
         ]
         XCTAssertEqual(spacing, spacing.sorted())
 
         let radii = [
+            JunoRadius.micro, JunoRadius.sm, JunoRadius.xs, JunoRadius.md,
+            JunoRadius.control, JunoRadius.field, JunoRadius.menu, JunoRadius.card,
+            JunoRadius.panel,
+        ]
+        XCTAssertEqual(radii, radii.sorted())
+        let roles = [
             JunoRadius.chip, JunoRadius.row, JunoRadius.well, JunoRadius.card,
             JunoRadius.message, JunoRadius.floating, JunoRadius.composer,
         ]
-        XCTAssertEqual(radii, radii.sorted())
+        XCTAssertEqual(roles, roles.sorted())
     }
 
     /// The deprecated scales resolve onto the surviving ones.
@@ -306,12 +386,105 @@ final class JunoDesignTokensTests: XCTestCase {
         XCTAssertEqual(JunoMotion.reduced(ambient, when: false, tier: .tint), ambient)
 
         // Travel is the default tier, and it neither passes the animation
-        // through nor drops it: it substitutes the flat cross-fade.
+        // through nor drops it: the spring becomes `--ease-out-soft` at
+        // `--dur-base`, as the web's reduced-motion block re-points it.
         let travelled = JunoMotion.reduced(ambient, when: true)
         XCTAssertNotNil(travelled)
         XCTAssertNotEqual(travelled, ambient)
-        XCTAssertEqual(travelled, .easeOut(duration: JunoMotion.Duration.exit))
+        XCTAssertEqual(travelled, JunoMotion.outSoft(JunoMotion.Duration.base))
         XCTAssertEqual(JunoMotion.reduced(ambient, when: false), ambient)
+
+        // The travel itself goes to zero, and scale to identity.
+        XCTAssertEqual(JunoMotion.shift(JunoMotion.riseDistance, reduceMotion: true), 0)
+        XCTAssertEqual(JunoMotion.shift(JunoMotion.riseDistance, reduceMotion: false), 6)
+        XCTAssertEqual(JunoMotion.scaleFrom(0.97, reduceMotion: true), 1)
+        XCTAssertEqual(JunoMotion.scaleFrom(0.97, reduceMotion: false), 0.97)
+
+        // "Prefer Cross-Fade Transitions" asks for the same substitution for
+        // travel, and nothing for loops.
+        let crossFade = JunoAccessibilityPreferences(prefersCrossFadeTransitions: true)
+        XCTAssertTrue(crossFade.reducesTravel)
+        XCTAssertFalse(crossFade.reduceMotion)
+        XCTAssertFalse(JunoAccessibilityPreferences().reducesTravel)
+    }
+
+    /// The timed rungs are the web's own `transition: <dur> <ease>` pairs,
+    /// built from the generated curves rather than SwiftUI's stock `.easeOut`
+    /// and `.easeIn`, which are neither of the web's curves (§8.5).
+    func testTheTimedRungsAreTheWebsCurves() {
+        func curve(
+            _ points: (x1: CGFloat, y1: CGFloat, x2: CGFloat, y2: CGFloat),
+            _ duration: TimeInterval
+        ) -> Animation {
+            .timingCurve(points.x1, points.y1, points.x2, points.y2, duration: duration)
+        }
+        XCTAssertEqual(JunoMotion.press, curve(JunoGeneratedEasing.outSoft, 0.07))
+        XCTAssertEqual(JunoMotion.fast, curve(JunoGeneratedEasing.outSoft, 0.12))
+        XCTAssertEqual(JunoMotion.exit, curve(JunoGeneratedEasing.in, 0.16))
+        XCTAssertEqual(JunoMotion.base, curve(JunoGeneratedEasing.outSoft, 0.22))
+        XCTAssertEqual(JunoMotion.slow, curve(JunoGeneratedEasing.outExpo, 0.36))
+
+        // The curves themselves, so a web retune is a decision and not a surprise.
+        XCTAssertTrue(JunoGeneratedEasing.outSoft == (0.33, 1.0, 0.68, 1.0))
+        XCTAssertTrue(JunoGeneratedEasing.in == (0.4, 0.0, 1.0, 1.0))
+        XCTAssertTrue(JunoGeneratedEasing.outExpo == (0.16, 1.0, 0.3, 1.0))
+
+        // `rise-in` is `animate-rise-in`: base on out-soft, over 6pt — not the
+        // out-strong-over-360ms it used to be. (The phone keeps the old
+        // entrance until its own pass.)
+        #if os(macOS)
+        XCTAssertEqual(JunoMotion.riseIn, JunoMotion.base)
+        #endif
+        XCTAssertEqual(JunoMotion.riseDistance, 6)
+    }
+
+    /// The springs, and the Mac's 0.75 — applied to springs only.
+    func testTheSpringsAndThePlatformFactor() {
+        #if os(macOS)
+        XCTAssertEqual(JunoMotion.platformFactor, 0.75)
+        #else
+        XCTAssertEqual(JunoMotion.platformFactor, 1)
+        #endif
+        let factor = JunoMotion.platformFactor
+        XCTAssertEqual(JunoMotion.standard, .spring(duration: 0.22 * factor, bounce: 0.05))
+        XCTAssertEqual(JunoMotion.emphasized, .spring(duration: 0.36 * factor, bounce: 0.10))
+        XCTAssertEqual(JunoMotion.layout, .spring(duration: 0.36 * factor, bounce: 0))
+    }
+
+    /// The live-state loops, at the web's periods.
+    func testTheLoopsAreTheWebsPeriods() {
+        XCTAssertEqual(JunoMotion.Loop.matrix, 1.8)
+        XCTAssertEqual(JunoMotion.Loop.statusBreathe, 2.8)
+        XCTAssertEqual(JunoMotion.Loop.skeletonBreathe, 1.8)
+    }
+
+    // MARK: - Spacing and layout (§8.3)
+
+    /// The ladder is the web's 4pt grid from 2 to 48 plus its 18 step, read
+    /// from the generated projection of Tailwind's scale.
+    func testTheSpaceLadderIsTheWebsScale() {
+        let ladder = [
+            JunoSpace.micro, JunoSpace.hairline, JunoSpace.tight, JunoSpace.snug,
+            JunoSpace.close, JunoSpace.cozy, JunoSpace.comfy, JunoSpace.regular,
+            JunoSpace.ample, JunoSpace.roomy, JunoSpace.section, JunoSpace.wide,
+            JunoSpace.region, JunoSpace.expanse, JunoSpace.vast,
+        ]
+        XCTAssertEqual(ladder, JunoGeneratedSpace.all)
+        XCTAssertEqual(ladder, [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48])
+        XCTAssertEqual(JunoSpace.turnGap, 24)
+        XCTAssertEqual(JunoSpace.pageSectionGap, 32)
+    }
+
+    /// The gutter steps on the column, at the web's container-query widths.
+    func testTheGutterStepsAtTheWebsColumnWidths() {
+        XCTAssertEqual(JunoSpace.gutter(forWidth: 320), 16)
+        XCTAssertEqual(JunoSpace.gutter(forWidth: 639.5), 16)
+        XCTAssertEqual(JunoSpace.gutter(forWidth: 640), 24)
+        XCTAssertEqual(JunoSpace.gutter(forWidth: 1023), 24)
+        XCTAssertEqual(JunoSpace.gutter(forWidth: 1024), 32)
+        XCTAssertEqual(JunoSpace.gutter(forWidth: 1800), 32)
+        XCTAssertEqual(JunoReadingMeasure.reading, 768)
+        XCTAssertEqual(JunoReadingMeasure.wide, 1024)
     }
 
     func testHairlinesAreTranslucent() {

@@ -15,8 +15,8 @@ extension JunoWorkVocabulary {
     /// The website's mark for a deliverable of this kind.
     ///
     /// The shared table still names an SF Symbol for the phone; the Mac draws
-    /// from the Lucide catalog, so the kind is mapped here rather than through
-    /// a symbol-name lookup that would land on the nearest guess.
+    /// from the website's generated set, so the kind is mapped here rather than
+    /// through a symbol-name lookup that would land on the nearest guess.
     static func artifactIcon(_ kind: JunoWorkArtifactKind) -> JunoIcon {
         switch kind {
         case .document, .report: .file

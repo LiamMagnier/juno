@@ -7,57 +7,124 @@ final class JunoBrandTests: XCTestCase {
     /// one-for-one, and the native set is allowed to extend it — status marks,
     /// list glyphs, the composer's controls — but never to drop from it. If the
     /// web adds a product mark and native does not, this is where it surfaces.
-    func testIconSetCarriesTheWebsitesAppIcons() {
-        let web: Set<String> = [
+    func testIconSetCarriesTheWebsitesRegistries() {
+        // Each registry's keys, as an array so a key two registries share
+        // (`research`, `error`, `memory`, …) can appear under both.
+        let web: [String] = [
             // AppIcons — the destinations.
-            "home", "work", "code", "library", "artifacts", "projects",
-            "tasks", "connections", "pulls", "conversation", "new", "search",
-            "settings",
+            "home", "work", "code", "design", "library", "research", "artifacts", "projects",
+            "assistants", "tasks", "connections", "pulls", "conversation", "new", "search",
+            "settings", "skills", "automations", "permissions",
             // CodeIcons — the things Juno Code talks about.
             "cloud", "device", "branch", "lock", "permission",
             "pin", "error", "refresh", "external", "file",
             // ComposerIcons — what the "+" menu adds, and the tools it arms.
             "attach", "photos", "files", "canvas",
-            "research", "web", "artifactsTool", "memory",
-            // Settings, profile, and feature sections.
-            "usage", "appearance", "writing", "language", "models", "notifications", "about",
-            "user", "tools", "knowledge", "sliders",
-            // Action controls, media, and navigation glyphs.
-            "mic", "send", "stop", "plus", "chevronLeft", "chevronRight", "chevronDown", "chevronUp",
-            "trash", "pencil", "copy", "check", "close", "ellipsis", "share", "terminal",
-            "arrowDown", "volume", "thumbsUp", "thumbsDown", "eyeOff",
-            // StatusIcons and the message action row.
-            "triangleAlert", "circleCheck", "circleX", "fork", "arrowUp", "quote",
+            "research", "task", "web", "artifactsTool", "memory",
+            // StatusIcons.
+            "warning", "error", "info", "success", "verified", "security",
+            // ActionIcons.
+            "edit", "delete", "dismiss", "copy", "refresh", "restore",
+            "external", "share", "download", "more", "filter", "parameters",
+            // SettingsIcons.
+            "general", "personalization", "memory", "models", "connectors",
+            "voice", "data", "account", "billing",
+            // The spec's marks the web names by export rather than by key.
+            "privateChat", "pinOff", "archiveRestore", "scan", "audioLines", "monitorUp",
         ]
         let native = Set(JunoIcon.allCases.map(\.rawValue))
-        XCTAssertTrue(web.isSubset(of: native), "missing: \(web.subtracting(native).sorted())")
+        let missing = Set(web).subtracting(native)
+        XCTAssertTrue(missing.isEmpty, "missing: \(missing.sorted())")
     }
 
-    /// Every case has a key in `scripts/generate-native-icons.mjs`, and every
-    /// key has a case. A case with no key renders as empty space with no error;
-    /// a key with no case is a dead asset.
-    func testEveryCaseHasAGeneratorKey() throws {
-        let url = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()  // JunoDesignSystemTests
-            .deletingLastPathComponent()  // Tests
-            .deletingLastPathComponent()  // JunoNativeKit
-            .deletingLastPathComponent()  // Packages
-            .deletingLastPathComponent()  // native
-            .appendingPathComponent("scripts/generate-native-icons.mjs")
-        guard let source = try? String(contentsOf: url, encoding: .utf8) else {
-            throw XCTSkip("generator not reachable from this checkout")
+    /// The drawings the registries assign, pinned by name so a remap on either
+    /// side is a deliberate change. `scripts/generate-native-icons.mjs --check`
+    /// proves the whole table against `app-icons.ts`; these are the ones a
+    /// reader would notice first.
+    func testRegistryConceptsWearTheWebsDrawings() {
+        XCTAssertEqual(JunoIcon.home.symbolName, "juno.chat")
+        XCTAssertEqual(JunoIcon.conversation.symbolName, "juno.chat")
+        XCTAssertEqual(JunoIcon.code.symbolName, "juno.code")
+        XCTAssertEqual(JunoIcon.design.symbolName, "juno.design")
+        XCTAssertEqual(JunoIcon.send.symbolName, "juno.send")
+        XCTAssertEqual(JunoIcon.privateChat.symbolName, "juno.ghost")
+        // Work is steps joined by a line, never the bolt it used to be.
+        XCTAssertEqual(JunoIcon.work.symbolName, "ph.treestructure")
+        XCTAssertEqual(JunoIcon.search.symbolName, "ph.magnifyingglass")
+        XCTAssertEqual(JunoIcon.settings.symbolName, "ph.gearsix")
+        XCTAssertEqual(JunoIcon.more.symbolName, "ph.dotsthree")
+        XCTAssertEqual(JunoIcon.pin.symbolName, "ph.pushpin")
+        XCTAssertEqual(JunoIcon.stop.symbolName, "ph.square")
+    }
+
+    /// Names are `ph.<name>` or `juno.<name>`, lowercase and hyphen-free, and a
+    /// cut is a suffix on the regular drawing's name.
+    func testSymbolNamesFollowTheCatalogsScheme() {
+        for icon in JunoIcon.allCases {
+            let name = icon.symbolName
+            XCTAssertTrue(name.hasPrefix("ph.") || name.hasPrefix("juno."), "\(icon): \(name)")
+            XCTAssertEqual(name, name.lowercased(), "\(icon): \(name)")
+            XCTAssertFalse(name.contains("-"), "\(icon): \(name)")
+            XCTAssertEqual(icon.assetName, name)
+            XCTAssertEqual(icon.assetName(.regular), name)
+            XCTAssertEqual(icon.assetName(.bold), "\(name).bold")
+            XCTAssertEqual(icon.assetName(.fill), icon.hasFill ? "\(name).fill" : name)
         }
-        let body = source[source.range(of: "const ICONS = {")!.upperBound...]
-        let table = body[..<body.range(of: "\n};")!.lowerBound]
-        var keys: Set<String> = []
-        for line in table.split(separator: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.hasPrefix("//"), let colon = trimmed.firstIndex(of: ":") else { continue }
-            keys.insert(String(trimmed[..<colon]))
+    }
+
+    /// The web's optical rule: bold at 13 and under, fill only for "on", and
+    /// only where a solid drawing exists — otherwise the size decides.
+    func testOpticalWeightFollowsTheWeb() {
+        XCTAssertEqual(JunoIcon.copy.opticalWeight(size: 12), .bold)
+        XCTAssertEqual(JunoIcon.copy.opticalWeight(size: 13), .bold)
+        XCTAssertEqual(JunoIcon.copy.opticalWeight(size: 14), .regular)
+        XCTAssertEqual(JunoIcon.copy.opticalWeight(size: 16), .regular)
+        XCTAssertEqual(JunoIcon.pin.opticalWeight(size: 12, isOn: true), .fill)
+        XCTAssertEqual(JunoIcon.thumbsUp.opticalWeight(size: 16, isOn: true), .fill)
+        XCTAssertEqual(JunoIcon.privateChat.opticalWeight(size: 16, isOn: true), .fill)
+        XCTAssertEqual(JunoIcon.copy.opticalWeight(size: 16, isOn: true), .regular)
+        XCTAssertEqual(JunoIcon.copy.opticalWeight(size: 12, isOn: true), .bold)
+    }
+
+    /// Every case's drawing exists in both apps' catalogs, with its bold cut,
+    /// and a fill cut exactly where ``JunoIcon/hasFill`` says — and the
+    /// catalogs carry nothing no case wears. The package has no app bundle to
+    /// load from, so this reads the generated catalogs on disk; the Mac's test
+    /// target loads the compiled ones (`DesktopIconCatalogTests`).
+    func testEveryCaseHasItsSymbolsInBothCatalogs() throws {
+        let native = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // …/JunoDesignSystemTests
+            .deletingLastPathComponent()  // …/Tests
+            .deletingLastPathComponent()  // …/JunoNativeKit
+            .deletingLastPathComponent()  // …/Packages
+            .deletingLastPathComponent()  // …/native
+        let catalogs = [
+            native.appendingPathComponent("macOS/JunoDesktop/Resources/Icons.xcassets"),
+            native.appendingPathComponent("iOS/JunoMobile/Resources/Assets.xcassets/Icons"),
+        ]
+        for catalog in catalogs {
+            guard let entries = try? FileManager.default.contentsOfDirectory(atPath: catalog.path) else {
+                throw XCTSkip("catalog not reachable from this checkout: \(catalog.path)")
+            }
+            let shipped = Set(entries.filter { $0.hasSuffix(".symbolset") }.map { String($0.dropLast(".symbolset".count)) })
+            var worn: Set<String> = []
+            for icon in JunoIcon.allCases {
+                let name = icon.symbolName
+                worn.formUnion([name, "\(name).bold"])
+                XCTAssertTrue(shipped.contains(name), "\(catalog.lastPathComponent): no \(name) for .\(icon)")
+                XCTAssertTrue(shipped.contains("\(name).bold"), "\(catalog.lastPathComponent): no \(name).bold")
+                XCTAssertEqual(
+                    shipped.contains("\(name).fill"), icon.hasFill,
+                    "\(catalog.lastPathComponent): \(name).fill disagrees with JunoIcon.filledSymbols"
+                )
+                if icon.hasFill { worn.insert("\(name).fill") }
+            }
+            XCTAssertEqual(shipped.subtracting(worn), [], "\(catalog.lastPathComponent): symbols no case wears")
+            XCTAssertFalse(
+                shipped.contains { $0.hasPrefix("nav-") },
+                "\(catalog.lastPathComponent): a retired Lucide image is back"
+            )
         }
-        let cases = Set(JunoIcon.allCases.map(\.rawValue))
-        XCTAssertEqual(cases.subtracting(keys), [], "cases with no generated asset")
-        XCTAssertEqual(keys.subtracting(cases), [], "generated assets with no case")
     }
 
     /// The string boundary resolves by exact name and refuses the rest — the
@@ -82,16 +149,6 @@ final class JunoBrandTests: XCTestCase {
                 JunoIcon(rawValue: name),
                 "Juno Code draws \(name); the generated set must carry it"
             )
-        }
-    }
-
-    /// The asset name is the contract with `scripts/generate-native-icons.mjs`.
-    /// A rename on either side breaks image loading silently at runtime — an
-    /// asset that is missing renders as nothing, with no error.
-    func testAssetNamesMatchTheGeneratorsOutput() {
-        XCTAssertEqual(JunoIcon.projects.assetName, "nav-projects")
-        for icon in JunoIcon.allCases {
-            XCTAssertEqual(icon.assetName, "nav-\(icon.rawValue)")
         }
     }
 

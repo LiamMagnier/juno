@@ -147,6 +147,17 @@ enum DesktopSettingsRouter {
         select(section)
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
     }
+
+    /// Selects the section and opens Settings through SwiftUI's own action.
+    ///
+    /// The route for any view that can read `\.openSettings` — the footer's
+    /// gear, the account popover. It is the supported path to the `Settings`
+    /// scene, where the selector above is the one a closure with no view
+    /// environment has to fall back on.
+    static func open(_ section: DesktopSettingsSection, using openSettings: OpenSettingsAction) {
+        select(section)
+        openSettings()
+    }
 }
 
 /// The ⌘, window: a source list of sections beside the section's form.
@@ -196,9 +207,10 @@ struct DesktopSettingsWindow: View {
     }
 }
 
-/// The shape of Settings — System Settings' shape — shared by the ⌘, window
-/// and the in-window sheet so the two cannot come to disagree about what
-/// Settings contains.
+/// The shape of Settings — System Settings' shape — in the ⌘, window, which is
+/// the only place Settings lives (§7.2). The in-window sheet that shared this
+/// shell was deleted in Phase 1: two surfaces for one set of preferences meant
+/// a sheet over the product the reader was using, and a second Done button.
 ///
 /// A `NavigationSplitView`: the sections are a real source list on the left,
 /// so arrow keys, type-select, the focus ring and Increase Contrast are the
@@ -209,14 +221,9 @@ struct DesktopSettingsWindow: View {
 /// has to. The sidebar toggle is removed because a settings window with its
 /// sections hidden is a window nobody can use.
 ///
-/// `detail` builds the page for a section. The window hands over the whole
-/// configuration; the modal has to work from the individual models its
-/// callers already pass it, which is why the shell does not build the page
-/// itself.
+/// `detail` builds the page for a section.
 struct DesktopSettingsShell<Detail: View>: View {
     @Binding var section: DesktopSettingsSection
-    /// Present in the modal, where the shell has to offer its own way out.
-    var onDismiss: (() -> Void)? = nil
     @ViewBuilder let detail: (DesktopSettingsSection) -> Detail
 
     @State private var query = ""
@@ -232,22 +239,6 @@ struct DesktopSettingsShell<Detail: View>: View {
                 .junoReadingCanvas()
         }
         .toolbar(removing: .sidebarToggle)
-        .toolbar {
-            if let onDismiss {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done", action: onDismiss)
-                        .keyboardShortcut(.defaultAction)
-                        // The one primary action on the sheet, in Juno's
-                        // accent rather than whatever the system's is.
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.junoAccent)
-                        .help("Close settings")
-                        .accessibilityIdentifier("juno.desktop.settings.done")
-                }
-            }
-        }
-        // Esc still leaves, as it did when the rail drew its own close control.
-        .onExitCommand { onDismiss?() }
     }
 }
 

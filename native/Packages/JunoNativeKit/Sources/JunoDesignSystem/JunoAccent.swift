@@ -69,41 +69,27 @@ public enum JunoAccent: String, CaseIterable, Sendable, Identifiable {
         }
     }
 
-    /// The text colour that stays legible *on* this accent — the web's
-    /// `--primary-foreground`. Amber and the lifted dark accents are light enough
-    /// that white text on them fails contrast, which is why this is not just white.
-    public var onAccent: Color {
-        switch self {
-        case .coral: .white
-        case .juniper:
-            // `0 0% 100%` / `150 30% 9%` — juniper's dark value lifts to 54%,
-            // so white on it fails; the ink is a near-black in juniper's own
-            // hue rather than the warm one the other lifted accents use.
-            Color.junoAdaptive(
-                light: JunoColorToken(unchecked: 1, 1, 1),
-                dark: JunoColorToken(unchecked: 0.0630, 0.1170, 0.0900)
-            )
-        case .teal, .violet, .sage:
-            Color.junoAdaptive(
-                light: JunoColorToken(unchecked: 1, 1, 1),
-                // `40 6% 10%` — a warm near-black, not pure black.
-                dark: JunoColorToken(unchecked: 0.1060, 0.1029, 0.0958)
-            )
-        case .amber:
-            // `30 40% 12%` / `30 40% 10%`.
-            Color.junoAdaptive(
-                light: JunoColorToken(unchecked: 0.1680, 0.1200, 0.0720),
-                dark: JunoColorToken(unchecked: 0.1400, 0.1000, 0.0600)
-            )
-        }
-    }
+    /// `--primary`: the action colour, per appearance.
+    ///
+    /// Read from ``generatedPalette`` — the projection of the `[data-accent]`
+    /// blocks — rather than rebuilt from the HSL triples above, which stay only
+    /// for ``hsl(dark:)``. The two agree (`JunoAccentTests` pins it), but the
+    /// projection is the one `design:tokens:check` keeps honest.
+    public var color: Color { Color.junoAdaptive(generatedPalette.primary) }
 
-    public var color: Color {
-        Color.junoAdaptive(
-            light: JunoColorToken(hsl: light),
-            dark: JunoColorToken(hsl: dark)
-        )
-    }
+    /// `--primary-foreground`: the text colour that stays legible *on* this
+    /// accent. Amber and the lifted dark accents are light enough that white
+    /// text on them fails contrast, which is why this is not just white.
+    public var onAccent: Color { Color.junoAdaptive(generatedPalette.onPrimary) }
+
+    /// `--primary-ink`: this accent as text — links, accent text, code
+    /// keywords. Lighter than the fill in dark mode wherever the fill would
+    /// not clear 4.5:1 on the charcoal.
+    public var ink: Color { Color.junoAdaptive(generatedPalette.ink) }
+
+    /// The accent block's `--ring`. The same neutral pair in every accent, so
+    /// keyboard focus never takes the action colour.
+    public var ring: Color { Color.junoAdaptive(generatedPalette.ring) }
 
     /// The raw `--primary` triplet, for effects that need to move *within* the
     /// accent rather than just paint with it.

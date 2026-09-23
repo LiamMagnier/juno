@@ -6,206 +6,416 @@ import UIKit
 import AppKit
 #endif
 
-/// Adaptive brand surfaces used by the native apps, converted from the web's
-/// custom properties in `src/app/globals.css`. Each token names the CSS variable
-/// and HSL triple it came from, so a change on the web has one obvious landing
-/// site here. Light mode is a warm off-white and dark mode a *warm* near-black —
-/// on both, red is the highest channel and blue the lowest. That warmth is the
-/// brand; a neutral or blue-leaning grey reads as a generic SwiftUI app.
+/// Juno's colour tokens: the web's custom properties from `src/app/globals.css`,
+/// read from the generated projection (`Generated/JunoGeneratedTokens.swift`)
+/// rather than transcribed. Light mode is the warm paper and dark mode the warm
+/// charcoal — on both, red is the highest channel and blue the lowest. That
+/// warmth is the brand; a neutral or blue-leaning grey reads as a generic
+/// SwiftUI app.
 ///
-/// Anything not listed here defers to the system semantic colors so the apps
+/// **The names are the redesign's (§8.1 of `MACOS_LIQUID_GLASS_REDESIGN.md`).**
+/// Each accessor names the CSS variable it resolves, so a change on the web has
+/// one obvious landing site here, and `JunoColorConsumptionTests` fails if an
+/// accessor stops resolving to its generated counterpart. The older names
+/// (`junoSurface`, `junoMutedForeground`, `junoSidebarForeground`,
+/// `junoFocusRing`, `junoSidebarSelection`, …) still compile and resolve to the
+/// same values; they are aliases, not a second palette, and each says which
+/// redesign name replaces it. They are not marked `@available(deprecated)` yet
+/// because together they carry about a thousand call sites across Chat, Code
+/// and the phone, and the shared packages build with warnings as errors — the
+/// rename lands with each surface's own rework instead.
+///
+/// Anything not listed here defers to the system semantic colours so the apps
 /// track platform conventions automatically.
 public extension JunoColorToken {
-    /// `--primary: 15 54% 46%`, identical in both appearances.
+    /// `--primary`, identical in both appearances: the brand coral. The
+    /// account's accent is ``SwiftUI/Color/junoAccent``.
     static let accentLight = JunoColorToken.coral
-    static let accentDark = JunoColorToken.coral
+    static let accentDark = JunoGeneratedColors.primary.dark
 
-    /// `--background`: `54 18% 97%` / `48 7% 9%`.
-    static let canvasLight = JunoColorToken.warmWhite
-    static let canvasDark = JunoColorToken.warmBlack
-
-    // ── Projected, not transcribed ───────────────────────────────────────────
-    //
-    // Everything below now READS the generated projection of globals.css
-    // (`Generated/JunoGeneratedTokens.swift`) instead of holding its own copy
-    // of the converted sRGB triple. The values are unchanged — they were
-    // verified identical to the CSS before the switch — but they are no longer
-    // a second thing to remember to update. `npm run design:tokens:check`
-    // fails CI if the projection and globals.css disagree.
-    //
-    // The doc comments keep naming the CSS variable, because that is still the
-    // most useful thing to know when reading a call site.
-
-    /// `--card`: `54 44% 99%` / `48 7% 12.5%`. One step above the canvas.
+    /// `--background`: #FAF9F6 / #1F1D1C — the warm paper and the warm
+    /// charcoal. The window's `containerBackground` and the reading plane.
     ///
-    /// Light was a literal pure white floating on warm paper — the one pairing
-    /// that reads as somebody else's brand rather than Juno's. `54 44% 99%` is
-    /// a 1% step, indistinguishable as a surface, but it puts the float on the
-    /// same hue family as the paper it sits on.
+    /// **iOS keeps the 4% ground it shipped with, for now.** The Mac takes the
+    /// web's 11.5% charcoal, which is what the redesign asks for and what the
+    /// card (14%) and popover (16.5%) steps are tuned against. The phone's
+    /// screens were composed on the near-black `warmBlack` this replaced, and
+    /// lifting their ground by seven points of lightness is a visible redesign
+    /// of every iOS screen rather than a token fix — so it waits for the iOS
+    /// pass, and is the one place the two apps' grounds differ. Light mode is
+    /// the generated value on both: the old `warmWhite` sat one 8-bit step from
+    /// it.
+    static let canvasLight = JunoGeneratedColors.background.light
+    #if os(iOS)
+    static let canvasDark = JunoColorToken(unchecked: 0.042, 0.0412, 0.038)
+    #else
+    static let canvasDark = JunoGeneratedColors.background.dark
+    #endif
+
+    /// `--card`: #FEFDFC / #252422. One step above the canvas: run cards, code,
+    /// tables, the sources pill, attachment cards.
     static let surfaceLight = JunoGeneratedColors.card.light
     static let surfaceDark = JunoGeneratedColors.card.dark
 
-    /// `--popover`: `54 44% 99%` / `48 6% 18%`. Transient surfaces sit higher
-    /// still, so a menu stays legible over a card.
+    /// `--popover`: one step above the card. **Not painted on the Mac**, where
+    /// popovers, menus and sheets are system glass; kept for the phone.
     static let popoverLight = JunoGeneratedColors.popover.light
     static let popoverDark = JunoGeneratedColors.popover.dark
 
-    /// `--muted`: `50 23% 95%` / `48 7% 15%`. Selected rows and quiet fills.
+    /// `--muted`. The same values as `--secondary` today; kept because the
+    /// phone reads it by this name.
     static let mutedLight = JunoGeneratedColors.muted.light
     static let mutedDark = JunoGeneratedColors.muted.dark
 
-    /// `--muted-foreground`: `48 4% 40%` / `48 7% 63%`.
-    static let mutedForegroundLight = JunoGeneratedColors.mutedForeground.light
-    static let mutedForegroundDark = JunoGeneratedColors.mutedForeground.dark
+    /// `--secondary`: #F2F0EB / #302E2C. The user bubble, wells, inline code,
+    /// pressed chips, keycaps.
+    static let secondaryLight = JunoGeneratedColors.secondary.light
+    static let secondaryDark = JunoGeneratedColors.secondary.dark
 
-    /// `--foreground`: `48 3% 12%` / `48 24% 93%`. The most-read ink in the
-    /// product, and until now it had no native counterpart at all — which is
-    /// why 400-odd `.foregroundStyle(.secondary)` sites fall through to the
-    /// platform's pure-neutral label colour on a warm canvas. Use
-    /// ``Color/junoForeground`` where that neutrality shows.
+    /// `--accent` — the web's *neutral* hover, not the brand colour (the web
+    /// names its action colour `--primary`): #EEECE5 / #383633. The hover fill
+    /// on opaque content.
+    static let hoverLight = JunoGeneratedColors.accent.light
+    static let hoverDark = JunoGeneratedColors.accent.dark
+
+    /// `--border`: #E1DFD8 / #3C3937, opaque. Hairlines on content, drawn at
+    /// ``JunoHairline/opacity(increaseContrast:)``.
+    ///
+    /// **iOS keeps its translucent black/white hairline for now**, for the same
+    /// reason as ``canvasDark``: on the phone's near-black ground an opaque 23%
+    /// border is a visibly heavier rule than the one its screens were drawn
+    /// with.
+    #if os(iOS)
+    static let borderLight = JunoColorToken(unchecked: 0, 0, 0, 0.12)
+    static let borderDark = JunoColorToken(unchecked: 1, 1, 1, 0.14)
+    #else
+    static let borderLight = JunoGeneratedColors.border.light
+    static let borderDark = JunoGeneratedColors.border.dark
+    #endif
+
+    /// `--input`: #CECAC0 / #484541. Field hairlines on content.
+    static let inputLight = JunoGeneratedColors.input.light
+    static let inputDark = JunoGeneratedColors.input.dark
+
+    /// `--foreground`: #1D1D1B / #F4F3F1. Primary ink; see
+    /// ``SwiftUI/Color/junoForeground``.
     static let foregroundLight = JunoGeneratedColors.foreground.light
     static let foregroundDark = JunoGeneratedColors.foreground.dark
 
-    /// `--sidebar`: `50 23% 95%` / `48 10% 7.5%`.
+    /// `--muted-foreground`: #6A6862 / #AEAAA3. Secondary text, glyphs at rest,
+    /// placeholders.
+    static let mutedForegroundLight = JunoGeneratedColors.mutedForeground.light
+    static let mutedForegroundDark = JunoGeneratedColors.mutedForeground.dark
+
+    /// `--muted-foreground` at 70%: the web's `text-muted-foreground/70`, its
+    /// most common quieter-than-secondary ink.
     ///
-    /// This is intentionally distinct from `--muted` in dark appearance: the
-    /// web shell's sidebar is a shade deeper than the reading canvas, so the
-    /// content opens up instead of being boxed by a lighter grey slab.
+    /// **2.89:1 on the light canvas** (pinned in `JunoInkContrastTests`), so it
+    /// fails AA for text and is allowed only on non-essential text of 13pt and
+    /// up — metadata a reader can do without. Keycaps and timers are read, so
+    /// they use the secondary ink.
+    static let tertiaryInkLight = JunoGeneratedColors.mutedForeground.light.withOpacity(0.7)
+    static let tertiaryInkDark = JunoGeneratedColors.mutedForeground.dark.withOpacity(0.7)
+
+    /// `--sidebar`: the web's recessed column (8.8% against an 11.5% canvas in
+    /// dark). The Mac's sidebar is system glass and does not paint it; kept
+    /// for a column tint, should the shell choose one (errata 3).
     static let sidebarLight = JunoGeneratedColors.sidebar.light
     static let sidebarDark = JunoGeneratedColors.sidebar.dark
 
-    // Border, success, danger and caution are deliberately *not* redefined here.
-    // `JunoSurfaces.swift` already owns `borderLight`/`borderDark` and
-    // `JunoStatus.swift` owns the status ramp (`junoSuccess`, `junoDanger`,
-    // `junoCaution`), both tuned for contrast against `junoCanvasWarm`. Adding a
-    // second set converted from the web would give the app two competing reds.
+    /// `--sidebar-foreground`: #504E49 / #B7B4AE. Sidebar glyphs and labels at
+    /// rest.
+    static let sidebarForegroundLight = JunoGeneratedColors.sidebarForeground.light
+    static let sidebarForegroundDark = JunoGeneratedColors.sidebarForeground.dark
 
-    /// `--hairline`: `48 12% 18% / 0.06` / `48 24% 93% / 0.08`.
-    ///
-    /// FIXED DRIFT. These were `(0, 0, 0, 0.10)` and `(1, 1, 1, 0.12)` — pure
-    /// black and pure white, at nearly twice the intended alpha. They were the
-    /// only two tokens in this file with no comment and no CSS variable named
-    /// beside them, which is what a value nobody projected looks like.
-    ///
-    /// It mattered more than two numbers suggest. A hairline is the most
-    /// repeated mark in the interface — every divider, every card edge, every
-    /// table rule — and a *neutral* one on a warm canvas is precisely the tell
-    /// the note at the top of this file warns about. The Mac was drawing every
-    /// rule in the product in somebody else's grey, 67% too strong.
+    /// `--hairline`: `48 12% 18% / 0.06` / `45 14% 94% / 0.08`. A warm
+    /// translucent rule for dividers laid over something other than the canvas.
     static let hairlineLight = JunoGeneratedColors.hairline.light
     static let hairlineDark = JunoGeneratedColors.hairline.dark
 
-    /// `--source`: `187 62% 34%` / `187 58% 49%`. The web's citation teal.
+    /// `--source`: the citation teal. Not a status: it marks sourced or
+    /// supplementary material — a citation, a deep dive's rule, a tip.
     ///
-    /// Added rather than folded into the status ramp because it is not a status:
-    /// it marks *supplementary or sourced* material — a citation, a deep dive's
-    /// quotation rule, a learning card's "Tip" — and reusing `junoSuccess` for it
-    /// would say a tip had passed something.
-    ///
-    /// Darkened from `187 62% 34%` to `187 62% 33%`: the web's own value measured
-    /// 4.38:1 on `canvasLight`, and this token is read as text — a citation
-    /// label, a tip's heading — not painted as a fill. Hue and saturation are
-    /// untouched. Now 4.60:1. The dark value already cleared the floor and is
-    /// unchanged, so the two appearances still carry the same teal.
-    ///
-    /// DECLARED DIVERGENCE — the one place this file deliberately does not
-    /// match `JunoGeneratedColors.source.light`, and the only literal left in
-    /// it. Written as an explicit offset from the projection rather than as a
-    /// bare triple so the relationship survives: if the web ever moves
-    /// `--source`, this stays one lightness step darker than wherever it moved
-    /// to, instead of silently becoming an unrelated colour that happens to
-    /// still compile. Everything else here is projected; if you are adding a
-    /// second entry to this list, the bar is a measured contrast failure.
-    static let sourceLight = JunoColorToken(unchecked: 0.1254, 0.4869, 0.5346)
+    /// DECLARED DIVERGENCE, light only: one lightness step darker than the
+    /// web's `--source`, because the web's value measures 4.38:1 on the light
+    /// canvas and this token is read as text (a citation label, a tip's
+    /// heading). Derived from the projection rather than written as a triple,
+    /// so it stays one step darker than wherever the web moves `--source`; the
+    /// dark value already clears the floor and is the generated one. If you are
+    /// adding a second divergence to this file, the bar is a measured contrast
+    /// failure.
+    static let sourceLight = JunoGeneratedColors.source.light.adjustingLightness(by: -0.01)
     static let sourceDark = JunoGeneratedColors.source.dark
+
+    // ── Status, as the web splits it: a fill and an ink ─────────────────────
+    //
+    // The fill is for a dot, a bar, a chip's ground; the ink is the AA text
+    // ramp (`text-success` on the web resolves to `--success-ink`, not to the
+    // fill). The older `junoSuccess`/`junoDanger`/`junoCaution` ramp in
+    // `JunoStatus.swift` is hand-tuned text colour and stays as it is until its
+    // call sites move onto these — which is why `--success` itself has no
+    // token here yet: its redesign name, `junoSuccess`, is still that ramp's
+    // (see the note in `JunoStatus.swift`).
+
+    /// `--success-ink`: #347449 / #60AF7A.
+    static let successInkLight = JunoGeneratedColors.successInk.light
+    static let successInkDark = JunoGeneratedColors.successInk.dark
+    /// `--warning`: #B48931 / #D4A954.
+    static let warningLight = JunoGeneratedColors.warning.light
+    static let warningDark = JunoGeneratedColors.warning.dark
+    /// `--warning-foreground`, the warning ink: #846424 / #EAC886. "N left".
+    static let warningInkLight = JunoGeneratedColors.warningForeground.light
+    static let warningInkDark = JunoGeneratedColors.warningForeground.dark
+    /// `--destructive`: #B9533C / #BF553E.
+    static let destructiveLight = JunoGeneratedColors.destructive.light
+    static let destructiveDark = JunoGeneratedColors.destructive.dark
+    /// `--destructive-ink`: #A2442F / #C86B56. Delete, and error text.
+    static let destructiveInkLight = JunoGeneratedColors.destructiveInk.light
+    static let destructiveInkDark = JunoGeneratedColors.destructiveInk.dark
+
+    /// `--code-string` / `--code-number`: syntax. Keywords are the accent ink.
+    static let codeStringLight = JunoGeneratedColors.codeString.light
+    static let codeStringDark = JunoGeneratedColors.codeString.dark
+    static let codeNumberLight = JunoGeneratedColors.codeNumber.light
+    static let codeNumberDark = JunoGeneratedColors.codeNumber.dark
+
+    // ── Inside glass, and selection ─────────────────────────────────────────
+    //
+    // Derived from `--foreground` at an alpha, not opaque, because these are
+    // laid on system glass: an opaque fill would stop the material sampling
+    // what is behind it, which is the whole of what makes it glass.
+
+    /// Hover inside glass: foreground at 6% / 8%.
+    static let glassHoverLight = JunoGeneratedColors.foreground.light.withOpacity(0.06)
+    static let glassHoverDark = JunoGeneratedColors.foreground.dark.withOpacity(0.08)
+    /// A resting fill inside glass — the voice disc, armed marks, the plan
+    /// pill, the search button: foreground at 8% / 12%.
+    static let glassFillLight = JunoGeneratedColors.foreground.light.withOpacity(0.08)
+    static let glassFillDark = JunoGeneratedColors.foreground.dark.withOpacity(0.12)
+
+    /// `--sidebar-selected`: the selected sidebar row. **Opaque**, and that is
+    /// the point: the platform paints its own selection in the *system* accent
+    /// underneath a row background, and any alpha here lets that blue (or
+    /// whatever the reader's accent is) show through.
+    static let selectedFillLight = JunoGeneratedColors.sidebarSelected.light
+    static let selectedFillDark = JunoGeneratedColors.sidebarSelected.dark
+    /// The selected row's edge: foreground at 12% / 14%, rising to 24% under
+    /// Increase Contrast. On the web the outline is what says "selected"; the
+    /// fill is barely a step off the column.
+    static let selectedEdgeLight = JunoGeneratedColors.foreground.light.withOpacity(0.12)
+    static let selectedEdgeDark = JunoGeneratedColors.foreground.dark.withOpacity(0.14)
+    static let selectedEdgeIncreasedLight = JunoGeneratedColors.foreground.light.withOpacity(0.24)
+    static let selectedEdgeIncreasedDark = JunoGeneratedColors.foreground.dark.withOpacity(0.24)
 }
 
+// MARK: - Colours
+
 public extension Color {
-    /// The account's chosen accent — coral unless Settings says otherwise.
-    ///
-    /// A computed property, not a `static let`, and that is the whole fix for
-    /// "changing the accent colour does nothing": the value was frozen at coral at
-    /// process start, so the picker moved a setting that was stored, synced, and
-    /// then read by nothing. Resolving through ``JunoAccentSelection`` means every
-    /// existing call site — 80-odd of them — picks the change up, and because the
-    /// selection is `@Observable` the reads register as dependencies and the views
-    /// actually redraw.
-    ///
-    /// `MainActor.assumeIsolated` is safe here in practice and unavoidable in
-    /// principle: SwiftUI evaluates view bodies on the main actor, which is the
-    /// only place a colour is resolved, but `Color`'s own accessors are not
-    /// annotated so the compiler cannot see that. The fallback keeps a non-main
-    /// caller (a unit test, a background snapshot) on brand rather than trapping.
+    // ── The accent, by account setting ──────────────────────────────────────
+    //
+    // Computed properties, not `static let`s, and that is the whole fix for
+    // "changing the accent colour does nothing": a stored value was frozen at
+    // coral at process start. Resolving through ``JunoAccentSelection`` means
+    // every call site picks the change up, and because the selection is
+    // `@Observable` the reads register as dependencies and the views redraw.
+    //
+    // `MainActor.assumeIsolated` is safe in practice and unavoidable in
+    // principle: SwiftUI evaluates view bodies on the main actor, which is the
+    // only place a colour is resolved, but `Color`'s accessors are not
+    // annotated so the compiler cannot see that. The off-main fallback keeps a
+    // unit test or a background snapshot on brand rather than trapping.
+
+    /// `--primary`, by accent: the action colour. Spent only where §0.4 of the
+    /// redesign allows — the send/stop/busy disc, toggle tracks, sliders and
+    /// progress, at most one prominent button per surface, the live status
+    /// dot. Never selection, the greeting name, toolbar glyphs, marks, chips
+    /// or decoration. Apply it with ``SwiftUI/View/junoAccentTint()``.
     static var junoAccent: Color {
-        guard Thread.isMainThread else {
-            return Color.junoAdaptive(light: .accentLight, dark: .accentDark)
-        }
+        guard Thread.isMainThread else { return JunoAccent.coral.color }
         return MainActor.assumeIsolated { JunoAccentSelection.shared.current.color }
     }
 
-    /// Text and glyphs drawn *on* the accent. White on coral, but a warm near-black
-    /// on amber and on the lifted dark teal/violet/sage, where white fails contrast.
+    /// `--primary-ink`, by accent: links, accent text, code keywords. A
+    /// separate ramp because the fill does not clear 4.5:1 as text in every
+    /// accent — dark coral text on the charcoal needs a lighter coral.
+    static var junoAccentInk: Color {
+        guard Thread.isMainThread else { return JunoAccent.coral.ink }
+        return MainActor.assumeIsolated { JunoAccentSelection.shared.current.ink }
+    }
+
+    /// `--primary-foreground`, by accent: glyphs and text drawn *on* the
+    /// accent. White on coral, a warm near-black on amber and on the lifted
+    /// dark teal/violet/sage, where white fails contrast.
     static var junoOnAccent: Color {
-        guard Thread.isMainThread else { return .white }
+        guard Thread.isMainThread else { return JunoAccent.coral.onAccent }
         return MainActor.assumeIsolated { JunoAccentSelection.shared.current.onAccent }
     }
 
-    /// The primary screen background.
+    /// The accent block's `--ring`: #5F5C54 / #D1CFC7, neutral in every accent,
+    /// so changing the action colour never turns every focused field into a
+    /// coloured outline. Equal to the Mac app's graphite `AccentColor` asset,
+    /// which is what AppKit draws the system focus ring in.
+    static var junoRing: Color {
+        guard Thread.isMainThread else { return JunoAccent.coral.ring }
+        return MainActor.assumeIsolated { JunoAccentSelection.shared.current.ring }
+    }
+
+    // ── Grounds ─────────────────────────────────────────────────────────────
+
+    /// `--background`: the window's ground and the reading plane.
     static let junoCanvas = Color.junoAdaptive(light: .canvasLight, dark: .canvasDark)
 
-    /// An elevated surface (cards, grouped rows) that reads one step above the
-    /// canvas without a heavy border.
-    static let junoSurface = Color.junoAdaptive(light: .surfaceLight, dark: .surfaceDark)
+    /// `--card`: run cards, code, tables, the sources pill, attachment cards.
+    static let junoCard = Color.junoAdaptive(light: .surfaceLight, dark: .surfaceDark)
 
-    /// A restrained hairline for the rare divider that carries real meaning.
-    static let junoHairline = Color.junoAdaptive(light: .hairlineLight, dark: .hairlineDark)
+    /// `--secondary`: the user bubble, wells, inline code, pressed chips,
+    /// keycaps.
+    static let junoSecondary = Color.junoAdaptive(light: .secondaryLight, dark: .secondaryDark)
 
-    /// A transient surface — menu, popover, sheet — one step above ``junoSurface``.
-    static let junoPopover = Color.junoAdaptive(light: .popoverLight, dark: .popoverDark)
+    /// `--accent`, the web's neutral hover: the hover fill on opaque content.
+    /// Inside glass use ``junoGlassHover``.
+    static let junoHover = Color.junoAdaptive(light: .hoverLight, dark: .hoverDark)
 
-    /// A quiet fill: the selected sidebar row, a resting chip, a user message.
-    static let junoMuted = Color.junoAdaptive(light: .mutedLight, dark: .mutedDark)
+    /// `--border`: hairlines on content. Draw it at
+    /// ``JunoHairline/opacity(increaseContrast:)``.
+    static let junoBorder = Color.junoAdaptive(light: .borderLight, dark: .borderDark)
 
-    /// Primary text — the web's `--foreground`.
+    /// `--input`: a field's hairline on content.
+    static let junoInput = Color.junoAdaptive(light: .inputLight, dark: .inputDark)
+
+    // ── Ink ─────────────────────────────────────────────────────────────────
+
+    /// Primary ink — the web's `--foreground`.
     ///
     /// **This is the default ink**, reached through ``SwiftUI/View/junoInk()``.
-    /// The advice here used to be the other way round — "prefer `.primary`, use
-    /// this where the warmth shows" — and the result was two call sites against
-    /// 129 for `Color.primary`, because "where the warmth shows" is not a test
-    /// anyone can apply at a call site. It shows everywhere: the canvas's whole
-    /// identity is that red is its highest channel, so a pure-neutral label on
-    /// it is off-brand by construction.
-    ///
-    /// Use `.primary` only where the *system* owns the surface — inside a
-    /// `Menu`, a toolbar, an alert — and its vibrancy is doing work an absolute
-    /// colour cannot.
+    /// The canvas's whole identity is that red is its highest channel, so a
+    /// pure-neutral label on it is off-brand by construction. Use `.primary`
+    /// only where the *system* owns the surface — inside a `Menu`, a toolbar,
+    /// an alert — and its vibrancy is doing work an absolute colour cannot.
     static let junoForeground = Color.junoAdaptive(
         light: .foregroundLight, dark: .foregroundDark
     )
 
-    /// Secondary text, reached through ``SwiftUI/View/junoSecondaryInk()``.
+    /// `--muted-foreground`: secondary text, glyphs at rest, placeholders.
+    /// Reached through ``SwiftUI/View/junoSecondaryInk()``.
     ///
-    /// Also the floor: it is what ``SwiftUI/View/junoMetaInk()`` resolves to,
-    /// because the rung below it does not clear WCAG AA and therefore does not
-    /// exist. Same caveat as above — `.secondary` only where the system owns the
-    /// surface.
-    ///
-    /// **Never multiply it by an opacity at the call site.** The token is
-    /// already at the contrast floor (~5.2:1 light on the canvas), so
-    /// `.junoMutedForeground.opacity(0.7)` is not a quieter grey, it is an
-    /// illegible one — and a fixed colour scaled down by hand also stops
-    /// participating in the system's Increase Contrast adaptation.
-    static let junoMutedForeground = Color.junoAdaptive(
+    /// **Never multiply it by an opacity at the call site.** It is already near
+    /// the AA floor (~5.2:1 light on the canvas); the one sanctioned quieter
+    /// step is ``junoTertiaryInk``, with its own rules.
+    static let junoSecondaryInk = Color.junoAdaptive(
         light: .mutedForegroundLight, dark: .mutedForegroundDark
     )
 
-    /// The navigation column, matched to the website's sidebar variables.
-    static let junoSidebar = Color.junoAdaptive(light: .sidebarLight, dark: .sidebarDark)
+    /// `--muted-foreground` × 0.7: metadata a reader can do without. 2.89:1 on
+    /// the light canvas — **only non-essential text of 13pt and up**. Keycaps,
+    /// timers and anything that must be read take ``junoSecondaryInk``.
+    static let junoTertiaryInk = Color.junoAdaptive(
+        light: .tertiaryInkLight, dark: .tertiaryInkDark
+    )
+
+    /// `--sidebar-foreground`: sidebar glyphs and labels at rest. They lift to
+    /// ``junoForeground`` when their row is selected.
+    static let junoSidebarInk = Color.junoAdaptive(
+        light: .sidebarForegroundLight, dark: .sidebarForegroundDark
+    )
+
+    // ── Status ──────────────────────────────────────────────────────────────
+
+    /// `--success-ink`: success read as text.
+    static let junoSuccessInk = Color.junoAdaptive(light: .successInkLight, dark: .successInkDark)
+    /// `--warning`: a warning's dot, bar or chip ground.
+    static let junoWarning = Color.junoAdaptive(light: .warningLight, dark: .warningDark)
+    /// `--warning-foreground`: a warning read as text — "N left".
+    static let junoWarningInk = Color.junoAdaptive(light: .warningInkLight, dark: .warningInkDark)
+    /// `--destructive`: a destructive state's dot, bar or chip ground.
+    static let junoDestructive = Color.junoAdaptive(
+        light: .destructiveLight, dark: .destructiveDark
+    )
+    /// `--destructive-ink`: Delete, and error text.
+    static let junoDestructiveInk = Color.junoAdaptive(
+        light: .destructiveInkLight, dark: .destructiveInkDark
+    )
 
     /// Sourced or supplementary material: a citation, a deep dive's rule, a tip.
-    /// Never a status — see the token's note in ``JunoColorToken/sourceLight``.
+    /// Never a status — see ``JunoColorToken/sourceLight``.
     static let junoSource = Color.junoAdaptive(light: .sourceLight, dark: .sourceDark)
 
+    /// `--code-string`.
+    static let junoCodeString = Color.junoAdaptive(light: .codeStringLight, dark: .codeStringDark)
+    /// `--code-number`.
+    static let junoCodeNumber = Color.junoAdaptive(light: .codeNumberLight, dark: .codeNumberDark)
+
+    // ── Inside glass, and selection ─────────────────────────────────────────
+
+    /// Hover inside one of the five glass sites (and on the system sidebar):
+    /// foreground at 6% / 8%.
+    static let junoGlassHover = Color.junoAdaptive(light: .glassHoverLight, dark: .glassHoverDark)
+
+    /// A resting fill inside glass — the voice disc, armed marks, the plan
+    /// pill, the search button: foreground at 8% / 12%.
+    static let junoGlassFill = Color.junoAdaptive(light: .glassFillLight, dark: .glassFillDark)
+
+    /// `--sidebar-selected`, opaque: the selected sidebar row. Never the
+    /// accent — selection is not an action.
+    static let junoSelectedFill = Color.junoAdaptive(
+        light: .selectedFillLight, dark: .selectedFillDark
+    )
+
+    /// The selected row's edge at standard contrast: foreground at 12% / 14%.
+    /// Views that draw it read Increase Contrast and use
+    /// ``junoSelectedEdge(increaseContrast:)``.
+    static let junoSelectedEdge = Color.junoAdaptive(
+        light: .selectedEdgeLight, dark: .selectedEdgeDark
+    )
+
+    /// The selected row's edge for the current contrast setting: 24% under
+    /// Increase Contrast.
+    ///
+    /// A function of the flag rather than one dynamic colour because AppKit
+    /// does not reach a SwiftUI `Color` with the high-contrast appearance: a
+    /// dynamic `NSColor` resolved through SwiftUI is asked for aqua or dark
+    /// aqua and nothing else, so the switch has to be read from
+    /// `colorSchemeContrast` (or ``SwiftUI/EnvironmentValues/junoAccessibility``)
+    /// by the view that draws the edge.
+    static func junoSelectedEdge(increaseContrast: Bool) -> Color {
+        increaseContrast ? selectedEdgeIncreased : junoSelectedEdge
+    }
+
+    private static let selectedEdgeIncreased = Color.junoAdaptive(
+        light: .selectedEdgeIncreasedLight, dark: .selectedEdgeIncreasedDark
+    )
+
+    // ── The older names ─────────────────────────────────────────────────────
+    //
+    // Same values as the redesign names they point at. See the note at the
+    // top of the file for why they are not yet `@available(deprecated)`.
+
+    /// The older name for ``junoCard``.
+    static let junoSurface = Color.junoCard
+
+    /// The older name for ``junoSecondaryInk``.
+    static let junoMutedForeground = Color.junoSecondaryInk
+
+    /// `--muted`: a quiet fill. The same values as ``junoSecondary`` today;
+    /// prefer that name in new code.
+    static let junoMuted = Color.junoAdaptive(light: .mutedLight, dark: .mutedDark)
+
+    /// `--popover`. **Not painted on the Mac** — popovers, menus and sheets
+    /// are system glass there. Kept for the phone.
+    static let junoPopover = Color.junoAdaptive(light: .popoverLight, dark: .popoverDark)
+
+    /// `--hairline`: a warm translucent rule for a divider laid over something
+    /// other than the canvas.
+    static let junoHairline = Color.junoAdaptive(light: .hairlineLight, dark: .hairlineDark)
+
+    /// `--sidebar`, the web's recessed column. The Mac's sidebar is system
+    /// glass and does not paint it.
+    static let junoSidebar = Color.junoAdaptive(light: .sidebarLight, dark: .sidebarDark)
+
+    // MARK: Building colours
+
+    /// A colour that resolves per appearance. Both halves are always given: a
+    /// single value that "works in both" is how the two themes drift.
     static func junoAdaptive(light: JunoColorToken, dark: JunoColorToken) -> Color {
         #if canImport(UIKit)
         return Color(uiColor: UIColor { traits in
@@ -219,6 +429,54 @@ public extension Color {
         #else
         return Color(juno: light)
         #endif
+    }
+
+    /// A generated pair as a colour.
+    static func junoAdaptive(_ pair: JunoGeneratedPair) -> Color {
+        junoAdaptive(light: pair.light, dark: pair.dark)
+    }
+}
+
+// MARK: - Hairlines
+
+/// How strongly a content hairline is drawn.
+///
+/// `--border` is opaque, and the web draws it at a fraction nearly everywhere
+/// (`border-border/60`–`/80`). The redesign settles the Mac on one strength —
+/// 0.8 — and full strength under Increase Contrast, so a rule never depends on
+/// which fraction the author happened to type.
+public enum JunoHairline {
+    /// 0.8 at standard contrast, 1.0 under Increase Contrast.
+    public static func opacity(increaseContrast: Bool) -> Double {
+        increaseContrast ? 1 : 0.8
+    }
+}
+
+// MARK: - Accent tint
+
+public extension View {
+    /// Tints the controls below this point in the account's accent: toggle
+    /// tracks, sliders, progress, the one `.borderedProminent` button.
+    ///
+    /// **Apply it below the view that declares the toolbar**, never on the
+    /// window root. Toolbar items inherit the tint of the view that owns the
+    /// `.toolbar`, and the redesign keeps toolbar glyphs monochrome (§0.4); a
+    /// tint on the root turns every toolbar symbol, and the system's own
+    /// sidebar toggle, coral. The window's `AccentColor` asset stays graphite
+    /// (``SwiftUI/Color/junoRing``) for the same reason — it is what AppKit
+    /// draws focus rings and unstyled selection in.
+    ///
+    /// A modifier rather than `.tint(Color.junoAccent)` inline so the accent is
+    /// read inside a view body, where the ``JunoAccentSelection`` observation
+    /// registers and a change in Settings redraws the tint.
+    func junoAccentTint() -> some View {
+        modifier(JunoAccentTintModifier())
+    }
+}
+
+private struct JunoAccentTintModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content.tint(Color.junoAccent)
     }
 }
 

@@ -74,19 +74,21 @@ struct DesktopDesignLauncherTests {
         #expect(DesktopProductMode.allCases.allSatisfy { $0.label != "Design" })
     }
 
-    /// The footer, not the rail.
+    /// A navigation row, not a footer row (§2.1 of the Liquid Glass redesign).
     ///
-    /// `sidebarCases` is the list at the *top* of Chat's column. Design belongs
-    /// with the account row at the bottom — where `app-sidebar.tsx` puts it —
-    /// and adding it to the rail would put the same door in two places, one of
-    /// which the web does not have.
+    /// `sidebarCases` is the headerless block at the top of Chat's column:
+    /// Library, Projects, Artifacts, Design. Design used to sit in the footer
+    /// beside the account; the footer is about the account now, and a door to
+    /// a destination belongs with the other doors. Settings and Usage left the
+    /// column altogether — Settings is its own window — so they are not cases
+    /// at all any more, and More holds only the pages that exist.
     @Test
-    func designIsNotOneOfTheRailDestinations() {
-        #expect(!DesktopDestination.sidebarCases.contains(.design))
-        // Usage and Settings are the comparison that makes the rule readable:
-        // Settings is likewise absent, and Usage is present.
-        #expect(!DesktopDestination.sidebarCases.contains(.settings))
-        #expect(DesktopDestination.sidebarCases.contains(.usage))
+    func designIsOneOfTheNavigationRows() {
+        #expect(DesktopDestination.sidebarCases == [.library, .projects, .artifacts, .design])
+        #expect(DesktopDestination.moreCases == [.connections, .memory])
+        #expect(DesktopDestination(rawValue: "settings") == nil)
+        #expect(DesktopDestination(rawValue: "usage") == nil)
+        #expect(DesktopDestination(rawValue: "tasks") == nil)
     }
 
     /// Code's column reaches its own copy of the page, so its selection has to
@@ -117,9 +119,10 @@ struct DesktopDesignLauncherTests {
         )
     }
 
-    /// Work's footer row writes Chat's destination and then switches product.
+    /// The legacy Work footer row writes Chat's destination and then switches
+    /// product.
     ///
-    /// Work's window is handed a Work transport and nothing else, so it cannot
+    /// That workspace is handed a Work transport and nothing else, so it cannot
     /// draw the page itself; the crossing is the mechanism, and the string it
     /// writes is the one ``DesktopNavigationState`` has to be able to read back.
     /// If the two ever disagreed the row would land the reader on Chat's last

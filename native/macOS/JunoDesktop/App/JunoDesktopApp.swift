@@ -8,16 +8,45 @@ import JunoPreviewSupport
 
 enum JunoDesktopWindow {
     static let mainID = "juno.main"
-    /// Incognito is a WINDOW on this platform, not a mode inside the main one.
-    /// Closing it is what erases the conversation, and that reads as a promise
-    /// only if the thing you close is the thing that held it.
-    static let incognitoID = "juno.incognito"
     /// The ⌘/ list of every shortcut the app answers.
     static let shortcutsID = "juno.shortcuts"
     /// The File menu's item that opens another main window. Named here because
     /// ``JunoDesktopAppDelegate`` invokes it by title when a launch comes up
     /// with no window at all.
     static let newWindowMenuTitle = "New Window"
+
+    // There is no incognito window any more. Private chat is a mode of the
+    // chat route (the toolbar's Private toggle, ⇧⌘N), not a second window
+    // with a second composer.
+
+    /// Brings an existing main window to the front — deminiaturized, key, and
+    /// with the app active — and says whether there was one.
+    ///
+    /// `openWindow(id:)` on a `WindowGroup` always opens a *new* window
+    /// (errata 12), so a request that only needs the main window — a menu
+    /// command with nothing focused — tries this first and opens a window
+    /// only when none exists.
+    @MainActor
+    static func bringMainWindowForward() -> Bool {
+        guard let window = NSApp.windows.first(where: {
+            $0.identifier?.rawValue.hasPrefix(mainID) == true
+        }) else { return false }
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+        return true
+    }
+
+    /// Brings the main window forward, or opens one if there is none — the
+    /// path every surface outside the window takes after it has made its
+    /// request through ``DesktopWorkbenchRegistry``: Quick Entry's send and the
+    /// menu-bar item (§7.10).
+    @MainActor
+    static func showMainWindow(using openWindow: OpenWindowAction) {
+        guard !bringMainWindowForward() else { return }
+        openWindow(id: mainID)
+        NSApp.activate()
+    }
 }
 
 /// Two things only AppKit can tell us: the app finished launching, and the app
@@ -121,21 +150,32 @@ struct JunoDesktopApp: App {
 
     var body: some Scene {
         WindowGroup(id: JunoDesktopWindow.mainID) {
-            #if DEBUG
-            if JunoPreviewEnvironment.isActive {
-                JunoDesktopPreviewRoot()
-                    .frame(minWidth: 900, minHeight: 620)
-                    .junoPreviewAppearance()
-            } else {
+            Group {
+                #if DEBUG
+                if JunoPreviewEnvironment.isActive {
+                    JunoDesktopPreviewRoot()
+                        .frame(minWidth: 820, minHeight: 560)
+                        .junoPreviewAppearance()
+                } else {
+                    liveRoot
+                }
+                #else
                 liveRoot
+                #endif
             }
-            #else
-            liveRoot
-            #endif
+            // The window paints the warm canvas once, behind everything —
+            // sign-in, both products, every page. It is the only placement
+            // macOS has for a window ground, and painting it here rather than
+            // on each detail column is what lets content scroll *under* the
+            // toolbar and the sidebar's glass sample warm paper instead of
+            // the system's grey.
+            .containerBackground(Color.junoCanvas, for: .window)
         }
         .defaultSize(width: 1240, height: 800)
         .windowResizability(.contentMinSize)
-        .windowStyle(.hiddenTitleBar)
+        // No `.hiddenTitleBar`. The window has a real title — the chat's, "New
+        // chat" on a draft, or the page's — so the Window menu, Mission
+        // Control and ⌘` name it, and the toolbar shows it (§1.3).
         // `.unified`, not `.unifiedCompact`.
         //
         // `.unifiedCompact` is AppKit's *compact* titlebar mode: it shortens the
@@ -156,8 +196,8 @@ struct JunoDesktopApp: App {
         // landing here.
         //
         // Compact is the right choice for a utility window with one or two
-        // actions. This window is the product's primary surface and carries a
-        // search field, so it takes the standard metric.
+        // actions. This window is the product's primary surface, so it takes
+        // the standard metric.
         .windowToolbarStyle(.unified)
         .windowBackgroundDragBehavior(.enabled)
         .commands {
@@ -171,18 +211,6 @@ struct JunoDesktopApp: App {
         // that process down when it closes.
         CodePreviewScene()
 
-        // ⇧⌘N, as in every browser's private window. `Window` rather than
-        // `WindowGroup`: two incognito windows would be two separate untracked
-        // conversations with one menu item to reach them, and no way to tell
-        // which is which.
-        Window("Incognito", id: JunoDesktopWindow.incognitoID) {
-            if let configuration {
-                DesktopIncognitoWindow(configuration: configuration)
-                    .frame(minWidth: 560, minHeight: 480)
-            }
-        }
-        .defaultSize(width: 720, height: 720)
-
         // A `Settings` scene is what puts Juno's settings behind ⌘, and under the
         // application menu, where a Mac user looks for them. Reaching settings
         // only by clicking an account row in the sidebar meant ⌘, did nothing —
@@ -190,9 +218,16 @@ struct JunoDesktopApp: App {
         // The Settings window: General, Code, Usage, Connections. The account's
         // pages live here rather than in a product's navigation column, so
         // opening Usage never replaces the surface the reader was working in.
+        // The only settings surface (§7.2): the in-window sheet and the Chat
+        // column's Settings destination are gone, and every entry point — ⌘,,
+        // the footer's gear, the account popover — opens this scene.
         Settings {
             DesktopSettingsWindow(configuration: configuration)
                 .junoAccountAppearance(configuration)
+                // This scene declares no toolbar items of its own, so the
+                // accent can sit at its root: toggles, sliders and the one
+                // prominent button take it, and nothing in the chrome does.
+                .junoAccentTint()
         }
 
         Window("Keyboard Shortcuts", id: JunoDesktopWindow.shortcutsID) {
@@ -201,10 +236,11 @@ struct JunoDesktopApp: App {
         .defaultSize(width: 640, height: 720)
         .windowResizability(.contentSize)
 
-        // The menu bar item: live sessions, New task, Ask Juno. Read off the
-        // shared registry, so it is right with no window open.
+        // The menu bar item: New Chat, live Code sessions, Open Juno (§7.10).
+        // Read off the shared registry, so it is right with no window open.
         MenuBarExtra {
             DesktopMenuBarExtraContent()
+                .junoAccentTint()
         } label: {
             DesktopMenuBarExtraLabel()
         }
@@ -213,8 +249,10 @@ struct JunoDesktopApp: App {
     @ViewBuilder
     private var liveRoot: some View {
         if let configuration {
+            // 820×560 fits the sidebar at its narrowest beside a chat column
+            // at its narrowest; the window opens at 1240×800.
             JunoDesktopRootView(configuration: configuration)
-                .frame(minWidth: 900, minHeight: 620)
+                .frame(minWidth: 820, minHeight: 560)
         } else {
             // Unreachable outside the preview harness: `configuration` is only
             // nil when the preview branch above is taken.

@@ -33,11 +33,23 @@
  * (the `parts` articulation): the ball terminal pops out of the gap, the spark
  * twinkles a quarter turn, the circle slides back from the square.
  *
+ * THE GEOMETRY LIVES IN `juno-glyph-paths.ts`, as data, so the native apps
+ * draw the very same marks: `scripts/generate-native-icons.mjs` reads it and
+ * ships the outlined drawings as SF Symbol templates. This file only turns
+ * each drawing into elements; redraw a mark there, not here.
+ *
  * No hooks, no context: safe in server components.
  */
-import { forwardRef, type ComponentPropsWithoutRef, type ReactNode } from "react";
+import { forwardRef, type ComponentPropsWithoutRef } from "react";
 
-type GlyphWeight = "thin" | "light" | "regular" | "bold" | "fill" | "duotone";
+import {
+  junoGlyphDrawing,
+  type JunoGlyphElement,
+  type JunoGlyphName,
+  type JunoGlyphWeight,
+} from "@/components/ui/juno-glyph-paths";
+
+type GlyphWeight = JunoGlyphWeight;
 
 export type JunoGlyphProps = ComponentPropsWithoutRef<"svg"> & {
   alt?: string;
@@ -47,42 +59,17 @@ export type JunoGlyphProps = ComponentPropsWithoutRef<"svg"> & {
   mirrored?: boolean;
 };
 
-const LINE: Record<Exclude<GlyphWeight, "fill">, number> = {
-  thin: 8,
-  light: 12,
-  regular: 16,
-  bold: 24,
-  duotone: 16,
-};
-
-const r2 = (n: number) => Math.round(n * 100) / 100;
-
-/** A point on a circle; angles in degrees, clockwise from three o'clock. */
-function onCircle(r: number, deg: number, cx = 128, cy = 128): [number, number] {
-  const t = (deg * Math.PI) / 180;
-  return [r2(cx + r * Math.cos(t)), r2(cy + r * Math.sin(t))];
+/** One element of a drawing, with its articulating part named for globals.css. */
+function renderElement({ tag: Tag, attrs, part }: JunoGlyphElement, index: number) {
+  return <Tag key={index} className={part ? `juno-part juno-part--${part}` : undefined} {...attrs} />;
 }
 
-/** The logo's four-point spark: four points joined by concave curves. */
-function sparkPath(cx: number, cy: number, h: number): string {
-  const k = r2(h * 0.2);
-  return (
-    `M${cx},${cy - h} Q${cx + k},${cy - k} ${cx + h},${cy} ` +
-    `Q${cx + k},${cy + k} ${cx},${cy + h} Q${cx - k},${cy + k} ${cx - h},${cy} ` +
-    `Q${cx - k},${cy - k} ${cx},${cy - h} Z`
-  );
-}
-
-function defineGlyph(
-  name: string,
-  draw: (line: number) => ReactNode,
-  drawFill: () => ReactNode,
-) {
+function defineGlyph(name: string, glyph: JunoGlyphName) {
   const Glyph = forwardRef<SVGSVGElement, JunoGlyphProps>(function Glyph(
     { alt, color = "currentColor", size = "1em", weight = "regular", mirrored = false, children, ...rest },
     ref,
   ) {
-    const solid = weight === "fill";
+    const drawing = junoGlyphDrawing(glyph, weight);
     return (
       <svg
         ref={ref}
@@ -92,7 +79,7 @@ function defineGlyph(
         viewBox="0 0 256 256"
         fill="none"
         stroke={color}
-        strokeWidth={solid ? LINE.regular : LINE[weight]}
+        strokeWidth={drawing.line}
         strokeLinecap="round"
         strokeLinejoin="round"
         color={color === "currentColor" ? undefined : color}
@@ -101,7 +88,7 @@ function defineGlyph(
       >
         {alt ? <title>{alt}</title> : null}
         {children}
-        {solid ? drawFill() : draw(LINE[weight])}
+        {drawing.elements.map(renderElement)}
       </svg>
     );
   });
@@ -109,138 +96,17 @@ function defineGlyph(
   return Glyph;
 }
 
-// ---------------------------------------------------------------------------
-// Chat — the logo's bubble as a line: a ring that stops short at the top right,
-// a ball terminal in the gap, the tail at the lower left.
-// ---------------------------------------------------------------------------
+/** Chat — the logo's bubble as a line: a ring that stops short at the top
+ *  right, a ball terminal in the gap, the tail at the lower left. Its `fill` is
+ *  the bubble gone solid with the logo's spark cut out of it. */
+export const JunoChatGlyph = defineGlyph("JunoChatGlyph", "chat");
 
-const CHAT = (() => {
-  const r = 96;
-  const start = onCircle(r, -90);
-  const end = onCircle(r, -30);
-  const ball = onCircle(r, -60);
-  const tailIn = onCircle(r, 154);
-  const tailOut = onCircle(r, 116);
-  const tip = onCircle(136, 135);
-  return {
-    r,
-    ball,
-    line:
-      `M${start} A${r},${r} 0 0 0 ${tailIn} L${tip} L${tailOut} ` +
-      `A${r},${r} 0 0 0 ${end}`,
-    shape:
-      `M${start} A${r},${r} 0 0 0 ${tailIn} L${tip} L${tailOut} ` +
-      `A${r},${r} 0 1 0 ${start} Z`,
-  };
-})();
+/** Code — the spark between two chevrons, where `</>` puts a slash. */
+export const JunoCodeGlyph = defineGlyph("JunoCodeGlyph", "code");
 
-export const JunoChatGlyph = defineGlyph(
-  "JunoChatGlyph",
-  (line) => (
-    <>
-      <path d={CHAT.line} />
-      <circle
-        className="juno-part juno-part--ball"
-        cx={CHAT.ball[0]}
-        cy={CHAT.ball[1]}
-        r={r2(line * 0.8)}
-        fill="currentColor"
-        stroke="none"
-      />
-    </>
-  ),
-  // Selected: the bubble goes solid and the spark from the logo is cut out of it.
-  () => (
-    <>
-      <path d={`${CHAT.shape} ${sparkPath(128, 128, 46)}`} fill="currentColor" fillRule="evenodd" stroke="none" />
-      <path d={CHAT.shape} />
-    </>
-  ),
-);
+/** Design — a square in front of a circle, stacked like cut paper: the circle
+ *  stops short of the square instead of crossing it. */
+export const JunoDesignGlyph = defineGlyph("JunoDesignGlyph", "design");
 
-// ---------------------------------------------------------------------------
-// Code — the spark between two chevrons, where `</>` puts a slash.
-// ---------------------------------------------------------------------------
-
-const CHEVRONS = "M76,72 L24,128 L76,184 M180,72 L232,128 L180,184";
-
-export const JunoCodeGlyph = defineGlyph(
-  "JunoCodeGlyph",
-  (line) => (
-    <>
-      <path d={CHEVRONS} />
-      <path className="juno-part juno-part--spark" d={sparkPath(128, 128, r2(40 + line * 0.5))} fill="currentColor" stroke="none" />
-    </>
-  ),
-  () => (
-    <>
-      <path d={CHEVRONS} strokeWidth={LINE.bold} />
-      <path className="juno-part juno-part--spark" d={sparkPath(128, 128, 54)} fill="currentColor" stroke="none" />
-    </>
-  ),
-);
-
-// ---------------------------------------------------------------------------
-// Design — a square in front of a circle, stacked like cut paper: the circle
-// stops short of the square instead of crossing it.
-// ---------------------------------------------------------------------------
-
-const SQUARE = { x: 28, y: 100, size: 120, rx: 24 };
-const DISC = { cx: 160, cy: 96, r: 66 };
-
-/** The circle's visible arc, ending `clearance` units short of the square's
- *  edge whatever the line weight. */
-function discArc(line: number, clearance = 20) {
-  const gap = clearance + line;
-  const right = SQUARE.x + SQUARE.size + gap;
-  const top = SQUARE.y - gap;
-  const yAtRight = r2(DISC.cy + Math.sqrt(DISC.r ** 2 - (right - DISC.cx) ** 2));
-  const xAtTop = r2(DISC.cx - Math.sqrt(DISC.r ** 2 - (top - DISC.cy) ** 2));
-  return { right, top, yAtRight, xAtTop };
-}
-
-export const JunoDesignGlyph = defineGlyph(
-  "JunoDesignGlyph",
-  (line) => {
-    const a = discArc(line);
-    return (
-      <>
-        <rect x={SQUARE.x} y={SQUARE.y} width={SQUARE.size} height={SQUARE.size} rx={SQUARE.rx} />
-        <path className="juno-part juno-part--disc" d={`M${a.right},${a.yAtRight} A${DISC.r},${DISC.r} 0 1 0 ${a.xAtTop},${a.top}`} />
-      </>
-    );
-  },
-  () => {
-    const a = discArc(LINE.regular, 12);
-    return (
-      <>
-        <rect
-          x={SQUARE.x}
-          y={SQUARE.y}
-          width={SQUARE.size}
-          height={SQUARE.size}
-          rx={SQUARE.rx}
-          fill="currentColor"
-        />
-        <path
-          className="juno-part juno-part--disc"
-          d={`M${a.right},${a.yAtRight} A${DISC.r},${DISC.r} 0 1 0 ${a.xAtTop},${a.top} L${a.right},${a.top} Z`}
-          fill="currentColor"
-          strokeWidth={8}
-        />
-      </>
-    );
-  },
-);
-
-// ---------------------------------------------------------------------------
-// Send — an up arrow whose head has the spark's concave flanks.
-// ---------------------------------------------------------------------------
-
-const SEND = "M128,212 V52 M60,116 Q108,92 128,52 Q148,92 196,116";
-
-export const JunoSendGlyph = defineGlyph(
-  "JunoSendGlyph",
-  () => <path d={SEND} />,
-  () => <path d={SEND} strokeWidth={LINE.bold} />,
-);
+/** Send — an up arrow whose head has the spark's concave flanks. */
+export const JunoSendGlyph = defineGlyph("JunoSendGlyph", "send");

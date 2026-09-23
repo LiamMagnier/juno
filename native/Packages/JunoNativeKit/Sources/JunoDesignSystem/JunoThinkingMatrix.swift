@@ -28,7 +28,7 @@ public struct JunoThinkingMatrix: View {
     /// overlap slightly, so the bright point leaves a soft trail rather than the
     /// grid blinking nine separate times.
     private static let sequence = [0, 1, 2, 5, 8, 7, 6, 3, 4]
-    private static let cycle: Double = 1.8
+    private static let cycle: Double = JunoMotion.Loop.matrix
 
     private let dot: Double
     private let spacing: Double

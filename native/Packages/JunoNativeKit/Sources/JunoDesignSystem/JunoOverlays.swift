@@ -88,7 +88,9 @@ public extension View {
     /// canvas this puts down and, on iOS, the platter underneath it. For a
     /// destination *pushed* inside the sheet's `NavigationStack`, add
     /// `.containerBackground(.clear, for: .navigation)` as well — a pushed
-    /// container paints its own ground a second time.
+    /// container paints its own ground a second time. That placement is
+    /// **iOS-only**: macOS has no `.navigation` container background, only
+    /// `.window`, which is where the Mac paints its canvas once.
     ///
     /// On iOS this deliberately implies a **full-height** sheet. A sheet that
     /// carries sustained text is a reading surface, and a reading surface does

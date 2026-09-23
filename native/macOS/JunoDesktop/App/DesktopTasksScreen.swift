@@ -63,17 +63,25 @@ struct DesktopTasksScreen: View {
 
     /// Whether the trailing column is up.
     ///
-    /// The `.inspector` this drives belongs to the window (``DesktopChatWorkspace``
-    /// declares the same key), so the key itself is the wire: scene storage is one
-    /// value per key per scene, and both views read and write that one value. The
-    /// toolbar toggle below therefore still opens and closes a column this page
-    /// does not own — and the default stays `true`, because task detail is the
-    /// point of the page rather than an extra.
+    /// The `.inspector` this drives belongs to the window, so the key itself is
+    /// the wire: scene storage is one value per key per scene. Chat's window
+    /// mounted that inspector until Phase 1 of the Liquid Glass redesign took
+    /// Tasks out of Chat; Code's Scheduled page mounts none, so there the toggle
+    /// below has no column to open. It goes when this page is ported to
+    /// Automations (Phase 4).
     @SceneStorage("juno.desktop.tasks.inspector") private var isInspectorShown = true
-    /// Selection and the two pending presentations, shared with the inspector the
-    /// window renders. Injected by ``DesktopChatWorkspace``, which is the only
-    /// place this page is built.
-    @Environment(DesktopTasksSurface.self) private var surface
+    /// Selection and the two pending presentations, shared with an inspector
+    /// when a window renders one and injects the surface.
+    ///
+    /// Optional, with a surface of the page's own as the fallback. Chat was the
+    /// only host that injected one, and Phase 1 of the Liquid Glass redesign
+    /// took Tasks out of Chat; Code's Scheduled page builds this screen without
+    /// injecting anything, and a required `@Environment` object that is absent
+    /// traps on first read.
+    @Environment(DesktopTasksSurface.self) private var injectedSurface: DesktopTasksSurface?
+    @State private var ownSurface = DesktopTasksSurface()
+
+    private var surface: DesktopTasksSurface { injectedSurface ?? ownSurface }
     // Soonest-first: the question a schedule answers is "what happens next".
     @State private var sortOrder = [
         KeyPathComparator(\NativeScheduledTask.nextRunAt, order: .forward)
@@ -281,7 +289,7 @@ struct DesktopTasksScreen: View {
         let message = "Juno can run a prompt for you every morning — a news brief, a metrics check, a language lesson."
         // The destination's own mark rather than SF's `clock`. The web draws no
         // glyph in this state at all, so there is nothing to copy — but a page
-        // whose sidebar row is a Lucide calendar-clock should not name itself
+        // whose sidebar row is the web's calendar mark should not name itself
         // with a borrowed one when its empty state is the only picture on it.
         if model.isRetiredAndEmpty {
             // Not "Tasks are part of Pro". The plan ceiling went with the

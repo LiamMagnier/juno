@@ -1,7 +1,7 @@
 import JunoDesignSystem
 import SwiftUI
 
-/// A tab's label: the destination's own Lucide mark and its title.
+/// A tab's label: the destination's own mark and its title.
 ///
 /// The mark comes from the same generated set every other surface uses, so
 /// the tab bar, the iPad sidebar and the Mac's product switcher draw one

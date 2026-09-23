@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { GHOST } from "@/components/ui/juno-glyph-paths";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +15,10 @@ import { cn } from "@/lib/utils";
  * set, it goes in as its own drawing on the 256 grid with a regular and a fill
  * cut, and the pointer-tracking eyes stay unless the owner signs off on
  * dropping them.
+ *
+ * Its geometry lives in `juno-glyph-paths.ts` (`GHOST`) because the native
+ * apps do carry it in their icon set — `juno.ghost`, with still eyes, at the
+ * set's line, plus a `fill` cut for the "on" state. One drawing, two readers.
  */
 export function PrivateChatToggle({
   active,
@@ -72,27 +77,28 @@ export function PrivateChatToggle({
           )}
         >
           <svg
-            viewBox="0 0 48 48"
+            viewBox={`0 0 ${GHOST.viewBox} ${GHOST.viewBox}`}
             className="size-5 overflow-visible transition-transform duration-base ease-out-soft group-hover:-translate-y-0.5 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:translate-y-0 motion-reduce:group-hover:scale-100"
             aria-hidden="true"
           >
             <path
-              d="M9.5 39V21C9.5 12 16 6.5 24 6.5S38.5 12 38.5 21v18c0 1.7-1.9 2.6-3.2 1.6l-3.4-2.6-3.4 2.6a2.5 2.5 0 0 1-3.1 0L22 38l-3.4 2.6a2.5 2.5 0 0 1-3.1 0l-3.4-2.6-3.4 2.6C11.4 41.6 9.5 40.7 9.5 39Z"
+              d={GHOST.body}
               className="fill-background stroke-current transition-colors duration-base"
-              strokeWidth="2"
+              strokeWidth={GHOST.line}
               strokeLinejoin="round"
             />
             <g
               className="transition-transform duration-fast ease-out-soft"
               style={{ transform: "translate(var(--ghost-eye-x, 0px), var(--ghost-eye-y, 0px))" }}
             >
-              <circle cx="19" cy="22" r="2.4" fill="currentColor" />
-              <circle cx="29" cy="22" r="2.4" fill="currentColor" />
+              {GHOST.eyes.map((eye) => (
+                <circle key={eye.cx} cx={eye.cx} cy={eye.cy} r={eye.r} fill="currentColor" />
+              ))}
             </g>
             <path
-              d="M20.5 30c1.7 1.4 5.3 1.4 7 0"
+              d={GHOST.smile}
               className="stroke-current opacity-70 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 motion-reduce:transition-none"
-              strokeWidth="2"
+              strokeWidth={GHOST.line}
               strokeLinecap="round"
               fill="none"
             />

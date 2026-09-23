@@ -266,10 +266,10 @@ struct DesktopProjectsScreen: View {
                     Label("New project", icon: .plus)
                 }
                 .junoProminentGlassButton()
-                // Registered exactly once on this screen. While the old browser
-                // was showing, two views claimed ⇧⌘N at the same time.
-                .keyboardShortcut("n", modifiers: [.command, .shift])
-                .help("Create a project (⇧⌘N)")
+                // No shortcut: ⇧⌘N is New Private Chat, in the menu bar, from
+                // every window (§7.8). A page claiming the same keys would
+                // make them mean something different on one screen.
+                .help("Create a project")
                 .accessibilityIdentifier("New project")
                 .contentShape(.rect)
             }
@@ -1128,7 +1128,7 @@ private struct DesktopProjectDetail: View {
 
             HStack(alignment: .center, spacing: JunoSpace.cozy) {
                 Text(project.name)
-                    .font(JunoSerif.font(size: 38, relativeTo: .largeTitle, face: .medium))
+                    .junoType(.pageTitle)
                     .lineLimit(2)
                     .textSelection(.enabled)
                 Button(action: renameProject) {
@@ -1280,26 +1280,28 @@ private struct DesktopProjectDetail: View {
     }
 
     private var quickStart: some View {
-        DesktopComposer(
+        ChatComposer(
             model: conversationModel,
             attachmentModel: configuration.attachmentModel,
             libraryModel: configuration.libraryModel,
             projectModel: model,
             // This composer is locked to `project.id`, so the assistant's
             // preferred model applies to everything started from here — see
-            // ``DesktopComposer/routedModelID(for:)``.
+            // ``ChatComposer/composeTurn()``.
             workspaceModel: configuration.projectWorkspaceModel,
             documentIndex: configuration.documentIndexModel,
             connectorModel: configuration.connectorModel,
+            memorySettings: configuration.memorySettingsModel,
             draftProjectID: .constant(nil),
             draftPrompt: .constant(nil),
             openVoiceMode: openVoiceMode,
             fixedProjectID: project.id,
             didSendConversation: openConversation
         )
-        // Voice happens here, over this project's own composer, rather than in a
-        // sheet — see ``DesktopVoiceDock``.
-        .junoVoiceColumn(voiceColumn)
+        // Voice happens here, inside this project's own composer (§5.8): the
+        // call turns its controls row into the call bar, with no dock above
+        // it and no light behind it.
+        .junoVoiceCall(voiceColumn)
         .frame(maxWidth: .infinity)
         .disabled(project.isPending)
     }

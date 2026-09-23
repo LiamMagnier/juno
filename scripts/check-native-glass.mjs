@@ -1,24 +1,22 @@
 import path from "node:path";
 import process from "node:process";
-import { enclosingTypeName, gate, lineAt, swiftSources } from "./check-native-design-lib.mjs";
+import { bracedRegions, enclosingTypeName, gate, lineAt, swiftSources } from "./check-native-design-lib.mjs";
 
 /*
  * RULE 1 OF THE REWORK BRIEF: the chrome is glass; everything you read or act on
  * is opaque.
  *
- * Exactly one Liquid Glass layer per screen — sidebar, toolbar, tab bar, composer
- * — over an OPAQUE content layer. Glass on a transcript row, a diff hunk, a code
- * block, a message bubble, a card or an empty state is a defect, and it is the
- * single most reliable way to make a product look experimental: text sampled
- * through a blur of whatever happens to be behind it has no fixed contrast, so
- * the same paragraph is legible over one background and not over another.
+ * The system draws the chrome's glass — the sidebar pane, toolbar item groups,
+ * menus, popovers, sheets and alerts. Juno adds Liquid Glass of its own in
+ * EXACTLY FIVE places (§0.1 of docs/native/MACOS_LIQUID_GLASS_REDESIGN.md): the
+ * composer cluster, the ⌘K / Search panel, the find bar, the toast host and the
+ * Quick Entry panel. Glass on a transcript row, a diff hunk, a code block, a
+ * message bubble, a card or an empty state is a defect, and it is the single
+ * most reliable way to make a product look experimental: text sampled through a
+ * blur of whatever happens to be behind it has no fixed contrast, so the same
+ * paragraph is legible over one background and not over another.
  *
- * At the time this gate was written the tree was clean at 9 of 9 glass sites.
- * That is the reason the gate exists NOW rather than later: it is cheap to hold a
- * property that is already true, and expensive to recover one after four lanes
- * have each added "just one" translucent card.
- *
- * TWO CHECKS.
+ * FOUR CHECKS.
  *
  *   1. A material or glass call in a file — or inside a type — whose NAME says it
  *      is content. Names are the only evidence available without parsing SwiftUI,
@@ -29,17 +27,48 @@ import { enclosingTypeName, gate, lineAt, swiftSources } from "./check-native-de
  *      they cannot morph between each other via `glassEffectID`, and they cost
  *      more to render than the same elements grouped. A cluster of loose calls is
  *      how glass ends up looking like several different materials on one bar.
+ *   3. Custom Liquid Glass in a file shipped to the Mac that is not one of the
+ *      five allow-listed sites (§8.7). This is the check that catches a glass
+ *      button on a page, a glass pill in a toolbar item, a glass capsule on a
+ *      dictation bar — each "just one", and together the reason the old composer
+ *      read as five materials on one row. The phone app is out of scope here: it
+ *      has its own chrome (`JunoMobileChrome`), and checks 1 and 2 still hold it.
+ *   4. Glass inside `.sheet` or `.popover` content, anywhere. Both are system
+ *      glass on macOS 26; glass drawn inside them is glass on glass.
+ *
+ * Checks 3 and 4 were added with the redesign and start from a recorded
+ * baseline: the sites they find today are the migration's to-do list, and the
+ * ratchet makes sure the list only ever gets shorter.
  */
 
-// The primitives that OWN glass. `JunoMaterials` is the fallback ladder
-// (`glassEffect` on 26+, `.regularMaterial` below it) and the two chrome files
-// are the container helpers themselves — exempting them is not a loophole,
-// because every one of their callers is still scanned.
+// The primitives that OWN glass: `JunoMaterials` and the two chrome files are
+// the modifiers and containers themselves. Exempting them is not a loophole,
+// because every one of their callers is still scanned — and the callers are
+// where a glass surface is actually decided.
 const EXEMPT = new Set([
   "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoMaterials.swift",
   "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesktopChrome.swift",
   "native/iOS/JunoMobile/App/JunoMobileChrome.swift",
 ]);
+
+/*
+ * The five places Juno draws glass of its own (§0.1, §8.7). Matched by file
+ * name rather than path so a site can move between the design system and the
+ * app without editing this list — and so a sixth file cannot join it by
+ * living in the right directory.
+ */
+const GLASS_SITES = new Set([
+  "JunoComposerShell.swift",
+  "DesktopSearchPanel.swift",
+  "DesktopFindBar.swift",
+  "JunoToastHost.swift",
+  "DesktopQuickEntry.swift",
+]);
+
+/** Files that ship to the Mac, which is what the allow-list governs. */
+function shipsToMac(filePath) {
+  return filePath.startsWith("native/macOS/") || filePath.startsWith("native/Packages/");
+}
 
 /*
  * `.thinMaterial` and `.ultraThickMaterial` are on this list even though the
@@ -48,21 +77,34 @@ const EXEMPT = new Set([
  * member has the identical problem: sampled contrast on something meant to be
  * read.
  */
-const TRANSLUCENCY = [
-  [/\.glassEffect\b/g, "Liquid Glass"],
-  // The house wrappers. `.junoGlass(…)` IS `.glassEffect` with an OS fallback,
-  // so leaving it off would let the rule be sidestepped by using the tidier
-  // spelling — which is the spelling the rework will push everyone towards.
-  // `\(` rather than `\b` so `.junoGlassID(…)` — which only tags a participant
-  // and applies no material — is not caught by it.
-  [/\.junoGlass\s*\(/g, "Liquid Glass (via .junoGlass)"],
-  [/\.junoFloatingGlass\s*\(/g, "Liquid Glass (via .junoFloatingGlass)"],
-  [/\.junoAccentGlass\s*\(/g, "Liquid Glass (via .junoAccentGlass)"],
+const MATERIALS = [
   [/\.ultraThinMaterial\b/g, "`.ultraThinMaterial`"],
   [/\.thinMaterial\b/g, "`.thinMaterial`"],
   [/\.regularMaterial\b/g, "`.regularMaterial`"],
   [/\.thickMaterial\b/g, "`.thickMaterial`"],
   [/\.ultraThickMaterial\b/g, "`.ultraThickMaterial`"],
+];
+
+/*
+ * Every spelling of Liquid Glass in this tree: the SDK's own and the house
+ * wrappers. A wrapper left off the list is a way round the rule, and the tidier
+ * spelling is the one the rework pushes everyone towards.
+ *
+ * `\(` rather than `\b` after the house names, so `.junoGlassID(…)` — which only
+ * tags a participant and applies no material — is not caught by `.junoGlass(`.
+ */
+const GLASS = [
+  [/\.glassEffect\b/g, "Liquid Glass"],
+  [/\.junoGlass\s*\(/g, "Liquid Glass (via .junoGlass)"],
+  [/\.junoFloatingGlass\s*\(/g, "Liquid Glass (via .junoFloatingGlass)"],
+  [/\.junoAccentGlass\s*\(/g, "Liquid Glass (via .junoAccentGlass)"],
+  [/\.junoFloatingChrome\s*\(/g, "Liquid Glass (via .junoFloatingChrome)"],
+  [/\.junoGlassButton\s*\(/g, "Liquid Glass (via .junoGlassButton)"],
+  [/\.junoProminentGlassButton\s*\(/g, "Liquid Glass (via .junoProminentGlassButton)"],
+  [/\.junoProminentAction\s*\(/g, "Liquid Glass (via .junoProminentAction)"],
+  [/buttonStyle\(\s*\.glass/g, "a glass button style"],
+  [/\.glassProminent\b/g, "`.glassProminent`"],
+  [/\bJunoGlassBackground\s*\(/g, "Liquid Glass (via JunoGlassBackground)"],
 ];
 
 /** The words that mark an identifier as a thing the user reads, not chrome. */
@@ -89,52 +131,104 @@ function marksContent(identifier) {
   return null;
 }
 
-const violations = [];
+/*
+ * A presentation's content: the braces opened on a `.sheet(` or `.popover(`
+ * line. Brace counting on blanked source, so a sheet whose content is a named
+ * view defined elsewhere is not seen here — that view's own file is scanned by
+ * checks 1–3 in its own right.
+ */
+const PRESENTATION = /\.(?:sheet|popover)\s*\(/;
+
+/*
+ * One violation per line. A `.buttonStyle(.glassProminent)` on a content row
+ * inside a popover trips three patterns and all four checks; counting it more
+ * than once would make the baseline a number nobody can reconcile against the
+ * code. The first reason recorded for a line is the most specific one, so
+ * checks run most-specific first.
+ */
+const byLine = new Map();
+function report(filePath, line, reason) {
+  const key = `${filePath}:${line}`;
+  if (!byLine.has(key)) byLine.set(key, { path: filePath, line, reason });
+}
+
 for (const file of swiftSources()) {
   if (EXEMPT.has(file.path)) continue;
   const basename = path.basename(file.path, ".swift");
   const fileMarker = marksContent(basename);
+  const isGlassSite = GLASS_SITES.has(path.basename(file.path));
+  const presentations = bracedRegions(file.lines, PRESENTATION);
+  const insidePresentation = (line) =>
+    presentations.some((region) => line > region.startLine && line <= region.endLine);
   /*
    * `JunoGlass` (iOS) and `JunoDesktopGlass` (macOS) ARE the container — each
-   * wraps `GlassEffectContainer` with the availability check — and
-   * `junoGlassSearchContainer()` is the single-element form. A file that reaches
-   * for one of them has grouped its glass, which is the property this half of
-   * the rule is actually asking about.
+   * wraps `GlassEffectContainer` — and `junoGlassSearchContainer()` is the
+   * single-element form. A file that reaches for one of them has grouped its
+   * glass, which is the property check 2 is actually asking about.
    */
   const hasContainer = /\b(?:GlassEffectContainer|JunoGlass|JunoDesktopGlass)\b|\.junoGlassSearchContainer\b/
     .test(file.code);
 
-  for (const [pattern, label] of TRANSLUCENCY) {
+  const patterns = [
+    ...GLASS.map(([pattern, label]) => ({ pattern, label, isGlass: true })),
+    ...MATERIALS.map(([pattern, label]) => ({ pattern, label, isGlass: false })),
+  ];
+  for (const { pattern, label, isGlass } of patterns) {
     for (const match of file.code.matchAll(pattern)) {
       const line = lineAt(file.code, match.index);
       const typeName = enclosingTypeName(file.code, match.index);
       const marker = fileMarker ?? marksContent(typeName);
+
+      // 1 — translucency on a surface whose name says it is content.
       if (marker) {
         const where = fileMarker ? `${basename}.swift` : typeName;
-        violations.push({
-          path: file.path,
+        report(
+          file.path,
           line,
-          reason:
-            `${label} on a content surface — \`${where}\` is a "${marker}", and content `
-            + "is opaque; glass belongs to the sidebar, toolbar, tab bar and composer",
-        });
+          `${label} on a content surface — \`${where}\` is a "${marker}", and content `
+            + "is opaque; glass belongs to the system chrome and the five glass sites",
+        );
         continue;
       }
-      if (label.startsWith("Liquid Glass") && !hasContainer) {
-        violations.push({
-          path: file.path,
+
+      // 4 — glass on glass: a system sheet or popover already is glass.
+      if (isGlass && insidePresentation(line)) {
+        report(
+          file.path,
           line,
-          reason:
-            `loose ${label} — no GlassEffectContainer (or JunoGlass/JunoDesktopGlass) in `
+          `${label} inside a .sheet or .popover — both are system glass on macOS 26, `
+            + "so this is glass on glass; a presentation's content is opaque",
+        );
+        continue;
+      }
+
+      // 3 — custom glass outside the five sites.
+      if (isGlass && shipsToMac(file.path) && !isGlassSite) {
+        report(
+          file.path,
+          line,
+          `${label} outside the five glass sites — Juno draws glass only in the composer `
+            + "cluster, the Search panel, the find bar, the toast host and Quick Entry (§0.1)",
+        );
+        continue;
+      }
+
+      // 2 — loose glass that samples on its own.
+      if (isGlass && label.startsWith("Liquid Glass") && !hasContainer) {
+        report(
+          file.path,
+          line,
+          `loose ${label} — no GlassEffectContainer (or JunoGlass/JunoDesktopGlass) in `
             + "this file, so it samples on its own, cannot morph via glassEffectID, and "
             + "costs more to render",
-        });
+        );
       }
     }
   }
 }
 
-violations.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);
+const violations = [...byLine.values()]
+  .sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);
 
 process.exit(
   gate({
@@ -142,10 +236,12 @@ process.exit(
     headline: "Glass is chrome; content is opaque.",
     why:
       "  Text read through a blur has no fixed contrast — the same paragraph is legible\n"
-      + "  over one background and not over the next. So the rule is one Liquid Glass\n"
-      + "  layer per screen (sidebar, toolbar, tab bar, composer) over an OPAQUE content\n"
-      + "  layer. For a row, card, bubble, diff hunk or empty state, use a JunoSurfaces\n"
-      + "  fill and a hairline instead.\n"
+      + "  over one background and not over the next. So the system draws the chrome's\n"
+      + "  glass (sidebar, toolbar, menus, popovers, sheets), Juno adds glass only in the\n"
+      + "  five allow-listed sites (JunoComposerShell, DesktopSearchPanel, DesktopFindBar,\n"
+      + "  JunoToastHost, DesktopQuickEntry), and everything else is OPAQUE. For a row,\n"
+      + "  card, bubble, control or empty state, use a JunoSurfaces fill and a hairline;\n"
+      + "  inside a sheet or popover, use nothing — the presentation is already glass.\n"
       + "\n"
       + "  For the loose-glass case: put the cluster inside ONE `GlassEffectContainer`\n"
       + "  and give every participant a `glassEffectID` in a shared namespace. That is\n"

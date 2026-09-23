@@ -2,8 +2,9 @@ import process from "node:process";
 import { bracedRegions, gate, lineAt, swiftSources } from "./check-native-design-lib.mjs";
 
 /*
- * RULE 4 OF THE REWORK BRIEF: every hit target is at least 44×44, with a
- * `.contentShape` matching what the control visibly is.
+ * RULE 4 OF THE REWORK BRIEF: every hit target is at least 44×44 on touch —
+ * 28×28 on the Mac, see PLATFORM-AWARE below — with a `.contentShape` matching
+ * what the control visibly is.
  *
  * Two failures, and the second is the one people miss. A 20pt icon button is
  * obviously too small. But a correctly sized button whose label is an `HStack`
@@ -23,7 +24,24 @@ import { bracedRegions, gate, lineAt, swiftSources } from "./check-native-design
  * is auditable from the call site instead of inferred from three modifiers up.
  */
 
-const MINIMUM = 44;
+/*
+ * PLATFORM-AWARE (§8.7 of docs/native/MACOS_LIQUID_GLASS_REDESIGN.md).
+ *
+ * 44pt is a TOUCH rule. A pointer is a single pixel, and the Mac's own control
+ * metrics — a toolbar button, a sidebar row's accessory, a borderless icon
+ * button — are 28pt; a 44pt frame on a Mac control is a phone control that
+ * wandered onto a desktop, and it pushes rows and toolbars out of the system's
+ * rhythm. So sources under `native/macOS/` are held to 28pt, with the same
+ * `.contentShape` requirement, and everything else — the phone app, and the
+ * shared packages, which compile for the phone — keeps 44.
+ */
+const TOUCH_MINIMUM = 44;
+const POINTER_MINIMUM = 28;
+
+/** The target this file's controls are held to. */
+function minimumFor(filePath) {
+  return filePath.startsWith("native/macOS/") ? POINTER_MINIMUM : TOUCH_MINIMUM;
+}
 
 /** End offset of the balanced `(…)`/`{…}` group opening at `open`. */
 function consumeBalanced(code, open) {
@@ -123,6 +141,7 @@ const SYSTEM_DRAWN = new RegExp(
 
 const violations = [];
 for (const file of swiftSources()) {
+  const MINIMUM = minimumFor(file.path);
   const systemDrawn = bracedRegions(file.lines, SYSTEM_DRAWN);
   const isSystemDrawn = (line) =>
     systemDrawn.some((region) => line > region.startLine && line <= region.endLine);
@@ -149,7 +168,7 @@ for (const file of swiftSources()) {
         line: lineAt(file.code, span.start + worst.offset),
         reason:
           `${control} sized ${worst.name}: ${worst.value} with nothing in it reaching ${MINIMUM}pt `
-          + `— state the target: .frame(minWidth: 44, minHeight: 44) (heuristic: padding is invisible here)`,
+          + `— state the target: .frame(minWidth: ${MINIMUM}, minHeight: ${MINIMUM}) (heuristic: padding is invisible here)`,
       });
       continue;
     }
@@ -179,9 +198,10 @@ deduped.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);
 process.exit(
   gate({
     rule: "targets",
-    headline: "Every target is 44pt and shaped like the control.",
+    headline: "Every target is 44pt on touch, 28pt on the Mac, and shaped like the control.",
     why:
       "  Two fixes, usually on the same line. Size: `.frame(minWidth: 44, minHeight: 44)`\n"
+      + "  on iOS and shared code, `.frame(minWidth: 28, minHeight: 28)` under native/macOS,\n"
       + "  on the control itself, so the target is readable at the call site rather than\n"
       + "  inferred from padding three modifiers away. Shape: `.contentShape(.rect)` — or\n"
       + "  a concentric shape where the control has a visible corner — so the hit region\n"

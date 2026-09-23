@@ -95,7 +95,7 @@ struct JunoLessonHeader: View {
             JunoLessonKicker(text: kicker, accent: accent, tint: kickerTint)
             if let title, !title.isEmpty {
                 Text(title)
-                    .font(JunoSerif.font(size: 20, relativeTo: .title3, face: .medium))
+                    .junoType(.heading)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let description, !description.isEmpty {
@@ -182,7 +182,7 @@ public struct JunoLearningCardView: View {
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(titleLine)
-                            .font(JunoSerif.font(size: 19, relativeTo: .title3, face: .medium))
+                            .junoType(.heading)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(card.content)
                             .junoFont(size: 15, relativeTo: .body)
@@ -255,7 +255,7 @@ public struct JunoProcessTimelineView: View {
                 // between rows so it cannot fall out of step with the numbers.
                 VStack(spacing: 0) {
                     Text("\(index + 1)")
-                        .font(JunoSerif.font(size: 24, relativeTo: .title2, face: .medium))
+                        .junoType(.title)
                         .monospacedDigit()
                         .foregroundStyle(
                             isActive ? Color.junoAccent
@@ -274,7 +274,7 @@ public struct JunoProcessTimelineView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(step.label)
-                        .font(JunoSerif.font(size: 15, relativeTo: .callout, face: .semibold))
+                        .junoType(.body.weight(.semibold))
                         .foregroundStyle(isActive ? Color.junoAccent : Color.junoForeground)
                         .fixedSize(horizontal: false, vertical: true)
                     if let description = step.description {
@@ -478,8 +478,7 @@ public struct JunoComparisonView: View {
                     .frame(width: 2)
                     .accessibilityHidden(true)
                 Text(verdict)
-                    .font(JunoSerif.font(size: 15, relativeTo: .callout, face: .mediumItalic))
-                    .lineSpacing(6)
+                    .junoType(.body.weight(.medium).italic())
                     .foregroundStyle(Color.junoForeground.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 14)
@@ -515,7 +514,7 @@ public struct JunoDeepDiveView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             JunoLessonKicker(text: "Deep dive", accent: .junoSource, tint: .junoSource)
                             Text(deepDive.title)
-                                .font(JunoSerif.font(size: 16, relativeTo: .callout, face: .medium))
+                                .junoType(.bodyLarge.weight(.medium))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             if deepDive.summary != deepDive.title, !open {
@@ -577,6 +576,7 @@ public struct JunoQuizInteraction: View {
     @State private var hintOpen = false
     @State private var fired = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.junoTextScale) private var textScale
 
     private static let letters = Array("ABCDEFGH")
 
@@ -651,7 +651,7 @@ public struct JunoQuizInteraction: View {
             if multi { progressRow }
 
             Text(q.question)
-                .font(JunoSerif.font(size: 17, relativeTo: .body, face: .medium))
+                .junoType(.bodyLarge.weight(.medium))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -669,8 +669,7 @@ public struct JunoQuizInteraction: View {
                     JunoLessonToggle(label: "Hint", open: hintOpen) { hintOpen.toggle() }
                     if hintOpen {
                         Text(hint)
-                            .font(JunoSerif.font(size: 14, relativeTo: .subheadline, face: .mediumItalic))
-                            .lineSpacing(5)
+                            .junoType(.ui.weight(.medium).italic())
                             .foregroundStyle(Color.junoMutedForeground)
                             .fixedSize(horizontal: false, vertical: true)
                             .transition(.junoInline)
@@ -730,8 +729,7 @@ public struct JunoQuizInteraction: View {
                     .foregroundStyle(state.markerColor)
                     .frame(width: 18)
                 Text(option.label)
-                    .font(JunoSerif.font(size: 15, relativeTo: .callout))
-                    .lineSpacing(5)
+                    .junoType(.body)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -769,8 +767,10 @@ public struct JunoQuizInteraction: View {
         // Verdict and explanation are ONE text run, not two stacked lines: the
         // sentence is "Not quite — the answer is B", and breaking it in two
         // would read as a label above an unrelated remark.
+        // A `Font`, not `junoType`: an operand of `Text` interpolation takes
+        // only `Text`-returning modifiers.
         let verdict = Text(isCorrect ? "Correct — " : "Not quite — ")
-            .font(JunoSerif.font(size: 15, relativeTo: .callout, face: .mediumItalic))
+            .font(JunoType.body.weight(.medium).italic().font(scale: textScale))
             .foregroundStyle(isCorrect ? Color.junoSuccess : Color.junoDanger)
         let body = Text(explanation ?? fallback)
             .font(.junoBody)
@@ -814,7 +814,7 @@ public struct JunoQuizInteraction: View {
             VStack(alignment: .leading, spacing: 4) {
                 JunoLessonMicrocap(text: "Recap", tint: .junoAccent)
                 Text(recapLine)
-                    .font(JunoSerif.font(size: 18, relativeTo: .title3, face: .medium))
+                    .junoType(.heading)
                     .fixedSize(horizontal: false, vertical: true)
             }
             VStack(alignment: .leading, spacing: 0) {
@@ -850,7 +850,7 @@ public struct JunoQuizInteraction: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
                 Text(question.question)
-                    .font(JunoSerif.font(size: 15, relativeTo: .callout))
+                    .junoType(.body)
                     .foregroundStyle(Color.junoForeground.opacity(0.9))
                     .fixedSize(horizontal: false, vertical: true)
                 if !right, let correctLabel {
@@ -967,7 +967,7 @@ public struct JunoQuizBlockView: View {
                     JunoLessonKicker(text: "Quick check", tint: .junoAccent)
                     if let title = quiz.title {
                         Text(title)
-                            .font(JunoSerif.font(size: 19, relativeTo: .title3, face: .medium))
+                            .junoType(.heading)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

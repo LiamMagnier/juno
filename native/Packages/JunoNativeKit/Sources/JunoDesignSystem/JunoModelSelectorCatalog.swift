@@ -335,7 +335,7 @@ public enum JunoModelSelectorCatalog {
 
     // MARK: - Capability chips
 
-    /// One text chip with its Lucide mark, in the web's order.
+    /// One text chip with its mark from the website's set, in the web's order.
     public struct Chip: Equatable, Sendable {
         public let label: String
         public let icon: JunoIcon

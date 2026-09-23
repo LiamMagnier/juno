@@ -3,7 +3,7 @@ import SwiftUI
 /// A small word in a capsule: a capability chip, a "Smart" badge, a
 /// "Recommended" mark.
 ///
-/// Text first, with an optional Lucide mark before it — the mark is a
+/// Text first, with an optional Juno mark before it — the mark is a
 /// clarifier, never the whole chip, so a row of them still reads as words.
 /// Neutral by default (`junoMuted` ground, muted ink); `tint` paints the ink
 /// and a thin wash of the same colour for the one chip on a surface that is

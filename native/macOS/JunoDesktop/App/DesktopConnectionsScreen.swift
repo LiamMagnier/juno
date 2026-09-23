@@ -803,7 +803,7 @@ private enum DesktopConnectorGrid {
     /// 1024pt page invites a sentence, and what this one takes is one app's name.
     /// Its height is the chip's, so search and categories read as one filter block.
     static let searchFieldWidth: CGFloat = 320
-    /// The magnifier inside it. Lucide's 2pt stroke at caption size — smaller than
+    /// The magnifier inside it, at caption size — smaller than
     /// ``JunoIconView``'s sidebar default, which would outweigh the field's text.
     static let searchGlyphSize: CGFloat = 14
     /// A status dot. Small enough to read as punctuation beside its label.

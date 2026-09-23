@@ -41,15 +41,44 @@ struct JunoDesktopSmokeTests {
     func productModesHaveStableSceneStorageValues() {
         #expect(DesktopProductMode.chat.rawValue == "chat")
         #expect(DesktopProductMode.code.rawValue == "code")
-        #expect(DesktopProductMode.work.rawValue == "work")
+        // The legacy workspace keeps Work's stored value, so a window saved
+        // by an older build restores to the same place.
+        #expect(DesktopProductMode.legacyWork.rawValue == "work")
         // Every case is pinned above, so a product added without a line here
         // fails rather than shipping an unpinned scene-storage value.
         #expect(DesktopProductMode.allCases.count == 3)
     }
 
-    /// The menu bar and the toolbar switcher both enumerate `allCases`, so a
-    /// product with no label of its own would render as an empty menu row and an
-    /// empty segment — a control the reader can hit but cannot read.
+    /// Two products (§1.4 of the Liquid Glass redesign). The switch, the View
+    /// menu and Quick Entry all read `switchable`; the legacy Work workspace
+    /// is in none of them and has no shortcut — Window › Tasks (Legacy) is the
+    /// only way to it.
+    @Test
+    func theSwitchOffersChatAndCodeOnly() {
+        #expect(DesktopProductMode.switchable == [.chat, .code])
+        #expect(DesktopProductMode.chat.keyboardDigit == "1")
+        #expect(DesktopProductMode.code.keyboardDigit == "2")
+        #expect(DesktopProductMode.legacyWork.keyboardDigit == nil)
+        #expect(DesktopProductMode.legacyWork.keyboardShortcut == nil)
+        #expect(DesktopProductMode.chat.help == "Chat  ⌘1")
+        #expect(DesktopProductMode.code.help == "Code  ⌘2")
+        #expect(!DesktopProductMode.switchable.contains(.legacyWork))
+    }
+
+    /// The switch draws the selected product in its solid cut, so both
+    /// products must have one — an outline in the "on" state would leave the
+    /// selection with nothing to show it but a colour, which §0.4 forbids.
+    @Test
+    func everySwitchableProductHasAFillCut() {
+        for mode in DesktopProductMode.switchable {
+            #expect(mode.icon.hasFill, "\(mode.rawValue) has no .fill cut")
+            #expect(mode.icon.assetName(.fill).hasSuffix(".fill"))
+        }
+    }
+
+    /// The menu bar and the switch both enumerate products, so one with no
+    /// label of its own would render as an empty menu row and an empty segment
+    /// — a control the reader can hit but cannot read.
     @Test
     func everyProductModeNamesItself() {
         for mode in DesktopProductMode.allCases {

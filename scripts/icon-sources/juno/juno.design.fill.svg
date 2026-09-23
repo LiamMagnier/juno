@@ -1,0 +1,4 @@
+<!-- juno.design.fill: outlined from src/components/ui/juno-glyph-paths.ts by `node scripts/generate-native-icons.mjs --outline-juno`. Do not edit. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" data-source="af439a520f520da7">
+  <path d="M156,124L156,196C156,213.67 141.67,228 124,228L52,228C34.33,228 20,213.67 20,196L20,124C20,106.33 34.33,92 52,92L124,92C141.67,92 156,106.33 156,124ZM227.91,79.03C237.29,116.54 214.48,154.54 176.97,163.91C174.45,164.54 172,162.63 172,160.03L172,76L98.52,76C95.7,76 93.77,73.17 94.79,70.55C103.04,49.41 121.02,33.58 143.04,28.09C180.54,18.71 218.54,41.52 227.91,79.03Z"/>
+</svg>

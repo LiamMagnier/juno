@@ -23,14 +23,62 @@ struct DesktopNavigationStateTests {
         )
     }
 
+    /// An empty draft selects nothing (§2.3 of the Liquid Glass redesign).
+    ///
+    /// New chat is an untagged button, not a row the reader is on, so the
+    /// chat route with no conversation must resolve to no selection at all —
+    /// otherwise the column highlights the button that made the draft, or
+    /// the last conversation, while the reader is in neither.
     @Test
-    func chatWithNoConversationSelectsTheChatDestination() {
+    func aDraftSelectsNothing() {
         #expect(
             DesktopNavigationState.selection(
                 destination: .chat,
                 selectedConversationID: nil
-            ) == .destination(.chat)
+            ) == nil
         )
+    }
+
+    /// Search has no row until the ⌘K panel replaces it; the column must not
+    /// claim some other row is open while the Search page is.
+    @Test
+    func theSearchPageSelectsNothing() {
+        #expect(
+            DesktopNavigationState.selection(
+                destination: .search,
+                selectedConversationID: "conv-1"
+            ) == nil
+        )
+    }
+
+    /// A pinned project's row is the selection while the page it opened is
+    /// up; with no pinned project open, the Projects row is.
+    @Test
+    func aPinnedProjectRowIsTheSelectionForItsPage() {
+        #expect(
+            DesktopNavigationState.selection(
+                destination: .projects,
+                selectedConversationID: "conv-1",
+                openProjectID: "proj-1"
+            ) == .project("proj-1")
+        )
+        #expect(
+            DesktopNavigationState.selection(
+                destination: .projects,
+                selectedConversationID: nil
+            ) == .destination(.projects)
+        )
+    }
+
+    @Test
+    func selectingAPinnedProjectOpensProjectsAndKeepsTheConversation() {
+        let resolved = DesktopNavigationState.resolve(
+            selection: .project("proj-2"),
+            current: (.chat, "conv-5")
+        )
+        #expect(resolved.destination == .projects)
+        #expect(resolved.conversationID == "conv-5")
+        #expect(resolved.isDrafting == false)
     }
 
     /// A conversation can stay loaded while the user is on another page. The
@@ -84,14 +132,17 @@ struct DesktopNavigationStateTests {
         #expect(resolved.isDrafting == false)
     }
 
+    /// The list letting go of its selection — which is what a new draft looks
+    /// like from the list's side — must not navigate anywhere or start a draft.
     @Test
     func aClearedSelectionChangesNothing() {
         let resolved = DesktopNavigationState.resolve(
             selection: nil,
-            current: (.tasks, "conv-2")
+            current: (.library, "conv-2")
         )
-        #expect(resolved.destination == .tasks)
+        #expect(resolved.destination == .library)
         #expect(resolved.conversationID == "conv-2")
+        #expect(resolved.isDrafting == false)
     }
 
     // MARK: - Restoration
@@ -170,6 +221,11 @@ struct DesktopNavigationStateTests {
     func anUnknownStoredDestinationFallsBackToChat() {
         #expect(DesktopNavigationState.destination(fromStored: "moodboard") == .chat)
         #expect(DesktopNavigationState.destination(fromStored: "") == .chat)
+        // The three pages Phase 1 retired from the column. A window saved on
+        // one of them reopens on Chat rather than on a blank pane.
+        for retired in ["tasks", "usage", "settings"] {
+            #expect(DesktopNavigationState.destination(fromStored: retired) == .chat)
+        }
 
         for destination in DesktopDestination.allCases {
             #expect(DesktopNavigationState.destination(fromStored: destination.rawValue) == destination)
@@ -195,6 +251,48 @@ struct DesktopNavigationStateTests {
                 destination: .artifacts,
                 conversationTitle: "ignored"
             ) == "Artifacts"
+        )
+    }
+
+    /// The window is never nameless: the Window menu, Mission Control and ⌘`
+    /// read this title, and `.navigationTitle("")` left them a blank row.
+    @Test
+    func theWindowTitleIsNeverEmpty() {
+        #expect(
+            DesktopNavigationState.windowTitle(destination: .chat, conversationTitle: "   ")
+                == "New chat"
+        )
+        #expect(
+            DesktopNavigationState.windowTitle(destination: .chat, conversationTitle: "")
+                == "New chat"
+        )
+        for destination in DesktopDestination.allCases {
+            #expect(
+                !DesktopNavigationState.windowTitle(
+                    destination: destination,
+                    conversationTitle: nil
+                ).isEmpty
+            )
+        }
+    }
+
+    /// A private chat is titled in the web's words, whatever conversation was
+    /// open before it — it is a new chat that is never saved.
+    @Test
+    func aPrivateChatIsTitledIncognitoChat() {
+        #expect(
+            DesktopNavigationState.windowTitle(
+                destination: .chat,
+                conversationTitle: "Designing the sidebar",
+                isPrivate: true
+            ) == "Incognito chat"
+        )
+        #expect(
+            DesktopNavigationState.windowTitle(
+                destination: .library,
+                conversationTitle: nil,
+                isPrivate: true
+            ) == "Library"
         )
     }
 

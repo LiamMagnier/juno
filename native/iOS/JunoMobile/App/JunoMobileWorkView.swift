@@ -3,7 +3,7 @@ import JunoDesignSystem
 import JunoWorkKit
 import SwiftUI
 
-/// Maps legacy work-state names to the same Lucide vocabulary used by the web
+/// Maps legacy work-state names to the same icon vocabulary used by the web
 /// and the rest of the native shell. The work protocol intentionally keeps its
 /// symbol strings for backwards-compatible decoding; presentation is the only
 /// place that translates them to bundled Juno artwork.

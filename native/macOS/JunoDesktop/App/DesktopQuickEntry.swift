@@ -6,11 +6,13 @@ import SwiftUI
 /// The floating "Ask Juno" panel, bound to ⌥Space from anywhere.
 ///
 /// A small non-activating panel — the app does not come to the front, the
-/// panel does — with one field and a Chat / Code / Work switch. Return sends:
-/// Chat opens the main window on a new conversation carrying the text, Code
-/// opens it on the New task screen with the text as the prompt, Work opens it
-/// on Work's home with the text as the errand. The panel is the whole of the
-/// feature; it holds no state a window does not already own.
+/// panel does — holding the composer's shell and the Chat/Code switch. Return
+/// sends: Chat brings the main window forward on a new conversation carrying
+/// the text, Code brings it forward on the New task screen with the text as the
+/// prompt. The panel is the whole of the feature; it holds no state a window
+/// does not already own. (Work left the switch in Phase 1 of the Liquid Glass
+/// redesign; what used to be an errand for it is a chat now, and Phase 5 arms
+/// "Do This as a Task" on it.)
 ///
 /// **The hotkey needs Accessibility.** A global key monitor only receives
 /// events when the app is trusted for accessibility, so the panel says so in
@@ -26,6 +28,21 @@ final class DesktopQuickEntryController {
     private var panel: NSPanel?
     private var globalMonitor: Any?
     private var localMonitor: Any?
+    /// The account's Light or Dark choice, or nil to follow the system.
+    ///
+    /// The panel is AppKit's, not a SwiftUI scene, so the theme the main
+    /// window takes through `.preferredColorScheme` never reaches it: a reader
+    /// who chose Dark got a light panel over a dark window. The window's root
+    /// hands the choice over here instead (errata, "Light mode and theme
+    /// override").
+    private var appearance: NSAppearance?
+
+    /// Applies the account's theme to the panel, now and whenever it is next
+    /// built. Nil follows the system, as the main window does.
+    func setColorScheme(_ scheme: ColorScheme?) {
+        appearance = scheme.flatMap { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) }
+        panel?.appearance = appearance
+    }
 
     /// Whether the global monitor can receive keys. Read live: the reader may
     /// grant the permission while the app is running.
@@ -98,6 +115,7 @@ final class DesktopQuickEntryController {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
+        panel.appearance = appearance
         panel.contentView = NSHostingView(
             rootView: DesktopQuickEntryView(
                 isAccessibilityTrusted: isAccessibilityTrusted,
@@ -118,14 +136,27 @@ private final class DesktopQuickEntryPanel: NSPanel {
     }
 }
 
-/// The panel's contents: one glass surface, in the composer's own language.
+/// The panel's contents: the composer's own shell, and the product switch
+/// (§7.10).
 ///
-/// The same single-surface box every composer in the product draws — the
-/// composer radius, the floating chrome, one field, one control row with the
-/// product switch on the left and the coral send on the right. It used to be
-/// an opaque raised rectangle at the card radius with the switch jammed beside
-/// the field; a panel that pops up over other apps is the one place the
-/// material genuinely has something to refract.
+/// **The one composer.** Quick Entry used to draw a composer of its own — a
+/// Juno mark beside the field, floating glass chrome at the composer radius, a
+/// custom segmented control and a coral circle — which was a fifth
+/// implementation of the same object, drifting from the other four. It is now
+/// ``JunoComposerShell``, the shape every composer in the product is: the
+/// field row, then the controls row with the Chat/Code switch where `+` sits in
+/// a chat and the same primary disc at the end. No mark: the panel is summoned
+/// by a key the reader just pressed, and it needs no logo to say whose it is.
+///
+/// This is the one custom glass site outside the main window (§0.1): a panel
+/// that pops up over other apps is the place the material genuinely has
+/// something to refract.
+///
+/// **Sending brings the existing window forward** (errata 12). `openWindow(id:)`
+/// on a `WindowGroup` always opens a *new* window, so every ⌥Space used to
+/// leave another main window behind it. The request goes through
+/// ``DesktopWorkbenchRegistry`` to whichever window is open, and that window is
+/// brought forward; a window is opened only when there is none.
 struct DesktopQuickEntryView: View {
     let isAccessibilityTrusted: Bool
     let dismiss: () -> Void
@@ -135,88 +166,34 @@ struct DesktopQuickEntryView: View {
     @FocusState private var fieldFocused: Bool
     @Environment(\.openWindow) private var openWindow
 
+    /// Narrower than a chat's 768: the panel floats over other work, and a
+    /// Spotlight-sized entry is what the eye expects from a global key.
+    private static let width: CGFloat = 640
+
     private var canSend: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Chat's placeholder is the composer's own; Code's names what Code does
+    /// with a sentence.
     private var placeholder: String {
-        switch product {
-        case .chat: "Ask Juno…"
-        case .code: "Describe a task for Juno Code…"
-        case .work: "Give Juno an errand with a finish line…"
-        }
+        product == .code ? "Describe a task for Juno Code…" : ChatComposerPlaceholder.text()
     }
 
     private var hint: String {
-        switch product {
-        case .chat: "↩ starts a new chat"
-        case .code: "↩ starts a task in Juno Code"
-        case .work: "↩ hands the errand to Juno Work"
-        }
+        product == .code ? "↩ starts a task in Juno Code" : "↩ starts a new chat"
     }
 
     var body: some View {
-        JunoDesktopGlass {
-            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                HStack(spacing: JunoSpace.cozy) {
-                    JunoMark(size: 20)
-                        .junoInk()
-                        .accessibilityHidden(true)
-                    TextField(placeholder, text: $text)
-                        .textFieldStyle(.plain)
-                        .junoFont(size: 17, relativeTo: .title3)
-                        .junoInk()
-                        .focused($fieldFocused)
-                        .onSubmit(send)
-                        .accessibilityIdentifier("juno.desktop.quick-entry.field")
-                }
-
-                HStack(spacing: JunoSpace.cozy) {
-                    DesktopSegmented(
-                        options: DesktopProductMode.allCases.map {
-                            .init($0, $0.label, icon: $0.icon)
-                        },
-                        selection: $product,
-                        accessibilityLabel: "Send to"
-                    )
-                    Text(hint)
-                        .junoCaption()
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    if !isAccessibilityTrusted {
-                        Button {
-                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                                NSWorkspace.shared.open(url)
-                            }
-                        } label: {
-                            JunoIconLabel(verbatim: "Allow ⌥Space everywhere", icon: .permission, size: 12)
-                                .junoCaption()
-                                .frame(minWidth: 44, minHeight: 44)
-                                .contentShape(.rect)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Open Privacy & Security › Accessibility — the global shortcut needs it")
-                        .accessibilityIdentifier("juno.desktop.quick-entry.accessibility")
-                    }
-                    Button(action: send) {
-                        JunoIconView(.arrowUp, size: 14)
-                            .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
-                            .frame(width: 32, height: 32)
-                    }
-                    .junoCircleAction(active: canSend)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Circle())
-                    .disabled(!canSend)
-                    .help("Send (↩)")
-                    .accessibilityLabel("Send")
-                    .accessibilityIdentifier("juno.desktop.quick-entry.send")
-                }
-            }
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.vertical, JunoSpace.cozy)
-            .junoFloatingChrome(cornerRadius: JunoRadius.composer)
-        }
-        .frame(width: 640)
+        JunoComposerShell(
+            captionAbove: { EmptyView() },
+            above: { EmptyView() },
+            field: { field },
+            controls: { controls },
+            edge: { EmptyView() },
+            captionBelow: { EmptyView() }
+        )
+        .frame(width: Self.width)
         .padding(JunoSpace.snug)
         .onAppear { fieldFocused = true }
         .accessibilityElement(children: .contain)
@@ -224,20 +201,82 @@ struct DesktopQuickEntryView: View {
         .accessibilityIdentifier("juno.desktop.quick-entry")
     }
 
+    private var field: some View {
+        TextField(
+            text: $text,
+            prompt: Text(placeholder).foregroundStyle(Color.junoSecondaryInk),
+            axis: .vertical
+        ) {
+            Text(placeholder)
+        }
+        .textFieldStyle(.plain)
+        .junoType(.body)
+        .foregroundStyle(Color.junoForeground)
+        .lineLimit(1...6)
+        .focused($fieldFocused)
+        // ↩ sends and ⇧↩ breaks the line, as in every composer.
+        .onKeyPress(.return, phases: .down) { press in
+            if press.modifiers.contains(.shift) { return .ignored }
+            send()
+            return .handled
+        }
+        // The panel is its own window, outside every view that states the
+        // accent, so the field states it for its caret. Only the field: the
+        // switch beside it must not take a tint (§0.4).
+        .junoAccentTint()
+        .accessibilityIdentifier("juno.desktop.quick-entry.field")
+    }
+
+    private var controls: some View {
+        HStack(spacing: JunoComposerMetrics.controlSpacing) {
+            // The window's own switch, so Quick Entry and the toolbar can
+            // never offer different products or draw them differently. Icons
+            // only, as in the toolbar: outside a toolbar a segmented picker
+            // would spell its labels out.
+            DesktopProductSwitch(product: $product)
+                .labelStyle(.iconOnly)
+                .fixedSize()
+            Text(hint)
+                .junoType(.caption)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .lineLimit(1)
+                .padding(.leading, JunoSpace.snug)
+            Spacer(minLength: JunoSpace.snug)
+            if !isAccessibilityTrusted {
+                Button {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    JunoIconLabel(verbatim: "Allow ⌥Space everywhere", icon: .permission, size: 12)
+                        .junoType(.caption)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .padding(.horizontal, JunoSpace.tight)
+                        .frame(height: JunoComposerMetrics.controlHeight)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(ComposerControlStyle())
+                .help("Open Privacy & Security › Accessibility — the global shortcut needs it")
+                .accessibilityIdentifier("juno.desktop.quick-entry.accessibility")
+            }
+            ComposerPrimaryDisc(
+                face: canSend ? .send : .disabled("Send"),
+                identifier: "juno.desktop.quick-entry.send",
+                action: send
+            )
+        }
+    }
+
     private func send() {
         let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return }
-        switch product {
-        case .code:
+        if product == .code {
             DesktopWorkbenchRegistry.shared.request(.newCodeTask(prompt: prompt))
-        case .work:
-            DesktopWorkbenchRegistry.shared.requestWorkErrand(prompt: prompt)
-        case .chat:
+        } else {
             DesktopWorkbenchRegistry.shared.request(.newChat(prompt: prompt))
         }
         text = ""
         dismiss()
-        openWindow(id: JunoDesktopWindow.mainID)
-        NSApp.activate()
+        JunoDesktopWindow.showMainWindow(using: openWindow)
     }
 }

@@ -114,6 +114,14 @@ jobs:
       - name: Design tokens have not drifted
         run: npm run design:tokens:check
 
+      # The apps' icon set is generated from the web's: Phosphor's geometry out
+      # of node_modules, Juno's own marks out of juno-glyph-paths.ts, and the
+      # concept → drawing table out of app-icons.ts. A glyph swapped on the web,
+      # a mark redrawn without re-outlining, or a JunoIcon case wearing the
+      # wrong drawing fails here — on Linux, without Swift.
+      - name: Icons have not drifted
+        run: npm run native:icons:check
+
   # ---------------------------------------------------------------------------
   # The four design rules from docs/native/REWORK_PLAN.md, as build failures.
   #

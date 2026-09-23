@@ -3,29 +3,46 @@ import JunoCodeUI
 import JunoDesignSystem
 import SwiftUI
 
-/// The menu bar item: which runs are live, and the way to start another.
+/// The menu bar item (§7.10): New Chat, the Code sessions that are live, and
+/// the way back to the window.
 ///
 /// Codex and Claude Code both keep a presence in the menu bar so a run left
-/// working in another Space still has a status a glance away. This is that:
-/// every active session with its state, a click to open it, New task and Ask
-/// Juno. It reads ``DesktopWorkbenchRegistry`` rather than any window, so it is
-/// correct with no window open at all — which is exactly when it is most useful.
+/// working in another Space still has a status a glance away. This is that. It
+/// reads ``DesktopWorkbenchRegistry`` rather than any window, so it is correct
+/// with no window open at all — which is exactly when it is most useful.
 ///
-/// The glyphs are the website's Lucide marks, the same catalog every other
-/// surface draws from; a menu is the one place the platform would otherwise
-/// hand us a system symbol by default.
+/// **Every item brings the existing window forward.** They used to call
+/// `openWindow(id:)`, which on a `WindowGroup` always opens a *new* window
+/// (errata 12): three clicks here left three main windows. The request goes
+/// through the registry to the window that is already open, and
+/// ``JunoDesktopWindow/showMainWindow(using:)`` fronts it, opening one only
+/// when there is none.
+///
+/// **What is not here.** New task and Ask Juno: a task starts from Code's own
+/// window, and ⌥Space is its own shortcut, listed in Keyboard Shortcuts. The
+/// chats that need you slot in above the sessions when that list exists
+/// (Phase 5, §2.5).
 struct DesktopMenuBarExtraContent: View {
     @Environment(\.openWindow) private var openWindow
     @State private var registry = DesktopWorkbenchRegistry.shared
 
+    // Each group sits in a `Section`, which a menu draws as a separator and
+    // nothing else — and which tells the targets gate these are system-drawn
+    // menu items, not views laid out here.
     var body: some View {
+        Section {
+            Button {
+                registry.request(.newChat(prompt: nil))
+                JunoDesktopWindow.showMainWindow(using: openWindow)
+            } label: {
+                JunoIconLabel("New Chat", icon: .new)
+            }
+            .keyboardShortcut("n")
+        }
+
         let sessions = registry.activeSessions
-        if registry.workbench == nil {
-            Text("Sign in to Juno to see running sessions")
-        } else if sessions.isEmpty {
-            Text("No sessions running")
-        } else {
-            Section(sessions.count == 1 ? "1 session running" : "\(sessions.count) sessions running") {
+        if !sessions.isEmpty {
+            Section("Live Code Sessions") {
                 ForEach(sessions) { session in
                     Button {
                         open(session)
@@ -42,27 +59,7 @@ struct DesktopMenuBarExtraContent: View {
 
         Section {
             Button {
-                registry.request(.newCodeTask(prompt: nil))
-                openWindow(id: JunoDesktopWindow.mainID)
-                NSApp.activate()
-            } label: {
-                JunoIconLabel("New task…", icon: .new)
-            }
-            .keyboardShortcut("n")
-            .disabled(registry.workbench == nil)
-
-            Button {
-                DesktopQuickEntryController.shared.toggle()
-            } label: {
-                JunoIconLabel("Ask Juno…", icon: .conversation)
-            }
-            .keyboardShortcut(" ", modifiers: [.option])
-        }
-
-        Section {
-            Button {
-                openWindow(id: JunoDesktopWindow.mainID)
-                NSApp.activate()
+                JunoDesktopWindow.showMainWindow(using: openWindow)
             } label: {
                 JunoIconLabel("Open Juno", icon: .external)
             }
@@ -80,36 +77,34 @@ struct DesktopMenuBarExtraContent: View {
         if let id = session.sessionID {
             registry.request(.openSession(id))
         }
-        openWindow(id: JunoDesktopWindow.mainID)
-        NSApp.activate()
+        JunoDesktopWindow.showMainWindow(using: openWindow)
     }
 }
 
-/// The menu bar item's own glyph: Juno's bracket mark, with a count when
-/// something is running and the count in front when something is blocked on
-/// the reader.
+/// The menu bar item's own glyph: Juno's chat mark, as a template image, with
+/// a count only when something needs you (§7.10).
 ///
-/// The status bar takes an `NSImage`, so the website's `code` mark is loaded
-/// from the app's own navigation catalog as a template at menu-bar size rather
-/// than through `JunoIconView`, whose SwiftUI frame the status item ignores.
+/// A count of everything running would be a number that is almost always
+/// non-zero and so says nothing; what earns a glance is a session blocked on
+/// the reader. The status bar takes an `NSImage`, so the mark is loaded from
+/// the app's icon set rather than through `JunoIconView`, whose SwiftUI frame
+/// the status item ignores. The asset is a symbol, sized by a point size: 14pt
+/// sets the 256 grid at 16pt, the menu bar's glyph box.
 struct DesktopMenuBarExtraLabel: View {
     @State private var registry = DesktopWorkbenchRegistry.shared
 
     private static let mark: NSImage = {
-        let image = NSImage(named: JunoIcon.code.assetName) ?? NSImage()
+        let symbol = NSImage(named: JunoIcon.home.assetName)
+        let image = symbol?.withSymbolConfiguration(.init(pointSize: 14, weight: .regular)) ?? symbol ?? NSImage()
         image.isTemplate = true
-        image.size = NSSize(width: 16, height: 16)
         return image
     }()
 
     var body: some View {
-        let sessions = registry.activeSessions
-        let waiting = sessions.filter(\.status.needsApproval).count
+        let waiting = registry.activeSessions.filter(\.status.needsApproval).count
         Image(nsImage: Self.mark)
         if waiting > 0 {
             Text("\(waiting)")
-        } else if !sessions.isEmpty {
-            Text("\(sessions.count)")
         }
     }
 }

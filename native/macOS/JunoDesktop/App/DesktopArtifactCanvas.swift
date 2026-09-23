@@ -366,11 +366,11 @@ struct DesktopArtifactDock<Content: View>: View {
     /// the whole column when there is not enough room for both.
     ///
     /// **`content` is never removed.** It used to be, in the compact case, and
-    /// that one `if` reached a very long way. It took ``DesktopComposer`` with
+    /// that one `if` reached a very long way. It took ``ChatComposer`` with
     /// it, and a SwiftUI view that leaves the hierarchy takes its `@State` too:
     /// the half-typed message, Deep research, Web search, the connectors picked
-    /// for this one send, the model chosen for it. It also took the voice dock
-    /// mounted on that composer, and `DesktopVoiceDock` hangs up on
+    /// for this one send, the model chosen for it. It also took the call bar
+    /// drawn in that composer, and ``DesktopVoiceCallBar`` hangs up on
     /// `onDisappear` — so opening an artifact ended a call that was still being
     /// spoken, and the dock came back offering to *restart*, which clears the
     /// record. Dragging the window across ``DesktopArtifactCanvasMetrics/sideBySideWidth``
@@ -515,10 +515,10 @@ struct DesktopArtifactDock<Content: View>: View {
 /// The artifact itself: the website's canvas header, its view switcher, and the
 /// artifact under both.
 ///
-/// Paints no canvas of its own. `junoReadingCanvas()` is applied once, at the
-/// window level, and a page that repaints it is what flattens the window into
-/// one cream field — the header's half-strength surface is the only fill here,
-/// and it is the web's `bg-card/50`.
+/// Paints no canvas of its own. The window paints `Color.junoCanvas` once, as
+/// its container background, and a panel that repaints it is what flattens the
+/// window into one cream field — the header's half-strength surface is the only
+/// fill here, and it is the web's `bg-card/50`.
 struct DesktopArtifactCanvas: View {
     let artifact: DesktopChatArtifact
     let close: () -> Void

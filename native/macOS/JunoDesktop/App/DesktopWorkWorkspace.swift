@@ -228,8 +228,10 @@ struct DesktopWorkWorkspace: View {
                 product: $product,
                 compose: compose,
                 openDesign: openDesign,
-                openSettings: { leaveForChat(.settings) },
-                openUsage: { leaveForChat(.usage) }
+                // Settings is its own window now (§7.2), so these no longer
+                // cross into Chat to reach it.
+                openSettings: { DesktopSettingsRouter.open(.general) },
+                openUsage: { DesktopSettingsRouter.open(.usage) }
             )
             .junoSidebarColumn()
         } detail: {
@@ -333,14 +335,8 @@ struct DesktopWorkWorkspace: View {
         leaveForChat(.design)
     }
 
-    /// Open Settings or Usage, which are Chat destinations.
-    ///
-    /// Work's column had neither, and no toolbar item for them either — so a
-    /// reader sitting in Work who wanted to change anything about Work had to
-    /// switch product, find Settings in Chat's column, and go looking. Chat and
-    /// Code both pin the account block; the three products are meant to read as
-    /// three faces of one application, and the window's furniture moving when
-    /// you switch tabs is the clearest way to say they are not.
+    /// Open a Chat destination — Design, from the column's footer row — by
+    /// writing Chat's stored destination and switching product.
     private func leaveForChat(_ destination: DesktopDestination) {
         storedDestination = destination.rawValue
         product = .chat
@@ -407,7 +403,7 @@ struct DesktopWorkWorkspace: View {
                 model: model,
                 sessions: visibleSessions,
                 isSearching: !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                firstName: JunoGreeting.firstName(from: session.profile.name),
+                firstName: ChatGreeting.firstName(from: session.profile.name),
                 selection: selection,
                 hostModel: hostModel,
                 connectorModel: configuration.connectorModel,
@@ -974,7 +970,7 @@ private struct DesktopWorkSidebar: View {
 
     // MARK: Fixed rows
 
-    /// One of the column's pages: a Lucide mark in the same fixed gutter the
+    /// One of the column's pages: the website's mark in the same fixed gutter the
     /// task marks use, and a word. No chevron, no count except on Inbox.
     private func pageRow(
         _ item: DesktopWorkSidebarItem,
@@ -1337,10 +1333,10 @@ private struct DesktopWorkOverview: View {
 
     // MARK: Greeting
 
-    /// The serif question, centred, with the reader's name in accent italic —
-    /// the web's own `EmptyGreeting`. Below the toolbar with a region's worth
-    /// of air: the largest type on the page used to sit close enough to the
-    /// floating toolbar to read as *in* it.
+    /// The question, centred, with the reader's name in accent italic. Sans on
+    /// the page-title rung: Newsreader is the Chat greeting's alone. Below the
+    /// toolbar with a region's worth of air: the largest type on the page used
+    /// to sit close enough to the floating toolbar to read as *in* it.
     private var greeting: some View {
         Text(question)
             .multilineTextAlignment(.center)
@@ -1355,11 +1351,11 @@ private struct DesktopWorkOverview: View {
     /// break as one line rather than as two views that can wrap independently.
     private var question: AttributedString {
         var text = AttributedString(firstName == nil ? "What needs doing?" : "What needs doing, ")
-        text.font = JunoSerif.font(size: 34, relativeTo: .largeTitle)
+        text.font = JunoType.pageTitle.weight(.regular).font()
         text.foregroundColor = Color.junoForeground
         guard let firstName else { return text }
         var name = AttributedString("\(firstName)?")
-        name.font = JunoSerif.font(size: 34, relativeTo: .largeTitle, face: .mediumItalic)
+        name.font = JunoType.pageTitle.weight(.medium).italic().font()
         name.foregroundColor = Color.junoAccent
         text.append(name)
         return text

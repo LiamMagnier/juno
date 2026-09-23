@@ -5,6 +5,11 @@ import SwiftUI
 /// The iPhone and website Dictate Mode adapted without changing its shape:
 /// live transcript above a fixed glass capsule with cancel, stop-to-edit, and
 /// send exits.
+///
+/// **Code's and the legacy Work workspace's only.** Chat dictates inside its
+/// composer's shell (``ComposerDictationField``, ``ComposerDictationControls``,
+/// §5.8), with no capsule, glow or uppercase. This view stays, unchanged, for
+/// the two composers that still mount it until their own reworks replace it.
 struct DesktopDictation: View {
     let onCancel: () -> Void
     let onStop: (String) -> Void

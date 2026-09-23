@@ -13,7 +13,13 @@ import JunoWorkKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Which model a composer or a re-asked turn goes to.
 enum DesktopChatSelection {
+    /// The current pick while it is still selectable, then the conversation's
+    /// own model, then **Auto** — so there is always a model (§5.3). Before the
+    /// catalog has loaded (or when it failed) nothing is selectable yet; the
+    /// conversation's model, or Auto, is sent as-is and the store accepts an
+    /// unknown id only while it has no catalog to check it against.
     static func resolvedModelID(
         current: String,
         conversationModel: String,
@@ -25,7 +31,13 @@ enum DesktopChatSelection {
         if selectable.contains(where: { $0.id == conversationModel }) {
             return conversationModel
         }
-        return selectable.first?.id ?? conversationModel
+        if let auto = selectable.first(where: \.isJunoAuto) {
+            return auto.id
+        }
+        if let first = selectable.first {
+            return first.id
+        }
+        return conversationModel.isEmpty ? ChatComposerModels.autoModelID : conversationModel
     }
 }
 
@@ -40,8 +52,17 @@ enum DesktopChatSelection {
 enum DesktopSidebarItem: Hashable {
     case destination(DesktopDestination)
     case conversation(String)
+    /// A pinned project's own row, which opens that project's page.
+    case project(String)
 }
 
+/// The Chat product's window: the one live `NavigationSplitView` while Chat is
+/// showing (crash rule 1), the column, and ``ChatDetail`` — the stable
+/// container that owns the title, the title menu and the toolbar.
+///
+/// It also owns the few things more than one surface reaches: the delete
+/// confirmation, the share popover's state and the new-project sheet, so the
+/// sidebar row, its hover menu and the title menu all present the same one.
 struct DesktopChatWorkspace: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     let configuration: JunoDesktopConfiguration
@@ -60,12 +81,16 @@ struct DesktopChatWorkspace: View {
     /// Lets the root retire a one-shot production launch route after this view
     /// has actually applied it. The screenshot harness does not provide one.
     var consumeInitialDestination: (() -> Void)?
-    /// A one-shot request made from the Code sidebar to start an ordinary Chat
-    /// conversation that is not scoped to any local repository.
+    /// A one-shot request made from another product, the menu bar or Quick
+    /// Entry to start an ordinary Chat conversation that is not scoped to any
+    /// local repository.
     var unscopedChatRequestID: UUID?
     /// Text the request asked the draft to open with — from ⌥Space, or the
     /// menu bar item. Nil for an ordinary New Chat.
     var unscopedChatPrompt: String? = nil
+    /// The request asked for a private draft: ⇧⌘N from Code, the legacy
+    /// workspace, or with no window focused.
+    var unscopedChatIsPrivate = false
     let consumeUnscopedChatRequest: () -> Void
     @SceneStorage("juno.desktop.destination") private var storedDestination =
         DesktopDestination.chat.rawValue
@@ -81,36 +106,40 @@ struct DesktopChatWorkspace: View {
     /// which a nil `overrideDestination` alone cannot.
     @State private var hasSeededOverride = false
     @SceneStorage("juno.desktop.columns") private var storedColumnVisibility = ""
-    /// Whether the Tasks inspector is up. The key is ``DesktopTasksScreen``'s own
-    /// — scene storage is one value per key per scene, so the page's toolbar
-    /// toggle and this window's `.inspector` are reading and writing the same
-    /// flag, and the page keeps its default of showing.
-    @SceneStorage("juno.desktop.tasks.inspector") private var tasksInspectorShown = true
     @State private var columnVisibility = NavigationSplitViewVisibility.all
-    /// The Tasks page's selection and its pending presentations.
-    ///
-    /// Held by the window because the page and the inspector are now two views in
-    /// two different columns of it, and `@State` cannot span them. See
-    /// ``DesktopTasksSurface``.
-    @State private var tasksSurface = DesktopTasksSurface()
     /// Set by Projects immediately before it opens a new draft. The composer
-    /// consumes it once so an ordinary toolbar New Chat never inherits an old
-    /// project's scope.
+    /// consumes it once so an ordinary New Chat never inherits an old project's
+    /// scope.
     @State private var draftProjectID: String?
     /// Optional text entered on a project overview before opening Chat. The
     /// composer consumes this once, so the project page never presents a fake
     /// prompt field.
     @State private var draftPrompt: String?
-    /// A one-shot deep link into Projects. The Projects destination itself still
-    /// opens the index; only a concrete project row writes this value.
+    /// A deep link into one project. The Projects row opens the index; a pinned
+    /// project's row — or Open Project in the title menu — writes this.
     @State private var requestedProjectID: String?
-    @State private var sharing = false
-    @State private var showingSettingsModal = false
-    /// Why the last ⇧⌘1 screenshot did not land in the composer.
+    /// Why the last ⇧⌘U screenshot did not land in the composer.
     @State private var screenshotFailure: String?
-
-    /// One line under the toolbar after a Share, so the copy is acknowledged.
-    @State private var shareNotice: String?
+    /// True while the chat route is a private chat (§5.8): nothing saved,
+    /// synced or remembered, and the window titled "Incognito chat". The
+    /// toolbar's Private toggle and ⇧⌘N set it; any navigation clears it, and
+    /// clearing it is what erases the chat — see `erasePrivateChat()`. The
+    /// column draws it with the same composer as any draft, sending to the
+    /// in-memory ``NativePrivateChatModel``.
+    @State private var isPrivateChat = false
+    @State private var confirmingLeavePrivate = false
+    /// A call is live on the chat route. The Private toggle steps aside while
+    /// it is: a call's transcript is filed as a conversation.
+    @State private var isInCall = false
+    /// The conversation whose sidebar row is showing its rename field.
+    @State private var renamingConversationID: String?
+    /// The conversation Delete… is asking about.
+    @State private var pendingDeletion: NativeConversation?
+    @State private var newProjectRequest: DesktopNewProjectRequest?
+    @State private var share = DesktopShareState()
+    /// ⌘U from the menu bar, or a file dropped on the chat column, on its way
+    /// to the composer — which owns the importer and the attachment rules.
+    @State private var composerRequest: ChatComposerRequest?
 
     /// The destination in force: the launch override while it stands, otherwise
     /// whatever scene storage restored.
@@ -131,7 +160,18 @@ struct DesktopChatWorkspace: View {
         )
     }
 
-    /// Projects the two underlying pieces of state into the column's single
+    /// The pinned project whose row should read as selected: only while its
+    /// page is up, and only if the column actually draws a row for it.
+    private var openPinnedProjectID: String? {
+        guard let requestedProjectID,
+              configuration.projectModel?.projects.contains(where: {
+                  $0.id == requestedProjectID && $0.starred
+              }) == true
+        else { return nil }
+        return requestedProjectID
+    }
+
+    /// Projects the underlying pieces of state into the column's single
     /// selection, and back. The rules themselves are in
     /// ``DesktopNavigationState`` so they can be tested; this only moves values.
     private var selection: Binding<DesktopSidebarItem?> {
@@ -139,14 +179,18 @@ struct DesktopChatWorkspace: View {
             get: {
                 DesktopNavigationState.selection(
                     destination: currentDestination,
-                    selectedConversationID: model.selectedConversationID
+                    selectedConversationID: model.selectedConversationID,
+                    openProjectID: openPinnedProjectID
                 )
             },
             set: { item in
-                // A sidebar destination means "open its root". A concrete
-                // pinned-project row writes its id again after this selection,
-                // so only that path deep-links into a project.
-                requestedProjectID = nil
+                // Only a pinned project's row deep-links into a project; every
+                // other selection opens its destination's root.
+                if case .project(let id) = item {
+                    requestedProjectID = id
+                } else {
+                    requestedProjectID = nil
+                }
                 let resolved = DesktopNavigationState.resolve(
                     selection: item,
                     current: (currentDestination, model.selectedConversationID)
@@ -155,6 +199,9 @@ struct DesktopChatWorkspace: View {
                 storedDestination = resolved.destination.rawValue
                 model.selectedConversationID = resolved.conversationID
                 model.isDraftingNewConversation = resolved.isDrafting
+                // Choosing anything in the column leaves a private chat — and
+                // leaving it is what erases it.
+                if item != nil { isPrivateChat = false }
             }
         )
     }
@@ -163,61 +210,46 @@ struct DesktopChatWorkspace: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             DesktopChatSidebar(
                 model: model,
-                syncModel: configuration.syncModel,
-                avatarModel: configuration.avatarModel,
-                workModel: configuration.workModel,
-                codeModel: configuration.codeModel,
                 projectModel: configuration.projectModel,
+                configuration: configuration,
                 session: session,
                 product: $product,
                 destination: destination,
                 selection: selection,
-                requestedProjectID: $requestedProjectID,
-                openSettingsModal: { showingSettingsModal = true },
-                signOut: { Task { await configuration.authModel.signOut() } }
+                renamingConversationID: $renamingConversationID,
+                openProjectID: openPinnedProjectID,
+                actions: conversationActions,
+                newChat: beginDraft,
+                newChatInProject: startConversation(in:),
+                openSearch: openSearch
             )
             .junoSidebarColumn()
         } detail: {
-            DesktopDestinationView(
-                destination: destination,
-                configuration: configuration,
-                session: session,
-                conversationModel: model,
-                draftProjectID: $draftProjectID,
-                draftPrompt: $draftPrompt,
-                requestedProjectID: $requestedProjectID
-            )
-            // The Tasks page reads its selection from here; the inspector below
-            // writes it. One object, injected once, because the page is built by
-            // `DesktopDestinationView` — which has nothing of its own to hand it.
-            .environment(tasksSurface)
-            .junoReadingCanvas()
-            .navigationTitle("")
-            .toolbar { detailToolbar }
+            detail
         }
-        .sheet(isPresented: $showingSettingsModal) {
-            if let settingsModel = configuration.memorySettingsModel {
-                DesktopSettingsModal(
-                    model: settingsModel,
-                    authModel: configuration.authModel,
-                    session: session,
-                    configuration: configuration,
-                    accountDataClient: configuration.accountDataClient,
-                    shareClient: configuration.shareClient,
-                    modelCatalog: model.selectableModels,
-                    avatarData: configuration.avatarModel?.imageData,
-                    syncModel: configuration.syncModel,
-                    outbox: configuration.outbox,
-                    openUsage: { destination.wrappedValue = .usage },
-                    codeHostModel: configuration.codeHostModel,
-                    workHostModel: configuration.workHostModel,
-                    learningModel: nil,
-                    onDismiss: { showingSettingsModal = false }
-                )
+        .focusedSceneValue(\.junoWorkspaceActions, workspaceActions)
+        // Opener and actions on one line: the targets gate reads a dialog's
+        // buttons as system-drawn only when its brace opens on that line.
+        .confirmationDialog("Delete this conversation?", isPresented: isConfirmingDeletion, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { deletePendingConversation() }
+            Button("Cancel", role: .cancel) { pendingDeletion = nil }
+        } message: {
+            // The web's copy, verbatim (`app-sidebar.tsx`).
+            Text("This permanently removes the conversation and its messages. This can't be undone.")
+        }
+        .confirmationDialog("Leave this private chat?", isPresented: $confirmingLeavePrivate, titleVisibility: .visible) {
+            Button("Leave", role: .destructive) { isPrivateChat = false }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("It won't be saved.")
+        }
+        .sheet(item: $newProjectRequest) { request in
+            if let projectModel = configuration.projectModel {
+                DesktopNewProjectForm(model: projectModel) { projectID in
+                    projectCreated(projectID, for: request)
+                }
             }
         }
-        .inspector(isPresented: inspectorPresentation) { inspector }
-        .focusedSceneValue(\.junoWorkspaceActions, workspaceActions)
         .alert("Screenshot unavailable", isPresented: screenshotFailurePresented) {
             Button("OK", role: .cancel) { screenshotFailure = nil }
         } message: {
@@ -250,154 +282,371 @@ struct DesktopChatWorkspace: View {
         .onChange(of: columnVisibility) { _, visibility in
             storedColumnVisibility = visibility == .detailOnly ? "detailOnly" : "all"
         }
+        // The share popover belongs to the chat it was opened for; switching
+        // chats or leaving the route closes it rather than leaving it pointing
+        // at a conversation that is no longer on screen. Not when the chat now
+        // selected *is* that chat: a row's Share… selects its chat and shares
+        // it in one gesture, and whichever of the two lands first, the popover
+        // it opened must stay open (see ``DesktopShareState/conversationID``).
+        .onChange(of: model.selectedConversationID) { _, selected in
+            guard DesktopShareState.selectionClosesPopover(sharing: share.conversationID, selected: selected)
+            else { return }
+            share.isPresented = false
+        }
+        .onChange(of: currentDestination) { _, value in
+            guard value != .chat else { return }
+            share.isPresented = false
+            isPrivateChat = false
+        }
+        // Leaving private mode IS the erase. Nothing else holds these turns,
+        // so dropping them here is what makes "not saved" true rather than
+        // merely stated — on the toggle, on navigation, and when the window's
+        // Chat workspace goes away with a product switch.
+        .onChange(of: isPrivateChat) { _, isOn in
+            if !isOn { erasePrivateChat() }
+        }
+        .onDisappear { erasePrivateChat() }
     }
 
-    /// What the destination in force puts in the trailing column, or nil when it
-    /// has nothing to put there.
+    // MARK: Detail
+
+    /// The detail column: ``ChatDetail`` — the one owner of the title, the
+    /// title menu and the toolbar — around whichever destination is open.
     ///
-    /// Tasks is the only destination that fills it. Artifacts keeps its version
-    /// history as a pane inside its own page — ``DesktopArtifactsScreen`` says why
-    /// — and the rest have nothing to inspect. The model is part of the answer
-    /// rather than checked separately: an account whose scheduled-task service is
-    /// unavailable gets the page's own explanation and no empty column beside it.
-    private var inspectableTasks: NativeScheduledTaskModel? {
-        guard currentDestination == .tasks else { return nil }
-        return configuration.scheduledTaskModel
+    /// Split out of `body`, and its arguments computed one per property, so
+    /// the type checker solves each on its own: inline in the split view's
+    /// `detail:` closure, the generic container, its trailing builder and a
+    /// dozen arguments were one expression, and one the compiler gave up on.
+    private var detail: some View {
+        ChatDetail(
+            title: windowTitle,
+            subtitle: windowSubtitle,
+            titleMenuConversation: titleMenuConversation,
+            projects: configuration.projectModel?.projects ?? [],
+            actions: conversationActions,
+            isChatRoute: currentDestination == .chat,
+            offline: offlineState,
+            retryConnection: retryConnection,
+            toolbar: toolbar
+        ) {
+            destinationContent
+        }
     }
 
-    /// Whether the window's one inspector is up.
-    ///
-    /// The write is gated on the same condition as the read. A column dismissed
-    /// while some other surface is showing must not be recorded as the reader
-    /// hiding the *task* inspector, or Tasks would open closed next time for a
-    /// reason that had nothing to do with it.
-    private var inspectorPresentation: Binding<Bool> {
-        Binding(
-            get: { inspectableTasks != nil && tasksInspectorShown },
-            set: { shown in
-                guard inspectableTasks != nil else { return }
-                tasksInspectorShown = shown
-            }
+    private var destinationContent: some View {
+        DesktopDestinationView(
+            destination: destination,
+            configuration: configuration,
+            session: session,
+            conversationModel: model,
+            draftProjectID: $draftProjectID,
+            draftPrompt: $draftPrompt,
+            requestedProjectID: $requestedProjectID,
+            composerRequest: $composerRequest,
+            isPrivateChat: isPrivateChat,
+            callActiveChanged: { isInCall = $0 },
+            shareConversation: replyShare
         )
     }
 
-    /// The trailing column's content, given the inspector's resize range once
-    /// rather than per destination: a column whose width is redeclared as the
-    /// reader moves through the sidebar is a column AppKit re-lays out on every
-    /// navigation.
-    private var inspector: some View {
-        Group {
-            if let inspectableTasks {
-                DesktopTasksInspector(
-                    model: inspectableTasks,
-                    surface: tasksSurface,
-                    openConversation: openConversation
-                )
+    /// A reply's Share, which opens the same popover the toolbar's does. Nil
+    /// without a share service, which leaves the action off every reply.
+    private var replyShare: (() -> Void)? {
+        guard configuration.shareClient != nil else { return nil }
+        return { shareSelectedConversation() }
+    }
+
+    private var offlineState: DesktopOfflineState? {
+        DesktopOfflineState.resolve(
+            connectivity: configuration.authModel.connectivity,
+            syncPhase: configuration.syncModel?.phase
+        )
+    }
+
+    private func retryConnection() {
+        Task { await configuration.authModel.retryRestore() }
+    }
+
+    // MARK: Title
+
+    private var windowTitle: String {
+        DesktopNavigationState.windowTitle(
+            destination: currentDestination,
+            conversationTitle: model.selectedConversation?.title,
+            isPrivate: isPrivateChat
+        )
+    }
+
+    /// The project a saved chat belongs to — the web's floating project pill,
+    /// as the system's subtitle. Empty everywhere else.
+    private var windowSubtitle: String {
+        guard currentDestination == .chat, !isPrivateChat,
+              let projectID = model.selectedConversation?.projectId
+        else { return "" }
+        return configuration.projectModel?.projects.first { $0.id == projectID }?.name ?? ""
+    }
+
+    /// The chat the title menu acts on: a saved one, on the chat route, not
+    /// private.
+    private var titleMenuConversation: NativeConversation? {
+        guard currentDestination == .chat, !isPrivateChat else { return nil }
+        return model.selectedConversation
+    }
+
+    // MARK: Toolbar
+
+    private var toolbar: ChatToolbar {
+        ChatToolbar(
+            isChatRoute: currentDestination == .chat,
+            isSidebarCollapsed: columnVisibility == .detailOnly,
+            canShare: canShareSelectedConversation,
+            isPrivate: isPrivateChat,
+            canGoPrivate: configuration.privateChatModel != nil && !isInCall,
+            share: share,
+            newChat: beginDraft,
+            startShare: shareSelectedConversation,
+            togglePrivate: togglePrivateChat
+        )
+    }
+
+    private var canShareSelectedConversation: Bool {
+        configuration.shareClient != nil
+            && !isPrivateChat
+            && model.selectedConversationID != nil
+            && !model.selectedMessages.isEmpty
+    }
+
+    /// Publishes the open conversation, puts the link on the pasteboard, and
+    /// says so in the popover.
+    ///
+    /// The Mac copies rather than opening a share sheet: a link is going into a
+    /// message or a document the reader is already writing. The route is
+    /// idempotent per conversation, so sharing twice yields the same link.
+    private func shareSelectedConversation() {
+        guard let client = configuration.shareClient,
+              let conversationID = model.selectedConversationID,
+              share.phase != .working || share.conversationID != conversationID
+        else { return }
+        share.conversationID = conversationID
+        share.phase = .working
+        share.isPresented = true
+        let accountID = session.profile.id
+        Task {
+            do {
+                let published = try await client.share(conversationID: conversationID, for: accountID)
+                // A share started for another chat since then owns the popover
+                // and the pasteboard: copying this link over that one would
+                // leave the popover describing a link that is not the one
+                // pasted.
+                guard share.conversationID == conversationID else { return }
+                JunoPasteboard.copy(published.url.absoluteString)
+                share.phase = .copied(published.url)
+            } catch {
+                guard share.conversationID == conversationID else { return }
+                share.phase = .failed("The conversation couldn’t be published. Try again in a moment.")
             }
         }
-        .inspectorColumnWidth(
-            min: JunoInspectorMetrics.minimum,
-            ideal: JunoInspectorMetrics.ideal,
-            max: JunoInspectorMetrics.maximum
+    }
+
+    // MARK: Private chat
+
+    /// Drops the private chat's turns and stops its reply. The model itself
+    /// stays started for the account — the root owns its lifetime — so the
+    /// next private chat can send at once.
+    private func erasePrivateChat() {
+        configuration.privateChatModel?.reset()
+    }
+
+    /// On a draft, switches that draft to private. On a saved chat or a page,
+    /// starts a new private chat. Turning it off with messages on screen asks
+    /// first, because turning it off is what erases them.
+    private func togglePrivateChat() {
+        if isPrivateChat {
+            if let privateModel = configuration.privateChatModel, !privateModel.isEmpty {
+                confirmingLeavePrivate = true
+            } else {
+                isPrivateChat = false
+            }
+            return
+        }
+        guard !isInCall else { return }
+        if currentDestination != .chat || model.selectedConversationID != nil {
+            beginDraft()
+        }
+        // A private turn carries only its words, so anything already attached
+        // to the draft stays behind rather than riding along unsent.
+        configuration.attachmentModel?.clear()
+        configuration.privateChatModel?.reset()
+        isPrivateChat = configuration.privateChatModel != nil
+    }
+
+    /// ⇧⌘N: a new private chat, whatever was on screen — except over a live
+    /// call, whose transcript is filed as a conversation. The system's beep
+    /// says the command did nothing, as it does for any unavailable key.
+    private func beginPrivateDraft() {
+        guard !isInCall else {
+            NSSound.beep()
+            return
+        }
+        beginDraft()
+        configuration.privateChatModel?.reset()
+        isPrivateChat = configuration.privateChatModel != nil
+    }
+
+    // MARK: Conversation actions
+
+    private var conversationActions: DesktopConversationActions {
+        DesktopConversationActions(
+            rename: { conversation in
+                // The row holds the field, so the row has to be on screen.
+                if columnVisibility == .detailOnly { columnVisibility = .all }
+                renamingConversationID = conversation.id
+            },
+            commitRename: { conversation, name in
+                Task { await model.renameConversation(id: conversation.id, title: name) }
+            },
+            togglePin: { conversation in
+                Task { await model.setPinned(id: conversation.id, pinned: !conversation.pinned) }
+            },
+            move: { conversation, projectID in
+                Task { await model.setProject(id: conversation.id, projectID: projectID) }
+            },
+            newProject: { conversation in
+                guard configuration.projectModel != nil else { return }
+                newProjectRequest = DesktopNewProjectRequest(conversationID: conversation?.id)
+            },
+            openProject: openProject,
+            share: { conversation in
+                // The menus disable Share… for an empty chat; this is the
+                // guard for a caller that did not ask.
+                guard !model.messages(for: conversation.id).isEmpty else { return }
+                openConversation(conversation.id)
+                // A turn later, so the toolbar has unhidden Share for this
+                // chat before the popover anchors to it.
+                Task { shareSelectedConversation() }
+            },
+            canShare: { conversation in
+                configuration.shareClient != nil && !model.messages(for: conversation.id).isEmpty
+            },
+            archive: { conversation, undoManager in
+                setArchived(conversation.id, archived: true, undoManager: undoManager)
+            },
+            delete: { conversation in pendingDeletion = conversation }
         )
     }
 
-    /// Opens a conversation some other surface points at — today, the chat a
-    /// scheduled task writes its runs into.
+    /// Archives or restores a chat, and registers the opposite with the
+    /// window's undo manager — so Edit › Undo Archive Chat (⌘Z) brings it
+    /// back, and Redo sends it away again.
     ///
-    /// `DesktopDestinationView` performs the same navigation for the pages it
-    /// builds, but the task inspector is no longer one of them: it hangs off this
-    /// window's split view, above anything that view can reach.
+    /// The toast that also offers Undo (§2.4, "Chat archived.") needs the
+    /// window-level toast host, which lands in Phase 3; until then the undo
+    /// manager is the way back, alongside the web's archive.
+    private func setArchived(_ id: String, archived: Bool, undoManager: UndoManager?) {
+        if archived, model.selectedConversationID == id {
+            beginDraft()
+        }
+        Self.applyArchive(id, archived: archived, model: model, undoManager: undoManager)
+    }
+
+    /// Writes the archive flag and registers its inverse. Static, over the
+    /// model alone, because the undo stack outlives any one render of this
+    /// view: the handler must not reach back into view state to run.
+    private static func applyArchive(
+        _ id: String,
+        archived: Bool,
+        model: NativeConversationModel<SQLiteAccountRepository>,
+        undoManager: UndoManager?
+    ) {
+        Task { await model.setArchived(id: id, archived: archived) }
+        guard let undoManager else { return }
+        undoManager.registerUndo(withTarget: model) { model in
+            MainActor.assumeIsolated {
+                applyArchive(id, archived: !archived, model: model, undoManager: undoManager)
+            }
+        }
+        undoManager.setActionName("Archive Chat")
+    }
+
+    private var isConfirmingDeletion: Binding<Bool> {
+        Binding(
+            get: { pendingDeletion != nil },
+            set: { if !$0 { pendingDeletion = nil } }
+        )
+    }
+
+    /// Deletes the conversation Delete… asked about. A real delete — the
+    /// store enqueues `conversation.delete` — which is why it asks first.
+    private func deletePendingConversation() {
+        guard let conversation = pendingDeletion else { return }
+        pendingDeletion = nil
+        if model.selectedConversationID == conversation.id {
+            beginDraft()
+        }
+        Task { await model.deleteConversation(id: conversation.id) }
+    }
+
+    private func projectCreated(_ projectID: String, for request: DesktopNewProjectRequest) {
+        if let conversationID = request.conversationID {
+            // Add to Project ▸ New Project…: the chat moves into what it made.
+            Task { await model.setProject(id: conversationID, projectID: projectID) }
+        } else {
+            // The Pinned projects header: straight into the new project, as the
+            // web's `/projects?new=1` does.
+            openProject(projectID)
+        }
+    }
+
+    // MARK: Navigation
+
+    private func openProject(_ projectID: String) {
+        requestedProjectID = projectID
+        destination.wrappedValue = .projects
+    }
+
+    private func openSearch() {
+        destination.wrappedValue = .search
+    }
+
+    /// Opens a conversation some other surface points at.
     private func openConversation(_ id: String) {
         draftProjectID = nil
         draftPrompt = nil
+        requestedProjectID = nil
+        isPrivateChat = false
         model.isDraftingNewConversation = false
         model.selectedConversationID = id
         destination.wrappedValue = .chat
     }
 
-    /// Every item is present in every state and disables rather than vanishing.
-    ///
-    /// A `ToolbarItem` that appears and disappears makes SwiftUI rebuild the
-    /// AppKit toolbar underneath a live window, and that rebuild is what drove
-    /// the split-view constraint loop this shell previously crashed in. Disabling
-    /// is also better behaviour: the control keeps its position, so the pointer
-    /// does not have to re-find it.
-    @ToolbarContentBuilder
-    private var detailToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            Button {
-                beginDraft()
-            } label: {
-                Label("New chat", icon: .compose)
-            }
-            .junoToolbarMetrics()
-            .help("Start a new chat (⌘N)")
-            .accessibilityIdentifier("New chat")
-
-            Button {
-                destination.wrappedValue = .search
-            } label: {
-                Label("Search", icon: .search)
-            }
-            .junoToolbarMetrics()
-            .help("Search chats, projects and files (⌘⇧F)")
-            .accessibilityIdentifier("Search")
-        }
-
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-        ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    Task { await createShare() }
-                } label: {
-                    Label("Share", icon: .share)
-                }
-                .junoToolbarMetrics()
-                .disabled(
-                    sharing || configuration.shareClient == nil
-                        || model.selectedConversationID == nil
-                )
-                .help("Create a public link to this conversation")
-                .accessibilityIdentifier("Share")
-        }
-    }
-
-    /// Publishes the conversation and puts the link on the pasteboard.
-    ///
-    /// The Mac copies rather than opening a share sheet: a link is going into a
-    /// message or a document the reader is already writing, and the pasteboard is
-    /// one step where the sheet is three. The route is idempotent per
-    /// conversation, so pressing Share twice yields the same link.
-    private func createShare() async {
-        guard let client = configuration.shareClient,
-              let conversationID = model.selectedConversationID,
-              case .signedIn(let session) = configuration.authModel.phase,
-              !sharing
-        else { return }
-        sharing = true
-        defer { sharing = false }
-        do {
-            let share = try await client.share(conversationID: conversationID, for: session.profile.id)
-            JunoPasteboard.copy(share.url.absoluteString)
-            shareNotice = "Link copied — anyone with it can read this conversation as it is now."
-        } catch {
-            shareNotice = "The conversation couldn’t be published. Try again in a moment."
-        }
+    /// "New Chat in Project": a draft already scoped to the project.
+    private func startConversation(in projectID: String) {
+        beginDraft()
+        draftProjectID = projectID
     }
 
     /// What the menu bar can do to this window while it is focused.
     private var workspaceActions: DesktopWorkspaceActions {
         var screenshot: (() -> Void)?
-        if configuration.attachmentModel != nil {
+        var attachFiles: (() -> Void)?
+        // Not in private mode, whose turns carry only words: a screenshot
+        // taken there would wait in the attachment tray for a chat it cannot
+        // be sent in.
+        if configuration.attachmentModel != nil, !isPrivateChat {
             screenshot = { attachScreenshot() }
+            // Only where the composer is on screen to receive it.
+            if currentDestination == .chat {
+                attachFiles = { composerRequest = ChatComposerRequest(kind: .chooseFiles) }
+            }
         }
         return DesktopWorkspaceActions(
             newItem: beginDraft,
             newChat: beginDraft,
-            openSearch: { destination.wrappedValue = .search },
+            openSearch: openSearch,
             switchProduct: { product = $0 },
             currentProduct: product,
-            attachScreenshot: screenshot
+            attachScreenshot: screenshot,
+            attachFiles: attachFiles
         )
     }
 
@@ -408,7 +657,7 @@ struct DesktopChatWorkspace: View {
         )
     }
 
-    /// ⇧⌘1. The system picker chooses the window or display; the frame lands
+    /// ⇧⌘U. The system picker chooses the window or display; the frame lands
     /// in the composer as a picture attachment on the open conversation, or on
     /// the draft when there is none.
     private func attachScreenshot() {
@@ -429,34 +678,132 @@ struct DesktopChatWorkspace: View {
         )
     }
 
+    /// A new, empty, saved-when-sent draft. It selects nothing in the column.
     private func beginDraft() {
         draftProjectID = nil
         draftPrompt = nil
+        requestedProjectID = nil
+        overrideDestination = nil
         storedDestination = DesktopDestination.chat.rawValue
         model.isDraftingNewConversation = true
         model.selectedConversationID = nil
         configuration.attachmentModel?.clear()
+        isPrivateChat = false
     }
 
     private func consumePendingUnscopedChatRequest() {
         guard unscopedChatRequestID != nil else { return }
         overrideDestination = nil
-        beginDraft()
-        if let prompt = unscopedChatPrompt, !prompt.isEmpty {
-            draftPrompt = prompt
+        if unscopedChatIsPrivate {
+            beginPrivateDraft()
+        } else {
+            beginDraft()
+            if let prompt = unscopedChatPrompt, !prompt.isEmpty {
+                draftPrompt = prompt
+            }
         }
         consumeUnscopedChatRequest()
     }
 }
 
-/// The navigation column, as a real macOS source list.
+/// A request for the New Project sheet. The conversation, when there is one,
+/// moves into the project the sheet creates.
+struct DesktopNewProjectRequest: Identifiable {
+    let id = UUID()
+    let conversationID: String?
+}
+
+/// New Project, as a form sheet (§7.1): one field, Cancel and Create Project.
 ///
-/// Everything visual here is the platform's: `List(selection:)` in `.sidebar`
-/// style draws the selection, the hover state, the section headers and the row
-/// metrics, and it is what makes the column keyboard-navigable. The column
-/// paints **no background** — a sidebar is a vibrant region on macOS, and the
-/// opaque fill this view used to apply is the exact failure ``JunoSurfaces``
-/// documents: it turned a vibrant source list into a grey slab.
+/// The system's sheet presentation — glass on macOS 26 — with no fill of
+/// Juno's own, a grouped `Form`, and one `.borderedProminent` default action in
+/// the account's accent. Instructions are the project page's to edit; asking
+/// for them here made naming a project a two-field chore.
+struct DesktopNewProjectForm: View {
+    @Bindable var model: NativeProjectModel<SQLiteAccountRepository>
+    let created: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var creationError: String?
+    @FocusState private var nameFocused: Bool
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    TextField("Name", text: $name)
+                        .focused($nameFocused)
+                        .onSubmit(create)
+                        .accessibilityIdentifier("New project name")
+                } header: {
+                    Text("New project")
+                        .junoType(.heading)
+                        .junoInk()
+                        .textCase(nil)
+                        .accessibilityAddTraits(.isHeader)
+                } footer: {
+                    // Only an error this sheet's own attempt produced.
+                    if let creationError {
+                        Text(creationError)
+                            .junoFont(size: 12, relativeTo: .footnote)
+                            .foregroundStyle(Color.junoDestructiveInk)
+                    } else {
+                        Text("A project keeps one topic's chats, files and instructions together.")
+                            .junoFont(size: 12, relativeTo: .footnote)
+                            .junoSecondaryInk()
+                    }
+                }
+            }
+            .formStyle(.grouped)
+
+            HStack(spacing: JunoSpace.cozy) {
+                Spacer(minLength: 0)
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .contentShape(.rect)
+                Button("Create Project", action: create)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(trimmedName.isEmpty || model.isMutating)
+                    .contentShape(.rect)
+                    .accessibilityIdentifier("Create project")
+            }
+            .junoDialogActions()
+        }
+        .frame(width: 420)
+        .presentationSizing(.form)
+        // A sheet is presented from the split view, above the detail's tint,
+        // so the one prominent button states the accent itself.
+        .junoAccentTint()
+        .task { nameFocused = true }
+    }
+
+    private func create() {
+        guard !trimmedName.isEmpty else { return }
+        Task {
+            creationError = nil
+            guard let id = await model.createProject(name: trimmedName) else {
+                creationError = model.lastErrorDescription ?? "Juno could not create this project."
+                return
+            }
+            created(id)
+            dismiss()
+        }
+    }
+}
+
+/// The chat route's column: the transcript — or a draft's empty state — with
+/// the one composer in its bottom bar, and the artifact canvas docked beside
+/// it.
+///
+/// Paints **no background**: the window paints `Color.junoCanvas` once, as its
+/// container background, so the transcript scrolls under the toolbar and the
+/// composer's glass has warm paper to sample (§1.2).
 struct DesktopConversationView: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     let attachmentModel: NativeComposerAttachmentModel?
@@ -465,7 +812,26 @@ struct DesktopConversationView: View {
     let session: NativeAuthenticatedSession
     @Binding var draftProjectID: String?
     @Binding var draftPrompt: String?
+    /// ⌘U from the menu bar, and the drops this column accepts, for the
+    /// composer to act on.
+    @Binding var composerRequest: ChatComposerRequest?
+    /// Moves the window to another destination — the `+` menu's Manage
+    /// Connections… goes to the Connections page.
+    let openDestination: (DesktopDestination) -> Void
+    /// The private chat, while the route is private (§5.8, Private): the same
+    /// column and the same composer, with the in-memory model behind them
+    /// instead of the store. Nil for an ordinary chat.
+    var privateChat: NativePrivateChatModel? = nil
+    /// Tells the window whether a call is live, so the toolbar's Private
+    /// toggle can step aside while one is — a call's transcript is filed as a
+    /// conversation, which is the one thing private mode promises not to do.
+    var callActiveChanged: (Bool) -> Void = { _ in }
+    /// A reply's Share: the window's, so it opens the same popover the
+    /// toolbar's Share does rather than copying a link in silence (§7.3). Nil
+    /// when the account has no share service.
+    var shareConversation: (() -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openSettings) private var openSettings
     @State private var voiceSession: DesktopVoiceSession?
     /// Why a spoken conversation could not be opened. An alert rather than an
     /// inline banner because the reader pressed a button and nothing happened —
@@ -479,13 +845,28 @@ struct DesktopConversationView: View {
     /// made the sheet this replaces a presentation whose presenter could vanish
     /// underneath it. The row now only says "open this".
     @State private var openArtifact: DesktopChatArtifact?
-    /// Everything the composer bloom is driven by. See ``DesktopChatAuraState``
-    /// for why it cannot live inside the composer.
-    @State private var aura = DesktopChatAuraState()
-    /// The conversation column's own height, which is what the aura's `54vh` and
-    /// `26vh` caps are measured against. Without it the bloom falls back to its
-    /// absolute cap and is taller on a short window than the web ever draws it.
+    /// The conversation column's own size: its height is what a draft's
+    /// composer group is centred in (§4.1), and its width is what the
+    /// greeting's size is fluid against (§4.2).
     @State private var columnHeight: CGFloat = 0
+    @State private var columnWidth: CGFloat = 0
+    /// A new chat's first turn, from Return until the store has the real one
+    /// (§10.1). It is what ends the draft at once — so the handoff runs when
+    /// the reader sends, not a network round trip later — and it stands in the
+    /// transcript as the reader's bubble until the store's own arrives.
+    @State private var handoffTurn: NativeChatMessage?
+    /// The draft group's height — greeting, composer and chips — without its
+    /// lift, and the part of it hanging below the composer.
+    @State private var dockGroupHeight: CGFloat = 0
+    @State private var dockFooterHeight: CGFloat = 0
+    /// A file is being dragged over the column.
+    @State private var isDropTargeted = false
+    /// ↑ in the composer's empty field, handed to the last message you sent.
+    @State private var editLastRequest: UUID?
+    /// The account's budget windows, for the composer's quota line. Nil until
+    /// the first read lands, and nil draws nothing — never a guessed limit.
+    @State private var plan: NativeUsagePlan?
+    @State private var planReadAt: Date?
 
     var body: some View {
         // Clamped through `Color.clear.overlay { … }`, for the reason
@@ -496,10 +877,22 @@ struct DesktopConversationView: View {
         // takes whatever height it is proposed and an overlay is sized by its
         // base, so the chat can never resize the window it lives in.
         Color.clear
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
-                columnHeight = $0
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                columnHeight = size.height
+                columnWidth = size.width
             }
             .overlay { conversationContent }
+            // The toolbar's Private toggle steps aside while a call is live.
+            .onChange(of: voiceSession != nil, initial: true) { _, active in
+                callActiveChanged(active)
+            }
+            .onDisappear { callActiveChanged(false) }
+            // The stand-in for a first turn has done its job once the store
+            // holds the real one — or once this is no longer that draft.
+            .onChange(of: model.selectedMessages.contains { $0.role == .user }) { _, hasTurn in
+                if hasTurn { handoffTurn = nil }
+            }
+            .onChange(of: privateChat != nil) { _, _ in handoffTurn = nil }
             // The canvas closes when a conversation does. It belongs to the
             // thread it was opened from, and a panel that survived the switch
             // would be describing a reply that is no longer on screen.
@@ -511,6 +904,12 @@ struct DesktopConversationView: View {
                     conversationID: model.selectedConversationID,
                     includeRecent: true
                 )
+            }
+            // The budget moves when a turn finishes, so the plan is read when
+            // the column appears and again as each reply ends.
+            .task(id: model.isGenerating) {
+                guard !model.isGenerating else { return }
+                await readPlan()
             }
             // The web's COEXISTENCE RULE, in the one shape this window has for
             // it: the canvas and a live call are both large right-hand claims on
@@ -540,116 +939,194 @@ struct DesktopConversationView: View {
 
     /// The transcript (or the draft greeting) and the composer.
     ///
-    /// Paints **no background**. The detail column applies `junoReadingCanvas()`
-    /// once, at the window level; painting the canvas a second time here is what
-    /// flattened the window into one cream field and boxed the composer in a
-    /// rectangle of its own.
-    @ViewBuilder
+    /// Paints **no background**. The window paints the canvas once, as its
+    /// container background; painting it a second time here is what flattened
+    /// the window into one cream field and boxed the composer in a rectangle of
+    /// its own.
+    ///
+    /// The canvas is a **column**, not a presentation. It sits beside the
+    /// conversation exactly as the website's does, so the reply the artifact
+    /// came out of stays readable next to it. A draft has no artifact to show,
+    /// so the dock is simply closed there — and wrapping both phases in it is
+    /// what keeps the composer one view across the first send.
     private var conversationContent: some View {
-        // A live call takes the greeting's place even before a single word has
-        // been said, which is the web's `hasMessages || voiceOpen`
-        // (`chat-view.tsx`). Without it the most common way to start a call —
-        // pressing the microphone on the home screen — is the one place the
-        // spoken conversation could never be read, because a draft has no
-        // message list to append it to.
-        if model.selectedConversation == nil, voiceSession == nil {
-            draftColumn
-        } else {
-            // The canvas is a **column**, not a presentation. It sits beside the
-            // conversation exactly as the website's does, so the reply the
-            // artifact came out of stays readable next to it — which is the whole
-            // difference between docking and covering.
-            DesktopArtifactDock(
-                artifact: openArtifact,
-                close: closeArtifact,
-                requestEdit: { prompt in
-                    draftPrompt = prompt
-                    closeArtifact()
-                }
-            ) {
-                transcriptColumn
+        DesktopArtifactDock(
+            artifact: openArtifact,
+            close: closeArtifact,
+            requestEdit: { prompt in
+                draftPrompt = prompt
+                closeArtifact()
+            }
+        ) {
+            chatColumn
+        }
+    }
+
+    /// A draft: no conversation, no first turn on its way, and no call. A live
+    /// call takes the greeting's place before a word is said — the web's
+    /// `hasMessages || voiceOpen` — because a draft has no message list to
+    /// append the call to. A private chat is a draft until its first turn.
+    private var isDraft: Bool {
+        guard voiceSession == nil else { return false }
+        if let privateChat { return privateChat.isEmpty }
+        return model.selectedConversation == nil && handoffTurn == nil
+    }
+
+    /// The turns this column shows that have no row in the store: a private
+    /// chat's, or the stand-in for a first turn the store has not created yet.
+    ///
+    /// The stand-in is dropped in the same render the store's own bubble
+    /// arrives in, not an update later, so the two never show together.
+    private var localMessages: [NativeChatMessage] {
+        if let privateChat {
+            let streamingID = privateChat.isStreaming ? privateChat.turns.last?.id : nil
+            return privateChat.turns.map { turn in
+                NativeChatMessage(
+                    id: "private-\(turn.id)",
+                    conversationID: "",
+                    clientID: nil,
+                    role: turn.role == .user ? .user : .assistant,
+                    content: turn.content,
+                    reasoning: turn.reasoning,
+                    model: turn.model,
+                    // A private turn has no stored moment, and a date that
+                    // changed per render would make every row look new.
+                    createdAt: .distantPast,
+                    revision: 0,
+                    isPending: turn.id == streamingID
+                )
             }
         }
+        guard let handoffTurn, !model.selectedMessages.contains(where: { $0.role == .user }) else {
+            return []
+        }
+        return [handoffTurn]
     }
 
-    /// The home screen: greeting on its bloom, composer under it, fine print
-    /// pinned to the foot.
-    ///
-    /// The disclaimer is a bottom inset rather than a third row of the stack —
-    /// the web's own split (`justify-center` on the group, a `shrink-0`
-    /// disclaimer at the bottom of the column). Two flexible `Spacer`s with
-    /// different minimums approximated it and left the fine print floating a
-    /// third of the way up a tall window. Pinning it also makes the two branches
-    /// of this view agree, so it does not jump the moment a chat starts.
-    private var draftColumn: some View {
-        VStack(spacing: JunoSpace.section) {
-            DesktopDraftGreeting(
-                profileName: profileName,
-                aura: aura,
-                viewport: columnHeight > 0 ? columnHeight : nil
+    /// A new chat's first send, from the composer (§10.1). `.began` arrives
+    /// inside the handoff's transaction, so setting the stand-in here is what
+    /// ends the draft — the lift falls, the greeting and chips leave, and the
+    /// transcript arrives with the bubble — in one animation.
+    private func firstTurn(_ event: ChatFirstTurnEvent) {
+        switch event {
+        case .began(let content):
+            handoffTurn = NativeChatMessage(
+                id: "handoff-\(UUID().uuidString.lowercased())",
+                conversationID: "",
+                clientID: nil,
+                role: .user,
+                content: content,
+                reasoning: nil,
+                model: nil,
+                createdAt: Date(),
+                revision: 0
             )
-            composer
+        case .accepted:
+            break
+        case .refused:
+            handoffTurn = nil
+        }
+    }
+
+    /// The chat column: the transcript, with the composer in its bottom bar.
+    ///
+    /// **One mount, both phases** (§4.1, §5.1). The composer lives in the
+    /// column's `safeAreaBar` whether the column is a draft or a conversation,
+    /// so it is the same view — same draft, same focus, same attachments — on
+    /// either side of the first send. In a draft the bar also carries the
+    /// greeting and is lifted to the optical centre; in a conversation it rests
+    /// at the foot, and the transcript scrolls *under* it, which is what gives
+    /// the glass something to bend. The bar spans this column alone, so the
+    /// canvas docks beside it rather than under it: a composer stretched under
+    /// an artifact would be offering to send into it.
+    ///
+    /// No in-content title strip: the conversation's title is the window's.
+    private var chatColumn: some View {
+        Group {
+            if isDraft {
+                Color.clear
+            } else {
+                DesktopTranscript(
+                    model: model,
+                    localMessages: localMessages,
+                    localError: privateChat?.lastErrorDescription,
+                    // Not while a first turn is on its way: with nothing selected
+                    // yet, the store's errors and approvals describe some other
+                    // chat, and a refusal is reported by the composer.
+                    showsStoreState: privateChat == nil && model.selectedConversationID != nil,
+                    voiceMessages: voiceMessages,
+                    messageActions: configuration.messageActionsClient,
+                    followUpClient: configuration.followUpClient,
+                    draftPrompt: $draftPrompt,
+                    accountID: session.profile.id,
+                    syncModel: configuration.syncModel,
+                    openArtifact: open(artifact:),
+                    share: shareConversation,
+                    editLastRequest: editLastRequest
+                )
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // The field behind the whole column — the conversation and the composer
-        // both — scoped to it, so the sidebar is never washed by it.
-        .junoVoiceField(voiceColumn)
+        .safeAreaBar(edge: .bottom, spacing: 0) {
+            ChatComposerDock(
+                lift: composerLift,
+                gutter: DesktopChatMeasure.gutter,
+                groupHeightChanged: { dockGroupHeight = $0 },
+                footerHeightChanged: { dockFooterHeight = $0 }
+            ) {
+                // Mounted for the life of the column and posed rather than
+                // removed (``ChatEmptyPose``): inside the handoff's
+                // transaction it fades up and away while the composer it hangs
+                // from settles to the dock (§10.1).
+                ChatGreeting(
+                    profileName: profileName,
+                    isPrivate: privateChat != nil,
+                    columnWidth: columnWidth,
+                    isShown: isDraft
+                )
+                .padding(.bottom, JunoSpace.region)
+            } composer: {
+                composer
+            } footer: {
+                // Not in a private chat: incognito carries its own two-line
+                // header, and a row of suggestions under it would be asking
+                // for the one thing private mode does not keep.
+                if privateChat == nil {
+                    ChatStarterChips(isShown: isDraft) { opening in
+                        composerRequest = ChatComposerRequest(kind: .seed(opening))
+                    }
+                    .padding(.top, JunoSpace.regular)
+                }
+            }
+        }
+        // The whole column takes a drop (§5.8), and the composer draws the
+        // target: a file dragged over the transcript is headed for the draft.
+        // Not in private mode, whose turns carry only words.
+        .dropDestination(for: URL.self) { urls, _ in
+            let files = urls.filter(\.isFileURL)
+            guard attachmentModel != nil, privateChat == nil, !files.isEmpty else { return false }
+            composerRequest = ChatComposerRequest(kind: .attach(files))
+            return true
+        } isTargeted: { targeted in
+            isDropTargeted = targeted && attachmentModel != nil && privateChat == nil
+        }
     }
 
-    /// The conversation and its composer.
-    ///
-    /// No in-content title strip. The conversation's title and its last-updated
-    /// stamp are the window's `navigationTitle` and `navigationSubtitle`, which is
-    /// where a Mac window says what it is showing. Repeating it in a bordered bar
-    /// directly under the toolbar said the same thing twice and cost 42pt of the
-    /// reading canvas.
-    ///
-    /// The composer is a *safe-area inset*, not the last row of a `VStack`, and
-    /// that is what makes it glass. Stacked, it occupied its own band of canvas —
-    /// a rectangle of `--background` with nothing behind it — so the glass had
-    /// nothing to refract and read as a flat white pill. As an inset the
-    /// transcript keeps the full height and scrolls *underneath* the composer, so
-    /// messages pass behind it and the material finally has something to bend.
-    ///
-    /// The inset spans this column alone, which is why the canvas docks around it
-    /// rather than inside it: the composer belongs to the conversation, and a
-    /// composer stretched under an artifact would be offering to send into it.
-    private var transcriptColumn: some View {
-        DesktopTranscript(
-            model: model,
-            voiceMessages: voiceMessages,
-            messageActions: configuration.messageActionsClient,
-            followUpClient: configuration.followUpClient,
-            draftPrompt: $draftPrompt,
-            accountID: session.profile.id,
-            syncModel: configuration.syncModel,
-            openArtifact: open(artifact:),
-            share: configuration.shareClient == nil ? nil : { Task { await shareConversation() } }
-        )
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            composer
-        }
-        .junoVoiceField(voiceColumn)
+    /// The composer group's bottom padding: centred on the optical middle in a
+    /// draft, at rest in a conversation. The empty state animates the change.
+    private var composerLift: CGFloat {
+        isDraft
+            ? ChatComposerLift.draft(
+                columnHeight: columnHeight,
+                groupHeight: dockGroupHeight,
+                footerHeight: dockFooterHeight
+            )
+            : ChatComposerLift.resting
     }
 
     private func open(artifact: NativeMessageContent.ArtifactReference) {
         withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
             openArtifact = DesktopChatArtifact(reference: artifact)
-        }
-    }
-
-    /// The row's Share: publish and copy the link, exactly as the toolbar does.
-    private func shareConversation() async {
-        guard let client = configuration.shareClient,
-              let conversationID = model.selectedConversationID,
-              case .signedIn(let signedIn) = configuration.authModel.phase
-        else { return }
-        do {
-            let share = try await client.share(conversationID: conversationID, for: signedIn.profile.id)
-            JunoPasteboard.copy(share.url.absoluteString)
-        } catch {
-            // The toolbar's Share reports the failure in its own notice; the
-            // row's stays quiet rather than adding a second surface for it.
         }
     }
 
@@ -666,7 +1143,7 @@ struct DesktopConversationView: View {
     /// a line the recognizer is still rewriting marked as still arriving. They
     /// are **transient** — nothing here writes them anywhere. Hanging up is what
     /// files a conversation, from the controller's own record, and only the
-    /// final lines (``DesktopVoiceDock``); a row built here that also persisted
+    /// final lines (``DesktopVoiceHangUp``); a row built here that also persisted
     /// would file every half-heard hypothesis twice.
     private var voiceMessages: [NativeChatMessage] {
         guard let voiceSession else { return [] }
@@ -731,6 +1208,11 @@ struct DesktopConversationView: View {
     /// either half the microphone button was a control that did nothing at all
     /// when pressed — indistinguishable from a broken app, and impossible to
     /// report. It now says which half is missing.
+    ///
+    /// From a draft, dialling is the handoff (§10.1): the call takes the
+    /// greeting's place, so the session is set inside the handoff's
+    /// transaction and the composer settles to its dock as the call bar
+    /// appears in it.
     private func startVoice(modelID: String) {
         guard let sender = configuration.requestSender else {
             voiceUnavailable = "Juno is not signed in, so it cannot start a voice conversation."
@@ -753,16 +1235,17 @@ struct DesktopConversationView: View {
             conversationID: model.selectedConversationID,
             projectID: model.selectedConversation?.projectId
         )
-        voiceSession = started
-        // Dialled from here rather than from the dock's `task`. The dock lives
-        // in the chat column now, so it can appear a second time over the same
-        // session — and `start()` is legal from `ended`, which would make that
-        // second appearance silently redial.
+        withAnimation(JunoMotion.handoff(reduceMotion: reduceMotion)) {
+            voiceSession = started
+        }
+        // Dialled from here rather than from the call bar's `task`: the bar can
+        // be rebuilt over the same session, and `start()` is legal from
+        // `ended`, which would make a second appearance silently redial.
         Task { await started.controller.start(provider: initialProvider) }
     }
 
     private var composer: some View {
-        DesktopComposer(
+        ChatComposer(
             model: model,
             attachmentModel: attachmentModel,
             libraryModel: configuration.libraryModel,
@@ -770,14 +1253,47 @@ struct DesktopConversationView: View {
             workspaceModel: configuration.projectWorkspaceModel,
             documentIndex: configuration.documentIndexModel,
             connectorModel: configuration.connectorModel,
+            memorySettings: configuration.memorySettingsModel,
             draftProjectID: $draftProjectID,
             draftPrompt: $draftPrompt,
             openVoiceMode: startVoice,
-            aura: aura
+            privateChat: privateChat,
+            onFirstTurn: firstTurn,
+            quota: ChatComposerQuota(plan: plan),
+            isDropTargeted: isDropTargeted,
+            request: composerRequest,
+            editLastMessage: canEditLastMessage ? { editLastRequest = UUID() } : nil,
+            manageConnections: configuration.connectorModel == nil
+                ? nil : { openDestination(.connections) },
+            // Settings › Plan & billing until the Upgrade sheet lands
+            // (Phase 3): the one place in the app that can change a plan.
+            openUpgrade: { DesktopSettingsRouter.open(.billing, using: openSettings) }
         )
-        // The dock only. The field this composer used to carry is now behind
-        // the whole column — see ``conversationContent``.
-        .junoVoiceDock(voiceColumn)
+        // The call is drawn inside the composer's own shell (§5.8): announced
+        // here, it turns the controls row into the call bar.
+        .junoVoiceCall(voiceColumn)
+    }
+
+    /// Whether ↑ has a message to reopen: one you sent, saved, and not mid-reply.
+    private var canEditLastMessage: Bool {
+        !isDraft && privateChat == nil && !model.isGenerating
+            && model.selectedMessages.contains { $0.role == .user && !$0.isPending }
+    }
+
+    /// Re-reading the plan more often than this adds requests and no
+    /// information; a reply ending inside the window is not worth a second call.
+    private static let planReadFloor: TimeInterval = 15
+
+    private func readPlan() async {
+        guard let sender = configuration.requestSender else { return }
+        if plan != nil, let planReadAt, Date().timeIntervalSince(planReadAt) < Self.planReadFloor {
+            return
+        }
+        guard let loaded = await NativeUsageClient(sender: sender).loadPlan(for: session.profile.id) else {
+            return
+        }
+        planReadAt = Date()
+        plan = loaded
     }
 }
 
@@ -828,6 +1344,17 @@ enum DesktopChatMeasure {
 
 private struct DesktopTranscript: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
+    /// Turns this column shows that have no row in the store: a private chat's
+    /// (§5.8), or the stand-in for a new chat's first turn while the store is
+    /// still creating it (§10.1). Drawn by the same row as everything else,
+    /// with no actions — there is nothing on the server to act on.
+    var localMessages: [NativeChatMessage] = []
+    /// A private chat's failure, where its reply would have been.
+    var localError: String? = nil
+    /// Whether the store's own state — approvals, follow-ups, research, its
+    /// errors — belongs to this column. Not in a private chat, which has no
+    /// conversation for any of them to describe.
+    var showsStoreState = true
     /// The live spoken turns, if a call is running. Kept apart from
     /// `model.selectedMessages` rather than merged into the store: these belong
     /// to the call, not to the conversation, and a store that held them would
@@ -845,10 +1372,14 @@ private struct DesktopTranscript: View {
     /// Asks the conversation column to dock the canvas. A row cannot own that
     /// panel — see ``DesktopConversationView/openArtifact``.
     let openArtifact: (NativeMessageContent.ArtifactReference) -> Void
-    /// Publishes the conversation and copies its link; nil when the account
-    /// has no share service. Reached from every reply's action row, as on the
-    /// web, not only from the toolbar.
+    /// The window's Share — publish, copy, and say so in the Share popover;
+    /// nil when the account has no share service. Reached from every reply's
+    /// action row, as on the web, not only from the toolbar.
     let share: (() -> Void)?
+    /// A new value asks the last message you sent to open for editing — ↑ in
+    /// the composer's empty field (§5.9). The row owns its editor; this only
+    /// says "now".
+    var editLastRequest: UUID? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var actionError: String?
     @State private var speechPlayback = DesktopSpeechPlayback()
@@ -857,12 +1388,20 @@ private struct DesktopTranscript: View {
     @State private var animateFrom = Int.max
     /// The conversation whose count `animateFrom` was last seeded against.
     @State private var settledConversationID: String?
+    /// The same gate for ``localMessages``. It starts at zero, because the
+    /// transcript is only ever built with local turns in it at the handoff —
+    /// and those are the turns that rise, a beat after the greeting leaves.
+    @State private var localAnimateFrom = 0
 
     /// The web's `max-w-3xl` reading column. See ``DesktopChatMeasure``.
     static let readingWidth: CGFloat = DesktopChatMeasure.reading
 
     private var lastAssistantMessageID: String? {
         model.selectedMessages.last(where: { $0.role == .assistant })?.id
+    }
+
+    private var lastUserMessageID: String? {
+        model.selectedMessages.last(where: { $0.role == .user && !$0.isPending })?.id
     }
 
     /// The account catalog's name for a canonical model id.
@@ -947,10 +1486,49 @@ private struct DesktopTranscript: View {
                                     editMessage(message, newContent: newContent)
                                 }
                                 : nil,
-                            isGenerating: model.isGenerating
+                            isGenerating: model.isGenerating,
+                            editRequest: message.id == lastUserMessageID ? editLastRequest : nil
                         )
                         .modifier(DesktopMessageRise(rises: index >= animateFrom))
                         .id(message.id)
+                    }
+
+                    // A private chat's turns, or a first turn on its way to
+                    // the store. Those present when the transcript is built are
+                    // the handoff's (§10.1), and rise a beat after it starts.
+                    ForEach(Array(localMessages.enumerated()), id: \.element.id) { index, message in
+                        DesktopMessageRow(
+                            message: message,
+                            isVoice: true,
+                            modelDisplayName: nil,
+                            isLastAssistant: false,
+                            copy: {
+                                copy(NativeMessageContent.plainText(of: message.content))
+                            },
+                            regenerate: nil,
+                            switchableModels: [],
+                            continueResponse: nil,
+                            branch: nil,
+                            setFeedback: nil,
+                            readAloud: nil,
+                            share: nil,
+                            openArtifact: { _ in },
+                            branchPosition: nil,
+                            stepBranch: nil,
+                            editMessage: nil,
+                            isGenerating: message.isPending
+                        )
+                        .modifier(
+                            DesktopMessageRise(
+                                rises: index >= localAnimateFrom,
+                                delay: localAnimateFrom == 0 ? DesktopChoreography.firstTurnBeat : 0
+                            )
+                        )
+                        .id(message.id)
+                    }
+
+                    if let localError {
+                        DesktopChatError(message: localError, canRetry: false, retry: {})
                     }
 
                     // Connector approvals are not prose and must stay above the
@@ -958,7 +1536,7 @@ private struct DesktopTranscript: View {
                     // `/api/approvals` as well as from the live stream, so this
                     // card remains answerable after a cold launch or a missed
                     // SSE frame.
-                    if let conversationID = model.selectedConversationID {
+                    if showsStoreState, let conversationID = model.selectedConversationID {
                         ForEach(model.chatApprovals(for: conversationID)) { approval in
                             NativeChatApprovalCard(
                                 approval: approval,
@@ -1016,14 +1594,14 @@ private struct DesktopTranscript: View {
                         .id(message.id)
                     }
 
-                    if model.isGenerating, !model.researchActivity.isEmpty {
+                    if showsStoreState, model.isGenerating, !model.researchActivity.isEmpty {
                         DesktopResearchActivity(items: model.researchActivity)
                     }
 
                     // Under the last reply, once it has settled. Inside the stack
                     // so it scrolls with the transcript rather than floating over
                     // it, and clamped to the reading column like everything else.
-                    if let conversationID = model.selectedConversationID {
+                    if showsStoreState, let conversationID = model.selectedConversationID {
                         NativeFollowUpStrip(
                             conversationID: conversationID,
                             accountID: accountID,
@@ -1035,7 +1613,7 @@ private struct DesktopTranscript: View {
                         .frame(maxWidth: Self.readingWidth, alignment: .leading)
                     }
 
-                    if let error = model.chatErrorDescription {
+                    if showsStoreState, let error = model.chatErrorDescription {
                         DesktopChatError(
                             message: error,
                             canRetry: model.canRetrySelectedConversation,
@@ -1092,6 +1670,18 @@ private struct DesktopTranscript: View {
             // often never arrives anywhere.
             .onChange(of: voiceMessages) { _, _ in
                 proxy.scrollTo("transcript-bottom", anchor: .bottom)
+            }
+            // A private turn arriving, or a private reply growing: the same
+            // two cases as the store's messages above.
+            .onChange(of: localMessages) { previous, current in
+                if current.count != previous.count {
+                    localAnimateFrom = current.count < previous.count ? current.count : previous.count
+                    withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                        proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                    }
+                } else {
+                    proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                }
             }
             .onChange(of: model.chatPhase) { _, _ in
                 proxy.scrollTo("transcript-bottom", anchor: .bottom)
@@ -1254,6 +1844,9 @@ private struct DesktopTranscript: View {
 /// index gate answers the question appearance cannot.
 private struct DesktopMessageRise: ViewModifier {
     let rises: Bool
+    /// How long to wait before rising, in seconds. The handoff's first bubble
+    /// waits a beat, so the greeting is visibly leaving before it arrives.
+    var delay: TimeInterval = 0
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var risen: Bool
@@ -1262,21 +1855,22 @@ private struct DesktopMessageRise: ViewModifier {
     /// there by `onAppear`. Seeded the other way it spent its first frame at zero
     /// opacity, which on a lazily-built stack means every old message flickers as
     /// the reader scrolls back through the conversation.
-    init(rises: Bool) {
+    init(rises: Bool, delay: TimeInterval = 0) {
         self.rises = rises
+        self.delay = delay
         _risen = State(initialValue: !rises)
     }
 
     func body(content: Content) -> some View {
         content
             .opacity(risen ? 1 : 0)
-            .offset(y: risen ? 0 : DesktopChoreography.riseDistance)
+            // Under Reduce Motion the travel is dropped and the fade keeps its
+            // timing — the tint tier — so a new turn still arrives rather than
+            // appearing.
+            .offset(y: risen ? 0 : JunoMotion.shift(DesktopChoreography.riseDistance, reduceMotion: reduceMotion))
             .onAppear {
-                guard rises, !reduceMotion else {
-                    risen = true
-                    return
-                }
-                withAnimation(JunoMotion.reduced(JunoMotion.riseIn, when: reduceMotion)) {
+                guard rises else { return }
+                withAnimation(JunoMotion.reduced(JunoMotion.riseIn, when: reduceMotion, tier: .tint)?.delay(delay)) {
                     risen = true
                 }
             }
@@ -1303,7 +1897,9 @@ struct DesktopRegenerateModel: Identifiable, Equatable {
 /// under the reply, exactly where the web puts it.
 private struct DesktopMessageRow: View {
     let message: NativeChatMessage
-    /// Whether this is a spoken turn from a call that is still running.
+    /// Whether this turn has no row in the store yet: a spoken line from a call
+    /// that is still running, a private chat's turn, or a first turn the store
+    /// is still creating.
     ///
     /// It suppresses the footer and the action row, as `isVoice` does on the web
     /// (`message-item.tsx`), and for the same reason: there is no row behind it
@@ -1326,8 +1922,8 @@ private struct DesktopMessageRow: View {
     let branch: (() -> Void)?
     let setFeedback: ((NativeChatFeedback?) -> Void)?
     let readAloud: (() -> Void)?
-    /// Publishes the conversation and copies its link — the toolbar's Share,
-    /// reachable from the row as it is on the web.
+    /// The toolbar's Share and its popover, reachable from the row as it is on
+    /// the web.
     let share: (() -> Void)?
     /// Hands an artifact up to the conversation column, which owns the canvas.
     let openArtifact: (NativeMessageContent.ArtifactReference) -> Void
@@ -1339,6 +1935,9 @@ private struct DesktopMessageRow: View {
     let editMessage: ((String) -> Void)?
     /// Whether a generation is running. Greys the pager and withholds Edit.
     let isGenerating: Bool
+    /// A new value opens this message's editor, as its Edit action does. Set
+    /// only on the last message you sent, by ↑ in the composer.
+    var editRequest: UUID? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The pointer is over the turn: the web's `group-hover`.
@@ -1413,6 +2012,11 @@ private struct DesktopMessageRow: View {
             }
         }
         .onHover { hovered = $0 }
+        .onChange(of: editRequest) { _, request in
+            guard request != nil, editMessage != nil, !isGenerating, !editing else { return }
+            draft = plainText
+            editing = true
+        }
     }
 
     // MARK: The reader's turn
@@ -1532,10 +2136,13 @@ private struct DesktopMessageRow: View {
             HStack(spacing: JunoSpace.snug) {
                 Button("Cancel") { editing = false }
                     .buttonStyle(.bordered)
+                // The card's one prominent button, in the accent the column
+                // is tinted with — bordered, not glass: the editor is content
+                // on the transcript (§0.1).
                 Button("Save & resend") { submitEdit() }
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(!canSubmitEdit)
-                    .junoProminentAction()
+                    .buttonStyle(.borderedProminent)
             }
             .controlSize(.small)
         }
@@ -1659,10 +2266,11 @@ private struct DesktopMessageRow: View {
 
     /// The row itself: present in the tree always, visible under the pointer
     /// (or keyboard focus) — the web's `opacity-0 group-hover:opacity-100`.
+    ///
+    /// A plain row, not a glass container: the actions are content on the
+    /// transcript (§0.1), drawn with ``DesktopMessageActionStyle``.
     private func actionRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        JunoDesktopGlass(spacing: JunoSpace.snug) {
-            HStack(spacing: 0) { content() }
-        }
+        HStack(spacing: 0) { content() }
             .opacity(hovered || copied ? 1 : 0)
             .animation(
                 JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
@@ -1712,17 +2320,16 @@ private struct DesktopMessageRow: View {
         } label: {
             DesktopMessageActionMark(icon: .refresh, active: false, tint: nil)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(DesktopMessageActionStyle())
         .menuIndicator(.hidden)
-        .junoGlassButton()
-        .controlSize(.small)
         .fixedSize()
         .help("Regenerate")
         .accessibilityLabel("Regenerate")
     }
 }
 
-/// One native glass action on a message row. `active` is a pressed thumb.
+/// One action on a message row. `active` is a pressed thumb.
 private struct DesktopMessageAction: View {
     let label: String
     let icon: JunoIcon
@@ -1748,15 +2355,49 @@ private struct DesktopMessageAction: View {
         Button(action: action) {
             DesktopMessageActionMark(icon: icon, active: active, tint: tint)
         }
-        .junoGlassButton()
-        .controlSize(.small)
+        .buttonStyle(DesktopMessageActionStyle())
         .help(label)
         .accessibilityLabel(label)
         .accessibilityAddTraits(active ? .isSelected : [])
     }
 }
 
-/// The Lucide mark shared by the native buttons and menu trigger.
+/// A message action's hover and press: the opaque content recipe, not glass.
+///
+/// The actions are content on the transcript (§0.1, §10.2 #1), and they sit
+/// below the detail column's accent tint (§1.2) — so the system glass button
+/// they used to wear lit up coral under the pointer, spending the accent on a
+/// row of icons (§0.4). The hover is the web's neutral `hover:bg-accent` on the
+/// canvas; the glyph keeps the ink ``DesktopMessageActionMark`` gives it.
+private struct DesktopMessageActionStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Action(configuration: configuration)
+    }
+
+    private struct Action: View {
+        let configuration: ButtonStyleConfiguration
+        @State private var hovered = false
+        @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        var body: some View {
+            configuration.label
+                .opacity(isEnabled ? 1 : 0.5)
+                .background {
+                    RoundedRectangle(cornerRadius: JunoRadius.md, style: .continuous)
+                        .fill(Color.junoHover)
+                        .opacity(hovered && isEnabled ? 1 : 0)
+                }
+                .contentShape(.rect)
+                .scaleEffect(configuration.isPressed ? JunoMotion.scaleFrom(0.97, reduceMotion: reduceMotion) : 1)
+                .onHover { hovered = $0 }
+                .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: hovered)
+                .animation(JunoMotion.reduced(JunoMotion.press, when: reduceMotion), value: configuration.isPressed)
+        }
+    }
+}
+
+/// The website's mark shared by the native buttons and menu trigger.
 private struct DesktopMessageActionMark: View {
     let icon: JunoIcon
     let active: Bool

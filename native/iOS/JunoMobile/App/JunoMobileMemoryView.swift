@@ -193,11 +193,7 @@ struct JunoMobileMemoryView: View {
                             VStack(alignment: .leading, spacing: JunoSpace.tight) {
                                 if let title = section.title {
                                     Text(title)
-                                        .font(
-                                            JunoSerif.font(
-                                                size: 15, relativeTo: .subheadline, face: .medium
-                                            )
-                                        )
+                                        .font(JunoType.body.weight(.medium).font())
                                         .foregroundStyle(Color.junoMutedForeground)
                                 }
                                 JunoMarkdownText(section.body)

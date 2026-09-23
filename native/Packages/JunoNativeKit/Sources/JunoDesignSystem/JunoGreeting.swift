@@ -1,12 +1,14 @@
 import Foundation
 
-/// The home greeting, ported verbatim from the website's `TIME_GREETINGS` in
-/// `src/components/chat/empty-state.tsx`.
+/// The phone's home greeting: a phrase picked by the hour, ported from the
+/// `TIME_GREETINGS` table the website's `empty-state.tsx` used to carry.
 ///
-/// The buckets and the phrases inside them are the web's, in the web's order, so
-/// the phone greets you the same way the site does at the same hour. The port is
-/// kept as pure data plus one pure function precisely so it can be tested
-/// against the source table without standing up a view.
+/// **The phone's alone now.** The website dropped time-of-day copy for one
+/// sentence — "How can I help, *Name*?" — and the Mac follows the web
+/// (`ChatGreeting`, §4.2 of `docs/native/MACOS_LIQUID_GLASS_REDESIGN.md`); the
+/// phone keeps this until its own redesign. The buckets and phrases are the
+/// old table's, in its order. The port is kept as pure data plus one pure
+/// function precisely so it can be tested without standing up a view.
 public enum JunoGreeting {
     /// A half-open hour range `[from, to)` and the phrases it may use.
     public struct Bucket: Equatable, Sendable {

@@ -37,21 +37,26 @@ struct DesktopShortcutsWindow: View {
 
     static let groups: [Group] = [
         Group(title: "Everywhere", shortcuts: [
-            ("⌘1 · ⌘2 · ⌘3", "Chat · Code · Work"),
-            ("⌘N", "New chat, task or run — whichever the window is showing"),
+            ("⌘1 · ⌘2", "Chat · Code"),
+            ("⌘N", "New chat in Chat, new task in Code"),
             ("⇧⌘O", "New chat"),
-            ("⇧⌘N", "New incognito window"),
+            ("⇧⌘N", "New private chat"),
             ("⇧⌘F", "Find in Juno"),
             ("⌥Space", "Ask Juno from anywhere"),
             ("⌘,", "Settings"),
             ("⌃⌘S", "Show or hide the sidebar"),
             ("⌘/", "This list"),
         ]),
+        // The composer's keys (§5.9): Return sends — the old "⌘↩" row was never
+        // true of this composer — and ↑ in an empty field reopens the last
+        // message.
         Group(title: "Chat", shortcuts: [
-            ("⌘↩", "Send"),
+            ("↩", "Send"),
             ("⇧↩", "New line"),
+            ("↑", "Edit your last message"),
             ("⌘.", "Stop"),
-            ("⇧⌘1", "Attach a screenshot"),
+            ("⌘U", "Attach files"),
+            ("⇧⌘U", "Attach a screenshot"),
         ]),
         Group(title: "Code", shortcuts: [
             ("⌘K", "Command palette"),
@@ -69,12 +74,10 @@ struct DesktopShortcutsWindow: View {
             ("/", "Slash commands · /compact folds the context"),
             ("@", "Mention a file"),
         ]),
-        Group(title: "Work", shortcuts: [
-            ("↩", "Start the task in the composer"),
-            ("⌘R", "Refresh tasks"),
-            ("↩ · ⎋", "Allow once · refuse the approval in front of you"),
-        ]),
     ]
+
+    // No Work group: Work is not a product any more, and its legacy
+    // workspace (Window › Tasks (Legacy)) takes no shortcuts of its own (§1.6).
 
     /// Every row, in group order, for the one table.
     static let shortcuts: [Shortcut] = groups.flatMap(\.shortcuts)

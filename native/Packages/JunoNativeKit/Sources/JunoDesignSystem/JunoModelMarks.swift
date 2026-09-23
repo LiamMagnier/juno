@@ -84,13 +84,24 @@ public struct JunoProviderMark: View {
 /// `HStack` cannot do this — it either overflows its container or squeezes its
 /// children — and the chips have to survive both a narrow detail panel and
 /// accessibility text sizes.
+///
+/// Each line is aligned on its own. The default hugs the leading edge, which is
+/// what a row of tags under a heading wants; the empty chat's starter chips are
+/// `.center`, the web's `flex-wrap justify-center`, so a second line of one chip
+/// sits under the middle of the first rather than under its left end.
 public struct JunoChipFlow: Layout {
     private let spacing: CGFloat
     private let lineSpacing: CGFloat
+    private let alignment: HorizontalAlignment
 
-    public init(spacing: CGFloat = 5, lineSpacing: CGFloat = 5) {
+    public init(
+        spacing: CGFloat = 5,
+        lineSpacing: CGFloat = 5,
+        alignment: HorizontalAlignment = .leading
+    ) {
         self.spacing = spacing
         self.lineSpacing = lineSpacing
+        self.alignment = alignment
     }
 
     public func sizeThatFits(
@@ -124,24 +135,51 @@ public struct JunoChipFlow: Layout {
         subviews: Subviews,
         cache: inout ()
     ) {
-        var x = bounds.minX
         var y = bounds.minY
-        var rowHeight: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > bounds.minX, x + size.width > bounds.maxX {
-                x = bounds.minX
-                y += rowHeight + lineSpacing
-                rowHeight = 0
+        for line in lines(of: subviews, maxWidth: bounds.width) {
+            // Each wrapped line takes its own slack, so a short last line is
+            // centred (or trailed) under the full width, not under the first.
+            let slack = max(0, bounds.width - line.width)
+            let inset: CGFloat = alignment == .center ? slack / 2 : alignment == .trailing ? slack : 0
+            var x = bounds.minX + inset
+            for item in line.items {
+                subviews[item.index].place(
+                    at: CGPoint(x: x, y: y),
+                    anchor: .topLeading,
+                    proposal: ProposedViewSize(item.size)
+                )
+                x += item.size.width + spacing
             }
-            subview.place(
-                at: CGPoint(x: x, y: y),
-                anchor: .topLeading,
-                proposal: ProposedViewSize(size)
-            )
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
+            y += line.height + lineSpacing
         }
+    }
+
+    /// One wrapped line: which subviews it holds, at what size, and how much
+    /// room they take together.
+    private struct Line {
+        var items: [(index: Int, size: CGSize)] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    /// The subviews broken into lines. Measured once and placed from the
+    /// measurement, so the line a chip lands on and the inset that aligns the
+    /// line come from the same numbers.
+    private func lines(of subviews: Subviews, maxWidth: CGFloat) -> [Line] {
+        var lines: [Line] = []
+        var line = Line()
+        for (index, subview) in subviews.enumerated() {
+            let size = subview.sizeThatFits(.unspecified)
+            if !line.items.isEmpty, line.width + spacing + size.width > maxWidth {
+                lines.append(line)
+                line = Line()
+            }
+            line.width += (line.items.isEmpty ? 0 : spacing) + size.width
+            line.height = max(line.height, size.height)
+            line.items.append((index, size))
+        }
+        if !line.items.isEmpty { lines.append(line) }
+        return lines
     }
 }
 

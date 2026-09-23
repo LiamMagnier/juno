@@ -17,55 +17,59 @@ public extension JunoColorToken {
     // `JunoColors.swift`. The dark one had drifted outright — `0.086, 0.086,
     // 0.094` puts *blue* highest, so the "warm" canvas the doc comment promised
     // was in fact cool, and the desktop shell was painting a cool graphite next
-    // to `warmBlack`'s warm one. `raisedLight` was a third pure white. There is
-    // now one ground: `junoCanvasWarm` and `junoRaised` below are aliases, and
+    // to the warm canvas. `raisedLight` was a third pure white. There is now
+    // one ground: `junoCanvasWarm` and `junoRaised` below are aliases, and
     // `JunoDesignTokensTests.testBrandNeutralsAreWarmInBothAppearances` asserts
     // the warmth of both so this cannot silently happen a second time.
 
-    // Row states. Deliberately low-contrast: a source list should whisper.
+    // Row states and rules. Deliberately low-contrast: a source list should
+    // whisper.
+    //
+    // These were hand-written neutral alphas — pure black and pure white at a
+    // few percent — and the redesign retires them (§8, "delete the hand-written
+    // neutral alphas"). On the Mac each now resolves to the generated token
+    // that has its job: a row's hover is hover *inside glass*, a held row is a
+    // resting glass fill, and a rule is the web's warm `--hairline`. The values
+    // move by a percent or two and turn warm; the roles do not move at all,
+    // which is why the names stay.
+    //
+    // **iOS keeps the alphas it shipped with** until its own pass, so no phone
+    // screen changes under this token work.
+    #if os(iOS)
     static let rowHoverLight = JunoColorToken(unchecked: 0, 0, 0, 0.045)
     static let rowHoverDark = JunoColorToken(unchecked: 1, 1, 1, 0.06)
     static let rowSelectedLight = JunoColorToken(unchecked: 0, 0, 0, 0.075)
     static let rowSelectedDark = JunoColorToken(unchecked: 1, 1, 1, 0.10)
-
-    // The navigation column's selected row — the web's `--sidebar-selected`.
-    // Opaque, not an alpha wash, because it is fed to the platform as a *tint*
-    // and the system composites it itself.
-    //
-    // Projected rather than transcribed, and this is the change that proves
-    // why. It read `--sidebar-accent` until the web split that token in two:
-    // the panel's general tonal fill stayed where it was and the two row
-    // states moved to colours of their own, so that selection and hover stop
-    // being one paint at two opacities. The fill lands close to where the
-    // accent was — on the web the OUTLINE is what says "selected", and this
-    // is a tint with no outline to give — but it is free to move now, and a
-    // transcribed constant would not have followed it. Repointing the
-    // projection is the whole of the fix.
-    static let sidebarSelectionLight = JunoGeneratedColors.sidebarSelected.light
-    static let sidebarSelectionDark = JunoGeneratedColors.sidebarSelected.dark
-
-    // The navigation column's resting ink — the web's `--sidebar-foreground`.
-    // Barely off neutral: the same warm cast the rest of the palette carries, so
-    // a grey column does not read as a cold one.
-    static let sidebarForegroundLight = JunoGeneratedColors.sidebarForeground.light
-    static let sidebarForegroundDark = JunoGeneratedColors.sidebarForeground.dark
-
-    // The ambient throw under a raised card, from the web's `--shadow-soft`
-    // (`hsl(30 10% 20% / 0.05…0.08)`). Warm rather than neutral black: a grey
-    // shadow on a warm canvas reads as dirt.
-    static let cardShadowLight = JunoColorToken(unchecked: 0.20, 0.19, 0.18, 0.07)
-    static let cardShadowDark = JunoColorToken(unchecked: 0, 0, 0, 0.42)
-
-    // Hairlines. Two weights: one that separates regions, one that outlines.
     static let separatorLight = JunoColorToken(unchecked: 0, 0, 0, 0.08)
     static let separatorDark = JunoColorToken(unchecked: 1, 1, 1, 0.09)
-    static let borderLight = JunoColorToken(unchecked: 0, 0, 0, 0.12)
-    static let borderDark = JunoColorToken(unchecked: 1, 1, 1, 0.14)
+    #else
+    static let rowHoverLight = JunoColorToken.glassHoverLight
+    static let rowHoverDark = JunoColorToken.glassHoverDark
+    static let rowSelectedLight = JunoColorToken.glassFillLight
+    static let rowSelectedDark = JunoColorToken.glassFillDark
+    static let separatorLight = JunoColorToken.hairlineLight
+    static let separatorDark = JunoColorToken.hairlineDark
+    #endif
+
+    // The navigation column's selected row — the web's `--sidebar-selected`.
+    // The older name for `selectedFillLight`/`selectedFillDark` in
+    // `JunoColors.swift`: opaque, because the platform paints its own selection
+    // in the system accent underneath, and any alpha lets it show through.
+    static let sidebarSelectionLight = JunoColorToken.selectedFillLight
+    static let sidebarSelectionDark = JunoColorToken.selectedFillDark
+
+    // The ambient throw under a raised card: the web's `--shadow-soft`, which
+    // is `--shadow-ink` at a few percent. Warm rather than neutral black in
+    // light mode — a grey shadow on a warm canvas reads as dirt. The alphas are
+    // the one hand-set part: the web states its shadow as a stack of offsets,
+    // and one native blur stands in for the stack.
+    static let cardShadowLight = JunoGeneratedColors.shadowInk.light.withOpacity(0.07)
+    static let cardShadowDark = JunoGeneratedColors.shadowInk.dark.withOpacity(0.42)
 
     // Keyboard focus follows the web's neutral `--ring`, not the account's
-    // accent. Every accent palette intentionally projects the same pair, so a
-    // user can change Juno's action colour without turning every focused field,
-    // list and button into a coloured outline.
+    // accent. Every accent palette projects the same pair, so a user can change
+    // Juno's action colour without turning every focused field, list and button
+    // into a coloured outline. `Color.junoRing` is the redesign's name.
     static let focusRingLight = JunoAccent.coral.generatedPalette.ring.light
     static let focusRingDark = JunoAccent.coral.generatedPalette.ring.dark
 
@@ -82,48 +86,45 @@ public extension JunoColorToken {
 
 public extension Color {
     /// The reading surface. An alias of ``junoCanvas`` — the desktop shell and
-    /// the phone now stand on the same ground rather than two that had drifted.
+    /// the phone stand on the same token rather than two that had drifted.
     static let junoCanvasWarm = Color.junoCanvas
     /// One step above the canvas: code blocks, tables, cards. An alias of
-    /// ``junoSurface``, for the same reason.
-    static let junoRaised = Color.junoSurface
-    /// Pointer-over state for a list row.
+    /// ``junoCard``, for the same reason.
+    static let junoRaised = Color.junoCard
+    /// Pointer-over state for a list row. On the Mac, ``junoGlassHover``.
     static let junoRowHover = Color.junoAdaptive(light: .rowHoverLight, dark: .rowHoverDark)
-    /// Selected state for a list row that is not the focused selection.
+    /// Selected state for a list row that is not the focused selection. On the
+    /// Mac, ``junoGlassFill``.
     static let junoRowSelected = Color.junoAdaptive(
         light: .rowSelectedLight, dark: .rowSelectedDark
     )
-    /// Separates regions (header from list, canvas from composer).
+    /// Separates regions (header from list, canvas from composer). On the Mac,
+    /// ``junoHairline``.
     static let junoSeparator = Color.junoAdaptive(
         light: .separatorLight, dark: .separatorDark
     )
-    /// Outlines a control or panel.
-    static let junoBorder = Color.junoAdaptive(light: .borderLight, dark: .borderDark)
-    /// Keyboard-focus outline — neutral, visible, and matched to the web's `--ring`.
+    /// Keyboard-focus outline. The older name for ``junoRing``.
     static let junoFocusRing = Color.junoAdaptive(
         light: .focusRingLight, dark: .focusRingDark
     )
     /// Terminal and diff output.
     static let junoTerminal = Color.junoAdaptive(light: .terminalLight, dark: .terminalDark)
-    /// The navigation column's selected row — the web's `--sidebar-selected`.
+    /// The navigation column's selected row. The older name for
+    /// ``junoSelectedFill``.
     ///
     /// Fed to `List` as a tint rather than painted by hand, so the platform keeps
     /// drawing the selection and Juno only says what colour it is. See
     /// `junoSidebarSelectionTint()`.
-    static let junoSidebarSelection = Color.junoAdaptive(
-        light: .sidebarSelectionLight, dark: .sidebarSelectionDark
-    )
-    /// The navigation column's resting ink — the web's `--sidebar-foreground`.
+    static let junoSidebarSelection = Color.junoSelectedFill
+    /// The navigation column's resting ink. The older name for
+    /// ``junoSidebarInk``.
     ///
-    /// Both the label and its mark rest on this and lift to ``Color/primary``
+    /// Both the label and its mark rest on this and lift to ``junoForeground``
     /// when the row is selected, which is the whole of the web's row treatment:
     /// one fill, one ink, no accent. It has to be stated on the mark itself,
     /// because a `Label` inside a `.sidebar` list resolves its icon slot against
-    /// the *system accent* and an inherited `foregroundStyle` never reaches it —
-    /// which is why the column was drawing coral glyphs it was never asked for.
-    static let junoSidebarForeground = Color.junoAdaptive(
-        light: .sidebarForegroundLight, dark: .sidebarForegroundDark
-    )
+    /// the *system accent* and an inherited `foregroundStyle` never reaches it.
+    static let junoSidebarForeground = Color.junoSidebarInk
     /// The throw under a raised card. Only ever used through ``View/junoCard(cornerRadius:)``.
     static let junoCardShadow = Color.junoAdaptive(
         light: .cardShadowLight, dark: .cardShadowDark
@@ -177,24 +178,73 @@ public extension View {
 /// The spacing scale. Every gap in a Juno view comes from here.
 ///
 /// Named by intent rather than by number so a reader of the view can tell *why*
-/// a gap is that size. The values are the 4-point grid the brief asks for.
+/// a gap is that size. Every step forwards to ``JunoGeneratedSpace``, projected
+/// from Tailwind's scale: the web's 4-point grid from 2 to 48 plus the 18 the
+/// config adds for the one slightly-larger glyph box. It deliberately does not
+/// follow an 8-point grid — the web spends 10, 14 and 18 on purpose, and a
+/// native ladder without them rounds every port of a web gap to a neighbour.
+///
+/// The eight original names keep their values; the seven steps the web uses
+/// and this scale lacked are added between them.
 public enum JunoSpace {
+    /// 2 — an optical nudge: a badge off its glyph, a keycap's inner pad.
+    public static let micro: CGFloat = JunoGeneratedSpace.step0_5
     /// 4 — between a glyph and its label.
-    public static let hairline: CGFloat = 4
+    public static let hairline: CGFloat = JunoGeneratedSpace.step1
     /// 6 — inside a compact control.
-    public static let tight: CGFloat = 6
+    public static let tight: CGFloat = JunoGeneratedSpace.step1_5
     /// 8 — between related rows.
-    public static let snug: CGFloat = 8
+    public static let snug: CGFloat = JunoGeneratedSpace.step2
+    /// 10 — a pill's horizontal pad.
+    public static let close: CGFloat = JunoGeneratedSpace.step2_5
     /// 12 — a control's internal padding; a row's horizontal inset.
-    public static let cozy: CGFloat = 12
-    /// 16 — between a label and its content.
-    public static let regular: CGFloat = 16
+    public static let cozy: CGFloat = JunoGeneratedSpace.step3
+    /// 14 — a card's inner padding in a dense list.
+    public static let comfy: CGFloat = JunoGeneratedSpace.step3_5
+    /// 16 — between a label and its content; the narrowest page gutter.
+    public static let regular: CGFloat = JunoGeneratedSpace.step4
+    /// 18 — the slightly-larger interface glyph box: the web's `size-4.5`.
+    public static let ample: CGFloat = JunoGeneratedSpace.step4_5
     /// 20 — between grouped blocks.
-    public static let roomy: CGFloat = 20
-    /// 24 — between sections.
-    public static let section: CGFloat = 24
-    /// 32 — between major regions; a canvas's outer margin.
-    public static let region: CGFloat = 32
+    public static let roomy: CGFloat = JunoGeneratedSpace.step5
+    /// 24 — between sections; between transcript turns; the middle gutter.
+    public static let section: CGFloat = JunoGeneratedSpace.step6
+    /// 28 — one step past a section gap, for air around a heading block.
+    public static let wide: CGFloat = JunoGeneratedSpace.step7
+    /// 32 — between major regions and page sections; the widest gutter.
+    public static let region: CGFloat = JunoGeneratedSpace.step8
+    /// 40 — the air around an empty state's centred block.
+    public static let expanse: CGFloat = JunoGeneratedSpace.step10
+    /// 48 — the largest step: a page's top margin before its first heading.
+    public static let vast: CGFloat = JunoGeneratedSpace.step12
+
+    /// The gap between transcript turns (§8.3).
+    public static let turnGap: CGFloat = section
+    /// The gap between a page's sections (§8.3).
+    public static let pageSectionGap: CGFloat = region
+
+    /// The page gutter for a detail column of `width` points: 16 below 640, 24
+    /// below 1024, 32 from 1024 up.
+    ///
+    /// The web's `--page-gutter`, which steps on the *content column's* width
+    /// (a container query on `.app-main-canvas`), never the window's — the
+    /// sidebar takes window width and gives it back, so the window is the
+    /// wrong thing to measure. The same column widths as the measures below
+    /// (640 is where a column first fits the reading measure with margins,
+    /// 1024 is ``JunoReadingMeasure/wide``). Three named steps rather than a
+    /// fluid clamp, because the gutter is an edge that rows, headers and cards
+    /// all align against, and it has to be a number the rest of the system can
+    /// name.
+    public static func gutter(forWidth width: CGFloat) -> CGFloat {
+        if width < gutterMediumWidth { return regular }
+        if width < gutterWideWidth { return section }
+        return region
+    }
+
+    /// The column width at which the gutter steps from 16 to 24: 40rem.
+    public static let gutterMediumWidth: CGFloat = 640
+    /// The column width at which the gutter steps from 24 to 32: 64rem.
+    public static let gutterWideWidth: CGFloat = JunoReadingMeasure.wide
 }
 
 /// The radius scale, applied by role, so the window does not mix five different
@@ -243,41 +293,110 @@ public enum JunoSpace {
 /// value, because parity was the stated intent and it simply pointed at the
 /// wrong token (see below).
 ///
-/// The web has retuned the ladder once since — fields to 10, cards and
-/// popovers to 14, the composer shell out to 26 — and these rungs followed it
-/// without a single edit here, which is the whole point of the aliasing. The
-/// numbers in the doc lines below are therefore descriptions of where the web
-/// currently sits, not commitments; the alias is the commitment.
+/// The web has retuned the ladder since — and these rungs followed it without
+/// a single edit here, which is the whole point of the aliasing. The numbers
+/// in the doc lines below are descriptions of where the web currently sits,
+/// not commitments; the alias is the commitment.
+///
+/// ——— The redesign's names (§8.4) ——————————————————————————————————————————
+///
+/// The web's own ladder names — `micro`, `sm`, `xs`, `md`, `control`, `field`,
+/// `menu`, `card`, `panel` — are aliases here too, **with exactly the web's
+/// values**. That is the collision rule above applied the other way round: the
+/// reason `control` and `panel` were once renamed away was that the Swift word
+/// meant a different size from the TSX word. Aliased onto the generated rung,
+/// the word now means the same size on both sides, so a port reads
+/// `rounded-panel` and writes `JunoRadius.panel`. The older role names
+/// (`chip`, `row`, `well`, `message`, `floating`, `composer`) keep their
+/// values.
+///
+/// There is no `full` number: a capsule is `Capsule()` (chips, pills, the find
+/// bar). Toasts are **not** capsules — the web draws them at ``card``.
+///
+/// ——— The concentric rule ——————————————————————————————————————————————————
+///
+/// Any container that insets children declares its own shape with
+/// ``SwiftUI/View/junoContainerShape(cornerRadius:)``, and the children draw
+/// ``JunoRadius/concentric(minimum:)`` instead of picking a radius: the system
+/// then gives each child the container's radius minus its inset, never less
+/// than the minimum. It is the native form of the web's
+/// `design-system/concentric-radius` lint rule. (The WWDC spelling
+/// `.rect(corner: .containerConcentric)` is not in the SDK; the shipping API is
+/// `ConcentricRectangle` / `.rect(corners: .concentric(minimum:))`.)
 public enum JunoRadius {
-    /// 6 — a compact control: a chip, a small button, a segment.
+    // ── The web's ladder, by its own names ──────────────────────────────────
+
+    /// 2 — rules, the tiniest chips.
+    public static let micro: CGFloat = JunoGeneratedRadius.micro
+    /// 4 — tiny chips.
+    public static let sm: CGFloat = JunoGeneratedRadius.sm
+    /// 6 — marks, keycaps, inline code.
+    public static let xs: CGFloat = JunoGeneratedRadius.xs
+    /// 8 — popover rows, the bubble's tail corner.
+    public static let md: CGFloat = JunoGeneratedRadius.md
+    /// 10 — the sidebar selection pill, inner hover fills, the search button.
+    public static let control: CGFloat = JunoGeneratedRadius.control
+    /// 12 — code, tables, wells, inner run tiles, attachment tiles, and the
+    /// dashed empty-state well.
+    public static let field: CGFloat = JunoGeneratedRadius.field
+    /// 14 — a segmented track. (System menus draw their own corners.)
+    public static let menu: CGFloat = JunoGeneratedRadius.menu
+    /// 16 — the user bubble, an approval card, content cards, the empty-state
+    /// well, a toast.
+    public static let card: CGFloat = JunoGeneratedRadius.card
+    /// 20 — the composer shell, run cards, the command panel.
+    public static let panel: CGFloat = JunoGeneratedRadius.panel
+
+    // ── The older role names ────────────────────────────────────────────────
+
+    /// 6 — a compact control: a chip, a small button, a segment. The web's
+    /// `xs`.
     ///
-    /// Renamed from `control`, which collided with the web's `rounded-control`
-    /// — 10px at the time, 9px now. 6px is the web's `xs`, whose documented
-    /// role — "chips, dots, tiny badges" — is the same one this rung already
-    /// described.
+    /// Renamed from `control` when that word meant 6 here and 10 on the web;
+    /// ``control`` now carries the web's value.
     public static let chip: CGFloat = JunoGeneratedRadius.xs
     /// 8 — a list row's selection shape. The web's `md`.
     public static let row: CGFloat = JunoGeneratedRadius.md
-    /// 10 — a code block, a table, an inspector card.
+    /// 12 — a code block, a table, an inspector card. The web's `field`.
     ///
-    /// Renamed from `panel`, which collided with the web's `rounded-panel` —
-    /// 28px against this rung's 12px at the time, a difference of more than
-    /// double. This is the web's `field`, the general small-container rung.
+    /// Renamed from `panel` when that word meant 12 here and 28 on the web;
+    /// ``panel`` now carries the web's value.
     public static let well: CGFloat = JunoGeneratedRadius.field
-    /// 14 — a content card: a project tile, an artifact thumbnail.
-    public static let card: CGFloat = JunoGeneratedRadius.card
-    /// 14 — a chat message bubble. The web's `popover`.
+    /// 16 — a chat message bubble. The web's `popover`.
     public static let message: CGFloat = JunoGeneratedRadius.popover
-    /// 14 — a floating surface: a floating toolbar, a transient control group.
+    /// 16 — a floating surface: a floating toolbar, a transient control group.
     public static let floating: CGFloat = JunoGeneratedRadius.popover
-    /// 26 — the composer's outer container.
+    /// 20 — the composer's outer container: the web's `rounded-composer`.
     ///
-    /// VALUE CHANGED, 24 → the web's `rounded-composer`. This was the one rung
-    /// that claimed parity in a comment: "matching the web's `--radius: 24px`".
-    /// The web composer shell has never used `--radius` — it uses
-    /// `rounded-composer`, which was 22px then and is 26px now. The intent was
-    /// to match the composer and it matched a different token that happened to
-    /// be nearby; following the right token is what let the 22 → 26 retune
+    /// This was the one rung that claimed parity in a comment — "matching the
+    /// web's `--radius: 24px`" — while the web composer has never used
+    /// `--radius`. Following the right token is what lets a composer retune
     /// reach the Mac on its own.
     public static let composer: CGFloat = JunoGeneratedRadius.composer
+
+    // ── Concentric ──────────────────────────────────────────────────────────
+
+    /// A child's shape inside a container declared with
+    /// ``SwiftUI/View/junoContainerShape(cornerRadius:)``: the container's
+    /// radius less the child's inset, never below `minimum`.
+    ///
+    /// The default minimum is ``control`` (10), the spec's own floor for an
+    /// inset fill — the hover pill inside the composer, a tile inside a run
+    /// card — so a deeply inset child still reads as rounded rather than
+    /// collapsing to a square. Pass ``xs`` for marks.
+    public static func concentric(minimum: CGFloat = control) -> ConcentricRectangle {
+        ConcentricRectangle(corners: .concentric(minimum: .fixed(minimum)), isUniform: true)
+    }
+}
+
+public extension View {
+    /// Declares this view's corner radius as the shape its inset children are
+    /// concentric with: `.containerShape(.rect(cornerRadius:))`.
+    ///
+    /// Pair it with ``JunoRadius/concentric(minimum:)`` on the children. Put it
+    /// on the view that owns the padding — the composer shell, a run card —
+    /// not on its background, which has no children to inform.
+    func junoContainerShape(cornerRadius: CGFloat) -> some View {
+        containerShape(.rect(cornerRadius: cornerRadius))
+    }
 }

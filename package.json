@@ -28,6 +28,8 @@
     "phase2:ci:verify": "node scripts/verify-phase2-ci.mjs",
     "test:e2e": "playwright test",
     "native:test": "bash scripts/native-test.sh",
+    "native:icons": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/generate-native-icons.mjs",
+    "native:icons:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning scripts/generate-native-icons.mjs --check",
     "native:contract:check": "node scripts/check-native-swift-contract.mjs",
     "native:design:check": "node scripts/check-native-design.mjs",
     "native:design:baseline": "node scripts/check-native-design.mjs --baseline",

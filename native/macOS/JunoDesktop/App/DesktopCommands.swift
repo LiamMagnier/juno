@@ -20,9 +20,26 @@ struct DesktopWorkspaceActions {
     var openSearch: () -> Void
     var switchProduct: (DesktopProductMode) -> Void
     var currentProduct: DesktopProductMode
-    /// ⇧⌘1: a screenshot into the composer. Chat's only; the other products
+    /// ⇧⌘U: a screenshot into the composer. Chat's only; the other products
     /// leave it nil and the menu item disables.
     var attachScreenshot: (() -> Void)? = nil
+    /// ⌘U: the composer's file picker. Nil wherever no composer is showing.
+    var attachFiles: (() -> Void)? = nil
+}
+
+/// What the menu bar can do to the focused *window*, whichever product it is
+/// showing.
+///
+/// Published by ``JunoDesktopWorkspaceView`` — the one view that sits above
+/// every product and can change which one is showing — so ⇧⌘N reaches Chat's
+/// private draft from Code, and Window › Tasks (Legacy) reaches the old Work
+/// workspace from anywhere, without either product having to publish them.
+struct DesktopShellActions {
+    /// Switches the window to Chat on a new private draft.
+    var newPrivateChat: () -> Void
+    /// Swaps in the legacy Work workspace (§1.6). Phase 5 removes it.
+    var openLegacyTasks: () -> Void
+    var isShowingLegacyTasks: Bool
 }
 
 /// What the Code window adds to the menu bar while it is focused.
@@ -53,6 +70,10 @@ private struct DesktopCodeActionsKey: FocusedValueKey {
     typealias Value = DesktopCodeActions
 }
 
+private struct DesktopShellActionsKey: FocusedValueKey {
+    typealias Value = DesktopShellActions
+}
+
 extension FocusedValues {
     var junoWorkspaceActions: DesktopWorkspaceActions? {
         get { self[DesktopWorkspaceActionsKey.self] }
@@ -63,6 +84,11 @@ extension FocusedValues {
         get { self[DesktopCodeActionsKey.self] }
         set { self[DesktopCodeActionsKey.self] = newValue }
     }
+
+    var junoShellActions: DesktopShellActions? {
+        get { self[DesktopShellActionsKey.self] }
+        set { self[DesktopShellActionsKey.self] = newValue }
+    }
 }
 
 /// Juno's menu bar.
@@ -71,9 +97,17 @@ extension FocusedValues {
 /// only place a user reliably discovers a keyboard shortcut. The app previously
 /// shipped one item — "New Chat" — which meant no way to switch product, reach
 /// settings, toggle the sidebar or find help without a pointer.
+///
+/// Phase 1 of the Liquid Glass redesign makes the minimum changes (§7.8): the
+/// products are Chat ⌘1 and Code ⌘2 in the View menu, with no ⌘3; New Private
+/// Chat ⇧⌘N is always present; the screenshot moves to ⇧⌘U beside ⌘U Attach,
+/// freeing ⇧⌘1; ⇧⌘O stays as the web's New chat alias; and the old Work
+/// workspace is reachable only from Window › Tasks (Legacy). The full menu bar,
+/// generated from one shortcut registry, is Phase 3.
 struct JunoDesktopCommands: Commands {
     @FocusedValue(\.junoWorkspaceActions) private var actions
     @FocusedValue(\.junoCodeActions) private var codeActions
+    @FocusedValue(\.junoShellActions) private var shellActions
     @Environment(\.openWindow) private var openWindow
     @State private var updater = DesktopUpdateModel.shared
 
@@ -94,16 +128,16 @@ struct JunoDesktopCommands: Commands {
                     }
                     .keyboardShortcut("n", modifiers: [.command])
                 } else {
-                    Button("New Incognito Window") {
-                        openWindow(id: JunoDesktopWindow.incognitoID)
-                    }
-                    .keyboardShortcut("n", modifiers: [.command, .shift])
-
                     Button(JunoDesktopWindow.newWindowMenuTitle) {
                         openWindow(id: JunoDesktopWindow.mainID)
                     }
                     .keyboardShortcut("n", modifiers: [.command])
                 }
+                // Always present, whatever is focused (§7.8): private chat is
+                // a mode of Chat now, not a window, so there is always
+                // somewhere for it to open.
+                Button("New Private Chat") { newPrivateChat() }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
             }
         }
 
@@ -125,10 +159,19 @@ struct JunoDesktopCommands: Commands {
                     .disabled(codeActions == nil)
             }
             Section {
+                // ⌘U, the key the composer's `+` menu teaches. Here as well so
+                // it works with that menu closed.
+                Button("Attach Files…") {
+                    actions?.attachFiles?()
+                }
+                .keyboardShortcut("u", modifiers: [.command])
+                .disabled(actions?.attachFiles == nil)
+                // ⇧⌘U, beside ⌘U Attach: the pair a reader learns together.
+                // It used to be ⇧⌘1, one key from the ⌘1 product shortcut.
                 Button("Attach Screenshot…") {
                     actions?.attachScreenshot?()
                 }
-                .keyboardShortcut("1", modifiers: [.command, .shift])
+                .keyboardShortcut("u", modifiers: [.command, .shift])
                 .disabled(actions?.attachScreenshot == nil)
             }
             Section {
@@ -147,12 +190,25 @@ struct JunoDesktopCommands: Commands {
         SidebarCommands()
         ToolbarCommands()
 
-        // ⌘1 · ⌘2 · ⌘3, and a checkmark against the mode the focused window
-        // is in. Driven by `allCases`, so a product added to the enum appears
-        // here without anyone remembering to add a row.
-        CommandMenu("Product") {
+        // View › Chat ⌘1 · Code ⌘2, above the system's sidebar items, with a
+        // checkmark against the product the focused window shows. This is
+        // also the way to switch while the sidebar — and the switch in its
+        // toolbar segment — is hidden.
+        CommandGroup(before: .sidebar) {
             Section {
                 productItems
+            }
+        }
+
+        // Window › Tasks (Legacy): the only door left to the old Work
+        // workspace, so a task already running can still be answered (§1.6).
+        // No shortcut, on purpose. Phase 5 removes it.
+        CommandGroup(after: .windowArrangement) {
+            Section {
+                Button(DesktopProductMode.legacyWork.label) {
+                    shellActions?.openLegacyTasks()
+                }
+                .disabled(shellActions == nil || shellActions?.isShowingLegacyTasks == true)
             }
         }
 
@@ -209,22 +265,34 @@ struct JunoDesktopCommands: Commands {
 
     /// One row per product, with the platform's own checkmark against the
     /// focused window's — a `Toggle` in a menu is how AppKit draws a checked
-    /// item, so no glyph of ours is involved.
+    /// item, so no glyph of ours is involved. Driven by
+    /// ``DesktopProductMode/switchable``, so the legacy workspace never gets a
+    /// row or a digit.
     @ViewBuilder
     private var productItems: some View {
-        Section {
-            ForEach(DesktopProductMode.allCases) { mode in
-                Toggle(
-                    mode.label,
-                    isOn: Binding(
-                        get: { actions?.currentProduct == mode },
-                        set: { isOn in if isOn { actions?.switchProduct(mode) } }
-                    )
+        ForEach(DesktopProductMode.switchable) { mode in
+            Toggle(
+                mode.label,
+                isOn: Binding(
+                    get: { actions?.currentProduct == mode },
+                    set: { isOn in if isOn { actions?.switchProduct(mode) } }
                 )
-                .keyboardShortcut(KeyEquivalent(mode.keyboardDigit), modifiers: [.command])
-                .disabled(actions == nil)
-            }
+            )
+            .keyboardShortcut(mode.keyboardShortcut)
+            .disabled(actions == nil)
         }
+    }
+
+    /// ⇧⌘N. Through the focused window when there is one; otherwise the request
+    /// goes to whichever main window exists — brought forward rather than a
+    /// second one opened — and only with none at all is a window opened for it.
+    private func newPrivateChat() {
+        if let shellActions {
+            shellActions.newPrivateChat()
+            return
+        }
+        DesktopWorkbenchRegistry.shared.request(.newChat(prompt: nil, isPrivate: true))
+        JunoDesktopWindow.showMainWindow(using: openWindow)
     }
 
     @ViewBuilder
@@ -275,8 +343,7 @@ struct JunoDesktopCommands: Commands {
     private static func newItemTitle(for product: DesktopProductMode) -> String {
         switch product {
         case .chat: "New Chat"
-        case .code: "New Task"
-        case .work: "New Task"
+        case .code, .legacyWork: "New Task"
         }
     }
 }

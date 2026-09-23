@@ -234,14 +234,16 @@ public struct JunoModelSelector: View {
         }
     }
 
-    /// The small mono "Image" / "Video" line that introduces a lab's non-text
-    /// rows — the web's `ModalityLabel`. Not a row the cursor can land on.
+    /// The small "Image" / "Video" line that introduces a lab's non-text rows —
+    /// the web's `ModalityLabel`. Not a row the cursor can land on. Sans: a
+    /// section label is words, and mono is for code, ids, counts and costs
+    /// (§10.2 #6).
     private func modalityCaption(_ modality: JunoModelModality) -> some View {
         HStack(spacing: JunoSpace.tight) {
             JunoIconView(modality == .video ? .play : .image, size: 11)
             Text(modality.sectionTitle)
         }
-        .junoFont(size: 10, relativeTo: .caption2, design: .monospaced)
+        .junoFont(size: 11, relativeTo: .caption2)
         .junoMetaInk()
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.top, JunoSpace.tight)
@@ -279,8 +281,10 @@ public struct JunoModelSelector: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
 
+                // Neutral: a tag is a fact about the row, and coral is spent
+                // on the one action on a surface, never on a mark (§0.4).
                 if auto {
-                    JunoCapsuleTag("Smart", tint: Color.junoAccent)
+                    JunoCapsuleTag("Smart")
                 }
 
                 Spacer(minLength: JunoSpace.hairline)
@@ -300,9 +304,11 @@ public struct JunoModelSelector: View {
                         .lineLimit(1)
                 }
 
+                // The model in use is marked in ink, not the accent: selection
+                // never spends coral (§0.4).
                 if selected {
                     JunoIconView(.check, size: 14)
-                        .foregroundStyle(Color.junoAccent)
+                        .foregroundStyle(Color.junoForeground)
                 }
             }
             .padding(.horizontal, JunoSpace.snug)
@@ -498,13 +504,18 @@ struct JunoModelDetailPanel: View {
 
             Divider()
 
+            // The panel's one prominent action, in the system's bordered style
+            // rather than tinted glass: the selector is always presented in a
+            // popover, which is glass already, and glass on glass is the one
+            // layering the design never allows (§0.1, §10.2).
             Button(action: use) {
                 Text(JunoModelSelectorCatalog.useLabel(model, selected: isSelected))
                     .junoFont(size: 13, relativeTo: .subheadline, weight: .medium)
                     .frame(maxWidth: .infinity)
                     .contentShape(.rect)
             }
-            .junoProminentAction()
+            .buttonStyle(.borderedProminent)
+            .tint(Color.junoAccent)
             .controlSize(.large)
             .disabled(isSelected || JunoModelSelectorCatalog.isComingSoon(model) || otherwiseUnavailable)
             .padding(JunoSpace.cozy)
@@ -575,8 +586,10 @@ struct JunoModelDetailPanel: View {
         if pricingLine != nil || JunoModelSelectorCatalog.requiredPlan(model) != nil {
             Divider()
             VStack(alignment: .leading, spacing: 2) {
+                // A section label in words, so sans (§10.2 #6); the prices
+                // under it keep their tabular digits.
                 Text("Pricing")
-                    .junoFont(size: 10, relativeTo: .caption2, design: .monospaced)
+                    .junoFont(size: 11, relativeTo: .caption2)
                     .junoSecondaryInk()
                 if let pricingLine {
                     pricingLine
@@ -664,7 +677,9 @@ struct JunoModelDetailPanel: View {
                 Text(model.displayName)
                     .junoFont(size: 15, relativeTo: .headline, weight: .semibold)
                     .junoInk()
-                JunoCapsuleTag("Recommended", tint: Color.junoAccent)
+                // Neutral, as every tag is: the Use button below is this
+                // panel's one coral (§0.4).
+                JunoCapsuleTag("Recommended")
             }
             Spacer(minLength: 0)
             providerTile
@@ -681,9 +696,11 @@ struct JunoModelDetailPanel: View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             ForEach(Self.autoTiers, id: \.0) { number, line in
                 HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                    // A count, so mono; ink rather than coral, which is not
+                    // spent on decoration (§0.4).
                     Text(number)
                         .junoFont(size: 11, relativeTo: .caption, weight: .bold, design: .monospaced)
-                        .foregroundStyle(Color.junoAccent)
+                        .foregroundStyle(Color.junoForeground)
                     Text(line)
                         .junoFont(size: 11, relativeTo: .caption)
                         .junoSecondaryInk()

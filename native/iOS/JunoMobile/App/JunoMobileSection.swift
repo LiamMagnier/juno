@@ -49,8 +49,8 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     /// Mac's sidebar has always used; `new` is a plus, and a plus belongs on the
     /// control that *starts* a chat, not on the destination that lists them.
     /// Settings is `settings`, now that the shared icon set carries one — it fell
-    /// back to `gearshape` before, the only SF Symbol in an otherwise Lucide
-    /// column, which read as a glyph borrowed from another product.
+    /// back to `gearshape` before, the only SF Symbol in a column of the web's
+    /// own marks, which read as a glyph borrowed from another product.
     var junoIcon: JunoIcon {
         switch self {
         case .chat: .home
@@ -68,7 +68,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
 
     /// Legacy symbol names kept for older navigation tests and integrations.
     /// The production drawer never renders this value; it always uses
-    /// ``junoIcon`` so the visible rail stays on the website's Lucide geometry.
+    /// ``junoIcon`` so the visible rail stays on the website's own geometry.
     var systemImage: String {
         switch self {
         case .chat: "square.and.pencil"

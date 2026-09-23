@@ -136,12 +136,13 @@ private struct JunoDesktopPreviewWorkspace: View {
 
     /// The product `--juno-preview-tab` asks for.
     ///
-    /// "code" and "work" are products rather than destinations; everything else
-    /// is a Chat destination and is resolved by ``requestedDestination`` below.
+    /// "code" and "work" are products rather than destinations — "work" being
+    /// the legacy tasks workspace now — and everything else is a Chat
+    /// destination, resolved by ``requestedDestination`` below.
     private static var requestedProduct: DesktopProductMode {
         switch JunoPreviewEnvironment.initialDestination {
         case "code": .code
-        case "work": .work
+        case "work": .legacyWork
         default: .chat
         }
     }
@@ -154,6 +155,15 @@ private struct JunoDesktopPreviewWorkspace: View {
             workbenchModel: workbenchModel,
             initialDestination: Self.requestedDestination
         )
+        .onAppear {
+            // Settings is a window of its own now, not a Chat destination, so
+            // the harness's "settings" tab opens that window over Chat.
+            if JunoPreviewEnvironment.initialDestination == "settings" {
+                let section = JunoPreviewEnvironment.initialSettingsRoute
+                    .flatMap(DesktopSettingsSection.init(rawValue:)) ?? .general
+                DispatchQueue.main.async { DesktopSettingsRouter.open(section) }
+            }
+        }
     }
 
     /// The `--juno-preview-tab` value as a sidebar destination.

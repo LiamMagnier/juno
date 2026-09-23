@@ -21,13 +21,6 @@ public struct JunoColorToken: Hashable, Sendable {
         self.opacity = opacity
     }
 
-    private init(uncheckedRed red: Double, green: Double, blue: Double, opacity: Double = 1) {
-        self.red = red
-        self.green = green
-        self.blue = blue
-        self.opacity = opacity
-    }
-
     /// Package-internal constructor for the curated palette tokens, whose
     /// components are known-valid literals.
     init(unchecked red: Double, _ green: Double, _ blue: Double, _ opacity: Double = 1) {
@@ -37,49 +30,65 @@ public struct JunoColorToken: Hashable, Sendable {
         self.opacity = opacity
     }
 
-    // The brand primitives, converted from the web's own custom properties in
-    // `src/app/globals.css` so the two platforms cannot drift. The comment on
-    // each token is the HSL triple it was derived from.
+    // The brand primitives. Every one of them now reads the generated
+    // projection of `src/app/globals.css` (`Generated/JunoGeneratedTokens.swift`)
+    // rather than holding a hand-converted triple.
+    //
+    // `warmWhite` and `warmBlack` used to sit here as the canvas, and they were
+    // the reason this comment exists. They were the one ground the generator
+    // did not feed, so they went stale twice: `48 7% 9%` after the web moved to
+    // a 4% ground, and then 4% after the web moved back up to the 11.5% warm
+    // charcoal it ships today — which left the Mac painting a near-black the
+    // website no longer has. The canvas is now `JunoGeneratedColors.background`
+    // like every other surface (see `JunoColorToken.canvasLight`). The one
+    // hand-kept ground left is the phone's dark canvas, held at its shipped 4%
+    // on purpose and documented where it is declared.
 
-    /// `--primary: 15 54% 46%`. Juno's coral. Deliberately the *same* value in
-    /// light and dark — the web does not brighten it, and neither should we.
+    /// `--primary`: Juno's coral, the same value in light and dark — the web
+    /// does not brighten it, and neither should we.
     ///
-    /// Darkened from 51%: white on `15 54% 51%` computes to 4.081:1, below the
-    /// 4.5:1 the primary CTA's 14px medium label needs. Hue and saturation are
-    /// untouched, so the warm coral character is exactly as before.
-    public static let coral = JunoColorToken(
-        uncheckedRed: 0.7084,
-        green: 0.3358,
-        blue: 0.2116
-    )
-    /// `--background` (light): `54 18% 97%`. A warm off-white, not a pure grey.
+    /// `15 54% 46%`, darkened from 51% on the web so white on it clears the
+    /// 4.5:1 the primary CTA's label needs. This is the *brand* coral, not the
+    /// account's accent: anything that should follow the accent picker reads
+    /// ``SwiftUI/Color/junoAccent`` instead.
+    public static let coral = JunoGeneratedColors.primary.light
+
+    /// This token at a fraction of its current alpha.
     ///
-    /// Lightness is unchanged at 97% — only hue and chroma moved, so no surface
-    /// relationship or elevation step shifts. Still warm: R > G > B.
-    public static let warmWhite = JunoColorToken(
-        uncheckedRed: 0.9754,
-        green: 0.9743,
-        blue: 0.9646
-    )
-    /// `--background` (dark): `48 5% 4%`. Warm — red highest, blue lowest.
-    ///
-    /// Hand-transcribed rather than read from `JunoGeneratedColors`, because
-    /// this is the one ground the generator does not project. That is exactly
-    /// why it goes stale: it still said `48 7% 9%` after the web dropped to a
-    /// 4% ground, which inverted
-    /// ``JunoDesignTokensTests/testDarkCanvasIsDarkerThanEverySurfaceAboveIt``
-    /// — the canvas measured *lighter* than the card sitting on it, so in dark
-    /// mode every card would have read as a dent instead of a float.
-    ///
-    /// Saturation is 5%, not the old 7%, for the reason `globals.css` states
-    /// beside the dark ramp: 7% was tuned against a 9% ground, and the same
-    /// tint over near-black has no lightness left to dilute it and turns to
-    /// brown sludge in the shadows.
-    public static let warmBlack = JunoColorToken(
-        uncheckedRed: 0.042,
-        green: 0.0412,
-        blue: 0.038
-    )
+    /// The derived tokens — tertiary ink, the glass fills, the selection edge —
+    /// are a web ink at an opacity (`text-muted-foreground/70`,
+    /// `foreground / 0.06`). Deriving them here, from the projected ink, is
+    /// what keeps them following that ink when the web retunes it; a literal
+    /// RGBA would be one more hand-kept copy.
+    public func withOpacity(_ factor: Double) -> JunoColorToken {
+        JunoColorToken(unchecked: red, green, blue, opacity * min(max(factor, 0), 1))
+    }
+
+    /// The same hue and saturation, `delta` lighter (positive) or darker
+    /// (negative) in HSL lightness — the unit every web colour token is
+    /// written in, so a declared divergence can be stated as "one step darker
+    /// than the web" and keep meaning that when the web moves.
+    public func adjustingLightness(by delta: Double) -> JunoColorToken {
+        let maxC = max(red, green, blue)
+        let minC = min(red, green, blue)
+        let lightness = (maxC + minC) / 2
+        let chroma = maxC - minC
+        var hue = 0.0
+        var saturation = 0.0
+        if chroma > 0 {
+            saturation = chroma / (1 - abs(2 * lightness - 1))
+            switch maxC {
+            case red: hue = 60 * ((green - blue) / chroma).truncatingRemainder(dividingBy: 6)
+            case green: hue = 60 * ((blue - red) / chroma + 2)
+            default: hue = 60 * ((red - green) / chroma + 4)
+            }
+            if hue < 0 { hue += 360 }
+        }
+        let shifted = JunoColorToken(
+            hsl: (hue, saturation, min(max(lightness + delta, 0), 1))
+        )
+        return JunoColorToken(unchecked: shifted.red, shifted.green, shifted.blue, opacity)
+    }
 }
 
 public extension Color {
@@ -204,33 +213,66 @@ public enum JunoCornerRadius {
 public enum JunoMotion {
 
     // MARK: - The ladder
+    //
+    // Every timed rung is a generated duration on a generated curve
+    // (`JunoGeneratedDuration` × `JunoGeneratedEasing`), so the Mac runs the
+    // web's own `transition: <dur> <ease>` pairs rather than SwiftUI's stock
+    // `.easeOut`/`.easeIn`, which are neither of the web's curves. The springs
+    // keep SwiftUI's duration/bounce form — the web has no spring token to
+    // project — and are the only rungs ``platformFactor`` touches.
 
-    /// A press. Below the direct-manipulation threshold: anything slower than
-    /// ~70ms on a transform is *felt* as lag on the one interaction where
-    /// latency is most obvious.
+    /// A press: `--dur-press` (70ms) on `--ease-out-soft`, for the 0.97 dip.
     ///
-    /// Its home is ``JunoPressButtonStyle`` — the rung had zero call sites until
-    /// there was a button style that owned it, because no view author reaches
-    /// for a 70ms animation by hand.
-    public static let press = Animation.easeOut(duration: Duration.press)
-    /// Immediate feedback: taps, toggles, icon morphs (e.g. + → ×), Send/Stop.
-    public static let fast = Animation.easeOut(duration: Duration.fast)
-    /// A dismissal. Entrances decelerate, exits accelerate — the product had no
-    /// accelerate curve at all, which is why every dismissal read as the UI
-    /// being reluctant to let go. Exit is ~0.65 × its entrance.
+    /// Below the direct-manipulation threshold: anything slower than ~70ms on
+    /// a transform is *felt* as lag on the one interaction where latency is
+    /// most obvious. Its home is ``JunoPressButtonStyle`` — no view author
+    /// reaches for a 70ms animation by hand.
+    public static let press = outSoft(Duration.press)
+    /// Feedback on the element already under the pointer: a hover fill, a
+    /// face swap (send → stop), the message action row's reveal.
+    /// `--dur-fast` (120ms) on `--ease-out-soft`.
+    public static let fast = outSoft(Duration.fast)
+    /// Everything leaving: `--dur-exit` (160ms) on `--ease-in`.
     ///
-    /// Its home is ``SwiftUI/AnyTransition/junoOverlay`` and
-    /// ``SwiftUI/AnyTransition/junoInline``: an exit curve is only reachable
-    /// through the removal half of an asymmetric transition, which is why a rung
-    /// whose own doc comment described the bug it fixes still had zero uses.
-    public static let exit = Animation.easeIn(duration: Duration.exit)
-    /// Standard transitions: selection, disclosure, popovers, sheets.
+    /// Entrances decelerate, exits accelerate, and exit is ~0.65 × its
+    /// entrance — a dismissal on an ease-out reads as the UI being reluctant to
+    /// let go. Its home is the removal half of ``SwiftUI/AnyTransition/junoOverlay``
+    /// and ``SwiftUI/AnyTransition/junoInline``: an exit curve is only
+    /// reachable through an asymmetric transition.
+    public static let exit = timingCurve(JunoGeneratedEasing.in, duration: Duration.exit)
+    /// The default entrance: `--dur-base` (220ms) on `--ease-out-soft`. The
+    /// greeting, the starter chips, an arriving turn, a toast.
+    public static let base = outSoft(Duration.base)
+    /// A whole region changing in place: `--dur-slow` (360ms) on
+    /// `--ease-out-expo`. The AI title cross-fading into a sidebar row.
+    public static let slow = outExpo(Duration.slow)
+    /// Standard transitions: selection, the composer growing, tiles, the
+    /// segmented thumb. A 0.22s spring with a 0.05 bounce, × ``platformFactor``.
     public static let standard = Animation.spring(
         duration: Duration.base * platformFactor, bounce: 0.05
     )
-    /// Emphasized transitions: larger spatial moves like the sidebar reveal.
+    /// Emphasized transitions: the composer handoff from the empty state to a
+    /// conversation. A 0.36s spring with a 0.10 bounce, × ``platformFactor``.
     public static let emphasized = Animation.spring(
         duration: Duration.slow * platformFactor, bounce: 0.10
+    )
+    /// The composer handoff (§10.1 of the Mac redesign) as the one transaction
+    /// it is: ``emphasized``, or under Reduce Motion a 160ms cross-fade.
+    ///
+    /// Not ``reduced(_:when:tier:)``, whose travel substitute is 220ms: the
+    /// handoff under Reduce Motion is *several things leaving at once* — the
+    /// greeting, the chips, the composer's lift — and a leaving thing is timed
+    /// on `--dur-exit`. Kept here rather than at the call sites so the two
+    /// places that start a handoff (a first send, a call dialled from a draft)
+    /// cannot drift apart.
+    public static func handoff(reduceMotion: Bool) -> Animation {
+        reduceMotion ? outSoft(Duration.exit) : emphasized
+    }
+    /// Layout that must not overshoot: a dock opening, a panel changing height.
+    /// ``emphasized``'s duration with no bounce, because an edge that bounces
+    /// past its resting place drags the content beside it along twice.
+    public static let layout = Animation.spring(
+        duration: Duration.slow * platformFactor, bounce: 0
     )
     /// Interactive, gesture-following spring for anything tracking a held
     /// finger or a dragged pointer.
@@ -249,7 +291,7 @@ public enum JunoMotion {
     /// Not scaled by ``platformFactor``: a reward is the same size everywhere.
     public static let reward = Animation.spring(duration: Duration.slow, bounce: 0.18)
 
-    /// Same names, different values: the Mac runs the travel rungs at three
+    /// Same names, different values: the Mac runs the springs at three
     /// quarters of the phone's, with identical bounce.
     ///
     /// A pointer covers distance faster than a thumb, the windows are larger,
@@ -257,6 +299,12 @@ public enum JunoMotion {
     /// motion was specified once and shipped twice. One factor, applied here
     /// and nowhere else — a call site that multiplies by hand is starting a
     /// second ladder.
+    ///
+    /// **Springs only.** The timed rungs (press, fast, exit, base, slow) are the
+    /// web's own durations and stay exactly that on the Mac: they pace
+    /// feedback, not travel, and a hover that answers faster than the web's
+    /// would read as a different product rather than a native one. Recorded
+    /// as deliberate difference 11 in the redesign spec's register (§0.8).
     public static var platformFactor: Double {
         #if os(macOS)
             return 0.75
@@ -342,11 +390,67 @@ public enum JunoMotion {
     /// numbers. One ladder, one rung.
     public static let canvasEnter = outExpo(Duration.base)
 
-    /// The web's `rise-in`: opacity 0→1 over a short lift on `--ease-out-strong`,
-    /// pinned to the ladder's `slow` rung rather than the 0.32 it shipped as.
-    /// Shared by an arriving message, the greeting's two beats and the voice
-    /// dock's entrance.
+    /// The web's `rise-in`: opacity 0→1 over a ``riseDistance`` lift, on
+    /// `--dur-base` and `--ease-out-soft` — `animate-rise-in` in
+    /// `tailwind.config.ts`, which is ``base`` exactly.
+    ///
+    /// It used to be `--ease-out-strong` over 360ms, a curve and a duration the
+    /// web's keyframe never used: the greeting and each arriving turn landed a
+    /// beat later, and harder, than the same moment in the browser.
+    ///
+    /// **The phone keeps the old entrance for now.** Its greeting and message
+    /// arrival were choreographed against the 360ms rise (the greeting's two
+    /// beats are staged on it), so retiming them is part of the phone's own
+    /// pass rather than a token change that lands underneath it.
+    #if os(iOS)
     public static let riseIn = timingCurve(JunoGeneratedEasing.outStrong, duration: Duration.slow)
+    #else
+    public static let riseIn = base
+    #endif
+
+    /// How far a `rise-in` entrance travels, in points: the web's 6px
+    /// (`translateY(calc(6px * var(--motion-shift, 1)))`). Read it through
+    /// ``shift(_:reduceMotion:)`` so Reduce Motion zeroes it.
+    public static let riseDistance: CGFloat = 6
+
+    /// A travel distance, or zero under Reduce Motion — the native form of the
+    /// web's `--motion-shift`, which multiplies every translating keyframe.
+    public static func shift(_ distance: CGFloat, reduceMotion: Bool) -> CGFloat {
+        reduceMotion ? 0 : distance
+    }
+
+    /// A starting scale, or identity under Reduce Motion — the web's
+    /// `--motion-scale-from`.
+    public static func scaleFrom(_ scale: CGFloat, reduceMotion: Bool) -> CGFloat {
+        reduceMotion ? 1 : scale
+    }
+
+    /// The periods of the loops that carry live state, in seconds. Each one
+    /// runs on `--ease-breathe` (``JunoGeneratedEasing/breathe``) on the web,
+    /// and each one stops under Reduce Motion through ``ambient(_:when:)``.
+    ///
+    /// Only live state loops. A loop with nothing happening behind it is the
+    /// ambient decoration the redesign removes.
+    public enum Loop {
+        /// `thinking-matrix`: the nine-dot working mark.
+        public static let matrix: TimeInterval = 1.8
+        /// `status-glow`: the live status dot's breathe.
+        public static let statusBreathe: TimeInterval = 2.8
+        /// `skeleton-breathe`: a loading placeholder's rise and settle.
+        public static let skeletonBreathe: TimeInterval = 1.8
+    }
+
+    /// One of the ``Loop`` periods as a running breathe: half the period out on
+    /// `--ease-breathe`, half back, forever.
+    ///
+    /// Always pass it through ``ambient(_:when:)`` — a loop is the one kind of
+    /// motion Reduce Motion stops rather than shortens — and drive it from a
+    /// state flipped in `onAppear`, so the loop has two values to travel
+    /// between.
+    public static func breathe(period: TimeInterval) -> Animation {
+        timingCurve(JunoGeneratedEasing.breathe, duration: period / 2)
+            .repeatForever(autoreverses: true)
+    }
 
     /// Builds a SwiftUI curve from a projected cubic-bezier quadruple.
     ///
@@ -373,8 +477,12 @@ public enum JunoMotion {
     /// want to stop.
     public enum Tier: Sendable {
         /// Something moves, resizes, or crosses the layout: a sheet rising, a
-        /// row sliding, a panel revealing. **Collapses to a flat cross-fade.**
-        /// This is the tier the preference exists for.
+        /// row sliding, a panel revealing. **Its spring becomes `--ease-out-soft`
+        /// at `--dur-base`, and the caller drops the distance** through
+        /// ``JunoMotion/shift(_:reduceMotion:)`` and
+        /// ``JunoMotion/scaleFrom(_:reduceMotion:)`` — so what is left is the
+        /// same change as a cross-fade. This is the tier the preference exists
+        /// for.
         case travel
         /// Colour, opacity or a tint crossfading in place, with no geometry
         /// change. **Survives unchanged.** Reduce Motion asks for less movement,
@@ -390,11 +498,20 @@ public enum JunoMotion {
 
     /// Returns the animation Reduce Motion should get for a given ``Tier``.
     ///
-    /// The default tier is ``Tier/travel``, which is the behaviour every
-    /// existing call site already had — a flat 160ms ease-out, deliberately not
+    /// The default tier is ``Tier/travel``: deliberately an animation and not
     /// `nil`, because returning nil made 117 sites snap and a user who enables
     /// the preference stopped being told that anything had happened at all.
     /// Pass `.tint` or `.ambient` where the animation is genuinely one of those.
+    ///
+    /// The travel substitute is the web's own reduced-motion block in
+    /// `globals.css`, which re-points `--ease-spring`, `--ease-out-strong` and
+    /// `--ease-out-expo` at `--ease-out-soft` and caps `--dur-slow` at
+    /// `--dur-base`: a spring with its travel removed has nothing left to
+    /// overshoot, and a spring on opacity alone clips.
+    ///
+    /// On 26.4 and later, pass ``JunoAccessibilityPreferences/reducesTravel``
+    /// rather than the bare Reduce Motion flag, so the system's "Prefer
+    /// Cross-Fade Transitions" setting is answered by the same substitution.
     public static func reduced(
         _ animation: Animation,
         when reduceMotion: Bool,
@@ -402,7 +519,7 @@ public enum JunoMotion {
     ) -> Animation? {
         guard reduceMotion else { return animation }
         switch tier {
-        case .travel: return .easeOut(duration: Duration.exit)
+        case .travel: return outSoft(Duration.base)
         case .tint: return animation
         case .ambient: return nil
         }
@@ -521,7 +638,7 @@ public extension AnyTransition {
     static var junoPage: AnyTransition {
         .asymmetric(
             insertion: .opacity
-                .combined(with: .offset(y: 6))
+                .combined(with: .offset(y: JunoMotion.riseDistance))
                 .animation(JunoMotion.riseIn),
             removal: .opacity.animation(JunoMotion.exit)
         )
@@ -548,15 +665,33 @@ public struct JunoAccessibilityPreferences: Equatable, Sendable {
     public var reduceMotion: Bool
     public var reduceTransparency: Bool
     public var increaseContrast: Bool
+    /// The system's "Prefer Cross-Fade Transitions" (26.4 and later; always
+    /// false before it). It asks for the same thing as Reduce Motion's travel
+    /// tier — the change without the movement — so the two are answered by one
+    /// substitution through ``reducesTravel``.
+    public var prefersCrossFadeTransitions: Bool
 
     public init(
         reduceMotion: Bool = false,
         reduceTransparency: Bool = false,
-        increaseContrast: Bool = false
+        increaseContrast: Bool = false,
+        prefersCrossFadeTransitions: Bool = false
     ) {
         self.reduceMotion = reduceMotion
         self.reduceTransparency = reduceTransparency
         self.increaseContrast = increaseContrast
+        self.prefersCrossFadeTransitions = prefersCrossFadeTransitions
+    }
+
+    /// Whether travel — a lift, a slide, a scale — should collapse to a
+    /// cross-fade. Pass this as the `when:` of
+    /// ``JunoMotion/reduced(_:when:tier:)`` for the travel tier and to
+    /// ``JunoMotion/shift(_:reduceMotion:)``.
+    ///
+    /// Loops answer Reduce Motion alone: a cross-fade preference says how a
+    /// transition should look, not that ambient state should stop.
+    public var reducesTravel: Bool {
+        reduceMotion || prefersCrossFadeTransitions
     }
 
     /// A *scheduling* duration under Reduce Motion: a `Task.sleep` before a
@@ -589,10 +724,15 @@ public extension EnvironmentValues {
     /// the user flips mid-session propagates exactly as the underlying
     /// environment values do.
     var junoAccessibility: JunoAccessibilityPreferences {
-        JunoAccessibilityPreferences(
+        var crossFade = false
+        if #available(macOS 26.4, iOS 26.4, *) {
+            crossFade = accessibilityPrefersCrossFadeTransitions
+        }
+        return JunoAccessibilityPreferences(
             reduceMotion: accessibilityReduceMotion,
             reduceTransparency: accessibilityReduceTransparency,
-            increaseContrast: colorSchemeContrast == .increased
+            increaseContrast: colorSchemeContrast == .increased,
+            prefersCrossFadeTransitions: crossFade
         )
     }
 }

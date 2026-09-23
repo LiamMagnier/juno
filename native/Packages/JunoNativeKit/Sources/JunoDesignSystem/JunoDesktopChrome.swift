@@ -39,13 +39,14 @@ import SwiftUI
 /// A fixed-width sidebar was the single most un-Mac-like thing about the first
 /// desktop shell: every real Mac source list can be dragged, and the width a
 /// user picks is part of how they arrange their window. `ideal` is the width the
-/// window opens at; `minimum` still fits the longest destination label
-/// ("Connections") without truncating; `maximum` stops the column from eating
-/// the reading canvas.
+/// window opens at — the web's `SIDEBAR_DEFAULT` (`app-shell.tsx`), so a chat
+/// title truncates at the same character on both; `minimum` still fits the
+/// footer's name, plan word and gear without clipping; `maximum` stops the
+/// column from eating the reading canvas on the 820pt minimum window.
 public enum JunoSidebarMetrics {
-    public static let minimum: CGFloat = 208
-    public static let ideal: CGFloat = 264
-    public static let maximum: CGFloat = 380
+    public static let minimum: CGFloat = 224
+    public static let ideal: CGFloat = 304
+    public static let maximum: CGFloat = 336
 }
 
 /// The inspector column's resize range. Narrower than the sidebar because it
@@ -76,9 +77,15 @@ public extension View {
     /// which is why the brief forbids glass here. Chrome floating *over* this
     /// surface is what carries the material.
     ///
-    /// **Apply it once, at the window level** — on the `NavigationSplitView`'s
-    /// detail column, or on a sheet's root — and never again inside a page. The
-    /// canvas is a *backdrop*: content belongs on ``SwiftUI/View/junoCard(cornerRadius:)``
+    /// **Apply it once, at the window level** — and never again inside a page.
+    /// Chat's window does not use it at all: the main window paints
+    /// `Color.junoCanvas` as its `.containerBackground(for: .window)`, which is
+    /// what lets a transcript scroll under the toolbar and the chrome's glass
+    /// sample warm paper (§1.2 of the Liquid Glass redesign); a detail column
+    /// painted opaque on top of that stops content at the toolbar's edge. This
+    /// is for a surface with no such container — a secondary window's root, a
+    /// sheet's — and for the columns not yet reworked. The canvas is a
+    /// *backdrop*: content belongs on ``SwiftUI/View/junoCard(cornerRadius:)``
     /// above it, with the warm ground showing around and between, exactly as the
     /// web puts white `--card` surfaces on `--background`. A page that repaints
     /// the canvas over its own content is what turns the window into one flat
@@ -110,14 +117,16 @@ public extension View {
 
 public extension View {
     /// Makes a `.sidebar`-style `List` resolve its selection to the web's
-    /// `--sidebar-selected` instead of to Juno's coral.
+    /// `--sidebar-selected` instead of to the app's accent.
     ///
-    /// macOS draws the focused selection of a source list in the **app's accent**,
-    /// and Juno's accent asset is coral — so every selected row came out as a
-    /// full-width saturated coral bar, which is nothing like the web shell, where
-    /// the active row is `.sidebar-row-selected`: warm paper picked out of warm
-    /// paper, a clear step off the column and bounded by a hairline. Coral on the web is spent on *one* primary action, never on a whole
-    /// row.
+    /// macOS draws the focused selection of a source list in the **app's accent**
+    /// — the reader's system accent, or the app's `AccentColor` asset, which is
+    /// graphite (the web's neutral `--ring`, ``SwiftUI/Color/junoRing``) and
+    /// never coral. Either way the selected row came out as a full-width
+    /// saturated bar, which is nothing like the web shell, where the active row
+    /// is `.sidebar-row-selected`: warm paper picked out of warm paper, a clear
+    /// step off the column and bounded by a hairline. Coral on the web is spent
+    /// on *one* primary action, never on a whole row.
     ///
     /// This is a tint, not a hand-drawn highlight, and that distinction is the
     /// whole point. `List(selection:)` keeps drawing the selection itself, so
@@ -152,17 +161,21 @@ public extension View {
     /// the first attempt shipped. Clear while unselected, so an unselected row
     /// is still nothing but the vibrant column it sits on.
     ///
+    /// **Opaque, plus a 1pt edge** (§2.6 of the redesign). The fill is the
+    /// generated `--sidebar-selected`, which is solid on purpose: the focused
+    /// selection underneath is drawn in the *system* accent, and a translucent
+    /// pill lets that blue show through — the one failure the "no blue" gate
+    /// exists to catch. The fill is barely a step off the column, so the edge
+    /// is what actually says "selected", exactly as the web's
+    /// `.sidebar-row-selected` outline does; it rises to 24% under Increase
+    /// Contrast.
+    ///
     /// The `List` keeps drawing the selection itself, so arrow keys,
     /// type-select and the focus ring all keep working; only the colour the
-    /// reader sees is Juno's — the web's `--sidebar-selected`, in both states,
-    /// the way the web draws it. Apply this to every selectable row of a
+    /// reader sees is Juno's. Apply this to every selectable row of a
     /// `.sidebar` list alongside ``junoSidebarRowInk()``.
     func junoSidebarRowSelection(_ selected: Bool) -> some View {
-        listRowBackground(
-            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                .fill(selected ? Color.junoSidebarSelection : Color.clear)
-                .padding(.horizontal, JunoSpace.tight)
-        )
+        listRowBackground(JunoSidebarSelectionPill(selected: selected))
     }
 
     /// Pins a source-list row's ink so a pale selection cannot invert it.
@@ -225,6 +238,32 @@ public extension View {
     @available(macOS 26.0, *)
     func junoSidebarScrollEdge() -> some View {
         scrollEdgeEffectStyle(.soft, for: .bottom)
+    }
+}
+
+/// The web's selected-row recipe as a row background: the opaque
+/// `--sidebar-selected` fill in the control radius, and a 1pt inset edge.
+///
+/// A view rather than a shape expression inside the modifier because the edge
+/// has to read Increase Contrast, and only a view can read the environment.
+/// Clear — fill and edge both — while unselected.
+struct JunoSidebarSelectionPill: View {
+    let selected: Bool
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+        shape
+            .fill(selected ? Color.junoSelectedFill : Color.clear)
+            .overlay {
+                shape.strokeBorder(
+                    selected
+                        ? Color.junoSelectedEdge(increaseContrast: contrast == .increased)
+                        : Color.clear,
+                    lineWidth: 1
+                )
+            }
+            .padding(.horizontal, JunoSpace.tight)
     }
 }
 

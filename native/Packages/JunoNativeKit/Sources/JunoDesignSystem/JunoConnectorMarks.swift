@@ -189,6 +189,30 @@ public struct JunoConnectorMark: View {
 
     @MainActor
     private static var iconCache: [String: NSImage?] = [:]
+
+    /// The connector's mark as an image a system menu can draw beside a row, or
+    /// nil when there is only a monogram to offer.
+    ///
+    /// A menu item takes an `Image`, not a view, so the ``JunoConnectorMark``
+    /// view itself cannot be handed to the composer's Connectors submenu. The
+    /// order is the view's — the installed app, then the bundled brand artwork
+    /// — and the copy is sized to the row, because AppKit draws an image at its
+    /// own size and the bundled marks are larger than a menu line. A catalog
+    /// logo is not fetched here: a menu is not the place to wait on a CDN.
+    @MainActor
+    public static func menuImage(for connectorID: String, size: CGFloat = 16) -> NSImage? {
+        let source = applicationIcon(for: connectorID)
+            ?? NSImage(named: "connector-\(connectorID.lowercased())")
+        guard let source else { return nil }
+        let sized = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            source.draw(in: rect)
+            return true
+        }
+        // A template mark (GitHub, Notion) stays a template, so the menu inks
+        // it for the appearance; a brand-coloured one keeps its colours.
+        sized.isTemplate = source.isTemplate
+        return sized
+    }
     #endif
 }
 

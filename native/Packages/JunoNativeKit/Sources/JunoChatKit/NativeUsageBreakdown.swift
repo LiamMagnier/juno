@@ -681,6 +681,22 @@ public struct NativeUsageClient: Sendable {
         )
     }
 
+    /// The plan meters alone — the cheap route, without the ledger scan.
+    ///
+    /// For surfaces that show the plan and nothing else: the sidebar footer's
+    /// plan word, which is read on every window and must not cost a year of
+    /// ledger rows to say "Pro". `nil` when the route cannot be read, which the
+    /// caller renders as no plan word rather than as a guessed one.
+    public func loadPlan(for accountID: AccountID) async -> NativeUsagePlan? {
+        let wire = try? await fetch(
+            NativeUsagePlanWire.self,
+            path: "/api/profile/usage",
+            query: [],
+            for: accountID
+        )
+        return wire.map(NativeUsagePlan.init)
+    }
+
     private func fetch<Wire: Decodable>(
         _ type: Wire.Type,
         path: String,

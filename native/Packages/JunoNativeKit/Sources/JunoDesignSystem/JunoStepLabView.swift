@@ -66,7 +66,7 @@ public struct JunoStepLabView: View {
                 if steps.count > 1 { rail }
             }
             Text(lab.title)
-                .font(JunoSerif.font(size: 21, relativeTo: .title3, face: .medium))
+                .junoType(.title)
                 .fixedSize(horizontal: false, vertical: true)
             if let description = lab.description, !compact {
                 Text(description)
@@ -117,7 +117,7 @@ public struct JunoStepLabView: View {
         VStack(alignment: .leading, spacing: compact ? 12 : 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(selected.title)
-                    .font(JunoSerif.font(size: 18, relativeTo: .headline, face: .medium))
+                    .junoType(.heading)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(selected.summary)
                     .junoFont(size: 15, relativeTo: .body)
@@ -136,8 +136,7 @@ public struct JunoStepLabView: View {
                     JunoLessonMicrocap(text: "Notice", tint: .junoAccent)
                         .padding(.top, 1)
                     Text(notice)
-                        .font(JunoSerif.font(size: 14, relativeTo: .subheadline, face: .mediumItalic))
-                        .lineSpacing(5)
+                        .junoType(.ui.weight(.medium).italic())
                         .foregroundStyle(Color.junoForeground.opacity(0.75))
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -202,7 +201,7 @@ public struct JunoStepLabView: View {
                             .junoFont(size: 13, relativeTo: .subheadline, design: .monospaced)
                             .foregroundStyle(Color.junoSuccess)
                         Text("Lab complete")
-                            .font(JunoSerif.font(size: 15, relativeTo: .callout, face: .mediumItalic))
+                            .junoType(.body.weight(.medium).italic())
                             .foregroundStyle(Color.junoForeground.opacity(0.85))
                     }
                     if let takeaway = lab.takeaway {
@@ -212,8 +211,7 @@ public struct JunoStepLabView: View {
                                 .frame(width: 2)
                                 .accessibilityHidden(true)
                             Text(takeaway)
-                                .font(JunoSerif.font(size: 16, relativeTo: .callout, face: .mediumItalic))
-                                .lineSpacing(6)
+                                .junoType(.body.weight(.medium).italic())
                                 .foregroundStyle(Color.junoForeground.opacity(0.85))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.leading, 14)
@@ -550,7 +548,7 @@ private struct JunoTransformerVisual: View {
                         Button { stage = index } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 12) {
                                 Text(item.name)
-                                    .font(JunoSerif.font(size: 14, relativeTo: .subheadline, face: .medium))
+                                    .junoType(.ui.weight(.medium))
                                 Spacer(minLength: 0)
                                 Text(item.role)
                                     .junoFont(size: 10, relativeTo: .caption, design: .monospaced)
@@ -740,9 +738,9 @@ private struct JunoNextTokenVisual: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text(data.prompt + " ")
-                    .font(JunoSerif.font(size: 16, relativeTo: .callout))
+                    .junoType(.bodyLarge)
                 Text(data.token)
-                    .font(JunoSerif.font(size: 16, relativeTo: .callout, face: .medium))
+                    .junoType(.bodyLarge.weight(.medium))
                     .foregroundStyle(Color.junoAccent)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -787,8 +785,7 @@ private struct JunoGenericProcessVisual: View {
                             tint: index == 1 ? .junoAccent : .junoMutedForeground
                         )
                         Text(station.value)
-                            .font(JunoSerif.font(size: 15, relativeTo: .callout))
-                            .lineSpacing(5)
+                            .junoType(.body)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.leading, 14)

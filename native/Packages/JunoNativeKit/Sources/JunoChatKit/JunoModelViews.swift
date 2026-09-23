@@ -161,6 +161,22 @@ public struct JunoThinkingPopover: View {
             || (proMode != nil && scale.supportsProMode)
     }
 
+    /// The panel's height for `scale`, or zero when there is nothing to set.
+    ///
+    /// The Mac's model popover states its frame up front (crash rule 2), so the
+    /// height has to be known before the panel exists. Zero for Auto, which
+    /// picks its own depth, and for a model with fewer than two stops, where a
+    /// slider would have nowhere to go — the popover is then its model row
+    /// alone. Flash and Pro sit in the panel's header row, so they add nothing
+    /// (``JunoThinkingMetrics/modeRowHeight``).
+    nonisolated public static func height(for scale: NativeThinkingScale?) -> CGFloat {
+        guard let scale, !scale.isAutomatic, scale.stops.count >= 2 else { return 0 }
+        return JunoThinkingMetrics.height(
+            caption: scale.junoLadder.caption != nil,
+            modeToggles: false
+        )
+    }
+
     public var body: some View {
         JunoThinkingPanel(
             ladder: scale.junoLadder,

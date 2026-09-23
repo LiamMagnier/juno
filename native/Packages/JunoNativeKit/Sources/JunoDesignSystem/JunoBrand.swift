@@ -72,40 +72,77 @@ public struct JunoLogo: View {
     }
 }
 
-/// A Juno glyph: a product destination, or one of the things Juno Code talks
-/// about.
+/// A Juno glyph: a product destination, one of the things Juno Code talks
+/// about, or a control.
 ///
-/// These are the website's own icons, not lookalikes: the cases mirror
-/// `src/lib/app-icons.ts` one-for-one — the first group is its `AppIcons`, the
-/// second its `CodeIcons` — and the assets are generated from the installed
-/// `lucide-react` by `scripts/generate-native-icons.mjs`, so the two platforms
-/// cannot drift. Regenerate rather than editing the SVGs by hand.
+/// These are the website's own icons, not lookalikes. The web draws every glyph
+/// through `src/components/ui/icons.tsx` — Phosphor's geometry on its 256-unit
+/// grid, plus Juno's own marks — and `src/lib/app-icons.ts` decides which
+/// drawing each concept wears. A case named for a registry key (`AppIcons`,
+/// `CodeIcons`, `ComposerIcons`, `StatusIcons`, `ActionIcons`,
+/// `SettingsIcons`) wears exactly that key's drawing, and
+/// `scripts/generate-native-icons.mjs --check` fails when one does not. The
+/// assets are SF Symbol templates generated from the installed
+/// `@phosphor-icons/react` and `juno-glyph-paths.ts`; regenerate rather than
+/// editing them by hand.
 ///
-/// SF Symbols remain correct for *system* affordances — back, close, share,
-/// camera, photo picker, chevrons, checkmarks — where there is no Juno icon and
-/// the platform glyph is what a user already recognises. The line is whether
-/// the mark names something in the product or something in the OS: a pull
-/// request is Juno's, a disclosure chevron is Apple's.
+/// Several cases can wear one drawing — `.edit` and `.pencil`, `.dismiss` and
+/// `.close` — because the web's registries name concepts, and two concepts may
+/// share a mark without being the same thing.
+///
+/// SF Symbols remain correct for what the system owns (§8.6): the sidebar
+/// toggle, the magnifier inside a system search field, menu checkmarks,
+/// disclosure chevrons, `ProgressView`, window controls and the share sheet's
+/// own glyph. The line is whether the mark names something in the product or
+/// something in the OS: a pull request is Juno's, a disclosure chevron is
+/// Apple's.
 public enum JunoIcon: String, CaseIterable, Sendable {
     case home, work, code, library, artifacts, projects
     case tasks, connections, pulls, conversation, new, search
 
-    /// The web reaches Settings from the user menu rather than the rail, so this
-    /// mark had no destination row to be generated for and the native sidebars —
-    /// which do have one — fell back to `gearshape`. One SF Symbol sitting in a
-    /// column of Lucide marks reads as a glyph borrowed from another product,
-    /// which is exactly the drift this enum exists to prevent.
+    /// The web reaches Settings from the user menu rather than the rail, and
+    /// draws it with the same six-toothed gear (`AppIcons.settings`); the native
+    /// sidebars give it a row.
     case settings
 
-    /// Juno Code's vocabulary. `pin` is a pin and never a star, `error` is a
-    /// circle and never a triangle, and `branch` covers repository, default
-    /// branch and base ref alike — each because that is what the web draws.
+    /// The rest of `AppIcons`: Juno Design, and the destinations the web's
+    /// command palette and More menu name.
+    case design, assistants, skills, automations, permissions
+
+    /// Juno Code's vocabulary (`CodeIcons`). `pin` is a pin and never a star,
+    /// `error` is a circle and never a triangle, and `branch` covers
+    /// repository, default branch and base ref alike — each because that is
+    /// what the web draws.
     case cloud, device, branch, lock, permission
     case pin, error, refresh, external, file
 
-    /// What the composer's "+" menu adds to a message, and the tools it arms.
+    /// What the composer's "+" menu adds to a message, and the tools it arms
+    /// (`ComposerIcons`).
     case attach, photos, files, canvas
-    case research, web, artifactsTool, memory
+    case research, web, artifactsTool, memory, task
+
+    /// `StatusIcons`: what happens to you. A warning is a triangle, an error a
+    /// circle (`.error`, above), a note an "i".
+    case warning, info, success, verified, security
+
+    /// `ActionIcons`: what you do. `.more` is the horizontal overflow on every
+    /// row, card and message; `.restore` is the anticlockwise arrow, and
+    /// ``archiveRestore`` is the box that brings an archived row back.
+    case edit, delete, dismiss, restore, more, parameters
+
+    /// `SettingsIcons`: the settings rail, each named for the thing you edit.
+    case general, personalization, connectors, voice, data, account, billing
+
+    /// The private-chat ghost (`private-chat-toggle.tsx`), with still eyes.
+    /// Its `.fill` cut — the solid body with the face cut out — is the "on"
+    /// state.
+    case privateChat
+
+    /// Marks the web draws under its own export names, where no registry key
+    /// covers them: Unpin (`PinOff`), Restore from the archive
+    /// (`ArchiveRestore`), Screenshot (`Scan`), the voice face (`AudioLines`)
+    /// and Share Screen (`MonitorUp`).
+    case pinOff, archiveRestore, scan, audioLines, monitorUp
 
     /// Settings, profile, and feature sections.
     case usage, appearance, writing, language, models, notifications, about
@@ -117,18 +154,21 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     case arrowDown, volume, thumbsUp, thumbsDown, eyeOff
 
     /// Added for the macOS rework: Codex-class Code shell, message actions,
-    /// native lists. Each case has a key in `scripts/generate-native-icons.mjs`.
+    /// native lists.
     case folderOpen, folderPlus, clock, history, shield, compass, blocks
     case play, pause, gitCommit, fork, fileDiff, list, grid, image
     case circleDot, loader, agents, archive, download, filter, eye, message
     case bell, arrowUp, arrowLeft, arrowRight, minus, box, key, link
     case sun, moon, monitor, home2
 
-    /// Status and state marks — the web's `StatusIcons` and the handful of
-    /// Lucide glyphs its lists draw beside a row's state. Added so the last SF
-    /// Symbol names still crossing a package boundary resolve to a real mark
-    /// instead of the wrench that ``init(systemImage:)``'s predecessor handed
-    /// out for anything it did not recognise.
+    /// Status and state marks — the web's `StatusIcons` under their old
+    /// names, and the glyphs its lists draw beside a row's state. Added so the
+    /// last SF Symbol names still crossing a package boundary resolve to a real
+    /// mark instead of the wrench that ``init(systemImage:)``'s predecessor
+    /// handed out for anything it did not recognise.
+    ///
+    /// `sparkles` and `brain` resolve because existing call sites name them,
+    /// not because they are right: §10.2 bans both as marks for "AI".
     case triangleAlert, circleCheck, circleX, circleMinus, circleHelp, circleDashed
     case circleSlash, circle, circlePause, circlePlay, circleStop, badgeCheck
     case chevronsUpDown, compose, fileSearch, filePlus, fileCode, fileQuestion
@@ -141,7 +181,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     case logOut, flag, imageOff, activity, gitMerge, volumeX, ellipsisVertical
     case squareStack
     /// The same paperclip as ``attach``, under the name the Code shell reaches
-    /// for. Two names, one asset — a Lucide mark is what it draws, not a role.
+    /// for. Two names, one drawing.
     case paperclip
 
     /// The last marks the shared packages still spelled as SF Symbol names:
@@ -150,8 +190,255 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// long answer can find the sequence diagram without reading its label.
     case squareCheck, square, arrowLeftRight, workflow, chartPie, chartGantt, waypoints
 
-    /// The asset-catalog name, matching the generator's output.
-    public var assetName: String { "nav-\(rawValue)" }
+    /// The generated symbol this case wears, without a cut suffix: `ph.<name>`
+    /// for Phosphor's drawings, `juno.<name>` for Juno's own.
+    ///
+    /// One case per line, and only string literals: the generator's check
+    /// reads this switch to prove every name exists, carries a `.bold` cut,
+    /// and — for a registry key — is the drawing the web's registry assigns.
+    public var symbolName: String {
+        switch self {
+        // Juno's own marks.
+        case .home, .conversation: "juno.chat"
+        case .code: "juno.code"
+        case .design: "juno.design"
+        case .send: "juno.send"
+        case .privateChat: "juno.ghost"
+
+        // AppIcons.
+        case .work, .automations, .task, .workflow: "ph.treestructure"
+        case .library: "ph.books"
+        case .artifacts: "ph.stack"
+        case .projects: "ph.folder"
+        case .folderOpen: "ph.folderopen"
+        case .tasks: "ph.calendardots"
+        case .connections, .connectors: "ph.plug"
+        case .pulls: "ph.gitpullrequest"
+        case .new, .plus: "ph.plus"
+        case .search: "ph.magnifyingglass"
+        case .settings: "ph.gearsix"
+        case .assistants: "ph.robot"
+        case .skills: "ph.scroll"
+        case .permissions, .shieldCheck: "ph.shieldcheck"
+
+        // CodeIcons.
+        case .cloud: "ph.cloud"
+        case .device: "ph.laptop"
+        case .branch: "ph.gitbranch"
+        case .lock: "ph.locksimple"
+        case .permission, .security: "ph.shieldwarning"
+        case .pin: "ph.pushpin"
+        case .error: "ph.warningcircle"
+        case .refresh: "ph.arrowclockwise"
+        case .external: "ph.arrowupright"
+        case .file: "ph.filetext"
+
+        // ComposerIcons.
+        case .attach, .paperclip: "ph.paperclip"
+        case .photos: "ph.imagesquare"
+        case .files: "ph.filearrowup"
+        case .canvas, .memory, .compose: "ph.notepencil"
+        case .research, .binoculars: "ph.binoculars"
+        case .web, .language: "ph.globesimple"
+        case .artifactsTool: "ph.layout"
+        case .scan: "ph.scan"
+
+        // StatusIcons and ActionIcons.
+        case .warning, .triangleAlert: "ph.warning"
+        case .info, .about: "ph.info"
+        case .success, .check: "ph.check"
+        case .verified, .badgeCheck: "ph.sealcheck"
+        case .edit, .pencil: "ph.pencilsimple"
+        case .delete, .trash: "ph.trash"
+        case .dismiss, .close: "ph.x"
+        case .restore, .rotateCcw: "ph.arrowcounterclockwise"
+        case .more, .ellipsis: "ph.dotsthree"
+        case .parameters, .general, .sliders, .filter: "ph.slidershorizontal"
+        case .copy: "ph.copy"
+        case .share: "ph.sharenetwork"
+        case .download: "ph.downloadsimple"
+        case .upload: "ph.uploadsimple"
+        case .link: "ph.linksimple"
+        case .unlink: "ph.linksimplebreak"
+        case .archive: "ph.archive"
+        case .archiveRestore: "ph.boxarrowup"
+        case .pinOff: "ph.pushpinslash"
+        case .logOut: "ph.signout"
+        case .thumbsUp: "ph.thumbsup"
+        case .thumbsDown: "ph.thumbsdown"
+        case .volume: "ph.speakerhigh"
+        case .quote: "ph.quotes"
+        case .fork: "ph.gitfork"
+
+        // SettingsIcons.
+        case .personalization: "ph.usergear"
+        case .models: "ph.cpu"
+        case .data: "ph.database"
+        case .account, .user: "ph.user"
+        case .billing: "ph.creditcard"
+
+        // Voice and media.
+        case .mic, .voice: "ph.microphone"
+        case .micOff: "ph.microphoneslash"
+        case .audioLines: "ph.waveform"
+        case .phoneOff: "ph.phonedisconnect"
+        case .monitorUp: "ph.monitorarrowup"
+        case .monitorOff: "ph.screencast"
+        case .stop, .square: "ph.square"
+        case .play: "ph.play"
+        case .pause: "ph.pause"
+        case .circlePlay: "ph.playcircle"
+        case .circlePause: "ph.pausecircle"
+        case .circleStop: "ph.stopcircle"
+        case .image: "ph.image"
+        case .imageOff: "ph.imagebroken"
+        case .crop: "ph.crop"
+        case .crosshair: "ph.crosshair"
+
+        // Direction and navigation.
+        case .chevronLeft: "ph.caretleft"
+        case .chevronRight: "ph.caretright"
+        case .chevronDown: "ph.caretdown"
+        case .chevronUp: "ph.caretup"
+        case .chevronsUpDown: "ph.caretupdown"
+        case .arrowDown: "ph.arrowdown"
+        case .arrowUp: "ph.arrowup"
+        case .arrowLeft: "ph.arrowleft"
+        case .arrowRight: "ph.arrowright"
+        case .arrowLeftRight: "ph.arrowsleftright"
+        case .maximize: "ph.arrowsoutsimple"
+        case .undo: "ph.arrowuupleft"
+        case .history: "ph.clockcounterclockwise"
+        case .panelLeft: "ph.sidebarsimple"
+        case .panelRight: "ph.sidebarsimple.mirrored"
+        case .ellipsisVertical: "ph.dotsthreevertical"
+
+        // Objects, people and state.
+        case .terminal: "ph.terminalwindow"
+        case .eyeOff: "ph.eyeslash"
+        case .eye: "ph.eye"
+        case .clock: "ph.clock"
+        case .fileDiff, .diff: "ph.gitdiff"
+        case .list: "ph.listbullets"
+        case .listChecks: "ph.listchecks"
+        case .grid: "ph.squaresfour"
+        case .columns: "ph.columns"
+        case .loader: "ph.circlenotch"
+        case .agents: "ph.users"
+        case .message: "ph.chattext"
+        case .minus: "ph.minus"
+        case .box: "ph.package"
+        case .key: "ph.key"
+        case .sun: "ph.sun"
+        case .moon: "ph.moon"
+        case .monitor: "ph.monitor"
+        case .knowledge: "ph.bookopen"
+        case .tools: "ph.wrench"
+        case .circleCheck: "ph.checkcircle"
+        case .circleX: "ph.xcircle"
+        case .circleHelp: "ph.question"
+        case .circleDashed: "ph.circledashed"
+        case .circleSlash: "ph.prohibitinset"
+        case .octagonX: "ph.prohibit"
+        case .circle: "ph.circle"
+        case .fileSearch: "ph.filemagnifyingglass"
+        case .fileCode: "ph.filecode"
+        case .wifiOff: "ph.wifislash"
+        case .sparkles: "ph.sparkle"
+        case .penTool: "ph.pennib"
+        case .lockOpen: "ph.locksimpleopen"
+        case .hand: "ph.hand"
+        case .shieldOff: "ph.shieldslash"
+        case .activity: "ph.pulse"
+        case .squareStack: "ph.cards"
+        case .cloudOff: "ph.cloudslash"
+
+        // Named by a native surface only; each is Phosphor's own drawing of it.
+        case .usage: "ph.chartbar"
+        case .appearance: "ph.palette"
+        case .writing: "ph.textalignleft"
+        case .notifications, .bell: "ph.bell"
+        case .folderPlus: "ph.folderplus"
+        case .shield: "ph.shield"
+        case .compass: "ph.compass"
+        case .blocks: "ph.puzzlepiece"
+        case .gitCommit: "ph.gitcommit"
+        case .gitMerge: "ph.gitmerge"
+        case .circleDot: "ph.record"
+        case .home2: "ph.house"
+        case .circleMinus: "ph.minuscircle"
+        case .filePlus: "ph.fileplus"
+        case .fileQuestion: "ph.filedashed"
+        case .clockCheck, .calendarCheck: "ph.calendarcheck"
+        case .clockAlert: "ph.clockcountdown"
+        case .hourglass: "ph.hourglass"
+        case .appWindow: "ph.appwindow"
+        case .userCircle: "ph.usercircle"
+        case .brain: "ph.brain"
+        case .chartLine: "ph.chartline"
+        case .chartPie: "ph.chartpie"
+        case .chartGantt: "ph.chartbarhorizontal"
+        case .gauge: "ph.gauge"
+        case .dollar: "ph.currencydollar"
+        case .equal: "ph.equals"
+        case .location: "ph.mappin"
+        case .textCursor: "ph.cursortext"
+        case .layoutList: "ph.rows"
+        case .power: "ph.power"
+        case .flag: "ph.flag"
+        case .volumeX: "ph.speakerx"
+        case .squareCheck: "ph.checksquare"
+        case .waypoints: "ph.graph"
+        }
+    }
+
+    /// The symbols that ship a `.fill` cut: the "on" drawings — a pinned row,
+    /// the stop face, a rated reply, the selected product, private mode on.
+    /// Everything else has no solid drawing, and asking for one draws the
+    /// outline rather than an empty frame.
+    static let filledSymbols: Set<String> = [
+        "juno.chat", "juno.code", "juno.design", "juno.ghost",
+        "ph.pushpin", "ph.square", "ph.thumbsup", "ph.thumbsdown",
+    ]
+
+    /// Which of a glyph's drawings to use — the web's `weight`, and the only
+    /// three the apps ship.
+    public enum Weight: String, CaseIterable, Sendable {
+        /// The house weight: a 16-unit line on the 256 grid, 1pt at 16pt.
+        case regular
+        /// The heavier cut, for 13pt and under, where a 1pt line starts to
+        /// disappear.
+        case bold
+        /// The solid drawing, for an "on" or selected state only.
+        case fill
+    }
+
+    /// Whether this glyph has a solid drawing for an "on" state.
+    public var hasFill: Bool { Self.filledSymbols.contains(symbolName) }
+
+    /// The regular cut's asset name — what `Image(_:)`, `Label(_:image:)` and
+    /// `NSImage(named:)` load. A symbol, so it sizes with the surrounding font
+    /// like an SF Symbol does.
+    public var assetName: String { symbolName }
+
+    /// The asset for one cut. A `.fill` this glyph does not have falls back to
+    /// the regular drawing: an outline in the "on" state is a smaller mistake
+    /// than an empty frame.
+    public func assetName(_ weight: Weight) -> String {
+        switch weight {
+        case .regular: symbolName
+        case .bold: "\(symbolName).bold"
+        case .fill: hasFill ? "\(symbolName).fill" : symbolName
+        }
+    }
+
+    /// The web's optical rule (`icons.tsx`): the solid drawing only for an "on"
+    /// state, and only where one exists; otherwise the bold cut at 13pt and
+    /// under, where a 1pt line starts to disappear.
+    public func opticalWeight(size: CGFloat, isOn: Bool = false) -> Weight {
+        if isOn, hasFill { return .fill }
+        return size <= 13 ? .bold : .regular
+    }
 
     /// The website's mark for an SF Symbol name, or `nil` when no such mark
     /// exists.
@@ -406,41 +693,162 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     ]
 }
 
-/// Renders a ``JunoIcon`` at a weight that sits correctly beside SF Symbols.
+/// Renders a ``JunoIcon`` in a fixed square, choosing the cut the way the web
+/// does.
 ///
-/// Lucide draws on a 24pt grid with a 2pt stroke. At a 20pt render that stroke
-/// reads slightly heavier than an equivalent SF Symbol, so the default size is
-/// nudged down rather than scaling the artwork up — matching stroke weight
-/// matters more than matching bounding box when the two sit in one list.
+/// `size` is the edge of the 256-unit grid, as on the web: `JunoIconView(.copy,
+/// size: 16)` draws what `<Copy size={16} />` draws. At 13pt and under it takes
+/// the bold cut, whose line survives the size; `isOn: true` takes the solid
+/// drawing where the glyph has one (a pinned row, a rated reply, private mode
+/// on) and is ignored where it does not. `weight:` overrides both, for the few
+/// places the design names a cut outright — the composer's send face is
+/// `JunoIconView(.send, size: 14, weight: .bold)`.
 ///
-/// **This is the one icon API.** `JunoIconView(.copy, size: 16)` in a view,
-/// `Label("Copy", icon: .copy)` where a label is wanted. Every mark is one of
-/// the website's own, generated from `lucide-react`. There is no SF Symbol
-/// path: the `systemImage:` initialiser this once carried drew an empty frame
-/// for a name it could not resolve, and the gap was invisible until someone
-/// looked at the screen. A mark that is missing is now a compile error.
+/// The default size stays at the 19pt the unsized call sites were laid out
+/// against. §8.6's house size is 16 (12 bold, 14, 20 for empty states); new
+/// surfaces pass it.
+///
+/// **This is the one icon API for a fixed box.** Where the system sizes the
+/// glyph — a sidebar row, a menu item, a toolbar label — use the symbol itself
+/// (`Image(.library)`, `Label("Library", image: JunoIcon.library.assetName)`),
+/// which takes the text's size and baseline like an SF Symbol. There is no SF
+/// Symbol path here: the `systemImage:` initialiser this once carried drew an
+/// empty frame for a name it could not resolve, and the gap was invisible until
+/// someone looked at the screen. A mark that is missing is now a compile error.
 public struct JunoIconView: View {
     private let icon: JunoIcon
     private let size: CGFloat
+    private let weight: JunoIcon.Weight
+    @Environment(\.displayScale) private var displayScale
 
-    public init(_ icon: JunoIcon, size: CGFloat = 19) {
+    public init(_ icon: JunoIcon, size: CGFloat = 19, weight: JunoIcon.Weight? = nil, isOn: Bool = false) {
         self.icon = icon
         self.size = size
+        self.weight = weight ?? icon.opticalWeight(size: size, isOn: isOn)
     }
 
     public var body: some View {
-        Image(icon.assetName)
+        JunoGlyphBox.image(named: icon.assetName(weight), box: size, scale: displayScale)
             .renderingMode(.template)
-            .resizable()
-            .scaledToFit()
             .frame(width: size, height: size)
+    }
+}
+
+/// Draws a generated symbol into a square exactly the size of its grid.
+///
+/// Neither of SwiftUI's own routes does this. `.resizable()` on a symbol scales
+/// the *ink* to the frame — a 16pt plus came out 15.5pt wide instead of 12, and
+/// every glyph a different size — and sizing by font needs a frozen
+/// `Font.system(size:)`, which the type gate rightly refuses for text. So the
+/// symbol is asked for at the point size that sets its grid to `box` (the
+/// generator sets the grid at 16/14 of the point size) and drawn with its
+/// cap-height centre — the grid's centre — on the square's centre. Drawn, not
+/// passed through, so no enclosing `font` or `imageScale` can resize it.
+@MainActor
+enum JunoGlyphBox {
+    /// The 256 grid's edge per point of symbol size (`generate-native-icons.mjs`).
+    static let gridPerPoint: CGFloat = 16.0 / 14.0
+
+    #if canImport(UIKit)
+    private static var cache: [String: UIImage] = [:]
+    #elseif canImport(AppKit)
+    private static var cache: [String: NSImage] = [:]
+    #endif
+
+    static func image(named name: String, box: CGFloat, scale: CGFloat) -> Image {
+        #if canImport(UIKit)
+        let key = "\(name)@\(box)x\(scale)"
+        if let cached = cache[key] { return Image(uiImage: cached) }
+        let configuration = UIImage.SymbolConfiguration(pointSize: box / gridPerPoint, weight: .regular)
+        guard let symbol = UIImage(named: name, in: .main, with: configuration) else { return Image(name) }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        let drawn = UIGraphicsImageRenderer(size: CGSize(width: box, height: box), format: format).image { _ in
+            // The alignment rect is the cap-height box, whose centre is the grid's.
+            let insets = symbol.alignmentRectInsets
+            let midX = insets.left + (symbol.size.width - insets.left - insets.right) / 2
+            let midY = insets.top + (symbol.size.height - insets.top - insets.bottom) / 2
+            symbol.withTintColor(.black, renderingMode: .alwaysOriginal)
+                .draw(at: CGPoint(x: box / 2 - midX, y: box / 2 - midY))
+        }
+        .withRenderingMode(.alwaysTemplate)
+        cache[key] = drawn
+        return Image(uiImage: drawn)
+        #elseif canImport(AppKit)
+        let key = "\(name)@\(box)"
+        if let cached = cache[key] { return Image(nsImage: cached) }
+        guard let symbol = NSImage(named: name)?
+            .withSymbolConfiguration(.init(pointSize: box / gridPerPoint, weight: .regular))
+        else { return Image(name) }
+        // Vector all the way: the handler runs at whatever scale the image is
+        // drawn at. The alignment rect is the cap-height box, whose centre is
+        // the grid's.
+        let alignment = symbol.alignmentRect
+        let natural = symbol.size
+        let drawn = NSImage(size: NSSize(width: box, height: box), flipped: false) { rect in
+            symbol.draw(in: NSRect(
+                x: rect.midX - alignment.midX,
+                y: rect.midY - alignment.midY,
+                width: natural.width,
+                height: natural.height
+            ))
+            return true
+        }
+        drawn.isTemplate = true
+        cache[key] = drawn
+        return Image(nsImage: drawn)
+        #else
+        return Image(name)
+        #endif
+    }
+}
+
+public extension Image {
+    /// A Juno glyph as a symbol, sized by the surrounding font like an SF
+    /// Symbol. Pass `.bold` beside text of 13pt and under.
+    ///
+    /// **Where the system picks the image scale — a sidebar row, a toolbar
+    /// item — use ``JunoSymbol`` instead.** See there for why a bare `Image`
+    /// draws nothing in those places.
+    init(_ icon: JunoIcon, weight: JunoIcon.Weight = .regular) {
+        self.init(icon.assetName(weight))
+    }
+}
+
+/// A Juno glyph as a symbol the surrounding font sizes — for a sidebar row's
+/// or a toolbar item's `Label` icon, where the system decides the size.
+///
+/// **Pinned to the medium image scale, and that is load-bearing.** The
+/// generated symbol sets carry a single `Regular-M` master, so the compiled
+/// catalog holds renditions for the medium scale only. A `.sidebar` list and
+/// the toolbar ask for the *large* scale; CoreUI finds no rendition for it and
+/// SwiftUI draws nothing — measured on macOS 27, where every Phosphor and Juno
+/// glyph in the sidebar and toolbar came out as an empty slot while the same
+/// image rendered correctly everywhere else. AppKit-drawn surfaces (menus, a
+/// segmented `Picker`) load the image through `NSImage(named:)`, which ignores
+/// the scale, so they are unaffected. When the icon generator emits `S` and
+/// `L` masters, this can go back to a bare `Image`.
+///
+/// The point size still follows the row's font, so the sidebar's icon-size
+/// setting still moves the glyph with its label.
+public struct JunoSymbol: View {
+    private let icon: JunoIcon
+    private let weight: JunoIcon.Weight
+
+    public init(_ icon: JunoIcon, weight: JunoIcon.Weight = .regular) {
+        self.icon = icon
+        self.weight = weight
+    }
+
+    public var body: some View {
+        Image(icon, weight: weight)
+            .imageScale(.medium)
     }
 }
 
 public extension Label where Title == Text, Icon == JunoIconView {
     /// `Label("Copy", icon: .copy)` — a label whose mark is one of the
-    /// website's, sized for a menu row or a list row rather than at the asset's
-    /// own 24pt.
+    /// website's, in a fixed box sized for a menu row or a list row.
     @MainActor
     init(_ title: LocalizedStringKey, icon: JunoIcon, size: CGFloat = 15) {
         self.init { Text(title) } icon: { JunoIconView(icon, size: size) }
@@ -453,13 +861,12 @@ public extension Label where Title == Text, Icon == JunoIconView {
     }
 }
 
-/// A menu row, button or list row labelled with a Juno icon.
+/// A menu row, button or list row labelled with a Juno icon in a fixed box.
 ///
-/// `Label(_:systemImage:)` cannot take one of these — the assets are images,
-/// not symbols — and `Label(_:image:)` renders them at the image's own size,
-/// which is a 24pt box beside 13pt menu text. This pairs the text with a
-/// ``JunoIconView`` sized for the row instead, so a Juno mark can appear
-/// anywhere an SF Symbol label already does.
+/// Pairs the text with a ``JunoIconView`` sized for the row. Where the row
+/// should size the glyph itself, `Label(_:image:)` with the icon's
+/// ``JunoIcon/assetName`` does that: the assets are symbols, so they take the
+/// row's font like an SF Symbol.
 public struct JunoIconLabel: View {
     private let title: Text
     private let icon: JunoIcon

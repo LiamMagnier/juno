@@ -51,8 +51,8 @@ final class JunoMobileNavigationTests: XCTestCase {
     }
 
     /// The drawer draws `junoIcon` when a destination has one and falls back to
-    /// an SF Symbol when it does not. One system glyph in a column of Lucide
-    /// marks reads as a row borrowed from another product — the exact drift
+    /// an SF Symbol when it does not. One system glyph in a column of the web's
+    /// own marks reads as a row borrowed from another product — the exact drift
     /// Settings was fixed for — so every row the drawer lists must have the
     /// website's own mark.
     func testEveryDrawerDestinationCarriesTheSharedGlyph() {

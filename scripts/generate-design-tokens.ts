@@ -2,8 +2,9 @@
  * Project the web's design tokens onto every other client.
  *
  * `src/app/globals.css` is the source of truth for colour, and
- * `tailwind.config.ts` for the radius ladder. Both are hand-authored, both are
- * heavily commented, and neither is going to be generated from something else —
+ * `tailwind.config.ts` for the radius, type and spacing ladders. Both are
+ * hand-authored, both are heavily commented, and neither is going to be
+ * generated from something else —
  * the comments beside those values are the most useful documentation in the
  * repository and a generator would flatten them.
  *
@@ -25,6 +26,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
+
+import defaultTheme from "tailwindcss/defaultTheme";
 
 import tailwindConfig from "../tailwind.config";
 
@@ -216,12 +219,131 @@ const radii = Object.entries(rawRadius)
 if (!radii.length) throw new Error("No px radii found in tailwind.config.ts");
 
 // ---------------------------------------------------------------------------
+// Type (from the Tailwind config's `fontSize` ladder)
+// ---------------------------------------------------------------------------
+
+/**
+ * The ladder is written in rem (16px) with one of two shapes:
+ *
+ *   "1.375rem"                                   a fixed rung
+ *   "clamp(1.625rem, 1rem + 1.5625cqi, 2rem)"    a fluid rung, keyed to the
+ *                                                content column (`cqi`), or to
+ *                                                the window (`vw`) for `hero`
+ *
+ * Both are projected to points (the web's px, 1:1) and the fluid term is kept
+ * as `intercept + slope × width` so a native column can land on exactly the
+ * size the web's column would at the same width. Anything else is a hard
+ * error: a rung the parser cannot read would otherwise vanish from the Swift
+ * ladder with every check still green.
+ */
+const REM = /^([\d.]+)rem$/;
+const CLAMP = /^clamp\(\s*([\d.]+)rem\s*,\s*([\d.]+)rem\s*\+\s*([\d.]+)(cqi|vw)\s*,\s*([\d.]+)rem\s*\)$/;
+const EM = /^(-?[\d.]+)em$/;
+
+type TypeRung = {
+  name: string;
+  minSize: number;
+  maxSize: number;
+  intercept: number;
+  slope: number;
+  lineHeight: number;
+  tracking: number;
+  weight: number | null;
+};
+
+type FontSizeMeta = { lineHeight?: string; letterSpacing?: string; fontWeight?: string };
+
+const rawFontSize = (tailwindConfig.theme?.extend?.fontSize ?? {}) as Record<
+  string,
+  string | [string, FontSizeMeta]
+>;
+
+const round4 = (n: number) => Math.round(n * 1e4) / 1e4;
+
+const typeRungs: TypeRung[] = Object.entries(rawFontSize).map(([name, value]) => {
+  const [size, meta]: [string, FontSizeMeta] = Array.isArray(value) ? value : [value, {}];
+  let minSize: number;
+  let maxSize: number;
+  let intercept: number;
+  let slope: number;
+  const fixed = REM.exec(size);
+  const fluid = CLAMP.exec(size);
+  if (fixed) {
+    minSize = maxSize = intercept = Number(fixed[1]) * 16;
+    slope = 0;
+  } else if (fluid) {
+    minSize = Number(fluid[1]) * 16;
+    intercept = Number(fluid[2]) * 16;
+    // `1cqi` is 1% of the container's inline size, so the per-point slope is
+    // the coefficient over 100 — the same for `vw` against the window.
+    slope = Number(fluid[3]) / 100;
+    maxSize = Number(fluid[5]) * 16;
+  } else {
+    throw new Error(`fontSize "${name}" is neither a rem size nor a rem clamp: ${size}`);
+  }
+  const lineHeight = meta.lineHeight === undefined ? NaN : Number(meta.lineHeight);
+  if (!Number.isFinite(lineHeight)) {
+    throw new Error(`fontSize "${name}" has no unitless lineHeight: ${meta.lineHeight}`);
+  }
+  let tracking = 0;
+  if (meta.letterSpacing !== undefined) {
+    const em = EM.exec(meta.letterSpacing);
+    if (!em) throw new Error(`fontSize "${name}" letterSpacing is not in em: ${meta.letterSpacing}`);
+    tracking = Number(em[1]);
+  }
+  const weight = meta.fontWeight === undefined ? null : Number(meta.fontWeight);
+  return {
+    name,
+    minSize: round4(minSize),
+    maxSize: round4(maxSize),
+    intercept: round4(intercept),
+    // Six places rather than four: the slope is multiplied by a column width
+    // in the hundreds, so a fourth-place rounding lands a fluid rung a few
+    // hundredths of a point off the web's size at the anchor widths.
+    slope: Math.round(slope * 1e6) / 1e6,
+    lineHeight,
+    tracking,
+    weight,
+  };
+});
+
+if (!typeRungs.length) throw new Error("No fontSize ladder found in tailwind.config.ts");
+
+// ---------------------------------------------------------------------------
+// Spacing (Tailwind's default scale, plus the config's own `4.5` step)
+// ---------------------------------------------------------------------------
+
+/**
+ * The steps a native surface is allowed to use. Tailwind's scale runs to 96
+ * and has a `px` and a `0`; the native ladder is the web's 4pt grid from 2 to
+ * 48 plus the 18 the config adds, which is every gap the app shell and the
+ * chat surfaces actually spend. Listed by utility suffix, so `gap-3` on the
+ * web reads as `step3` in Swift. A step the theme stops defining is a hard
+ * error rather than a silently shorter ladder.
+ */
+const SPACE_STEPS = ["0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5", "6", "7", "8", "10", "12"];
+
+const rawSpacing: Record<string, string> = {
+  ...(defaultTheme.spacing as Record<string, string>),
+  ...((tailwindConfig.theme?.extend?.spacing ?? {}) as Record<string, string>),
+};
+
+const spaceSteps = SPACE_STEPS.map((key) => {
+  const raw = rawSpacing[key];
+  const rem = raw === undefined ? null : REM.exec(raw);
+  if (!rem) throw new Error(`spacing "${key}" is missing or not in rem: ${raw}`);
+  return { key, px: round4(Number(rem[1]) * 16) };
+});
+
+// ---------------------------------------------------------------------------
 // Emit
 // ---------------------------------------------------------------------------
 
 const digest = createHash("sha256")
   .update(readFileSync(CSS_PATH))
   .update(JSON.stringify(rawRadius))
+  .update(JSON.stringify(rawFontSize))
+  .update(JSON.stringify(spaceSteps))
   .digest("hex")
   .slice(0, 16);
 
@@ -253,8 +375,8 @@ const f = (n: number) => (Number.isInteger(n) ? n.toFixed(1) : String(n));
 
 const BANNER = (tool: string) => `// Generated by scripts/generate-design-tokens.ts — DO NOT EDIT.
 //
-// Source: src/app/globals.css (colour, motion) + tailwind.config.ts (radius).
-// Regenerate with \`npm run design:tokens\`; \`npm run design:tokens:check\`
+// Source: src/app/globals.css (colour, motion) + tailwind.config.ts (radius,
+// type, spacing). Regenerate with \`npm run design:tokens\`; \`npm run design:tokens:check\`
 // fails CI when this file no longer matches its sources.
 //
 // tokens-digest: ${digest}
@@ -354,6 +476,45 @@ ${easings
 public enum JunoGeneratedRadius {
 ${radii.map((r) => `    public static let ${swiftName(r.name)}: CGFloat = ${f(r.px)}`).join("\n")}
 }
+
+/// One rung of the web's type ladder (\`tailwind.config.ts\` → \`fontSize\`), in
+/// points: the web's px, 1:1.
+///
+/// A fixed rung has \`minSize == maxSize\` and a zero \`fluidSlope\`. A fluid rung
+/// is \`clamp(minSize, fluidIntercept + fluidSlope × width, maxSize)\`, where
+/// \`width\` is the content column in points — the web's \`cqi\` container (or the
+/// window, \`vw\`, for the one marketing rung).
+public struct JunoGeneratedTypeRung: Hashable, Sendable {
+    public let minSize: CGFloat
+    public let maxSize: CGFloat
+    public let fluidIntercept: CGFloat
+    public let fluidSlope: CGFloat
+    /// Unitless, as in CSS: a multiple of the font size.
+    public let lineHeight: CGFloat
+    /// In em, as in CSS; multiply by the size for points.
+    public let tracking: CGFloat
+    /// The CSS numeric weight, or nil where the rung leaves weight to the caller (400).
+    public let weight: Int?
+}
+
+/// The type ladder, in the config's order.
+public enum JunoGeneratedType {
+${typeRungs
+  .map(
+    (t) =>
+      `    /// \`text-${t.name}\`\n    public static let ${swiftName(t.name)} = JunoGeneratedTypeRung(minSize: ${f(t.minSize)}, maxSize: ${f(t.maxSize)}, fluidIntercept: ${f(t.intercept)}, fluidSlope: ${f(t.slope)}, lineHeight: ${f(t.lineHeight)}, tracking: ${f(t.tracking)}, weight: ${t.weight === null ? "nil" : t.weight})`
+  )
+  .join("\n")}
+}
+
+/// The spacing steps native surfaces may use, in points, named for the
+/// Tailwind utility suffix they come from: \`step3\` is \`p-3\` / \`gap-3\`.
+public enum JunoGeneratedSpace {
+${spaceSteps.map((s) => `    /// \`${s.key}\`\n    public static let step${s.key.replace(".", "_")}: CGFloat = ${f(s.px)}`).join("\n")}
+
+    /// Every step, smallest first.
+    public static let all: [CGFloat] = [${spaceSteps.map((s) => f(s.px)).join(", ")}]
+}
 `;
 
 // ---- TypeScript ----------------------------------------------------------
@@ -411,7 +572,8 @@ if (process.argv.includes("--check")) {
   }
   console.log(
     `[design-tokens] up to date — ${colorNames.length} colours, ${accents.length} accents, ` +
-      `${durations.length} durations, ${easings.length} easings, ${radii.length} radii (digest ${digest})`
+      `${durations.length} durations, ${easings.length} easings, ${radii.length} radii, ` +
+      `${typeRungs.length} type rungs, ${spaceSteps.length} spacing steps (digest ${digest})`
   );
 } else {
   for (const [path, contents] of outputs) {
@@ -421,6 +583,7 @@ if (process.argv.includes("--check")) {
   }
   console.log(
     `[design-tokens] ${colorNames.length} colours, ${accents.length} accents, ` +
-      `${durations.length} durations, ${easings.length} easings, ${radii.length} radii (digest ${digest})`
+      `${durations.length} durations, ${easings.length} easings, ${radii.length} radii, ` +
+      `${typeRungs.length} type rungs, ${spaceSteps.length} spacing steps (digest ${digest})`
   );
 }

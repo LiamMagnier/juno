@@ -42,12 +42,28 @@ public extension JunoColorToken {
     static let diffRemovedDark = JunoColorToken(unchecked: 0.243, 0.110, 0.110)
 }
 
+/// The status ramp the apps shipped with, read as text and glyphs.
+///
+/// **The redesign's status tokens live in `JunoColors.swift`**, as the web
+/// splits them — a fill and an AA ink: `junoSuccessInk`, `junoWarning` /
+/// `junoWarningInk`, `junoDestructive` / `junoDestructiveInk`, all generated.
+/// This ramp predates that split and is hand-tuned, and it stays because
+/// roughly 450 call sites across Code, Work and the phone read it as *text*:
+/// repointing it at the web's fills would drop every one of them below 4.5:1.
+///
+/// `junoSuccess` is the one collision. The redesign spec gives that name to
+/// `--success` (the fill); here it is still the legacy ink. It moves to the
+/// fill when its call sites have moved to `junoSuccessInk`, and until then new
+/// code reaching for a success *ink* should write `junoSuccessInk`.
 public extension Color {
-    /// A passing, approved or succeeded state.
+    /// A passing, approved or succeeded state, as text. New code:
+    /// ``junoSuccessInk``.
     static let junoSuccess = Color.junoAdaptive(light: .successLight, dark: .successDark)
-    /// A failing, denied or errored state.
+    /// A failing, denied or errored state, as text. New code:
+    /// ``junoDestructiveInk`` (text) or ``junoDestructive`` (a fill).
     static let junoDanger = Color.junoAdaptive(light: .dangerLight, dark: .dangerDark)
-    /// A waiting or recoverable state.
+    /// A waiting or recoverable state, as text. New code: ``junoWarningInk``
+    /// (text) or ``junoWarning`` (a fill).
     static let junoCaution = Color.junoAdaptive(light: .cautionLight, dark: .cautionDark)
 
     /// The fill behind an added diff line.
