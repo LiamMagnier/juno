@@ -12,6 +12,9 @@ import Observation
 private struct DesktopQueuedCodeSnapshot: Sendable {
     let events: [SessionEvent]
     let status: SessionStatus
+    /// Why the task's prompt was turned away after the session took it — a
+    /// hook blocked it, or it was stopped while its hooks ran — or nil.
+    let refusal: String?
 }
 
 /// The local Workbench adapter used by the server-owned `/api/code/tasks`
@@ -20,6 +23,9 @@ private struct DesktopQueuedCodeSnapshot: Sendable {
 @MainActor
 private final class DesktopQueuedCodeExecutor {
     private let workbench: WorkbenchModel
+    /// The prompt of the task in hand, while its hooks decide and after. The
+    /// host runs one task at a time, so one is all there is to remember.
+    private var delivery: (sessionID: String, value: SessionController.RemotePromptDelivery)?
 
     init(workbench: WorkbenchModel) {
         self.workbench = workbench
@@ -71,10 +77,22 @@ private final class DesktopQueuedCodeExecutor {
             throw DesktopQueuedCodeError.sessionUnavailable
         }
         await workbench.renameSession(id: session.id, title: task.title)
-        controller.composerText = task.prompt
-        await controller.send()
-        if let error = controller.transientError {
-            throw DesktopQueuedCodeError.startFailed(error)
+        // Delivered the way the relay delivers a phone's prompt, not through
+        // the composer and Send. `send()` keeps a draft a hook turned away and
+        // says nothing, so a blocked task read as started, its new session
+        // stayed idle — never terminal — and the loop that waits for the end
+        // of this task waited forever and claimed nothing else.
+        //
+        // Returned once the session has taken the prompt, before its hooks
+        // decide: a hook that needs approval asks on the phone, and the
+        // phone's answer arrives through the loop that streams this task,
+        // which starts only once this returns. What the hooks decide is read
+        // off the delivery in `snapshot`.
+        do {
+            let taken = try await controller.deliverRemotePrompt(task.prompt)
+            delivery = (session.id.value, taken)
+        } catch {
+            throw DesktopQueuedCodeError.startFailed(error.localizedDescription)
         }
         return session.id.value
     }
@@ -85,9 +103,11 @@ private final class DesktopQueuedCodeExecutor {
         guard let controller = await workbench.controller(
             for: CodeSessionID(value: sessionID)
         ) else { throw DesktopQueuedCodeError.sessionUnavailable }
+        let refusal = delivery?.sessionID == sessionID ? delivery?.value.refusal : nil
         return DesktopQueuedCodeSnapshot(
             events: controller.events.filter { $0.sequence > sequence },
-            status: controller.session.status
+            status: controller.session.status,
+            refusal: refusal?.message
         )
     }
 
@@ -237,6 +257,12 @@ private actor DesktopQueuedCodeHost {
                         control,
                         sessionID: sessionID
                     )
+                }
+                // The prompt never became a turn, so no status will ever end
+                // this task: fail it, after the row saying which hook refused
+                // it has gone up with the rest.
+                if let refusal = snapshot.refusal {
+                    throw DesktopQueuedCodeError.startFailed(refusal)
                 }
                 if snapshot.status.isTerminal { return }
                 try await Task.sleep(for: .milliseconds(650))
