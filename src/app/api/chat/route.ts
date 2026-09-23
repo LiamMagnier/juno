@@ -34,7 +34,12 @@ import {
   maybeConsolidateProject,
 } from "@/lib/memory";
 import { memoryReceiptDetail } from "@/lib/memory-lifecycle";
-import { ArtifactVersionConflictError, persistArtifacts, persistTargetedArtifactEdit } from "@/lib/artifacts-store";
+import {
+  ArtifactVersionConflictError,
+  detachArtifactsFromMessage,
+  persistArtifacts,
+  persistTargetedArtifactEdit,
+} from "@/lib/artifacts-store";
 import {
   applyArtifactPatch,
   ArtifactPatchError,
@@ -2514,13 +2519,13 @@ async function handleChat(req: Request) {
        * A regenerate PRESERVES the previous answer instead of destroying it: the
        * old row's content is snapshotted into an immutable MessageVersion
        * (ciphertext copied verbatim — the crypto is row-independent, see
-       * message-crypto.ts), its artifacts are dropped, and the Message row is
-       * then overwritten in place. The Message row is therefore always the
-       * CURRENT version; MessageVersion rows are append-only, read-only history
-       * rendered by the client's "‹ 2/3 ›" pager. Which version the user was
-       * VIEWING never changes the result: the prompt excludes the answer being
-       * regenerated entirely, so regeneration is deterministic in its inputs and
-       * versions simply accumulate oldest-first.
+       * message-crypto.ts), its artifacts are detached but kept, and the
+       * Message row is then overwritten in place. The Message row is therefore
+       * always the CURRENT version; MessageVersion rows are append-only,
+       * read-only history rendered by the client's "‹ 2/3 ›" pager. Which
+       * version the user was VIEWING never changes the result: the prompt
+       * excludes the answer being regenerated entirely, so regeneration is
+       * deterministic in its inputs and versions simply accumulate oldest-first.
        */
       const persistAssistantTurn = async (data: {
         content: string;
@@ -2561,8 +2566,11 @@ async function handleChat(req: Request) {
         };
         if (mode === "supersede" && stale) {
           // Snapshot the answer being replaced BEFORE overwriting it — a
-          // regenerate must never lose what the user already had. Atomic with
-          // the overwrite so a crash can't leave a duplicate version behind.
+          // regenerate must never lose what the user already had. That covers
+          // its artifacts too: they are detached, not deleted, so hand edits
+          // and share links survive and a re-emission appends to the same row.
+          // Atomic with the overwrite so a crash can't leave a duplicate
+          // version behind.
           const [, , updated] = await prisma.$transaction([
             prisma.messageVersion.create({
               data: versionSnapshot({
@@ -2570,7 +2578,7 @@ async function handleChat(req: Request) {
                 sources: stale.sources as unknown as Prisma.InputJsonValue | null,
               }),
             }),
-            prisma.artifact.deleteMany({ where: { messageId: stale.id } }),
+            detachArtifactsFromMessage(stale.id),
             prisma.message.update({
               where: { id: stale.id },
               data: {
