@@ -1,7 +1,7 @@
 import type { Plan } from "@prisma/client";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { DISCOVERED, UNAVAILABLE } from "@/lib/models.generated";
-import type { ModelToolCapabilities } from "@/lib/model-tools";
+import { labHasNativeSearch, toolCapabilitiesFor, type ModelToolCapabilities } from "@/lib/model-tools";
 
 // Canonical model id is "provider:providerModel" (e.g. "anthropic:claude-opus-4-8").
 export type ModelId = string;
@@ -207,11 +207,22 @@ export function hasRetired(model: Pick<ModelInfo, "retiresOn">, today: string = 
   return model.retiresOn != null && model.retiresOn < today;
 }
 
-// Providers whose chat models can search the web natively (their own tool /
-// grounding — no third-party search service).
-const WEB_SEARCH_PROVIDERS = new Set<Provider>(["anthropic", "google", "xai"]);
+/**
+ * Whether a lab's chat models search the web natively on Juno's transport
+ * (their own tool or grounding — no third-party search service).
+ *
+ * Read from the tool capability table rather than a list of its own, which is
+ * what left every OpenAI model without search after Responses gained a hosted
+ * tool (RC-2). A model in hand is read through `modelSearchesNatively`, which
+ * also sees the per-model exceptions (pre-Gemini-3, an unconfirmed Grok slug).
+ */
 export function providerSupportsWebSearch(p: Provider): boolean {
-  return WEB_SEARCH_PROVIDERS.has(p);
+  return labHasNativeSearch(p);
+}
+
+/** `ModelInfo.webSearch`: provider-native search on Juno's transport (SPEC §5.6). */
+function modelSearchesNatively(model: Pick<ModelInfo, "provider" | "id" | "api">): boolean {
+  return toolCapabilitiesFor(model).nativeSearch;
 }
 
 interface ModelDef {
@@ -269,7 +280,7 @@ function def(d: ModelDef): ModelInfo {
     agenticTools: d.agenticTools ?? (modality === "chat" ? guessAgenticTools(d.id) : false),
     cost: d.cost ?? guessCost(d.id),
     modality,
-    webSearch: modality === "chat" ? providerSupportsWebSearch(d.provider) : false,
+    webSearch: modality === "chat" ? modelSearchesNatively({ provider: d.provider, id: `${d.provider}:${d.id}`, api: d.api }) : false,
     status: d.status,
     family: d.family,
     deprecationNote: d.deprecationNote,
@@ -479,7 +490,7 @@ const CURATED: ModelInfo[] = [
   // DeepSeek points the unversioned alias at the current Flash generation the
   // way `deepseek-chat` used to work, and the version appears only in the
   // product name. Getting this wrong is a 404 on every message.
-  def({ provider: "deepseek", id: "deepseek-flash", name: "DeepSeek V4.1 Flash", family: "v4-flash", status: "current", released: "2026-09", minPlan: "FREE", cost: 1, contextWindow: 1_048_576, description: "Sparse MoE on a 552B backbone — a 1M window, 384K of output, and the cheapest frontier tier there is." }),
+  def({ provider: "deepseek", id: "deepseek-flash", name: "DeepSeek V4.1 Flash", family: "v4-flash", status: "current", released: "2026-09", minPlan: "FREE", reasoning: true, cost: 1, contextWindow: 1_048_576, description: "Sparse MoE on a 552B backbone — a 1M window, 384K of output, and the cheapest frontier tier there is." }),
   def({ provider: "deepseek", id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", family: "v4-flash", status: "legacy", released: "2026-04", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Fast, very cheap default — near-Pro reasoning at a third of the cost." }),
   def({ provider: "deepseek", id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", family: "v4-pro", status: "current", released: "2026-04", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "DeepSeek flagship — hardest reasoning and complex agent tasks." }),
   def({ provider: "deepseek", id: "deepseek-chat", name: "DeepSeek Chat", family: "v4-flash", status: "deprecated", released: "2024-12", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Legacy alias routing to V4 Flash.", deprecationNote: "Retires Jul 24, 2026 — use DeepSeek V4 Flash", retiresOn: "2026-07-24", replacedBy: "deepseek:deepseek-v4-flash" }),
@@ -517,7 +528,7 @@ const CURATED: ModelInfo[] = [
   def({ provider: "xai", id: "grok-4.3", name: "Grok 4.3", family: "grok", status: "legacy", released: "2026-05", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "Fast, inexpensive tier — chat, coding, and agentic tool calling. Superseded by 4.5." }),
   def({ provider: "xai", id: "grok-4.1-fast", name: "Grok 4.1 Fast", family: "grok-fast", status: "current", released: "2026-05", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 2_000_000, description: "xAI's volume tier — a 2M window, tool calling, and reasoning you can switch off." }),
   def({ provider: "xai", id: "grok-build-0.1", name: "Grok Build 0.1", family: "grok-build", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 256_000, description: "Fast agentic coding — successor to Grok Code Fast." }),
-  def({ provider: "xai", id: "grok-4.20-multi-agent-0309", name: "Grok 4.20 Multi-Agent", family: "grok-multi-agent", status: "current", released: "2026-03", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "Parallel multi-agent deep research (beta)." }),
+  def({ provider: "xai", id: "grok-4.20-multi-agent-0309", name: "Grok 4.20 Multi-Agent", family: "grok-multi-agent", status: "current", released: "2026-03", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "Parallel multi-agent research (beta)." }),
   def({ provider: "xai", id: "grok-4.20-0309-reasoning", name: "Grok 4.20 (Reasoning)", family: "grok", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Previous flagship reasoning Grok." }),
   def({ provider: "xai", id: "grok-4.20-0309-non-reasoning", name: "Grok 4.20", family: "grok", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, reasoning: false, cost: 2, contextWindow: 1_000_000, description: "Low-latency non-thinking Grok 4.20." }),
 
@@ -664,7 +675,7 @@ const DISCOVERED_MODELS: ModelInfo[] = DISCOVERED.filter(
   agenticTools: guessAgenticTools(d.id),
   cost: guessCost(d.id),
   modality: "chat",
-  webSearch: providerSupportsWebSearch(d.provider),
+  webSearch: modelSearchesNatively({ provider: d.provider, id: `${d.provider}:${d.id}` }),
   status: "current",
   family: d.id, // its own family — never competes with curated "current" slots
   legacy: false,
@@ -984,7 +995,7 @@ export function resolveModel(id: string): ModelInfo | null {
     agenticTools: guessAgenticTools(migrated.providerModel),
     cost: guessCost(migrated.providerModel),
     modality: "chat",
-    webSearch: providerSupportsWebSearch(migrated.provider),
+    webSearch: modelSearchesNatively({ provider: migrated.provider, id: canonical }),
     status: "current",
     legacy: false,
   };

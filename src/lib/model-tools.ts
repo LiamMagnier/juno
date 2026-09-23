@@ -19,6 +19,7 @@
 
 import type { ModelInfo } from "@/lib/models";
 import type { Provider } from "@/lib/providers";
+import type { ReasoningEffort } from "@/types/chat";
 
 export interface ModelToolCapabilities {
   supported: boolean;                                  // accepts function tools at all
@@ -200,4 +201,36 @@ export function toolCapabilitiesFor(
     ...(MODEL_TOOLS[model.id] ?? {}),
     ...(model.tools ?? {}),
   };
+}
+
+/**
+ * Whether a lab's models search natively on Juno's transport, by its lab row.
+ *
+ * For the places that know only a provider — a deployment's configured labs,
+ * a model discovered at runtime. A model in hand is read through
+ * `toolCapabilitiesFor(model).nativeSearch`, which also sees its exceptions.
+ */
+export function labHasNativeSearch(provider: Provider): boolean {
+  return (LAB_TOOLS[provider] ?? COMPAT).nativeSearch;
+}
+
+const EFFORT_RANK: Record<NonNullable<ReasoningEffort>, number> = {
+  minimal: 0, low: 1, medium: 2, high: 3, xhigh: 4, max: 5,
+};
+
+/**
+ * Whether provider-hosted search may ride a request at this effort.
+ *
+ * The original gpt-5 rejects hosted `web_search` at "minimal" (SPEC §5.2
+ * item 3), so its minimal turns carry no native search and get Juno's
+ * `web_search` instead. No effort at all ranks below every tier.
+ */
+export function hostedSearchAllowedAt(
+  caps: Pick<ModelToolCapabilities, "nativeSearch" | "hostedSearchMinEffort">,
+  effort: ReasoningEffort | null | undefined,
+): boolean {
+  if (!caps.nativeSearch) return false;
+  if (!caps.hostedSearchMinEffort) return true;
+  const rank = effort ? EFFORT_RANK[effort] : -1;
+  return rank >= EFFORT_RANK[caps.hostedSearchMinEffort];
 }

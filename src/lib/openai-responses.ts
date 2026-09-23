@@ -1,60 +1,93 @@
 import "server-only";
 import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
-import { providerApiKey, providerBaseUrl, PROVIDERS } from "@/lib/providers";
-import { normalizeFinishReason } from "@/lib/finish-reason";
-import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
-import {
-  openAIPromptCacheRequestFields,
-  openAIResponsesSystemInput,
-} from "@/lib/openai-prompt-cache";
+import { providerApiKey, providerBaseUrl, PROVIDERS, type Provider } from "@/lib/providers";
+import { getModelMetrics } from "@/lib/model-metrics";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 import type { McpToolset } from "@/lib/mcp";
 import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
 import { attachmentTextBudget } from "@/lib/knowledge/document-text";
-import { canInlineDocument, isPdfAttachment, oversizeDocumentNote } from "@/lib/attachment-bytes";
 import {
-  sendableToolImages,
-  toDataUrl,
-  toolImageIntro,
-  withheldImagesNote,
-} from "@/lib/tool-result-images";
-import { providerRequestModel } from "@/lib/model-request";
+  canInlineDocument,
+  isPdfAttachment,
+  oversizeDocumentNote,
+  providerReceivesDocumentBytes,
+} from "@/lib/attachment-bytes";
+import { createLoopController } from "@/lib/llm/loop";
+import {
+  runResponsesLoop,
+  type ResponsesDialect,
+  type ResponsesInputItem,
+} from "@/lib/llm/responses-loop";
+import type { AdapterRequest, ProviderTransport } from "@/lib/llm/types";
 
 /**
- * OpenAI Responses API adapter — for models that are not served on
- * /chat/completions at all (the gpt-*-pro line and Responses-only Codex
- * snapshots). Mirrors streamOpenAICompat's contract exactly: same LlmEvent
- * stream, same MCP tool loop, same usage/finish semantics, so routes and the
- * UI can't tell which wire protocol served the request.
+ * The Responses API adapter — every OpenAI model, and Grok on xAI's Responses
+ * surface (SPEC §5.2, §5.5).
+ *
+ * It was the adapter for the models that are not served on /chat/completions
+ * at all (the gpt-*-pro line and Responses-only Codex snapshots). It is the
+ * adapter for every OpenAI model now: GPT-6 and the GPT-5.6 line cannot call
+ * tools on /chat/completions at any real effort, and the hosted web search,
+ * `phase` and encrypted reasoning replay exist only here. Grok moved for the
+ * same reason search did: xAI's server-side tools live only on Responses.
+ *
+ * This module turns the conversation into input items (attachment bytes come
+ * from storage) and wires in the SDK client; the loop itself lives in
+ * `llm/responses-loop.ts`, free of `server-only`, so it can be driven offline.
  */
 
-let cached: OpenAI | null = null;
+const clients = new Map<Provider, OpenAI>();
 
-function client(): OpenAI {
-  const apiKey = providerApiKey("openai");
-  if (!apiKey) throw new Error(`${PROVIDERS.openai.label} API key is not configured.`);
-  // SDK retries are disabled so a partially consumed paid response cannot be
-  // replayed without a new, explicitly metered attempt.
-  if (!cached) cached = new OpenAI({ apiKey, baseURL: providerBaseUrl("openai"), maxRetries: 0 });
-  return cached;
+function client(provider: Provider): OpenAI {
+  const apiKey = providerApiKey(provider);
+  if (!apiKey) throw new Error(`${PROVIDERS[provider].label} API key is not configured.`);
+  let c = clients.get(provider);
+  if (!c) {
+    // SDK retries are disabled so a partially consumed paid response cannot be
+    // replayed without a new, explicitly metered attempt.
+    c = new OpenAI({ apiKey, baseURL: providerBaseUrl(provider), maxRetries: 0 });
+    clients.set(provider, c);
+  }
+  return c;
+}
+
+/**
+ * The SDK as a `ProviderTransport`: the request body in, the stream's events out.
+ *
+ * xAI routes requests of one conversation to one prompt cache through the
+ * `x-grok-conv-id` header; it has no body field for it.
+ */
+function sdkTransport(dialect: ResponsesDialect, cacheKey: string | undefined): ProviderTransport {
+  const c = client(dialect === "xai" ? "xai" : "openai");
+  const headers = dialect === "xai" && cacheKey ? { "x-grok-conv-id": cacheKey } : undefined;
+  return {
+    async *request(body, signal) {
+      const stream = await c.responses.create(body as OpenAI.Responses.ResponseCreateParamsStreaming, {
+        signal,
+        headers,
+      });
+      yield* stream;
+    },
+  };
 }
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 const BINARY_ATTACHMENT_LOOKBACK = 8; // kept in sync with the compat/Anthropic adapters
-const MAX_TOOL_ROUNDS = 6;
-
-type InputItem = OpenAI.Responses.ResponseInputItem;
 
 async function toResponsesInput(
   history: MessageForModel[],
-  vision: boolean,
+  model: ModelInfo,
   /** Per-file text ceiling, from the model's own context window. */
   attachmentTextMaxChars?: number
-): Promise<InputItem[]> {
-  const out: InputItem[] = [];
+): Promise<ResponsesInputItem[]> {
+  const vision = model.vision;
+  const out: ResponsesInputItem[] = [];
+  // Whether this surface takes a PDF as `input_file`: OpenAI does, xAI has not
+  // been shown to (attachment-bytes.ts).
+  const documentBytes = providerReceivesDocumentBytes(model);
   // Block-anchored (see openai-compat.ts): keeps the cacheable prefix stable
   // between steps instead of moving it every turn.
   const binaryFrom = Math.max(
@@ -69,7 +102,7 @@ async function toResponsesInput(
       out.push({
         role: "assistant",
         content: [{ type: "output_text", text: msg.content || "(no content)" }],
-      } as InputItem);
+      });
       continue;
     }
 
@@ -93,21 +126,16 @@ async function toResponsesInput(
           });
         } else if (att.kind === "IMAGE" && IMAGE_TYPES.includes(att.mimeType) && vision && !embedBinary) {
           parts.push({ type: "input_text", text: `[Image "${att.fileName}" shared earlier in the conversation.]` });
-        } else if (isPdfAttachment(att) && vision && embedBinary) {
+        } else if (isPdfAttachment(att) && vision && embedBinary && documentBytes) {
           /*
            * `input_file` — THE PATH THAT WAS NEVER TAKEN.
            *
            * The Responses API accepts a PDF as a first-class input and, like
            * Anthropic and Gemini, rasterises each page alongside its text
-           * layer. Juno never used it: a PDF reached every GPT model as the
-           * bracketed sentence below, so a scanned document was unreadable on
-           * OpenAI no matter how good the file was — and the apology said
-           * "this model does not receive raw PDF bytes", which had stopped
-           * being true of the API long before it stopped being true here.
-           *
-           * The text still rides along when extraction produced any, because
-           * a text layer is cheaper and more exact than reading a rendering
-           * of it, and the two together are what the providers do internally.
+           * layer. The text still rides along when extraction produced any,
+           * because a text layer is cheaper and more exact than reading a
+           * rendering of it, and the two together are what the providers do
+           * internally.
            */
           const { bytes } = await getObjectBytes(att.storageKey);
           if (canInlineDocument(bytes.byteLength)) {
@@ -128,6 +156,30 @@ async function toResponsesInput(
               text: oversizeDocumentNote(att.fileName, bytes.byteLength, !!att.extractedText),
             });
           }
+        } else if (isPdfAttachment(att) && !att.extractedText && vision && embedBinary) {
+          // xAI: no document part, so a PDF with no text layer — a scan — goes
+          // as its first pages rendered to images, as it did on compat.
+          const { bytes } = await getObjectBytes(att.storageKey);
+          const { renderDocumentPages } = await import("@/lib/media/raster");
+          const pages = canInlineDocument(bytes.byteLength) ? await renderDocumentPages({ bytes, maxPages: 4 }) : [];
+          if (pages.length) {
+            parts.push({
+              type: "input_text",
+              text: `[The PDF "${att.fileName}" has no text layer, so the first ${pages.length} page${pages.length === 1 ? "" : "s"} follow as images. Read them as the document itself. Use read_document or inspect_image for anything beyond them.]`,
+            });
+            for (const page of pages) {
+              parts.push({
+                type: "input_image",
+                detail: "auto",
+                image_url: `data:${page.mimeType};base64,${Buffer.from(page.bytes).toString("base64")}`,
+              });
+            }
+          } else {
+            parts.push({
+              type: "input_text",
+              text: `[Attached file "${att.fileName}" (${att.mimeType}) — ${pdfAttachmentFallbackNote(att.parserState)}]`,
+            });
+          }
         } else if (att.extractedText) {
           parts.push({ type: "input_text", text: attachedFileText(att.fileName, att.extractedText, { maxChars: attachmentTextMaxChars }) });
         } else {
@@ -143,381 +195,92 @@ async function toResponsesInput(
       }
     }
 
-    out.push({ role: "user", content: parts } as unknown as InputItem);
+    out.push({ role: "user", content: parts });
   }
 
   return out;
 }
 
-/**
- * Map Juno's tier to the Responses API's reasoning.effort.
- *
- * The gpt-5.x-pro models accept medium|high|xhigh and cannot be run
- * non-thinking, so a missing/too-shallow tier is raised to their "high" default
- * rather than dropped. Everything else relays the tier as-is — including
- * "xhigh" and "max", which this used to flatten to "high" and thereby silently
- * cap the deepest settings the user picked.
- */
-function mapEffort(model: ModelInfo, effort?: ReasoningEffort): string | undefined {
-  const id = model.providerModel.toLowerCase();
-  if (/-pro$/.test(id)) {
-    if (effort === "medium" || effort === "high" || effort === "xhigh") return effort;
-    return "high"; // pro's own default; it has no none/low
-  }
-  if (!effort) return canDisableViaNoneEffort(model) ? "none" : undefined;
-  // "max" exists on GPT-5.6 and GPT-6 Astra/Sol/Luna; older Responses models
-  // top out at xhigh.
-  if (effort === "max" && !/gpt-5\.6|gpt-6-(astra|sol|luna)/.test(id)) return "xhigh";
-  return effort;
+/** Legacy positional calls get today's six tool rounds and the forced final request. */
+const LEGACY_TOOL_BUDGET = 7;
+
+function isAdapterRequest(value: unknown): value is AdapterRequest {
+  return !!value && typeof value === "object" && "loop" in value && "history" in value && "model" in value;
 }
 
 /**
- * GPT-5.1+ express "don't think" as an explicit effort of "none".
+ * Stream one turn through the Responses API.
  *
- * The old blanket `codex -> false` rule was WRONG for gpt-5.3-codex, which
- * verifiably accepts "none" (-> 200, reasoning_tokens=0) while 5.1/5.2-codex
- * reject it ("Supported values are: 'low', 'medium', 'high'..."). Defer to the
- * per-model caps, which encode each snapshot's live-probed enum, rather than
- * re-deriving support from a substring here.
+ * Takes one `AdapterRequest` (SPEC §5.0). The positional form is the
+ * deprecated one `streamChat` still calls until its caller passes a toolset
+ * (WS9a): its `McpToolset` runs through the legacy tool runner, on today's
+ * budget of six tool rounds and a forced final request.
  */
-function canDisableViaNoneEffort(model: ModelInfo): boolean {
-  const id = model.providerModel.toLowerCase();
-  // GPT-6 is here for Sol and Luna, which list "none"; Astra does not, and
-  // its caps say so (canDisable false), so it is still never sent "none".
-  if (!/gpt-5\.\d|gpt-6/.test(id)) return false;
-  return model.reasoning && reasoningCaps(model).canDisable;
-}
-
-export async function* streamOpenAIResponses(
+export function streamOpenAIResponses(req: AdapterRequest): AsyncGenerator<LlmEvent>;
+/** @deprecated Pass one `AdapterRequest` (SPEC §5.0). */
+export function streamOpenAIResponses(
   model: ModelInfo,
   system: string,
   history: MessageForModel[],
   maxTokens: number,
   signal?: AbortSignal,
   reasoningEffort?: ReasoningEffort,
-  _webSearch?: boolean,
+  webSearch?: boolean,
+  toolset?: McpToolset,
+  dynamicContext?: string,
+  cacheKey?: string,
+  fastMode?: boolean,
+  proMode?: boolean
+): AsyncGenerator<LlmEvent>;
+export async function* streamOpenAIResponses(
+  first: AdapterRequest | ModelInfo,
+  system?: string,
+  history?: MessageForModel[],
+  maxTokens?: number,
+  signal?: AbortSignal,
+  reasoningEffort?: ReasoningEffort,
+  webSearch?: boolean,
   toolset?: McpToolset,
   dynamicContext?: string,
   cacheKey?: string,
   fastMode?: boolean,
   proMode?: boolean
 ): AsyncGenerator<LlmEvent> {
-  const input = await toResponsesInput(
-    history,
-    model.vision,
-    attachmentTextBudget(getModelMetrics(model).contextTokens)
+  let req: AdapterRequest;
+  let legacyToolset: McpToolset | undefined;
+  if (isAdapterRequest(first)) {
+    req = first;
+  } else {
+    legacyToolset = toolset;
+    const hasTools = !!toolset && toolset.tools.length > 0;
+    req = {
+      model: first,
+      system: system ?? "",
+      history: history ?? [],
+      maxTokens: maxTokens ?? 0,
+      signal,
+      reasoningEffort,
+      webSearch: !!webSearch,
+      dynamicContext,
+      cacheKey,
+      fastMode,
+      proMode,
+      loop: createLoopController({ budget: hasTools ? LEGACY_TOOL_BUDGET : 1 }),
+    };
+  }
+
+  const dialect: ResponsesDialect = req.model.provider === "xai" ? "xai" : "openai";
+  const historyItems = await toResponsesInput(
+    req.history,
+    req.model,
+    attachmentTextBudget(getModelMetrics(req.model).contextTokens)
   );
-  // GPT-5.6+: put system into input with an explicit cache breakpoint so the
-  // static prefix is a first-class cached segment (see openai-prompt-cache.ts).
-  // Older models keep `instructions` below.
-  const systemAsInput = openAIResponsesSystemInput(model, system);
-  if (systemAsInput) {
-    input.unshift(...(systemAsInput as unknown as InputItem[]));
-  }
-  // Same cache-safe placement as the compat adapter: dynamic context lands as a
-  // system item just before the newest user turn, never ahead of the stable prefix.
-  if (dynamicContext) {
-    let lastUser = input.length;
-    for (let i = input.length - 1; i >= 0; i--) {
-      const item = input[i] as { role?: string };
-      if (item.role === "user") {
-        lastUser = i;
-        break;
-      }
-    }
-    input.splice(lastUser, 0, {
-      role: "system",
-      content: [{ type: "input_text", text: dynamicContext }],
-    } as InputItem);
-  }
-
-  const hasTools = !!toolset && toolset.tools.length > 0;
-  // Responses uses a flat function-tool shape (no nested `function` wrapper).
-  const tools: OpenAI.Responses.Tool[] | undefined = hasTools
-    ? toolset!.tools.map((t) => {
-        const fn = (t as { function: { name: string; description?: string; parameters?: Record<string, unknown> } }).function;
-        return {
-          type: "function" as const,
-          name: fn.name,
-          description: fn.description ?? "",
-          parameters: fn.parameters ?? { type: "object" },
-          strict: false,
-        };
-      })
-    : undefined;
-
-  // Pro is a SECOND axis, not a deeper effort: `reasoning.mode` selects standard
-  // or pro execution while `reasoning.effort` controls how much reasoning happens
-  // inside it, and the two are set independently. Gated on supportsProMode rather
-  // than relayed blind — every other Responses model 400s on an unknown
-  // reasoning key, and this adapter also serves the 5.x-pro and Codex lines.
-  const usePro = !!proMode && supportsProMode(model);
-  const requestedEffort = mapEffort(model, reasoningEffort);
-  // "none" and pro contradict each other — pro mode's whole content is that the
-  // model deliberates more. Rather than send a self-cancelling pair, drop the
-  // effort and let the API apply its own default (medium in both modes).
-  const effort = usePro && requestedEffort === "none" ? undefined : requestedEffort;
-  // ASK FOR WHAT THE MODEL ALREADY MAKES.
-  //
-  // Without this key the API emits no reasoning_summary_* events at all, so the
-  // handler below was dead code and every gpt-*-pro / gpt-*-codex run showed NO
-  // reasoning whatsoever. Verified live on all seven api:"responses" models Juno
-  // ships (5.5/5.4/5.2-pro, 5.3/5.2/5.1-codex, 5.1-codex-mini): every one
-  // accepts summary:"detailed" -> 200.
-  //
-  // "detailed" over "auto" because "auto" collapses to a single part on most
-  // prompts, and the parts ARE the steps. Cost: summary tokens bill as output
-  // tokens (already counted by the usage handler below) — measured ~600 chars
-  // per part, 17 parts on a hard prompt ≈ 2.5k output tokens.
-  //
-  // Skipped when effort is "none": the model does not think, so there is
-  // nothing to summarise and nothing to pay for.
-  // Pro mode reasons even when the effort is left to the API's default, so the
-  // summary is worth asking for on `usePro` alone — keying it off `effort` would
-  // hide the steps on exactly the runs that produce the most of them.
-  const wantsSummary = usePro || (!!effort && effort !== "none");
-
-  console.info("[llm:openai-responses] stream start", {
-    model: model.providerModel,
-    maxTokens,
-    reasoningEffort: effort ?? null,
-    proMode: usePro,
-    tools: hasTools ? toolset!.tools.length : 0,
-  });
-
-  let cumInput = 0;
-  let cumOutput = 0;
-  let cumCached = 0;
-  let cumCacheWrite = 0;
-  let cumReasoning = 0;
-  let cumTotal = 0;
-  let sawUsage = false;
-  let finishRaw: string | undefined;
-  // Declared OUTSIDE the round loop on purpose: a tool round starts a fresh
-  // response whose summary_index restarts at 0, but the user is watching one
-  // continuous run. Keeping the ordinal monotonic across rounds is what stops
-  // round 2's first part from overwriting round 1's.
-  let summaryPart = -1;
-
-  const c = client();
-  const maxRounds = hasTools ? MAX_TOOL_ROUNDS + 1 : 1;
-  for (let round = 0; round < maxRounds; round++) {
-    const isFinalRound = round === maxRounds - 1;
-    const params: OpenAI.Responses.ResponseCreateParamsStreaming & Record<string, unknown> = {
-      // The one identifier an adapter may serialize — it re-checks the
-      // catalog-id/provider-id equality every other adapter enforces.
-      model: providerRequestModel(model),
-      // When system is already in `input` with a cache breakpoint (GPT-5.6+),
-      // omit `instructions` so the prefix is one contiguous cached block.
-      ...(systemAsInput ? {} : { instructions: system }),
-      input,
-      stream: true,
-      // No server-side persistence: history is resent per round, like every
-      // other Juno adapter — nothing about the chat lives in OpenAI storage.
-      store: false,
-      max_output_tokens: maxTokens,
-    };
-    // ASK FOR THE REASONING BACK IN A FORM THAT CAN BE RETURNED.
-    //
-    // `store: false` is stateless, so OpenAI keeps nothing between rounds: the
-    // reasoning items a round produced have to travel back with the function
-    // calls they produced or the model restarts its chain of thought every
-    // round (worse tool use, reasoning tokens paid for twice, and an outright
-    // error on some snapshots). `include: ["reasoning.encrypted_content"]` is
-    // what makes those items returnable at all — without it the output carries
-    // no encrypted payload to echo.
-    if (model.reasoning) params.include = ["reasoning.encrypted_content"];
-    // Cast: the installed openai types predate the "none"/"xhigh"/"max" values
-    // that the Responses API now accepts.
-    if (effort || usePro) {
-      params.reasoning = {
-        ...(effort ? { effort } : {}),
-        ...(usePro ? { mode: "pro" } : {}),
-        ...(wantsSummary ? { summary: "detailed" } : {}),
-      } as OpenAI.Responses.ResponseCreateParams["reasoning"];
-    }
-    if (tools) {
-      params.tools = tools;
-      params.tool_choice = isFinalRound ? "none" : "auto";
-    }
-    // Official OpenAI prompt caching (key + GPT-5.6 options / retention).
-    Object.assign(params, openAIPromptCacheRequestFields(model, cacheKey));
-    // OpenAI priority processing (premium latency). The route gates fastMode to
-    // priority-eligible models, so relaying it straight through is safe.
-    if (fastMode) params.service_tier = "priority";
-
-    const stream = await c.responses.create(params, { signal });
-
-    const calls: Array<{ callId: string; name: string; args: string }> = [];
-    /**
-     * Everything this round produced that the NEXT round must see again, in
-     * wire order: each reasoning item followed by the function call it led to.
-     * Order is the contract — a reasoning item after its own call is rejected.
-     */
-    const replayItems: InputItem[] = [];
-    let roundFinish: string | undefined;
-
-    for await (const event of stream) {
-      switch (event.type) {
-        case "response.output_text.delta":
-          yield { type: "text", text: event.delta };
-          break;
-        // A part boundary is a FACT the API states, not something to infer from
-        // the text later. Counting the announcements is the whole mechanism:
-        // each `part.added` opens a step, and every delta until the next one
-        // belongs to it.
-        case "response.reasoning_summary_part.added":
-          summaryPart++;
-          break;
-        case "response.reasoning_summary_text.delta":
-          // Defensive: a delta with no preceding part.added still belongs to a
-          // real part, so open one rather than emitting part:-1.
-          if (summaryPart < 0) summaryPart = 0;
-          yield { type: "reasoning", text: event.delta, part: summaryPart };
-          break;
-        case "response.output_item.done": {
-          const item = event.item as { type: string; call_id?: string; name?: string; arguments?: string };
-          // Carries `encrypted_content` thanks to the `include` above.
-          if (item.type === "reasoning") replayItems.push(event.item as unknown as InputItem);
-          if (item.type === "function_call" && item.call_id && item.name) {
-            calls.push({ callId: item.call_id, name: item.name, args: item.arguments ?? "{}" });
-            replayItems.push(event.item as unknown as InputItem);
-          }
-          break;
-        }
-        case "response.completed":
-        case "response.incomplete": {
-          const resp = event.response;
-          if (resp.usage) {
-            sawUsage = true;
-            cumInput += resp.usage.input_tokens ?? 0;
-            cumOutput += resp.usage.output_tokens ?? 0;
-            cumCached += resp.usage.input_tokens_details?.cached_tokens ?? 0;
-            // Docs: cache writes are `cache_write_tokens` (GPT-5.6+). Older SDKs
-            // sometimes exposed `cache_creation_tokens` — accept both.
-            const details = resp.usage as {
-              input_tokens_details?: {
-                cached_tokens?: number;
-                cache_write_tokens?: number;
-                cache_creation_tokens?: number;
-              };
-              output_tokens_details?: { reasoning_tokens?: number };
-              total_tokens?: number;
-            };
-            const writeTok =
-              details.input_tokens_details?.cache_write_tokens ??
-              details.input_tokens_details?.cache_creation_tokens ??
-              0;
-            if (writeTok > 0) cumCacheWrite += writeTok;
-            const reasoningTok = details.output_tokens_details?.reasoning_tokens ?? 0;
-            if (reasoningTok > 0) cumReasoning += reasoningTok;
-            if (details.total_tokens != null) cumTotal += details.total_tokens;
-          }
-          roundFinish =
-            event.type === "response.incomplete"
-              ? resp.incomplete_details?.reason === "max_output_tokens"
-                ? "length"
-                : (resp.incomplete_details?.reason ?? "stop")
-              : calls.length > 0
-                ? "tool_calls"
-                : "stop";
-          break;
-        }
-        case "response.failed": {
-          const err = event.response.error;
-          throw Object.assign(new Error(err?.message ?? "Responses API run failed."), {
-            status: undefined,
-            error: { message: err?.message },
-          });
-        }
-        case "error": {
-          const ev = event as { message?: string; code?: string };
-          throw Object.assign(new Error(ev.message ?? "Responses API stream error."), {
-            error: { message: ev.message },
-          });
-        }
-        default:
-          break;
-      }
-    }
-    finishRaw = roundFinish;
-
-    if (hasTools && !isFinalRound && calls.length > 0) {
-      // The round's own output first — reasoning items and the calls they
-      // produced, verbatim and in order — then one output per call below.
-      input.push(...replayItems);
-      for (const call of calls) {
-        const label = toolset!.labelFor(call.name);
-        // The Responses adapter has the whole argument JSON before it
-        // dispatches, so the arguments ride on the CALL — the row is complete
-        // in the panel while the connector is still being waited on.
-        yield { type: "tool", server: label, name: call.name, phase: "call", callId: call.callId, args: call.args };
-        let parsedArgs: Record<string, unknown> = {};
-        try {
-          parsedArgs = call.args ? JSON.parse(call.args) : {};
-        } catch {
-          parsedArgs = {};
-        }
-        const exec = await toolset!.execute(call.name, parsedArgs, signal);
-        // `function_call_output.output` is a string, so pixels follow it as a
-        // user turn carrying `input_image` parts — the documented way to show
-        // a Responses model an image a function produced.
-        const images = sendableToolImages(exec.images, model.vision);
-        input.push({
-          type: "function_call_output",
-          call_id: call.callId,
-          output: withheldImagesNote(exec.text, exec.images, images.length),
-        } as InputItem);
-        if (images.length) {
-          input.push({
-            role: "user",
-            content: [
-              { type: "input_text", text: toolImageIntro(call.name, images) },
-              ...images.map((image) => ({
-                type: "input_image",
-                detail: "high",
-                image_url: toDataUrl(image),
-              })),
-            ],
-          } as unknown as InputItem);
-        }
-        yield {
-          type: "tool",
-          server: label,
-          name: call.name,
-          phase: "result",
-          callId: call.callId,
-          result: exec.body,
-          ok: exec.ok,
-          durationMs: exec.durationMs,
-        };
-      }
-      continue;
-    }
-    break;
-  }
-
-  if (sawUsage) {
-    yield {
-      type: "usage",
-      input: cumInput,
-      output: cumOutput,
-      reasoning: cumReasoning || undefined,
-      total: cumTotal || undefined,
-      cacheRead: cumCached || undefined,
-      cacheWrite: cumCacheWrite || undefined,
-    };
-  }
-  // A trailing tool_calls means even the forced-answer round wanted more tools —
-  // surface "length" so the UI warns + offers Continue (same as the compat path).
-  const finalRaw = finishRaw === "tool_calls" ? "length" : finishRaw;
-  yield { type: "finish", reason: normalizeFinishReason(finalRaw ?? "stop"), raw: finalRaw };
-  console.info("[llm:openai-responses] stream finish", {
-    model: model.providerModel,
-    finishReason: finalRaw ?? "stop",
-    promptTokens: sawUsage ? cumInput : null,
-    completionTokens: sawUsage ? cumOutput : null,
-    reasoningTokens: sawUsage ? cumReasoning || null : null,
-    cachedTokens: sawUsage ? cumCached : null,
+  yield* runResponsesLoop({
+    req,
+    dialect,
+    history: historyItems,
+    transport: req.transport ?? sdkTransport(dialect, req.cacheKey),
+    legacyToolset,
+    log: (event, data) => console.info(`[llm:${dialect}-responses] stream ${event}`, data),
   });
 }
