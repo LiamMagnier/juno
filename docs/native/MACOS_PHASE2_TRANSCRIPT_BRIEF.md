@@ -829,3 +829,9 @@ Key facts:
 - **Sources** gain `origin`.
 - **Notices.** Only five codes have kind "warning": finish_length, usage_limit, connector_unavailable, hostile_content and research_skipped. All other codes have kind "context".
 - **Presentation copy** for each canonical tool id lives on the client (SPEC §3.8). Mirror that table in Swift and never display the English `title`.
+- **Advertising and safety (SPEC §2.2 addendum).**
+  - `GET /api/v1/bootstrap` gains a top-level `chat: { clientFeatures: [...] }`, and `/api/app` features gain `chatClientFeatures`. If the key is absent, the server is older and speaks profile 1 only.
+  - Production's `chatBodySchema` (`src/lib/chat/request.ts:68`) is a non-strict `z.object`, so it strips unknown keys. The Mac therefore **always sends** `clientFeatures`, `timeZone` and `locale`, and decodes whichever grammar comes back.
+  - Also read `chat.clientFeatures` from bootstrap, adding it to `BootstrapWireResponse` in `NativeBootstrapClient.swift` as an optional field. It isn't a gate; the UI uses it to know research handoff is available.
+  - Add the `chat` key to `contracts/openapi/juno-native-v1.yaml` when the contract is regenerated.
+  - The bootstrap decoders are synthesized `Decodable`, so an unknown top-level key is already tolerated. Checked on 2026-09-23.
