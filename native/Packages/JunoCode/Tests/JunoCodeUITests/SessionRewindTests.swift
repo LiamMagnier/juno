@@ -289,6 +289,59 @@ final class SessionRewindTests: XCTestCase {
         await controller.stop()
     }
 
+    /// A rewind holds the session from its checks to the reloaded
+    /// transcript. A prompt from the phone, a message typed here and a
+    /// `/compact` that arrive while it restores files and cuts the record are
+    /// turned away — not started on the orchestrator the rewind is about to
+    /// let go of, whose memory still holds the turns being cut.
+    func testNothingStartsWhileARewindIsUnderWay() async throws {
+        let (controller, model) = try await twoTurns()
+        let second = try XCTUnwrap(controller.rewindTurns.last)
+        let requestsBefore = model.requests.count
+
+        let rewinding = Task { await controller.rewind(to: second.id, restoring: .codeAndConversation) }
+        for _ in 0..<100 where !controller.isRewinding {
+            await Task.yield()
+        }
+        XCTAssertTrue(controller.isRewinding, "the rewind should be under way")
+        XCTAssertFalse(controller.isRunning, "a rewind is not a run: its own panel offers Stop by that")
+
+        do {
+            try await controller.deliverRemotePrompt("From the phone")
+            XCTFail("a prompt from the phone was taken in the middle of a rewind")
+        } catch let refusal as SessionController.RemotePromptRefusal {
+            XCTAssertTrue(refusal.message.contains("being rewound"), refusal.message)
+        }
+        controller.composerText = "From the desk"
+        await controller.send()
+        XCTAssertEqual(controller.transientError, RewindCopy.inProgress)
+        await controller.compactConversation()
+        XCTAssertEqual(controller.transientError, RewindCopy.inProgress)
+        let again = await controller.rewind(to: second.id, restoring: .conversation)
+        XCTAssertEqual(again, .failed(message: RewindCopy.inProgress))
+
+        let outcome = await rewinding.value
+        XCTAssertEqual(outcome, .rewound(restoredPaths: ["notes.txt"]))
+        XCTAssertFalse(controller.isRewinding)
+        XCTAssertEqual(controller.rewindTurns.map(\.text), ["Create first.txt"])
+        XCTAssertEqual(try read("notes.txt"), "hello\n")
+        XCTAssertEqual(model.requests.count, requestsBefore, "no run started during the rewind")
+        let prompts = await store.events(for: controller.sessionID).compactMap { event -> String? in
+            if case let .userPrompt(prompt) = event.payload { return prompt.text }
+            return nil
+        }
+        XCTAssertEqual(prompts, ["Create first.txt"])
+        XCTAssertEqual(controller.composerText, "Change the notes\n\nFrom the desk", "the draft is kept")
+
+        // Held no longer: the phone's next prompt goes, on the rewound history.
+        let delivery = try await controller.deliverRemotePrompt("From the phone")
+        let refusal = await delivery.outcome()
+        XCTAssertNil(refusal)
+        await controller.awaitCurrentRun()
+        let sent = try XCTUnwrap(model.requests.last)
+        XCTAssertFalse(sent.messages.contains(.user("Change the notes")), "a cut turn came back")
+    }
+
     /// A `/compact` between runs saves its fold over the conversation when
     /// the model's summary comes back, so a rewind meanwhile would be undone
     /// by it, or have the turns it removed folded back into the summary.

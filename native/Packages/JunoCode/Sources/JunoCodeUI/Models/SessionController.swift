@@ -1133,6 +1133,21 @@ public final class SessionController {
     /// conversation.
     public private(set) var isSubmitting = false
 
+    /// True while ``rewind(to:restoring:force:)`` is cutting the session
+    /// back, from its checks to the reloaded transcript.
+    ///
+    /// A rewind reads the whole transcript twice and restores files between,
+    /// and until this existed nothing held the session meanwhile: a prompt
+    /// from the phone could start a run on the orchestrator the rewind was
+    /// about to let go of, whose history still held the turns being cut. The
+    /// run then saved them back over the rewound conversation, and Stop could
+    /// no longer reach it. A message, a `/compact` and a second rewind are all
+    /// refused until it is done.
+    ///
+    /// Not part of ``isRunning``: nothing is running, and the rewind's own
+    /// panel reads that to offer Stop.
+    public private(set) var isRewinding = false
+
     public var elapsedSeconds: Double? {
         guard let runStartedAt, session.status.isActive else { return nil }
         return Date().timeIntervalSince(runStartedAt)
@@ -1247,6 +1262,10 @@ public final class SessionController {
         // ↩ while its hooks decide finds it still there. It is the same
         // message; sending it again would be a second turn.
         guard !isSubmitting else { return }
+        guard !isRewinding else {
+            transientError = RewindCopy.inProgress
+            return
+        }
         let prompt = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         // An attachment on its own is a message. "Look at this" with a screenshot
         // and no sentence is a normal thing to send, and refusing it would make the
@@ -1324,6 +1343,10 @@ public final class SessionController {
         live: Live,
         accepted: (@Sendable () -> Void)? = nil
     ) async throws {
+        // Every entry point refuses during a rewind in its own words; this is
+        // the backstop for one that did not ask, such as a redirect typed
+        // into a stale approval.
+        guard !isRewinding else { throw RewindInProgress() }
         if session.status.isActive {
             let current = await currentOrchestrator(live)
             switch kind {
@@ -1351,6 +1374,7 @@ public final class SessionController {
         live: Live,
         accepted: (@Sendable () -> Void)? = nil
     ) async throws {
+        guard !isRewinding else { throw RewindInProgress() }
         liveAssistantText = ""
         let configuration = session.configuration
         // Written before the prompt, so the transcript reads contract-then-turn
@@ -1371,6 +1395,11 @@ public final class SessionController {
             prompt: prompt, modelPrompt: modelPrompt, images: images, accepted: accepted
         )
         runStartedAt = Date()
+    }
+
+    /// A message turned away because a rewind holds the session.
+    private struct RewindInProgress: LocalizedError {
+        var errorDescription: String? { RewindCopy.inProgress }
     }
 
     /// Why a prompt from another device was not delivered.
@@ -1463,6 +1492,7 @@ public final class SessionController {
         guard let live else {
             throw RemotePromptRefusal(message: "This session cannot run on this Mac right now.")
         }
+        guard !isRewinding else { throw Self.remoteRefusal(for: RewindInProgress()) }
         guard !isSubmitting else {
             throw RemotePromptRefusal(message: "The agent is already running in this session.")
         }
@@ -1544,6 +1574,10 @@ public final class SessionController {
             RemotePromptRefusal(message: "A hook on the Mac stopped this message: \(reason)")
         case OrchestratorError.stoppedBeforeSending:
             RemotePromptRefusal(message: "The session was stopped on the Mac before this message was sent.")
+        case is RewindInProgress:
+            RemotePromptRefusal(
+                message: "This session is being rewound on the Mac. Send the message again once it has finished."
+            )
         default:
             RemotePromptRefusal(message: "The message could not be delivered on the Mac: \(error.localizedDescription)")
         }
@@ -2413,7 +2447,8 @@ public final class SessionController {
     public func explainRewindUnavailable() {
         transientError = isRunning
             ? RewindCopy.running
-            : isCompacting ? RewindCopy.compacting : "There is nothing to rewind to yet."
+            : isCompacting ? RewindCopy.compacting
+            : isRewinding ? RewindCopy.inProgress : "There is nothing to rewind to yet."
     }
 
     /// How many files each turn changed, by turn, for the rewind picker. What
@@ -2477,7 +2512,8 @@ public final class SessionController {
     /// edited and sent again.
     ///
     /// Refused while a run is active, since the run owns the history it is
-    /// appending to. A file edited outside Juno since it wrote it is never
+    /// appending to, and it holds the session until it is done (see
+    /// ``isRewinding``). A file edited outside Juno since it wrote it is never
     /// overwritten on the first attempt: the result is `.diverged`, and
     /// `force` is the reader's second, explicit answer — the same shape as
     /// Restore Anyway on a single file.
@@ -2488,11 +2524,12 @@ public final class SessionController {
         force: Bool = false
     ) async -> RewindOutcome {
         guard let live else { return .failed(message: RewindCopy.preview) }
-        // Both, because the recorded status trails the run by a hop.
-        if session.status.isActive {
-            return .failed(message: RewindCopy.running)
-        }
-        if let orchestrator, await orchestrator.isRunning {
+        guard !isRewinding else { return .failed(message: RewindCopy.inProgress) }
+        // `isRunning`, not the recorded status alone: a message whose hooks
+        // are still deciding — typed here or sent from the phone — has no
+        // run yet, and the one it is about to start would append to the
+        // history this cuts.
+        if isRunning {
             return .failed(message: RewindCopy.running)
         }
         // Nor while a `/compact` between runs is folding the history: the
@@ -2501,6 +2538,15 @@ public final class SessionController {
         // or fold turns the reader just removed.
         if isCompacting {
             return .failed(message: RewindCopy.compacting)
+        }
+        // Taken before the first suspension, so nothing starts between these
+        // checks and the cut: every await below — two whole-transcript reads
+        // and the file restore — is a window a phone's prompt used to fit in.
+        isRewinding = true
+        defer { isRewinding = false }
+        // The recorded status trails the run by a hop.
+        if let orchestrator, await orchestrator.isRunning {
+            return .failed(message: RewindCopy.running)
         }
         if let orchestrator, await orchestrator.isCompacting {
             return .failed(message: RewindCopy.compacting)
@@ -2534,6 +2580,20 @@ public final class SessionController {
         }
 
         if scope.restoresConversation {
+            func conversationNotRewound(_ reason: String) -> RewindOutcome {
+                let message = restored.isEmpty
+                    ? "Could not rewind the conversation. \(reason)"
+                    : "Restored \(restored.count == 1 ? "1 file" : "\(restored.count) files"), but the conversation could not be rewound. \(reason)"
+                transientError = message
+                return .failed(message: message)
+            }
+            // Asked once more, last thing before the cut. Nothing this
+            // controller does can start a run while the rewind holds the
+            // session, but the orchestrator is what would save its own
+            // history over the cut, so it is not taken on trust.
+            if let orchestrator, await orchestrator.isRunning {
+                return conversationNotRewound(RewindCopy.running)
+            }
             do {
                 let plan = try await live.store.rewindConversation(sessionID: sessionID, to: turnID)
                 if scope.restoresCode {
@@ -2548,12 +2608,7 @@ public final class SessionController {
                 composerText = draft.isEmpty ? plan.turn.text : plan.turn.text + "\n\n" + composerText
                 rewindGeneration += 1
             } catch {
-                let reason = RewindCopy.message(for: error)
-                let message = restored.isEmpty
-                    ? "Could not rewind the conversation. \(reason)"
-                    : "Restored \(restored.count == 1 ? "1 file" : "\(restored.count) files"), but the conversation could not be rewound. \(reason)"
-                transientError = message
-                return .failed(message: message)
+                return conversationNotRewound(RewindCopy.message(for: error))
             }
         }
 
@@ -2576,10 +2631,20 @@ public final class SessionController {
     /// The orchestrator is let go rather than told: it holds the history it
     /// last saw in memory, and the replacement built on the next send loads
     /// the rewound one from the store.
+    ///
+    /// Never one with a run in flight, though the rewind's hold should make
+    /// that impossible. Let go mid-run, it would carry on unseen: Stop could
+    /// no longer reach it, its approvals would go unrecorded, and a second
+    /// run would start beside it on the next send. It is kept for Stop, and
+    /// its contract forgotten, so the next send replaces it once it is done.
     private func reloadAfterRewind(_ live: Live) async {
-        await orchestrator?.release()
-        orchestrator = nil
-        orchestratorContract = nil
+        if let orchestrator, await orchestrator.isRunning {
+            orchestratorContract = nil
+        } else {
+            await orchestrator?.release()
+            orchestrator = nil
+            orchestratorContract = nil
+        }
         liveAssistantText = ""
         // The next request reports the new size; the old number describes a
         // history that no longer exists.
@@ -3565,6 +3630,12 @@ public final class SessionController {
         // a history that prompt is about to join.
         guard !isRunning else {
             transientError = "Juno is still working. Compaction happens between turns; try again once this one ends."
+            return
+        }
+        // The fold saves over the conversation a rewind is cutting, and would
+        // fold back the turns it removes.
+        guard !isRewinding else {
+            transientError = RewindCopy.inProgress
             return
         }
         guard !isCompacting else { return }

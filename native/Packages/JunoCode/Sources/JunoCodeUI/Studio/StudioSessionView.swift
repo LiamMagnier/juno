@@ -50,6 +50,7 @@ public struct StudioSessionView: View {
             && controller.isAgentTransportConfigured
             && !controller.isCompacting
             && !controller.isSubmitting
+            && !controller.isRewinding
     }
 
     private var placeholder: String {

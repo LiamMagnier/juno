@@ -107,6 +107,9 @@ enum RewindCopy {
     static let running = "Juno is working. Stop it before rewinding."
     static let compacting = "Juno is compacting the conversation. Rewind once it has finished, or stop it."
     static let preview = "Preview mode does not rewind."
+    /// What a message, a `/compact` or a second rewind is told while a rewind
+    /// is cutting the session back.
+    static let inProgress = "This session is being rewound. Try again once the rewind has finished."
     /// The limit every rewind shares with Claude Code's: Juno sees the files
     /// its own tools write, and nothing a command writes. The exception is a
     /// file its tools also changed, which goes back whole — a command's edit
