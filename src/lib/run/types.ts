@@ -28,6 +28,8 @@ export interface RunView {
   items: RunItem[];                    // chronological by seq
   tools: Extract<RunItem, { kind: "tool" }>[];
   facts: { model?: RunFact; effort?: RunFact; context?: RunFact; tools?: RunFact; connectors?: RunFact;
+           /** The research completion message's fact (SPEC §9.6.3): its line leads "Researched for". */
+           research?: RunFact;
            memory: ClientMemoryReceipt[] };
   counts: { sources: number; searches: number; codeRuns: number; filesCreated: number;
             connectorsUsed: string[]; filesRead: string[]; failedTools: number; warnings: number };
@@ -52,6 +54,19 @@ export interface PhaseState {
   calm: boolean;               // ≥ 20 s of continuous working
   /** Escalation caption tier: 0 none, 1 after 2 min of working, 2 after 10 min. */
   escalation: 0 | 1 | 2;
+  /** Two or more reads (or searches) started within `coalesceWindowMs`: the label counts them
+   *  ("Reading 3 sources") instead of naming one. Absent for a single call. */
+  coalesced?: number;
+  /** How long the run has been working without a break, in ms (drives calm and escalation). */
+  workingMs?: number;
+}
+
+/**
+ * A phase as the pacer releases it: what the line may show right now.
+ * `reveal` is "none" before 150 ms, "glyph" until 400 ms, then "label" (SPEC §7.3).
+ */
+export interface PacedPhase extends PhaseState {
+  reveal: "none" | "glyph" | "label";
 }
 
 /** What `derivePhase` reads besides the view: the live state of the stream. */
@@ -77,6 +92,8 @@ export type ArgNode =
   | { kind: "number"; value: number; approx?: boolean }   // Intl.NumberFormat; approx → "~" prefix
   | { kind: "duration"; ms: number; style: "narrow" | "long" | "digital" }
   | { kind: "date"; iso: string; style: "short" | "medium" }
+  /** A clock time ("14:02" / "2:02 PM"), formatClock in the UI locale: approval receipts. */
+  | { kind: "time"; iso: string }
   /** A whole-phrase plural: a number node followed by `one` or `other`, chosen with
    *  Intl.PluralRules in the UI locale. `one`/`other` are *_COPY literals. */
   | { kind: "count"; n: number; one: string; other: string; approx?: boolean };
@@ -100,3 +117,19 @@ export interface ToolPresentation {
 
 /** 1 wins: the open panel's live item, then the chat line, the artifact card, a Research row. */
 export type LoopPriority = 1 | 2 | 3 | 4;
+
+// ── The provisional hold (src/lib/run/provisional-text.ts) ────────────────────
+
+/** How the client classified one live round's text before the server did (SPEC §7.3). */
+export type RoundVerdict = "answer" | "commentary";
+
+/**
+ * One message's live answer-area state, shared by the run block (which runs the
+ * hold and the peek collapse) and the answer body (which renders what it may).
+ */
+export interface LiveAnswerState {
+  /** Per round: settled by the hold. A round absent here is still held (or needs no hold). */
+  verdicts: Readonly<Record<number, RoundVerdict>>;
+  /** The peek has finished collapsing (or never opened): answer text may render. */
+  revealed: boolean;
+}
