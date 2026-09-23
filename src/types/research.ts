@@ -37,6 +37,37 @@ export interface ResearchEstimate {
 }
 
 /**
+ * A run's sizing, frozen on `plan.envelope` at confirmation (SPEC §9.2). The
+ * engine reads every limit from it; money shows only in the panel's details.
+ *
+ * Declared here rather than in `envelope.ts` because `parsePlan` (domain.ts)
+ * reads it back and `envelope.ts` imports the domain's cost facts: the type
+ * living in a third, dependency-free module keeps those two from importing
+ * each other.
+ */
+export interface ResearchEnvelope {
+  v: 1;
+  ceilingMicroUsd: number;
+  reserve: { writerMicroUsd: number; auditMicroUsd: number };
+  workers: number;
+  rounds: number;
+  toolCallsPerWorker: number;
+  pages: number;
+  resultsPerQuery: number;
+  engines: string[];
+  workerTokens: number;
+  wallClockMs: number;
+  workerWallClockMs: number;
+  judgeCalls: number;
+  /** Model id of the lead: the planner and the writer (§9.5.1). */
+  leadModel: string;
+  limitedBy: "scope" | "plan" | "month" | "window";
+  estimate: ResearchEstimate;
+  /** What the client needs to recompute the estimate. */
+  caps: ResearchEstimateCaps;
+}
+
+/**
  * Where a run is, as the reader sees it. Derived server-side from the run's
  * state and latest events; the client maps it to a glyph and a phrase with one
  * table (`RESEARCH_PHASE_UI`).

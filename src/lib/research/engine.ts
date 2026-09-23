@@ -49,6 +49,7 @@ import {
   PLANNER_OUTPUT_TOKENS,
   PLANNER_PROMPT_CHARS,
   REVISION_REPORT_CHARS,
+  RESEARCH_SNAPSHOT_CHARS,
   SEARCH_FEE_MICRO_USD,
   SYNTHESIS_OUTPUT_TOKENS,
   SYSTEM_PROMPT_CHARS,
@@ -820,7 +821,7 @@ const FETCH_PER_HOST = 2;
  * context holds, and the main-content extraction added alongside this means 12k
  * of a stripped page is worth more than 16k of one with the nav bar still in it.
  */
-export const SNAPSHOT_CHARS = 12_000;
+export const SNAPSHOT_CHARS = RESEARCH_SNAPSHOT_CHARS;
 /**
  * Below this, what a search engine handed back is a preview rather than a page,
  * and the source is worth opening properly. Set well under `SNAPSHOT_CHARS` so a
