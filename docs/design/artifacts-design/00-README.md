@@ -45,4 +45,5 @@ This folder is the record of all three. It changes no product code.
 | X-01 dead previews | `claude/sharp-aryabhata-79fb4b` @ `b7946ff5` | Fixed with share governance. Not merged or deployed; needs a migration deploy |
 | X-02 Canvas editor remount | `claude/suspicious-borg-f3e3b4` @ `499b6afd` | Fix ready to land (fast-forwards from main); waiting for a releaser and a signed-in check |
 | X-03 / X-04 edit and regenerate deletes | `claude/agitated-elion-a15fe9` @ `7243613f` | Fixed. Not merged or deployed |
+| X-08 design size after expansion; M11 type immutability | `artifacts/r0-size-and-type` @ `db3766ab` (stacked on `7243613f`, worktree `../juno-artifacts-r0`) | Fixed with tests. Not merged; lands together with `7243613f` in R0 |
 | X-11 / X-12 Mac dock designs and stale revision | `mac/liquid-glass-chat` (Phase 2 stage 3) | In progress in the juno-glass worktree |
