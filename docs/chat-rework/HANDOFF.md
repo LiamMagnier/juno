@@ -28,6 +28,27 @@ usage limit. Nothing unfinished is on main, and nothing was deployed.
 | `f1badf26`, `5f89b888` | `SPEC.md`: 5,600 lines with 3 adversarial reviews applied, plus the bootstrap-advertising addendum agreed with the Mac session | Branch only |
 | `8e226dba` | **WS0 contract scaffold.** All new types, stubs, CSS tokens and `rework-worktree-setup.sh`. Full gate green: 3,803 tests | Branch only |
 
+## Frugal resume, 2026-09-24: `web/tool-call-hotfixes`
+
+The owner resumed with under 10% of the week's usage left and asked for small slices, with no
+multi-agent workflows. So first came a hotfix branch off origin/main (7f92324f), in the worktree
+`/Users/liammagnier/Developer/project/juno-rework/hotfix`:
+
+- `6de5c15d`: the pinned-DNS fix (a cherry-pick of c899d6f7).
+- `00bdd27a`: **Juno's own chat tools stop hanging.**
+  - `read_document` and `inspect_image` get exact `read_only` broker rules.
+  - The runtime forwards `onApprovalRequest`, so `browser_agent` and `code_interpreter` show their
+    approval card instead of waiting unseen for 120 s.
+  - Gemini sends `exec.text`.
+- Gate on this exact tree: typecheck clean, 3,781 tests passing with 0 failures, eslint clean,
+  `check-approval-dispatch` OK.
+- **Not pushed.** It fast-forwards onto main. Pushing needs one agreed releaser, and deploying
+  needs the owner.
+
+The next small slices, if usage allows:
+- remove the Quick/Standard/Deep/Max words from the web UI, UI only;
+- stop sending xAI's retired Live Search, once verified live.
+
 ## In progress: wave 1 (paused mid-implementation)
 
 The run was `wf_a8130f4a-430` (`rework-wave1`), stopped during the implement stage. No review, fix
