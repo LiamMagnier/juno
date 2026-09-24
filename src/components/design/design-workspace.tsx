@@ -38,6 +38,7 @@ import { DesignAdjustments } from "@/components/design/design-adjustments";
 import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
 import { ZoomBar, type DesignViewportHandle } from "@/components/design/design-canvas";
 import { toPendingProposal, type DesignEditProposal } from "@/components/design/design-edit-transport";
+import { DESIGNS_HOME } from "@/lib/artifact-links";
 import type { DesignAdjustment } from "@/lib/design/ai";
 import type { NodeId } from "@/lib/design/types";
 
@@ -152,7 +153,9 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Couldn’t delete this design.");
       toast.success("Design deleted.");
-      router.replace("/design");
+      // Back to where designs are listed now: Artifacts, filtered to designs.
+      // `/design` would get there too, through one redirect more.
+      router.replace(DESIGNS_HOME);
     } catch (error) {
       setDeleting(false);
       toast.error(error instanceof Error ? error.message : "Couldn’t delete this design.");
@@ -165,7 +168,7 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
         <Tooltip>
           <TooltipTrigger asChild>
             <Button asChild variant="ghost" size="icon-sm" className="shrink-0 text-muted-foreground hover:text-foreground">
-              <Link href="/design" aria-label="All designs">
+              <Link href={DESIGNS_HOME} aria-label="All designs">
                 <ArrowLeft className="size-4" aria-hidden />
               </Link>
             </Button>

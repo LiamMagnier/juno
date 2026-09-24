@@ -1,0 +1,173 @@
+{
+ "issues": [
+  {
+   "severity": "blocker",
+   "section": "\u00a71.5 step 5 (l.110), \u00a72.7 seal rule (l.276-277), \u00a78.3 (l.1087-1090), \u00a78.4, WF-1, WF-2",
+   "issue": "The headline example of the AI editing loop breaks the plan's own rules, so nobody can tell who changed what. (1) The head seals \"before any Juno turn reads it\". The owner's hand-edited fill therefore becomes v4 (authorKind user), and Juno's Apply must be v5. Step 5, WF-1 and WF-2 all say \"Apply makes v4\" and \"v3 \u2192 v4\". (2) \u00a78.3 drops Juno's operations on any node a person changed after the read. That is node-level, but step 5 implies field-level (\"kept the owner's fill\"). (3) The owner asked to make the CTA quieter, which is a change to that same button's fill. Keeping the owner's fill ignores an explicit request, and under a node-level rule the whole CTA change would be dropped. (4) While the head has unsealed edits, the stepper still reads \"\u2039 v4 \u203a\", so the label is wrong. Each exchange after a hand edit also adds two versions (the user seal, then Juno's), and nothing says so.",
+   "fix": "Write the contract once, in \u00a78.3. People-win applies only to edits made after Juno's read (concurrent edits). It works at field level (node id + property path), not node level. An explicit request in the turn overrides the person's earlier edits to the fields it names. Rewrite \u00a71.5 step 5: v4 = \"Your edits\" (sealed when you asked), and Apply makes v5 \"Juno: quieter CTA, larger title\". Change WF-1 and WF-2 to v4 \u2192 v5. While the head is dirty, the stepper reads \"v4 \u00b7 edited\" (or \"Current edits\"). Add a golden test for each case: a concurrent edit is kept; an earlier edit that the request names is changed; an earlier edit on another field survives."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a710.1 (l.1242), \u00a710.2 rows 'Juno's change lands' / 'A proposal waits' / 'Juno is working' (l.1260-1263)",
+   "issue": "Who changed what is not readable on the canvas. Four states share one visual language. (a) The person's selection draws a fixed indigo outline (`--canvas-selection` 229 78% 60%, globals.css:471; design-canvas.tsx:1068-1175). (b) Juno's applied change reuses \"the selection-outline style\" (\u00a710.2), yet \u00a710.1 says the change halo is drawn in the accent. (c) A pending suggestion is an accent outline with an 8% accent fill. On the default coral accent, PREMIUM \u00a72d already found that reads as a warning. (d) Juno working is a breathing outline. A reader cannot tell \"I selected these\" from \"Juno changed these\". The reveal also vanishes after about 1.4 s (800 ms hold plus 560 ms fade): it plays unseen when the panel is closed, and reduced-motion users get 1.5 s. Separately, \u00a710.1 makes the one accent mean \"Juno acting\". That turns it into an AI colour, the thing 03 \u00a78 #9 rejects and FLAT_UI \u00a72.4 forbids (accent = primary action, selected mark, focus).",
+   "fix": "Publish a four-state canvas legend in \u00a710, where no state relies on colour alone. Your selection: a solid `--canvas-selection` outline, unchanged. Juno's suggestion waiting: a 1 px dashed ink/60 outline plus a small \"Juno \u00b7 suggestion\" name tag on its frame, no fill. Juno's applied change: the tonal reveal, plus a persistent \"Juno \u00b7 v5\" mark on those rows in Layers until a person next edits them; hovering the suggestion card outlines the layers again. Juno working: a neutral-ink outline that breathes in brightness. Take the \"Juno acting\" use out of the accent (\u00a710.1). Play the reveal on the first view after a change, not only when it lands. Under reduced motion, hold the static outline until the next interaction. Announce \"Juno changed 4 layers: \u2026\" in an aria-live region."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a72.5 (l.220-234), \u00a78.4, \u00a78.10, \u00a76.1 bars, \u00a76.4, \u00a77.4 step 5, \u00a78.8, WF-4",
+   "issue": "The \"one noun per concept\" table has no user-facing noun for Juno's pending change, and the plan uses several: \"waiting suggestion\" (\u00a78.10), \"revision\" (WF-4, \u00a71.4), \"change\" (\u00a76.1, \u00a76.4), \"proposal\" (\u00a78.4), \"edit card\" (\u00a71.5) and \"Suggest to owner\" (\u00a78.7). The verbs vary with the phase: \"Use it\" (R1 guard), \"Apply\" (proposal) and \"Use this\" (tries). A stopped draft reads \"Keep v4 \u00b7 Continue v5\" in WF-4 but \"Keep what's here \u00b7 Discard\" in \u00a77.4. A failed render reads \"v5 didn't render \u00b7 Show error \u00b7 Fix with Juno\" in WF-4 but \"This page hit an error \u00b7 Fix with Juno \u00b7 Details\" in \u00a78.8. People will not learn a loop whose words change every release.",
+   "fix": "Add rows to \u00a72.5. Juno's pending change is a **suggestion**: Apply \u00b7 Discard while it waits, then Undo \u00b7 Compare. Alternatives are **tries**: Use this \u00b7 Keep both \u00b7 Discard. The R1 guard uses the same words (\"Juno's suggestion is waiting \u00b7 Compare \u00b7 Apply\"). Retire \"revision\", \"Use it\" and \"proposal\" from copy; `ArtifactProposal` stays as the internal name. Add a single copy table (state \u00d7 card, bar, native) as an appendix, and make WF-4, \u00a76.4, \u00a77.4 and \u00a78.8 quote it verbatim."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a78.4 (l.1094), \u00a78.3, Phase 6 \u00a78.7",
+   "issue": "Undo ownership is undefined. A Juno change can be undone in three ways: \"Undo Juno: <summary>\" (one undo entry), the card's Undo, and \u2318Z in the editor. The plan does not say whether a change Juno applied directly (no review) sits on the person's \u2318Z stack. If it does, \u2318Z after a few hand edits silently reverts Juno's work. It also does not say what happens when the head no longer matches, or, from Phase 6, whether collaborator B's \u2318Z can undo a Juno change that A requested.",
+   "fix": "State the rule. Apply is the person's action, so it goes on their \u2318Z stack. A change Juno applied directly is never on anyone's \u2318Z stack; it is undone from its card or from History, and that undo appends a restore version attributed to the person. \u2318Z is per person, as in Figma. Add these cases to the Phase 3 component tests."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a78.4 'Up to three asks run in parallel' (l.1102), \u00a78.5, \u00a79.1 'Activity view' (l.1170), \u00a72.6 fork row (l.263)",
+   "issue": "The plan fixes one channel, the conversation, which is linear: Enter queues and send \u21c4 stop. It then allows three parallel asks per artifact, without saying where three concurrent replies appear in one transcript. An artifact can also be edited from other conversations (fork turns address it by id) and, from Phase 6, from each collaborator's private thread. The full window's Chat tab shows only the made-in chat, so those changes never appear where the reader looks. The \"Activity view\" that should reconcile this appears once in \u00a79.1 and nowhere in the anatomy, the wireframes or the phases.",
+   "fix": "In v1, one Juno write per artifact at a time; extra on-canvas asks queue as the R-038 chips. Design an Activity surface, either a History popover section or an \"Activity\" tab in the leading pane. It lists every version with author (You, Juno for <person>, a task, a restore), channel (this chat, another chat, a comment, a task) and a link. An edit made from another conversation drops a one-line receipt into the made-in chat. Wireframe the surface and put it in Phase 2 with the stepper."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a75.1 (l.676), \u00a75.2 'Every Copy link yields /a/{id}' (l.697), \u00a79.1",
+   "issue": "On Day one, every Copy link produces `/a/{id}`, and that URL 404s for anyone but the owner until grants arrive (Phase 6b, around W28\u2013W33). People will paste it to a colleague and send a dead link. The plan also delivers two links with different content (a live `/a/{id}` and a pinned `/share/{token}`). Claude's hallmark is \"one shareable link you can open on your phone\" (primary evidence).",
+   "fix": "Until grants ship, header and menu copy read \"Copy private link\", with the tooltip \"Only you can open this\". The Share dialog steers to Publish. A signed-in non-owner at `/a/{id}` sees \"Only the owner can open this \u00b7 Ask them to publish it\", not a bare 404. Add an owner decision on one URL: `/a/{id}` serves the published pin to anyone without access, and `/share/{token}` redirects to it."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a76.1 header (l.741), \u00a76.2 panel (l.751), WF-1",
+   "issue": "The \"one 44 px row, identical at every size\" does not fit the panel. At the 420 px minimum, with 16 px gutters and 32 px targets, the controls take about 496 px (type word ~44, \u2039 v4 \u203a ~92, switcher 32, \"Design \u25be\" ~72, Play 32, Share ~56, \u22ef, \u2922 and \u2715 at 32 each, plus nine gaps). That exceeds the 388 px available before the title gets any space. It is also true at the default 46% panel on a 1440 px window (about 535 px, leaving the title roughly 40 px). Only the mode control has a collapse rule. The \u22ef menu repeats \"Open in full window \u2318\u21e7\u21a9\" beside the \u2922 button. In the full window, what \u2715 does (close, or collapse to the panel?) is undefined, and there is no Collapse control. Compare side by side (\u00a71.5 step 7) cannot fit a panel under 640 px.",
+   "fix": "Give \u00a76.1 a priority collapse ladder with a minimum of 120 px for the title. Under 560 px, the mode control becomes a menu. Under 480 px, Play, the switcher and the type word move into \u22ef and Share becomes icon-only. Remove \"Open in full window\" from \u22ef. In the full window, \u2922 becomes \u2921 Collapse and \u2715 is defined (it returns to the chat, per \u00a75.2). In the panel, Compare uses Hold-Before or an onion overlay; side by side is full-window only."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a76.2 panel band (l.751), \u00a76.1 floating layers, \u00a78.5 'the pill that pops from a selection', WF-1",
+   "issue": "Below 640 px, selecting a layer makes a contextual bar pop up over the canvas, and \u00a78.5 adds an Ask pill that pops from the selection. The plan adopts U8, \"Nothing auto-pops over the canvas on selection\", lists 03 \u00a78 #16 (\"a properties panel that pops open on selection\") under what it will not copy, and in WF-2 notes that \"a rail never opens on selection\". The bar also covers the nodes directly above the selection, which are the ones being edited.",
+   "fix": "Dock the selection controls in the panel's existing bottom tool row (WF-1's \"V \u25a2 \u25cb T \u2026  Fit 100%\"). With a selection, that row cross-fades to Fill \u00b7 Radius \u00b7 Ask \u00b7 \u22ef and back when the selection clears. Nothing floats over the canvas, and Ask stays the composer's selection chip. If the floating bar is kept, record it as an explicit amendment to U8 and \u00a78 #16, with the reason."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a76.2 'Reading PREMIUM rule 2' (l.757), WF-2 notes (Motion \u21e7M docks a timeline)",
+   "issue": "PREMIUM rule 2 says \"Two panes maximum. The narrow one is a rail of marks.\" The full window has a stage, a full chat transcript on the left and an inspector on the right; Motion adds a docked timeline as a fourth region. The plan \"reads\" the rule so that this passes, instead of recording an amendment, while \u00a70 promises that amendments go to OPEN_DECISIONS. It also never says that the app sidebar disappears in the full window, which it must or there are four columns, nor how the sidebar leaves during the expand.",
+   "fix": "Record an explicit amendment for editors in OPEN_DECISIONS: stage plus at most one pane on each side, with the timeline counting as part of the stage. Make stage plus one pane the default for Doc, Page, Code and Diagram. State that the app sidebar is hidden in the full window, and specify its exit (the sidebar's own collapse motion, run in parallel with the expand) and the way back (the \u2039 chat link)."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a710.2 'Card \u2192 panel' and 'Panel \u2192 full window' (l.1253, 1258)",
+   "issue": "The two signature motions cannot be built as written. (1) framer `layoutId=\"artifact-{id}\"` moves one element, so the card loses its poster (a hole in the transcript) while the panel is open. The shared element also starts at the card's rect but renders inside the panel column, and every column in chat-view is `overflow-hidden` (chat-view.tsx:1989, 1998, 2214), so the start of the morph is clipped and it reads as a slide. (2) framer `layout` animates by scale. On the stage it stretches the sandbox iframe and the design canvas for 360 ms, and on `layoutId=\"composer\"` it squashes the textarea, which ICONS_AND_MOTION \u00a72.2 rule 8 names as the reason textareas cannot use framer layout. (3) The morph is asymmetric: it opens across the scroller, but closing is forbidden to \"fly back\" by the same PREMIUM \u00a72d argument. (4) The expand is sequenced: 360 ms for the frame, then 120 ms for the chat fade once the stage settles, with the composer travelling alongside, so it takes 480 ms or more for a gesture the user caused. (5) Where the canvas camera anchors during the resize is unspecified.",
+   "fix": "Use snapshot morphs (the View Transitions API, the way Claude's only morph works: 350 ms on `.32,.72,0,1`, which is `duration-slow` on `ease-drawer` in Juno) for card \u2192 panel and panel \u2192 window. Keep the card's poster in place and morph a snapshot of it. Resize live content at the first frame behind a cross-fade (the transcript trick the plan already uses) instead of framer `layout`. The composer does not travel: it cross-fades out and back in, keeping its draft and focus as state. Either make open and close symmetric when the card is on screen, or drop the morph both ways and pair the dock entrance with a tonal flash on the source card. Run the pane fades in parallel. Keep the canvas centre fixed while it resizes."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a76.3 wireframes, \u00a76.2 'Public page' and 'Phone' rows, \u00a76.5",
+   "issue": "The card \u2192 panel \u2192 window \u2192 share \u2192 phone chain has holes. There is no wireframe of the public page (`/share/{token}`) at desktop or phone width, although it is the link people open on their phones. There is none of `/a/{id}` at phone-width web either. By \u00a76.2 the leading pane becomes a drawer under 640 px, and the composer is pinned inside it, so on a phone asking Juno needs a drawer, which contradicts \"asking never needs a tab switch\". The iPhone Share/Publish sheet is also missing, although N2 claims phone publishing. WF-7's caption says the Day-one bar is \"Ask and Share\", but it draws \"Play Comment Tweaks Ask\" and no Share.",
+   "fix": "Add a WF for the public page (desktop and 390 px: pinned version, page or slide switcher, footer with Report). Add a WF for `/a/{id}` at 390 px: the stage, the composer docked at the bottom (as in the \u2318\\ floating form), Chat, Layers and Inspector as sheets. Add a WF for iPhone Share. Redraw WF-7 with the Day-one bar as Ask \u00b7 Share."
+  },
+  {
+   "severity": "major",
+   "section": "WF-1, WF-4, WF-6, \u00a71.5 step 3, \u00a76.2 card, \u00a77.3",
+   "issue": "The wireframes mix phases and disagree with the card and header contracts. WF-1, labelled Day one, puts Play on the card (Play is Launch) and a C comment tool in the tool row (comments are Phase 6), against \u00a71.5's \"said so in one line rather than shown as disabled controls\". WF-1's first card is still live at v4 although \"earlier turns fold into a version receipt\". Its edit card follows the creation reply with no user follow-up turn. Its header has no switcher although the chat header says \"Made here 2\". The card title order appears three ways: \"Design \u00b7 Sign-in screen\" (\u00a71.5, \u00a77.3), \"Sign-in screen / Design \u00b7 v4\" (WF-4) and \"Design \u00b7 Sign-in screen \u00b7 v4\" (WF-6). The Mac dock header has two rows (\"Design \u25be \u2026 Saved \u2713\"), against the one-row rule. The Mac window uses \"v4 \u25be\" instead of \"\u2039 v4 \u203a\" and names the pane toggle \"Juno\" while the tab is \"Chat\".",
+   "fix": "Label every wireframe with its phase, and draw each Day-one frame with only Day-one controls. Fix WF-1's transcript: user turn, card as receipt, follow-up user turn, suggestion card. Write one card anatomy (\u00a77.3 wins: type word first) and one header, and redraw WF-6 to match. Show \"Saved\" as the header's one trailing signal on every platform or on none."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a72.5, \u00a76.1, WF-1 header, \u00a75.1 (&page=), \u00a79.1 (l.1172), Share.opensIn",
+   "issue": "Several words carry more than one meaning. \"Design\" is the sidebar row, the type, the editor family (\"Juno Design\") and a mode, so WF-1's header reads \"Sign-in screen  Design  \u2039 v4 \u203a  Design \u25be\". \"Page\" is a type (for a calculator or a game) and also a design page (the `&page=` parameter, the \"page or slide switcher\"). \"Shared\" with a filled globe marks *published*, and Settings \u203a Shared links lists published artifacts, which merges the two concepts \u00a72.5 and \u00a79.1 insist are separate. \"Canvas\" is retired for the panel but comes back as the public viewer mode (`opensIn canvas|play`, \"Opens in ( Canvas | Play )\").",
+   "fix": "Rename the mode set to Edit \u00b7 Prototype \u00b7 Motion \u00b7 Inspect, which matches the Doc's Read \u00b7 Edit. Rename the Page type (\"App\" or \"Web page\"), or rename the design's pages to \"Screens\". When published, the header reads \"Published\" with the globe, and Settings \u203a Shared links becomes \"Published links\" or is removed (see the IA issue). Change `opensIn` copy to View | Play."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a74.1-\u00a74.6, \u00a74.2 (l.605-615), \u00a79.1 Settings \u203a Shared links, WF-3",
+   "issue": "The IA is not simple. On the web on Day one, one design can be found in about 13 places: transcript card or receipt, panel, Made here, the panel's artifact switcher, `/a/{id}`, Artifacts (All, Designs, Recents, Pinned, Published, In project), the Design pointer row, sidebar Pinned, the project page section, \u2318K, unified search, Settings \u203a Shared links, and the composer's Library \u203a Made tab. Several pairs are duplicates: Made here and the panel switcher list \"the same set\" (\u00a74.5); the Recents scope and the Last opened sort; the Everything scope and the All chip; Settings \u203a Shared links and the Published scope. Made here's create tiles make that list also a creator, against PREMIUM rule 1, and repeat + \u203a Make and the slash commands. Recently deleted sits at the foot of a cursor-paged grid, which a large library never reaches, while the Mac puts it in the header.",
+   "fix": "Merge the switcher into Made here, as one control in the panel header. Drop the Recents scope (sort by Last opened does it) and name the scopes All \u00b7 Pinned \u00b7 Published \u00b7 In project. Drop Settings \u203a Shared links in favour of Artifacts \u203a Published, where Unpublish lives in the row menu. Remove the create tiles from Made here. Put Recently deleted in the header on web and Mac alike. Target count: at most 8, and write the count into \u00a74."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a74.1 (l.585-594), \u00a71.3, R13-Launch",
+   "issue": "The Design pointer row is 03 \u00a78 #7 (a sidebar row per type), shipped to everyone from Day one (W17\u2013W20) until Launch (W27) plus a 30-day find-rate hold. While on `/artifacts?type=design`, it is ambiguous which row shows selected, Design or Artifacts, and the selection flips when the filter changes. Removing the row later is a second forced navigation change (the #17 concern).",
+   "fix": "Ship Day one without the row. `/design` redirects, the Artifacts row carries a one-time \"Designs are here now\" line, and \u2318K keeps a \"Design\" alias. If the row stays, it never takes the selected fill (Artifacts owns selection) and is removed within one release, not \"at Launch if the find rate holds\"."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a72.3 type table (l.171-184), \u00a72.5, \u00a711.4",
+   "issue": "The taxonomy exposes ten nouns, and two pairs are invisible to users: Markdown and Doc share the \"Docs\" chip, and Graphic and Image share \"Images\", while the header shows the other word. Legacy MARKDOWN is kept alongside DOC indefinitely, and \"Turn into Doc\" makes a copy. Legacy document and presentation files stay \"file only\". That is 03 \u00a78 #3 (two generations side by side; migrate in one pass).",
+   "fix": "Show users eight nouns: Design, Deck, Doc, Page/App, Code, Diagram, Image, File. At Launch, migrate MARKDOWN to DOC in one pass, keeping the same id and appending a version with authorKind `upgrade`, which the schema already has (the Markdown-to-blocks projection is lossless). Show SVG as Image. Legacy task files can stay Files, but the plan should say so as a known exception in \u00a715."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a71.1-\u00a71.3, \u00a72.3, \u00a72.4, \u00a77.3, \u00a716 vs claude-primary-evidence.md and 03 \u00a72.3",
+   "issue": "The plan misses Claude hallmarks that people see. Design System is one of Claude's four core types: quickstart attaches the default system and the Design type's Theme menu shows named tokens. The plan puts it in Phase 7 \"and beyond\" (W34+). Claude's merge added a Manual / Auto control in the message box; the plan uses an invisible five-condition apply-or-review heuristic (\u00a78.4). Claude's enabler was apps with a per-artifact database, multiplayer and ask-Claude (\"with multiplayer features and databases\"); the plan's `ask` and `data` are \"later\". Claude Design's default of about three directions (A8) is also deferred. On top of that, Settings \u203a Capabilities adds five per-type switches where critics asked for one chat-only path.",
+   "fix": "Add a \"Brand\" lite in Phase 4: colours, type and radius as document variables, applied to every new Design and Deck and editable once. Add a composer control, \"Juno's edits: Ask first | Apply\", as the mirror of Manual/Auto, with today's heuristic as the Ask-first behaviour. Schedule an owner-only `data` capability for Pages by Launch, or list apps-with-data as a named gap in \u00a716. Replace the five switches with one: \"Make things: Automatically | Only when I choose Make\"."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a71.3, \u00a713.3 Phases 2-4, \u00a713.5",
+   "issue": "\u00a71.1 says the storage merge \"already happened by accident\", yet the merge the owner asked for (no Design door, design made and edited in the conversation, one Artifacts home) reaches the owner only on 2027-01-21 and completes on 2027-04-01. Nothing in \u00a713.5 ties the Artifacts home or the Design redirect to the edit loop. They depend on `/a/{id}`, posters, X-24 and X-02 (all done by around W10) plus a home built on the `/library` machinery. Most of the first four months is platform work the owner cannot see.",
+   "fix": "Split Day one. Turn `ia.merged` on for the owner cohort at R10 (First light becomes \"the merge, for you\"), and let the edit loop follow at R12. Keep public rollout gated on the find rate. Otherwise, state in \u00a71.3 in one sentence why the owner must wait until W17."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a73.9 N1 (l.562), \u00a76.5 (l.991), D17",
+   "issue": "iPhone design editing, the one lead neither Claude nor Figma has (03 \u00a71 #10), is removed for 13 weeks. The plan also writes \"Editing on iPhone returns in January\" into the product while N2 spans the release freeze (46 days). If N2 slips, the copy becomes 03 \u00a78 #4, promising phone editing the app does not have. The stated reasons are already handled elsewhere: X-14 is fixed on the server for every installed build in R2 (\u00a73.8), and N1 already ships X-15's base-version fix to the Mac.",
+   "fix": "Ship the same base-version fix to iPhone in N1 and keep text and colour field edits, through the field-preserving save plus the 409-on-newer-head check. If read-only stays, the copy gives no month (\"Editing on iPhone is paused while we make saves safe\") until N2 is in TestFlight."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a76.2 (l.751), \u00a75.2 (l.694), \u00a76.1 stepper (\u2325[ \u2325]), \u00a74.7 (\u2318\u2325C), \u00a78.4 'Holding B'",
+   "issue": "Keyboard behaviour conflicts. The editor's Escape rejects a pending suggestion today (design-editor.tsx:474-477: `state.rejectPending()`). The plan also binds Esc to close the panel, collapse the full window and return focus, so Esc pressed to deselect could discard Juno's suggestion or close the surface. On macOS, \u2325[ and \u2325] type \u201c and \u2018, so a global version-step binding takes those characters from the composer, rename fields and the Doc editor. \u2318\u2325C is Copy properties in Figma and Copy Style in Mac apps. Hold-B has no visible, touch or screen-reader equivalent.",
+   "fix": "Define an Esc ladder: text edit, then tool, then selection, then close or collapse. Esc never discards a suggestion. Move version stepping to \u2325\u2318[ and \u2325\u2318] (\u2318[ and \u2318] are layer order, design-editor.tsx:461-466). Put the Mac pane toggle in the View menu on an unused chord. Add a press-and-hold \"Before\" button on the suggestion card, with B as its accelerator and an aria-pressed state."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a714.2 (l.1623-1652)",
+   "issue": "The owner decisions are not crisp. The table has 26 rows that mix plumbing (D12 enum values, D13 the anchor, D15 thresholds, D21 the telemetry sink) with product choices. Some rows are actions, not choices (D9 \"run counts\", D10 \"buy the domain\"). Some bundle several questions (D2, D6, D7). The genuinely owner-level choices raised by this review are missing: the default for Juno's edits (Ask first or Apply); one URL or two; type names (Deck versus Claude's \"Slides\", and Page); design-system timing; the date the owner sees the merge (IA first or with the loop); iPhone read-only; hiding the sidebar in the full window.",
+   "fix": "Split \u00a714.2 into at most eight product decisions, each a yes/no with a default and a deadline week, and an \"Engineering defaults (owner may override)\" table for the rest. Move D9 and D10 to R1's checklist. Add the missing decisions above."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a74.7 (l.642-647), WF-6, \u00a710.2 'Panel \u2192 full window' Mac column",
+   "issue": "On the Mac, WF-6 shows two Share buttons at once: the toolbar's Share (the chat, with an artifact form added to its popover) and the dock header's Share (the artifact). \u2922 opens a separate document window while the dock stays open, so one head has two live editing sessions in one app, and the web meaning of Expand (the same view grows) differs from the Mac's (a new window). The dock header has two rows; the window's leading-pane toggle is named \"Juno\" but its tab is \"Chat\".",
+   "fix": "The toolbar's Share shares the chat only (\"Share chat\"); the artifact is shared only from its own header. Mac \u2922 becomes \"Open in window\": the dock closes and hands off its selection, zoom and undo. The dock header is one row with \"Saved\" as its trailing signal. One name, Chat, for the pane everywhere."
+  },
+  {
+   "severity": "minor",
+   "section": "\u00a710.2 table, \u00a710.3",
+   "issue": "Several motion values are off the token ladder or inconsistent. The auto-open offset is 24 px, a value no variant has (rise 6, pop 4, stage 12; the dock uses 16). The header comes in 60 ms later, which should be `STAGGER.loose`. The reveal holds for 800 ms. Streaming rises are 4 px, not `variants.fadeUp`'s 6. Reduced-motion cross-fades are 160 ms in some rows and 120 ms in others; ICONS rule 10 says fades keep their timing, which means `transition.fast`. The stagger is capped at 8 though `STAGGER_CAP` is 10 (motion.ts:249) and 03 M11 says 10. The camera uses `duration-base`/`ease-in-out` while the edge chip uses `duration-slow` and 03 M15 uses `ease-drawer`. The same panel opens on a spring from a card and on `ease-drawer` from a link. A RollingNumber in the header moves chrome, against PREMIUM rule 10.",
+   "fix": "Add a token column to every row. Auto-open uses the dock's 16 px (or `stage`). The header delay is `STAGGER.loose`. Name the reveal hold, or drop it. Streaming uses `variants.fadeUp`. Reduced-motion cross-fades use `transition.fast`. Use the code's cap of 10. Write one camera spec. Use one curve for the panel whatever opened it. The version number swaps with `IconSwap`, never rolls."
+  },
+  {
+   "severity": "minor",
+   "section": "\u00a710.2 'Streaming into the object' (l.1262), \u00a77.4 Doc row",
+   "issue": "Tokens stream into the active block, batched per animation frame, while \"later blocks slide down with framer layout on spring.standard\". Every frame re-targets the layout springs of all the pending skeleton blocks below, so they trail rubberily and the page jitters for the whole stream. Claude's fast paths avoid re-layout for half-streamed structure.",
+   "fix": "Reserve the active block's height inside its skeleton (grow in steps, or only when a line wraps), and animate the following blocks with `layout` only when a block commits, never per token."
+  },
+  {
+   "severity": "minor",
+   "section": "\u00a74.8, WF-7, \u00a710.2 iPhone column",
+   "issue": "Several phone behaviours are unspecified. On a medium-detent sheet, pinch and pan on the canvas compete with the sheet's drag-to-resize and dismiss. `navigationTransition(.zoom)` into a 50% detent sheet is untested as a form. The reduced-motion column covers only the web; the native reduced behaviour of each row is not given.",
+   "fix": "Inside the canvas, the canvas owns pan and pinch; only the grabber and header drag the sheet. Open to the large detent when zooming from the card, or use the standard sheet rise. Add a native reduced-motion column (JunoMotion.reduced maps to opacity-only changes; the zoom falls back to a cross-fade)."
+  },
+  {
+   "severity": "minor",
+   "section": "\u00a77.1 Make (l.1011), \u00a78.6 (l.1121), WF-1, WF-2",
+   "issue": "The composer carries a lot, and it has no precedence rules: Deep research and Make marks in the field, a selection chip, queued-ask chips, a \"What Juno sees\" disclosure and a steering placeholder. With Make \"Design \u00b7 Phone\" armed and a selection chip \"Button\" present, the message means both \"make a new design\" and \"edit this one\". The full-window composer is 320 px, below 30rem, where PREMIUM \u00a72d drops the marks' words, yet WF-2 draws words and leaves out + and the model chip, although \u00a710.2 calls it \"the same view\".",
+   "fix": "Arming Make clears the selection chip, and selecting clears Make, each with a one-line note. Apply \u00a72d's under-30rem rule in the leading pane, and draw the full + / model / send composer in WF-2."
+  },
+  {
+   "severity": "minor",
+   "section": "WF-5, \u00a79.1, \u00a72.6 downgrade row, D19",
+   "issue": "The Share dialog tells the reader the mechanism (\"Screening: passed.\"), against the \"never the mechanism\" craft rule, and adds analytics (\"124 views \u00b7 81 people\"), against PREMIUM rule 1. Nothing says what happens to published links above Free's quota of 3 after a downgrade. Unpublishing them would tie made things to plan state (03 \u00a78 #13).",
+   "fix": "Show screening only when it refuses, with the reason. Move views to Info. State that existing published links stay live after a downgrade and only new publishes are blocked."
+  },
+  {
+   "severity": "minor",
+   "section": "\u00a76.2 card, WF-3 note, \u00a710.1 'Picture first, glyph second'",
+   "issue": "Cards and tiles draw a type glyph beside the title under a poster. PREMIUM rule 4 says glyphs mark destinations, not documents, which the plan itself applies to Pinned rows in \u00a74.1. Rule 16 warns against a consistently over-dressed shape: this card has a poster, a glyph, a title, the type, a version, the updated time and two verbs.",
+   "fix": "Drop the glyph wherever a poster renders. Keep it only in the \"Preview unavailable\" tile and the Unsupported state."
+  }
+ ],
+ "verdict": "Revise before the owner signs off. The plan's backbone is right and faithful to Claude's staged order: account-owned artifacts, immutable versions with a working copy, one surface mounted by id, Share kept apart from Publish, governance before scripted public pages, and protection for installed clients. As a product and UX specification it is neither coherent nor yet the merge the owner asked for:\n\n- **The editing loop's headline example breaks its own rules.** Sealing before Juno reads makes Juno's edit v5, not v4, and \"people's edits win\" is undefined between node and field level. This is the one blocker.\n- **The canvas cannot show who changed what.** Selection, Juno's change, a pending suggestion and \"working\" all use the same outline in selection or accent colour, and the plan turns the accent into an AI colour.\n- **The two signature motions cannot be built as written.** Framer layoutId and layout would clip the morph, stretch the iframe and canvas, and squash the composer.\n- **The wireframes mix phases and leave gaps.** They omit the public page and the phone-width web view, and the header cannot fit a panel at its minimum or default width.\n- **Words collide.** Design has four meanings, Page two, and \"Shared\" means published.\n- **The IA is not simple.** One design can be found in about 13 places on the web, with several duplicate controls.\n- **Some anti-patterns come back.** It keeps a Design sidebar row (\u00a78 #7), keeps Markdown beside Doc (#3), and pops a bar over the canvas on selection (#16).\n- **Claude's visible hallmarks arrive late or not at all.** A default design system, the Manual/Auto control, one link that opens on a phone, and apps with data land at Launch (W27) or later, or are missing.\n- **The owner-decision table mixes plumbing with real product choices.**\n\nFix the blocker and the majors, redraw the wireframes per phase, and cut \u00a714.2 to at most eight product decisions."
+}

@@ -1144,9 +1144,9 @@ export function AppSidebar({
         </div>
 
         {/* ── Destinations ─────────────────────────────────────────────── */}
-        {/* Chat: Library · Projects · Artifacts · Design. Code: Artifacts ·
-            Customize · Pull requests. Then More for the rest. The rail keeps
-            the same order icon-only; More opens the same flyout. */}
+        {/* Chat: Library · Projects · Artifacts. Code: Artifacts · Customize ·
+            Pull requests. Then More for the rest. The rail keeps the same
+            order icon-only; More opens the same flyout. */}
         {/* `min-h-0 flex-1 overflow-y-auto` on the rail: collapsed, the list
             scroller below renders nothing, all thirteen rail rows sit in
             non-scrolling blocks, and the shell's `<aside>` is `overflow-hidden`
@@ -1213,16 +1213,16 @@ export function AppSidebar({
             : ([
                 { href: "/library", kind: "library", label: "Library", active: pathname === "/library" },
                 { href: "/projects", kind: "projects", label: "Projects", active: !!pathname?.startsWith("/projects") },
+                /* NO DESIGN ROW. A design is an artifact with the DESIGN type,
+                   and Artifacts is the one index of made things, so a row of
+                   its own was a second door onto a subset of this one
+                   (docs/design/artifacts-design/04-MERGE-PLAN.md §4.1). It
+                   also could not be drawn honestly: with Artifacts filtered to
+                   designs, both rows had a claim on the selected fill. `/design`
+                   still answers, as a redirect to `/artifacts?type=DESIGN`
+                   with the presets above the grid, and ⌘K keeps "Design" as a
+                   word that finds it. */
                 { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname === "/artifacts" },
-                /* Design is a destination like the four above it and is drawn
-                   like one. It used to be pinned on its own above the footer
-                   hairline, on the reasoning that it must never scroll away —
-                   but this whole block sits ABOVE the scroll region (the only
-                   thing that scrolls is the conversation list), so it never
-                   scrolled away here either. The pin was solving a problem that
-                   did not exist, and it cost a row stranded at the bottom of the
-                   column with a void above it. */
-                { href: "/design", kind: "design", label: "Design", active: pathname === "/design" },
                 /* Agents: the teammates the account delegates to
                    (docs/design/AGENTS.md §3.1). A destination like Projects —
                    a place that holds things — and not a third product: an

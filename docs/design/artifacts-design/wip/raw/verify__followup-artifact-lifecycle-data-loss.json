@@ -1,0 +1,185 @@
+{
+ "verdicts": [
+  {
+   "id": "followup-artifact-lifecycle-data-loss-1",
+   "verdict": "confirmed",
+   "corrected_severity": "critical",
+   "corrected_location": "src/app/api/messages/[id]/route.ts:38-40 (deleteMany), docstring claim at :9-14",
+   "reasoning": "READ: the PATCH transaction runs prisma.artifact.deleteMany where conversationId matches and message.createdAt > the edited message's createdAt, then message.deleteMany (route.ts:30-45). persistArtifacts never reassigns messageId (artifacts-store.ts:68-70). Hand saves (/api/artifacts/[id] POST, route.ts:61-75) and design commits (design/store.ts:156-203) leave messageId alone too. ArtifactVersion and Share cascade (schema.prisma:1157, 1823), and DesignComment lives inside the document JSON (design/types.ts:738, 786). Client flow: BubbleEditor Send or Enter (message-item.tsx:694-713) \u2192 saveEdit (1025-1028) \u2192 editAndResend PATCHes and regenerates with no confirmation (use-chat.ts:1688-1731). \u2191 in an empty composer opens the editor (composer.tsx:2099-2104; message-item.tsx:1031-1040). /design/<id> then hits loadOwnedDesignArtifact \u2192 notFound \u2192 'This design isn\u2019t here' (design/[artifactId]/page.tsx:23-24; not-found.tsx:22). The 'never destroys history' docstring covers only the user's wording. Refutation attempts failed: no server guard, no test, no confirm. Scope limit: hand-started /design artifacts have messageId=null, so the relation filter never matches them and edits cannot delete them. Only chat-made artifacts are at risk. Merge impact: this is the main blocker for 'designs as typed artifacts in conversations'. Artifact lifetime must be decoupled from message lifetime before designs live in chats."
+  },
+  {
+   "id": "followup-artifact-lifecycle-data-loss-2",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "corrected_location": "src/app/api/chat/route.ts:2566-2574 (supersede transaction); src/lib/artifacts-store.ts:48-50,76-89",
+   "reasoning": "READ: the supersede transaction deletes artifacts with messageId=stale.id under the comment 'a regenerate must never lose what the user already had' (route.ts:2563-2574). persistArtifacts then runs with the same message id (3110-3112), finds no row for the identifier and creates a new cuid at v1 (artifacts-store.ts:48-50, 77-89). The web Regenerate menu fires with no confirmation (message-item.tsx:572-605). CORRECTION to the native part: on main, native Try again/Switch model is a no-op on a completed answer. retryLastMessage returns unless retryContexts has an entry (NativeConversationStore.swift:1747-1751), and completion removes that entry (1928-1930). So on main the native path only reaches supersede after a failed or stopped turn whose partial answer was persisted. On mac/liquid-glass-chat, retryLastMessage gains regenerationContext(for:), which regenerates settled answers (git diff main...mac/liquid-glass-chat, NativeConversationStore.swift). That makes the native claim fully true once the branch ships."
+  },
+  {
+   "id": "followup-artifact-lifecycle-data-loss-3",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "corrected_location": "src/hooks/use-chat.ts:344-354 (mergeArtifacts), 1706-1719 (editAndResend)",
+   "reasoning": "READ: mergeArtifacts only upserts by identifier (use-chat.ts:344-354). editAndResend truncates messages but not artifacts (1706-1719). The recovery poll (455) and the done frame (678) also merge. setArtifacts replaces only on conversation switch (305) or on the idle reconcile (318-342). That reconcile needs router.refresh, which app-provider.tsx:192-199 defers while __junoSoftRoutePath matches. ChatView sets that path for chats it creates (chat-view.tsx:369, 408, 441). Error copy is as claimed: a 404 throws 'Save failed' \u2192 'Couldn\u2019t save the artifact.' (canvas-panel.tsx:435, 540-542); restore \u2192 'Couldn\u2019t restore this version.' (455); share \u2192 generic error with Try again (share-dialog.tsx:68-74, 144-148); modify \u2192 404 copy (chat/route.ts:1466-1467); design \u2192 toast then rollback (use-design-document.ts:103, 265-269). SCOPE CORRECTION: for a chat opened by URL (not a soft route), the sync refresh reconciles once status returns to idle, so the ghost is short-lived there. It persists 'for the rest of the session' only in chats created in the current ChatView. After a failed Save the draft stays in the editor, so it is not lost immediately."
+  },
+  {
+   "id": "followup-artifact-lifecycle-data-loss-4",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "corrected_location": "src/components/chat/chat-view.tsx:871-874, 951-967, 2498",
+   "reasoning": "READ: openArtifact is looked up by id (chat-view.tsx:871-874). A new row with the same identifier replaces the old map entry (use-chat.ts:347-350), so openArtifact becomes null. closingArtifact is set only in closeArtifact (951-955), and the effect at 957-967 never sets it when the artifact disappears. So `(openArtifact ?? closingArtifact) &&` (2498) unmounts CanvasPanel with no exit, and its draft/editBaseVersion/staleConflict state (canvas-panel.tsx:251-253) is gone. CanvasPanel gets no busy/streaming prop (chat-view.tsx:2531-2539), so it stays editable during a regenerate. The old row survives until persistAssistantTurn's supersede (route.ts:2566-2574). A mid-stream Save therefore succeeds ('Saved as vN', canvas-panel.tsx:545), and supersede then deletes it."
+  },
+  {
+   "id": "followup-artifact-lifecycle-data-loss-5",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "corrected_location": "src/app/api/messages/[id]/route.ts:38-40; src/lib/artifacts-store.ts:52-73; prisma/schema.prisma:1146-1160",
+   "reasoning": "READ: a later turn's re-emission appends a version and bumps currentVersion on the earlier-created row (artifacts-store.ts:56-73). The edit route deletes only rows whose creating message is newer (messages/[id]/route.ts:38-40). ArtifactVersion has no messageId (schema.prisma:1146-1160), so versions from deleted turns stay current. History comes only from Message rows (chat/route.ts:1853-1861), and I found no other artifact reads feeding prompts (grep for prisma.artifact in src/lib: only queries.ts, sync-entities.ts, share.ts, the stores). CORRECTION: the targeted edit loads versions where version=baseVersion and requires baseVersion==currentVersion (route.ts:1463, 1469-1473), not 'versions[currentVersion]'; the effect is the same. Severity lowered: nothing is lost. The problem is provenance and consistency (orphaned 'generated' versions stay current), and the next re-emission supersedes them."
+  },
+  {
+   "id": "followup-artifact-lifecycle-data-loss-6",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "corrected_location": "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:258-264, 520-523; native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:264-267; native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:234-253",
+   "reasoning": "READ: `.onChange(of: openDesign == nil) { if gone { closeDesign() } }` (DesktopDesignScreen.swift:261-263), and closeDesign sets draft=nil (520-523) with no alert. NativeArtifactModel.reload replaces the artifacts array, nils a vanished selection, then selects artifacts.first (NativeArtifactStore.swift:260-267). DesktopArtifactsScreen's .task(id: selectedArtifactID) clears the draft and opens the new selection (234-253). onChange only returns to the library when the selection is nil (256-261), so another artifact's document appears in place. The Artifact DELETE trigger feeds sync (migration 20260716200000:116-117), and load skips tombstones (NativeArtifactStore.swift:95). The glass branch makes no functional change to these files. Severity lowered to medium: it needs a remote destructive action (defects 1, 2, 11 or an explicit delete) while an unsaved Mac draft exists."
+  },
+  {
+   "id": "followup-artifact-lifecycle-data-loss-7",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "corrected_location": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:321-336 (save), 338-355 (restore)",
+   "reasoning": "READ: saveArtifact and restoreArtifact read baseVersion from the in-memory model at Save time (NativeArtifactStore.swift:321-355), and the model is refreshed on every sync (252-288). Nothing records the version the draft started from. The problem is broader than claimed: DesktopDesignSurface reads `content` once and ignores later values (DesktopArtifactCanvas.swift:972-980). DesktopDesignScreen keys it only on id + reloadToken (DesktopDesignScreen.swift:426-435). So a remote v6 is never drawn while a design is open, even with no draft. The user's first gesture after sync is made on v5, and \u2318S sends baseVersion 6. The server's guard passes (artifacts/[id]/route.ts:51-56), and v6 is silently superseded. The web stamps editBaseVersion on the first keystroke instead (canvas-panel.tsx:505-512)."
+  },
+  {
+   "id": "followup-artifact-lifecycle-data-loss-8",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "corrected_location": "native/iOS/JunoMobile/App/JunoMobileWorkspaceViews.swift:2165-2169",
+   "reasoning": "READ: `.onChange(of: artifact.currentVersion) { selectedVersion = value; designDraft = nil; designReloadToken = UUID() }` (JunoMobileWorkspaceViews.swift:2165-2169), with no prompt. The draft is written by the editable design body when viewing the latest version (2062-2067) and saved via designDraftControls (2258-2277). The brief's 'read-only on iPhone' is wrong: the phone edits and saves designs."
+  },
+  {
+   "id": "followup-artifact-lifecycle-data-loss-9",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "corrected_location": "src/lib/artifacts-store.ts:63-67",
+   "reasoning": "READ: the existing-row branch writes title, type and language from the model's tag (artifacts-store.ts:63-67). normalizeForStorage checks only when the NEW type is DESIGN (16-25). chat-artifact-verification.ts runs per-type checks with no cross-version type comparison (74-113). The system prompt tells the model to reuse identifiers (src/lib/chat/system-prompt.ts:257; the auditor's path was slightly off). loadOwnedDesignArtifact filters type 'DESIGN' (design/store.ts:33-38), so a retyped row makes /design/<id> notFound. A user rename (artifacts/[id]/route.ts:93-110) is overwritten by the next re-emission's title, which is the common case."
+  },
+  {
+   "id": "followup-artifact-lifecycle-data-loss-10",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "corrected_location": "src/components/canvas/canvas-panel.tsx:1236-1253 with 313-315 and 369-370",
+   "reasoning": "READ (not executed): onCommitted pushes a version stub with content \"\" (canvas-panel.tsx:1243-1252). chat-view's handleArtifactUpdated swaps in the stubbed artifact by id (chat-view.tsx:1254-1262). The effect at 313-315 moves selectedVersion to the new currentVersion, which changes the wrapper key (1235) and remounts DesignEditor. versionContent uses `??`, and \"\" is not nullish, so the content is \"\" (369-370). useDesignDocument parses on mount (use-design-document.ts:171-188), and parseStoredDesignDocument(\"\") throws 'Design document is not valid JSON' (migrations.ts:91-97). The editor then shows 'This design can\u2019t be opened' (design-editor.tsx:520-531). The first user gesture on generated output always allocates a checkpoint (operations.ts:530-538; store.ts:122-127), so in-chat design editing dies after one gesture until reload. Reachable: DESIGN maps to mode 'design' (artifact-runtime.ts:98), and chat opens designs in this Canvas. The pattern has been there since 7c344b96; 983dc2ad only re-indented it. Raised to high because it breaks the in-conversation design surface the merge depends on. PART REFUTED: restoring a stub to write \"\" is practically unreachable. A second stub needs a live editor, and any restore replaces the client artifact with the server's full copy (canvas-panel.tsx:449-450)."
+  },
+  {
+   "id": "followup-artifact-lifecycle-data-loss-11",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "corrected_location": "src/app/api/design/route.ts:69-90; src/app/api/conversations/[id]/route.ts:81-90; src/app/api/conversations/route.ts:72-80; src/components/app/app-sidebar.tsx:2268-2273; src/components/settings/sections/data-privacy.tsx:106,118-121",
+   "reasoning": "READ: POST /api/design creates a message-less conversation titled after the design, with a DESIGN artifact (design/route.ts:69-90). Artifact.conversation cascades (schema.prisma:1137), and Share cascades from Artifact (1823). listConversations does not filter message-less conversations (queries.ts:39-47), so these appear in Recents. The single-delete and delete-all routes hard-delete (conversations/[id]/route.ts:81-90; conversations/route.ts:72-80, called by data-privacy.tsx:52). The copy mentions only 'the conversation and its messages' (app-sidebar.tsx:2270-2273) and 'Every chat and its messages\u2026 Memories and projects stay' (data-privacy.tsx:106, 118-121). Nothing mentions artifacts, designs or share links."
+  },
+  {
+   "id": "followup-artifact-lifecycle-data-loss-12",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "corrected_location": "src/lib/share.ts:257-260; src/lib/design/store.ts:179-198",
+   "reasoning": "READ: getSharedArtifactSnapshot picks the highest version with createdAt <= snapshotAt (share.ts:257-260), claiming later versions stay private (242-245). rewriteVersion compare-and-swaps the content of the existing row and never touches createdAt (store.ts:185-188). allocatesCheckpoint folds user edits into an 'edit' row younger than 30 s (operations.ts:512, 530-538). So edits folded after the share appear on the public link. Narrow window: 30 s, web design edits only; the Mac and phone save through append."
+  },
+  {
+   "id": "followup-artifact-lifecycle-data-loss-13",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "corrected_location": "src/components/chat/message-item.tsx:1362-1375; src/lib/message-content.ts:257-260",
+   "reasoning": "READ: closed artifact parts carry only an identifier (message-content.ts:257-260). The card resolves it against the live artifacts map, and a miss falls back to title 'Artifact', type CODE and onOpen undefined (message-item.tsx:1364-1375). A reused identifier resolves to the new row's title, content and version. The old answer's tag body survives in MessageVersion text but is never rendered as a card body."
+  },
+  {
+   "id": "followup-artifact-lifecycle-data-loss-14",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "corrected_location": "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift:481, 503-508, 518-526, 634-639, 656-660",
+   "reasoning": "READ: openArtifact is @State, copied from the message's ArtifactReference (634-639). It is cleared only on conversation switch (505-507), voice start (518-526) or close (656-660). Nothing observes the transcript losing the source message. The dock renders reference.content, never the stored row, by design (DesktopArtifactCanvas.swift:34-41, 809-818). The glass branch reworks this file heavily, but its diff still resets openArtifact only on switch/close; not traced exhaustively."
+  },
+  {
+   "id": "ux-0",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: BubbleEditor offers only Cancel/Send, and Enter sends (message-item.tsx:694-713). saveEdit leads straight to PATCH + regenerate (1025-1028; use-chat.ts:1688-1731) with no confirmation, count or undo. \u2191 in an empty composer arms the editor (composer.tsx:2099-2104; message-item.tsx:1031-1040). The server deletes later messages and their artifacts (messages/[id]/route.ts:38-44). Native edit branches instead (NativeConversationStore.swift:2304-2315, 2380-2393). The best-in-class comparison is outside knowledge, not checked in the repo."
+  },
+  {
+   "id": "ux-1",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the Delete design dialog says every version is permanently removed and cannot be undone, but does not mention share links (design-workspace.tsx:240-262). Regenerate (message-item.tsx:572-605) and Edit (694-713) delete the same data with no dialog at all. No confirm-flow copy anywhere mentions share links."
+  },
+  {
+   "id": "ux-2",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: each cited message matches the code: canvas-panel.tsx:435/540-542 and 455; the 409-without-latest copy at 534; share-dialog.tsx:68-74, 144-148; chat/route.ts:1466-1467; use-design-document.ts:103, 265-269. No 'copy draft' or 'save as new' affordance exists. Nuance: after a failed Save the draft stays in the Code editor (setDraft(null) runs only on success, 543-544), so the user can copy it by hand."
+  },
+  {
+   "id": "ux-3",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: DesktopDesignScreen.swift:258-263 (comment 'the only honest state') calls closeDesign, which nils the draft (520-523) without notice. NativeArtifactStore.swift:264-267 re-selects artifacts.first, and DesktopArtifactsScreen.swift:234-253 then opens that other artifact in place. See the missed item: the same screen also drops the draft on 'All designs' and on re-appear."
+  },
+  {
+   "id": "ux-4",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: native editUserMessage keeps the original subtree and sends the revision as a new message with a client-only BranchPlacement (NativeConversationStore.swift:2304-2315, 2362-2393). Branch topology lives in a client-owned table that sync never writes (JunoStorage/MessageBranchLink.swift:3-20). The web PATCH deletes later turns (messages/[id]/route.ts:38-44). INFERRED: the web renders all Message rows in createdAt order, so it shows both branches flattened. A web edit of the old-branch message would then delete the native branch as well."
+  },
+  {
+   "id": "ux-5",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "Same evidence as defect 11: design/route.ts:69-90 creates a Recents-visible, message-less conversation (queries.ts:39-47 has no message filter). The cascades are at schema.prisma:1137 and 1823. The dialog copy is app-sidebar.tsx:2270-2273 and data-privacy.tsx:106, 118-121."
+  }
+ ],
+ "missed": [
+  {
+   "id": "missed-1",
+   "title": "Mac and iPhone 'Try again' / 'Switch model' on a completed answer does nothing, silently",
+   "severity": "medium",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeConversationStore.swift",
+   "line": 1748,
+   "evidence": "READ: retryLastMessage guards on `var context = retryContexts[conversationID]` and otherwise returns (1747-1751). Completion removes the context (1928-1930); it is set only on failure or recovery (1980, 2060). The Mac shows the regenerate menu on every last assistant whenever not generating (DesktopChatWorkspace.swift:906-913, 1636-1637). iPhone does the same (JunoMobileConversationsView.swift:730-735). Fixed on mac/liquid-glass-chat by regenerationContext(for:), which also routes native regenerate into the server's artifact-deleting supersede (defect 2).",
+   "failure_scenario": "On Mac or iPhone, a reply finishes normally. The user opens Regenerate and picks Try again or another model. Nothing happens, with no error or feedback."
+  },
+  {
+   "id": "missed-2",
+   "title": "Normal chat turns revise artifacts from the stale tag body in history and silently supersede hand edits and /design work as current",
+   "severity": "medium",
+   "file": "src/lib/artifacts-store.ts",
+   "line": 52,
+   "evidence": "READ: prompt history is Message rows only (chat/route.ts:1853-1861), and nothing else reads artifacts into prompts (grep of prisma.artifact in src/lib and src/app/api/chat). The model is told to re-emit the complete content under the same identifier (src/lib/chat/system-prompt.ts:257). persistArtifacts appends and bumps currentVersion with no base-version check (artifacts-store.ts:52-73), unlike persistTargetedArtifactEdit, which compare-and-swaps (103-114).",
+   "failure_scenario": "The model makes design 'signin' v1. The user edits it in /design for an hour (v2..v10 as 'edit'), then asks in chat 'make the button blue'. The model rewrites from the v1 body in its history, and v11 becomes current without the hour of edits. They are recoverable only by finding and restoring v10 by hand."
+  },
+  {
+   "id": "missed-3",
+   "title": "Mac Design screen throws away an unsaved draft on 'All designs' and whenever the screen re-appears, with no prompt",
+   "severity": "medium",
+   "file": "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift",
+   "line": 264,
+   "evidence": "READ: the back button calls closeDesign() (443-446), and `.onAppear { closeDesign() }` runs on every appearance (264). closeDesign sets draft = nil (520-523). No isDirty check or confirmation exists (isDirty is used only to enable Save/Discard and in the subtitle, 239-242, 474, 481, 507).",
+   "failure_scenario": "The user edits a design for 10 minutes without \u2318S, then clicks 'All designs' or switches to Chat and back. The edits are gone with no warning."
+  },
+  {
+   "id": "missed-4",
+   "title": "Native branch edit: the server gets no branch topology, so the model's context includes the abandoned branch and both branches share one artifact row",
+   "severity": "medium",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeConversationStore.swift",
+   "line": 2380,
+   "evidence": "READ: editUserMessage sends the revision as an ordinary sendMessage carrying a client-only BranchPlacement (2380-2393). GenerationRequestWire has no parent or cut-off field (NativeChatAPIClient.swift:968-981). The server builds history from every Message row in the conversation (chat/route.ts:1853-1861). A re-emitted identifier appends to the single row per (conversationId, identifier) (schema.prisma:1142; artifacts-store.ts:48-73).",
+   "failure_scenario": "On the Mac, the user edits U2 'make it formal' to 'make it casual'. The model receives U1, A1, U2 (formal), A2 (formal essay), U2' as context, and the old branch colours the answer. Paging back to the old branch's card shows the new branch's current essay, because both branches point at one artifact row."
+  },
+  {
+   "id": "missed-5",
+   "title": "'Delete all conversations' also deletes every Code session (kind 'code') and all artifacts and shares, but the copy mentions only chats",
+   "severity": "low",
+   "file": "src/app/api/conversations/route.ts",
+   "line": 76,
+   "evidence": "READ: DELETE runs prisma.conversation.deleteMany({ where: { userId } }) with no kind filter (conversations/route.ts:72-80). Code sessions are Conversation rows with kind 'code' (schema.prisma ~507; conversations/route.ts:44). The copy says 'Every chat and its messages\u2026 Memories and projects stay' (data-privacy.tsx:106, 118-121). The single-delete dialog has code-specific copy (app-sidebar.tsx:2269-2273), so the product knows sessions differ.",
+   "failure_scenario": "The user clears their chats in Settings \u2192 Delete all. All Juno Code session transcripts, every artifact and design, and every artifact share link are deleted too, with no mention in the dialog."
+  }
+ ]
+}

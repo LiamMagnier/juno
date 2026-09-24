@@ -429,9 +429,13 @@ export async function runUnifiedSearch(
             type: "artifact" as const,
             title: row.title || "Untitled artifact",
             snippet: buildSnippet(row.snippetSource ?? "", terms),
-            // ?artifact= is the deep link the library already uses; ?v= names
-            // the version that matched, which may not be the current one.
-            href: href(`/chat/${row.conversationId}`, { artifact: row.identifier, v: row.version }),
+            // The artifact's own address, at the version that matched, which may
+            // not be the current one. This used to be the chat's `?artifact=`
+            // deep link, which ignores `?v=` — so a hit found in v2 opened v5,
+            // and the passage it matched was not on the screen (M28). `/a/{id}`
+            // draws the named version and moves a design at its latest version
+            // into the editor (src/lib/artifact-links.ts).
+            href: href(`/a/${row.id}`, { v: row.version }),
             locator: `v${row.version}`,
             projectId: row.projectId,
             updatedAt: row.updatedAt.toISOString(),

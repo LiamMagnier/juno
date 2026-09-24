@@ -86,6 +86,9 @@ function withRequestContext(req: NextRequest, applyCsp: boolean): NextResponse {
   return res;
 }
 
+/** The public poster route, which sets its own Content-Security-Policy. */
+const SHARE_POSTER_PATH = /^\/share\/[^/]+\/poster$/;
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -97,8 +100,14 @@ export function middleware(req: NextRequest) {
 
   // CSP applies to documents, not to the JSON/SSE API. The request id applies
   // to both.
+  //
+  // One non-API path is not a document: a shared design's poster
+  // (`/share/{token}/poster`), which answers with an SVG image under its own,
+  // stricter policy (`POSTER_CSP` in src/lib/design/poster.ts). Next adds a
+  // route handler's header only when the middleware has not already set it,
+  // so stamping the page policy here would silently replace the poster's.
   if (!pathname.startsWith("/api/")) {
-    return withRequestContext(req, true);
+    return withRequestContext(req, !SHARE_POSTER_PATH.test(pathname));
   }
 
   const authHeader = req.headers.get("authorization");
