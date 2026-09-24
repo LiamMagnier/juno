@@ -1412,6 +1412,10 @@ model ModerationFlag {
   category       String    @default("other")
   detail         String    @db.Text
   messagePreview String?   @db.Text // redacted/truncated snippet that triggered it
+  /// What the flag was about, when it was a public link rather than a message.
+  /// Plain ids, not relations, so removing the link does not remove the flag.
+  shareId        String?
+  artifactId     String?
   action         String    @default("flagged") // flagged | strike | banned
   reviewedAt     DateTime?
   reviewedBy     String?
@@ -1826,15 +1830,53 @@ model Share {
   snapshotAt     DateTime  @default(now())
   views          Int       @default(0)
   revokedAt      DateTime?
+  /// Removed by Juno (admin takedown), as distinct from revoked by its owner.
+  /// A taken-down link 404s, drops out of the owner's list, and its target
+  /// cannot be shared again until an admin restores it. See
+  /// src/lib/share-moderation.ts.
+  takenDownAt    DateTime?
+  takenDownBy    String?
+  takedownReason String?   @db.Text
   createdAt      DateTime  @default(now())
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   artifact     Artifact?     @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  reports      ShareReport[]
 
   @@index([userId, createdAt])
   @@index([conversationId])
   @@index([artifactId])
+}
+
+/// A visitor's report of a public share link (the Report link on /share/[token]).
+///
+/// Not owned by anyone who can read it: the reporter is anonymous and the
+/// share's owner never sees it. Admin-only, always read through
+/// prismaUnguarded. The share's token, title and owner are copied in so a
+/// report outlives the link it was about — deleting the account or the chat
+/// cascades the share away, and the report is the record of why it mattered.
+model ShareReport {
+  id           String    @id @default(cuid())
+  shareId      String?
+  shareToken   String
+  shareTitle   String    @default("")
+  shareOwnerId String
+  /// phishing | malware | illegal | harassment | sexual | other
+  reason       String
+  detail       String    @default("") @db.Text
+  /// Optional address the reporter left for a reply.
+  contact      String?
+  /// open | actioned | dismissed
+  status       String    @default("open")
+  resolvedAt   DateTime?
+  resolvedBy   String?
+  createdAt    DateTime  @default(now())
+
+  share Share? @relation(fields: [shareId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([shareId])
 }
 
 // ----------------------------------------------------------------------------

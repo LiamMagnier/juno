@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { buildCsp } from "@/lib/csp";
+import { documentPolicyFor, sandboxOrigin } from "@/lib/sandbox-policy";
 import { evaluateCsrf } from "@/lib/csrf";
 import { REQUEST_ID_HEADER, RESPONSE_REQUEST_ID_HEADER } from "@/lib/request-id";
 
@@ -52,9 +53,12 @@ function requestIdFor(req: NextRequest): string {
  * (react-markdown without rehype-raw, two audited dangerouslySetInnerHTML
  * sites), which is exactly when to add it — before there is one.
  *
- * The policy lives in @/lib/csp so it can be unit tested; the artifact iframe is
- * `srcdoc` + `sandbox` WITHOUT allow-same-origin, so it is an opaque origin and
- * unaffected by any of this.
+ * The policy lives in @/lib/csp so it can be unit tested. It is NOT applied to
+ * the artifact preview shell (/sandbox/*): a document an iframe gets from
+ * `srcdoc`, `blob:` or `data:` inherits the embedding page's policy, so while
+ * previews were srcdoc frames this nonce policy blocked every script in them
+ * (audit X-01). Previews now load the shell by URL and the shell's response
+ * carries its own policy — see src/lib/sandbox-policy.ts.
  */
 function withRequestContext(req: NextRequest, applyCsp: boolean): NextResponse {
   const requestId = requestIdFor(req);
@@ -64,7 +68,11 @@ function withRequestContext(req: NextRequest, applyCsp: boolean): NextResponse {
   let csp: string | null = null;
   if (applyCsp) {
     const nonce = crypto.randomUUID();
-    csp = buildCsp({ nonce, relayUrl: process.env.NEXT_PUBLIC_VOICE_RELAY_URL });
+    csp = buildCsp({
+      nonce,
+      relayUrl: process.env.NEXT_PUBLIC_VOICE_RELAY_URL,
+      sandboxOrigin: sandboxOrigin(),
+    });
     // Next reads the nonce off the REQUEST header to stamp its own script tags.
     // It looks for `Content-Security-Policy`, so request and response use the
     // same enforcing policy and nonce.
@@ -80,6 +88,12 @@ function withRequestContext(req: NextRequest, applyCsp: boolean): NextResponse {
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // The preview shell brings its own policy, and a separate preview origin
+  // serves the shell and nothing else.
+  const policy = documentPolicyFor({ pathname, host: req.headers.get("host"), sandboxOrigin: sandboxOrigin() });
+  if (policy === "not-found") return new NextResponse("Not found", { status: 404 });
+  if (policy === "sandbox") return withRequestContext(req, false);
 
   // CSP applies to documents, not to the JSON/SSE API. The request id applies
   // to both.

@@ -504,17 +504,36 @@ version history + diff, run controls, an element inspector, quote-to-composer,
 fullscreen, Office export (for Markdown artifacts), and share. It hosts:
 
 - **`SandboxFrame`** (`canvas/sandbox-frame.tsx`) — the security-critical renderer.
-  Artifacts run in an **opaque-origin iframe**: `sandbox="allow-scripts allow-popups
-  allow-forms allow-modals"` with **no `allow-same-origin`**, so artifact code can
-  never reach the app's cookies, storage, or DOM. `buildSandboxDoc` builds an
-  `srcDoc` per artifact type: React/JSX (React + Babel + Tailwind CDN, ESM imports
-  stripped, lucide shimmed), HTML/SVG/CSS, Mermaid (Mermaid CDN), a JS/Python console
-  runtime (Pyodide), or an escaped `<pre>`. Parent↔frame communication is
-  `postMessage` only, trusting solely the frame's own `contentWindow`.
+  Artifacts run in an **opaque-origin iframe** (`SANDBOX_FLAGS` in
+  `src/lib/sandbox-policy.ts`: `allow-scripts allow-forms allow-modals
+  allow-downloads allow-pointer-lock`, narrower on public shares) with **no
+  `allow-same-origin`**, so artifact code can never reach the app's cookies,
+  storage, or DOM. `buildSandboxDoc` builds one document per artifact type:
+  React/JSX (React + Babel + Tailwind CDN, ESM imports stripped, lucide shimmed),
+  HTML/SVG/CSS, Mermaid (Mermaid CDN), a JS/Python console runtime (Pyodide), or an
+  escaped `<pre>`. The frame is **not** a `srcdoc` frame: a srcdoc (or blob:/data:)
+  document inherits the app's enforcing nonce CSP, which blocked every artifact
+  script from 26 Aug to 23 Sep 2026 (audit X-01). `SandboxDocumentFrame` loads a
+  static shell from `/sandbox/v1/<profile>` — a separate cookieless origin when
+  `NEXT_PUBLIC_SANDBOX_ORIGIN` is set, the app's own otherwise — whose response
+  carries its own policy (`src/lib/sandbox-shell.ts`), and hands it the document
+  over `postMessage`. That policy is also the **egress policy**: code, styles and
+  fonts from an allowlist of CDNs, requests only to the package CDNs, no form posts,
+  and on a public share no images or frames from arbitrary hosts. Parent↔frame
+  communication is `postMessage` only, trusting solely the frame's own
+  `contentWindow`; the shell accepts a document only from its parent at the app's
+  origin. `tests/sandbox-origin*.test.ts` fail if a preview ever inherits the app
+  policy again.
 - **`CodeSurface`** — a flat, line-numbered code editor/viewer with theme-aware
   `highlight.js` highlighting.
 
-The same `SandboxFrame` powers inline Mermaid blocks and the public share viewer.
+The same frame powers inline Mermaid blocks, Work site previews and the public share
+viewer. Share pages run no preview scripts by default (the `static` profile: markup
+only, React and Mermaid as source) until `JUNO_PREVIEW_ORIGIN_PUBLIC=1` switches them to
+the scripted `public` profile, which waits on publish-time screening. A public link can be pulled
+three ways: its owner revokes it, an owner of Juno takes it down (Admin › Links, with a
+notification to the link's owner), or its owner is banned, which suspends every link
+they shared until the ban is lifted. Visitors report links from the share page footer.
 
 ### 4.3b Files: the transcript tile and the side viewer
 
@@ -2576,9 +2595,11 @@ in the clear so a list can describe it without a decryption key).
 - **CSRF** origin check on all cookie-bearing API writes (`src/middleware.ts`).
 - **Rate limiting** (Postgres fixed-window) on auth, chat, upload, generation, and abuse-
   prone routes; the IP source doesn't trust spoofable left-most `X-Forwarded-For`.
-- **Artifact sandboxing:** opaque-origin iframe, `allow-scripts` only (no
-  `allow-same-origin`) — artifact code cannot reach cookies, storage, or the app DOM;
-  parent trusts only `postMessage` from the frame's own `contentWindow`.
+- **Artifact sandboxing:** opaque-origin iframe (no `allow-same-origin`) loaded by URL
+  from the preview shell, never `srcdoc`, so it runs under its own policy rather than
+  inheriting the app's — artifact code cannot reach cookies, storage, or the app DOM,
+  and its network egress is allowlisted (`src/lib/sandbox-policy.ts`); the parent
+  trusts only `postMessage` from the frame's own `contentWindow`.
 - **Uploads:** magic-byte verification, non-images forced to download
   (`Content-Disposition: attachment` + `application/octet-stream`), per-plan size caps,
   ownership-checked reads that 404 (no existence oracle).
@@ -2587,9 +2608,11 @@ in the clear so a list can describe it without a decryption key).
   so no secret ever rides workflow inputs or reaches the runner.
 - **Moderation** blocks the worst content before generation and fails open on the
   classifier; markdown renders without raw HTML; input is Zod-validated throughout.
-- **Baseline headers** (`next.config.mjs`): nosniff, `X-Frame-Options: SAMEORIGIN`,
-  referrer policy, `Permissions-Policy` (microphone only), HSTS. A full CSP is future work
-  (Next.js inline scripts need per-request nonces).
+- **Baseline headers** (`next.config.mjs`): nosniff, `Permissions-Policy` (microphone
+  only) and HSTS everywhere; `X-Frame-Options: SAMEORIGIN` and a referrer policy
+  everywhere but the preview shell, which sets its own framing and referrer rules. An
+  enforcing nonce CSP is sent on every document (`src/middleware.ts`, `src/lib/csp.ts`)
+  except the preview shell.
 - **Privacy:** interface auto-translation sends only opaque catalog IDs, never user
   content; the deep-research/source favicons load from each source's own origin, not a
   proxy; public shares are `noindex` snapshots.

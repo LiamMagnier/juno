@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/session";
-import { createShare, listShares, serializeShare } from "@/lib/share";
+import { createShare, listShares, serializeShare, ShareTakenDownError } from "@/lib/share";
 
 export const runtime = "nodejs";
 
@@ -34,7 +34,15 @@ export async function POST(req: Request) {
   const targetId = kind === "CHAT" ? conversationId! : artifactId!;
 
   // createShare owner-checks the target and reuses the newest active link.
-  const share = await createShare(user.id, kind, targetId);
+  let share;
+  try {
+    share = await createShare(user.id, kind, targetId);
+  } catch (err) {
+    if (err instanceof ShareTakenDownError) {
+      return NextResponse.json({ error: err.message, code: "share_taken_down" }, { status: 403 });
+    }
+    throw err;
+  }
   if (!share) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   return NextResponse.json({ share: serializeShare(share) });
