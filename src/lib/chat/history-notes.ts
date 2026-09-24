@@ -179,7 +179,12 @@ function recordLine(record: ToolCallRecord): string {
 function legacyLine(tool: ClientToolDetail): string {
   const name = junoToolIdOf(tool.name) ?? (tool.name.includes("__") ? `${clean(tool.server, 60)}: ${humanizeToolName(tool.name)}` : tool.name);
   const args = tool.args ? compactArgs(tool.args) : "";
-  const status = tool.status === "ok" ? HISTORY_NOTE_TEXT.ok : HISTORY_NOTE_TEXT.failed(tool.status ?? "unfinished");
+  const status =
+    tool.status === "ok"
+      ? HISTORY_NOTE_TEXT.ok
+      : tool.status === "failed"
+        ? HISTORY_NOTE_TEXT.failedLegacy
+        : HISTORY_NOTE_TEXT.failed("unfinished");
   return `- ${clean(name, 120)}${args ? ` ${args}` : ""} → ${status}`;
 }
 

@@ -17,6 +17,8 @@ export const HISTORY_NOTE_TEXT = {
   ok: "ok",
   /** A call that did not succeed, with its error code or status. */
   failed: (code: string) => `failed (${code})`,
+  /** A pre-rework row that failed: the row recorded no reason. */
+  failedLegacy: "failed",
   /** The final URL of a fetch that was redirected. */
   finalUrl: (url: string) => `(final ${url})`,
   pages: (range: string) => `pages ${range}`,
