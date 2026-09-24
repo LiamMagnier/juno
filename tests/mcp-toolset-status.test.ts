@@ -14,6 +14,7 @@ import {
   resolvedConnectorTool,
   sortConnectorTools,
 } from "@/lib/tools/connector-tools";
+import { connectorUnavailableLine } from "@/lib/tools/connector-tools.prompt";
 
 /*
  * Connectors mapped into the chat contract (SPEC §3.4). `src/lib/mcp.ts` is
@@ -195,4 +196,11 @@ test("a connector row shows at most three safe, one-line arguments", () => {
   assert.deepEqual(connectorPresentArgs({ count: 3, enabled: false, token: "t" }), { count: 3, enabled: false });
   assert.equal(humaniseToolName("listCalendarEvents"), "List calendar events");
   assert.equal(humaniseToolName("search-messages"), "Search messages");
+});
+
+test("an unavailable connector becomes one line for the model, outside the cached prompt", () => {
+  assert.equal(
+    connectorUnavailableLine("Figma", "auth_expired"),
+    "Figma is linked but unavailable this turn (auth expired). If the user asks for it, say so and suggest reconnecting it in Settings.",
+  );
 });

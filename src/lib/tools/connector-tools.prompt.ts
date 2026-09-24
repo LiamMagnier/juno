@@ -12,3 +12,13 @@ export function connectorImageLabel(n: number): string {
 export function connectorImagesDroppedText(max: number): string {
   return `[An image from the tool was not included: at most ${max} are shown.]`;
 }
+
+/**
+ * The line the route adds to the turn's `dynamicContext` (never the cached
+ * system prompt) for each requested connector that is unavailable this turn
+ * (SPEC §3.4 item 1), so a connector flipping state never rewrites the cached
+ * prefix.
+ */
+export function connectorUnavailableLine(label: string, reason: string): string {
+  return `${label} is linked but unavailable this turn (${reason.replace(/_/g, " ")}). If the user asks for it, say so and suggest reconnecting it in Settings.`;
+}
