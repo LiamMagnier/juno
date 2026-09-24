@@ -1,4 +1,4 @@
-import type { ChatFinishReason, ClientMessage } from "@/types/chat";
+import type { ChatFinishReason, ClientArtifact, ClientMessage } from "@/types/chat";
 
 /**
  * Stable fingerprint for the server-owned transcript supplied to `useChat`.
@@ -45,4 +45,47 @@ export function settleClientMessage(
     error: true,
     errorMessage,
   };
+}
+
+/**
+ * Fold one settled turn's artifacts into the chat's list, as the server just
+ * wrote them.
+ *
+ * Keyed by identifier: the server keeps one row per identifier per
+ * conversation and appends to it across edits and regenerates, so a returned
+ * artifact replaces the entry it updates and keeps its id (an open canvas
+ * looks it up by id). Any other entry still pinned to `messageId` was
+ * detached by the server — a regenerated answer that no longer emits it — so
+ * it is detached here too rather than left claiming an answer it is not in.
+ * Nothing is removed: the server removed nothing.
+ */
+export function applyTurnArtifacts(
+  current: ClientArtifact[],
+  incoming: ClientArtifact[],
+  messageId: string
+): ClientArtifact[] {
+  const returned = new Set(incoming.map((a) => a.identifier));
+  const stale = current.some((a) => a.messageId === messageId && !returned.has(a.identifier));
+  if (incoming.length === 0 && !stale) return current;
+  const map = new Map(
+    current.map((a) => [
+      a.identifier,
+      a.messageId === messageId && !returned.has(a.identifier) ? { ...a, messageId: null } : a,
+    ])
+  );
+  for (const a of incoming) map.set(a.identifier, a);
+  return Array.from(map.values());
+}
+
+/**
+ * The server's side of an edit, mirrored: the answers after the edited
+ * message are deleted, and their artifacts stay, detached, with every version
+ * and share link.
+ */
+export function detachArtifactsFromMessages(
+  current: ClientArtifact[],
+  messageIds: ReadonlySet<string>
+): ClientArtifact[] {
+  if (!current.some((a) => a.messageId && messageIds.has(a.messageId))) return current;
+  return current.map((a) => (a.messageId && messageIds.has(a.messageId) ? { ...a, messageId: null } : a));
 }
