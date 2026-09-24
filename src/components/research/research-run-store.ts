@@ -275,7 +275,6 @@ export function createResearchRunStore(deps: ResearchRunStoreDeps): ResearchRunS
 
     async post(runId, path, body) {
       const entry = entryFor(runId);
-      const request = ++entry.requests;
       update(entry, { busy: true, notice: null });
       try {
         const res = await deps.fetch(`/api/research/${encodeURIComponent(runId)}${path}`, {
@@ -283,6 +282,10 @@ export function createResearchRunStore(deps: ResearchRunStoreDeps): ResearchRunS
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
+        // Numbered when the answer lands, not when the request left: the
+        // control's answer is read after its own write, so it is newer than
+        // any poll still in flight, including one that left after this POST.
+        const request = ++entry.requests;
         const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
         if (!res.ok) {
           // The server's own words. A client that invents its own message for

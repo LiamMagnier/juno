@@ -58,7 +58,8 @@ function toSummary(row: unknown): ResearchRunSummary | null {
     conversationId: text(r.conversationId),
     state,
     phase,
-    title: text(r.title),
+    // The list before the rework named no title; its goal is the next best name.
+    title: text(r.title) ?? text(r.goal),
     createdAt: text(r.createdAt) ?? new Date(0).toISOString(),
     finishedAt: text(r.finishedAt),
     live: typeof r.live === "boolean" ? r.live : !isTerminalPhase(phase),

@@ -29,6 +29,7 @@ import type { PhraseLine, PhraseSpec } from "@/lib/run/types";
 export const RESEARCH_COPY = {
   /** The panel's stable name: the aside's accessible name and its h2. */
   panelTitle: "Research",
+  closePanel: "Close panel",
 
   /** The phase sentence, one per `ResearchPhase` (§9.11.1). */
   phase: {
@@ -63,6 +64,8 @@ export const RESEARCH_COPY = {
     claimsNotChecked: "claims not checked",
     claimNotSupported: "claim not supported",
     claimsNotSupported: "claims not supported",
+    claimContradicted: "claim contradicted",
+    claimsContradicted: "claims contradicted",
     researcher: "researcher",
     researchers: "researchers",
     round: "round",
@@ -256,6 +259,8 @@ export const RESEARCH_COPY = {
     openAtPassage: "Open at passage",
     passage: "Passage",
     of: "of",
+    previous: "Previous passage",
+    next: "Next passage",
     noQuote: "No passage was recorded for this citation.",
   },
 

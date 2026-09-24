@@ -204,3 +204,56 @@ export const NOTIFY_MIN_MINUTES = 5;
 export function notifyPromptVisible(input: { minutesUpTo: number | null; permission: string | null; asked: boolean }): boolean {
   return (input.minutesUpTo ?? 0) > NOTIFY_MIN_MINUTES && input.permission === "default" && !input.asked;
 }
+
+export interface NotifyStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+/** Whether the line has been shown before, ever (R7: asked on the first qualifying Start only). */
+export function notifyAsked(storage: NotifyStorage | null): boolean {
+  try {
+    return storage?.getItem(NOTIFY_ASKED_KEY) === "1";
+  } catch {
+    // Storage refused (a private window): treat as asked, so the line is not offered on every card.
+    return true;
+  }
+}
+
+/** Records that the line was shown. Storage can refuse; the line then simply shows again next time. */
+export function markNotifyAsked(storage: NotifyStorage | null): void {
+  try {
+    storage?.setItem(NOTIFY_ASKED_KEY, "1");
+  } catch {
+    // Nothing to do: the reader is not harmed by seeing the offer again.
+  }
+}
+
+// ── What the card reads from the run ──────────────────────────────────────────
+
+export interface CardClarification {
+  id: string;
+  question: string;
+  options: string[];
+}
+
+/**
+ * The clarifications the card asks, from the DTO's `clarifications` (the
+ * merged planner, §9.5), else the older plan's own list (`suggestions` were
+ * its options), so a run parked at the old clarify gate still gets its card.
+ */
+export function clarificationsOf(run: {
+  clarifications?: Array<{ id: string; question: string; options?: string[] }>;
+  plan: { clarifications?: Array<{ id: string; question: string; suggestions?: string[] }> };
+}): CardClarification[] {
+  if (run.clarifications?.length) {
+    return run.clarifications.map((c) => ({ id: c.id, question: c.question, options: c.options ?? [] }));
+  }
+  return (run.plan.clarifications ?? []).map((c) => ({ id: c.id, question: c.question, options: c.suggestions ?? [] }));
+}
+
+/** The approach sentence: the planner's own, else the brief it wrote from the goal. */
+export function approachOf(run: { plan: { approach?: string; brief?: string } }): string | null {
+  const text = (run.plan.approach ?? run.plan.brief ?? "").trim();
+  return text || null;
+}
