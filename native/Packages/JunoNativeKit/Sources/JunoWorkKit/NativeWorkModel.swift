@@ -250,7 +250,7 @@ public final class NativeWorkModel {
     /// nobody was being asked for. The web carried the same bug until
     /// `work-payload.ts` was written, and this is the same lift.
     public var pendingQuestion: WorkQuestionPrompt? {
-        var asked: [String: String] = [:]
+        var asked: [String: WorkQuestionPrompt] = [:]
         var order: [String] = []
         for event in events {
             guard let kind = JunoWorkEventKind(rawValue: event.kind) else { continue }
@@ -269,7 +269,13 @@ public final class NativeWorkModel {
                 // read what" — the prompt is still tracked so the composer opens
                 // in answer mode rather than offering to steer a stopped run.
                 let text = WorkEventPayload.string(payload, "question", "text", "prompt") ?? ""
-                if asked.updateValue(text, forKey: questionID) == nil {
+                let prompt = WorkQuestionPrompt(
+                    questionID: questionID, text: text,
+                    options: Self.questionOptions(payload["options"]),
+                    why: WorkEventPayload.string(payload, "why", "reason"),
+                    askedAt: event.createdAt
+                )
+                if asked.updateValue(prompt, forKey: questionID) == nil {
                     order.append(questionID)
                 }
             case .questionAnswered:
@@ -278,10 +284,24 @@ public final class NativeWorkModel {
                 continue
             }
         }
-        guard let questionID = order.last(where: { asked[$0] != nil }),
-            let text = asked[questionID]
-        else { return nil }
-        return WorkQuestionPrompt(questionID: questionID, text: text)
+        guard let questionID = order.last(where: { asked[$0] != nil }) else { return nil }
+        return asked[questionID]
+    }
+
+    /// A question's suggested replies: plain strings, or `{label}` / `{text}`
+    /// objects, as the runtime and this Mac's run host each write them.
+    nonisolated static func questionOptions(_ value: JunoJSONValue?) -> [String] {
+        guard case .array(let items)? = value else { return [] }
+        return items.compactMap { item in
+            switch item {
+            case .string(let text): text
+            case .object(let object):
+                object["label"]?.stringValue ?? object["text"]?.stringValue
+            default: nil
+            }
+        }
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
     }
 
     /// What the box on the open task is for: a reply, an instruction, or a
@@ -677,6 +697,9 @@ public final class NativeWorkModel {
             return nil
         }
         guard self.accountID == accountID else { return nil }
+        // A task started from this chat while the list was on its way is
+        // newer than anything the list could name.
+        if let open = openSession, open.conversationID == conversationID { return open }
         guard let newest = Self.newestSession(in: listed, conversationID: conversationID) else {
             if openSession?.conversationID != nil { closeOpenSession() }
             return nil

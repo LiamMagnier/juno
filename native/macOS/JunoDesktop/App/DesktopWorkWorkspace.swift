@@ -2479,18 +2479,22 @@ private struct DesktopWorkThread: View {
             if isFollowing {
                 VStack(spacing: JunoSpace.cozy) {
                     if let blocking = blockingApproval {
-                        DesktopWorkApprovalCard(
-                            model: model,
+                        // The chat card's approval (§6.9), shared rather
+                        // than kept in two shapes until this window goes.
+                        ChatWorkApprovalCard(
                             approval: blocking.request,
-                            decideLocally: blocking.isLocal
-                                ? { [hostModel] decision in
+                            isBusy: model.isMutating,
+                            decide: { [hostModel] decision in
+                                if blocking.isLocal {
                                     hostModel?.localApprovalDecider?(
                                         blocking.request.id,
                                         decision,
                                         blocking.request.actionDigest
                                     )
+                                } else {
+                                    Task { await model.decide(blocking.request, decision) }
                                 }
-                                : nil
+                            }
                         )
                         .id(blocking.request.id)
                         .transition(.opacity)
@@ -4004,108 +4008,6 @@ private struct DesktopWorkContextEditor: View {
 /// executor recomputes the digest immediately before acting and refuses on a
 /// mismatch, which is what stops an approval shown for one action authorising
 /// a different one.
-private struct DesktopWorkApprovalCard: View {
-    let model: NativeWorkModel
-    let approval: WorkApprovalRequest
-    /// Set when the question was raised by a run executing on this Mac, in which
-    /// case the answer goes to the in-process coordinator holding the suspended
-    /// tool rather than to the relay. Nil for a cloud run.
-    var decideLocally: ((JunoWorkApprovalDecision) -> Void)?
-
-    private var risk: JunoWorkRiskLevel? { JunoWorkRiskLevel(rawValue: approval.risk) }
-
-    /// The colour the card is edged and headed in. Irreversible actions are the
-    /// only ones that get danger; everything else that reaches a person is
-    /// caution.
-    private var tint: Color { DesktopWorkVocabulary.riskTint(approval.risk) }
-
-    private var allowsStandingGrant: Bool {
-        approval.allowsStandingGrant
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            HStack(spacing: JunoSpace.snug) {
-                JunoIconView(.shield, size: 14)
-                    .foregroundStyle(tint)
-                Text(DesktopWorkVocabulary.risk(approval.risk))
-                    .junoFont(size: 11, relativeTo: .caption, weight: .semibold)
-                    .foregroundStyle(tint)
-                Text(DesktopWorkVocabulary.action(approval.action))
-                    .junoCaption()
-                    .lineLimit(1)
-                Spacer(minLength: JunoSpace.snug)
-                // Stated rather than counted down. A live countdown would need a
-                // timer running behind every thread, and the honest failure —
-                // pressing Allow after the window closed — is already reported
-                // by the client as a sentence saying the approval expired.
-                Text("Expires \(approval.expiresAt.formatted(.relative(presentation: .named)))")
-                    .junoCaption()
-            }
-
-            // The stored sentence, verbatim. It is what an audit can prove was
-            // on screen.
-            Text(approval.summary)
-                .junoBody()
-                .junoInk()
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-
-            // Weight matches consequence: one prominent action, one ordinary
-            // one, and a refusal that is easy to hit and impossible to hit by
-            // accident.
-            HStack(spacing: JunoSpace.snug) {
-                Button("Allow once") { decide(.allowed) }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.junoAccent)
-                    .keyboardShortcut(.defaultAction)
-                    .accessibilityIdentifier("juno.work.approval.allow")
-                // Offered only where a standing yes is actually possible —
-                // `WorkAlwaysAllowance` refuses anything above `command`.
-                if allowsStandingGrant {
-                    Button("work.approval.allow-always") { decide(.allowedAlways) }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("juno.work.approval.allow-always")
-                }
-                Spacer(minLength: JunoSpace.regular)
-                Button("Refuse", role: .destructive) { decide(.denied) }
-                    .buttonStyle(.bordered)
-                    .keyboardShortcut(.cancelAction)
-                    .accessibilityIdentifier("juno.work.approval.deny")
-            }
-            .controlSize(.regular)
-            .disabled(model.isMutating)
-        }
-        .padding(JunoSpace.regular)
-        .background(
-            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                .fill(Color.junoSurface)
-                .shadow(
-                    color: .junoCardShadow,
-                    radius: JunoElevation.cardBlur,
-                    y: JunoElevation.cardOffsetY
-                )
-        )
-        .background(
-            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                .fill(tint.opacity(0.06))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                .strokeBorder(tint.opacity(0.45), lineWidth: 1)
-        )
-        .accessibilityIdentifier("juno.work.approval")
-    }
-
-    private func decide(_ decision: JunoWorkApprovalDecision) {
-        if let decideLocally {
-            decideLocally(decision)
-            return
-        }
-        Task { await model.decide(approval, decision) }
-    }
-}
-
 /// The one box for saying anything to a task.
 ///
 /// One composer, pinned, in every state, which is `work-thread-composer.tsx`'s

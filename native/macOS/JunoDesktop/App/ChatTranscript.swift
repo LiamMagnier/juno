@@ -133,6 +133,9 @@ struct DesktopTranscript: View {
     var openResearch: ((String) -> Void)? = nil
     /// "Research this": sends a question as a Research request.
     var researchThis: ((String) -> Void)? = nil
+    /// The chat's newest task, when the work model is following it (§6.8).
+    var workRun: ChatWorkRunState? = nil
+    var workActions = ChatWorkRunActions()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var actionError: String?
     /// Where the transcript is scrolled. It starts at the newest turn and
@@ -216,6 +219,13 @@ struct DesktopTranscript: View {
                     !model.selectedMessages.contains { $0.id == run.userMessageID && $0.role == .user }
                 }) { run in
                     researchRow(run)
+                }
+
+                // The chat's task follows the turn that started it — the
+                // newest one only, as the web shows it.
+                if let workRun {
+                    ChatWorkRunCard(state: workRun, actions: workActions)
+                        .id("work:\(workRun.session.sessionID)")
                 }
 
                 // A private chat's turns, or a first turn on its way to

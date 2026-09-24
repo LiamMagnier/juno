@@ -260,6 +260,8 @@ struct ChatComposerRequest: Equatable {
         /// "Research this" (the `suggest_research` chip): **send** this as a
         /// Research request (Tool calls & research SPEC §3.8.9, §9.10).
         case research(String)
+        /// "Reply Below" on a task's question: put the caret in the field.
+        case focus
     }
 
     let id = UUID()
@@ -659,6 +661,9 @@ struct ChatComposer: View {
     let connectorModel: NativeConnectorModel?
     /// The Work model, for "Do This as a Task". Nil hides the row.
     var workModel: NativeWorkModel? = nil
+    /// Stops this chat's live task. Set while one runs: an empty field's disc
+    /// becomes its Stop (§6.8), and a streaming reply's Stop still wins.
+    var stopTask: (() -> Void)? = nil
     /// The synced account settings, for the `+` menu's Memory switch.
     let memorySettings: NativeMemorySettingsModel<SQLiteAccountRepository>?
     @Binding var draftProjectID: String?
@@ -871,7 +876,7 @@ struct ChatComposer: View {
 
     private var face: ChatComposerFace {
         ChatComposerFace.resolve(
-            isGenerating: isGenerating,
+            isGenerating: isGenerating || (stopTask != nil && draftIsEmpty && !voiceActive),
             hasDraft: !draftIsEmpty,
             blockedReason: blockedReason,
             waitingReason: waitingReason,
@@ -1152,6 +1157,8 @@ struct ChatComposer: View {
                 deepResearch = true
                 prompt = question
                 submit()
+            case .focus:
+                focused = true
             }
         }
         .onChange(of: draftIsEmpty, initial: true) { _, isEmpty in
@@ -1535,13 +1542,15 @@ struct ChatComposer: View {
     private var primaryDisc: some View {
         let face = self.face
         let startsTask = face == .send && taskArmed
+        let stopsTask = face == .stop && !isGenerating
         return ComposerPrimaryDisc(
             face: face,
-            label: startsTask ? "Start this as a task" : nil,
+            label: startsTask ? "Start this as a task" : stopsTask ? "Stop the task" : nil,
             help: startsTask ? "Start this as a task  \u{21A9}" : nil
         ) {
             switch face {
-            case .stop: stopGeneration()
+            case .stop:
+                if isGenerating { stopGeneration() } else { stopTask?() }
             // Never waits on a resolved model: a call can start before the
             // catalog lands, on Auto.
             case .voice: startVoice()

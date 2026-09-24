@@ -989,6 +989,14 @@ struct DesktopConversationView: View {
             }
             // The conversation's research runs, followed while it is open —
             // and again whenever a hand-off adds one.
+            // The chat's newest task, followed while the chat is open. A draft
+            // or private chat follows none, which lets go of a chat's task.
+            .task(id: "work:\(session.profile.id.rawValue):\(model.selectedConversationID ?? "")") {
+                let id = privateChat == nil
+                    && model.selectedConversation.map { !$0.isPending } == true
+                    ? model.selectedConversationID : nil
+                await configuration.workModel?.followConversation(id)
+            }
             .task(id: "\(session.profile.id.rawValue):\(model.selectedConversationID ?? ""):\(openResearchRunKey)") {
                 guard privateChat == nil, let conversationID = model.selectedConversationID else { return }
                 await model.followResearch(conversationID: conversationID)
@@ -1483,7 +1491,9 @@ struct DesktopConversationView: View {
                     openResearch: { runID in openResearchPanel(runID) },
                     researchThis: privateChat == nil
                         ? { question in composerRequest = ChatComposerRequest(kind: .research(question)) }
-                        : nil
+                        : nil,
+                    workRun: privateChat == nil ? workRunState : nil,
+                    workActions: workActions
                 )
                 .environment(\.junoTranscriptMediaActions, mediaActions)
             }
@@ -1753,6 +1763,9 @@ struct DesktopConversationView: View {
             documentIndex: configuration.documentIndexModel,
             connectorModel: configuration.connectorModel,
             workModel: configuration.workModel,
+            stopTask: workRunState?.isLive == true && privateChat == nil
+                ? { [workModel = configuration.workModel] in Task { await workModel?.stopOpenRun() } }
+                : nil,
             memorySettings: configuration.memorySettingsModel,
             draftProjectID: $draftProjectID,
             draftPrompt: $draftPrompt,
@@ -1773,6 +1786,38 @@ struct DesktopConversationView: View {
         // The call is drawn inside the composer's own shell (§5.8): announced
         // here, it turns the controls row into the call bar.
         .junoVoiceCall(voiceColumn)
+    }
+
+    /// The task this chat started, while the work model follows it.
+    private var workRunState: ChatWorkRunState? {
+        guard let workModel = configuration.workModel,
+            let open = workModel.openSession,
+            let conversationID = model.selectedConversationID,
+            open.conversationID == conversationID
+        else { return nil }
+        return ChatWorkRunState.read(workModel, host: configuration.workHostModel, session: open)
+    }
+
+    /// The card's buttons. A run on this Mac is answered in-process
+    /// (`decideLocally`): only its coordinator holds the suspended tool.
+    private var workActions: ChatWorkRunActions {
+        let workModel = configuration.workModel
+        let host = configuration.workHostModel
+        return ChatWorkRunActions(
+            decide: { approval, decision in
+                if approval.isLocal {
+                    host?.localApprovalDecider?(
+                        approval.request.id, decision, approval.request.actionDigest
+                    )
+                } else {
+                    Task { await workModel?.decide(approval.request, decision) }
+                }
+            },
+            answer: { text in Task { _ = await workModel?.answer(text) } },
+            focusComposer: { composerRequest = ChatComposerRequest(kind: .focus) },
+            pause: { Task { await workModel?.pauseOpenRun() } },
+            resume: { Task { await workModel?.resumeOpenRun() } }
+        )
     }
 
     /// Whether ↑ has a message to reopen: one you sent, saved, and not mid-reply.

@@ -85,12 +85,25 @@ public enum WorkStreamFrame: Equatable, Sendable {
 public struct WorkQuestionPrompt: Equatable, Sendable, Identifiable {
     public let questionID: String
     public let text: String
+    /// Suggested replies, each answerable with one press. Empty when the run
+    /// asked an open question.
+    public let options: [String]
+    /// Why the run is asking, when it said.
+    public let why: String?
+    /// When it was asked, for "asked 5m ago".
+    public let askedAt: Date?
 
     public var id: String { questionID }
 
-    public init(questionID: String, text: String) {
+    public init(
+        questionID: String, text: String, options: [String] = [], why: String? = nil,
+        askedAt: Date? = nil
+    ) {
         self.questionID = questionID
         self.text = text
+        self.options = options
+        self.why = why
+        self.askedAt = askedAt
     }
 }
 

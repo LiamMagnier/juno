@@ -139,6 +139,15 @@ final class NativeWorkConversationTests: XCTestCase {
         XCTAssertNil(NativeWorkModel.newestSession(in: [elsewhere], conversationID: "conv_1"))
     }
 
+    /// One-press replies, in either shape an executor writes them.
+    func testQuestionOptionsReadEitherShape() {
+        let value: JunoJSONValue = .array([
+            .string("Go ahead"), .object(["label": .string("Change it")]), .string("  "), .bool(true),
+        ])
+        XCTAssertEqual(NativeWorkModel.questionOptions(value), ["Go ahead", "Change it"])
+        XCTAssertEqual(NativeWorkModel.questionOptions(nil), [])
+    }
+
     // MARK: - Fixtures
 
     private func summary(
