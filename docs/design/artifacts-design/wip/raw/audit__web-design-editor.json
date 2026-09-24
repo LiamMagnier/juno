@@ -1,0 +1,1054 @@
+{
+ "area": "Web: Juno Design editor UI/UX (src/components/design/** except host/, src/app/(app)/design/[artifactId]/**)",
+ "summary": "WHAT EXISTS (read). /design/[artifactId] is a server page. It loads the owned DESIGN artifact and mounts DesignWorkspace, which is a header (back arrow, inline name field, a vN label, a \"Chat\" link to the owning conversation, and a \u22ef menu whose only item is Delete) above DesignEditor on surface=\"window\". The editor has a toolbar (7 tools, undo/redo, 3 align keys, zoom bar, Motion, Export, Ask Juno, Saving\u2026) and a left rail with Layers and History tabs. Layers holds pages, a filterable tree, the component library and variables. The centre is an SVG canvas drawn by the same renderer the exports use, with a Motion timeline docked under it. The right rail has two tabs: Design (the inspector) and Prototype (interactions). The Ask Juno bar is docked over the bottom of the canvas. Every edit goes through one operation/transaction layer. It is applied optimistically and sent as a batch to /api/design/[id]/transactions, and a refusal rolls back. The editor is solid engineering in places: tested pure hit-test, descend-selection and group/rotated resize logic, fields that commit in bursts, per-layer \"Mixed\" reads, a keyboard-navigable layers tree, resizable and collapsible panes, and a full inspector (auto layout incl. grid/wrap, constraints, min/max, per-corner radius + smoothing, multi-fill/stroke lists, linear/radial gradients, a 7-type effect stack, typography, blend modes, instance variants, variables).\n\nAI IN THE EDITOR (read). Ask Juno is one non-streaming, single-turn POST (/api/design/[id]/edit). It carries the prompt, pageId, selected ids and baseRevision. It scopes to the selection by default: a chip shows the scope and can widen it to \"Whole design\". The server returns a proposal and a preview document. The canvas shows the preview read-only, with dashed outlines on the touched layers. A review card lists the change lines, with Apply and Reject (Esc rejects). After Apply, any sliders, colour wells or segmented controls the model attached become a \"Tune Juno's change\" card. There is no stop/cancel button, no prompt history, no attachments, and no before/after toggle. Requests are not recorded in the owning conversation. There is also a second, parallel AI path: the chat composer, which regenerates the artifact through <juno:artifact> tags.\n\nMISSING (searched, absent): pen/vector editing, boolean ops, hand tool or space-to-pan, keyboard zoom, touch pan/pinch, rulers, layout grids, measurement, minimap, comments UI (DesignComment exists in the model only), sharing/permissions (owner-only join), multiplayer/presence, a prototype player (interactions-panel.tsx:19-25 says so outright), version browse/restore in the window, system-clipboard copy/paste and \u2318C/\u2318V, drag-drop or paste of images, and variant creation, deleting components and detaching instances.\n\nBIGGEST PROBLEMS (substantiated). (1) During proposal review only the canvas, inspector and timeline go read-only. Keyboard shortcuts and the Layers panel stay live and write to the hidden committed document. If Apply then fails it still reports \"applied\". (2) Escape commits instead of cancelling in every name, number, text and hex field. React runs the nested blur with the pre-Escape closure (confirmed in react-dom source). (3) Several gestures break the product's own \"one gesture, one transaction\" rule. Gradient pads commit on every pointermove. Clicking a resize handle without dragging turns hug/fill sizing into fixed. A click that selects a new layer can move and snap it by pointer jitter. The inline fill hex and opacity inputs have no draft, so typing is reverted or committed on each keystroke. (4) Direct-manipulation feedback is thin next to Figma: no preview while drawing, no rotation preview, and moves shown as an outline only. You cannot marquee-select inside a frame. The line tool can only make horizontal lines. Dragging an auto-layout child does nothing visible. (5) Responsiveness breaks both ways. On \"window\" the rails never collapse (at least 376px together) and the toolbar has no overflow handling, so phones get a zero-width canvas. On \"embedded\" (the chat panel and the Mac host) the rails hide by viewport breakpoint with no way back, which breaks PREMIUM_AUDIT rule 11. Touch devices cannot pan at all.\n\nDESIGN-LAW FIT. Floating layers correctly use the overlay-glass material. Selection states use an accent tint (bg-primary/10 + text-primary) where FLAT_UI \u00a73.1/\u00a76 require bg-selected with foreground ink. The Ask Juno scope chip repeats the tinted pill PREMIUM_AUDIT \u00a72d P1 removed from the composer. Other violations of the product's own laws: raw z-10 instead of the named rungs, hit targets below 32/44px, and no exit motion on floating cards. For the Artifacts+Design merge, the pluggable transport and the operation/proposal layer are the right base. The owner-only access model, the missing comments/share/presence UI, the separate window route that leaves the conversation, the two AI channels, the 200 KB document cap and the broken phone layout are what stand in the way.",
+ "files_read": [
+  "src/app/(app)/design/[artifactId]/page.tsx",
+  "src/app/(app)/design/[artifactId]/loading.tsx",
+  "src/app/(app)/design/[artifactId]/error.tsx",
+  "src/app/(app)/design/[artifactId]/not-found.tsx",
+  "src/app/(app)/design/page.tsx (lines 1-80 + greps)",
+  "src/components/design/design-workspace.tsx",
+  "src/components/design/design-editor.tsx",
+  "src/components/design/design-canvas.tsx",
+  "src/components/design/use-design-document.ts",
+  "src/components/design/design-edit-transport.ts",
+  "src/components/design/ask-juno-bar.tsx",
+  "src/components/design/design-adjustments.tsx",
+  "src/components/design/panel-layout.tsx",
+  "src/components/design/design-context-menu.tsx",
+  "src/components/design/layers-panel.tsx",
+  "src/components/design/inspector-panel.tsx",
+  "src/components/design/effects-panel.tsx (1-560, 580-625, 714-812, 863-1080, 1370-2236)",
+  "src/components/design/interactions-panel.tsx (1-260 + greps)",
+  "src/components/design/motion-panel.tsx (1-80, 285-300, 690-730 + greps)",
+  "src/components/design/host/main.tsx (55-100, surface usage only)",
+  "src/components/canvas/canvas-panel.tsx (1200-1290, embedded DesignEditor)",
+  "src/lib/design/operations.ts (715-760, 773-782, 849-925, 1005-1110 + greps)",
+  "src/lib/design/store.ts (33-125)",
+  "src/lib/design/render.ts (960-975)",
+  "src/lib/design/variables.ts (178-191)",
+  "src/lib/design/layout.ts (225-240, 450-470)",
+  "src/lib/design/instances.ts (61-76)",
+  "src/lib/design/selection-context.ts (1-40, 224-249)",
+  "src/lib/design/types.ts (738-786 comments model)",
+  "src/app/api/design/[artifactId]/edit/route.ts (95-140 + greps)",
+  "src/components/ui/button.tsx (grep)",
+  "src/app/globals.css (overlay-glass, canvas tokens, muted-foreground)",
+  "tailwind.config.ts (radius ladder comment)",
+  "docs/design/FLAT_UI.md",
+  "docs/design/PREMIUM_AUDIT.md (477-560, 818-873)",
+  "docs/design/ICONS_AND_MOTION.md (152-297)",
+  "node_modules/react-dom/cjs/react-dom-client.development.js (3245-3290)",
+  "tests/design-canvas-interaction.test.ts, tests/design-panels.test.ts, tests/design-editing.test.ts, tests/design-effects.test.ts (headers; executed)"
+ ],
+ "inventory": [
+  {
+   "feature": "Window route + workspace header",
+   "description": "Server page loads the owned artifact (404 otherwise) and renders DesignWorkspace. Header has: back to /design; an inline name field that renames the artifact (PATCH) and the document (renameDocument op) with rollback on failure; a vN label that updates on commit; a Chat link to /chat/{conversationId} (full navigation away); a \u22ef menu with only 'Delete design' behind a confirm dialog. No share, present, comments, version history, duplicate or download in the header.",
+   "maturity": "partial",
+   "where": [
+    "src/app/(app)/design/[artifactId]/page.tsx:19-37",
+    "src/components/design/design-workspace.tsx:124-207,240-261,305-330"
+   ]
+  },
+  {
+   "feature": "Tools",
+   "description": "Select V, Frame F, Rectangle R, Ellipse O, Line L, Text T, Image I (file dialog). Drawing drops the new layer into the container under the drag origin and reverts to Select after one use. A click makes an 8x8 shape (text 160x24). No pen/vector, hand, comment, section, polygon/star or eyedropper tools. Text does not enter editing after creation. The line tool renders only horizontal lines.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/design-editor.tsx:124-132",
+    "src/components/design/design-canvas.tsx:610-650",
+    "src/lib/design/render.ts:966-969"
+   ]
+  },
+  {
+   "feature": "Canvas navigation",
+   "description": "Wheel/trackpad pans. \u2318/Ctrl-wheel and trackpad pinch zoom about the cursor. Middle-button or Alt+drag pans. Zoom range 2%-3200%, fit-to-content on open and on page change. Zoom bar: \u2212, %, + (click % resets to 100%), Fit, Selection. In the window it sits in the toolbar; elsewhere it floats bottom-left. No space-to-pan, no keyboard zoom (\u2318+/\u2318\u2212/\u21e71/\u21e72/\u23180 fall through to the browser), no touch pan/pinch, no minimap, no rulers, no animated zoom.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/design-canvas.tsx:32-33,258-347,470-473,858-887,1951-2015",
+    "src/components/design/design-workspace.tsx:279-300"
+   ]
+  },
+  {
+   "feature": "Selection model",
+   "description": "A click selects the outermost unlocked, visible ancestor. Clicking again inside the selection descends one level on release (Figma rule), \u2318/Ctrl-click deep-selects, Shift toggles. Shift on bare canvas adds via marquee. The marquee selects the outermost intersecting layers. \u2318A selects page roots. The selection is kept as an ancestor-free set. Hover outline in select mode. Locked/hidden layers cannot be hit. Esc: reject pending, then reset tool, then clear selection (no select-parent). No Enter/Shift+Enter/Tab tree navigation on the canvas, and no marquee inside a frame.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/design-canvas.tsx:362-374,463-514,587-605,1311-1498",
+    "src/components/design/use-design-document.ts:476-492,548-552",
+    "src/components/design/design-editor.tsx:455-460,474-480"
+   ]
+  },
+  {
+   "feature": "Transform: move / resize / rotate / nudge",
+   "description": "Move shows an outline ghost with smart-guide snapping to edges and centres of all other boxes (\u2318 disables it) and an x,y readout. Resize has 8 handles; a multi-selection scales as a group, a single rotated layer resizes in its local frame, Shift keeps ratio on commit, constrained children follow, and there is a W\u00d7H readout. A rotation handle above the box snaps to 15\u00b0 with Shift, with no live preview. Arrow keys nudge 1pt, Shift+arrow 10pt. No snapping on resize/draw, no spacing guides, no Alt-drag duplicate (Alt pans), no Shift axis-lock on move.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/design-canvas.tsx:376-426,516-580,652-719,942-1006,1123-1210,1542-1712",
+    "src/components/design/design-editor.tsx:349-360,488-503"
+   ]
+  },
+  {
+   "feature": "Text editing on canvas",
+   "description": "Double-click opens a textarea overlay in the same face, wrapped with the renderer's wrapText. Blur or \u2318Enter commits one updateNode; Esc cancels. No mixed styles per range. There is also a 'Text' field in the inspector.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/design-canvas.tsx:803-843,1733-1809",
+    "src/components/design/inspector-panel.tsx:931-939"
+   ]
+  },
+  {
+   "feature": "Images",
+   "description": "Image tool or inspector 'Choose/Replace picture\u2026'. PNG/JPEG/GIF/WebP read into a data URL, capped at 96 KB with no downscaling. A click places it at its intrinsic size scaled to at most 400pt; a drag places it in the drawn box. Scale modes fill/fit/stretch/tile. No drag-drop or paste. Image fills are read-only in the Fill list.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/use-design-document.ts:560-608",
+    "src/components/design/design-canvas.tsx:626-635,757-801",
+    "src/components/design/inspector-panel.tsx:1226-1296",
+    "src/components/design/effects-panel.tsx:434-438"
+   ]
+  },
+  {
+   "feature": "Context menu",
+   "description": "Lazy-loaded Radix dropdown at the pointer. On layers: Copy, Duplicate \u2318D, Paste, Delete \u232b, Rename\u2026 (inline field over the layer), Bring to front/forward, Send backward/back, Group, Ungroup, Create component \u2325\u2318K, Lock, Hide. On bare canvas: Paste, Select all, Zoom to fit. Height is capped to the available space.",
+   "maturity": "solid",
+   "where": [
+    "src/components/design/design-context-menu.tsx:122-338",
+    "src/components/design/design-canvas.tsx:68-70,889-935,1237-1266"
+   ]
+  },
+  {
+   "feature": "Copy / paste",
+   "description": "The context menu's Copy stores layer IDS in a module variable. Paste duplicates them only if every source still exists on the current page of the same document, offset to the click point. No keyboard \u2318C/\u2318V/\u2318X, no system clipboard, no cross-page or cross-document paste, no cut.",
+   "maturity": "stub",
+   "where": [
+    "src/components/design/design-context-menu.tsx:40-79,160-175,220,325",
+    "src/components/design/design-editor.tsx:471"
+   ]
+  },
+  {
+   "feature": "Undo / redo / History tab",
+   "description": "In-memory stacks capped at 100 entries. \u2318Z/\u21e7\u2318Z plus toolbar keys. The History tab lists undo entries newest first, attributed You/Juno with a layer count, and clicking one selects the touched layers (no time travel). Stacks are wiped by any save rollback and on reload. No artifact version browse/restore on this surface.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/use-design-document.ts:335-436",
+    "src/components/design/design-editor.tsx:426-431,585-605,1017-1043"
+   ]
+  },
+  {
+   "feature": "Layers panel",
+   "description": "Pages: add, switch, double-click rename, delete (hover). Tree in front-to-back order with collapse carets, a name filter that keeps ancestor paths, click / \u2318-toggle / Shift-range selection, roving-tabindex tree keyboard (arrows, Home/End, Left/Right collapse, F2/Enter rename), HTML5 drag to reorder or reparent, a per-row \u22ef menu (rename, z-order, delete), eye and lock toggles that stay visible when engaged, and motion/interaction badges that open the timeline or Prototype tab. Not virtualized.",
+   "maturity": "solid",
+   "where": [
+    "src/components/design/layers-panel.tsx:123-764"
+   ]
+  },
+  {
+   "feature": "Component library",
+   "description": "Collapsible list with SVG thumbnails from the renderer. Clicking places an instance centred in the viewport and selects it. Create component via \u2325\u2318K or the menu. The instance variant picker is driven by component.variants. No create-variant, delete-component, detach, go-to-main or component-properties UI.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/layers-panel.tsx:809-954",
+    "src/components/design/inspector-panel.tsx:505-554",
+    "src/components/design/design-editor.tsx:444-454"
+   ]
+  },
+  {
+   "feature": "Variables / tokens",
+   "description": "Section under Layers: add (colour by default), rename, retype (rewrites every mode), edit the value for the active mode, delete, and a mode switcher when a collection has more than one mode. The inspector binds only fills.0.color, and only for a single selection.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/layers-panel.tsx:960-1279",
+    "src/components/design/inspector-panel.tsx:373-394"
+   ]
+  },
+  {
+   "feature": "Inspector (Design tab)",
+   "description": "Empty selection shows Page (name, background) and Document counts. A selection shows: Name; Align (8, distribute needs 3 or more); X/Y/W/H/Rotate/Opacity; W/H sizing Fixed/Hug/Fill; Min/Max W/H; Constraints; In-parent layout (Grow, Free, Self); Auto layout (vertical/horizontal/grid, gap, padding, align, justify, columns, wrap); Appearance (blend, linked or per-corner radius, smoothing, clip); Fill list; Stroke list (weight, align); Effects stack (inner/drop shadow, layer/background blur, noise, texture, glass, reorderable); Instance variants; Image; Typography (text, family as free text, size, weight, line height and unit, tracking, style, align, vertical, decoration); Variables. Labels sit inside fields, Mixed is read per layer, number fields commit in bursts. No font picker, no per-layer export settings, no scrubbable labels, no math in fields.",
+   "maturity": "solid",
+   "where": [
+    "src/components/design/inspector-panel.tsx:106-1306",
+    "src/components/design/effects-panel.tsx:152-1370,1640-2236"
+   ]
+  },
+  {
+   "feature": "Alignment / distribution",
+   "description": "Toolbar keys for align horizontal centres, align vertical centres and distribute horizontally. The inspector has all 8, computed from laid-out boxes and skipping locked layers. No align-to-parent for a single layer, no tidy-up.",
+   "maturity": "solid",
+   "where": [
+    "src/components/design/design-editor.tsx:88-92,362-408,617-633",
+    "src/components/design/inspector-panel.tsx:634-674"
+   ]
+  },
+  {
+   "feature": "Motion timeline",
+   "description": "Dock under the canvas (collapsible, resizable). Animations, per-property tracks, keyframes (drag commits once on release), easing editor, play/pause with rAF, loop, scrub. The playhead drives a derived preview document on a read-only canvas.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/motion-panel.tsx:1-300,604-730",
+    "src/components/design/design-editor.tsx:225-255,802-822"
+   ]
+  },
+  {
+   "feature": "Prototype authoring (Prototype tab)",
+   "description": "Per-layer interactions: trigger (click/hover/press/drag/key/delay/scroll-into-view), action (navigate/back/overlay/scroll/open-url/play-animation/set-variable/set-mode/set-variant), transition and easing. The editor has no player or preview mode (stated in the panel). No on-canvas connection noodles.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/interactions-panel.tsx:1-260"
+   ]
+  },
+  {
+   "feature": "Ask Juno bar",
+   "description": "Docked at the bottom centre of the canvas (window surface only). A scope chip limits the request to the selection, on by default and removable. One text field. Send swaps to a spinner via IconSwap. An error or 'note' strip sits above it. The request carries the revision and is aborted on unmount. Non-streaming, single-turn, no cancel, no history, no attachments. Blocked while a proposal is pending. The toolbar's 'Ask Juno' key only focuses the bar.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/ask-juno-bar.tsx:47-239",
+    "src/components/design/design-edit-transport.ts:62-92",
+    "src/components/design/design-workspace.tsx:109-112,227-234"
+   ]
+  },
+  {
+   "feature": "Proposal review",
+   "description": "The canvas draws the server's preview document read-only with dashed highlights on touched layers. A card shows the summary, change lines and a count, with Reject and Apply; Esc rejects. Apply re-applies against the live document as author 'juno'. A note-only answer applies the selection change without a review. No before/after toggle and no per-change accept.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/design-editor.tsx:964-1015",
+    "src/components/design/design-workspace.tsx:81-107",
+    "src/components/design/use-design-document.ts:438-474",
+    "src/components/design/design-canvas.tsx:1092-1097"
+   ]
+  },
+  {
+   "feature": "AI adjustments ('Tune Juno's change')",
+   "description": "After Apply, model-attached slider, colour or segmented controls emit ordinary updateNode/setVariableMode ops. Sliders commit on release, with no live canvas preview.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/design-adjustments.tsx:39-246"
+   ]
+  },
+  {
+   "feature": "Export",
+   "description": "Toolbar menu: SVG, PNG (2\u00d7, rasterized client-side), PDF, HTML prototype, React component, SwiftUI view, design tokens JSON, document JSON, and a Juno Code handoff bundle. Exports the page, or silently only the single selected layer. Notes appear as toasts. No scale or format options, no preview, no busy state.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/design-editor.tsx:94-108,298-345,656-682,1106-1152"
+   ]
+  },
+  {
+   "feature": "Pane layout",
+   "description": "Layers, inspector and timeline are resizable by drag, arrow keys, Home or double-click reset, with clamped bounds. Collapsed-rail stubs keep a way back. Size and collapsed state persist in localStorage (juno.design.pane.*).",
+   "maturity": "solid",
+   "where": [
+    "src/components/design/panel-layout.tsx:36-270",
+    "src/components/design/design-editor.tsx:232-236,708-873"
+   ]
+  },
+  {
+   "feature": "Persistence / save status",
+   "description": "Optimistic apply. Ops are queued and coalesced, with one request in flight at a time. A 'Saving\u2026' pill shows while in flight. Any failure rolls back to the last acknowledged document and clears undo/redo. No 'Saved' state, offline queue, retry or unload guard.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/use-design-document.ts:149-326",
+    "src/components/design/design-editor.tsx:698-705"
+   ]
+  },
+  {
+   "feature": "Loading / error / empty states",
+   "description": "A route skeleton in the editor's shape; a client 'Loading design\u2026' spinner while parsing; a loadError panel with the migration reason; a route error boundary with digest and Try again / All designs; not-found; PanelEmpty for layers, history and filter misses; an inspector page section when nothing is selected.",
+   "maturity": "solid",
+   "where": [
+    "src/app/(app)/design/[artifactId]/loading.tsx",
+    "src/app/(app)/design/[artifactId]/error.tsx",
+    "src/app/(app)/design/[artifactId]/not-found.tsx",
+    "src/components/design/design-editor.tsx:520-544,1021",
+    "src/components/design/layers-panel.tsx:513-517"
+   ]
+  },
+  {
+   "feature": "Comments",
+   "description": "DesignComment (node or point anchored, resolvedAt, linked transaction) exists in the document model and is fed to the AI selection context. There is no UI or operation to create, view or resolve comments.",
+   "maturity": "absent",
+   "where": [
+    "src/lib/design/types.ts:738-786",
+    "src/lib/design/selection-context.ts:291"
+   ]
+  },
+  {
+   "feature": "Sharing / permissions",
+   "description": "The page is only as visible as the owning conversation (artifact \u2192 conversation \u2192 user join). No share link, viewer role or public view.",
+   "maturity": "absent",
+   "where": [
+    "src/lib/design/store.ts:33-39",
+    "src/app/(app)/design/[artifactId]/page.tsx:14-16"
+   ]
+  },
+  {
+   "feature": "Multiplayer / presence / live sync",
+   "description": "None. No cursors, avatars, polling or subscription. A second tab or device is only discovered through a refused transaction.",
+   "maturity": "absent",
+   "where": [
+    "src/components/design/use-design-document.ts:74-107"
+   ]
+  },
+  {
+   "feature": "Play / present mode",
+   "description": "Absent by the panel's own statement. Only the motion timeline previews animations.",
+   "maturity": "absent",
+   "where": [
+    "src/components/design/interactions-panel.tsx:19-25,183-186"
+   ]
+  },
+  {
+   "feature": "Rulers, guides, layout grids, measurement, minimap",
+   "description": "Not found. Searched src/components/design for ruler, measure, minimap and guide UI. The only 'ruler' is the motion timeline's.",
+   "maturity": "absent",
+   "where": []
+  },
+  {
+   "feature": "Vector editing / boolean ops",
+   "description": "The model has path nodes (render.ts 'path') but there is no pen tool and no boolean or vector-edit operation (operation list checked).",
+   "maturity": "absent",
+   "where": [
+    "src/lib/design/operations.ts (op list)",
+    "src/lib/design/render.ts:970-973"
+   ]
+  },
+  {
+   "feature": "Mobile / touch editing",
+   "description": "Only coarse: size bumps. The window surface never collapses rails, the toolbar has no overflow handling, and touch cannot pan or pinch.",
+   "maturity": "broken",
+   "where": [
+    "src/components/design/design-editor.tsx:549-555",
+    "src/components/design/design-canvas.tsx:470-473,858-887,1031"
+   ]
+  },
+  {
+   "feature": "Accessibility",
+   "description": "Good: tree semantics with a roving tabindex, separator semantics on resizers, aria-labels on icon keys, and motion-safe classes. Weak: the canvas is role=application with no keyboard object navigation, no announcements, and its focus outline removed; rail tabs are aria-pressed buttons rather than tabs; tooltips are unreachable on disabled keys; hit targets are below the product's 32/44px rule.",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/layers-panel.tsx:234-338,512-528",
+    "src/components/design/panel-layout.tsx:238-256",
+    "src/components/design/design-canvas.tsx:1028,1049-1051"
+   ]
+  }
+ ],
+ "architecture": "SERVER. src/app/(app)/design/[artifactId]/page.tsx calls requireUser, then loadOwnedDesignArtifact(artifactId, userId). That is a Prisma artifact query with where {type:'DESIGN', conversation:{userId}} and include versions, so every version's content is loaded (store.ts:33-39). The page picks the current version's content string and renders the client component DesignWorkspace {artifactId, title, version, content, conversationId}.\n\nWORKSPACE (design-workspace.tsx). Holds name, zoom, currentVersion and the mirrored selection {ids, names}. It also holds the armed/visible AI adjustments, the reviewing flag and the delete dialog. Imperative refs: editorRef (DesignEditorHandle: selectionContext, selectionNames, pageId, document, revision, proposeTransaction, apply), barRef (AskJunoBarHandle.focus) and viewportRef (DesignViewportHandle: zoomBy/zoomToFit/zoomTo100/zoomToSelection/sceneCentre). Rename sends PATCH /api/artifacts/[id] and applies a renameDocument op. Delete sends DELETE /api/artifacts/[id] and then router.replace('/design').\n\nEDITOR (design-editor.tsx). useDesignDocument({artifactId, initialContent, transport?, readOnly, onCommitted}) owns the document, pageId, selection, undo/redo stacks (HistoryEntry {undo, redo, touched, author}), pending (PendingProposal {transaction, result, changes, preview}) and saving. visibleDocument = pending?.preview ?? document. apply(ops, summary) runs applyTransaction locally, pushes history, and hands the ops to persist(). persist queues a PendingBatch: it merges into the tail by author and origin, and seals batches that mint ids. drain() sends one transaction at a time against the acknowledged revision through DesignTransport.commit. The default is httpTransport, POST /api/design/[id]/transactions {transaction, origin}; the Mac supplies a bridge transport. A failure calls rollback(storedDoc), which clears the queue and the undo/redo stacks and shows a toast.\n\nThe editor also owns the tool, left/right tab state, motion dock state and a window keydown handler scoped to focus within its root. It passes visibleDocument (or the motion preview document) to DesignCanvas, LayersPanel, InspectorPanel/InteractionsPanel and MotionPanel. All of them emit DesignOperation[] through onApply. Pane sizes come from usePaneSize (localStorage).\n\nCANVAS (design-canvas.tsx). layoutPage(doc, pageId) produces a LayoutMap. renderPageSvg(... background:false) returns an SVG string that is injected with dangerouslySetInnerHTML into one <svg> whose viewBox is the viewport. Chrome drawn in the same coordinate space: frame titles, hover, Juno highlight, selection or ghost, guides, marquee, handles, readout. Pointer state is a DragState {kind: move|resize|rotate|marquee|pan|create}. commitDrag emits one transaction on pointer-up. Pure, tested helpers: hitPath, pathHit, descendSelection, doubleClickTarget, canvasPress, pressLandsInSelection, resizeBox, resizeRotatedBox, resizeSelection. The context menu is React.lazy.\n\nAI. AskJunoBar \u2192 requestDesignEdit sends POST /api/design/[id]/edit {prompt, pageId, selectedNodeIds, baseRevision}. The server refuses a revision mismatch with 409 'conflict', rate-limits to 20/min, and makes one non-streamed model call. It returns DesignEditProposal {transaction, preview, touchedNodeIds, selection, inverse, changes, adjustments, note, model}. Workspace.onProposal either applies a selection-only answer, or calls toPendingProposal \u2192 editor.proposeTransaction and arms the adjustments. ProposalReview's Apply calls acceptPending, which re-applies against the live document as author 'juno' and persists it. After Apply, DesignAdjustments turns the adjustments into controls (adjustmentOperations).\n\nEXPORT. GET /api/design/[id]/export?format&pageId[&nodeId] returns a blob, JSON, or a rasterize request. PNG is drawn to a <canvas> client-side.\n\nREUSE. The same DesignEditor is mounted in the chat Canvas panel (canvas-panel.tsx:1238, surface 'embedded', readOnly for old versions, no Ask bar) and in the Mac/iPhone WKWebView host (host/main.tsx:65-71, surface 'embedded', bridge transport). The Liquid Glass branch mac/liquid-glass-chat has no diff in src/components/design or src/app/(app)/design (git diff --stat empty).",
+ "ux": [
+  {
+   "observation": "Moving a layer shows only an outline ghost while the artwork stays put until release. Drawing a new shape shows nothing at all (no rubber band, no size readout). Rotating shows no preview. Figma UI3 moves the real pixels live and previews shapes as they are drawn.",
+   "severity": "major",
+   "where": [
+    "src/components/design/design-canvas.tsx:942-1006,1099-1120"
+   ]
+  },
+  {
+   "observation": "The editor cannot be used on a phone or touch device: rails are pinned (window surface), the toolbar clips, and there is no touch pan or pinch. The merge target (Claude's typed artifacts are editable on phone) is unreachable from this code.",
+   "severity": "major",
+   "where": [
+    "src/components/design/design-editor.tsx:549-555",
+    "src/components/design/panel-layout.tsx:36-39",
+    "src/components/design/design-canvas.tsx:470-473,858-887,1031"
+   ]
+  },
+  {
+   "observation": "Rubber-band selection of layers inside a frame is impossible. Pressing empty space in a frame selects and drags the frame, and a marquee from outside selects the whole frame. This is the most common way to multi-select in Figma, where a marquee from inside an unselected frame selects its children.",
+   "severity": "major",
+   "where": [
+    "src/components/design/design-canvas.tsx:587-605,1477-1498"
+   ]
+  },
+  {
+   "observation": "Images over 96 KB are refused outright with no automatic downscale or compression. Most real photos and screenshots cannot be placed, and all assets share the document's 200 000-character budget.",
+   "severity": "major",
+   "where": [
+    "src/components/design/use-design-document.ts:569-588",
+    "src/lib/design/store.ts:59-63,117-120"
+   ]
+  },
+  {
+   "observation": "Ask Juno is one-shot. There is no streaming, no visible progress beyond a spinner in the send key, no stop, no prompt history or follow-up context, no reference or image attachment, and no before/after toggle on the review. Requests do not appear in the owning conversation, so chat and editor keep separate AI histories for one artifact.",
+   "severity": "major",
+   "where": [
+    "src/components/design/ask-juno-bar.tsx:70-103,212-235",
+    "src/app/api/design/[artifactId]/edit/route.ts:100-101,195",
+    "src/components/design/design-editor.tsx:964-1015"
+   ]
+  },
+  {
+   "observation": "Collaboration surfaces are absent: no comments UI despite a comment model, no share link, no presence, and no prototype Play. The header has only back, name, version, Chat and Delete. Compare Figma UI3's Share/Present/comments/avatars and Claude's shareable typed artifacts with comments.",
+   "severity": "major",
+   "where": [
+    "src/components/design/design-workspace.tsx:164-207",
+    "src/lib/design/types.ts:738-786",
+    "src/components/design/interactions-panel.tsx:19-25"
+   ]
+  },
+  {
+   "observation": "Missing keyboard vocabulary a designer expects: \u2318C/\u2318V/\u2318X, space-to-pan and H, zoom shortcuts (\u21e70/\u21e71/\u21e72, \u2318\u00b1), Enter/Shift+Enter to walk children or parent, Esc to select parent, Tab to cycle siblings, Shift-drag axis lock, Alt-drag duplicate (Alt pans instead), and Alt-hover measurement.",
+   "severity": "major",
+   "where": [
+    "src/components/design/design-editor.tsx:410-516",
+    "src/components/design/design-canvas.tsx:470-473"
+   ]
+  },
+  {
+   "observation": "The text tool creates a 'Text' layer but does not open the caret; the user must double-click it. Clicking with the rectangle, ellipse or frame tool creates an 8\u00d78 shape (Figma creates a 100\u00d7100).",
+   "severity": "minor",
+   "where": [
+    "src/components/design/design-canvas.tsx:610-650"
+   ]
+  },
+  {
+   "observation": "Selected layer rows, the current page, picked tools and the Ask Juno scope chip use the accent tint (bg-primary/10 + text-primary). FLAT_UI \u00a73.1/\u00a76 require bg-selected with foreground ink for selected rows and on toggles. PREMIUM_AUDIT \u00a72d P1 removed this exact tinted pill from the composer.",
+   "severity": "minor",
+   "where": [
+    "src/components/design/effects-panel.tsx:1509",
+    "src/components/design/layers-panel.tsx:436,463,552,619",
+    "src/components/design/ask-juno-bar.tsx:157-160",
+    "docs/design/FLAT_UI.md:30-34,181-184"
+   ]
+  },
+  {
+   "observation": "Hit targets fall below ICONS_AND_MOTION \u00a73 (32px pointer / 44px coarse). Layer row keys are 18px (24px coarse), IconButton sm is 20px, the zoom bar and fields are 24px (36px coarse), and rail toggles are 24px.",
+   "severity": "minor",
+   "where": [
+    "src/components/design/layers-panel.tsx:631,663,733",
+    "src/components/design/effects-panel.tsx:1418,1511",
+    "src/components/design/design-canvas.tsx:1972",
+    "src/components/design/design-editor.tsx:909"
+   ]
+  },
+  {
+   "observation": "Raw z-10 is used for the canvas dock, resizer, text overlay and rename field instead of the four named stacking rungs ICONS_AND_MOTION \u00a73 requires.",
+   "severity": "minor",
+   "where": [
+    "src/components/design/design-editor.tsx:796",
+    "src/components/design/panel-layout.tsx:252",
+    "src/components/design/design-canvas.tsx:1792,1897"
+   ]
+  },
+  {
+   "observation": "The inspector's font Family is a free-text field. There is no font list or preview, and weight is a bare 100-900 number.",
+   "severity": "minor",
+   "where": [
+    "src/components/design/inspector-panel.tsx:940-965"
+   ]
+  },
+  {
+   "observation": "The colour picker is a hex box plus the OS <input type=color> in a popover. There is no HSB square, alpha slider, document swatches or token picker in the well.",
+   "severity": "minor",
+   "where": [
+    "src/components/design/effects-panel.tsx:2142-2236"
+   ]
+  },
+  {
+   "observation": "Typography sits at the bottom of the inspector, below Effects, Instance and Image. Figma places Text directly under layout, before Fill.",
+   "severity": "minor",
+   "where": [
+    "src/components/design/inspector-panel.tsx:344-371"
+   ]
+  },
+  {
+   "observation": "Shortcut hints show \u2318/\u2325/\u21e7 glyphs on every platform, although the handler also accepts Ctrl on Windows and Linux.",
+   "severity": "minor",
+   "where": [
+    "src/components/design/design-editor.tsx:590-604",
+    "src/components/design/design-context-menu.tsx:218-290"
+   ]
+  },
+  {
+   "observation": "Export gives no indication that it will export only the single selected layer rather than the page, and the Export key has no busy state during slow exports.",
+   "severity": "minor",
+   "where": [
+    "src/components/design/design-editor.tsx:298-345,656-682"
+   ]
+  },
+  {
+   "observation": "The 'Ask Juno' toolbar key (shown only with a selection) just focuses a bar that is always visible on this surface. It is redundant chrome, and clicking it builds a full selection context for nothing.",
+   "severity": "info",
+   "where": [
+    "src/components/design/design-editor.tsx:684-697",
+    "src/components/design/design-workspace.tsx:109-112"
+   ]
+  },
+  {
+   "observation": "The canvas backdrop is the document's page colour (default 96% grey) in both themes, so the dark UI surrounds a bright canvas and theme-token chrome drawn on it (frame titles) loses contrast.",
+   "severity": "info",
+   "where": [
+    "src/components/design/design-canvas.tsx:195-199,1032-1035",
+    "src/lib/design/operations.ts:73"
+   ]
+  }
+ ],
+ "motion": [
+  {
+   "observation": "Rail tab strips (Layers/History, Design/Prototype) grow a 2px underline from the tab centre with scale-x on duration-base ease-out-soft, and it is removed under reduced motion. This is transform-only as ICONS_AND_MOTION \u00a72.2.8 requires, but it is chrome movement where PREMIUM_AUDIT rule 10 says 'nothing in chrome moves except a fill'.",
+   "where": [
+    "src/components/design/design-editor.tsx:888-895",
+    "docs/design/PREMIUM_AUDIT.md:830"
+   ]
+  },
+  {
+   "observation": "Disclosures follow the recipe: carets rotate (duration-base ease-in-out). Components, Variables, paint editors and the motion dock unfold and fold through Collapse (grid-rows) before unmounting.",
+   "where": [
+    "src/components/design/layers-panel.tsx:567-573,906-918,1109",
+    "src/components/design/effects-panel.tsx:420-433",
+    "src/components/design/design-editor.tsx:811-822"
+   ]
+  },
+  {
+   "observation": "State swaps use IconSwap with the spring curve: eye/eye-off, lock/unlock, link/unlink radius, send\u2194spinner. The scope chip's dismiss glyph uses AnimatePresence with variants.swap.",
+   "where": [
+    "src/components/design/layers-panel.tsx:739,753",
+    "src/components/design/inspector-panel.tsx:771",
+    "src/components/design/ask-juno-bar.tsx:171-185,226-231"
+   ]
+  },
+  {
+   "observation": "Lists: History entries rise in with staggerDelay capped at 8. Layer rows fade in on mount without stagger (deliberate). Interaction cards rise in. The route skeleton rows rise in on the tight stagger.",
+   "where": [
+    "src/components/design/design-editor.tsx:1025-1031",
+    "src/components/design/layers-panel.tsx:551",
+    "src/components/design/interactions-panel.tsx:236",
+    "src/app/(app)/design/[artifactId]/loading.tsx:56-60,67-72"
+   ]
+  },
+  {
+   "observation": "Floating canvas cards (proposal review, Tune Juno's change, the Ask Juno error/note strip) enter with animate-rise-in but are conditionally rendered, so they vanish in one frame on Apply, Reject, dismiss or next submit. That goes against ICONS_AND_MOTION \u00a72.2 rules 4 and 6 (floating layers have an exit; content folds back before it unmounts).",
+   "where": [
+    "src/components/design/design-editor.tsx:795-799,973",
+    "src/components/design/design-workspace.tsx:224-226",
+    "src/components/design/ask-juno-bar.tsx:112-129"
+   ]
+  },
+  {
+   "observation": "The canvas itself has no motion. Fit, Selection, 100% and zoom steps jump instantly. Proposal preview and Apply swap the whole scene in one frame, with no before/after cross-fade and nothing to draw the eye to the dashed touched layers. Selection chrome appears instantly. A short cross-fade between the current and proposed scene would make AI changes legible.",
+   "where": [
+    "src/components/design/design-canvas.tsx:258-308",
+    "src/components/design/use-design-document.ts:474"
+   ]
+  },
+  {
+   "observation": "The pane resizer grip fades its 4px accent bar in on hover, focus and drag (opacity only). The saving pill fades in and cuts out.",
+   "where": [
+    "src/components/design/panel-layout.tsx:259-266",
+    "src/components/design/design-editor.tsx:700-705"
+   ]
+  },
+  {
+   "observation": "Motion playback re-derives a preview document every animation frame. The canvas then re-runs layoutPage and renderPageSvg and re-injects the whole SVG string each frame. Smoothness depends on document size (the per-frame cost is inferred, not measured).",
+   "where": [
+    "src/components/design/design-editor.tsx:249-255,774",
+    "src/components/design/design-canvas.tsx:177-193,1078"
+   ]
+  }
+ ],
+ "defects": [
+  {
+   "id": "web-design-editor-1",
+   "title": "Edits made during a Juno proposal review apply to a hidden document",
+   "severity": "high",
+   "file": "src/components/design/design-editor.tsx",
+   "line": 747,
+   "evidence": "While state.pending is set, only the canvas, inspector, prototype and motion panels get readOnly (lines 784, 819, 860, 863). LayersPanel gets readOnly={readOnly} only (line 747). The window keydown handler (410-516) never checks state.pending, so Delete, \u2318D, \u2318G, arrow nudges and \u2318Z still call apply()/undo(). use-design-document.ts:343-344 apply() only checks opts.readOnly. Meanwhile visibleDocument = pending.preview (use-design-document.ts:474) is what the canvas and layers panel draw.",
+   "failure_scenario": "Juno proposes recolouring 'Button' and the review card is up. The user presses \u232b with Button selected (or toggles its eye in Layers, or presses \u2318Z). The real document changes, but the canvas and layers keep showing the preview, so nothing appears to happen. Apply then re-applies against a document that no longer matches (see -2). Layers-panel actions on nodes that exist only in the preview (layers the proposal created) throw not-found toasts."
+  },
+  {
+   "id": "web-design-editor-2",
+   "title": "Apply reports 'applied' even when acceptPending fails",
+   "severity": "medium",
+   "file": "src/components/design/design-editor.tsx",
+   "line": 1004,
+   "evidence": "The Apply onClick is `void state.acceptPending(); onResolved?.(\"applied\")` (1001-1006). acceptPending catches DesignOperationError, toasts, and leaves pending set (use-design-document.ts:441-469). On 'applied', the workspace sets reviewing=false and shows the armed adjustments (design-workspace.tsx:100-107).",
+   "failure_scenario": "After a layer was deleted during review (see -1), Apply throws 'not found'. The review card stays and the preview is still drawn. The Ask Juno bar is unblocked, and a 'Tune Juno's change' card appears for a change that was never applied. Its sliders silently write to the hidden document, or no-op when the targets do not exist."
+  },
+  {
+   "id": "web-design-editor-3",
+   "title": "Escape commits instead of cancelling in name, number, text and hex fields",
+   "severity": "medium",
+   "file": "src/components/design/effects-panel.tsx",
+   "line": 1782,
+   "evidence": "Every field cancels with `setDraft(null); target.blur()` inside onKeyDown. blur() dispatches a nested focusout synchronously. React runs nested events without flushing (react-dom-client.development.js:3251-3252 `if (isInsideEventHandler) return fn(a,b)`) and reads the handler from the last committed props (3274-3279). So onBlur still sees the typed draft and commits it. Affected: NumberField 1769-1787, OptionalNumberField 1868-1882, TextField 1917-1930, ColorField hex 2199-2208, design-workspace.tsx NameField 313-321. layers-panel.tsx page rename 444-451 and layer rename 588-595 go further: their onBlur commits e.target.value outright. The canvas LayerRenameField (design-canvas.tsx:1882-1891) is correct because it uses a done ref and never calls blur.",
+   "failure_scenario": "The user types 500 into W and presses Esc expecting a revert, and the layer becomes 500 wide. The user renames the design in the header, changes their mind and presses Esc, and the artifact is renamed (PATCH /api/artifacts) anyway. Esc during a page or layer rename renames it."
+  },
+  {
+   "id": "web-design-editor-4",
+   "title": "Inline fill/stroke hex and opacity inputs have no draft",
+   "severity": "medium",
+   "file": "src/components/design/effects-panel.tsx",
+   "line": 354,
+   "evidence": "The row's hex <input> is controlled by value={rgbaToHex(paint.color).slice(0,7)} and commits only when hexToRgba parses (354-365). hexToRgba accepts 3, 4, 6 and 8 digits only (variables.ts:185-190). The opacity <input type=number> is controlled from the document and commits on every onChange (369-384). ColorField's own doc comment (2132-2140) describes and fixes exactly this bug for the popover field, but not for the row.",
+   "failure_scenario": "The user clicks the fill row's hex, selects all and types 'f0a0b0'. After 'f' the value does not parse, so the input snaps back to the old colour and the keystroke is lost. Typing '#abc' commits #aabbcc mid-word. In opacity, typing '50' commits 5% then 50% (two undo entries and saves). Clearing the field is impossible because '' does not parse and is reverted."
+  },
+  {
+   "id": "web-design-editor-5",
+   "title": "Gradient stop, axis and radial pad drags commit a transaction on every pointermove",
+   "severity": "medium",
+   "file": "src/components/design/effects-panel.tsx",
+   "line": 607,
+   "evidence": "The GradientRail onPointerMove calls onMove \u2192 commitStops \u2192 onChange \u2192 setPaint \u2192 onApply per move (603-609). AxisPad drag onPointerMove calls onChange per move (728-736). RadialPad does the same (780-798). Each onApply pushes an undo entry (use-design-document.ts:389, capped at 100) and queues a persist. By contrast, keyframe drags commit once on release (motion-panel.tsx:712-719), and the canvas does too (design-canvas.tsx:13-16).",
+   "failure_scenario": "Dragging a gradient stop across the ramp for one second adds ~60 'Move gradient stop' history entries. That evicts the user's earlier real history (100-entry cap), makes \u2318Z step through 60 micro-positions, and floods the save queue with ~60 operations."
+  },
+  {
+   "id": "web-design-editor-6",
+   "title": "Editing a fill or stroke row on a mixed selection overwrites every layer's list with the first layer's",
+   "severity": "medium",
+   "file": "src/components/design/effects-panel.tsx",
+   "line": 294,
+   "evidence": "paints = read(nodes[0]) (284). setPaint maps over that list (295-296). setPaints \u2192 patchAll(node => write(next, node)) assigns it to every editable layer; for fills write ignores the node: `({ fills: paints })` (171). Only a 'Mixed' badge warns (302). FillControl's own comment (146-150) says per-layer assembly was the fix for exactly this, but the code does not do it.",
+   "failure_scenario": "Select a card with [image fill, 40% tint] and a button with [solid blue]. Toggle the eye on fill 2 or change its opacity. The button's blue fill is replaced by the card's image and tint, with no warning beyond the badge."
+  },
+  {
+   "id": "web-design-editor-7",
+   "title": "\u21e7\u2318G Ungroup does nothing for a single selected group",
+   "severity": "medium",
+   "file": "src/components/design/design-editor.tsx",
+   "line": 439,
+   "evidence": "The \u2318G branch returns when selection.length < 2 before checking shiftKey (437-442), so Ungroup via keyboard needs two or more containers selected. The ungroupNodes op accepts one group (operations.ts:1054-1060). The context menu enables Ungroup for one container and advertises the \u21e7\u2318G hint (design-context-menu.tsx:145,266-272), under a comment that it only shows 'chords the editor really binds' (108-109).",
+   "failure_scenario": "Select a group and press \u21e7\u2318G, the shortcut the menu teaches: nothing happens and there is no feedback."
+  },
+  {
+   "id": "web-design-editor-8",
+   "title": "Clicking a resize or rotate handle without dragging commits a transaction, and a resize click fixes hug/fill sizing",
+   "severity": "medium",
+   "file": "src/components/design/design-canvas.tsx",
+   "line": 670,
+   "evidence": "The resize branch of commitDrag has no zero-delta guard, unlike move's `dx !== 0 || dy !== 0` (652). It always pushes x/y/width/height and sets widthMode/heightMode:'fixed' when they are not fixed (670-702). Handle presses never set descentRef, so onPointerUp always commits (739-749). Rotate likewise pushes an unchanged rotation (705-719).",
+   "failure_scenario": "The user clicks a corner handle of an auto-layout card set to Hug, perhaps to see its size. The card silently becomes Fixed at its current size, stops hugging its content, and a 'Resize' undo entry and save are recorded. A click on the rotate knob records a no-op 'Rotate'."
+  },
+  {
+   "id": "web-design-editor-9",
+   "title": "Clicking an unselected layer can move and snap it through pointer jitter",
+   "severity": "medium",
+   "file": "src/components/design/design-canvas.tsx",
+   "line": 498,
+   "evidence": "The CLICK_SLOP protection only applies when descentRef is set, and that happens only when press.select === null (a press inside the existing selection) (498-501, 744-747). A press that re-picks a layer starts a move drag (512-513). Any pointermove updates drag.current with snapping of up to SNAP_THRESHOLD/zoom (546-576), and pointer-up commits when dx or dy is non-zero (652-667).",
+   "failure_scenario": "At 25% zoom the user clicks a label 4px from its frame edge on a trackpad, and the click wanders 1px. The layer moves 4pt, or snaps up to 24pt onto the frame edge, and a 'Move layer' entry is saved, from what was meant to be a selection click."
+  },
+  {
+   "id": "web-design-editor-10",
+   "title": "Dragging, nudging or aligning an auto-layout child writes x/y the layout ignores",
+   "severity": "medium",
+   "file": "src/components/design/design-canvas.tsx",
+   "line": 652,
+   "evidence": "The move commit writes updateNode {x,y} for every dragged node with no layout awareness (652-667). The same is true of nudge (design-editor.tsx:349-360) and align (362-408). layout.ts places in-flow children by the flow and uses child.x/y only for absolute children or non-layout parents (layout.ts:229-235,455-461).",
+   "failure_scenario": "The user drags the second button in a horizontal auto-layout row to swap it with the first. The ghost moves; on release the button snaps back to its flow slot, the order is unchanged, and a useless 'Move layer' entry is saved. Arrow keys on that child also do nothing visible but still record history."
+  },
+  {
+   "id": "web-design-editor-11",
+   "title": "Keyboard Delete, Duplicate, Group and Reorder fail as a whole when any selected layer is locked",
+   "severity": "medium",
+   "file": "src/components/design/design-editor.tsx",
+   "line": 485,
+   "evidence": "The keyboard handlers pass the raw selection to deleteNodes, duplicateNodes, groupNodes and reorderNodes (434, 441, 463, 468, 485). Those ops call requireUnlocked per root and throw (operations.ts:779-780, 919-923, 1012). \u2318A selects all page roots including locked ones (455-459), and Layers lets locked rows be selected (layers-panel.tsx:248-258). The context menu and layers menu filter locked layers first (design-context-menu.tsx:138,215,229; layers-panel.tsx:385-394).",
+   "failure_scenario": "A page has a locked background frame. The user presses \u2318A then \u232b to clear the page. Nothing is deleted and a toast says the background is locked. The same selection deleted from the context menu works."
+  },
+  {
+   "id": "web-design-editor-12",
+   "title": "Layers inside a frame cannot be marquee-selected",
+   "severity": "medium",
+   "file": "src/components/design/design-canvas.tsx",
+   "line": 1496,
+   "evidence": "canvasPress returns a marquee only when nothing is hit (1496). pathHit with deep=false returns path[0], the outermost frame (1376-1378). So pressing empty space inside a frame yields {kind:'move', select:[frame]}. A marquee from bare canvas collects the outermost intersecting node per root and does not descend into an intersecting frame (593-603).",
+   "failure_scenario": "A phone-screen frame holds 12 list rows. Dragging a box around rows 3-6 from inside the frame drags the whole frame instead. Starting outside and sweeping across selects the frame. The only way to get the rows is Shift-clicking or Layers range selection."
+  },
+  {
+   "id": "web-design-editor-13",
+   "title": "No live preview while drawing a shape or rotating",
+   "severity": "medium",
+   "file": "src/components/design/design-canvas.tsx",
+   "line": 962,
+   "evidence": "The ghost is computed only for move, resize and rotate (962-971). Rotate returns the original box, and the chrome rotation comes from the committed doc (987-988). There is no rendering branch for drag.kind==='create'; only the marquee is drawn (1110-1120). dragReadout is null for create and rotate (997-1006).",
+   "failure_scenario": "The user drags with the Rectangle tool and sees nothing but a crosshair until release, so cannot aim a size. They drag the rotate knob and nothing on screen turns or shows an angle, so they must release, read the inspector and retry."
+  },
+  {
+   "id": "web-design-editor-14",
+   "title": "The Shift-resize preview disagrees with the commit",
+   "severity": "low",
+   "file": "src/components/design/design-canvas.tsx",
+   "line": 957,
+   "evidence": "ghostResize passes preserveRatio=false (950-960). commitDrag uses the pointer-up event's shiftKey (672, 747). The comment at 945-949 says 'Preview and commit must move the same pixels'.",
+   "failure_scenario": "The user holds Shift while resizing a photo. The outline shows a free, distorted box, and on release the layer lands at a different proportional size. Releasing Shift a frame before the mouse gives an unconstrained result the user thought was locked."
+  },
+  {
+   "id": "web-design-editor-15",
+   "title": "The line tool only makes horizontal lines, and zero-height lines are nearly unclickable",
+   "severity": "medium",
+   "file": "src/lib/design/render.ts",
+   "line": 966,
+   "evidence": "The create patch stores only |dx| and |dy| as width and height from the min corner (design-canvas.tsx:611-624). The renderer draws a line horizontally through the box's vertical centre (render.ts:966-969). hitPath has no tolerance: a point must lie within [box.y, box.y+height] (design-canvas.tsx:1334), which for height 0 is a single scene coordinate.",
+   "failure_scenario": "The user drags the Line tool from bottom-left to top-right and gets a horizontal line mid-way up the drag box. A carefully drawn horizontal line (Math.round(dy) = 0) can then only be re-selected from the Layers panel, because clicks on it miss."
+  },
+  {
+   "id": "web-design-editor-16",
+   "title": "Touch devices cannot pan the canvas, and there is no pinch zoom",
+   "severity": "medium",
+   "file": "src/components/design/design-canvas.tsx",
+   "line": 470,
+   "evidence": "Pan starts only on button===1 or Alt+left with Select (470-473). Zoom and pan are handled only by the wheel listener (858-887). touchAction:'none' (1031) disables browser gestures, and there are no touch or gesture handlers (grep for touches/pinch/gesturestart finds nothing).",
+   "failure_scenario": "On an iPad or phone browser, a one-finger drag starts a marquee or moves a layer, and two fingers do nothing. Once the user zooms in with the + key they cannot scroll to another part of the design, except with the Fit and Selection buttons."
+  },
+  {
+   "id": "web-design-editor-17",
+   "title": "The window surface is unusable at narrow widths: rails never collapse and the toolbar has no overflow",
+   "severity": "medium",
+   "file": "src/components/design/design-editor.tsx",
+   "line": 549,
+   "evidence": "surface==='window' forces both rails to 'flex' at every width (549-550). The rails' minimum widths are 168 + 208 = 376px (panel-layout.tsx:37-38). The toolbar row (555) is a non-wrapping flex with no overflow handling inside the workspace's overflow-hidden root (design-workspace.tsx:163). By approximate arithmetic its contents need ~825px (7 tools + undo/redo + 3 align keys at 32px, a ~220px ZoomBar, Motion, Export), and ~965px with Ask Juno and Saving\u2026.",
+   "failure_scenario": "On a 390px phone the two rails take all the width and the canvas collapses to 0px, and Motion and Export are clipped off-screen. On a ~1024px laptop with the app sidebar open, the right end of the toolbar (Export, Ask Juno, Saving\u2026) is clipped and unreachable."
+  },
+  {
+   "id": "web-design-editor-18",
+   "title": "The embedded surface (chat panel, Mac host) hides the rails by viewport breakpoint with no way back",
+   "severity": "medium",
+   "file": "src/components/design/design-editor.tsx",
+   "line": 549,
+   "evidence": "Embedded rails use 'hidden md:flex' and 'hidden lg:flex', and the collapsed stubs and grips use the same classes (546-550, 710-717, 866-873). PREMIUM_AUDIT rule 11 says size by the container, never the viewport (docs/design/PREMIUM_AUDIT.md:831-835). The Mac host mounts with no surface prop, so it is embedded (host/main.tsx:65-71). The chat panel embeds it the same way (canvas-panel.tsx:1238-1255).",
+   "failure_scenario": "In the Mac app with a window narrower than 1024 WebView px, the inspector disappears with no toggle, so fills and text cannot be edited. In the web chat on a wide window, both rails squeeze a narrow side-panel canvas. This is the failure design-workspace.tsx:6-10 says the window route was built to escape."
+  },
+  {
+   "id": "web-design-editor-19",
+   "title": "Ask Juno fails with a misleading 'still saving' while a save is in flight, and stays stuck once another client has edited",
+   "severity": "medium",
+   "file": "src/components/design/ask-juno-bar.tsx",
+   "line": 73,
+   "evidence": "submit() sends handle.revision() (73), the local revision, which runs ahead of the server while the queue drains. The document only re-adopts the server copy when the queue empties (use-design-document.ts:280). The bar has no saving check (74). The edit route returns 409 'Your last change is still saving' on any mismatch (edit/route.ts:125-133). There is no polling or subscription to learn of other clients' edits.",
+   "failure_scenario": "The user nudges a layer and immediately asks Juno, and gets 'Your last change is still saving. Try again in a second.' Worse: with the design open in two tabs (or Mac + web), an edit in tab A makes every Ask Juno in tab B return the same 'still saving' message indefinitely, until B makes an edit (itself rolled back with an error) or reloads."
+  },
+  {
+   "id": "web-design-editor-20",
+   "title": "One failed save discards every unacknowledged edit and the whole undo/redo history",
+   "severity": "medium",
+   "file": "src/components/design/use-design-document.ts",
+   "line": 257,
+   "evidence": "A transport throw (network error) calls rollback(ackedRef.current) (257-262). rollback clears the queue, sets the document to the stored copy, and empties both stacks (200-209). There is no retry, offline queue or 'unsaved' state.",
+   "failure_scenario": "On flaky Wi-Fi the user makes ten quick edits while one request is out. That request times out, and all ten edits vanish from the canvas, undo history is gone, and a single 'Couldn\u2019t save that change.' toast explains it."
+  },
+  {
+   "id": "web-design-editor-21",
+   "title": "Opening a design loads every stored version's full document",
+   "severity": "medium",
+   "file": "src/app/(app)/design/[artifactId]/page.tsx",
+   "line": 23,
+   "evidence": "loadOwnedDesignArtifact uses include:{versions:{orderBy:{version:'asc'}}} with no select or take (store.ts:34-37). The page then uses one version (page.tsx:26). The page comment says every design route uses this same loader (14-15). Each version can be up to 200 000 characters (store.ts:63).",
+   "failure_scenario": "A design with 150 checkpoints pulls up to ~30 MB of JSON from Postgres to render one 200 KB document. Page load time grows with the document's history, not its size, and the same cost falls on design API routes that use the loader."
+  },
+  {
+   "id": "web-design-editor-22",
+   "title": "Adjustment sliders give no live preview and commit duplicate no-op transactions",
+   "severity": "low",
+   "file": "src/components/design/design-adjustments.tsx",
+   "line": 106,
+   "evidence": "onChange only sets local state (101). onPointerUp, onKeyUp and onBlur all call onCommit(value) (106-108), with no check that the value changed. apply() records any non-selection op as history (use-design-document.ts:376-391).",
+   "failure_scenario": "Dragging 'Corner radius' shows only the number; the button does not change until release. Releasing and then clicking elsewhere commits the same radius twice (two undo entries and saves). Tabbing into the slider commits an unchanged value on keyup."
+  },
+  {
+   "id": "web-design-editor-23",
+   "title": "Frame titles are not clickable, contrary to their documented purpose",
+   "severity": "low",
+   "file": "src/components/design/design-canvas.tsx",
+   "line": 1058,
+   "evidence": "The comment says the title 'is also the affordance that makes a frame selectable as a whole from outside its own bounds' (206-207). The title <g> is pointerEvents='none' (1058), and hitPath tests boxes only (1311-1349).",
+   "failure_scenario": "The user clicks or drags a frame's name label, as in Figma. A marquee starts and the frame is not selected or moved."
+  },
+  {
+   "id": "web-design-editor-24",
+   "title": "Frame titles are about 2.2:1 contrast in the dark theme on the default page colour",
+   "severity": "low",
+   "file": "src/components/design/design-canvas.tsx",
+   "line": 1069,
+   "evidence": "Titles are filled with hsl(var(--muted-foreground)) (1066-1070), which is 40 6% 66% in dark (globals.css:525). They sit on the document page colour, which defaults to rgb(0.96,0.96,0.97) regardless of theme (operations.ts:73; design-canvas.tsx:1034). The ratio is about 2.2:1 by computation, below WCAG 1.4.3 and 1.4.11.",
+   "failure_scenario": "In dark mode every artboard name on a default page is barely legible pale-grey-on-light-grey text."
+  },
+  {
+   "id": "web-design-editor-25",
+   "title": "The system colour picker resets alpha to 100%",
+   "severity": "low",
+   "file": "src/components/design/effects-panel.tsx",
+   "line": 2220,
+   "evidence": "The native picker commits e.target.value, which is always #rrggbb (2213-2220). PaintEditor's solid ColorField writes {...paint, color: hexToRgba(hex)} with a=1 (495-503), while the inline row input preserves a (364). The page-background comment claims the picker's alpha makes transparency reachable (inspector-panel.tsx:409-414, 447-450), but the popover has no alpha control.",
+   "failure_scenario": "A 50%-alpha glass fill becomes opaque the moment the user picks a new hue with the system picker."
+  },
+  {
+   "id": "web-design-editor-26",
+   "title": "Disabled toolbar keys never show their tooltip",
+   "severity": "low",
+   "file": "src/components/design/design-editor.tsx",
+   "line": 623,
+   "evidence": "The align keys are disabled below 2 or 3 selected layers (623) and undo/redo when their stacks are empty (586, 597). Button applies disabled:pointer-events-none (button.tsx:43), so a Radix tooltip cannot open. The comment at 607-615 justifies always-mounted disabled keys as the way to discover the gesture.",
+   "failure_scenario": "A new user hovers the three grey align glyphs to learn what they do and gets no label. The disabled keys teach nothing."
+  },
+  {
+   "id": "web-design-editor-27",
+   "title": "The prototype 'Set a variant' action is hidden for components whose variants live in component.variants",
+   "severity": "low",
+   "file": "src/components/design/interactions-panel.tsx",
+   "line": 225,
+   "evidence": "The action is offered only when component.properties contains a variant property (225, 546). The inspector explains that properties is optional and absent for components made by promote-to-component or by the AI, so it reads component.variants via variantAxes (inspector-panel.tsx:491-497; instances.ts:61-76).",
+   "failure_scenario": "An instance whose component has size=sm/lg variants (the inspector shows the picker) offers no 'Set a variant' action in the Prototype tab."
+  },
+  {
+   "id": "web-design-editor-28",
+   "title": "pointercancel commits the in-flight gesture instead of aborting it",
+   "severity": "low",
+   "file": "src/components/design/design-canvas.tsx",
+   "line": 1046,
+   "evidence": "onPointerCancel={onPointerUp} (1046), and onPointerUp calls commitDrag (739-749).",
+   "failure_scenario": "On a touch or pen device, a system gesture or palm rejection cancels the pointer mid-drag. The layer is committed at the half-way position with an undo entry, rather than being left where it was."
+  },
+  {
+   "id": "web-design-editor-29",
+   "title": "The on-canvas move readout and the inspector X/Y use different coordinate spaces",
+   "severity": "low",
+   "file": "src/components/design/design-canvas.tsx",
+   "line": 1003,
+   "evidence": "The move readout prints chromeBounds.x/y in page-absolute layout space (1002-1004). Inspector X/Y show node.x/node.y, which are parent-relative (inspector-panel.tsx:144-145,188-189; design-canvas.tsx:657-658).",
+   "failure_scenario": "The user drags a button inside a frame at (400,0) until the readout says '424, 96'. The inspector then shows X 24, Y 96 for the same layer."
+  },
+  {
+   "id": "web-design-editor-30",
+   "title": "Layers drag-and-drop always nests into containers; frames cannot be reordered by drag",
+   "severity": "low",
+   "file": "src/components/design/layers-panel.tsx",
+   "line": 543,
+   "evidence": "A drop is 'inside' whenever the target is a container (`e.altKey || isContainer(node)`, 541-544). The 'above' branch inserts after the target in the array (358-365). There is no below or insertion indicator, only a ring on the target (554).",
+   "failure_scenario": "The user drags top-level frame 'Login' onto frame 'Home' to put it above. Login is nested inside Home instead. Top-level frames can only be reordered with the \u22ef menu's z-order items, and a layer cannot be dropped to the bottom of a list."
+  },
+  {
+   "id": "web-design-editor-31",
+   "title": "The loading sequence flashes skeleton, then spinner, then editor",
+   "severity": "low",
+   "file": "src/components/design/use-design-document.ts",
+   "line": 170,
+   "evidence": "The document is parsed in a useEffect (170-188), so the SSR pass and the first client render have document=null and DesignEditor renders the centred 'Loading design\u2026' spinner (design-editor.tsx:537-544) in place of the route skeleton. The skeleton toolbar also lacks the undo/redo, align and zoom groups and uses fixed 208/256 rails, ignoring persisted pane sizes and collapse (loading.tsx:39-47,53,65), despite its comment that 'nothing jumps'.",
+   "failure_scenario": "Opening a design shows the 3-pane skeleton, then a blank header with a centred spinner line, then the editor pops in with a differently shaped toolbar and rails at the user's saved widths. That is two layout shifts."
+  },
+  {
+   "id": "web-design-editor-32",
+   "title": "The focusable canvas removes its focus outline with no replacement",
+   "severity": "low",
+   "file": "src/components/design/design-canvas.tsx",
+   "line": 1028,
+   "evidence": "The host has tabIndex={0} and role='application' (1049-1051) with className 'outline-none' (1028), and no focus-visible style. ICONS_AND_MOTION \u00a72.2.3 says never remove an outline without replacing it.",
+   "failure_scenario": "A keyboard user tabs to the canvas (the element that scopes every shortcut) and gets no indication that it has focus."
+  },
+  {
+   "id": "web-design-editor-33",
+   "title": "Export silently narrows to a single selected layer, and a malformed notes header shows an error after a successful download",
+   "severity": "low",
+   "file": "src/components/design/design-editor.tsx",
+   "line": 303,
+   "evidence": "The query adds nodeId when exactly one layer of any type is selected (302-303); the menu labels never say so, and the comment claims 'a single selected frame'. X-Juno-Export-Notes is parsed with JSON.parse after saveBlob, inside the same try (335-339), so a parse error goes to the catch toast.",
+   "failure_scenario": "With one text label selected, the user chooses Export \u2192 PDF expecting the page and gets a PDF of one word. Separately, a notes header that is not valid JSON produces 'Unexpected token\u2026' as an error toast although the file downloaded."
+  },
+  {
+   "id": "web-design-editor-34",
+   "title": "No unload guard while edits are queued or saving",
+   "severity": "low",
+   "file": "src/components/design/use-design-document.ts",
+   "line": 162,
+   "evidence": "Queued batches live only in refs (162-163), and drain() is async (226-286). Grep finds no beforeunload or visibilitychange handling in src/components/design.",
+   "failure_scenario": "The user makes a burst of edits and closes the tab or hard-reloads while 'Saving\u2026' is showing. The queued batches never reach the server and the edits are lost without warning."
+  }
+ ],
+ "gaps": [
+  {
+   "title": "Comments on the canvas",
+   "description": "Pin comments to layers or points, with threads, resolve and 'send to Juno as an edit' (the model already links comment \u2192 transaction). There is no UI or op today.",
+   "why": "Claude's merged surface ships typed artifacts with comments. Figma's review loop depends on them. The data model (types.ts:738-752) is already designed for it."
+  },
+  {
+   "title": "Share link and roles",
+   "description": "Viewer, commenter and editor links independent of conversation ownership, and a read-only public view.",
+   "why": "The access join (artifact \u2192 conversation \u2192 user) makes a design exactly as private as its chat, which blocks 'one shareable link'."
+  },
+  {
+   "title": "In-conversation design",
+   "description": "The window route leaves the chat (the header 'Chat' link is a full navigation). The embedded chat panel lacks the rails at narrow widths and has no Ask Juno. The chat composer and Ask Juno are separate AI channels that do not see each other.",
+   "why": "The owner's goal is Claude-style design inside conversations. Today a design is either a chat side panel with a crippled editor or a separate page."
+  },
+  {
+   "title": "Streaming, cancellable, conversational Ask Juno",
+   "description": "Stream reasoning and ops, add a stop button, keep follow-up context ('bigger', 'undo that'), attach images or references, and offer before/after and per-change accept.",
+   "why": "Claude Design and Figma AI both iterate in dialogue. A one-shot silent request with a spinner reads as slow and opaque."
+  },
+  {
+   "title": "Phone and touch editing",
+   "description": "A single-rail or bottom-sheet layout below a container width, touch pan and pinch, tap targets of 44px or more, and toolbar overflow.",
+   "why": "Claude's artifacts are 'editable on phone'. Web Juno Design is currently unusable on phones and tablets (defects -16, -17)."
+  },
+  {
+   "title": "Prototype Play / Present",
+   "description": "Run authored interactions and transitions in a player overlay, and share a prototype link.",
+   "why": "Interactions can be authored but not experienced in the product (interactions-panel.tsx:19-25). Figma's prototype view is a core loop."
+  },
+  {
+   "title": "Core canvas instruments",
+   "description": "Rulers and guides, layout grids, Alt-hover measurement, spacing guides, snapping during resize and draw, a pixel grid, and a minimap or overview.",
+   "why": "Precision layout parity with Figma UI3. Snapping is move-only today (design-canvas.tsx:546)."
+  },
+  {
+   "title": "Vector tools",
+   "description": "Pen tool, vector point editing, boolean operations, polygon and star.",
+   "why": "Path nodes exist in the model but can only come from the AI or an import."
+  },
+  {
+   "title": "Real clipboard",
+   "description": "\u2318C/\u2318V/\u2318X with the system clipboard (SVG/PNG/JSON), cross-page and cross-document paste, and image paste and drag-drop onto the canvas.",
+   "why": "Copy is currently an in-memory list of ids, reachable only from the context menu (design-context-menu.tsx:40-79)."
+  },
+  {
+   "title": "Version history in the editor",
+   "description": "Browse, preview, name and restore artifact checkpoints from /design/[id]. HistoryEntry.version exists but is never set.",
+   "why": "The store already writes checkpoints. The window's 'vN' label is inert, and the History tab is only the in-memory undo stack."
+  },
+  {
+   "title": "Larger documents and assets",
+   "description": "Store assets outside the document (blob storage) and lift the 200 000-character document cap and the 96 KB image cap, or downscale on import.",
+   "why": "The caps (store.ts:63, use-design-document.ts:578) block photo-heavy designs, slides and design-system files that the merge would add."
+  },
+  {
+   "title": "Component authoring completeness",
+   "description": "Create variants, component properties, detach instance, go to main component, delete component, and a cross-document design-system library.",
+   "why": "The createVariant, setComponentProperty and deleteComponent ops have no UI call site. 'Design System' as a typed artifact needs a cross-file library."
+  },
+  {
+   "title": "Multiplayer and live sync",
+   "description": "Presence, cursors and live document updates, or at minimum refetch on focus.",
+   "why": "Two tabs or devices silently diverge until a transaction is refused (defect -19)."
+  },
+  {
+   "title": "Keyboard and a11y completeness",
+   "description": "Space/H pan, zoom keys, Enter and Esc hierarchy navigation, canvas object navigation with announcements, a focus ring on the canvas, and platform-correct shortcut glyphs.",
+   "why": "Designer muscle memory and WCAG. Today \u2318\u00b1 zooms the browser page."
+  }
+ ],
+ "debt": [
+  {
+   "title": "Dead code and unused fields",
+   "description": "emptyDesignContent is exported but has no caller in src. `export { isContainer }` re-exports a lib symbol. HistoryEntry.version is never set. `void box` in commitDrag.",
+   "where": [
+    "src/components/design/design-editor.tsx:1045-1100",
+    "src/components/design/use-design-document.ts:52-53",
+    "src/components/design/design-canvas.tsx:664"
+   ]
+  },
+  {
+   "title": "Comments that contradict the code",
+   "description": "The context menu says updateNode refuses the unlock patch; the op now allows lock/visible-only patches (operations.ts:724-741). FillControl says per-layer assembly fixed carry-over, but the code assigns the first layer's list. The frame-title comment says titles are clickable. loading.tsx says 'nothing jumps'. The toolbar comment argues disabled keys aid discovery. The page-background comment claims the picker offers alpha.",
+   "where": [
+    "src/components/design/design-context-menu.tsx:295-299",
+    "src/components/design/effects-panel.tsx:146-150",
+    "src/components/design/design-canvas.tsx:206-207",
+    "src/app/(app)/design/[artifactId]/loading.tsx:15-19",
+    "src/components/design/design-editor.tsx:607-615",
+    "src/components/design/inspector-panel.tsx:409-414"
+   ]
+  },
+  {
+   "title": "Inconsistent commit discipline",
+   "description": "The canvas and keyframes commit once per gesture. Gradient pads commit per move. Inline paint inputs commit per keystroke. NumberField coalesces. Adjustment sliders double-commit. There is no shared 'gesture \u2192 one transaction' helper.",
+   "where": [
+    "src/components/design/effects-panel.tsx:354-384,603-609,728-798,1640-1683",
+    "src/components/design/design-adjustments.tsx:106-108",
+    "src/components/design/motion-panel.tsx:712-719"
+   ]
+  },
+  {
+   "title": "Escape/blur cancel pattern duplicated and wrong",
+   "description": "Six hand-written 'setDraft(null); blur()' cancels, all of which commit (see defect -3). A shared useDraftField with a cancelled ref would fix all of them.",
+   "where": [
+    "src/components/design/effects-panel.tsx:1782-1787,1927-1930,2205-2208",
+    "src/components/design/design-workspace.tsx:317-321",
+    "src/components/design/layers-panel.tsx:448-451,592-595"
+   ]
+  },
+  {
+   "title": "Oversized modules and misplaced primitives",
+   "description": "effects-panel.tsx (2236 lines) also hosts every field primitive, to dodge an import cycle. design-canvas.tsx (2015 lines) mixes gestures, rendering, text overlay, rename field and zoom UI. inspector-panel.tsx is 1306 lines. motion-panel.tsx exports field primitives that interactions-panel imports.",
+   "where": [
+    "src/components/design/effects-panel.tsx:28-32,1373-2236",
+    "src/components/design/design-canvas.tsx",
+    "src/components/design/interactions-panel.tsx:32"
+   ]
+  },
+  {
+   "title": "Full-scene string re-render per change and per playback frame",
+   "description": "renderPageSvg to string then dangerouslySetInnerHTML on every committed change and every motion-preview frame. The layers tree is not virtualized and mounts a Radix DropdownMenu per row. Component thumbnails re-render on every document change. Snap candidates are rebuilt on each pointermove. Scale is bounded only by the 200 KB cap.",
+   "where": [
+    "src/components/design/design-canvas.tsx:177-193,380-392,1078",
+    "src/components/design/layers-panel.tsx:652-703,839-847",
+    "src/components/design/design-editor.tsx:249-255"
+   ]
+  },
+  {
+   "title": "Viewport breakpoints inside a container-hosted component",
+   "description": "The 'embedded' rails use md:/lg: window breakpoints (PREMIUM_AUDIT rule 11), and 'window' has no responsive rule at all.",
+   "where": [
+    "src/components/design/design-editor.tsx:546-550"
+   ]
+  },
+  {
+   "title": "Design-law drift",
+   "description": "Selected state uses the accent tint instead of bg-selected (FLAT_UI \u00a73.1/\u00a76). Raw z-10 instead of named rungs. Radii use rounded-md/xs/sm/micro alongside the ladder names. Hit targets are below \u00a73 minimums.",
+   "where": [
+    "src/components/design/effects-panel.tsx:1509",
+    "src/components/design/layers-panel.tsx:552,619",
+    "src/components/design/design-editor.tsx:796",
+    "src/components/design/panel-layout.tsx:252"
+   ]
+  },
+  {
+   "title": "Loader over-fetches versions",
+   "description": "loadOwnedDesignArtifact includes every version's content for every caller.",
+   "where": [
+    "src/lib/design/store.ts:33-39",
+    "src/app/(app)/design/[artifactId]/page.tsx:23-26"
+   ]
+  },
+  {
+   "title": "Two parallel AI edit paths",
+   "description": "Chat-composer artifact regeneration (<juno:artifact>, versions) and the Ask Juno transaction proposals (/api/design/[id]/edit) share no history, context or UI.",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:1236-1255",
+    "src/app/api/design/[artifactId]/edit/route.ts:195",
+    "src/components/design/ask-juno-bar.tsx"
+   ]
+  },
+  {
+   "title": "No component-level tests",
+   "description": "Only pure helpers are tested (hit path, descend, resize, pane math, variable retype, effects and render). React behaviour (fields, keyboard, pending review, save rollback, Ask bar) has no tests, and jsdom and testing-library are not installed.",
+   "where": [
+    "tests/design-canvas-interaction.test.ts",
+    "tests/design-panels.test.ts"
+   ]
+  }
+ ],
+ "strengths": [
+  "One mutation path: every gesture, field, menu item, adjustment and accepted AI proposal is a validated DesignTransaction on one undo stack, with batched, coalesced and revision-addressed persistence (use-design-document.ts:1-23,226-326). This is the right substrate for AI edits, merge, replay and the Mac bridge.",
+  "The selection model is careful and tested: a press inside the selection drags it, a repeat click descends one level on release, \u2318 deep-selects, rotated layers hit-test in their own space, and the selection is kept ancestor-free (design-canvas.tsx:1311-1498; use-design-document.ts:548-552; tests/design-canvas-interaction.test.ts, 28 tests).",
+  "Transform maths is correct where it exists: group resize scales the union proportionally, a single rotated layer resizes along its own axes with the opposite corner pinned, and constraints propagate to children (design-canvas.tsx:1542-1712).",
+  "The inspector is honest about multi-selection, with per-field Mixed reads and per-layer patches for radius, limits and layoutChild. Number fields commit in bursts so steppers do not flood undo (inspector-panel.tsx:94-138; effects-panel.tsx:1640-1799).",
+  "The Layers tree is a real ARIA tree: roving tabindex, arrow, Home/End and Left/Right semantics, F2/Enter rename, range selection with an anchor, and a filter that keeps ancestor paths (layers-panel.tsx:188-338).",
+  "Ask Juno is scoped to the selection by default, with visible opt-out. The server refuses edits outside scope and on stale revisions, and the result is a reviewable preview rather than a silent write, followed by model-offered tuning controls that have exactly the inspector's reach (ask-juno-bar.tsx:55-58,148-187; design-adjustments.tsx:12-16,187-246).",
+  "Panes are resizable by pointer and keyboard with clamped, persisted sizes and a collapse that always leaves a way back (panel-layout.tsx; design-editor.tsx:919-958).",
+  "One editor across surfaces: a pluggable DesignTransport lets the same component run on the web (HTTP) and in the Mac/iPhone WKWebView (bridge) (use-design-document.ts:64-107; host/main.tsx:65-71).",
+  "Designed empty, loading and error states throughout, including a route error boundary that shows only the digest, a not-found, a PanelEmpty tile and a page/document inspector when nothing is selected.",
+  "Floating overlays share one material (overlay-glass = popover fill + hairline + shadow-float), consistent with FLAT_UI's 'shadows leave the page'.",
+  "Design tests pass: 92/92 across tests/design-canvas-interaction, design-panels, design-effects and design-editing."
+ ],
+ "merge_relevance": "Effect on merging Artifacts and Design into one Claude-style surface (design inside the conversation; Design/Docs/Slides/Design System as typed artifacts at one shareable link, editable on phone, with comments).\n\nENABLES:\n(a) DesignEditor already takes an artifactId plus a content string and a pluggable transport. The same component already runs in the chat Canvas panel, the /design/[id] window and the Mac/iPhone host, so 'one editor, many hosts' exists.\n(b) The operation/transaction layer and the proposal \u2192 preview \u2192 Apply/Reject flow (with the server scope guard and revision addressing) are the right primitive for an assistant that edits any typed artifact inside a conversation. Docs and Slides could adopt the same shape.\n(c) The selection-context builder and scoped requests fit 'edit this part' in chat.\n(d) The comment model already exists in DesignDocument, with node or point anchors and a transaction link.\n\nBLOCKS / MUST CHANGE:\n(1) Two AI channels. The chat composer regenerates whole artifacts via <juno:artifact> tags; Ask Juno sends single-turn transactions that are never written to the conversation. A merged surface needs one assistant thread that can emit design transactions, show them as reviewable proposals in the transcript, and see edits made by hand.\n(2) Surface split. The window route leaves the chat (the 'Chat' link is navigation). The embedded surface hides the rails by viewport breakpoint and has no Ask bar or zoom chrome parity. A merged layout needs a container-sized editor (rails as sheets or popovers at narrow widths) living beside the transcript.\n(3) Sharing, comments and presence are absent in the UI, and access is owner-only through the conversation join (store.ts:33-39). 'One shareable link with comments' needs a permission model independent of the chat plus comment UI and ops.\n(4) Phone editing is broken (defects -16 and -17: no touch pan, pinned rails, clipped toolbar), and the iPhone host is read-only.\n(5) Capacity: the 200 KB document cap, inline data-URL assets and the 96 KB image cap block slide decks and design-system files.\n(6) Versions: checkpoints exist server-side but the window has no version UI. The chat panel's version rail and the editor's History tab are different concepts.\n(7) The editor only knows DesignDocument. Docs, Slides and Design System types need either their own editors on the same transaction/proposal contract, or templates on the scene model (Slides as frames per page is plausible; a design system needs a cross-document variables and components library that does not exist).\n(8) Defects -1, -2 and -19 (review races, revision drift) grow worse once the chat assistant and a human edit the same artifact at the same time, so fix them before merging. The Liquid Glass branch (mac/liquid-glass-chat) does not touch these files, so there is no conflict from that side.",
+ "tests": "Tests that cover this area are pure-function tests only. None render React or simulate DOM events; jsdom and @testing-library are not installed.\n\n- tests/design-canvas-interaction.test.ts (28 tests): canvasPress, descendSelection, doubleClickTarget, hitPath with rotation, resizeSelection and resizeRotatedBox.\n- tests/design-panels.test.ts (8 tests): paneSizeFromDrag/Key, clampPaneSize, retypedVariable, nextVariableName, createVariable undo.\n- tests/design-effects.test.ts (~38 tests): fill/stroke lists, effect stacks, exporter degradation.\n- tests/design-editing.test.ts (18 tests): operation inverses, pages, image layers, text wrap.\n\nRun: `npx tsx --test tests/design-canvas-interaction.test.ts tests/design-panels.test.ts tests/design-effects.test.ts tests/design-editing.test.ts`. Result: 92 pass, 0 fail, ~430 ms.\n\nNot run: tests/design-operations, design-schema, design-ai, design-export, design-motion*, design-layout, design-host-* (lib/host, outside this area).\n\nNot covered by any test: use-design-document (queue, rollback, pending review), the keyboard handler, NumberField/TextField/ColorField behaviour (including the Escape bug), the inline paint inputs, gradient pad commits, AskJunoBar, DesignAdjustments, design-context-menu, the layers drag-drop, the workspace rename/delete, and the loading/error routes.",
+ "open_questions": [
+  "On macOS, do \u2325\u2318K (Create component) and \u2325\u2318]/\u2325\u2318[ (to front/back) actually fire? The handler compares event.key (design-editor.tsx:447,461,466). With Option held, Mac browsers usually report the Option-modified character (e.g. '\u02da', '\u2018') rather than 'k' or ']'. Figma-class editors match on event.code. Not verified in a browser.",
+  "When a proposal arrives, the focused Ask Juno input becomes disabled (ask-juno-bar.tsx:193). If the browser moves focus to <body>, the editor's focus-scoped shortcuts, including Esc-to-reject (design-editor.tsx:421), stop working until the canvas is clicked. This depends on browser focus-fixup behaviour and was not reproduced (the Browser pane was in use by another session).",
+  "saveBlob revokes the object URL synchronously after anchor.click() without attaching the anchor (design-editor.tsx:1106-1113). Do Safari or Firefox downloads of large exports ever fail because of this?",
+  "Does Chrome fire blur on a focused textarea that is removed from the DOM? If it does, Esc in TextEditorOverlay (design-canvas.tsx:1783-1786) might still commit through onBlur. The unmount ordering was not verified.",
+  "Snap candidates include every laid-out box, and it was not confirmed whether layoutPage includes hidden layers (design-canvas.tsx:380-392). If it does, moves snap to invisible edges.",
+  "What is the real performance envelope? No profiling was done of renderPageSvg/layoutPage on the largest documents allowed by the 200 KB cap, especially during motion playback and in the non-virtualized layers tree.",
+  "Should Alt+drag pan (design-canvas.tsx:470) be replaced by Figma's Alt-drag-to-duplicate, with pan moved to Space/H? That is a product decision about matching designers' expectations.",
+  "The chat Canvas panel still mounts the editor embedded (canvas-panel.tsx:1238), yet design-workspace.tsx:6-10 says opening a design used to route into chat and no longer does. Which entry points still open designs in the chat panel versus the window was not traced."
+ ]
+}
