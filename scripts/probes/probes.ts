@@ -27,6 +27,10 @@ export interface Probe {
 
 const GEMINI = "gemini-3.8-flash";
 
+/** One red pixel, for the probes that ask whether an image reached the model. */
+const RED_PIXEL_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
+
 export const PROBES: Probe[] = [
   {
     id: "P1",
@@ -268,9 +272,12 @@ export const PROBES: Probe[] = [
   },
   {
     id: "P13",
-    question: "xAI: Live Search on Chat Completions; web_search on grok-build-0.1; a function tool on the multi-agent model",
-    decides: "grok-build-0.1 nativeSearch and grok-4.20-multi-agent-0309 supported (model-tools.ts)",
+    question:
+      "xAI: Live Search on Chat Completions; web_search on grok-build-0.1; a function tool on the multi-agent model; an image inside a function_call_output",
+    decides:
+      "grok-build-0.1 nativeSearch and grok-4.20-multi-agent-0309 supported (model-tools.ts); (d) whether the xAI dialect sends tool images in the output array instead of a user turn (resultItems, src/lib/llm/responses-loop.ts)",
     async run() {
+      const look = { type: "function", name: "look", description: "probe", parameters: { type: "object", properties: {} } };
       return [
         await postOpenAIShaped("(a) search_parameters on Chat Completions (expect 410)", "xai", "/chat/completions", {
           model: "grok-4.7", messages: [{ role: "user", content: "latest xAI news?" }], search_parameters: { mode: "auto" }, max_tokens: 64,
@@ -281,6 +288,23 @@ export const PROBES: Probe[] = [
         await postOpenAIShaped("(c) a function tool on grok-4.20-multi-agent-0309", "xai", "/responses", {
           model: "grok-4.20-multi-agent-0309", store: false, input: [{ role: "user", content: "call f" }],
           tools: [{ type: "function", name: "f", description: "probe", parameters: { type: "object", properties: {} } }],
+        }),
+        // OpenAI takes this shape (SPEC §5.2 item 6). A 200 whose answer
+        // names the colour means xAI does too.
+        await postOpenAIShaped("(d) an input_image inside function_call_output.output (answer should say red)", "xai", "/responses", {
+          model: "grok-4.7", store: false, max_output_tokens: 64, tools: [look],
+          input: [
+            { role: "user", content: "Call look, then say in one word what colour the image is." },
+            { type: "function_call", call_id: "call_1", name: "look", arguments: "{}" },
+            {
+              type: "function_call_output",
+              call_id: "call_1",
+              output: [
+                { type: "input_text", text: "The image:" },
+                { type: "input_image", detail: "high", image_url: RED_PIXEL_PNG },
+              ],
+            },
+          ],
         }),
       ];
     },

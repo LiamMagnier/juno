@@ -3,9 +3,15 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { hostedSearchAllowedAt, labHasNativeSearch, toolCapabilitiesFor, type ModelToolCapabilities } from "@/lib/model-tools";
-import { MODEL_LIST, providerSupportsWebSearch, resolveModel } from "@/lib/models";
-import { providerAdapterFor } from "@/lib/provider-routing";
+import {
+  hostedSearchAllowedAt,
+  labHasNativeSearch,
+  providerSearchAvailable,
+  toolCapabilitiesFor,
+  type ModelToolCapabilities,
+} from "@/lib/model-tools";
+import { MODEL_LIST, modelSearchesNatively, providerSupportsWebSearch, resolveModel } from "@/lib/models";
+import { providerSearchServed } from "@/lib/provider-routing";
 import { PROVIDER_LIST } from "@/lib/providers";
 
 /*
@@ -181,20 +187,54 @@ test("every chat model in the catalog has a record, and the table is pinned", ()
   }
 });
 
-test("ModelInfo.webSearch is the record's native search, not a list of its own", () => {
+test("ModelInfo.webSearch is the provider's own search, read from the record", () => {
   for (const model of MODEL_LIST.filter((m) => m.modality === "chat")) {
-    // OpenAI's hosted search exists only on Responses (OPENAI_RESPONSES=0 keeps it off).
-    const served = model.provider !== "openai" || providerAdapterFor(model) === "openai-responses";
-    assert.equal(model.webSearch, toolCapabilitiesFor(model).nativeSearch && served, model.id);
+    assert.equal(model.webSearch, providerSearchAvailable(model), model.id);
+    assert.equal(model.webSearch, modelSearchesNatively(model), model.id);
   }
   // RC-2: every current OpenAI model searches on Responses now.
   for (const id of ["openai:gpt-6-astra", "openai:gpt-6-sol", "openai:gpt-6-luna", "openai:gpt-5.6-terra"]) {
     assert.equal(resolveModel(id)?.webSearch, true, id);
   }
+  // Pre-Gemini-3 grounds on a request that carries no functions. The flag the
+  // chat route reads until WS9a stays on, while the tool plan counts it as
+  // having no native search and gives it Juno's web_search beside its tools.
+  const legacyGemini = MODEL_LIST.find((m) => m.id === "google:gemini-2.5-pro");
+  assert.ok(legacyGemini);
+  assert.equal(legacyGemini.webSearch, true);
+  assert.equal(toolCapabilitiesFor(legacyGemini).nativeSearch, false);
+  // No provider search on Juno's transport: Live Search is gone, and the
+  // unconfirmed Grok slugs have no Responses search yet (probes P13b, P14).
+  for (const id of ["xai:grok-build-0.1", "xai:grok-4.1-fast"]) {
+    assert.equal(MODEL_LIST.find((m) => m.id === id)?.webSearch, false, id);
+  }
   // A lab-level answer for the places that know only a provider.
   for (const provider of PROVIDER_LIST) assert.equal(providerSupportsWebSearch(provider), labHasNativeSearch(provider), provider);
   assert.equal(labHasNativeSearch("openai"), true);
   assert.equal(labHasNativeSearch("deepseek"), false);
+});
+
+test("the catalog flag never reads the deployment's env; the server's own gate does", () => {
+  const sol = { provider: "openai", id: "openai:gpt-6-sol" } as const;
+  const saved = process.env.OPENAI_RESPONSES;
+  process.env.OPENAI_RESPONSES = "0";
+  try {
+    // The composer reads ModelInfo.webSearch in the browser, where server env
+    // is undefined, so the flag must not depend on it.
+    assert.equal(modelSearchesNatively(sol), true);
+    // Chat Completions carries no hosted search.
+    assert.equal(providerSearchServed(sol), false);
+    // A Responses-only snapshot keeps its route, and so its search.
+    assert.equal(providerSearchServed({ provider: "openai", id: "openai:gpt-5.5-pro", api: "responses" }), true);
+  } finally {
+    if (saved === undefined) delete process.env.OPENAI_RESPONSES;
+    else process.env.OPENAI_RESPONSES = saved;
+  }
+  assert.equal(providerSearchServed(sol), saved !== "0");
+  assert.equal(providerSearchServed({ provider: "google", id: "google:gemini-2.5-pro" }), true, "grounding alone");
+  assert.equal(providerSearchServed({ provider: "xai", id: "xai:grok-4.7" }), true);
+  assert.equal(providerSearchServed({ provider: "xai", id: "xai:grok-4.7", tools: { responses: false } }), false, "compat maps no search");
+  assert.equal(providerSearchServed({ provider: "deepseek", id: "deepseek:deepseek-flash" }), false);
 });
 
 test("toolCapabilitiesFor reads the lab row, the model's own rules and the overrides", () => {

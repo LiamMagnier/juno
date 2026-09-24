@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -29,6 +31,11 @@ function model(id: string, over: Partial<ModelInfo> = {}): ModelInfo {
 }
 
 const CALLS = [{ id: "c1", name: "lookup", args: '{"q":"x"}' }];
+
+test("the replay rules live in a module with no server-only import (SPEC §13 rule 1)", () => {
+  const source = readFileSync(path.join(process.cwd(), "src/lib/llm/compat-loop.ts"), "utf8");
+  assert.doesNotMatch(source, /^import "server-only";/m);
+});
 
 test("must (DeepSeek, MiMo, Kimi): the field is always there, even empty", () => {
   for (const id of ["deepseek:deepseek-v4-pro", "mimo:mimo-v2.6-pro", "moonshot:kimi-k3"]) {

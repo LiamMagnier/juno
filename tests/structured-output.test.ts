@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 import { runCompatLoop } from "@/lib/llm/compat-loop";
@@ -59,6 +61,13 @@ async function drain(stream: AsyncGenerator<LlmEvent>): Promise<LlmEvent[]> {
   for await (const event of stream) events.push(event);
   return events;
 }
+
+test("both loops under test have no server-only import (SPEC §13 rule 1)", () => {
+  for (const file of ["src/lib/llm/responses-loop.ts", "src/lib/llm/compat-loop.ts"]) {
+    const source = readFileSync(path.join(process.cwd(), file), "utf8");
+    assert.doesNotMatch(source, /^import "server-only";/m, file);
+  }
+});
 
 test("Responses: text.format carries the JSON schema, not strict", async () => {
   const json = '{"questions":["a"]}';

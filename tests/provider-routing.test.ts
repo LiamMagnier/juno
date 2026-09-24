@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { providerReceivesDocumentBytes } from "@/lib/attachment-bytes";
-import { openAIResponsesEnabled, providerAdapterFor } from "@/lib/provider-routing";
+import { MODEL_LIST } from "@/lib/models";
+import { openAIResponsesEnabled, PROVIDER_ADAPTERS, providerAdapterFor } from "@/lib/provider-routing";
 
 test("each provider family uses its own intended transport", () => {
   assert.equal(providerAdapterFor({ provider: "anthropic" }), "anthropic-native");
@@ -69,21 +70,39 @@ test("who receives a PDF's bytes follows the transport that serves the model", (
   assert.equal(providerReceivesDocumentBytes({ provider: "deepseek", ...vision }), false);
 });
 
+test("every transport a catalog model is routed to is a listed adapter", () => {
+  for (const model of MODEL_LIST.filter((m) => m.modality === "chat")) {
+    assert.ok(PROVIDER_ADAPTERS.includes(providerAdapterFor(model)), model.id);
+  }
+});
+
 /*
- * `streamChat` (src/lib/llm.ts, lane 3a) dispatches on this function's value
- * with a switch that has no default: a value it has no case for streams
- * nothing at all. "xai-responses" is served by `streamOpenAIResponses`, which
- * picks the xAI dialect from the model's provider. A todo until llm.ts gains
- * the case — Grok turns stream nothing on this branch alone — then an
- * ordinary test.
+ * `streamChat` (src/lib/llm.ts, lane 3a) dispatches on this function's value.
+ * The switch in the WS0 llm.ts this branch carries has no default, so a value
+ * with no case streams nothing at all: no text, no finish, no error. Every
+ * Grok model but grok-4.1-fast is such a value here ("xai-responses"), so a
+ * Grok turn is empty on this branch alone. The fix is lane 3a's file: a
+ * `case "xai-responses"` that calls `streamOpenAIResponses` (it picks the xAI
+ * dialect from the model's provider), and a `never` default so the next
+ * adapter value fails typecheck instead of streaming nothing.
+ *
+ * That makes it a precondition of the WS3a → WS3b merge (SPEC §12.1), and this
+ * test enforces it there. It turns on as soon as lane 3a's adapter loops are
+ * in the tree, which is the point from which the merged llm.ts is lane 3a's,
+ * and it fails that merge's gate until the switch is complete.
  */
+const LANE_3A_IN_TREE = ["src/lib/llm/anthropic-loop.ts", "src/lib/llm/gemini-loop.ts"].some((file) => existsSync(file));
+
 test(
-  "streamChat has a case for every adapter providerAdapterFor returns",
-  { todo: "lane 3a: add `case \"xai-responses\"` → streamOpenAIResponses in src/lib/llm.ts (SPEC §5.0)" },
+  "streamChat has a case for every adapter and fails typecheck on a new one",
+  {
+    skip: LANE_3A_IN_TREE
+      ? false
+      : "lane 3a's llm.ts is not in this tree; the WS3a → WS3b merge adds `case \"xai-responses\"` and a `never` default (SPEC §5.0)",
+  },
   () => {
     const llm = readFileSync("src/lib/llm.ts", "utf8");
-    for (const adapter of ["anthropic-native", "gemini-native", "openai-responses", "xai-responses", "openai-compatible"]) {
-      assert.match(llm, new RegExp(`case "${adapter}":`), adapter);
-    }
+    for (const adapter of PROVIDER_ADAPTERS) assert.match(llm, new RegExp(`case "${adapter}":`), adapter);
+    assert.match(llm, /:\s*never\s*=\s*adapter\b/, "the switch's default narrows `adapter` to never");
   },
 );

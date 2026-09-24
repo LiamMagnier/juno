@@ -1,8 +1,7 @@
 import type { Plan } from "@prisma/client";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { DISCOVERED, UNAVAILABLE } from "@/lib/models.generated";
-import { labHasNativeSearch, toolCapabilitiesFor, type ModelToolCapabilities } from "@/lib/model-tools";
-import { providerAdapterFor } from "@/lib/provider-routing";
+import { labHasNativeSearch, providerSearchAvailable, type ModelToolCapabilities } from "@/lib/model-tools";
 
 // Canonical model id is "provider:providerModel" (e.g. "anthropic:claude-opus-4-8").
 export type ModelId = string;
@@ -214,23 +213,24 @@ export function hasRetired(model: Pick<ModelInfo, "retiresOn">, today: string = 
  *
  * Read from the tool capability table rather than a list of its own, which is
  * what left every OpenAI model without search after Responses gained a hosted
- * tool (RC-2). A model in hand is read through `modelSearchesNatively`, which
- * also sees the per-model exceptions (pre-Gemini-3, an unconfirmed Grok slug).
+ * tool (RC-2). A model in hand, a discovered one included, is read through
+ * `modelSearchesNatively`, which also sees the per-model exceptions (the
+ * retiring OpenAI snapshots, an unconfirmed Grok slug).
  */
 export function providerSupportsWebSearch(p: Provider): boolean {
   return labHasNativeSearch(p);
 }
 
 /**
- * `ModelInfo.webSearch`: provider-native search on Juno's transport (SPEC §5.6).
+ * `ModelInfo.webSearch` for one model: its provider's own search can serve it
+ * on Juno's transport (SPEC §5.6; `providerSearchAvailable` has the rule).
  *
- * OpenAI's hosted search exists only on Responses, so a deployment that keeps
- * OpenAI on Chat Completions (`OPENAI_RESPONSES=0`) does not advertise it for
- * the models that stay there.
+ * The same answer on the server and in the browser, because the composer reads
+ * this flag from the client bundle. A deployment switch such as
+ * `OPENAI_RESPONSES=0` is applied where the server decides, never here.
  */
-function modelSearchesNatively(model: Pick<ModelInfo, "provider" | "id" | "api">): boolean {
-  if (!toolCapabilitiesFor(model).nativeSearch) return false;
-  return model.provider !== "openai" || providerAdapterFor(model) === "openai-responses";
+export function modelSearchesNatively(model: Pick<ModelInfo, "provider" | "id" | "api">): boolean {
+  return providerSearchAvailable(model);
 }
 
 interface ModelDef {

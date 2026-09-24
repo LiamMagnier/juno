@@ -2,9 +2,11 @@ import { createHash } from "node:crypto";
 import type { Plan } from "@prisma/client";
 import { AUTO_MODEL_INFO, isAutoModelId } from "@/lib/auto-model";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
+import { toolCapabilitiesFor } from "@/lib/model-tools";
 import { imageEditSupport, isDiscoveredModel, isSupersededModel, type ModelInfo } from "@/lib/models";
 import { effectiveMinPlan, planRank } from "@/lib/plans";
 import { fastModeMultiplier, supportsFastMode } from "@/lib/pricing";
+import { providerSearchServed } from "@/lib/provider-routing";
 import { PROVIDERS } from "@/lib/providers";
 import { decideModelCapability, type ModelCapabilityEvidence } from "@/lib/model-capability-policy";
 
@@ -77,11 +79,42 @@ function capabilityDecision(model: ModelInfo, capability: NativeModelCapability 
   return decideModelCapability(model, isDiscoveredModel(model.id), evidence);
 }
 
+/** Server facts the manifest cannot read from a `ModelInfo`. */
+export interface NativeModelCatalogOptions {
+  /**
+   * A keyed engine serves Juno's `web_search` on this deployment
+   * (`keyedSearchEngineConfigured()`, SPEC §6.3). The routes pass it once
+   * `/api/chat` plans a turn's tools with `chatToolEntitlements` (WS9a).
+   * Absent means false, which matches what the route runs before then: web
+   * only where the provider searches.
+   */
+  keyedSearchEngine?: boolean;
+}
+
+/**
+ * Whether turning web on can do anything for this model on this deployment
+ * (SPEC §3.6, RC-2). That is true when the provider's own search is served on
+ * the model's transport. It is also true when the model takes function tools
+ * and a keyed engine can run Juno's `web_search` for it.
+ *
+ * Native clients disable their web toggle when this is false. Publishing only
+ * the provider's search would keep the toggle off for good on every model that
+ * searches through Juno: the compat labs, the retiring OpenAI snapshots and the
+ * Grok slugs whose server search is unconfirmed.
+ */
+function webSearchPossible(model: ModelInfo, keyedSearchEngine: boolean): boolean {
+  if (model.modality !== "chat") return false;
+  if (providerSearchServed(model)) return true;
+  return keyedSearchEngine && toolCapabilitiesFor(model).supported;
+}
+
 export function nativeModelCatalog(
   models: ModelInfo[],
   plan?: Plan,
   capabilities?: ReadonlyMap<string, NativeModelCapability>,
+  options: NativeModelCatalogOptions = {},
 ) {
+  const keyedSearchEngine = options.keyedSearchEngine === true;
   const chatModels = models.filter((model) => model.modality === "chat" && !model.comingSoon);
   const autoUsable = chatModels.some((model) => usable(model, plan));
   const listed = autoUsable ? [AUTO_MODEL_INFO, ...models] : models;
@@ -165,7 +198,8 @@ export function nativeModelCatalog(
         // excludes from Work.
         tools: model.agenticTools,
         vision: model.vision,
-        webSearch: model.webSearch,
+        // Auto routes a web turn to a model that searches (`pickAutoModel`).
+        webSearch: auto ? model.webSearch : webSearchPossible(model, keyedSearchEngine),
         attachments: model.modality === "chat" || model.vision,
         streaming: model.modality === "chat",
         // How this model can edit an existing image: "mask" takes a pixel mask,

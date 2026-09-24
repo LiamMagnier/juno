@@ -393,8 +393,9 @@ function resultItems(
     }
     items.push({ type: "function_call_output", call_id: callId, output: text });
     if (images.length) {
-      // xAI: array outputs are not confirmed there, so the pictures follow
-      // every output as one user turn, introduced as tool output.
+      // xAI: array outputs are not confirmed there (probe P13d asks), so the
+      // pictures follow every output as one user turn, introduced as tool
+      // output. A declared exception to SPEC §5.2 item 6 until the probe runs.
       imageParts.push({ type: "input_text", text: toolImageIntro(result.name, images) });
       for (const image of images) imageParts.push({ type: "input_image", detail: "high", image_url: toDataUrl(image) });
     }

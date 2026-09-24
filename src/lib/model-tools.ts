@@ -188,10 +188,14 @@ function providerModelOf(id: string): string {
   return at === -1 ? id : id.slice(at + 1);
 }
 
+function isPreGemini3(model: Pick<ModelInfo, "provider" | "id">): boolean {
+  return model.provider === "google" && PRE_GEMINI_3.test(providerModelOf(model.id));
+}
+
 /** The rules that follow from the model entry itself, before any listed exception. */
 function derivedFor(model: Pick<ModelInfo, "provider" | "id" | "api">): Partial<ModelToolCapabilities> {
   const derived: Partial<ModelToolCapabilities> = {};
-  if (model.provider === "google" && PRE_GEMINI_3.test(providerModelOf(model.id))) derived.nativeSearch = false;
+  if (isPreGemini3(model)) derived.nativeSearch = false;
   // Responses-only snapshots (gpt-*-pro, some Codex) are not served on /chat/completions at all.
   if (model.api === "responses") derived.chatCompletions = false;
   return derived;
@@ -212,12 +216,33 @@ export function toolCapabilitiesFor(
 /**
  * Whether a lab's models search natively on Juno's transport, by its lab row.
  *
- * For the places that know only a provider — a deployment's configured labs,
- * a model discovered at runtime. A model in hand is read through
- * `toolCapabilitiesFor(model).nativeSearch`, which also sees its exceptions.
+ * For the places that know only a provider, such as a deployment's configured
+ * labs. A model in hand, a discovered one included, is read through
+ * `providerSearchAvailable` or `toolCapabilitiesFor(model).nativeSearch`,
+ * which also see its exceptions.
  */
 export function labHasNativeSearch(provider: Provider): boolean {
   return (LAB_TOOLS[provider] ?? COMPAT).nativeSearch;
+}
+
+/**
+ * Whether the provider's own search can serve this model on Juno's transport
+ * at all. This is what `ModelInfo.webSearch` says (SPEC §5.6).
+ *
+ * `nativeSearch`, plus the pre-Gemini-3 line. That line's grounding cannot
+ * share a request with function tools, so the tool plan (SPEC §3.6) counts it
+ * as having no native search and gives it Juno's `web_search` beside its
+ * functions. On a request that carries no functions it still grounds, as it
+ * always has. Until WS9a retires the chat route's read of
+ * `ModelInfo.webSearch`, that request is the only way these models reach the
+ * web, so the flag stays on for them.
+ *
+ * Free of deployment env on purpose: the composer reads the same flag from the
+ * browser bundle. The server applies its own switches (`OPENAI_RESPONSES`)
+ * through `providerSearchServed` in provider-routing.ts.
+ */
+export function providerSearchAvailable(model: Pick<ModelInfo, "provider" | "id" | "api" | "tools">): boolean {
+  return toolCapabilitiesFor(model).nativeSearch || isPreGemini3(model);
 }
 
 const EFFORT_RANK: Record<NonNullable<ReasoningEffort>, number> = {
