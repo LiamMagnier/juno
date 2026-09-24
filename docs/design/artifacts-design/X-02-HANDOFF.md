@@ -67,10 +67,14 @@ late.
    version, and Undo should stay enabled.
 3. Land `499b6afd` alone (fast-forward, or cherry-pick if main has moved).
    First coordinate a single releaser.
-4. Mark X-02 fixed in `00-AUDIT-OVERVIEW.md` on `wip/artifacts-design-audit`.
-   That moves the ref, so tell the juno-glass session.
-5. Tell the Mac side: once the host bundle is rebuilt, the Mac editor's rails
-   will appear at 640px and 896px of webview width instead of 768px and 1024px.
+4. Done by the audit session on 2026-09-24 (`wip/artifacts-design-audit` @
+   `c9bfc45f`). `00-README.md` and the Phase 0 table in `05-IMPROVEMENTS.md`
+   say "fix ready to land: 499b6afd". `00-AUDIT-OVERVIEW.md` stays unchanged
+   as the point-in-time record. The Mac rail-width note is in that branch's
+   `HANDOFF.md` for the juno-glass session.
+
+**On hold (2026-09-24):** no session has been named releaser, and pushing to
+main is the user's call. Land `499b6afd` only when the user says so.
 
 ## Known and out of scope
 
