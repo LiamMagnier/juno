@@ -101,6 +101,21 @@ export function SandboxGallery() {
           <MermaidBlock code={"graph TD\n  Visitor --> Page"} />
         </div>
       </SandboxProfileProvider>
+
+      {/* What a share shows by default, until JUNO_PREVIEW_ORIGIN_PUBLIC=1:
+          HTML as static markup, React and Mermaid as source. */}
+      <SandboxProfileProvider profile="static">
+        <div className="flex flex-col gap-4" data-profile="static">
+          <h2 className="text-heading font-semibold">Public share, scripted previews off (static profile)</h2>
+          <div className="flex h-80 flex-col" data-static="html">
+            <SharedArtifactViewer type="HTML" content={SAMPLES[0].content} version={2} />
+          </div>
+          <div className="flex h-64 flex-col" data-static="react">
+            <SharedArtifactViewer type="REACT" language="tsx" content={SAMPLES[1].content} version={1} />
+          </div>
+          <MermaidBlock code={"graph TD\n  Visitor --> Page"} />
+        </div>
+      </SandboxProfileProvider>
     </main>
   );
 }

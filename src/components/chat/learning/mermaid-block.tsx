@@ -60,7 +60,8 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
     return () => observer.disconnect();
   }, []);
 
-  // A Mermaid block inside a public share's transcript takes the public profile.
+  // A Mermaid block inside a public share takes the share's profile: `public`
+  // runs the diagram, `static` (the default there) shows its source instead.
   const profile = useSandboxProfile();
   const doc = React.useMemo(
     () => buildSandboxDoc("MERMAID", themedSource(code, dark), undefined, profile),
@@ -119,17 +120,25 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
       {/* The diagram now follows the app theme (see themedSource), so the canvas
           can sit on the same near-black rung as the block's own chrome instead
           of punching a white hole in the transcript. */}
-      <div className="relative bg-card">
-        <SandboxDocumentFrame
-          title="Mermaid diagram"
-          html={doc}
-          // Opaque origin (no allow-same-origin) so diagram code cannot reach the app.
-          sandbox="allow-scripts"
-          className="h-72 w-full border-0 bg-card"
-          onDocumentLoad={() => setLoaded(true)}
-        />
-        {!loaded && <div aria-hidden="true" className="skeleton absolute inset-0" />}
-      </div>
+      {profile === "static" ? (
+        // A public share while scripted previews are off: Mermaid draws with a
+        // script, so the diagram is shown as the source it was written in.
+        <pre className="max-h-72 overflow-auto whitespace-pre-wrap bg-card px-4 py-3 font-mono text-caption text-foreground">
+          {code}
+        </pre>
+      ) : (
+        <div className="relative bg-card">
+          <SandboxDocumentFrame
+            title="Mermaid diagram"
+            html={doc}
+            // Opaque origin (no allow-same-origin) so diagram code cannot reach the app.
+            sandbox="allow-scripts"
+            className="h-72 w-full border-0 bg-card"
+            onDocumentLoad={() => setLoaded(true)}
+          />
+          {!loaded && <div aria-hidden="true" className="skeleton absolute inset-0" />}
+        </div>
+      )}
     </div>
   );
 });

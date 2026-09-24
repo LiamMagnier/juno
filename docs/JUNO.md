@@ -528,7 +528,9 @@ fullscreen, Office export (for Markdown artifacts), and share. It hosts:
   `highlight.js` highlighting.
 
 The same frame powers inline Mermaid blocks, Work site previews and the public share
-viewer (which runs everything under the `public` profile). A public link can be pulled
+viewer. Share pages run no preview scripts by default (the `static` profile: markup
+only, React and Mermaid as source) until `JUNO_PREVIEW_ORIGIN_PUBLIC=1` switches them to
+the scripted `public` profile, which waits on publish-time screening. A public link can be pulled
 three ways: its owner revokes it, an owner of Juno takes it down (Admin › Links, with a
 notification to the link's owner), or its owner is banned, which suspends every link
 they shared until the ban is lifted. Visitors report links from the share page footer.

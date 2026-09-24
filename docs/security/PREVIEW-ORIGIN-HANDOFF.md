@@ -63,10 +63,14 @@ same-origin and separate-origin (`localhost:3111` app, `127.0.0.1:3111` previews
 - CI test that opens a preview URL top-level: yes, the second test in
   `tests/sandbox-origin-browser.test.ts`. It gets a 404; a shell served anyway has
   origin `null` and can't read the cookie.
-- Not met, and an owner decision: the plan keeps `/share/*` static until publish-time
-  screening and legacy-share screening (B11) are live; this branch runs public shares
-  under the `public` profile. The per-version HMAC subdomains and signed tokens need
-  the separate preview domain.
+- Public shares gated (owner's decision, 2026-09-24): `/share/*` previews run no scripts.
+  The `static` profile's shell admits only its own script, by hash; HTML, SVG and CSS
+  render as markup, and React, Mermaid and code show their source.
+  `JUNO_PREVIEW_ORIGIN_PUBLIC=1` switches shares to the scripted `public` profile. Turn
+  it on only after publish-time screening (X-32) and a screening pass over existing
+  HTML/React shares (B11) exist.
+- Still open: the per-version HMAC subdomains and signed tokens need the separate
+  preview domain.
 
 ## Exact next steps
 

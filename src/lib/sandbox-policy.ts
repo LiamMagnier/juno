@@ -67,12 +67,31 @@
  * No Node-only imports: the middleware (Edge) and the client both load this.
  */
 
-export type SandboxProfile = "private" | "public";
+/**
+ * `private`: your own previews. `public`: a public share with scripted previews
+ * on. `static`: a public share while they are off — the default, see
+ * `publicShareProfile` — where the document's markup and styles render and
+ * none of its scripts run.
+ */
+export type SandboxProfile = "private" | "public" | "static";
 
-export const SANDBOX_PROFILES: readonly SandboxProfile[] = ["private", "public"];
+export const SANDBOX_PROFILES: readonly SandboxProfile[] = ["private", "public", "static"];
 
 export function isSandboxProfile(value: unknown): value is SandboxProfile {
-  return value === "private" || value === "public";
+  return value === "private" || value === "public" || value === "static";
+}
+
+/**
+ * Whether a public share runs its previews' scripts: the merge plan's
+ * `preview.origin.public` (04-MERGE-PLAN §9.5, X-01b). Off unless
+ * `JUNO_PREVIEW_ORIGIN_PUBLIC=1`, and it stays off until content is screened
+ * when it is published and every existing HTML or React share has been
+ * screened (B11): turning it on starts every never-checked scripted link at
+ * once. Until then a share shows HTML, SVG and CSS as static markup, and React,
+ * Mermaid and code as source.
+ */
+export function publicShareProfile(flag: string | undefined = process.env.JUNO_PREVIEW_ORIGIN_PUBLIC): SandboxProfile {
+  return flag === "1" ? "public" : "static";
 }
 
 /** Versioned so a shell change can never be served to a parent built for another. */
@@ -158,11 +177,14 @@ const PRIVATE_FRAME_ORIGINS: readonly string[] = [
  *
  * A public share additionally drops `allow-modals` (an `alert`/`prompt` asking
  * for a password, under Juno's header) and `allow-downloads` (a stranger's page
- * handing a visitor a file).
+ * handing a visitor a file). A static one keeps only `allow-scripts`, for the
+ * shell's own script — the response's policy admits that one script by hash
+ * and nothing the document brings.
  */
 export const SANDBOX_FLAGS: Readonly<Record<SandboxProfile, string>> = {
   private: "allow-scripts allow-forms allow-modals allow-downloads allow-pointer-lock",
   public: "allow-scripts allow-forms allow-pointer-lock",
+  static: "allow-scripts",
 };
 
 /**
@@ -176,6 +198,7 @@ export const SANDBOX_FLAGS: Readonly<Record<SandboxProfile, string>> = {
 const SHELL_SANDBOX_DIRECTIVE: Readonly<Record<SandboxProfile, string>> = {
   private: `sandbox ${SANDBOX_FLAGS.private} allow-popups allow-popups-to-escape-sandbox`,
   public: `sandbox ${SANDBOX_FLAGS.public}`,
+  static: `sandbox ${SANDBOX_FLAGS.static}`,
 };
 
 const join = (...sources: (string | readonly string[])[]) => sources.flat().join(" ");
@@ -183,8 +206,30 @@ const join = (...sources: (string | readonly string[])[]) => sources.flat().join
 /**
  * The resource and egress directives. Shared by the shell's header and the meta
  * policy each preview document carries, so the two cannot drift apart.
+ *
+ * `shellScriptHash` is the static profile's one admitted script: the shell's
+ * own, as `'sha256-…'`. In the header it lets the shell hand over the document;
+ * in the document's meta it is absent, so `script-src 'none'`.
  */
-export function sandboxDirectives(profile: SandboxProfile): string[] {
+export function sandboxDirectives(profile: SandboxProfile, shellScriptHash?: string): string[] {
+  if (profile === "static") {
+    return [
+      "default-src 'none'",
+      // No 'unsafe-inline', so no inline script, event-handler attribute or
+      // javascript: URL in the document runs; no host, so nothing external.
+      `script-src ${shellScriptHash ?? "'none'"}`,
+      `style-src ${join("'unsafe-inline'", SANDBOX_CODE_ORIGINS)}`,
+      `font-src ${join("data:", SANDBOX_CODE_ORIGINS)}`,
+      `img-src ${join("data: blob:", SANDBOX_CODE_ORIGINS, SANDBOX_PUBLIC_IMAGE_ORIGINS)}`,
+      "media-src data: blob:",
+      "connect-src 'none'",
+      "frame-src 'none'",
+      "worker-src 'none'",
+      "base-uri 'none'",
+      "form-action 'none'",
+      "object-src 'none'",
+    ];
+  }
   const isPublic = profile === "public";
   return [
     "default-src 'none'",
@@ -223,12 +268,15 @@ export function sandboxPolicyMeta(profile: SandboxProfile): string {
 export function buildSandboxCsp({
   profile,
   frameAncestors,
+  shellScriptHash,
 }: {
   profile: SandboxProfile;
   frameAncestors: readonly string[];
+  /** The shell script's `'sha256-…'`; the static profile admits it and nothing else. */
+  shellScriptHash?: string;
 }): string {
   return [
-    ...sandboxDirectives(profile),
+    ...sandboxDirectives(profile, shellScriptHash),
     `frame-ancestors ${frameAncestors.length ? frameAncestors.join(" ") : "'none'"}`,
     SHELL_SANDBOX_DIRECTIVE[profile],
   ].join("; ");

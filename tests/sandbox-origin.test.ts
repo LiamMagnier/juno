@@ -7,10 +7,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { NextRequest } from "next/server";
 import { middleware } from "@/middleware";
 import { GET as shellRoute } from "@/app/sandbox/v1/[profile]/route";
-import { SandboxFrame } from "@/components/canvas/sandbox-frame";
+import { SandboxFrame, buildSandboxDoc, rendersStatically } from "@/components/canvas/sandbox-frame";
 import { SandboxProfileProvider } from "@/components/canvas/sandbox-document-frame";
 import { buildCsp } from "@/lib/csp";
-import { SANDBOX_SHELL_PATH, documentPolicyFor, sandboxShellUrl, type SandboxProfile } from "@/lib/sandbox-policy";
+import { createHash } from "node:crypto";
+import {
+  SANDBOX_SHELL_PATH,
+  documentPolicyFor,
+  publicShareProfile,
+  sandboxShellUrl,
+  type SandboxProfile,
+} from "@/lib/sandbox-policy";
 
 /**
  * AUDIT X-01: A PREVIEW MUST NOT INHERIT THE APP'S POLICY.
@@ -211,4 +218,55 @@ test("the shell is served only to a frame, never as a page of its own", async ()
     assert.equal(res.headers.get("x-content-type-options"), "nosniff");
   }
   assert.equal((await shellResponse("public", "iframe")).status, 200);
+});
+
+/*
+ * PUBLIC SHARES ARE GATED (merge plan §9.5, X-01b; the owner's call).
+ *
+ * Until content is screened at publish and every existing HTML/React share has
+ * been screened (B11), a public share runs no preview scripts: the `static`
+ * profile renders markup and styles only. JUNO_PREVIEW_ORIGIN_PUBLIC=1 lifts it.
+ */
+
+test("public shares run no preview scripts unless the flag says so", () => {
+  assert.equal(publicShareProfile(undefined), "static");
+  assert.equal(publicShareProfile(""), "static");
+  assert.equal(publicShareProfile("true"), "static", "only an explicit 1 turns it on");
+  assert.equal(publicShareProfile("1"), "public");
+
+  const page = stripComments(readFileSync(path.join(ROOT, "src/app/share/[token]/page.tsx"), "utf8"));
+  assert.match(page, /<SandboxProfileProvider profile=\{publicShareProfile\(\)\}>/);
+  assert.doesNotMatch(page, /profile="public"/, "the share page hard-codes scripted previews on");
+});
+
+test("the static shell admits its own script by hash and nothing the document brings", async () => {
+  const res = await shellResponse("static");
+  assert.equal(res.status, 200);
+  const csp = res.headers.get("content-security-policy") ?? "";
+  const scripts = directive(csp, "script-src") ?? "";
+  assert.match(scripts, /^'sha256-[A-Za-z0-9+/=]+'$/, `static script-src is not a single hash: ${scripts}`);
+  assert.equal(directive(csp, "connect-src"), "'none'");
+  assert.equal(directive(csp, "sandbox"), "allow-scripts");
+
+  // The hash is of the shell's own script, byte for byte, so the shell runs.
+  const body = await res.text();
+  const script = /<script>([\s\S]*?)<\/script>/.exec(body)?.[1] ?? "";
+  const hash = `'sha256-${createHash("sha256").update(script, "utf8").digest("base64")}'`;
+  assert.equal(scripts, hash, "the admitted hash no longer matches the shell, so the shell itself cannot run");
+});
+
+test("a static preview document carries no script of ours and no way to leave", () => {
+  const html = buildSandboxDoc(
+    "HTML",
+    `<html><head><meta http-equiv="refresh" content="0;url=https://elsewhere.example"></head><body><a href="https://x.example">x</a><script>steal()</script></body></html>`,
+    null,
+    "static"
+  );
+  assert.doesNotMatch(html, /http-equiv="refresh"/i, "a meta refresh would navigate the frame without a script");
+  assert.match(html, /<base target="_blank">/, "links would navigate the frame");
+  assert.match(html, /script-src 'none'/);
+  // Our bridges are scripts; in a static document they would only be refused.
+  assert.doesNotMatch(html, /juno:console|juno:open|juno:inspect/);
+  assert.equal(rendersStatically("REACT", "tsx"), false);
+  assert.equal(rendersStatically("HTML"), true);
 });

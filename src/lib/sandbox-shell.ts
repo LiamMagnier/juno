@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   SANDBOX_LOADED_MESSAGE,
   SANDBOX_READY_MESSAGE,
@@ -43,9 +44,23 @@ export function buildSandboxShell({
   /** Same-origin mode: the app and the shell share an origin, so accept it. */
   acceptOwnOrigin: boolean;
 }): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Preview</title></head><body><script>${shellScript({ parentOrigins, acceptOwnOrigin })}</${"script"}></body></html>`;
+}
+
+/**
+ * The shell's one script, exactly as it sits between its tags, so the static
+ * profile's policy can admit it by hash (`shellScriptHash`) and nothing else.
+ */
+function shellScript({
+  parentOrigins,
+  acceptOwnOrigin,
+}: {
+  parentOrigins: readonly string[];
+  acceptOwnOrigin: boolean;
+}): string {
   // `<` escaped so nothing in the list can end the script element.
   const parents = JSON.stringify(parentOrigins).replace(/</g, "\\u003c");
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Preview</title></head><body><script>
+  return `
 (function () {
   var parents = ${parents};
   // location.origin is the URL's origin even though this document's own origin
@@ -67,7 +82,12 @@ export function buildSandboxShell({
   window.addEventListener("message", onMessage);
   window.parent.postMessage({ type: ${JSON.stringify(SANDBOX_READY_MESSAGE)} }, "*");
 })();
-</${"script"}></body></html>`;
+`;
+}
+
+/** `'sha256-…'` of the shell script, the CSP source that admits exactly it. */
+export function shellScriptHash(options: { parentOrigins: readonly string[]; acceptOwnOrigin: boolean }): string {
+  return `'sha256-${createHash("sha256").update(shellScript(options), "utf8").digest("base64")}'`;
 }
 
 /**
@@ -97,10 +117,12 @@ export function sandboxShellResponse({
   separateOrigin: boolean;
 }): Response {
   const parentOrigins = separateOrigin && appOrigin ? [appOrigin] : [];
-  const html = buildSandboxShell({ parentOrigins, acceptOwnOrigin: !separateOrigin });
+  const shell = { parentOrigins, acceptOwnOrigin: !separateOrigin };
+  const html = buildSandboxShell(shell);
   const csp = buildSandboxCsp({
     profile,
     frameAncestors: separateOrigin ? parentOrigins : ["'self'"],
+    shellScriptHash: shellScriptHash(shell),
   });
   return new Response(html, {
     status: 200,

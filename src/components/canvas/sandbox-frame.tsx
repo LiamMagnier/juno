@@ -755,6 +755,29 @@ function consoleDoc(
 </${"script"}></body></html>`;
 }
 
+/**
+ * A document for the `static` profile: a public share while scripted previews
+ * are off (`publicShareProfile` in src/lib/sandbox-policy.ts). The markup and
+ * styles render; the shell's policy admits no script the document brings, so
+ * none of the bridges are injected either. Two things a page can do without a
+ * script are taken away as well: a `<meta http-equiv="refresh">` that would
+ * navigate the frame to another site, and ordinary links, which open nothing
+ * (`target="_blank"` in a frame with no allow-popups).
+ */
+function staticDoc(doc: string): string {
+  const withoutRefresh = doc.replace(/<meta[^>]+http-equiv\s*=\s*["']?refresh["']?[^>]*>/gi, "");
+  return insertPolicy(withoutRefresh, "static").replace(
+    sandboxPolicyMeta("static"),
+    `${sandboxPolicyMeta("static")}<base target="_blank">`
+  );
+}
+
+/** What a static public preview can show faithfully without running anything. */
+export function rendersStatically(type: ArtifactType, language?: string | null): boolean {
+  const lang = runtimeFor(type, language).lang;
+  return lang === "html" || lang === "svg" || lang === "css";
+}
+
 export function buildSandboxDoc(
   type: ArtifactType,
   content: string,
@@ -762,6 +785,14 @@ export function buildSandboxDoc(
   profile: SandboxProfile = "private"
 ): string {
   const rt = runtimeFor(type, language);
+  if (profile === "static") {
+    if (rt.lang === "html") return staticDoc(htmlDoc(content));
+    if (rt.lang === "svg") return staticDoc(svgDoc(content));
+    if (rt.lang === "css") return staticDoc(cssDoc(content));
+    return staticDoc(
+      htmlDoc(`<pre style="padding:16px;white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace">${escapeHtml(content)}</pre>`)
+    );
+  }
   if (rt.mode === "console" && rt.engine) return consoleDoc(content, rt.engine, rt.lang, rt.label, profile);
   switch (rt.lang) {
     case "tsx":

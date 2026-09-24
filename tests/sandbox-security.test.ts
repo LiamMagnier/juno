@@ -116,7 +116,7 @@ const directivesOf = (profile: SandboxProfile) =>
   );
 
 test("no profile lets a preview send a request to an arbitrary host", () => {
-  for (const profile of ["private", "public"] as const) {
+  for (const profile of ["private", "public", "static"] as const) {
     const d = directivesOf(profile);
     for (const name of ["script-src", "style-src", "font-src", "connect-src", "worker-src"]) {
       const sources = d.get(name) ?? [];
@@ -126,7 +126,7 @@ test("no profile lets a preview send a request to an arbitrary host", () => {
     // Requests go to the package CDNs and nowhere else (PyPI only for the
     // private Python console).
     for (const source of d.get("connect-src") ?? []) {
-      if (source === "data:" || source === "blob:") continue;
+      if (source === "data:" || source === "blob:" || source === "'none'") continue;
       assert.ok(
         SANDBOX_CONNECT_ORIGINS.includes(source) || (profile === "private" && /pypi|pythonhosted/.test(source)),
         `${profile}: connect-src allows ${source}`,
@@ -144,9 +144,15 @@ test("no profile lets a preview send a request to an arbitrary host", () => {
 });
 
 test("a public share allows nothing from an arbitrary host at all", () => {
-  const policy = sandboxDirectives("public").join("; ");
-  assert.doesNotMatch(policy, /(^|\s)https?:(\s|;|$)/, "a scheme-wide source on a public page");
-  assert.deepEqual(directivesOf("public").get("frame-src"), ["'none'"]);
+  for (const profile of ["public", "static"] as const) {
+    const policy = sandboxDirectives(profile).join("; ");
+    assert.doesNotMatch(policy, /(^|\s)https?:(\s|;|$)/, `${profile}: a scheme-wide source on a public page`);
+    assert.deepEqual(directivesOf(profile).get("frame-src"), ["'none'"]);
+  }
+  // With scripted public previews off, a shared page's document runs nothing
+  // and sends nothing.
+  assert.deepEqual(directivesOf("static").get("script-src"), ["'none'"]);
+  assert.deepEqual(directivesOf("static").get("connect-src"), ["'none'"]);
   // Your own previews keep photographs from the web — the documented trade.
   assert.ok(directivesOf("private").get("img-src")?.includes("https:"));
 });

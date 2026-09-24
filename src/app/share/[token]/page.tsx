@@ -8,6 +8,7 @@ import { SharedChatTranscript } from "@/components/share/shared-chat-transcript"
 import { SharedArtifactViewer } from "@/components/share/shared-artifact-viewer";
 import { ReportShareButton } from "@/components/share/report-share-dialog";
 import { SandboxProfileProvider } from "@/components/canvas/sandbox-document-frame";
+import { publicShareProfile } from "@/lib/sandbox-policy";
 import { getPublicShare, getSharedArtifactSnapshot, getSharedChatSnapshot, peekPublicShare } from "@/lib/share";
 import { cn } from "@/lib/utils";
 
@@ -17,9 +18,12 @@ import { cn } from "@/lib/utils";
  * tokens 404. Every share page is noindex/nofollow: sharing is link-visibility,
  * never search-visibility.
  *
- * What is on it was written by someone the visitor does not know, so every
- * preview below runs with the `public` sandbox profile (src/lib/sandbox-policy.ts):
- * no downloads or dialogs, and images and requests only to allowlisted hosts.
+ * What is on it was written by someone the visitor does not know. So previews
+ * below run no scripts at all (the `static` sandbox profile) until publish-time
+ * screening and a screening pass over existing shares exist; then
+ * JUNO_PREVIEW_ORIGIN_PUBLIC=1 switches them to the `public` profile: no
+ * downloads or dialogs, and images and requests only to allowlisted hosts.
+ * See publicShareProfile in src/lib/sandbox-policy.ts.
  */
 
 // Never cache a share render: revocation must kill the link on the next request.
@@ -82,7 +86,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
         </AppPage>
       </header>
 
-      <SandboxProfileProvider profile="public">
+      <SandboxProfileProvider profile={publicShareProfile()}>
         {chat ? (
           // The transcript stays flat prose on the page ground, at the reading measure.
           <AppPage scroll={false} measure="reading" className="flex-1" contentClassName="py-8">

