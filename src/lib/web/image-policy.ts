@@ -36,8 +36,10 @@ export function allowedImageKeys(urls: Iterable<string>): Set<string> {
 const PLACEHOLDER_BASE = "https://juno-image-base.invalid";
 
 /**
- * What to do with one image `src`. `pageOrigin` is the app's own origin
- * (`window.location.origin`), or null when rendering on the server.
+ * What to do with one image `src`. `pageOrigin` is Juno's own origin, or null
+ * when it is not known; a relative `src` is same-origin either way. Callers
+ * pass a value that is the same on the server and in the browser, so both
+ * renders decide alike.
  */
 export function imageDecision(
   src: string | null | undefined,

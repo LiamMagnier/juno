@@ -295,7 +295,7 @@ test("shell markup is read linearly: framework root, JavaScript plea, noscript",
 
 // ── The document fetch around it (fake transport; no network) ──────────────
 
-function respond(body: string | Uint8Array, init: ResponseInit = {}): Response {
+function respond(body: string | Uint8Array<ArrayBuffer>, init: ResponseInit = {}): Response {
   return new Response(body, { status: 200, headers: { "content-type": "text/html" }, ...init });
 }
 

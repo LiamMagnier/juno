@@ -24,7 +24,9 @@ export interface ChatSearchResult {
   /**
    * Tavily's full page text. Server-side only: it is the turn's prefetch for a
    * later `web_fetch` of the same URL (SPEC §6.1 step 14) and never reaches the
-   * model or the client as a search result.
+   * model or the client as a search result. `chatWebSearch` moves it into the
+   * turn's prefetch (`src/lib/web/turn-state.ts`) and never sets it here; the
+   * field stays so a result built elsewhere can still carry it.
    */
   rawContent?: string;
 }

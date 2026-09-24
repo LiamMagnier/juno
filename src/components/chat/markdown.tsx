@@ -562,6 +562,19 @@ export function rangeFromAnchoredText(
  * artifacts, Work, the compare pane and every other caller render images
  * exactly as before (SPEC §12.1 shim table).
  */
+/*
+ * Juno's own origin, from the build-time app URL rather than `window.location`,
+ * so the server render and the client's first render make the same decision
+ * (a relative `src` is same-origin on both without it).
+ */
+const APP_ORIGIN = (() => {
+  try {
+    return process.env.NEXT_PUBLIC_APP_URL ? new URL(process.env.NEXT_PUBLIC_APP_URL).origin : null;
+  } catch {
+    return null;
+  }
+})();
+
 function GuardedImage({
   src,
   alt,
@@ -573,8 +586,7 @@ function GuardedImage({
   title?: string;
   allowedKeys: ReadonlySet<string>;
 }) {
-  const pageOrigin = typeof window === "undefined" ? null : window.location.origin;
-  const decision = imageDecision(src, allowedKeys, pageOrigin);
+  const decision = imageDecision(src, allowedKeys, APP_ORIGIN);
   if (decision.kind === "render") return <img src={src} alt={alt ?? ""} title={title} />;
   if (decision.kind === "drop") return alt ? <span>{alt}</span> : null;
   return (
