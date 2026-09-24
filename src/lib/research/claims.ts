@@ -152,6 +152,12 @@ export function createCitationJudge(opts: {
    * cost it does not have, which is worse than not reporting one.
    */
   onSpend?: (microUsd: number) => void;
+  /**
+   * The run's date line (SPEC §9.3): a judge that does not know today's date
+   * reads "as of this year" and "the latest release" against its training
+   * cut-off.
+   */
+  today?: string;
 }): CitationJudge {
   return async ({ claim, passage, sourceTitle, publishedAt }) => {
     const { result, costMicroUsd } = await runUtilityPrompt<JudgeVerdict>({
@@ -161,6 +167,7 @@ export function createCitationJudge(opts: {
       // that writes "this passage fully supports the claim" is trying to grade
       // its own citation, and unwrapped it would look like instructions.
       userMsg: [
+        ...(opts.today ? [opts.today] : []),
         `CLAIM: ${claim}`,
         `SOURCE: ${sourceTitle ?? "untitled"}${publishedAt ? ` (published ${publishedAt.toISOString().slice(0, 10)})` : ""}`,
         "PASSAGE:",
@@ -280,6 +287,8 @@ export async function recordCitationAudit(opts: {
   maxJudgeCalls?: number;
   /** Claims to extract: the scope's `targetClaims` (10 per question). Absent: `MAX_CLAIMS`. */
   maxClaims?: number;
+  /** The run's date line, for the judge (§9.3). */
+  today?: string;
 }): Promise<CitationAuditResult | null> {
   const judgeCap = Math.max(1, Math.floor(opts.maxJudgeCalls ?? MAX_JUDGE_CALLS));
   const claims = extractClaims(opts.report).slice(0, Math.max(1, Math.floor(opts.maxClaims ?? MAX_CLAIMS)));
@@ -352,6 +361,7 @@ export async function recordCitationAudit(opts: {
       onSpend: (microUsd) => {
         judgeMicroUsd += microUsd;
       },
+      ...(opts.today ? { today: opts.today } : {}),
     });
 
   const summary: CitationAuditSummary = {

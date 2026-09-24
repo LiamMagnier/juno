@@ -908,6 +908,7 @@ export function researchEngine(): ResearchEngine {
         // the audit-wide caps.
         maxJudgeCalls: plan.envelope?.judgeCalls,
         maxClaims: plan.scope ? targetClaimsFor(plan.scope.questions) : undefined,
+        today: plan.today,
         sources: sources.map((source) => ({
           sourceId: source.id,
           url: source.url,
@@ -1138,10 +1139,22 @@ export async function listResearchRunSummaries(input: {
       createdAt: true,
       finishedAt: true,
       assistantMessageId: true,
-      report: true,
       _count: { select: { sources: true } },
     },
   });
+  // Whether a partially completed run delivered a report: asked only of those
+  // rows, and without loading a report — the watcher polls this every 20 s.
+  const partial = rows.filter((row) => row.state === "partially_completed").map((row) => row.id);
+  const withReport = new Set(
+    partial.length
+      ? (
+          await prisma.researchRun.findMany({
+            where: { id: { in: partial }, userId: input.userId, report: { not: null } },
+            select: { id: true },
+          })
+        ).map((row) => row.id)
+      : []
+  );
   // The latest telling event, only for runs still investigating — the one
   // state whose phase (searching or reading) the row alone cannot say.
   const investigating = rows.filter((row) => row.state === "investigating").map((row) => row.id);
@@ -1173,7 +1186,7 @@ export async function listResearchRunSummaries(input: {
         createdAt: row.createdAt,
         finishedAt: row.finishedAt,
         assistantMessageId: row.assistantMessageId,
-        hasReport: !!row.report?.trim(),
+        hasReport: withReport.has(row.id),
         latest: latestByRun.get(row.id) ?? null,
       }),
       // The pre-rework row's fields, kept so an older client's list still reads.
