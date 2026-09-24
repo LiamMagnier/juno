@@ -71,6 +71,9 @@ export function clampChars(value: string, max: number): string {
 
 // ── One source ───────────────────────────────────────────────────────────────
 
+/** Unicode format characters (Cf): soft hyphens, zero-width and bidi marks. */
+const FORMAT_CHARS = /\p{Cf}/gu;
+
 /** Printable ASCII only: a URL both WHATWG and Foundation's `URL(string:)` read the same way. */
 const PLAIN_URL = /^[\x21-\x7e]+$/;
 
@@ -103,7 +106,11 @@ export function normalizeSource(raw: Partial<ClientSource> & { url: string }): C
   const url = PLAIN_URL.test(trimmed) ? trimmed : parsed.href;
   if (url.length > MAX_SOURCE_URL_CHARS) return null;
 
-  const title = clampUtf8(singleLine(typeof raw.title === "string" ? raw.title : ""), MAX_SOURCE_TITLE_BYTES).trim();
+  // Native's `validText` refuses any Unicode control OR format character
+  // (`CharacterSet.controlCharacters` is Cc + Cf): a soft hyphen or a bidi mark
+  // in one page title would fail the whole frame, so they are dropped here.
+  const rawTitle = typeof raw.title === "string" ? raw.title.replace(FORMAT_CHARS, "") : "";
+  const title = clampUtf8(singleLine(rawTitle), MAX_SOURCE_TITLE_BYTES).trim();
   const snippet = typeof raw.snippet === "string" ? clampUtf8(raw.snippet, MAX_SOURCE_SNIPPET_BYTES) : "";
   const origin = (CHAT_SOURCE_ORIGINS as readonly string[]).includes(raw.origin as string)
     ? (raw.origin as ChatSourceOrigin)

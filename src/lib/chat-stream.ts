@@ -104,8 +104,16 @@ export function splitUtf8(text: string, maxBytes: number): string[] {
   return pieces;
 }
 
+/**
+ * One line native's `validText` accepts: no control (Cc) or format (Cf)
+ * character, no line separator, within `maxBytes`.
+ */
 function clampLineBytes(value: string, maxBytes: number): string {
-  const line = value.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ").replace(/\s{2,}/g, " ").trim();
+  const line = value
+    .replace(/[\p{Cc}\u2028\u2029]+/gu, " ")
+    .replace(/\p{Cf}/gu, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
   return splitUtf8(line, maxBytes)[0] ?? "";
 }
 
