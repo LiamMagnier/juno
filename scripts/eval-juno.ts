@@ -13,6 +13,9 @@
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { UnifiedAgentRegistry, detectAutomaticEscalation } from "../src/lib/agent/runtime.js";
+import { classifyExternalAction } from "../src/lib/action-approval.js";
+import { JUNO_TOOL_SPECS, junoToolSpec } from "../src/lib/tools/registry.js";
+import { toActionRiskClass } from "../src/lib/tools/risk.js";
 import { parseModelRef, prettifyModelName, resolveModel } from "../src/lib/models.js";
 import { cosineSimilarity, reciprocalRankFusion } from "../src/lib/knowledge/rank.js";
 import { parseTriggerConfig, evaluateTrigger } from "../src/lib/work/triggers.js";
@@ -234,35 +237,36 @@ export const EVAL_SUITE: EvalTask[] = [
   {
     id: "tool-01-registry-registration",
     category: "TOOLS",
-    name: "UnifiedAgentRegistry registers Python, Browser, and Computer Use",
+    name: "The chat tool registry holds the ten Juno tools, and no page-clicking browser",
     run: async () => {
-      const reg = new UnifiedAgentRegistry();
-      const p = reg.getTool("python_interpreter");
-      const b = reg.getTool("browser_agent");
-      const c = reg.getTool("computer_use");
-      return { success: !!p && !!b && !!c };
+      const ids: string[] = JUNO_TOOL_SPECS.map((spec) => spec.id);
+      const expected = [
+        "web_search", "web_fetch", "read_document", "inspect_image", "run_code",
+        "search_chats", "current_time", "calculate", "suggest_research", "start_task",
+      ];
+      const runtime = new UnifiedAgentRegistry();
+      const success = expected.every((id) => ids.includes(id)) && !runtime.getTool("browser_agent");
+      return { success, details: ids.join(", ") };
     },
   },
   {
     id: "tool-02-openai-function-schema",
     category: "TOOLS",
-    name: "Registry exports valid OpenAI-compatible function calling schemas",
+    name: "Every chat tool has a portable object schema a provider accepts",
     run: async () => {
-      const reg = new UnifiedAgentRegistry();
-      const schemas = reg.toProviderToolSchemas();
-      const pythonTool = schemas.find((s) => s.function.name === "python_interpreter");
-      const valid = pythonTool && pythonTool.type === "function" && pythonTool.function.parameters;
-      return { success: !!valid };
+      const valid = JUNO_TOOL_SPECS.every((spec) => spec.input.type === "object" && !!spec.input.properties);
+      return { success: valid };
     },
   },
   {
     id: "tool-03-permission-policy-read-only",
     category: "TOOLS",
-    name: "Browser navigation action is classified as read-only access",
+    name: "Juno's page reader is an exact read for the broker; the retired browser is not",
     run: async () => {
-      const reg = new UnifiedAgentRegistry();
-      const tool = reg.getTool("browser_agent");
-      return { success: tool?.riskClass === "read_only" };
+      const fetch = junoToolSpec("web_fetch");
+      const rule = classifyExternalAction({ connectorId: "juno_runtime", toolName: "web_fetch" }).riskClass;
+      const retired = classifyExternalAction({ connectorId: "juno_runtime", toolName: "browser_agent" }).riskClass;
+      return { success: !!fetch && rule === toActionRiskClass(fetch.risk) && retired === "unknown" };
     },
   },
   {
@@ -279,15 +283,12 @@ export const EVAL_SUITE: EvalTask[] = [
   {
     id: "tool-05-browser-tool-execution-shape",
     category: "TOOLS",
-    name: "Browser agent tool execution returns structured ToolExecution response",
+    name: "A pure chat tool returns a structured outcome without a broker",
     run: async () => {
-      const reg = new UnifiedAgentRegistry();
-      const result = await reg.executeToolCall(
-        "browser_agent",
-        { action: "navigate", url: "https://example.com" },
-        { userId: "eval-user", sessionId: "eval-session", mode: "chat", environment: "server_sandbox" }
-      );
-      return { success: typeof result.summary === "string" && result.success !== undefined };
+      const calculate = junoToolSpec("calculate");
+      if (!calculate) return { success: false };
+      const outcome = await calculate.execute({ expression: "(1+0.05)^10 * 2000" }, {} as Parameters<typeof calculate.execute>[1]);
+      return { success: outcome.status === "succeeded" && outcome.text.startsWith("= 3257.78925355"), details: outcome.text };
     },
   },
   {

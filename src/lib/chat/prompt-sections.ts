@@ -41,7 +41,7 @@ export const ATTACHED_IMAGE_NUDGE =
  * that assumes otherwise describes a document it was never given.
  */
 export const CODE_INTERPRETER_NUDGE =
-  "Running code: you have a code_interpreter tool that runs Python in a sandbox with the attached files in the working directory, under their own names. It is the general way to examine a file — open a PDF with pypdf and read the pages you need, crop or magnify part of an image with Pillow, load a spreadsheet with pandas and compute over it, or parse a format nothing else handles. Anything you print comes back to you, and any image you save is shown to you so you can read it yourself. Nothing has analysed these files in advance: if you need to know what is in one, open it.";
+  "Running code: you have a run_code tool that runs Python in a sandbox with the attached files in the working directory, under their own names. It is the general way to examine a file — open a PDF with pypdf and read the pages you need, crop or magnify part of an image with Pillow, load a spreadsheet with pandas and compute over it, or parse a format nothing else handles. Anything you print comes back to you, and any image you save is shown to you so you can read it yourself. Nothing has analysed these files in advance: if you need to know what is in one, open it.";
 
 export const SELECTION_ANCHOR_NUDGE =
   'Selection anchors: when a user message contains a [Selection from artifact "…"] block, treat the quoted text or element as a precise anchor into that artifact. For a modify request, change ONLY that region, keep the rest of the artifact byte-identical where possible, and re-emit the COMPLETE artifact under the same identifier. For a question about the selection, answer directly and do not re-emit the artifact unless asked.';
@@ -54,7 +54,7 @@ export interface SystemPromptSections {
   documentTool?: boolean;
   /** `inspect_image` is attached this turn (a picture, and a model that sees). */
   imageTool?: boolean;
-  /** `code_interpreter` is attached this turn (a file, and a sandbox to run in). */
+  /** `run_code` is attached this turn (a file, and a sandbox to run in). */
   codeTool?: boolean;
   /**
    * A canvas edit's exact-patch instructions. When present it REPLACES the

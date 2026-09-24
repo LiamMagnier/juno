@@ -100,7 +100,7 @@ const apply = (
 test("the grant is what the turn has, and nothing else", () => {
   const full = chatSkillGrantLayer(FULL);
   assert.deepEqual([...full.tools].sort(), [
-    CHAT_SKILL_TOOLS.browser,
+    CHAT_SKILL_TOOLS.webFetch,
     CHAT_SKILL_TOOLS.canvas,
     CHAT_SKILL_TOOLS.documents,
     CHAT_SKILL_TOOLS.images,
@@ -290,7 +290,7 @@ test("a skill narrows the runtime tools and can never widen them", () => {
   // A tool the turn never had cannot appear, however the skill declares it: the
   // filter runs over the allowlist, not over the request.
   const greedy = apply({
-    version: version({ requestedTools: [CHAT_SKILL_TOOLS.browser, CHAT_SKILL_TOOLS.documents] }),
+    version: version({ requestedTools: [CHAT_SKILL_TOOLS.webFetch, CHAT_SKILL_TOOLS.documents] }),
     capabilities: { ...FULL, webSearch: false },
   });
   assert.equal(greedy.applied, true);
@@ -311,4 +311,38 @@ test("a skill declaring no tools leaves the turn's own tools alone", () => {
   // way to remove capabilities from a conversation the reader configured.
   assert.deepEqual(narrowRuntimeToolsForSkill(allowlist, outcome.application), allowlist);
   assert.deepEqual(narrowRuntimeToolsForSkill(allowlist, null), allowlist);
+});
+
+// ---------------------------------------------------------------------------
+// The chat rework's tools and the old names (SPEC §3.5, INV-23)
+// ---------------------------------------------------------------------------
+
+test("the grant names every chat tool the turn carries, and the page reader rides web search", () => {
+  const all = chatSkillGrantLayer({ ...FULL, code: true, chats: true, time: true, calculate: true, research: true });
+  assert.deepEqual([...all.tools].sort(), [
+    "calculate", "canvas", "current_time", "inspect_image", "read_document", "run_code",
+    "search_chats", "suggest_research", "web_fetch", "web_search",
+  ]);
+  // Absent new capabilities are not granted; web_fetch follows web search unless said otherwise.
+  assert.deepEqual(chatSkillGrantLayer({ ...BARE, webSearch: true }).tools, ["web_search", "web_fetch"]);
+  assert.deepEqual(chatSkillGrantLayer({ ...BARE, webSearch: true, webFetch: false }).tools, ["web_search"]);
+  assert.deepEqual(Object.keys(CHAT_SKILL_TOOLS).sort(), [
+    "calculate", "canvas", "chats", "code", "documents", "images", "research", "time", "webFetch", "webSearch",
+  ], "the deprecated `browser` key is gone: nothing reads it");
+});
+
+test("a skill stored with browser_agent or code_interpreter still means web_fetch and run_code", () => {
+  const outcome = apply({
+    version: version({ requestedTools: ["browser_agent", "code_interpreter"] }),
+    capabilities: { ...FULL, code: true },
+  });
+  assert.equal(outcome.applied, true);
+  if (!outcome.applied) return;
+  assert.deepEqual([...outcome.application.resolved.tools].sort(), ["run_code", "web_fetch"]);
+  assert.deepEqual(outcome.application.resolved.withheld.tools, []);
+  // Narrowing reads the old names the same way, on either side.
+  assert.deepEqual(
+    narrowRuntimeToolsForSkill(["read_document", "code_interpreter", "run_code"], outcome.application),
+    ["code_interpreter", "run_code"],
+  );
 });

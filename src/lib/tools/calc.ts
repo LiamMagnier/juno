@@ -204,8 +204,11 @@ class Parser {
   }
 
   // expression := term (("+" | "-") term)*
+  //
+  // Depth is counted where nesting happens — a parenthesis, a function's
+  // arguments, a sign or an exponent — so 64 levels of parentheses are 64,
+  // not twice that.
   private expression(): number {
-    this.enter();
     let value = this.term();
     for (;;) {
       const token = this.peek();
@@ -218,7 +221,6 @@ class Parser {
       }
       break;
     }
-    this.leave();
     return value;
   }
 

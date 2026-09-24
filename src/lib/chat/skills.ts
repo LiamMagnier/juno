@@ -29,10 +29,11 @@
  */
 
 import {
-  BROWSER_TOOL_ID,
   INSPECT_IMAGE_TOOL_ID,
   READ_DOCUMENT_TOOL_ID,
+  RUN_CODE_TOOL_ID,
 } from "@/lib/chat/tool-policy";
+import { canonicalToolId } from "@/lib/tools/aliases";
 import {
   resolveSkillPermissions,
   selectSkillBySlug,
@@ -46,22 +47,29 @@ import {
 } from "@/lib/work/skills";
 
 /**
- * The tool names a chat turn can grant.
+ * The tool names a chat turn can grant: the chat tools' own ids (SPEC §3.5).
  *
- * Three of them are registry ids that `chatRuntimeToolAllowlist` already uses,
- * imported rather than re-spelled so a rename cannot leave a skill requesting a
- * tool by a name that no longer exists while the grant list uses the new one —
- * which would look exactly like a skill being correctly refused. The other two
- * are provider-side capabilities with no registry entry, named here because a
- * skill has to be able to ask for them by some name and there was none.
+ * The runtime ids are imported rather than re-spelled so a rename cannot leave
+ * a skill requesting a tool by a name that no longer exists while the grant
+ * list uses the new one — which would look exactly like a skill being
+ * correctly refused. A skill stored with an old name (`browser_agent`,
+ * `code_interpreter`) still means the tool that replaced it: every reader maps
+ * a requested name through `canonicalToolId` before comparing (INV-23).
+ * `web_search` also names the provider's own search, and `canvas` writing an
+ * artifact into the side panel.
  */
 export const CHAT_SKILL_TOOLS = {
-  /** Provider-side search (Claude `web_search`, Gemini grounding, Grok Live). */
+  /** Web search: the provider's (Claude `web_search`, Gemini grounding…) or Juno's. */
   webSearch: "web_search",
-  /** The hosted page reader. Rides the same toggle as search. */
-  browser: BROWSER_TOOL_ID,
+  /** Juno's page reader. Rides the same toggle as search. */
+  webFetch: "web_fetch",
   documents: READ_DOCUMENT_TOOL_ID,
   images: INSPECT_IMAGE_TOOL_ID,
+  code: RUN_CODE_TOOL_ID,
+  chats: "search_chats",
+  time: "current_time",
+  calculate: "calculate",
+  research: "suggest_research",
   /** Writing an artifact into the side panel. */
   canvas: "canvas",
 } as const;
@@ -78,6 +86,20 @@ export interface ChatSkillCapabilities {
   images: boolean;
   /** Connector ids resolved for this turn — never the ones merely requested. */
   connectors: readonly string[];
+  // The chat rework's tools (SPEC §3.5). Optional while the route moves over;
+  // absent is "not carried", except the page reader, which rides web search.
+  /** `web_fetch` is attached. Absent: follows `webSearch`. */
+  webFetch?: boolean;
+  /** `run_code` is attached. */
+  code?: boolean;
+  /** `search_chats` is attached. */
+  chats?: boolean;
+  /** `current_time` is attached. */
+  time?: boolean;
+  /** `calculate` is attached. */
+  calculate?: boolean;
+  /** `suggest_research` is attached. */
+  research?: boolean;
 }
 
 /**
@@ -107,11 +129,15 @@ export interface ChatSkillCapabilities {
  */
 export function chatSkillGrantLayer(capabilities: ChatSkillCapabilities): WorkSkillGrantLayer {
   const tools: string[] = [];
-  if (capabilities.webSearch) {
-    tools.push(CHAT_SKILL_TOOLS.webSearch, CHAT_SKILL_TOOLS.browser);
-  }
+  if (capabilities.webSearch) tools.push(CHAT_SKILL_TOOLS.webSearch);
+  if (capabilities.webFetch ?? capabilities.webSearch) tools.push(CHAT_SKILL_TOOLS.webFetch);
   if (capabilities.documents) tools.push(CHAT_SKILL_TOOLS.documents);
   if (capabilities.images) tools.push(CHAT_SKILL_TOOLS.images);
+  if (capabilities.code) tools.push(CHAT_SKILL_TOOLS.code);
+  if (capabilities.chats) tools.push(CHAT_SKILL_TOOLS.chats);
+  if (capabilities.time) tools.push(CHAT_SKILL_TOOLS.time);
+  if (capabilities.calculate) tools.push(CHAT_SKILL_TOOLS.calculate);
+  if (capabilities.research) tools.push(CHAT_SKILL_TOOLS.research);
   if (capabilities.canvas) tools.push(CHAT_SKILL_TOOLS.canvas);
   return {
     tools,
@@ -226,6 +252,11 @@ function withheldSentence(resolved: ResolvedSkillPermissions): string | null {
   );
 }
 
+/** Requested tool names through the alias map, de-duplicated, in order (INV-23). */
+export function canonicalToolNames(names: readonly string[]): string[] {
+  return [...new Set(names.map(canonicalToolId))];
+}
+
 /**
  * Applies a skill to a chat turn, or explains why it did not.
  *
@@ -263,7 +294,9 @@ export function applyChatSkill(input: {
   if (row.requiresConsent) return { applied: false, reason: "consent_required" };
 
   const resolved = resolveSkillPermissions({
-    request: skillRequestFrom({ contract: row.contract, requestedTools: [...row.requestedTools] }),
+    // A stored old name means the tool that replaced it (INV-23); the stored
+    // row is never rewritten.
+    request: skillRequestFrom({ contract: row.contract, requestedTools: canonicalToolNames(row.requestedTools) }),
     granted: [chatSkillGrantLayer(input.capabilities)],
   });
 
@@ -316,10 +349,9 @@ export function narrowRuntimeToolsForSkill(
   application: ChatSkillApplication | null
 ): string[] {
   if (!application) return [...allowlist];
-  const requested = new Set([
-    ...application.resolved.tools,
-    ...application.resolved.withheld.tools,
-  ]);
+  const requested = new Set(
+    canonicalToolNames([...application.resolved.tools, ...application.resolved.withheld.tools])
+  );
   if (requested.size === 0) return [...allowlist];
-  return allowlist.filter((tool) => requested.has(tool));
+  return allowlist.filter((tool) => requested.has(canonicalToolId(tool)));
 }

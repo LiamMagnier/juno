@@ -28,6 +28,7 @@ import {
 } from "@/lib/skills/library-contract";
 import { provenanceRecord, type GithubDiscovery, type GithubSkillCandidate } from "@/lib/skills/github";
 import { titleFromSkillName } from "@/lib/skills/skill-md";
+import { canonicalToolId } from "@/lib/tools/aliases";
 import {
   permissionExpansion,
   permissionSurfaceOf,
@@ -229,16 +230,25 @@ export function discoverySourceKey(discovery: Pick<GithubDiscovery, "owner" | "r
  * refusing the whole skill over a field the specification marks experimental
  * would reject most of what is on GitHub, and storing the pattern would put a
  * declaration in the column that is guaranteed never to resolve.
+ *
+ * A renamed Juno tool is carried under its current name (`code_interpreter` →
+ * `run_code`, INV-23): an import writes the new names, while a skill already
+ * stored with an old one keeps it and is read through the same alias map.
  */
 export function partitionTools(names: readonly string[]): { carried: string[]; dropped: string[] } {
   const carried: string[] = [];
   const dropped: string[] = [];
   for (const name of names) {
-    if (carried.length < MAX_REQUESTED_TOOLS && SKILL_CAPABILITY_NAME_PATTERN.test(name)) carried.push(name);
-    else dropped.push(name);
+    if (carried.length < MAX_REQUESTED_TOOLS && SKILL_CAPABILITY_NAME_PATTERN.test(name)) {
+      const canonical = canonicalToolId(name);
+      if (!carried.includes(canonical)) carried.push(canonical);
+    } else dropped.push(name);
   }
   return { carried, dropped };
 }
+
+/** Stored tool names as the current names, so an old name never reads as a change (INV-23). */
+const canonicalTools = (names: readonly string[]) => names.map(canonicalToolId);
 
 /**
  * A fingerprint of instructions as they were read from upstream.
@@ -361,7 +371,10 @@ export function upstreamChanged(installed: InstalledSourceSkill, candidate: Gith
   const instructionsMoved = recorded
     ? recorded !== instructionsDigest(candidate.skill.instructions)
     : installed.instructions !== candidate.skill.instructions;
-  return instructionsMoved || !sameList(installed.requestedTools, partitionTools(candidate.skill.allowedTools).carried);
+  return (
+    instructionsMoved ||
+    !sameList(canonicalTools(installed.requestedTools), partitionTools(candidate.skill.allowedTools).carried)
+  );
 }
 
 /**
@@ -373,7 +386,7 @@ export function upstreamWidensPermissions(installed: InstalledSourceSkill, candi
   const next = githubSkillContract(candidate, installed.contract);
   return (
     permissionExpansion(
-      permissionSurfaceOf({ requestedTools: installed.requestedTools, contract: installed.contract }),
+      permissionSurfaceOf({ requestedTools: canonicalTools(installed.requestedTools), contract: installed.contract }),
       permissionSurfaceOf({ requestedTools: next.requestedTools, contract: next.contract })
     ).length > 0
   );
