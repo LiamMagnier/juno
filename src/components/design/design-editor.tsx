@@ -65,6 +65,7 @@ import {
   type PendingProposal,
 } from "@/components/design/use-design-document";
 import { layoutPage } from "@/lib/design/layout";
+import { fileNameFromDisposition } from "@/lib/download-name";
 import { buildSelectionContext } from "@/lib/design/selection-context";
 import { isContainer, type DesignDocument, type NodeId } from "@/lib/design/types";
 import type { DesignOperation } from "@/lib/design/operations";
@@ -328,8 +329,9 @@ export function DesignEditor({
         }
 
         const blob = await res.blob();
-        const disposition = res.headers.get("Content-Disposition") ?? "";
-        const named = /filename="([^"]+)"/.exec(disposition)?.[1];
+        // The UTF-8 name first: the quoted `filename=` is only the ASCII
+        // fallback, which saves "登录" as "design.svg" (X-23).
+        const named = fileNameFromDisposition(res.headers.get("Content-Disposition"));
         saveBlob(blob, named ?? `${doc?.name ?? "design"}.${format}`);
 
         const notes = res.headers.get("X-Juno-Export-Notes");
