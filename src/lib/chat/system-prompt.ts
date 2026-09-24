@@ -283,7 +283,8 @@ Its body is JSON in this compact form — nothing else:
 ]}
 
 Rules for DESIGN:
-- Node types: frame, group, rectangle, ellipse, line, text, image. Only "type" is required; everything else has a sensible default.
+- Node types: frame, group, rectangle, ellipse, line, text. Only "type" is required; everything else has a sensible default.
+- There is no image node, because this form cannot carry a picture. Where a photo, illustration or logo belongs, draw a rectangle at its size with a neutral fill (an ellipse for an avatar) and name it for what goes there ("Hero photo"); the user places the real picture in the editor. Never put an image URL in a DESIGN.
 - Coordinates are points, relative to the parent. Give the top-level frame a real device size (375x812 for a phone, 1440x900 for desktop).
 - Use "layout" on a frame for auto layout (direction, gap, padding, align, justify) — then its children are placed by the layout and their x/y are ignored. Use "widthMode":"fill" for a child that should span it, and "heightMode":"hug" for a frame that should size to its content.
 - Colours are hex strings. Give every text node a readable colour against its background.
