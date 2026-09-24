@@ -290,6 +290,28 @@ module.exports = {
       merge_logs: true,
     },
     {
+      // Lets proactive agents think between visits (scripts/agent-reflector.ts,
+      // docs/design/AGENTS.md §8): every ten minutes, a few agents whose last
+      // reflection is over six hours old look over their goals and raise ideas,
+      // within each account's usage windows. Its own process for the reason the
+      // trigger poller has one: a model call must never hold up a cron tick.
+      // Single instance; the per-agent claim makes a second harmless anyway.
+      name: "juno-agent-reflector",
+      cwd: runRoot,
+      script: "npm",
+      args: "run agents:reflector",
+      watch: false,
+      max_memory_restart: "400M",
+      env: {
+        ...releaseEnv,
+        NODE_ENV: "production",
+      },
+      error_file: "logs/agent-reflector-err.log",
+      out_file: "logs/agent-reflector-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+    },
+    {
       // Reclaims staged/imported objects after a request or VM dies before the
       // relational import transaction can mark them attached. The ledger keeps
       // this safe across restarts and multiple cleanup attempts.
@@ -341,6 +363,11 @@ module.exports = {
         PORT: 8787,
         NODE_ENV: "production",
         ALLOWED_ORIGINS: "https://chat.liams.dev,http://localhost:3000",
+        // Where the relay calls Juno back, server to server: memory and an
+        // agent's persona at call start, spend while the call runs. The backend
+        // is on this machine, so loopback — never the public edge. Without it
+        // those callbacks are silently skipped (relay/src/session.ts).
+        JUNO_APP_URL: rootEnv.JUNO_APP_URL || "http://127.0.0.1:3000",
         ...relayEnv,
       },
       error_file: path.join(__dirname, "..", "logs", "relay-err.log"),

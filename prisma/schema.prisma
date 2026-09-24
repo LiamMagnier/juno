@@ -144,6 +144,7 @@ model User {
   notifications               Notification[]
   projectMemberships          ProjectMember[]
   devicePushTokens            DevicePushToken[]
+  webPushSubscriptions        WebPushSubscription[]
   mfaRecoveryCodes            MfaRecoveryCode[]
   agents                      Agent[]
   agentGoals                  AgentGoal[]
@@ -624,7 +625,7 @@ model ProjectMember {
 model Notification {
   id         String    @id @default(cuid())
   userId     String
-  type       String // work_completed | work_failed | work_approval | code_completed | code_approval | research_completed | trigger_fired | spend_warning | connector_expired
+  type       String // work_completed | work_failed | work_approval | code_completed | code_approval | research_completed | trigger_fired | spend_warning | connector_expired | system_alert | agent_ideas | agent_handoff
   title      String
   body       String    @db.Text
   priority   String    @default("normal") // urgent | high | normal | low
@@ -639,6 +640,7 @@ model Notification {
 
   @@index([userId, readAt, createdAt])
   @@index([userId, type, createdAt])
+  @@index([userId, createdAt])
 }
 
 /// The custom-assistant configuration for one project: which tools it may reach
@@ -1235,11 +1237,49 @@ model DevicePushToken {
   lastUsedAt  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  /// The native sign-in (NativeDeviceSession.id) that registered this token, so
+  /// signing that device out or revoking it stops its pushes server-side — the
+  /// app's own DELETE cannot, because its bearer is already revoked by then.
+  deviceSessionId String?
+  /// Per-device switches (docs/design/AGENTS.md §8): blocking work — an approval
+  /// or a question — and everything else (finished, failed, an agent's ideas).
+  notifyNeedsYou  Boolean @default(true)
+  notifyUpdates   Boolean @default(true)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, active])
   @@index([token])
+  @@index([deviceSessionId])
+}
+
+/// A browser's Web Push subscription (RFC 8030/8291). The subscription itself is
+/// the per-device opt-in: nothing is ever subscribed without a person's click.
+model WebPushSubscription {
+  id             String    @id @default(cuid())
+  userId         String
+  endpoint       String    @unique
+  p256dh         String
+  auth           String
+  userAgent      String?
+  notifyNeedsYou Boolean   @default(true)
+  notifyUpdates  Boolean   @default(true)
+  active         Boolean   @default(true)
+  lastUsedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, active])
+}
+
+/// Server-held keys Juno provisions for itself on first use (today: the VAPID
+/// key pair for Web Push when VAPID_* is not set). `value` is field-encrypted.
+model ServiceKey {
+  name      String   @id
+  value     String   @db.Text
+  createdAt DateTime @default(now())
 }
 
 // Monthly usage counter for quota enforcement. `period` is "YYYY-MM".
