@@ -1366,6 +1366,9 @@ export const MessageItem = React.memo(function MessageItem({
                   return (
                     <ArtifactInlineCard
                       key={i}
+                      // The stored row's id: a design's card draws its poster
+                      // from it, and shows its glyph until the row arrives.
+                      artifactId={artifact?.id}
                       streaming={part.streaming && message.streaming}
                       title={artifact?.title ?? part.title ?? "Artifact"}
                       type={artifact?.type ?? part.artifactType ?? "CODE"}

@@ -3,6 +3,7 @@
 import * as React from "react";
 import type { ArtifactType } from "@/lib/message-content";
 import { runtimeFor, type RunMode } from "@/lib/artifact-runtime";
+import { designPosterUrl } from "@/lib/design/poster-url";
 
 const TAILWIND_CDN = "https://cdn.tailwindcss.com";
 const REACT_CDN = "https://unpkg.com/react@18.3.1/umd/react.development.js";
@@ -783,9 +784,77 @@ function consoleDoc(rawCode: string, engine: "js" | "python" | "unsupported", la
 </${"script"}></body></html>`;
 }
 
+/*
+ * A DESIGN IS NOT A PAGE, SO THIS FRAME DOES NOT RUN ONE (X-20).
+ *
+ * A design document is frames and layers as JSON. It used to fall through to
+ * the default branch below, which set the JSON in a `<pre>` and reported
+ * "done", so every surface that previewed a design through this frame showed
+ * its source under a green "Live". The picture of a design is the server's
+ * render of its first page, an image keyed by the artifact's id:
+ * `SandboxFrame` draws that directly, outside any iframe, when it is given the
+ * id. Without an id there is no picture to show, and this document says so in
+ * one line rather than pretending: no script, no chrome, no status, so nothing
+ * above it claims the preview ran.
+ */
+function designPlaceholderDoc(): string {
+  return `<!doctype html><html><head><meta charset="utf-8"/>${SANDBOX_CSP_META}<style>
+html,body{height:100%;margin:0}
+body{display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;
+  font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:#6b6760;text-align:center}
+</style></head><body><p>This preview does not draw designs. Open the design to see it.</p></body></html>`;
+}
+
+/**
+ * A saved design, drawn as its poster in place of the iframe. An `<img>` is
+ * the whole safety story: an image of SVG runs no script and loads nothing,
+ * so it needs no sandbox. It is the same URL, and so the same cached picture,
+ * that the Artifacts grid and the chat card draw, on the neutral mat a card
+ * puts under a preview. `className`, when a caller sizes the frame, sizes the
+ * mat instead.
+ *
+ * The failure is said in words, not with the design glyph the grid's
+ * `DesignPoster` falls back to: this module keeps its imports to the runtime
+ * helpers so `buildSandboxDoc` stays importable anywhere (the learning
+ * blocks' diagram renderer and the sandbox policy test both load it for the
+ * document alone), and the icon set is a component library, not a helper. The
+ * failure is remembered per URL, so a later version gets its own attempt.
+ */
+function DesignPosterFrame({
+  artifactId,
+  version,
+  className,
+}: {
+  artifactId: string;
+  version?: number;
+  className?: string;
+}) {
+  const src = designPosterUrl(artifactId, version);
+  const [failedSrc, setFailedSrc] = React.useState<string | null>(null);
+  return (
+    <div className={className ?? "size-full bg-background p-2"}>
+      {failedSrc === src ? (
+        <p className="grid size-full place-items-center px-5 text-center text-ui text-muted-foreground">
+          Preview unavailable
+        </p>
+      ) : (
+        <img
+          src={src}
+          alt="Design preview, first page"
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailedSrc(src)}
+          className="size-full object-contain"
+        />
+      )}
+    </div>
+  );
+}
+
 export function buildSandboxDoc(type: ArtifactType, content: string, language?: string | null): string {
   const rt = runtimeFor(type, language);
   if (rt.mode === "console" && rt.engine) return consoleDoc(content, rt.engine, rt.lang, rt.label);
+  if (rt.mode === "design") return designPlaceholderDoc();
   switch (rt.lang) {
     case "tsx":
     case "jsx":
@@ -829,10 +898,16 @@ export function SandboxFrame({
   onConsole,
   onStatus,
   className,
+  artifactId,
+  version,
 }: {
   type: ArtifactType;
   content: string;
   language?: string | null;
+  /** A DESIGN's stored id, and the version to picture: the frame shows that
+   *  design's poster instead of running anything. Ignored for other types. */
+  artifactId?: string | null;
+  version?: number;
   /** Bump to force a re-run/reload of the sandbox. */
   runNonce?: number;
   mode?: RunMode;
@@ -913,6 +988,10 @@ export function SandboxFrame({
   }, [onElementSelected, onInspectExit, onConsole, onStatus]);
 
   const isDark = mode === "console";
+
+  if (type === "DESIGN" && artifactId) {
+    return <DesignPosterFrame artifactId={artifactId} version={version} className={className} />;
+  }
 
   return (
     <iframe
