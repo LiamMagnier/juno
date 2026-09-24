@@ -30,8 +30,20 @@
 export function designPosterUrl(artifactId: string, version?: number): string {
   const base = `/api/artifacts/${encodeURIComponent(artifactId)}/poster`;
   if (version === undefined || !Number.isSafeInteger(version) || version < 1) return base;
-  return `${base}?v=${version}`;
+  return `${base}?v=${version}&r=${POSTER_RENDERER}`;
 }
+
+/**
+ * The renderer's generation, carried on every versioned poster URL.
+ *
+ * A sealed version is cached as immutable for a year, keyed by its URL, but
+ * the picture depends on the renderer as well as the design: the X-24 fix
+ * changed how every rotated or faded frame draws. Bump this when a change to
+ * `render.ts` or `poster.ts` changes what a stored design looks like, and every
+ * browser fetches the new drawing instead of keeping the old one for a year.
+ * The route ignores the parameter; it exists only to change the cache key.
+ */
+export const POSTER_RENDERER = 1;
 
 /**
  * The public poster behind a share link: `/share/{token}/poster`.

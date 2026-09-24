@@ -78,7 +78,14 @@ const prisma = {
 
 const prismaUnguarded = {
   share: {
-    findUnique: async (args: { where: { token: string } }) => shares.find((s) => s.token === args.where.token) ?? null,
+    // As `findActiveShare` reads it since share governance: the owner's ban
+    // comes along, and a taken-down share is not served.
+    findUnique: async (args: { where: { token: string } }) => {
+      const found = shares.find((s) => s.token === args.where.token);
+      if (!found) return null;
+      const { ownerBannedAt, ...share } = found as typeof found & { ownerBannedAt?: Date | null };
+      return { takenDownAt: null, ...share, user: { bannedAt: ownerBannedAt ?? null } };
+    },
     update: () => {
       shareViewBumps += 1;
       return Promise.resolve({});
@@ -238,7 +245,7 @@ test("the response carries the contract's headers and a working ETag", async () 
 
 test("the client URLs are the contract's", () => {
   assert.equal(designPosterUrl("ck123"), "/api/artifacts/ck123/poster");
-  assert.equal(designPosterUrl("ck123", 4), "/api/artifacts/ck123/poster?v=4");
+  assert.equal(designPosterUrl("ck123", 4), "/api/artifacts/ck123/poster?v=4&r=1");
   // A version that is not one is dropped rather than sent to 404.
   assert.equal(designPosterUrl("ck123", 0), "/api/artifacts/ck123/poster");
   assert.equal(designPosterUrl("ck123", 2.5), "/api/artifacts/ck123/poster");
@@ -361,15 +368,19 @@ routeTest("public: the version the share page shows, publicly cached, without co
   assert.deepEqual(rateKeys, ["share-poster:203.0.113.9"]);
 });
 
-routeTest("public: revoked, unknown, chat and non-design shares are a 404", async () => {
+routeTest("public: revoked, taken-down, banned-owner, unknown, chat and non-design shares are a 404", async () => {
   reset();
   seedOwnedDesign();
   shares = [
     { id: "s1", token: `${TOKEN}r`, userId: "u1", kind: "ARTIFACT", artifactId: "d1", conversationId: null, revokedAt: new Date(), snapshotAt: new Date() },
     { id: "s2", token: `${TOKEN}c`, userId: "u1", kind: "CHAT", artifactId: null, conversationId: "c1", revokedAt: null, snapshotAt: new Date() },
     { id: "s3", token: `${TOKEN}h`, userId: "u1", kind: "ARTIFACT", artifactId: "h1", conversationId: null, revokedAt: null, snapshotAt: new Date() },
+    { id: "s4", token: `${TOKEN}t`, userId: "u1", kind: "ARTIFACT", artifactId: "d1", conversationId: null, revokedAt: null, takenDownAt: new Date(), snapshotAt: new Date() },
+    { id: "s5", token: `${TOKEN}b`, userId: "u1", kind: "ARTIFACT", artifactId: "d1", conversationId: null, revokedAt: null, ownerBannedAt: new Date(), snapshotAt: new Date() },
   ];
-  for (const token of [`${TOKEN}r`, `${TOKEN}c`, `${TOKEN}h`, `${TOKEN}x`, "short"]) {
+  // Taken down and banned-owner shares too: the poster answers exactly as
+  // the share page does.
+  for (const token of [`${TOKEN}r`, `${TOKEN}c`, `${TOKEN}h`, `${TOKEN}t`, `${TOKEN}b`, `${TOKEN}x`, "short"]) {
     assert.equal((await getPublic(token)).status, 404, token);
   }
 });

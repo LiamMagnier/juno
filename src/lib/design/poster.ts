@@ -127,6 +127,10 @@ export function posterResponse(svg: string, request: Request, cacheControl: stri
     "X-Content-Type-Options": "nosniff",
     "Content-Security-Policy": POSTER_CSP,
     "Cache-Control": cacheControl,
+    // Share pages are noindex, and a public poster is the same content in a
+    // form a crawler could index on its own: an image search result pointing
+    // at a stranger's design is exactly what link-visibility sharing is not.
+    "X-Robots-Tag": "noindex, nofollow, noimageindex",
     ETag: etag,
   });
   if (matchesEtag(request.headers.get("if-none-match"), etag)) {
