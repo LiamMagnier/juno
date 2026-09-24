@@ -14,13 +14,21 @@ export interface CspOptions {
   nonce: string;
   /** wss:// origin of the voice relay, when one is configured. */
   relayUrl?: string;
+  /**
+   * Origin that serves artifact previews (NEXT_PUBLIC_SANDBOX_ORIGIN), when it
+   * is not this one. Previews are loaded by URL precisely so they do NOT run
+   * under this policy — see src/lib/sandbox-policy.ts — and the frame has to be
+   * allowed to load them.
+   */
+  sandboxOrigin?: string | null;
   /** Allow eval only in development mode for Fast Refresh */
   isDev?: boolean;
 }
 
-export function buildCsp({ nonce, relayUrl, isDev }: CspOptions): string {
+export function buildCsp({ nonce, relayUrl, sandboxOrigin, isDev }: CspOptions): string {
   const allowEval = isDev ?? (process.env.NODE_ENV === "development");
   const connect = ["'self'", relayUrl || null].filter(Boolean).join(" ");
+  const frames = ["'self'", "blob:", sandboxOrigin || null].filter(Boolean).join(" ");
   return [
     "default-src 'self'",
     // 'strict-dynamic' lets Next's nonced loader pull in its own chunks. The
@@ -40,7 +48,7 @@ export function buildCsp({ nonce, relayUrl, isDev }: CspOptions): string {
     "font-src 'self' data:",
     `connect-src ${connect}`,
     "media-src 'self' blob: data:",
-    "frame-src 'self' blob:",
+    `frame-src ${frames}`,
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",

@@ -254,7 +254,7 @@ export function ReportReader({
           buttons. */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4 print:hidden">
         <div className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
-          <span>Deep research report</span>
+          <span>Research report</span>
           <span>·</span>
           <span>{wordCount.toLocaleString()} words</span>
           <span>·</span>

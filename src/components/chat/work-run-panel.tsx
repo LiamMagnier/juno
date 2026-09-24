@@ -86,9 +86,12 @@ function useSpokenTurns(events: ConversationWork["events"]) {
 export function WorkRunPanel({
   work,
   className,
+  actor,
 }: {
   work: ConversationWork;
   className?: string;
+  /** Who is working, when it is one of the account's agents rather than Juno. */
+  actor?: string | null;
 }) {
   const { session, run } = work;
   const spoken = useSpokenTurns(work.events);
@@ -134,7 +137,7 @@ export function WorkRunPanel({
             className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1"
           >
             <WorkStatusPill status={session.status} describe={false} />
-            <p className="min-w-0 text-ui text-muted-foreground">{statusSentence(session.status)}</p>
+            <p className="min-w-0 text-ui text-muted-foreground">{statusSentence(session.status, actor)}</p>
           </motion.div>
         </div>
         <AnimatePresence initial={false}>

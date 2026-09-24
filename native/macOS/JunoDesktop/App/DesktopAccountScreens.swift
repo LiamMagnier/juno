@@ -5,6 +5,7 @@ import JunoChatKit
 import JunoCore
 import JunoDesignSystem
 import JunoStorage
+import JunoWorkKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -101,6 +102,16 @@ struct DesktopDestinationView: View {
             } else {
                 unavailable("Artifacts", "The synchronized artifact store is unavailable.")
             }
+        case .agents:
+            if let model = configuration.agentsModel {
+                NativeAgentsScreen(
+                    model: model,
+                    apps: agentApps,
+                    openConversation: openAgentThread
+                )
+            } else {
+                unavailable("Agents", "The agents service is unavailable.")
+            }
         case .connections:
             if let model = configuration.connectorModel {
                 DesktopConnectionsScreen(model: model)
@@ -188,6 +199,29 @@ struct DesktopDestinationView: View {
         conversationModel.isDraftingNewConversation = false
         conversationModel.selectedConversationID = id
         destination = .chat
+    }
+
+    /// Opens an agent's thread from its page.
+    ///
+    /// The server creates the thread on first use, so it can be a conversation
+    /// this Mac has never synced — and `NativeConversationModel.reload()` drops
+    /// a selection its store does not contain. The store is brought up to date
+    /// first, as a saved voice call is, and only then is the thread selected.
+    private func openAgentThread(_ id: String) {
+        Task {
+            if !conversationModel.conversations.contains(where: { $0.id == id }) {
+                await configuration.syncModel?.refresh()
+                await conversationModel.reload()
+            }
+            openConversation(id)
+        }
+    }
+
+    /// The apps an agent may be given: only the connected ones, by name.
+    private var agentApps: [NativeAgentAppChoice] {
+        (configuration.connectorModel?.linked ?? [])
+            .filter(\.connected)
+            .map { NativeAgentAppChoice(id: $0.id, label: $0.label) }
     }
 
     private func startConversation(in projectID: String, prompt: String?) {

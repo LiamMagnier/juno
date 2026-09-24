@@ -53,6 +53,7 @@ struct DesktopChatSidebar: View {
                 destinationRow(.library)
                 destinationRow(.projects)
                 destinationRow(.artifacts)
+                destinationRow(.agents)
                 moreRow
             }
 
@@ -309,6 +310,11 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     case projects
     case library
     case artifacts
+    /// Named, persistent teammates (docs/design/AGENTS.md): a roster, each
+    /// agent's page, and hiring. A destination in Chat's column rather than a
+    /// fourth product, because an agent lives in Chat — its thread is an
+    /// ordinary conversation — and its tasks are Work's.
+    case agents
     case connections
     case tasks
     /// Juno Design — the canvas, and the list of what has been drawn on it.
@@ -332,7 +338,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     var id: Self { self }
 
     static let sidebarCases: [Self] = [
-        .search, .chat, .library, .projects, .artifacts, .connections, .tasks, .memory, .usage,
+        .search, .chat, .library, .projects, .artifacts, .agents, .connections, .tasks, .memory, .usage,
     ]
 
     static let moreCases: [Self] = [.connections, .tasks, .memory, .usage]
@@ -344,6 +350,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .projects: "Projects"
         case .library: "Library"
         case .artifacts: "Artifacts"
+        case .agents: "Agents"
         case .connections: "Connections"
         case .tasks: "Tasks"
         case .design: "Design"
@@ -362,6 +369,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .projects: .projects
         case .library: .library
         case .artifacts: .artifacts
+        case .agents: .agents
         case .connections: .connections
         case .tasks: .tasks
         case .settings: .settings

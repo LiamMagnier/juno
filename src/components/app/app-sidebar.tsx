@@ -61,6 +61,10 @@ import { staggerDelay, transition } from "@/lib/motion";
 import { intentPrefetch } from "@/lib/intent-prefetch";
 import { cn } from "@/lib/utils";
 import type { ClientConversation } from "@/types/chat";
+import type { ClientAgent } from "@/lib/agents/types";
+import { AgentFace } from "@/components/agents/agent-face";
+import { NeedsYouDot, localStateSentence } from "@/components/agents/agent-bits";
+import { useAgents } from "@/components/agents/use-agents";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * The sidebar (docs/design/FLAT_UI.md §3).
@@ -175,6 +179,7 @@ const SKELETON_WIDTHS = ["72%", "56%", "80%", "64%", "48%", "68%"];
    one the old "Recents" section used, so a reader who folded it back then
    finds it the way they left it. */
 const SECTION_KEYS = {
+  agents: "juno:sidebar:agents:collapsed",
   projects: "juno:sidebar:projects:collapsed",
   pinned: "juno:sidebar:starred:collapsed",
   recents: "juno:sidebar:recents:collapsed",
@@ -261,6 +266,17 @@ export function AppSidebar({
 }) {
   const isCode = product === "code";
   const router = useRouter();
+  /* The roster the Agents fold draws. Polled only in Chat, where the fold
+     is; the Code column has no agents in it. Sorted waiting-first, so the
+     teammate that needs you is the first face in the fold. */
+  const { agents: roster } = useAgents({ enabled: product !== "code" });
+  const agents = React.useMemo(
+    () =>
+      (roster ?? [])
+        .slice()
+        .sort((a, b) => Number(b.state === "waiting") - Number(a.state === "waiting") || a.sortOrder - b.sortOrder),
+    [roster]
+  );
   const pathname = usePathname();
   const reduceMotion = useReducedMotion();
   // The chord hints print the reader's own modifier: "⌘" on Apple, "Ctrl"
@@ -284,6 +300,7 @@ export function AppSidebar({
   const [projects, setProjects] = React.useState<SidebarProject[]>([]);
   const [projectsError, setProjectsError] = React.useState(false);
   const [sectionCollapsed, setSectionCollapsed] = React.useState<Record<SectionKey, boolean>>({
+    agents: false,
     projects: false,
     pinned: false,
     recents: false,
@@ -356,7 +373,7 @@ export function AppSidebar({
     setMounted(true);
     loadProjects();
     try {
-      const next: Record<SectionKey, boolean> = { projects: false, pinned: false, recents: false };
+      const next: Record<SectionKey, boolean> = { agents: false, projects: false, pinned: false, recents: false };
       for (const key of Object.keys(SECTION_KEYS) as SectionKey[]) {
         const raw = localStorage.getItem(SECTION_KEYS[key]);
         if (raw) next[key] = JSON.parse(raw) === true;
@@ -1019,9 +1036,9 @@ export function AppSidebar({
         </div>
 
         {/* ── Destinations ─────────────────────────────────────────────── */}
-        {/* Chat: Library · Projects · Artifacts · Design. Code: Artifacts ·
-            Customize · Pull requests. Then More for the rest. The rail keeps
-            the same order icon-only; More opens the same flyout. */}
+        {/* Chat: Library · Projects · Artifacts. Code: Artifacts · Customize ·
+            Pull requests. Then More for the rest. The rail keeps the same
+            order icon-only; More opens the same flyout. */}
         {/* `min-h-0 flex-1 overflow-y-auto` on the rail: collapsed, the list
             scroller below renders nothing, all thirteen rail rows sit in
             non-scrolling blocks, and the shell's `<aside>` is `overflow-hidden`
@@ -1088,16 +1105,21 @@ export function AppSidebar({
             : ([
                 { href: "/library", kind: "library", label: "Library", active: pathname === "/library" },
                 { href: "/projects", kind: "projects", label: "Projects", active: !!pathname?.startsWith("/projects") },
+                /* NO DESIGN ROW. A design is an artifact with the DESIGN type,
+                   and Artifacts is the one index of made things, so a row of
+                   its own was a second door onto a subset of this one
+                   (docs/design/artifacts-design/04-MERGE-PLAN.md §4.1). It
+                   also could not be drawn honestly: with Artifacts filtered to
+                   designs, both rows had a claim on the selected fill. `/design`
+                   still answers, as a redirect to `/artifacts?type=DESIGN`
+                   with the presets above the grid, and ⌘K keeps "Design" as a
+                   word that finds it. */
                 { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname === "/artifacts" },
-                /* Design is a destination like the four above it and is drawn
-                   like one. It used to be pinned on its own above the footer
-                   hairline, on the reasoning that it must never scroll away —
-                   but this whole block sits ABOVE the scroll region (the only
-                   thing that scrolls is the conversation list), so it never
-                   scrolled away here either. The pin was solving a problem that
-                   did not exist, and it cost a row stranded at the bottom of the
-                   column with a void above it. */
-                { href: "/design", kind: "design", label: "Design", active: pathname === "/design" },
+                /* Agents: the teammates the account delegates to
+                   (docs/design/AGENTS.md §3.1). A destination like Projects —
+                   a place that holds things — and not a third product: an
+                   agent's thread is an ordinary chat, and its work is Work. */
+                { href: "/agents", kind: "agents", label: "Agents", active: !!pathname?.startsWith("/agents") },
               ] as const)
           ).map((item) => (
             <NavRow
@@ -1216,6 +1238,45 @@ export function AppSidebar({
                         activeConversationId={activeConversationId}
                         rowProps={rowProps}
                       />
+                    )}
+
+                    {/* AGENTS — the roster at a glance, above the filing. Each
+                        row is a live face, so the column says which teammate
+                        is working and which is waiting before a name is read
+                        (Grok's point: a roster is scanned peripherally), and
+                        its one trailing signal is the toned dot while it
+                        needs you. Absent until there is an agent: an empty
+                        heading is a promise the column cannot keep. */}
+                    {!isCode && !needsYouOnly && agents.length > 0 && (
+                      <Section
+                        label="Agents"
+                        isCollapsed={sectionCollapsed.agents}
+                        onToggleCollapse={() => toggleSection("agents")}
+                        action={
+                          <SectionAction
+                            label="New agent"
+                            onClick={() => {
+                              setSidebarOpen(false);
+                              router.push("/agents/new");
+                            }}
+                            always
+                          >
+                            <Plus className="size-3.5" />
+                          </SectionAction>
+                        }
+                      >
+                        {agents.map((agent) => (
+                          <AgentRow
+                            key={agent.id}
+                            agent={agent}
+                            active={
+                              pathname === `/agents/${agent.id}` ||
+                              (agent.conversationId !== null && agent.conversationId === activeConversationId)
+                            }
+                            onNavigate={() => setSidebarOpen(false)}
+                          />
+                        ))}
+                      </Section>
                     )}
 
                     {projectsError && !isCode && !needsYouOnly && (
@@ -2469,6 +2530,42 @@ function ConversationRow({
   );
 }
 
+
+/**
+ * One agent in the sidebar: its face at 20px, its name, and the toned dot
+ * while it needs you — the same one-trailing-signal rule the conversation rows
+ * follow. The face is decorative here (the name is printed beside it); its
+ * state is in the row's title and the dot.
+ */
+function AgentRow({ agent, active, onNavigate }: { agent: ClientAgent; active: boolean; onNavigate: () => void }) {
+  const sentence = localStateSentence(agent);
+  return (
+    <div
+      data-active={active ? "" : undefined}
+      className={cn(
+        "group relative flex h-8 items-center rounded-control pl-2 pr-2 coarse:h-11",
+        LIST_ROW_TRANSITION,
+        listRowClass(active)
+      )}
+    >
+      <Link
+        href={`/agents/${agent.id}`}
+        onClick={onNavigate}
+        prefetch={false}
+        aria-current={active ? "page" : undefined}
+        aria-label={`${agent.name}. ${sentence}`}
+        className="flex min-w-0 flex-1 items-center gap-2.5 text-nav font-normal"
+        title={sentence}
+      >
+        <span className="flex size-5 shrink-0 items-center justify-center">
+          <AgentFace avatar={agent.avatar} state={agent.state} size="xs" />
+        </span>
+        <span className="min-w-0 flex-1 truncate">{agent.name}</span>
+        {agent.state === "waiting" ? <NeedsYouDot /> : null}
+      </Link>
+    </div>
+  );
+}
 
 function ProjectRow({
   project,

@@ -3,7 +3,8 @@
 A production-grade, multimodal AI chat website: streaming chat across a large model
 catalog, durable history, long-term memory, a Canvas for live artifacts,
 file/image/PDF uploads, tool connectors (MCP), voice (read-aloud, dictation, and
-realtime speech-to-speech), cloud & device "Code" agent sessions, an interface that
+realtime speech-to-speech), cloud & device "Code" agent sessions, persistent
+Agents (named teammates with goals, routines and memory), an interface that
 auto-translates itself, and Stripe billing with server-side plan gating.
 
 Built with **Next.js 15** (App Router) · TypeScript · Tailwind CSS v3.4 · shadcn/ui ·
@@ -53,8 +54,8 @@ npm run i18n:extract   # regenerate the static UI translation catalog
 ## Where things live
 
 - `docs/JUNO.md` — complete documentation (read this first).
-- `prisma/schema.prisma` — the data model (48 models, 45 migrations in `prisma/migrations/`).
-- `src/app/api/` — 127 route handlers; `src/lib/` — all backend logic.
+- `prisma/schema.prisma` — the data model (104 models, 101 migrations in `prisma/migrations/`).
+- `src/app/api/` — 245 route handlers; `src/lib/` — all backend logic.
 - `relay/` — the standalone realtime-voice WebSocket service (see `relay/README.md`).
 - `runner/agent-core/` — vendored agent core for cloud Code (see its `VENDORED.md`).
 - `deploy/` — `deploy.sh`, PM2 config, nginx template, and the VM setup guides

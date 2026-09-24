@@ -273,3 +273,26 @@ test("no module outside field-crypto reaches for the raw enc: prefixes on these 
     });
   assert.deepEqual(offenders, []);
 });
+
+// ---------------------------------------------------------------------------
+// AgentNote.content — what an agent knows about a person (docs/design/AGENTS.md)
+// ---------------------------------------------------------------------------
+
+test("every file that touches AgentNote goes through field-crypto", () => {
+  // Born sealed: there is no legacy plaintext to backfill, so the only way the
+  // column reverts is a new call site that writes or reads `content` raw. Any
+  // file under src/ that names the model must name the cipher too, and every
+  // write of `content` must seal on the line that writes it.
+  const files = walk("src").filter((file) => /\bagentNote\./.test(source(file)));
+  assert.ok(files.length >= 2, "expected the agents store and reflection to touch AgentNote");
+  for (const file of files) {
+    const text = source(file);
+    assert.match(text, /from "@\/lib\/field-crypto"/, `${file} touches AgentNote without field-crypto`);
+    const unsealed = text
+      .split("\n")
+      .filter((line) => /\bcontent: (?!encryptField\()[a-z]/i.test(line) && /agentNote|source: "(user|reflection)"/.test(line));
+    assert.deepEqual(unsealed, [], `${file} writes AgentNote.content without sealing it`);
+  }
+  // And a rotation that skipped it would strand every note under a retired key.
+  assert.match(source("scripts/rotate-message-keys.ts"), /rotateTextColumn\("AgentNote\.content"/);
+});

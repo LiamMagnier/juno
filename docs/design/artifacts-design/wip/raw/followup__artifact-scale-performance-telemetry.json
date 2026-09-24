@@ -1,0 +1,638 @@
+{
+ "area": "Payload scale, bundle weight, sync volume and observability for artifacts and designs",
+ "summary": "Size and cost depend on how many versions an artifact has, and nothing measures any of it. Every read of an artifact loads and ships every version body. Places that do this: the chat thread (SSR and GET /api/conversations/[id], through src/lib/queries.ts:117-121 and src/lib/serializers.ts:207-223), the chat `done` frame and its encrypted stream log, and the artifact REST responses (GET, POST, PATCH and the 409 body). Each design transaction also reads every version body twice (src/lib/design/store.ts:33-39, 158-168, 193-197). The Mac and iPhone store every version body, re-download the current one whenever it is folded, and decrypt the whole account store several times on each sync wake-up. A DESIGN version costs about 620 chars per layer, measured through the real operation layer: 102 layers = 64 KB, 300 layers = 191 KB, and the 200,000-char cap is reached at about 310 layers. An hour of continuous editing allocates up to about 121 versions: one per 30 s, measured from the newest version's createdAt (operations.ts:512, store.ts:125). That makes the thread's `artifacts` JSON 9.2 MB at 100 layers, 18.5 MB at 200 and 27.5 MB at 300 (measured in scratch, same shape as the serializer). The SSR HTML carries about 1.54 times the content because of double JSON escaping, so roughly 12\u201336 MB (inferred). The brief's \"12 s poll for an hour\" no longer exists. Commit 03780dc0 (2026-08-17) cut recovery to a bounded window. All three callers pass 6 s, so one dropped stream costs at most about 4 full-thread GETs, or 37\u2013110 MB decoded for that design. The comment at queries.ts:108-110 still describes the old hour-long poll.\n\nBundle weight: the chat route already lazy-loads the canvas (chat-view.tsx:37-40). But canvas-panel.tsx:44 imports DesignEditor statically, so opening a plain HTML artifact downloads the whole design editor. I checked this with an esbuild approximation using splitting from chat-view.tsx; it is not a Next production build. Opening any canvas fetches about 449 KB of minified JS that chat-view does not already load. Of that, the canvas-panel chunk is 281 KB, and 224.6 KB of it (80%) is src/components/design plus src/lib/design; the rest is mainly highlight.js (131 KB) and sandbox-frame (31 KB). So about half of what a plain HTML artifact downloads is the design editor. The Mac's bundled editor.js (950,653 bytes) is out of date: its stamp is 2b86e5baaf9d, but the current sources hash to 9cc1cfa8d4fe. That is 11 commits and 16 changed files since 2fa09d35, and Mac 1.6.0 (0a3087fe) shipped without rebuilding it. Rebuilding at HEAD with the script's own flags gives about 1.66 MB (+75%), of which 577 KB is Phosphor icons pulled in by src/components/ui/icons.tsx:247.\n\nSync: there is no WHEN clause on the ArtifactVersion or Artifact UPDATE triggers (migration.sql:116-117). So every checkpoint fold writes 2 AccountChange rows and wakes each device, at most every 2 s (sync-feed.ts:50-51, 118-128). Each device then re-downloads the full version body (sync-entities.ts:244-258); updates are only merged within a single changes page (NativeSyncCoordinator.swift:236-251). An hour of active web editing can therefore re-send 135\u2013400 MB of decoded version bodies to each device. On the device, the fold replaces the record (keyed by namespace and id), so the store grows by versions \u00d7 body \u00d7 1.17: about 9\u201327 MB per hour of editing a design, with no pruning. Each wake-up then calls repository.snapshot at least three times (NativeSyncCoordinator.swift:128, CursorPageApplier.swift:111, NativeArtifactStore.swift:90). Each call reads and decrypts every record in the account (SQLiteAccountRepository.swift:75-88, 546-570), and NativeArtifactModel keeps every version body of every artifact in memory. The sync payload for artifact_version also leaves out `origin`.\n\nI found several correctness defects while tracing these paths. (a) In the chat canvas, the design editor breaks as soon as a new checkpoint is created, which includes the first edit of an AI-generated design. canvas-panel.tsx:1243-1253 adds a version with content \"\", selects it, and remounts the editor with \"\", so it reports \"This design can\u2019t be opened\". (b) The 200K check runs on a design's compact form before it is expanded (chat-artifact-verification.ts:63; expansion is about 6.5\u00d7, measured). A 41 KB compact design is stored as 266 KB. Every web edit of it then fails with 413, and it makes the whole native Artifacts screen fail (NativeArtifactStore.swift:157). (c) Folding rewrites a version without changing its createdAt, so the public share snapshot picks up edits made after the share was created. (d) The DESIGN inline card auto-previews the latest document as raw JSON in a <pre> inside a sandbox that loads the Tailwind CDN.\n\nInline previews mount and run as soon as the transcript renders. There is no virtualization or IntersectionObserver. Every card for the same identifier shows the latest content, so N revisions of one artifact run the same thing N times. React cards load React and ReactDOM development builds (UMD) plus an unpinned @babel/standalone, per iframe. Python cards load the full Pyodide 0.26.4 per iframe.\n\nTelemetry is essentially absent. src/lib/observability.ts is imported by nothing, and package.json has no Sentry, PostHog or OTel. The only signals are console lines (design edit :206, design export :244, artifacts export :116 and :133, artifacts-store :22), the per-message verification receipt in `activity`, and Share.views, a counter bumped on every render. Sandbox status goes only to the UI. The Mac's lastRefusal is written but never read. 409 and 413 responses are not logged.",
+ "files_read": [
+  "src/lib/queries.ts",
+  "src/lib/serializers.ts",
+  "src/app/api/conversations/[id]/route.ts",
+  "src/app/(app)/chat/[id]/page.tsx",
+  "src/hooks/use-chat.ts",
+  "src/lib/design/operations.ts",
+  "src/lib/design/store.ts",
+  "src/lib/design/migrations.ts",
+  "src/lib/design/authoring.ts",
+  "src/app/api/design/[artifactId]/transactions/route.ts",
+  "src/app/api/design/[artifactId]/edit/route.ts",
+  "src/app/api/design/[artifactId]/export/route.ts",
+  "src/app/(app)/design/[artifactId]/page.tsx",
+  "src/components/design/use-design-document.ts",
+  "src/components/design/design-editor.tsx",
+  "src/components/design/design-workspace.tsx",
+  "src/components/design/host/main.tsx",
+  "src/components/design/host/bridge.ts",
+  "src/components/canvas/canvas-panel.tsx",
+  "src/components/canvas/sandbox-frame.tsx",
+  "src/components/chat/chat-view.tsx",
+  "src/components/chat/artifact-inline-card.tsx",
+  "src/components/chat/message-item.tsx",
+  "src/lib/artifact-runtime.ts",
+  "src/lib/artifacts-store.ts",
+  "src/lib/chat-artifact-verification.ts",
+  "src/app/api/chat/route.ts",
+  "src/lib/chat/stream-log.ts",
+  "src/lib/chat-stream-log-store.ts",
+  "src/app/api/artifacts/route.ts",
+  "src/app/api/artifacts/[id]/route.ts",
+  "src/app/(app)/artifacts/page.tsx",
+  "src/lib/share.ts",
+  "src/lib/observability.ts",
+  "src/lib/sync-entities.ts",
+  "src/lib/sync-feed.ts",
+  "src/app/api/v1/changes/stream/route.ts",
+  "prisma/migrations/20260716200000_account_change_log/migration.sql",
+  "prisma/schema.prisma",
+  "scripts/build-design-editor.mjs",
+  "scripts/emit-design-fixture.ts",
+  "scripts/prune-sync.ts",
+  "tests/design-fixtures.ts",
+  "next.config.mjs",
+  "deploy/nginx.conf.template",
+  ".github/workflows/release-ios.yml",
+  "native/macOS/JunoDesktop/Resources/DesignEditor/index.html",
+  "native/macOS/JunoDesktop/Resources/DesignEditor/editor.js",
+  "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift",
+  "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift",
+  "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift",
+  "native/macOS/JunoDesktop/App/JunoDesktopRootView.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoSync/NativeSyncAPIClient.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoSync/NativeSyncCoordinator.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoSync/NativeChangeWakeupStream.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoSync/CursorPageApplier.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoStorage/SQLiteAccountRepository.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoStorage/AccountScopedStorage.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactAPIClient.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeConversationStore.swift",
+  "native/Packages/JunoNativeKit/Tests/JunoDesignKitTests/Fixtures/sign-in.juno.design.json",
+  "docs/design/ICONS_AND_MOTION.md",
+  "node_modules/next/dist/server/app-render/use-flight-response.js"
+ ],
+ "inventory": [
+  {
+   "feature": "Chat thread loader (SSR + GET /api/conversations/[id])",
+   "description": "Messages, with attachment selects trimmed and message versions as metadata only (queries.ts:104-115). Artifacts come with `include: { versions: true }` (queries.ts:117-121), and serializeArtifact ships every version body plus a duplicate of the latest one (serializers.ts:217-218). The page passes all of it as ChatView/CodeSessionView props (chat/[id]/page.tsx:36,55-75).",
+   "maturity": "partial",
+   "where": [
+    "src/lib/queries.ts:91-129",
+    "src/lib/serializers.ts:207-223",
+    "src/app/(app)/chat/[id]/page.tsx:36-76",
+    "src/app/api/conversations/[id]/route.ts:9-17"
+   ]
+  },
+  {
+   "feature": "Dropped-stream recovery poll",
+   "description": "Bounded backoff of 400 ms, 1 s, 2 s, then 3 s (use-chat.ts:178-183). All three callers pass a 6 s deadline (use-chat.ts:869-873, 1032, 1132), so the 12 s RECOVERY_WINDOW_MS default (126) is unused. Each attempt GETs the full thread (405). The hour-long 12 s poll was removed in 03780dc0.",
+   "maturity": "solid",
+   "where": [
+    "src/hooks/use-chat.ts:126-131",
+    "src/hooks/use-chat.ts:361-464"
+   ]
+  },
+  {
+   "feature": "Resumable stream log",
+   "description": "Every SSE frame is logged, including `done`, which carries the persisted message and every touched artifact with its full version history (chat/route.ts:3185-3193, stream-log.ts:166). Rows are encrypted, with 10 min retention for finished generations (chat-stream-log-store.ts:24-40).",
+   "maturity": "solid",
+   "where": [
+    "src/app/api/chat/route.ts:3185-3198",
+    "src/lib/chat/stream-log.ts:166",
+    "src/lib/chat-stream-log-store.ts:24-40"
+   ]
+  },
+  {
+   "feature": "Design checkpoint folding",
+   "description": "A user edit within 30 s of the newest version's createdAt, on top of an `edit` version, rewrites that row in place. Anything else appends a new version (operations.ts:512-540, store.ts:122-127). Rewrites use compare-and-swap on the full old body (store.ts:185-189).",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/operations.ts:505-540",
+    "src/lib/design/store.ts:89-203"
+   ]
+  },
+  {
+   "feature": "Web design editor send queue",
+   "description": "One request in flight at a time. Batches are coalesced and capped at 500 operations; a refused change rolls the canvas back to the stored document and shows a toast (use-design-document.ts:127, 200-282, 292-320).",
+   "maturity": "solid",
+   "where": [
+    "src/components/design/use-design-document.ts:88-104",
+    "src/components/design/use-design-document.ts:200-320"
+   ]
+  },
+  {
+   "feature": "Design transaction route",
+   "description": "POST applies one validated transaction. The response is the full document plus version metadata. GET returns revision and currentVersion but loads every version body to compute two ints. There is no rate limit (the AI edit route has 20/min).",
+   "maturity": "partial",
+   "where": [
+    "src/app/api/design/[artifactId]/transactions/route.ts:29-89",
+    "src/app/api/design/[artifactId]/edit/route.ts:102"
+   ]
+  },
+  {
+   "feature": "Standalone /design/[artifactId] page",
+   "description": "Sends only the current version body to the client (page.tsx:26-36), but reads every version body from the database first (store.ts:33-39).",
+   "maturity": "solid",
+   "where": [
+    "src/app/(app)/design/[artifactId]/page.tsx:19-38"
+   ]
+  },
+  {
+   "feature": "Canvas code-splitting",
+   "description": "CanvasPanel and DocumentViewer are next/dynamic with ssr:false (chat-view.tsx:37-48), and CodeSessionView is split (chat/[id]/page.tsx:20-22). DesignEditor is still a static import inside the canvas (canvas-panel.tsx:44), so every canvas open pays for it.",
+   "maturity": "partial",
+   "where": [
+    "src/components/chat/chat-view.tsx:25-48",
+    "src/components/canvas/canvas-panel.tsx:44"
+   ]
+  },
+  {
+   "feature": "Inline artifact cards",
+   "description": "CodeSurface and SandboxFrame are split out (artifact-inline-card.tsx:26-33). A card shows its preview automatically once streaming ends (181-201), with no lazy mount. Content is the artifact's latest body, not the version this message produced (message-item.tsx:1372).",
+   "maturity": "partial",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:156-457",
+    "src/components/chat/message-item.tsx:1360-1377"
+   ]
+  },
+  {
+   "feature": "Sandbox runtimes",
+   "description": "Opaque-origin srcdoc iframes. Runtimes come from CDNs: Tailwind Play, React and ReactDOM 18.3.1 development UMD, unpinned @babel/standalone, mermaid@11 and Pyodide 0.26.4 (sandbox-frame.tsx:7-12). Status and console output go only to the parent UI (sandbox-frame.tsx:880-911).",
+   "maturity": "partial",
+   "where": [
+    "src/components/canvas/sandbox-frame.tsx:7-12",
+    "src/components/canvas/sandbox-frame.tsx:495-802",
+    "src/components/canvas/sandbox-frame.tsx:820-931"
+   ]
+  },
+  {
+   "feature": "Artifacts library list (/api/artifacts)",
+   "description": "Takes the newest 200 artifacts by updatedAt, with a 1200-char preview truncated in SQL. No pagination, and search filters on the client only (artifacts/page.tsx:253-265). Download fetches the full history to save one body (page.tsx:341).",
+   "maturity": "partial",
+   "where": [
+    "src/app/api/artifacts/route.ts:17-96",
+    "src/app/(app)/artifacts/page.tsx:224,253-265,338-358"
+   ]
+  },
+  {
+   "feature": "Artifact detail/save/rename REST",
+   "description": "GET, POST, PATCH and the 409 stale body all return serializeArtifact with every version body (route.ts:20-25, 36, 53, 74, 83-89, 106). POST accepts any content up to 200,000 chars, with no DesignDocument validation for DESIGN.",
+   "maturity": "partial",
+   "where": [
+    "src/app/api/artifacts/[id]/route.ts:7-110"
+   ]
+  },
+  {
+   "feature": "Change capture + native change feed",
+   "description": "AFTER INSERT/UPDATE/DELETE triggers on Artifact and ArtifactVersion write AccountChange and EntityRevision rows (migration.sql:116-117). The SSE stream polls the max cursor every 2 s for 55 s (sync-feed.ts:50-52, 118-137). Retention pruning runs through prune-sync.ts (30 d default, weekly cron documented in deploy/VM_SETUP_GUIDE.md:274).",
+   "maturity": "solid",
+   "where": [
+    "prisma/migrations/20260716200000_account_change_log/migration.sql:39-117",
+    "src/lib/sync-feed.ts:27-153",
+    "scripts/prune-sync.ts:23-44"
+   ]
+  },
+  {
+   "feature": "Entity hydration for artifacts",
+   "description": "artifact_version entities carry id, artifactId, version, full content and createdAt, but no origin (sync-entities.ts:244-258). Batches are capped at 100 ids (sync-entities.ts:19; NativeSyncCoordinator.swift:220), with no response size limit on the client.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/sync-entities.ts:19,222-258",
+    "native/Packages/JunoNativeKit/Sources/JunoSync/NativeSyncCoordinator.swift:209-252"
+   ]
+  },
+  {
+   "feature": "Native encrypted local store",
+   "description": "SQLite with WAL and an AEAD cipher. snapshot() reads and decrypts every record in the account (SQLiteAccountRepository.swift:75-88, 546-570). The sync path and every model reload call it.",
+   "maturity": "partial",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoStorage/SQLiteAccountRepository.swift:47-88,546-570"
+   ]
+  },
+  {
+   "feature": "Native Artifacts model (Mac + iPhone)",
+   "description": "Rebuilds every artifact with every version body from a full snapshot on each sync generation (NativeArtifactStore.swift:89-133, 252-285). openArtifact downloads the full history again over REST (290-310). Any version over 200,000 UTF-16 units throws, which fails the whole load (157).",
+   "maturity": "partial",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:83-310"
+   ]
+  },
+  {
+   "feature": "Mac-hosted design editor bundle",
+   "description": "esbuild IIFE plus Tailwind (build-design-editor.mjs:117-185). The version stamp is a hash of every source (55-88). A `--check` exists but only release-ios.yml:76 runs it. The checked-in bundle is out of date.",
+   "maturity": "broken",
+   "where": [
+    "scripts/build-design-editor.mjs:55-203",
+    "native/macOS/JunoDesktop/Resources/DesignEditor/index.html",
+    ".github/workflows/release-ios.yml:76"
+   ]
+  },
+  {
+   "feature": "Mac design host diagnostics",
+   "description": "Editor crashes reach the pane through reportFailure (main.tsx:125-134) and are shown locally as .failed. Bridge refusals are stored in lastRefusal, which nothing reads (DesktopDesignEditorHost.swift:56-59, 186-188). Nothing is reported to the server.",
+   "maturity": "stub",
+   "where": [
+    "src/components/design/host/main.tsx:105-134",
+    "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift:56-59,150-194"
+   ]
+  },
+  {
+   "feature": "Artifact verification receipt",
+   "description": "Artifacts are checked once, with one repair attempt, before they are presented. The report is attached to the message's `activity` (chat/route.ts:436-458). It is not aggregated or counted anywhere.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/chat-artifact-verification.ts:1-200",
+    "src/app/api/chat/route.ts:425-458"
+   ]
+  },
+  {
+   "feature": "Share view counter",
+   "description": "Share.views is incremented fire-and-forget on every public render (share.ts:150-160). There is no dedupe, no bot filter and no time series.",
+   "maturity": "stub",
+   "where": [
+    "src/lib/share.ts:146-160",
+    "prisma/schema.prisma:1808-1828"
+   ]
+  },
+  {
+   "feature": "Metrics/observability module",
+   "description": "MetricsCollector.recordLatency/recordMetric emits structured console lines. Nothing imports it; `rg observability src tests scripts` finds only the file itself.",
+   "maturity": "absent",
+   "where": [
+    "src/lib/observability.ts:1-128"
+   ]
+  }
+ ],
+ "architecture": "WRITE PATHS. (1) A chat turn: text is parsed, then verifyAndRepairChatArtifacts runs (the 200K check is on the compact form) and prepareChatArtifactOutput rewrites the message. persistArtifacts then expands DESIGN, with no cap, and appends ArtifactVersion(origin generated). It returns serializeArtifact with every version, which rides the SSE `done` frame and is also written encrypted to ChatStreamEvent (chat/route.ts:3108-3193; artifacts-store.ts:38-95; stream-log.ts:166). (2) A web design edit: the local transaction is queued (use-design-document.ts:292-320) and drained as POST /api/design/[id]/transactions. That calls loadOwnedDesignArtifact, which reads every version body. commitTransaction then either appends (INSERT version + UPDATE artifact, include every version) or folds (a CAS UPDATE on the version body + UPDATE artifact, include every version). The response is the full document (store.ts:89-203; transactions/route.ts:29-69). (3) Mac library save: the full body is re-encoded and sent as POST /api/artifacts/[id], producing a new version (DesktopArtifactsScreen.swift:926-946, 1398-1405). There is no design validation on the server (artifacts/[id]/route.ts:7-16, 40-90).\n\nREAD PATHS. The chat page and GET /api/conversations/[id] use getConversationThread, which returns messages plus artifacts with every version (queries.ts:91-129). The SSR props become the RSC flight payload inlined as self.__next_f.push(JSON.stringify(row)), so strings are escaped twice (node_modules/next/dist/server/app-render/use-flight-response.js:131-138). The library uses /api/artifacts (200 rows, 1200-char previews) and /api/artifacts/[id] (every version). /design/[id] sends the current body only.\n\nSYNC. Postgres triggers (migration.sql:116-117) produce AccountChange and EntityRevision rows. /api/v1/changes/stream polls every 2 s and emits `cursor` events (sync-feed.ts:86-137). NativeChangeWakeupStream calls synchronizeWithRetry, which takes a snapshot to read the cursor, pages through /api/v1/changes, keeps the newest revision per key within a page, hydrates with /api/v1/entities in batches of 100, and applies through CursorPageApplier (another snapshot). JunoDesktopRootView.swift:69-85 then fans out to the conversation, project, workspace, artifact, memory and search models. NativeArtifactModel.reload takes one more snapshot, decodes every artifact_version and publishes [NativeArtifact] with every body. On the device, a record is one row per (namespace, id), so a fold replaces the row and a new checkpoint adds one.\n\nBUNDLES. On the web, chat-view statically imports its dependencies, and CanvasPanel is split out. The canvas chunk contains the design editor plus highlight.js and sandbox-frame shared chunks. On the Mac, the src/components/design/host/main.tsx IIFE is checked in under Resources/DesignEditor, loaded from file:// in a WKWebView and bridged with a nonce and revision validator.\n\nOBSERVABILITY. There is no metrics sink. The signals are console.error/warn in a handful of routes, per-message activity receipts in the database, Share.views, and CSP reports (/api/csp-report, for the app itself; the sandbox's meta CSP cannot report).",
+ "ux": [
+  {
+   "observation": "READ: after the first edit that creates a checkpoint, the chat-canvas design editor switches to \"This design can\u2019t be opened \u2014 Design document is not valid JSON\". This includes the first edit of any AI-generated design, because the latest version's origin is 'generated'. The Code tab for that version shows an empty body, and Copy copies \"\". Reloading the page fixes it.",
+   "severity": "major",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:1243-1253",
+    "src/components/canvas/canvas-panel.tsx:313-315",
+    "src/components/canvas/canvas-panel.tsx:369-370",
+    "src/components/canvas/canvas-panel.tsx:1237",
+    "src/components/design/use-design-document.ts:170-187",
+    "src/components/design/design-editor.tsx:520-535"
+   ]
+  },
+  {
+   "observation": "READ + verified in scratch: a DESIGN inline card in the transcript defaults to 'Preview', which is a white sandbox iframe (loading the Tailwind CDN) showing the escaped raw JSON of the latest document, up to 200 KB. Every revision's card shows the same latest JSON.",
+   "severity": "major",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:181-201",
+    "src/lib/artifact-runtime.ts:98",
+    "src/components/canvas/sandbox-frame.tsx:786-803",
+    "src/components/canvas/sandbox-frame.tsx:580-583",
+    "src/components/chat/message-item.tsx:1366-1376"
+   ]
+  },
+  {
+   "observation": "INFERRED: on a long transcript, every web, console and design card starts its sandbox as soon as the page loads. N status dots pulse 'Loading' while CDN runtimes download, and the transcript does N Babel compiles or Pyodide boots. Scrolling past old cards still pays for them.",
+   "severity": "minor",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:181-201",
+    "src/components/chat/artifact-inline-card.tsx:222-233"
+   ]
+  },
+  {
+   "observation": "READ: the web Artifacts library silently shows only the 200 most recently updated artifacts, and its search filters only that set. The Mac and iPhone Artifacts screens show every synced artifact, so the two libraries disagree for heavy users.",
+   "severity": "minor",
+   "where": [
+    "src/app/api/artifacts/route.ts:27",
+    "src/app/(app)/artifacts/page.tsx:253-265",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:89-133"
+   ]
+  },
+  {
+   "observation": "READ: on native, version origin badges appear after openArtifact merges the REST detail (which has origin) and disappear on the next sync reload, because synced versions have origin nil.",
+   "severity": "minor",
+   "where": [
+    "src/lib/sync-entities.ts:249-257",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:160-167",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactAPIClient.swift:349-357"
+   ]
+  },
+  {
+   "observation": "READ: one oversized DESIGN version (over 200,000 UTF-16 units after expansion) makes the whole native Artifacts screen fail with \"Juno could not read the locally stored artifact data\". On the web, every edit to that design fails with 'This change would make the document too large to save.'",
+   "severity": "major",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:151-158",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:276-285",
+    "src/lib/design/store.ts:117-120"
+   ]
+  },
+  {
+   "observation": "INFERRED: the first canvas open for a plain HTML/React artifact waits on about 449 KB of JS (esbuild estimate), about half of it the design editor. On a slow link that is a visible delay before the panel paints.",
+   "severity": "minor",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:44",
+    "src/components/chat/chat-view.tsx:37-40"
+   ]
+  },
+  {
+   "observation": "READ: the Mac design editor is built from sources 11 commits older than the web editor (stamp 2b86e5baaf9d; current sources hash to 9cc1cfa8d4fe). The Mac and web editors can therefore differ in panels, motion and icons (the Phosphor migration is missing from the Mac bundle: 0 'duotone' strings versus 202 in a HEAD build).",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/Resources/DesignEditor/index.html",
+    "scripts/build-design-editor.mjs:79-88"
+   ]
+  },
+  {
+   "observation": "INFERRED: opening a long chat that holds a design edited for an hour means decoding and parsing 9\u201327 MB of JSON in the page, and about 1.54\u00d7 that inline in the SSR HTML. On a phone browser that delays first paint and hydration for the whole conversation, not just the canvas.",
+   "severity": "major",
+   "where": [
+    "src/lib/queries.ts:117-121",
+    "src/app/(app)/chat/[id]/page.tsx:64-75"
+   ]
+  }
+ ],
+ "motion": [
+  {
+   "observation": "The design editor wrapper is keyed by selectedVersion and runs motion-safe:animate-fade-in. It replays whenever a checkpoint is appended, and in the empty-content case it fades into the error state instead of the canvas.",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:1237"
+   ]
+  },
+  {
+   "observation": "Inline card: motion-safe:animate-rise-in on mount; a keyed fade-in on view switch (a single fixed height, so no layout jump); a gen-sweep band on the divider while streaming; the status word cross-fades via key; the dot pulses only for live states (Writing, Loading, Running). This complies with ICONS_AND_MOTION.md:221-222 ('Loops are for live state only'). With N auto-running cards, N 'Loading' pulses can run at once.",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:226-233",
+    "src/components/chat/artifact-inline-card.tsx:296-312",
+    "src/components/chat/artifact-inline-card.tsx:354-393",
+    "docs/design/ICONS_AND_MOTION.md:221-222"
+   ]
+  },
+  {
+   "observation": "Design editor loading shows a Loader2 spinner with 'Loading design\u2026'. The load error fades in with the error mark tile. Both respect motion-safe.",
+   "where": [
+    "src/components/design/design-editor.tsx:520-544"
+   ]
+  },
+  {
+   "observation": "The Mac design pane overlays ProgressView while the bundle boots, and a JunoEmptyState when it is unavailable or failed. It has no motion of its own.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:1040-1063"
+   ]
+  }
+ ],
+ "defects": [
+  {
+   "id": "followup-artifact-scale-performance-telemetry-1",
+   "title": "Chat thread ships every artifact version body (plus a duplicate of the latest) on every load and every recovery poll",
+   "severity": "high",
+   "file": "src/lib/queries.ts",
+   "line": 120,
+   "evidence": "READ: queries.ts:117-121 uses `include: { versions: true }`. serializers.ts:217-218 emits `content: latest.content` AND `versions: sorted.map(v => ({..., content: v.content}))`. The attachment comment directly above (queries.ts:104-111) explains why full rows are avoided for attachments, and message versions are metadata-only (112-114), but artifacts are not. MEASURED in scratch (audit/thread-payload.ts, via tests/design-fixtures.ts and serializeDesignDocument): 121 versions (one hour of edits at one per 30 s, operations.ts:512 + store.ts:125) comes to 9.23 MB at 102 layers, 18.53 MB at 204 and 27.45 MB at 300. The SSR copy is escaped twice (measured 1.54\u00d7 for the fixture; use-flight-response.js:131-138), so about 12\u201336 MB of HTML (inferred). use-chat.ts:405 re-fetches the whole thread up to about 4 times per dropped stream (6 s windows at 869-873, 1032, 1132; backoff at 178-183). nginx serves / with proxy_buffering off (deploy/nginx.conf.template:117).",
+   "failure_scenario": "A user edits a 100-layer design in a conversation for an hour, then opens that chat on a phone. SSR reads 121 \u00d7 64 KB from Postgres, JSON-encodes about 9 MB, inlines about 12 MB into the HTML and gzips it on the single Node process. Because nginx does not buffer, a slow client holds the connection for the whole transfer. The browser parses all of it into ChatView props before the transcript is interactive. If the stream drops mid-turn, up to about 4 more 9 MB GETs follow within 6 s. At the 300-layer cap the figures triple."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-2",
+   "title": "Every design transaction reads every version body from Postgres twice",
+   "severity": "high",
+   "file": "src/lib/design/store.ts",
+   "line": 36,
+   "evidence": "READ: loadOwnedDesignArtifact includes every version (store.ts:33-39) and runs on every POST/GET to /api/design/[id]/transactions (transactions/route.ts:34, 77). appendVersion's update uses `include: { versions: { orderBy } }` (store.ts:163-167), and so does rewriteVersion's (store.ts:193-197). Only the current row is needed. The transactions route has no rate limit (compare edit/route.ts:102). The GET re-sync loads every body to return two ints (transactions/route.ts:77-82).",
+   "failure_scenario": "An hour into a session (121 versions at 64\u2013191 KB), each drag batch the web queue sends makes Postgres return about 2 \u00d7 121 bodies: 15.5 MB at 100 layers, about 46 MB near the cap. The editor sends batches back to back while the user manipulates, so response time, and with it the gap before the next batch can go out, grows with history length. That leaves the server busy and the 'saving' indicator on for longer as the session gets older."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-3",
+   "title": "Chat-canvas design editor breaks after the first new checkpoint (empty-content version appended to the envelope)",
+   "severity": "high",
+   "file": "src/components/canvas/canvas-panel.tsx",
+   "line": 1247,
+   "evidence": "READ: onCommitted appends `{ version, content: \"\", origin: \"edit\" }` and bumps currentVersion (canvas-panel.tsx:1243-1253). The effect at 313-315 sets selectedVersion to the new currentVersion. versionContent = versions.find(...)?.content ?? artifact.content yields \"\", because \"\" is not nullish (369-370). The wrapper `key={selectedVersion}` (1237) remounts DesignEditor with content \"\". useDesignDocument then calls parseStoredDesignDocument(\"\") (use-design-document.ts:174), JSON.parse throws 'Design document is not valid JSON' (migrations.ts:93-96), and the editor renders its load error (design-editor.tsx:520-535). The append path always runs on the first user edit after a 'generated' version (operations.ts:535; store.ts:123-127), and again after each 30 s window. The standalone /design workspace does not remount and is unaffected (design-workspace.tsx:212-215). The code dates from 7c344b962 (2026-08-05).",
+   "failure_scenario": "The user asks Juno for a sign-in screen design, opens it in the chat canvas and drags one layer. The transaction appends v2, onCommitted(2) fires, the canvas selects v2 with an empty body, and the editor is replaced by \"This design can\u2019t be opened\". Their edit was saved, but they cannot keep working without reloading the page."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-4",
+   "title": "Every checkpoint fold becomes a sync change that re-downloads the full version body on every device",
+   "severity": "medium",
+   "file": "prisma/migrations/20260716200000_account_change_log/migration.sql",
+   "line": 117,
+   "evidence": "READ: AFTER UPDATE triggers on both ArtifactVersion and Artifact have no WHEN clause (migration.sql:116-117). A fold writes both (store.ts:185-197), producing 2 AccountChange rows. /api/v1/changes/stream polls every 2 s and emits a cursor per advance (sync-feed.ts:50-51, 118-128). Each wake-up calls synchronizeWithRetry (NativeChangeWakeupStream.swift:226-233). Updates are only merged within one changes page (NativeSyncCoordinator.swift:232-251), and loadEntities returns the full `content` (sync-entities.ts:244-258). INFERRED volume: up to 1,800 wake-ups per hour \u00d7 about 75 KB (100 layers) to about 224 KB (cap) of JSON-escaped body, so about 135\u2013400 MB decoded per device per hour of active web editing (the actual rate is bounded by how often commits land).",
+   "failure_scenario": "The user edits a design on the web for an hour while their Mac and iPhone are signed in. Every couple of seconds both devices wake, fetch the changes page and download the whole current design body again, even though neither device shows that design. On cellular that is hundreds of MB, and each download is also written to the device's SQLite WAL."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-5",
+   "title": "Each native sync wake-up reads and decrypts the entire account store several times, including every artifact version",
+   "severity": "medium",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoStorage/SQLiteAccountRepository.swift",
+   "line": 75,
+   "evidence": "READ: snapshot(for:) loads every record and decrypts every payload (SQLiteAccountRepository.swift:75-88, 546-570, 646-683). It runs in synchronize() only to read the cursor (NativeSyncCoordinator.swift:128-129), per page in CursorPageApplier (CursorPageApplier.swift:111), and in NativeArtifactModel.reload via NativeArtifactStore.load (NativeArtifactStore.swift:89-133, 252-285). Load decodes every artifact_version body into [NativeArtifact].versions. JunoDesktopRootView.swift:69-85 fans every sync generation out to six models.",
+   "failure_scenario": "An account with 20 designs \u00d7 100 versions \u00d7 100 KB holds about 200 MB of artifact bodies. Every design edit on another device triggers at least three full decrypt-and-decode passes over those 200 MB, and publishes a new artifacts array holding all of it, on the Mac and the iPhone. The result is CPU and battery drain and memory spikes that grow with history rather than with what changed."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-6",
+   "title": "DESIGN size cap is checked before expansion; oversized designs are stored, then cannot be edited on web and break the native Artifacts screen",
+   "severity": "medium",
+   "file": "src/lib/chat-artifact-verification.ts",
+   "line": 63,
+   "evidence": "READ: `content.length > CHAT_ARTIFACT_MAX_CHARS` runs on the model's compact body (chat-artifact-verification.ts:60-72). The DESIGN check only confirms that normalizeDesignArtifact succeeds (90-102). persistArtifacts expands with no cap (artifacts-store.ts:16-24, 45-91). MEASURED (audit/expand-ratio.ts): expansion is 6.5\u00d7, and a 401-node compact design of 40,917 chars is stored as 266,396. Consequences READ: every web edit returns 413 'too-large' (store.ts:117-120). NativeArtifactStore.decodeVersion requires utf16.count \u2264 200,000 and throws corruptRecord, which fails the whole load (NativeArtifactStore.swift:151-158, 276-285). NativeArtifactAPIClient rejects the detail (NativeArtifactAPIClient.swift:349). Restoring it via POST /api/artifacts/[id] fails with z.max(200_000) (route.ts:8).",
+   "failure_scenario": "Juno generates a 100-card dashboard design (about 41 KB compact). It passes verification and is saved at 266 KB. The first drag in the editor is refused as too large to save, and the Mac and iPhone Artifacts screens switch to the failed state for the whole account until that artifact is deleted."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-7",
+   "title": "Checkpoint folding leaks post-share edits into public artifact snapshots",
+   "severity": "medium",
+   "file": "src/lib/share.ts",
+   "line": 258,
+   "evidence": "READ: share.ts:10-17 promises that 'the public page only renders content that existed at that instant \u2014 new messages and artifact edits stay private', and selects the newest version with `createdAt: { lte: share.snapshotAt }` (share.ts:257-260). rewriteVersion overwrites `content` in place without touching createdAt (store.ts:185-188), and folding continues while the newest version's createdAt is less than 30 s old (store.ts:123-126; operations.ts:538-539).",
+   "failure_scenario": "The user drags a layer, which creates checkpoint v5 at T0. At T0+5 s they share the design. Between T0+5 s and T0+30 s they keep editing, perhaps adding a placeholder with private text. Those edits fold into v5, whose createdAt T0 is still before snapshotAt, so the public link shows content made after the share."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-8",
+   "title": "DESIGN inline cards auto-preview raw document JSON in a sandbox that loads the Tailwind CDN",
+   "severity": "medium",
+   "file": "src/components/chat/artifact-inline-card.tsx",
+   "line": 184,
+   "evidence": "READ: inlinePreview = hasContent && (rt.mode !== \"none\" || MARKDOWN) (artifact-inline-card.tsx:184). runtimeFor('DESIGN') is mode 'design' (artifact-runtime.ts:98). RuntimePreview renders SandboxFrame (131-146). buildSandboxDoc falls through to `default:` and produces htmlDoc(<pre>escaped content</pre>) (sandbox-frame.tsx:801-802), and htmlDoc adds TAILWIND_CDN (582). VERIFIED in scratch (audit/design-inline.ts): mode 'design', inlinePreview true, the output has a <pre>, loads the Tailwind CDN and contains the JSON. The content is the artifact's latest full document (message-item.tsx:1372).",
+   "failure_scenario": "Juno creates a design and revises it three times in one conversation. The transcript shows four cards, each an iframe that fetches the Tailwind Play CDN and draws up to 200 KB of escaped JSON of the same latest document, instead of a picture of each version."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-9",
+   "title": "Inline previews mount and execute immediately for every card, each downloading its own CDN runtime; repeated identifiers re-run the latest content",
+   "severity": "medium",
+   "file": "src/components/chat/artifact-inline-card.tsx",
+   "line": 197,
+   "evidence": "READ: view defaults to 'preview' once streaming ends (artifact-inline-card.tsx:192-201). There is no IntersectionObserver or virtualization in the transcript (rg found IntersectionObserver in chat only at chat-view.tsx:1413-1422, for the composer). The React doc loads Tailwind Play, React and ReactDOM 18.3.1 *development* UMD, and `https://unpkg.com/@babel/standalone/babel.min.js` with no version (sandbox-frame.tsx:7-10, 512-515). Python loads Pyodide 0.26.4 full, plus loadPackagesFromImports and micropip (640-680). Mermaid loads mermaid@11, a floating major (11, 608). Every card for the same identifier gets artifact.content, the latest body (message-item.tsx:1372).",
+   "failure_scenario": "A long coding chat has 15 React artifact revisions and 5 Python scripts. Opening it creates 20 sandboxed iframes at once: 15 Babel standalone loads and compiles of the same latest component, and 5 Pyodide boots. The page stalls and memory climbs. Whether the CDN assets are shared between opaque-origin frames is unverified (see open_questions)."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-10",
+   "title": "Opening any canvas downloads the design editor (static import inside the lazily-loaded canvas chunk)",
+   "severity": "medium",
+   "file": "src/components/canvas/canvas-panel.tsx",
+   "line": 44,
+   "evidence": "READ: `import { DesignEditor, ... } from \"@/components/design/design-editor\"` is static (canvas-panel.tsx:44), and DesignEditor renders only when isDesign (1236-1256). MEASURED with esbuild splitting from chat-view.tsx into scratch (an approximation, not Next's chunking): the canvas-panel chunk is 281,357 B, of which 224,573 B is src/components/design plus src/lib/design. The chunks fetched beyond chat-view's static closure total 449,326 B (the rest is highlight.js at 131 KB and sandbox-frame at 31 KB). This agrees with the ~234 KB the team measured (chat-view.tsx:28-30).",
+   "failure_scenario": "A user opens a plain HTML artifact. Before the panel can paint, the browser downloads and compiles about 225 KB of design editor code it will never run, roughly half of the canvas's incremental cost."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-11",
+   "title": "Mac design editor bundle is stale and a HEAD rebuild would grow it ~75% (Phosphor icon set)",
+   "severity": "medium",
+   "file": "native/macOS/JunoDesktop/Resources/DesignEditor/index.html",
+   "line": 20,
+   "evidence": "READ + computed with a read-only copy of editorVersion() (audit/editor-version.mjs): the stamp is 1.0.0+2b86e5baaf9d, the current sources hash to 1.0.0+9cc1cfa8d4fe, and stampedMatches is false. `git log 2fa09d35..HEAD` over the editor sources lists 11 commits (16 files, +1161/-491), and all 11 predate the Mac 1.6.0 release commit 0a3087fe. Only release-ios.yml:76 runs design:editor:check; native/Scripts/release-macos.sh has no editor build or check. esbuild with the script's own flags (build-design-editor.mjs:127-145) into scratch produces 1,663,529 B versus the checked-in 950,653 B, of which @phosphor-icons/react is 577,119 B (34.7%), reached through src/components/ui/icons.tsx:247 (`@phosphor-icons/react/dist/ssr`). The checked-in bundle contains 0 'duotone' strings; the HEAD build contains 202.",
+   "failure_scenario": "The Mac ships an editor that differs from the web one (the redesign's panels, motion and icons are missing), with nothing flagging it. The next person to run `npm run design:editor` also adds about 713 KB to the app's WKWebView boot without noticing, because there is no size budget."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-12",
+   "title": "AI turns that touch a long-lived artifact stream and log its entire history",
+   "severity": "medium",
+   "file": "src/lib/artifacts-store.ts",
+   "line": 72,
+   "evidence": "READ: persistArtifacts and persistTargetedArtifactEdit `include: { versions: true }` and return serializeArtifact with every body (artifacts-store.ts:72, 88, 119-125). The chat route sends them in the `done` frame (chat/route.ts:3185-3193). The stream log writes every frame's JSON payload, `done` included, encrypted into ChatStreamEvent (stream-log.ts:166; chat-stream-log-store.ts:31-40), where it is kept for 10 minutes (24).",
+   "failure_scenario": "The user asks Juno to revise a 121-version, 100-layer design. The done frame is at least 9.2 MB: it is encrypted, inserted into Postgres, streamed over SSE and replayed in full on reconnect, only to append one version."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-13",
+   "title": "Library and native detail fetch full histories for single-body operations",
+   "severity": "low",
+   "file": "src/app/(app)/artifacts/page.tsx",
+   "line": 341,
+   "evidence": "READ: 'Download' GETs /api/artifacts/[id], which returns every version (route.ts:28-37), and uses only `.artifact.content` (page.tsx:341-351). Rename (PATCH) returns every version (route.ts:103-108). Save returns every version (route.ts:71-89). Native openArtifact re-downloads the full history over REST on every selection (NativeArtifactStore.swift:290-296), even though the bodies are already in the synced store.",
+   "failure_scenario": "Renaming a design with 121 versions on the web or the Mac downloads about 9\u201327 MB. Clicking between artifacts on the Mac re-downloads each one's full history every time."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-14",
+   "title": "Web artifacts library silently caps at 200 with client-only search",
+   "severity": "low",
+   "file": "src/app/api/artifacts/route.ts",
+   "line": 27,
+   "evidence": "READ: `take: 200` with no cursor or hasMore (route.ts:24-40). The page filters `items` locally (page.tsx:253-265) and has no load-more (rg for 'more|cursor|hasMore' found nothing).",
+   "failure_scenario": "A heavy user with 350 artifacts cannot find a design they made months ago: it is neither listed nor searchable on the web, though the Mac lists it."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-15",
+   "title": "Synced artifact_version entity drops `origin`",
+   "severity": "low",
+   "file": "src/lib/sync-entities.ts",
+   "line": 253,
+   "evidence": "READ: the loader returns id, artifactId, version, content and createdAt, but no origin (sync-entities.ts:249-257). Native decodes it with origin nil (NativeArtifactStore.swift:160-167), while REST detail carries origin (NativeArtifactAPIClient.swift:349-357). merge() then reload() replaces REST versions with synced ones (NativeArtifactStore.swift:263-265, 442-446).",
+   "failure_scenario": "On the Mac, a design's history shows 'Edited'/'Generated'/'Restored' labels right after opening, and they vanish on the next sync wake-up. Native clients cannot tell a fold-heavy user history from AI output."
+  }
+ ],
+ "gaps": [
+  {
+   "title": "No metrics sink at all",
+   "description": "src/lib/observability.ts is dead code: nothing imports it (rg across src, tests and scripts). package.json has no Sentry, PostHog, Datadog, OTel or Vercel analytics. There is no client error-reporting endpoint; /api/csp-report exists only for app CSP.",
+   "why": "No question about artifact or design health can be answered from production data without ad-hoc SQL."
+  },
+  {
+   "title": "Sandbox render failures are invisible",
+   "description": "The sandbox reports juno:status 'error' and console entries only to the parent React state (sandbox-frame.tsx:880-911; artifact-inline-card.tsx:222-233). The meta CSP cannot send reports. CDN runtime load failures (unpinned Babel, mermaid@11, Pyodide) are never counted.",
+   "why": "The most common artifact type (React) depends on third-party CDNs and a floating Babel version, and nobody would know when it breaks."
+  },
+  {
+   "title": "Design bridge refusals and editor crashes are local only",
+   "description": "DesktopDesignEditorHost records lastRefusal, which nothing reads (56-59, 186-188), and shows .failed(message) in the pane (172-173). reportFailure in the web host (main.tsx:125-134) only reaches the native pane. The same appears to hold on iOS (JunoMobileDesignEditorHost.swift:157), not read in depth.",
+   "why": "Out-of-date Mac bundles and protocol drift (see defect 11) could only be diagnosed from a user's screen."
+  },
+  {
+   "title": "409/413/422 outcomes unlogged",
+   "description": "Stale artifact saves (artifacts/[id]/route.ts:51-56, 81-86), design transaction conflicts and too-large responses (transactions/route.ts:47-51), and design AI 'unusable' 422s (edit/route.ts:273-281) return JSON with no console line or counter. The client only shows a toast and rolls back (use-design-document.ts:200-216).",
+   "why": "The conflict rate between two editors, or between the Mac save path and web transactions, cannot be measured."
+  },
+  {
+   "title": "Verification refusals/repairs only in per-message activity",
+   "description": "The report is attached to the message activity (chat/route.ts:444-457). The only other trace is the design-drop console.warn in artifacts-store.ts:22.",
+   "why": "A rate by problem code needs a scan of Message.activity; there is no aggregate."
+  },
+  {
+   "title": "Share analytics = one counter",
+   "description": "Share.views is incremented on every render, including the owner's own visits, crawlers and link unfurlers, with no timestamps or dedupe (share.ts:150-160).",
+   "why": "A merged shareable-link product needs views over time, unique viewers and referrers, and per-type engagement."
+  },
+  {
+   "title": "No payload, bundle or sync size budgets",
+   "description": "No test or CI check on thread payload size, canvas chunk size, editor.js size or per-sync bytes. build-design-editor --check compares hashes only (build-design-editor.mjs:186-199).",
+   "why": "Several regressions found here (full-history payloads, Phosphor in the editor bundle) would have been caught by a budget."
+  },
+  {
+   "title": "Owner questions that cannot be answered today",
+   "description": "(1) p50/p95 thread payload bytes and TTFB for /chat/[id]; how many conversations exceed 1/10/25 MB. (2) The distribution of version counts and total bytes per artifact, by type (SQL only). (3) Sandbox preview success rate by runtime (web/React/Mermaid/Python/JS) and CDN failure rate. (4) Canvas open latency, and ChunkLoadError rate for the canvas dynamic import. (5) Design transaction rate, fold versus append ratio, 409 conflict rate and 413 too-large rate. (6) Design AI edit outcomes: provider failure, 'unusable' 422, and proposal accept versus discard. (7) Mac/iPhone bridge refusals, editor crashes, and which editor bundle version users run. (8) Artifact verification verified/repaired/refused rates, by problem code. (9) Share views over time, unique viewers, and human versus bot views. (10) Native sync bytes per device per day, time per sync, local DB size, and snapshot decode time. (11) How many users have more than 200 artifacts and so cannot reach older ones on the web. (12) How often dropped-stream recovery runs and how many full-thread GETs it costs.",
+   "why": "The requested telemetry audit: each of these needs instrumentation that does not exist."
+  }
+ ],
+ "debt": [
+  {
+   "title": "Stale comments describe a removed hour-long 12 s poll",
+   "description": "The comments at queries.ts:108-110 ('polls ... every 12s for up to an hour ... ~300 times') and use-chat.ts:424-427 ('until the hour-long window expired') predate 03780dc0 (2026-08-17), which set RECOVERY_WINDOW_MS to 12_000 and the callers to 6 s windows. RECOVERY_WINDOW_MS is now only an unused default.",
+   "where": [
+    "src/lib/queries.ts:104-111",
+    "src/hooks/use-chat.ts:126",
+    "src/hooks/use-chat.ts:421-427"
+   ]
+  },
+  {
+   "title": "Two write paths for DESIGN documents",
+   "description": "The transactions route says 'This is the only write path. There is deliberately no \"replace the document\" endpoint' (transactions/route.ts:17-22). The Mac library saves whole bodies through POST /api/artifacts/[id], with no DesignDocument validation, one version per Save, and no checkpoint rule (DesktopArtifactsScreen.swift:926-946; artifacts/[id]/route.ts:40-90).",
+   "where": [
+    "src/app/api/design/[artifactId]/transactions/route.ts:17-28",
+    "src/app/api/artifacts/[id]/route.ts:7-90",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:920-946"
+   ]
+  },
+  {
+   "title": "Design editor imports zod and Phosphor into every host",
+   "description": "The design lib's schemas pull zod into the client (it is shared with chat-view through src/lib/work/skills.ts on the web, but costs 328 KB in the Mac IIFE). Phosphor ships every weight per glyph (577 KB in a HEAD editor build).",
+   "where": [
+    "src/lib/design/schema.ts",
+    "src/lib/design/operations.ts",
+    "src/components/ui/icons.tsx:247"
+   ]
+  },
+  {
+   "title": "React previews use development UMD builds and unpinned Babel",
+   "description": "react.development.js and react-dom.development.js load in every React preview. @babel/standalone has no version pin, and mermaid is pinned only to @11.",
+   "where": [
+    "src/components/canvas/sandbox-frame.tsx:8-11"
+   ]
+  },
+  {
+   "title": "Fold CAS ships the full old body as a WHERE parameter",
+   "description": "`updateMany({ where: { ..., content: row.content } })` sends up to 200 KB per gesture only for comparison. A revision or hash column would do the same job.",
+   "where": [
+    "src/lib/design/store.ts:185-189"
+   ]
+  },
+  {
+   "title": "Size cap measured in UTF-16 units but named bytes",
+   "description": "MAX_DOCUMENT_BYTES counts content.length (UTF-16 units), and so do the native caps (utf16.count). Consistent, but misnamed.",
+   "where": [
+    "src/lib/design/store.ts:60-63",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:157"
+   ]
+  },
+  {
+   "title": "Whole-store snapshot is the only read API",
+   "description": "AccountScopedRepository exposes snapshot(for:) and no per-namespace or per-key query, so every model does an O(account) decrypt to read its slice.",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoStorage/AccountScopedStorage.swift:160-161"
+   ]
+  }
+ ],
+ "strengths": [
+  "Attachments and message versions are already trimmed from the thread payload, with a clear rationale (queries.ts:104-115). The pattern to copy for artifacts exists.",
+  "The web design editor's send queue coalesces operations, keeps one request in flight and rebuilds against the acknowledged document (use-design-document.ts:200-320). It is carefully reasoned and removed per-gesture round trips.",
+  "Checkpoint folding meaningfully cut the number of version rows compared with a version per gesture (store.ts:65-88). The concept is right; the storage and sync side effects are the problem.",
+  "The library list truncates previews in SQL with `left(...)::int` and explains why (artifacts/route.ts:8-17, 42-78).",
+  "Code-splitting is deliberate and documented: CodeSessionView, CanvasPanel, DocumentViewer (pdf.js) and inline CodeSurface/SandboxFrame are all split, with measured rationale in the comments.",
+  "Change capture is trigger-based and uniform. Retention pruning has a compaction floor and 410 semantics (migration 20260717121000; prune-sync.ts).",
+  "The native store is encrypted at rest, and the sync coordinator checks revision monotonicity (staleHydration) and cursor advance.",
+  "The editor bundle build has a content hash over every source and a --check mode (build-design-editor.mjs:55-88, 186-199). It only needs to be wired into the Mac release and CI.",
+  "The Mac host validates bridge messages with a nonce and a revision, and re-asserts its copy on divergence (DesktopDesignEditorHost.swift:150-194)."
+ ],
+ "merge_relevance": "The planned merge (Design, Docs, Slides and Design System as typed artifacts inside conversations, one shareable link, editable on the phone, with comments) makes exactly this area's worst case the normal case: long-lived, often-edited artifacts that live in conversations. On main:\n\n(1) The conversation payload grows with versions \u00d7 body for every artifact in the thread (defect 1). A conversation holding a design, a deck and a doc edited over days would be tens of MB per open and per recovery. Before the merge, artifact envelopes should carry metadata plus the current body only, with versions paged on demand, as message versions already are (queries.ts:112-114). The done frame and REST responses should do the same.\n\n(2) Checkpoint folding on the synced ArtifactVersion row makes each gesture a sync event for every device (defects 4 and 5) and breaks share snapshots (defect 7). A merged surface with comments and phone editing needs a separate 'working head' (not change-captured per gesture, or trigger-throttled), immutable published versions, and share links pinned to a version id rather than a timestamp.\n\n(3) The in-conversation editor path (the chat canvas) is broken for designs after the first checkpoint (defect 3), which is precisely the 'Design inside conversations' experience the merge centres on.\n\n(4) Bundles: design code should be its own dynamic chunk, loaded only when a DESIGN (or Slides or Doc) editor opens. Inline cards for typed artifacts should render static thumbnails or snapshots (the export route already renders SVG/PNG) instead of raw JSON (defect 8) or auto-running sandboxes (defect 9).\n\n(5) Native: 'editable on phone' needs per-key store reads instead of whole-account snapshots, bodies fetched lazily instead of all versions synced, a single write path (the Mac currently saves whole bodies through POST /api/artifacts/[id]), and a fresh, size-budgeted editor bundle wired into the Mac release (defect 11).\n\n(6) Size caps must be enforced after normalization and be consistent across web, Mac and iPhone (defect 6), since docs and slides will expand the same way.\n\n(7) A shareable link with comments needs real share analytics and a telemetry spine: none exists (observability.ts is unused). Without it, the merge cannot be judged by adoption, error rates or payload budgets.\n\nThe mac/liquid-glass-chat branch does not touch this area. `git diff main...mac/liquid-glass-chat` over the audited paths shows only comment edits in DesktopArtifactCanvas.swift (366-373, 515-521) and a regenerated src/lib/design/tokens.generated.ts header and digest.",
+ "tests": "Ran `npx tsx --test tests/design-operations.test.ts tests/chat-artifact-verification.test.ts tests/sync-entity-envelope.test.ts tests/design-editing.test.ts`: 52 pass, 0 fail. design-editing.test.ts:325-338 covers allocatesCheckpoint's rule. Nothing tests: thread or artifact payload size; the chat-canvas onCommitted/remount path (defect 3); the size of expanded DESIGN versus the 200K cap (defect 6); share snapshots against folded versions (defect 7); inline DESIGN previews; sync volume; or bundle size. The only bundle freshness check is `npm run design:editor:check`, run only in release-ios.yml:76.\n\nScratch measurements, all written under the audit scratchpad and all read-only toward the repo:\n- design-size.ts: body size per layer count (12 layers = 8,207; 54 = 34,296; 102 = 64,274; 204 = 128,952; 300 = 191,152 chars; \u00d71.18 as a JSON string).\n- expand-ratio.ts: compact-to-stored expansion \u2248 6.5\u00d7.\n- thread-payload.ts: 121-version artifacts JSON of 9.23, 18.53 and 27.45 MB. Gzip and brotli figures from these synthetic, highly repetitive fixtures are unrealistically small and should not be used.\n- rsc-escape.ts: 1.18\u00d7 for the API, 1.54\u00d7 inline in the HTML.\n- canvas-diff.mjs and an esbuild chat-view split: canvas chunk composition.\n- An esbuild of design/host/main.tsx with the build script's flags: 1,663,529 B.\n- editor-version.mjs: out-of-date stamp.\n- design-inline.ts: DESIGN inline preview renders a <pre> of JSON with the Tailwind CDN.\n\nNo Next production build was run, so the chunk figures are esbuild approximations.",
+ "open_questions": [
+  "What commit rate does the web design queue actually sustain during a drag against production Postgres? It sets the real number of AccountChange rows, device wake-ups and bytes per hour (defect 4 gives an upper bound from the 2 s poll).",
+  "Do sandboxed srcdoc iframes without allow-same-origin share the HTTP cache for CDN runtimes (React, Babel, Pyodide) across cards in Chrome and Safari? Cache partitioning for opaque origins may force a re-download per card.",
+  "Do sandboxed srcdoc previews run in the chat's renderer process? If so, a runaway JS or Python artifact in an old message could jank the chat.",
+  "How closely do Next's production chunks for /chat/[id] and the canvas match the esbuild approximation (for example, optimizePackageImports for Phosphor)? No `next build` was run, by the audit rules.",
+  "What are the real production distributions of ArtifactVersion count and length per DESIGN artifact? That needs SQL, for example `SELECT \"artifactId\", count(*), sum(length(content)) FROM \"ArtifactVersion\" GROUP BY 1 ORDER BY 3 DESC LIMIT 50`.",
+  "How much does pglz TOAST compression reduce on-disk ArtifactVersion storage for design JSON? Heap and TOAST reads still decompress each body per request.",
+  "Can URLSession's default timeouts on iPhone cellular handle /api/v1/entities batches of 100 \u00d7 200 KB artifact_version bodies (about 23 MB) during bootstrap?",
+  "Is iPhone design editing really read-only? JunoMobileDesignArtifact.swift:256 wires editor.onTransaction; not read in depth here.",
+  "Did anyone see the chat-canvas design blank after the first edit (defect 3) in practice, or do most design edits happen in /design/[id], which is unaffected?",
+  "Should compact DESIGN bodies be stripped from message content once persisted? They are carried in Message.content as well as in the artifact versions, and are re-sent on every thread load."
+ ]
+}
