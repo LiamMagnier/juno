@@ -113,8 +113,7 @@ struct DesktopWorkAutomationsView: View {
                         .junoCaption()
                         .fixedSize(horizontal: false, vertical: true)
                     Button("Create an automation", action: beginNewAutomation)
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.junoAccent)
+                        .buttonStyle(.junoProminent)
                         .padding(.top, JunoSpace.tight)
                 }
                 .padding(JunoSpace.regular)
@@ -638,8 +637,7 @@ private struct DesktopWorkAutomationEditor: View {
                 Button("Cancel", action: onCancel)
                     .buttonStyle(.bordered)
                 Button("Save") { save() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.junoAccent)
+                    .buttonStyle(.junoProminent)
                     .disabled(!draft.isValid)
             }
             .padding(JunoSpace.region)
@@ -730,10 +728,10 @@ private struct DesktopWorkAutomationEditor: View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             Text("Where it runs")
                 .font(.headline)
-            // `DesktopSegmented`, not `Picker(.segmented)`: the AppKit control
+            // `JunoSegmented`, not `Picker(.segmented)`: the AppKit control
             // is for window toolbars; a switcher inside content gets the quiet
             // track with the one glass knob.
-            DesktopSegmented(
+            JunoSegmented(
                 options: [
                     .init(JunoWorkTarget.automatic, "Juno chooses"),
                     .init(JunoWorkTarget.cloud, "Cloud"),

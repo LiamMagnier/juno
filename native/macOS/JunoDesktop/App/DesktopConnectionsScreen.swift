@@ -24,12 +24,12 @@ import SwiftUI
 /// round trip works is the Connect button's tooltip, and the account-wide caveat
 /// is the page's closing note — the same three places the website puts them.
 ///
-/// **The one control this page does not put in the toolbar is search.**
-/// Connections is the only account page the app renders inside *two* different
-/// shells — Chat's window and Juno Code's — and Code's detail column already
-/// spends the window's single search field on its sessions. This page carries its
-/// own field instead, which is a crash fix rather than a preference;
-/// ``searchField`` has the report.
+/// **Nothing of this page is in the toolbar** (spec §3, §9). Its search, its
+/// All apps / Connected switch and Refresh live in the `JunoPage` header and
+/// controls row. That was already a crash fix for search: Connections is the
+/// only account page rendered inside *two* shells — Chat's window and the
+/// Settings window — and a second `.searchable` beside a shell's own took the
+/// process down; ``searchField`` has the report.
 struct DesktopConnectionsScreen: View {
     @Bindable var model: NativeConnectorModel
     @Environment(\.scenePhase) private var scenePhase
@@ -46,8 +46,7 @@ struct DesktopConnectionsScreen: View {
     private let backend = URL(string: JunoBackend.productionURLString)
 
     var body: some View {
-        content
-            .toolbar { toolbar }
+        page
             .confirmationDialog(
                 disconnectTarget.map { "Disconnect \($0.label)?" } ?? "",
                 isPresented: Binding(
@@ -81,13 +80,71 @@ struct DesktopConnectionsScreen: View {
 
     // MARK: Content
 
+    /// The page template (spec §9): the header, the controls row — the
+    /// search and the All apps / Connected switch, which used to be a
+    /// toolbar `Picker` — and the directory. Nothing in the toolbar (§3), so
+    /// the page reads the same in the Chat window and in Settings.
+    /// `JunoPage` is what keeps it from resizing the window: a catalog page of
+    /// eighty cards scrolls rather than pushing the sidebar off-screen.
+    private var page: some View {
+        JunoPage(measure: .wide) {
+            JunoPageHeader(
+                "Connections",
+                lede: "Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
+            ) {
+                if model.connectedCount > 0 {
+                    Text("\(model.connectedCount) connected")
+                        .junoCaption()
+                        .monospacedDigit()
+                        .fixedSize()
+                        .accessibilityLabel("\(model.connectedCount) apps connected")
+                }
+                Button {
+                    // Also the way out of a stuck wait: if the browser never
+                    // hands focus back to this app, a card must not sit on
+                    // "waiting" for the rest of the session.
+                    awaitingAuthorization = nil
+                    Task { await model.refresh() }
+                } label: {
+                    Label("Refresh", icon: .refresh)
+                }
+                .buttonStyle(.bordered)
+                .tint(nil)
+                .keyboardShortcut("r", modifiers: .command)
+                .contentShape(.rect)
+                .help("Re-read this account's connections (⌘R)")
+                .accessibilityLabel("Refresh connections")
+                .accessibilityIdentifier("connections.refresh")
+            }
+        } controls: {
+            if model.phase == .ready {
+                JunoPageControls {
+                    searchField
+                    JunoSegmented(
+                        options: [
+                            JunoSegmented<Bool>.Option(false, "All apps"),
+                            JunoSegmented<Bool>.Option(true, "Connected", count: model.connectedCount),
+                        ],
+                        selection: $model.showsConnectedOnly,
+                        accessibilityLabel: "Filter apps"
+                    )
+                    .help("Show every app, or only the ones this account has connected")
+                    .accessibilityIdentifier("connections.filter")
+                }
+            }
+        } content: {
+            content
+        }
+    }
+
     @ViewBuilder
     private var content: some View {
         switch model.phase {
         case .idle, .loading:
             ProgressView()
                 .controlSize(.small)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, JunoSpace.vast)
                 .accessibilityLabel("Loading connections")
         case .failed:
             JunoEmptyState(
@@ -106,68 +163,21 @@ struct DesktopConnectionsScreen: View {
         }
     }
 
-    /// The page. `JunoDetailPage` is what keeps it from resizing the window: a
-    /// detail column reports an ideal height upward and `NavigationSplitView`
-    /// grows its split view to satisfy it, so a catalog page of eighty cards would
-    /// otherwise push the sidebar off-screen rather than simply scrolling.
     private var directory: some View {
-        JunoDetailPage(maxWidth: DesktopConnectorGrid.pageWidth) {
-            VStack(alignment: .leading, spacing: JunoSpace.section) {
-                header
-                notices
-                filters
-                results
-                loadMore
-                footnote
-            }
-            .animation(
-                JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
-                value: connectedIDs
-            )
+        VStack(alignment: .leading, spacing: JunoSpace.section) {
+            categories
+            notices
+            results
+            loadMore
+            footnote
         }
-    }
-
-    /// The web's page head: the editorial serif line, one sentence of what this
-    /// page is for, and the count. The window's own title already says
-    /// "Connections", so the heading here is the website's sentence rather than
-    /// the same word a second time forty points lower.
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.regular) {
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                Text("Connect your tools")
-                    .junoPageHeading()
-                Text(
-                    "Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
-                )
-                .font(.callout)
-                .junoSecondaryInk()
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: JunoSpace.snug)
-            if model.connectedCount > 0 {
-                Text("\(model.connectedCount) connected")
-                    .font(.junoCodeSmall)
-                    .junoSecondaryInk()
-                    .padding(.horizontal, JunoSpace.cozy)
-                    .padding(.vertical, JunoSpace.tight)
-                    .background(Capsule(style: .continuous).fill(Color.junoMuted))
-                    .fixedSize()
-                    .accessibilityLabel("\(model.connectedCount) apps connected")
-            }
-        }
+        .animation(
+            JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
+            value: connectedIDs
+        )
     }
 
     // MARK: Filters
-
-    /// The two ways into a catalog of a thousand apps, as one block. They are a
-    /// pair — a name and a kind — so the gap between them is a control's gap and
-    /// not a section's.
-    private var filters: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            searchField
-            categories
-        }
-    }
 
     /// Search, as a field in the page rather than as a `.searchable`.
     ///
@@ -200,48 +210,14 @@ struct DesktopConnectionsScreen: View {
     /// input with a leading magnifier immediately above the category chips, which
     /// is where this one now sits. The titlebar was the divergence, not this.
     private var searchField: some View {
-        HStack(spacing: JunoSpace.tight) {
-            JunoIconView(.search, size: DesktopConnectorGrid.searchGlyphSize)
-                .junoSecondaryInk()
-                .accessibilityHidden(true)
-            // The web's placeholder, which names three apps rather than repeating
-            // the label: what a reader needs to know here is that the field
-            // searches a catalog of apps, not that it is a search field.
-            TextField("Search Gmail, Slack, GitHub…", text: $model.query)
-                .textFieldStyle(.plain)
-                .accessibilityLabel("Search apps")
-                .accessibilityIdentifier("connections.search")
-            if !model.query.isEmpty {
-                // An SF Symbol on purpose: clearing a field is an OS affordance
-                // and this is the glyph macOS already uses for it, where the
-                // magnifier beside it names a thing the product has a mark for.
-                Button {
-                    model.query = ""
-                } label: {
-                    JunoIconView(.circleX)
-                        .junoMetaInk()
-                }
-                .buttonStyle(.plain)
-                .help("Clear the search")
-                .accessibilityLabel("Clear search")
-                .accessibilityIdentifier("connections.search.clear")
-            }
-        }
-        .padding(.horizontal, JunoSpace.cozy)
-        .frame(height: DesktopConnectorGrid.chipHeight)
-        // Raised and bordered, not a filled pill: the chips below are filters and
-        // read as one control each, while this is somewhere to type. `junoCard`
-        // would be wrong for the same reason — it throws a shadow, and an input
-        // is not a card floating over the page.
-        .background(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .fill(Color.junoRaised)
+        // The web's placeholder, which names three apps rather than repeating
+        // the label: what a reader needs to know here is that the field
+        // searches a catalog of apps, not that it is a search field.
+        JunoPageSearchField(
+            text: $model.query,
+            prompt: "Search Gmail, Slack, GitHub…",
+            accessibilityIdentifier: "connections.search"
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .strokeBorder(Color.junoBorder, lineWidth: 1)
-        )
-        .frame(maxWidth: DesktopConnectorGrid.searchFieldWidth, alignment: .leading)
     }
 
     /// Composio ships around a thousand toolkits, so categories are the only thing
@@ -598,45 +574,6 @@ struct DesktopConnectionsScreen: View {
         if model.catalogErrorDescription != nil { return true }
         guard model.phase == .ready else { return false }
         return model.lastErrorDescription != nil || !model.composioConfigured
-    }
-
-    // MARK: Toolbar
-
-    /// Every item is present in every state and disables rather than vanishing: a
-    /// `ToolbarItem` that comes and goes makes SwiftUI rebuild the AppKit toolbar
-    /// under a live window, which is what drove this shell's split-view constraint
-    /// loop. Neither the category filter nor the search field is here — both are
-    /// the page's own controls, where the reader can see what is filtering the
-    /// results; ``searchField`` says why that is load-bearing rather than tidy.
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            Picker("Show", selection: $model.showsConnectedOnly) {
-                Text("All apps").tag(false)
-                Text("Connected").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .help("Show every app, or only the ones this account has connected")
-            .accessibilityLabel("Filter apps")
-            .accessibilityIdentifier("connections.filter")
-        }
-
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                // Also the way out of a stuck wait: if the browser never hands
-                // focus back to this app, a card must not sit on "waiting" for
-                // the rest of the session.
-                awaitingAuthorization = nil
-                Task { await model.refresh() }
-            } label: {
-                Label("Refresh", icon: .refresh)
-            }
-            .keyboardShortcut("r", modifiers: .command)
-            .help("Re-read this account's connections (⌘R)")
-            .accessibilityLabel("Refresh connections")
-            .accessibilityIdentifier("connections.refresh")
-        }
     }
 
     // MARK: Data

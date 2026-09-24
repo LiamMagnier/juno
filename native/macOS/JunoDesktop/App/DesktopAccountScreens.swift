@@ -37,11 +37,35 @@ struct DesktopDestinationView: View {
     var body: some View {
         // One identity per destination, so a change of page is a real
         // view-hierarchy transition — the web's cross-fade + 6pt rise — rather
-        // than the old page's subviews being reused under the new one.
-        page
+        // than the old page's subviews being reused under the new one. It also
+        // gives every page a fresh stack: leaving a page forgets what was
+        // pushed on it.
+        routed
             .id(destination)
             .transition(.junoPage)
             .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: destination)
+    }
+
+    /// The chat route as it is; every page inside a `NavigationStack` of its
+    /// own (spec §9): a detail page — an agent, and in track B a project, an
+    /// automation, a skill, a host — is pushed with
+    /// `.navigationDestination` and comes back with the system's back button,
+    /// instead of each page swapping itself out and drawing its own.
+    ///
+    /// The stack sits *inside* ``ChatDetail``, below the one toolbar and
+    /// title it declares, so a push never changes who owns them; the page's
+    /// name is restated as the stack root's title so the window keeps it
+    /// whichever of the two the system reads.
+    @ViewBuilder
+    private var routed: some View {
+        if destination == .chat {
+            page
+        } else {
+            NavigationStack {
+                page
+                    .navigationTitle(destination.label)
+            }
+        }
     }
 
     @ViewBuilder
@@ -499,6 +523,7 @@ struct DesktopMemoryScreen: View {
                     editingMemoryID = nil
                     Task { await model.updateMemory(id: id, content: editingContent) }
                 }
+                .buttonStyle(.junoProminent)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     model.isMutating

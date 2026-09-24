@@ -107,7 +107,9 @@ struct DesktopProjectsScreen: View {
         // See ``JunoDetailPage``, which is the same clamp with a page inside it.
         Color.clear
             .overlay { workspace }
-            .overlay(alignment: .bottom) { statusControl }
+            // An outage or a sync conflict, in the window's toast host (§7.7)
+            // rather than glass of this page's own.
+            .junoToastStatus(id: "projects.status", statusKey) { _ in statusToast }
             // Belt and braces on top of `@State`'s own default. The destination
             // switch in ``DesktopDestinationView`` rebuilds this view, so the
             // route already starts at the index; saying it out loud means the
@@ -265,7 +267,7 @@ struct DesktopProjectsScreen: View {
                 Button(action: startCreate) {
                     Label("New project", icon: .plus)
                 }
-                .junoProminentGlassButton()
+                .buttonStyle(.junoProminent)
                 // No shortcut: ⇧⌘N is New Private Chat, in the menu bar, from
                 // every window (§7.8). A page claiming the same keys would
                 // make them mean something different on one screen.
@@ -466,45 +468,38 @@ struct DesktopProjectsScreen: View {
 
     // MARK: - Status
 
-    /// The one thing on this screen allowed to float: a transient status control
-    /// carrying an outage or a sync conflict, and the two ways out of it. It sits
-    /// over the canvas rather than pushing the grid down, so a conflict does not
-    /// re-lay-out the cards the reader is looking at. Real glass, and the controls
-    /// inside it are plain — glass inside glass has no rim light left to read.
-    @ViewBuilder
-    private var statusControl: some View {
-        if !model.projects.isEmpty, let status = status {
-            JunoDesktopGlass(spacing: JunoSpace.snug) {
-                HStack(spacing: JunoSpace.cozy) {
-                    JunoIconView(status.icon, size: 16)
-                        .foregroundStyle(status.isConflict ? Color.junoCaution : .secondary)
-                        .accessibilityHidden(true)
-                    Text(status.message)
-                        .junoCaption()
-                    if status.isConflict {
-                        Button("Keep mine") {
-                            Task { await model.resolveConflicts(keepLocalChanges: true) }
-                        }
-                        .contentShape(.rect)
-                        Button("Use server version") {
-                            Task { await model.resolveConflicts(keepLocalChanges: false) }
-                        }
-                        .contentShape(.rect)
-                    } else {
-                        Button("Try again") {
-                            Task { await model.reload() }
-                        }
-                        .contentShape(.rect)
-                    }
-                }
-                .buttonStyle(.borderless)
-                .padding(.horizontal, JunoSpace.regular)
-                .padding(.vertical, JunoSpace.snug)
-                .junoFloatingChrome(cornerRadius: JunoRadius.well)
-            }
-            .padding(JunoSpace.roomy)
-            .accessibilityIdentifier("Projects status")
+    /// What the status toast is keyed on: a new message, or a conflict
+    /// arriving, is a new post; the same one is not.
+    private var statusKey: String? {
+        guard !model.projects.isEmpty, let status else { return nil }
+        return "\(status.isConflict)|\(status.message)"
+    }
+
+    /// An outage or a sync conflict, and the ways out of it. A conflict stays
+    /// until it is answered — its two answers are a decision the reader owes,
+    /// which a four-second toast would take away.
+    private var statusToast: JunoToast {
+        guard let status else { return JunoToast(title: "") }
+        if status.isConflict {
+            return JunoToast(
+                tone: .warning,
+                title: status.message,
+                action: JunoToast.Action("Keep mine") {
+                    Task { await model.resolveConflicts(keepLocalChanges: true) }
+                },
+                cancel: JunoToast.Action("Use server version") {
+                    Task { await model.resolveConflicts(keepLocalChanges: false) }
+                },
+                duration: nil
+            )
         }
+        return JunoToast(
+            tone: .error,
+            title: status.message,
+            action: JunoToast.Action("Try again") {
+                Task { await model.reload() }
+            }
+        )
     }
 
     /// A conflict is its own state — it has two specific answers rather than a
@@ -1148,7 +1143,7 @@ private struct DesktopProjectDetail: View {
                 } label: {
                     Label("New chat", icon: .compose)
                 }
-                .junoProminentGlassButton()
+                .buttonStyle(.junoProminent)
                 .disabled(project.isPending)
                 .help("Start a chat with this project's instructions and files")
                 .accessibilityIdentifier("New chat in project")
@@ -1245,12 +1240,12 @@ private struct DesktopProjectDetail: View {
     }
 
     private var sectionPicker: some View {
-        // `DesktopSegmented`, not `Picker(.segmented)`: the AppKit control is
+        // `JunoSegmented`, not `Picker(.segmented)`: the AppKit control is
         // for window toolbars, and inside content it draws its pre-Tahoe
         // chrome in the app accent. The glass-knob switcher is the in-content
         // rule everywhere else, and it sizes itself — the 240pt frame the
         // picker needed goes with it.
-        DesktopSegmented(
+        JunoSegmented(
             options: DesktopProjectTab.allCases.map { .init($0, $0.label) },
             selection: $tab,
             accessibilityLabel: "Project section"
@@ -2435,7 +2430,7 @@ private struct DesktopNewProjectSheet: View {
                         dismiss()
                     }
                 }
-                .junoProminentGlassButton()
+                .buttonStyle(.junoProminent)
                 .keyboardShortcut(.defaultAction)
                 .disabled(trimmedName.isEmpty || model.isMutating)
                 .accessibilityIdentifier("Create project")
@@ -2532,7 +2527,7 @@ private struct DesktopProjectInstructionsSheet: View {
                         dismiss()
                     }
                 }
-                .junoProminentGlassButton()
+                .buttonStyle(.junoProminent)
                 .keyboardShortcut(.defaultAction)
                 .disabled(draft == project.instructions || isSaving)
                 .accessibilityIdentifier("Save project instructions")

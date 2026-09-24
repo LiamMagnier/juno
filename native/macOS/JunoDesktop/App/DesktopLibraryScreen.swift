@@ -10,14 +10,11 @@ import UniformTypeIdentifiers
 /// The Library: every file this account has already shared with Juno.
 ///
 /// **Shaped after the web's `src/app/(app)/library/page.tsx`.** That page opens
-/// with an editorial header — "Your files", the one-line explanation, and the
-/// library's own totals — then a filter row carrying real per-tab counts, a
-/// search field, a list/grid switch, and finally the files themselves as cards
-/// with a preview. This screen is the same product on a Mac window's terms: the
-/// header and the file surface are the page, and the three controls that are
-/// *chrome* rather than content (filter, view switch, search) live in the
-/// toolbar, which is where macOS puts them and where they stay reachable when
-/// the sidebar is collapsed.
+/// with its header — "Library", the one-line explanation, and the library's
+/// own totals — then a controls row carrying the search field, the type filter
+/// with real per-tab counts, the sort and the list/grid switch, and finally the
+/// files themselves. This screen is the same page on the `JunoPage` template
+/// (spec §9): every control is in content and nothing is in the toolbar (§3).
 ///
 /// **Why both a grid and a table, rather than only the table this screen used to
 /// be.** The old build was a bare `Table`, and a short `Table` with
@@ -100,10 +97,6 @@ struct DesktopLibraryScreen: View {
     @State private var hoveredID: NativeLibraryItem.ID?
     @AppStorage("juno.desktop.library-view") private var storedPresentation = Presentation.grid.rawValue
 
-    /// The web shell's `max-w-6xl`. Without it a maximised window stretches one
-    /// file name across two thousand points and the page loses the measure the
-    /// website reads at.
-    private static let contentWidth: CGFloat = 1152
     /// A grid tile's range. The floor keeps a long name legible on two lines'
     /// worth of width; the ceiling stops four columns from becoming two slabs on
     /// a wide display.
@@ -141,86 +134,92 @@ struct DesktopLibraryScreen: View {
     }
 
     var body: some View {
-        // `Color.clear.overlay { … }` rather than the content directly. A detail
-        // column reports an ideal size upward and `NavigationSplitView` grows its
-        // AppKit split view to satisfy it, so a library of two hundred files
-        // would resize the *window* instead of scrolling. `Color.clear` accepts
-        // whatever height it is proposed and an overlay is sized by its base, so
-        // this page can never influence the window it sits in.
-        Color.clear
-            .overlay {
-                VStack(spacing: 0) {
-                    header
-                    Divider()
-                    documentIndexPanel
-                    content
+        // The page template (§9): the header and the controls row in content,
+        // nothing in the toolbar. The search field, the filter and the view
+        // switch used to be `ToolbarItem`s and a `.searchable` that came and
+        // went with the destination — crash rule 3 — and now sit where the
+        // reader can see what they act on, as on the web's `/library`.
+        // `JunoPage` draws `Color.clear.overlay { … }`, so a library of two
+        // hundred files scrolls instead of resizing the window.
+        JunoPage(measure: .wide, scrolling: .content) {
+            JunoPageHeader("Library", lede: "Everything you upload or share in chats.") {
+                summary
+                Button(action: refresh) {
+                    Label("Refresh", icon: .refresh)
                 }
+                .buttonStyle(.bordered)
+                .tint(nil)
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(model.isLoading)
+                .contentShape(.rect)
+                .help("Reload your library (⌘R)")
+                .accessibilityLabel("Refresh library")
+                .accessibilityIdentifier("juno.desktop.library-refresh")
+                addDocumentButton
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) { refreshFailure }
-            .searchable(text: $searchText, placement: .toolbar, prompt: "Search files and documents")
-            .toolbar { libraryToolbar }
-            .sheet(item: $editing) { editSheet($0) }
-            .fileImporter(
-                isPresented: $choosingDocument,
-                allowedContentTypes: NativeDocumentIndexModel.readableContentTypes,
-                // Several at once, because "index my contracts" is the request
-                // this exists for and one-at-a-time would be six open panels.
-                // They are read in sequence below, not concurrently: the pipeline
-                // reports one file at a time and a parallel import would make the
-                // progress line name whichever finished last.
-                allowsMultipleSelection: true
-            ) { result in
-                switch result {
-                case let .success(urls):
-                    documentPanelFailure = nil
-                    Task { await ingest(urls) }
-                case let .failure(error):
-                    documentPanelFailure = error.localizedDescription
-                }
+        } controls: {
+            // Only once there is something to filter (the web's rule): a
+            // search that matched nothing keeps its row, because the reader
+            // needs the field to clear it.
+            if !model.items.isEmpty {
+                controls
             }
-            .task { await model.refresh() }
-            // A file that scrolls out of the filter, or a reload that removes it,
-            // must not leave a selection nobody can see or act on.
-            .onChange(of: model.filter) { _, _ in pruneSelection() }
-            .onChange(of: searchText) { _, _ in
-                pruneSelection()
-                // One search field, two corpora. The field already narrowed the
-                // account's files by name; this is what makes the same keystrokes
-                // look *inside* the documents indexed on this Mac.
-                documentIndex?.setQuery(searchText)
+        } content: {
+            VStack(spacing: 0) {
+                documentIndexPanel
+                content
             }
-            .onChange(of: model.items) { _, _ in pruneSelection() }
+        }
+        // A failed reload while files are still on screen, in the window's
+        // toast host (§7.7), with its Retry.
+        .junoToastStatus(id: "library.refresh", refreshFailure) { error in
+            JunoToast(
+                tone: .error,
+                title: "Couldn’t load your files",
+                detail: error,
+                action: JunoToast.Action("Retry") { refresh() }
+            )
+        }
+        // Multi-select raises the host's selection bar (§7.7, §9).
+        .junoToastSelection(selectionBar, id: selection)
+        .sheet(item: $editing) { editSheet($0) }
+        .fileImporter(
+            isPresented: $choosingDocument,
+            allowedContentTypes: NativeDocumentIndexModel.readableContentTypes,
+            // Several at once, because "index my contracts" is the request
+            // this exists for and one-at-a-time would be six open panels.
+            // They are read in sequence below, not concurrently: the pipeline
+            // reports one file at a time and a parallel import would make the
+            // progress line name whichever finished last.
+            allowsMultipleSelection: true
+        ) { result in
+            switch result {
+            case let .success(urls):
+                documentPanelFailure = nil
+                Task { await ingest(urls) }
+            case let .failure(error):
+                documentPanelFailure = error.localizedDescription
+            }
+        }
+        .task { await model.refresh() }
+        // A file that scrolls out of the filter, or a reload that removes it,
+        // must not leave a selection nobody can see or act on.
+        .onChange(of: model.filter) { _, _ in pruneSelection() }
+        .onChange(of: searchText) { _, _ in
+            pruneSelection()
+            // One search field, two corpora. The field already narrowed the
+            // account's files by name; this is what makes the same keystrokes
+            // look *inside* the documents indexed on this Mac.
+            documentIndex?.setQuery(searchText)
+        }
+        .onChange(of: model.items) { _, _ in pruneSelection() }
     }
 
     // MARK: - Header
 
-    /// The web's page header: the editorial heading, the sentence that says what
-    /// this page is, and the library's real totals on the trailing side.
-    private var header: some View {
-        HStack(alignment: .bottom, spacing: JunoSpace.section) {
-            VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                Text("Your files")
-                    .junoPageHeading()
-                Text("Images and documents shared across your conversations.")
-                    .junoRowLabel()
-                    .junoSecondaryInk()
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 0)
-
-            summary
-        }
-        .padding(.horizontal, JunoSpace.region)
-        .padding(.top, JunoSpace.section)
-        .padding(.bottom, JunoSpace.roomy)
-        .frame(maxWidth: Self.contentWidth)
-        .frame(maxWidth: .infinity)
-    }
-
-    /// "12 items · 30.4 KB", and what is currently picked out of it. Every number
-    /// here is counted from `model.items`, never from a filtered view — the web
-    /// header reports the library's size, not the tab's.
+    /// "12 items · 30.4 KB": the library's size, counted from `model.items`,
+    /// never from a filtered view — the header reports the library, not the
+    /// tab (the web's storage caption sits in the same place).
     @ViewBuilder
     private var summary: some View {
         if !model.items.isEmpty {
@@ -228,19 +227,151 @@ struct DesktopLibraryScreen: View {
                 Text(itemCountLabel)
                 separatorDot
                 Text(totalSizeLabel)
-                if !selection.isEmpty {
-                    separatorDot
-                    Text("\(selection.count) selected")
-                        .junoInk()
-                    Button("Clear") { clearSelection() }
-                        .buttonStyle(.link)
-                        .accessibilityIdentifier("juno.desktop.library-clear-selection")
-                }
             }
             .junoCaption()
             .monospacedDigit()
             .fixedSize()
         }
+    }
+
+    /// Reads a file on this Mac into its search index. Disabled rather than
+    /// absent where the shell built no index, or while a read is in flight —
+    /// both real states, and the help text says which.
+    private var addDocumentButton: some View {
+        Button {
+            documentPanelFailure = nil
+            choosingDocument = true
+        } label: {
+            Label("Add Document…", icon: .filePlus)
+        }
+        .buttonStyle(.bordered)
+        .tint(nil)
+        .keyboardShortcut("i", modifiers: [.command, .shift])
+        .disabled(documentIndex?.isReady != true || documentIndex?.isIngesting == true)
+        .contentShape(.rect)
+        .help(
+            documentIndex?.isReady == true
+                ? "Read a PDF, Word file, spreadsheet or text file into this Mac's search index (⇧⌘I)"
+                : "Sign in to index a document on this Mac"
+        )
+        .accessibilityLabel("Add document to search index")
+        .accessibilityIdentifier("juno.desktop.library-add-document")
+    }
+
+    // MARK: - Controls
+
+    /// The web's `LibraryToolbar`: search, the type filter with its counts, the
+    /// sort, and the view switch at the far edge.
+    private var controls: some View {
+        JunoPageControls {
+            JunoPageSearchField(
+                text: $searchText,
+                prompt: "Search files and documents",
+                isSearching: documentIndex?.isSearching == true,
+                accessibilityIdentifier: "juno.desktop.library-search"
+            )
+            // The numbers come from `model.items` — the whole library — so
+            // "Images 5" means five images exist, not five survived the search.
+            JunoSegmented(
+                options: NativeLibraryModel.Filter.allCases.map {
+                    JunoSegmented<NativeLibraryModel.Filter>.Option($0, $0.title, count: count(for: $0))
+                },
+                selection: $model.filter,
+                accessibilityLabel: "Filter by type",
+                optionAccessibilityIdentifier: { "juno.desktop.library-filter.\($0.rawValue)" }
+            )
+            JunoPageMenu(
+                options: LibrarySort.allCases.map { JunoPageMenuOption($0, $0.label, menuTitle: $0.menuTitle) },
+                selection: sortBinding,
+                accessibilityLabel: "Sort files"
+            )
+        } trailing: {
+            JunoSegmented(
+                options: [
+                    JunoSegmented<Presentation>.Option(.list, "List", icon: .list),
+                    JunoSegmented<Presentation>.Option(.grid, "Grid", icon: .grid),
+                ],
+                selection: presentationBinding,
+                accessibilityLabel: "View",
+                optionAccessibilityIdentifier: { "juno.desktop.library-view.\($0.rawValue)" }
+            )
+        }
+    }
+
+    /// The web's four sorts (`library-toolbar.tsx`), which the list view's
+    /// column headers can also set.
+    enum LibrarySort: CaseIterable, Hashable {
+        case newest, oldest, name, largest
+
+        var label: String {
+            switch self {
+            case .newest: "Newest first"
+            case .oldest: "Oldest first"
+            case .name: "Name"
+            case .largest: "Largest first"
+            }
+        }
+
+        /// Title Case in the native menu (§0.7); the words are the web's.
+        var menuTitle: String {
+            switch self {
+            case .newest: "Newest First"
+            case .oldest: "Oldest First"
+            case .name: "Name"
+            case .largest: "Largest First"
+            }
+        }
+
+        var comparator: KeyPathComparator<NativeLibraryItem> {
+            switch self {
+            case .newest: KeyPathComparator(\NativeLibraryItem.createdAt, order: .reverse)
+            case .oldest: KeyPathComparator(\NativeLibraryItem.createdAt, order: .forward)
+            case .name: KeyPathComparator(\NativeLibraryItem.fileName, comparator: .localizedStandard)
+            case .largest: KeyPathComparator(\NativeLibraryItem.size, order: .reverse)
+            }
+        }
+
+        /// The sort a table's header click left behind, if it is one of the
+        /// four; a column the menu has no word for reads as the default.
+        init(sortOrder: [KeyPathComparator<NativeLibraryItem>]) {
+            guard let first = sortOrder.first else { self = .newest; return }
+            let path = first.keyPath
+            if path == \NativeLibraryItem.createdAt as PartialKeyPath<NativeLibraryItem> {
+                self = first.order == .forward ? .oldest : .newest
+            } else if path == \NativeLibraryItem.fileName as PartialKeyPath<NativeLibraryItem> {
+                self = .name
+            } else if path == \NativeLibraryItem.size as PartialKeyPath<NativeLibraryItem> {
+                self = .largest
+            } else {
+                self = .newest
+            }
+        }
+    }
+
+    private var sortBinding: Binding<LibrarySort> {
+        Binding(
+            get: { LibrarySort(sortOrder: sortOrder) },
+            set: { sortOrder = [$0.comparator] }
+        )
+    }
+
+    /// The host's selection bar while files are picked out (§7.7): the count,
+    /// Copy Names, and the clear.
+    private var selectionBar: JunoToastSelection? {
+        guard !selection.isEmpty else { return nil }
+        let ids = selection
+        return JunoToastSelection(
+            count: ids.count,
+            actions: [
+                JunoToast.Action(Self.copyTitle(count: ids.count), icon: .copy) { copyNames(for: ids) },
+            ],
+            clear: { clearSelection() }
+        )
+    }
+
+    /// A failed reload while files are still on screen.
+    private var refreshFailure: String? {
+        model.items.isEmpty ? nil : model.lastErrorDescription
     }
 
     private var separatorDot: some View {
@@ -280,13 +411,10 @@ struct DesktopLibraryScreen: View {
             .padding(JunoSpace.regular)
             .frame(maxWidth: .infinity, alignment: .leading)
             .junoCard()
-            // The page's own measure and gutters, in the order the header and the
-            // grid apply them, so this card lines up with the file tiles under it
-            // instead of running wider than the page it sits on.
-            .padding(.horizontal, JunoSpace.region)
-            .padding(.top, JunoSpace.regular)
-            .frame(maxWidth: Self.contentWidth)
-            .frame(maxWidth: .infinity)
+            // The page's own measure and gutters, as the header above applies
+            // them, so this card lines up with the file tiles under it.
+            .padding(.bottom, JunoSpace.regular)
+            .junoPageColumn()
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Documents indexed on this Mac")
             .accessibilityIdentifier("juno.desktop.library-document-index")
@@ -509,10 +637,8 @@ struct DesktopLibraryScreen: View {
                     card(item)
                 }
             }
-            .padding(.horizontal, JunoSpace.region)
-            .padding(.vertical, JunoSpace.section)
-            .frame(maxWidth: Self.contentWidth)
-            .frame(maxWidth: .infinity)
+            .padding(.bottom, JunoSpace.section)
+            .junoPageColumn()
         }
         .scrollBounceBehavior(.basedOnSize)
         // Edit ▸ Copy and ⌘C act on the selection through the platform's own
@@ -721,10 +847,8 @@ struct DesktopLibraryScreen: View {
         .scrollContentBackground(.hidden)
         .clipShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         .junoCard()
-        .padding(.horizontal, JunoSpace.region)
-        .padding(.vertical, JunoSpace.section)
-        .frame(maxWidth: Self.contentWidth)
-        .frame(maxWidth: .infinity)
+        .padding(.bottom, JunoSpace.section)
+        .junoPageColumn()
         .accessibilityIdentifier("juno.desktop.library-table")
         .contextMenu(forSelectionType: NativeLibraryItem.ID.self) { ids in
             if ids.isEmpty {
@@ -782,73 +906,6 @@ struct DesktopLibraryScreen: View {
         }
     }
 
-    // MARK: - Toolbar
-
-    /// Every item is always present and disables rather than vanishing: a
-    /// `ToolbarItem` that comes and goes rebuilds the AppKit toolbar under a live
-    /// window, which is what drove this shell's split-view constraint loop.
-    @ToolbarContentBuilder
-    private var libraryToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            // The web's tab row, with its counts. The numbers come from
-            // `model.items` — the whole library — so "Images 5" means five
-            // images exist, not five survived the current search.
-            Picker("Filter", selection: $model.filter) {
-                ForEach(NativeLibraryModel.Filter.allCases) { filter in
-                    Text("\(filter.title) \(count(for: filter))").tag(filter)
-                }
-            }
-            .pickerStyle(.segmented)
-            // Wide enough for "Images 300" — the route caps a library at 300
-            // rows, so no segment can ever grow past three digits.
-            .frame(width: 240)
-            .help("Show all files, images only, or documents only")
-            .accessibilityLabel("Library filter")
-            .accessibilityIdentifier("juno.desktop.library-filter")
-
-            Picker("View", selection: presentationBinding) {
-                Label("Grid", icon: .grid).tag(Presentation.grid)
-                Label("List", icon: .list).tag(Presentation.list)
-            }
-            .pickerStyle(.segmented)
-            .labelStyle(.iconOnly)
-            .frame(width: 84)
-            .help("Show files as a grid of previews or as a sortable list")
-            .accessibilityLabel("File view")
-            .accessibilityIdentifier("juno.desktop.library-view")
-
-            // Disabled rather than absent, unlike the context-menu actions below,
-            // and for this file's stated reason: a `ToolbarItem` that comes and
-            // goes rebuilds the AppKit toolbar under a live window. It is disabled
-            // only while a read is in flight or where the shell built no index —
-            // both real states, and the help text says which.
-            Button {
-                documentPanelFailure = nil
-                choosingDocument = true
-            } label: {
-                Label("Add Document", icon: .filePlus)
-            }
-            .keyboardShortcut("i", modifiers: [.command, .shift])
-            .disabled(documentIndex?.isReady != true || documentIndex?.isIngesting == true)
-            .help(
-                documentIndex?.isReady == true
-                    ? "Read a PDF, Word file, spreadsheet or text file into this Mac's search index (⇧⌘I)"
-                    : "Sign in to index a document on this Mac"
-            )
-            .accessibilityLabel("Add document to search index")
-            .accessibilityIdentifier("juno.desktop.library-add-document")
-
-            Button(action: refresh) {
-                Label("Refresh", icon: .refresh)
-            }
-            .keyboardShortcut("r", modifiers: .command)
-            .disabled(model.isLoading)
-            .help("Reload your library (⌘R)")
-            .accessibilityLabel("Refresh library")
-            .accessibilityIdentifier("juno.desktop.library-refresh")
-        }
-    }
-
     // MARK: - States
 
     /// The four states this page can honestly be in. Exactly one is drawn, and
@@ -872,12 +929,12 @@ struct DesktopLibraryScreen: View {
             // The website's own empty library draws `AppIcons.library`
             // (`library/page.tsx:726`); a stack of books is a mark from another
             // product. Same for the no-match state below and its search glyph.
+            // No action: the header's Refresh is already on the page, and a
+            // refresh does not fill an empty library.
             JunoEmptyState(
                 title: "Your library is empty",
                 message: "Files and images you share with Juno appear here automatically.",
-                icon: .library,
-                actionLabel: "Refresh",
-                action: refresh
+                icon: .library
             )
         } else {
             JunoEmptyState(
@@ -887,36 +944,6 @@ struct DesktopLibraryScreen: View {
                 actionLabel: clearLabel,
                 action: clearNarrowing
             )
-        }
-    }
-
-    /// A failed *reload* while files are still on screen. It floats over the
-    /// content as glass because it is transient chrome, and the content insets
-    /// under it so the last row is never trapped beneath it. The Retry button
-    /// inside is plain — glass laid over glass flattens both.
-    @ViewBuilder
-    private var refreshFailure: some View {
-        if let error = model.lastErrorDescription, !model.items.isEmpty {
-            JunoDesktopGlass(spacing: JunoSpace.snug) {
-                HStack(spacing: JunoSpace.snug) {
-                    JunoIconView(.triangleAlert)
-                        .foregroundStyle(Color.junoCaution)
-                        .accessibilityHidden(true)
-                    Text(error)
-                        .junoCaption()
-                        .lineLimit(2)
-                    Button("Retry", action: refresh)
-                        .buttonStyle(.borderless)
-                        .disabled(model.isLoading)
-                        .accessibilityIdentifier("juno.desktop.library-retry")
-                }
-                .padding(.horizontal, JunoSpace.regular)
-                .padding(.vertical, JunoSpace.snug)
-                .junoFloatingChrome()
-            }
-            .padding(.bottom, JunoSpace.cozy)
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Library could not be reloaded")
         }
     }
 

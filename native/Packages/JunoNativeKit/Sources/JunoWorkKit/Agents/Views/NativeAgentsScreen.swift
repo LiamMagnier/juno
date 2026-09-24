@@ -10,11 +10,12 @@ import SwiftUI
 /// person come first, so the first tile is always the one to look at, which is
 /// the question this page is opened to answer.
 ///
-/// **Navigation differs by platform, and only navigation.** On the Mac this
-/// screen is a destination inside the Chat window's detail column, which has no
-/// navigation stack, so opening an agent replaces the roster in place and the
-/// page carries its own back control — the shape the Memory page uses. On the
-/// iPhone the screen sits in a navigation stack, so an agent is pushed.
+/// **An agent is pushed, on both platforms.** On the Mac this screen is a
+/// page inside the Chat window's detail column, which gives every page a
+/// navigation stack of its own (MACOS_LIQUID_GLASS_REDESIGN.md §9), so opening
+/// an agent pushes its page and the system's back button returns; on the
+/// iPhone the screen sits in the app's stack. The page draws no back control
+/// of its own on either.
 ///
 /// "Message" hands the agent's thread to `openConversation`, which each app
 /// wires to its own chat: the thread is an ordinary conversation.
@@ -59,17 +60,17 @@ public struct NativeAgentsScreen: View {
     @ViewBuilder
     private var content: some View {
         #if os(macOS)
-        if let selectedAgentID {
-            NativeAgentPage(
-                model: model,
-                agentID: selectedAgentID,
-                apps: apps,
-                openConversation: openConversation,
-                back: { self.selectedAgentID = nil }
-            )
-        } else {
-            roster
-        }
+        roster
+            .navigationDestination(item: $selectedAgentID) { agentID in
+                NativeAgentPage(
+                    model: model,
+                    agentID: agentID,
+                    apps: apps,
+                    openConversation: openConversation,
+                    back: nil
+                )
+                .navigationTitle(model.agents.first { $0.id == agentID }?.name ?? "Agent")
+            }
         #else
         roster
             .navigationTitle("Agents")

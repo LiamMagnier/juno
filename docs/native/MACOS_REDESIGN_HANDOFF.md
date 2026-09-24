@@ -133,7 +133,7 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
 - **Newsreader italic.** Regular Italic is not bundled, so the greeting's name uses Medium Italic. Adding `Newsreader24pt-Italic.ttf` would match the web; downloading it needs the owner's permission.
 - **Composer line height.** The composer field draws 19pt lines instead of 24pt. Fixing it needs a text-view-backed field.
 - **Localization.** New copy is not yet in `Localizable.xcstrings`.
-- **Page toolbars.** Pages still declare their own toolbar items (Library, Connections, Search). Phase 4 fixes this.
+- **Page toolbars.** *(Resolved by the foundations stage: Library, Connections and Search moved their controls into `JunoPage`'s controls row; no Chat-window page declares `.toolbar` or `.searchable`.)*
 - **Runtime checks not done yet:**
   - the Blue-accent sweep: switch, sidebar selection, Quick Entry, the Private toggle
   - the §0.5 crash repro: 50 Chat↔Code swaps with a popover open
@@ -329,3 +329,20 @@ How the conflicts were settled:
 - The Agents roster renders inside the redesigned shell (fixture `window-agents`). Its visual redesign is track B.
 
 Now actionable because of `e5501f65`: the "Artifacts and Design merge on the web" follow-up above. The branch is on main, so the Mac's Design row, `/design` routing and poster previews can follow it. Nothing was changed for it in this merge: the Mac still has its Design row.
+
+## Foundations for Phases 3 and 4, 2026-09-24 (the shared layer both tracks build on)
+
+What landed (spec "Foundations errata", register #46–52), all on `mac/liquid-glass-chat`:
+
+- **Toast host** — `JunoDesignSystem/JunoToastHost.swift`. One `JunoToastCenter` per window (the Chat window's lives in `DesktopChatWorkspace`, drawn by `ChatDetail`; the Settings window has its own). Post with `@Environment(\.junoToast) var toast` → `toast(.success("…", action: JunoToast.Action("Undo") { … }))`; standing conditions with `.junoToastStatus(id:_:toast:)`; the Library-style selection bar with `.junoToastSelection(_:id:)`; the composer marks itself with `.junoToastAnchor()`. Wired: chat archive + Undo, the transcript's failed actions and confirmations, and the five old per-screen glass toasts (Library, Projects, Artifacts, design surface, Settings).
+- **Page template** — `JunoDesignSystem/JunoPage.swift`: `JunoPage`, `JunoPageHeader`, `JunoPageControls`, `JunoPageSearchField`, `JunoPageMenu`, `.junoPageColumn()`. Library, Connections and Search are on it; nothing in the toolbar.
+- **Routing** — every page destination sits in its own `NavigationStack` inside `ChatDetail` (`DesktopDestinationView.routed`); Agents pushes an agent's page. Track B moves Projects' detail (and automations, skills, hosts) onto `.navigationDestination`.
+- **`JunoSegmented`** (`DesktopSegmented.swift` deleted), **`JunoEmptyState`** rebuilt (`.page` / `.panel`, `.empty` / `.error`), **`JunoConfirmation`** + `.junoConfirmation`, **`JunoInlineRenameField`** (the sidebar rows use it) — `JunoSegmented.swift`, `JunoEmptyState.swift`, `JunoListActions.swift`.
+- **Prominent buttons** — `.buttonStyle(.junoProminent)` (`JunoButtonStyles.swift`) carries the Juno accent; cause and fix in the errata. New gate `npm run native:design:prominent` (in `native:design:check`, baseline 9 = Juno Code's own sites). Glass baseline re-locked 37 → 28, targets 303 → 291.
+- **Snapshots** — `Tests/Snapshots/FoundationSnapshotTests.swift` (`JUNO_SNAPSHOT_DIR` → `<dir>/foundations/`), twelve fixtures in both appearances; package tests `JunoDesignSystemTests/JunoFoundationsTests.swift`.
+
+How the two tracks split from here:
+- **Track A (overlays, this worktree):** ⌘K panel, share popover, menus, sheets, Settings, Quick Entry — post toasts through the notifier, never draw one; use `.junoConfirmation` for destructive choices and `.junoProminent` for a sheet's one primary button.
+- **Track B (pages, `../juno-glass-pages`, branch `mac/liquid-glass-pages`):** move Projects, Artifacts, Design, Memory, Agents' roster and the Phase 4 pages onto `JunoPage`; detail pages push; list rows rename with `JunoInlineRenameField`; the Artifacts view switch and the shared packages' segmented pickers move to `JunoSegmented` as their screens are rebuilt.
+
+Runtime checks not done (screen control is off): a toast over a live composer (and its glass), hover holding it, Undo restoring an archived chat, a push and pop on the Agents page with the system back button (and the §0.5 crash repro with a popover open while pushing), ⌘R / ⇧⌘I from the new header buttons, focus landing in Search's field on ⇧⌘F, the controls row wrapping as the window narrows.

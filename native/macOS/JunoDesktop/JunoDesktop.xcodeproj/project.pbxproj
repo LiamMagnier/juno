@@ -87,12 +87,12 @@
 		82451CC5EF480134FDEEA076 /* DesktopArtifactCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = E32AE9A2B8BCB8FB3A234FF9 /* DesktopArtifactCanvas.swift */; };
 		8310677A6AAE302AE3966EC4 /* TranscriptSnapshotRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A28B403D61B804B430DDBD8 /* TranscriptSnapshotRenderer.swift */; };
 		83FAF15E31CE0F7B821D8D4C /* DesktopChatShellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235EB2B1D38AE1D98186CB62 /* DesktopChatShellTests.swift */; };
+		8DDEC6DFC7D07093973197DF /* FoundationSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFEC75C74B556C16C538F98B /* FoundationSnapshotTests.swift */; };
 		8E2435051941860781351E14 /* DesktopShortcutsWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BCD0C57F737A1BCE0B8D622 /* DesktopShortcutsWindow.swift */; };
 		8EA636AE2ABF0429645101CB /* editor.css in Resources */ = {isa = PBXBuildFile; fileRef = D9EB13875731628203A4F315 /* editor.css */; };
 		8FD1C4164E8CDE6C7D2CD7ED /* DesktopChatDesignSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7078F6DE8A2BB72326BE41F2 /* DesktopChatDesignSourceTests.swift */; };
 		920EBFD18DE90BC1BD60CC8E /* JunoPreviewSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 35AB29EB28C0B56EEAD2AAAB /* JunoPreviewSupport */; };
 		92B937323764063EA9C4214E /* DesktopUsageModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE662C8AAB794BA99D7E03F /* DesktopUsageModelTests.swift */; };
-		9542990B0387C601D6DB550B /* DesktopSegmented.swift in Sources */ = {isa = PBXBuildFile; fileRef = 524F462202D5559551BED6F0 /* DesktopSegmented.swift */; };
 		9D75E980D81ADDC7975A56F9 /* JunoWorkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0FD1B5C83E81A48727EDB93C /* JunoWorkKit */; };
 		A30222FE187C44D417955604 /* DesktopNavigationStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87DDC6F2406B896D29731CCE /* DesktopNavigationStateTests.swift */; };
 		A5BA0EFC89B801F86E417AD3 /* DesktopWorkGrants.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4EE09E260A978CAC5D0F4BC /* DesktopWorkGrants.swift */; };
@@ -213,7 +213,6 @@
 		50B52B2ED47181984DAA60FA /* DesktopAccountScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopAccountScreens.swift; sourceTree = "<group>"; };
 		51D7DEFA18FA775DFB14FA34 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5207DEC5805B173ADFB8E6E6 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
-		524F462202D5559551BED6F0 /* DesktopSegmented.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSegmented.swift; sourceTree = "<group>"; };
 		53235B497624DA5B65F9B902 /* DesktopUsageScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopUsageScreen.swift; sourceTree = "<group>"; };
 		55640B7AF1057C3FE76ECF4F /* ChatComposerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerTests.swift; sourceTree = "<group>"; };
 		58DB0AEA26152BA4A960CDD3 /* SnapshotStills.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotStills.swift; sourceTree = "<group>"; };
@@ -270,6 +269,7 @@
 		ABC1B347386C32ED7FFEF4BE /* DesktopIconCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopIconCatalogTests.swift; sourceTree = "<group>"; };
 		ADA36220F51C8AF1A7636D73 /* DesktopCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCommands.swift; sourceTree = "<group>"; };
 		AE0BCDD021BF5183D9F1413D /* DesktopCodeStudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCodeStudio.swift; sourceTree = "<group>"; };
+		AFEC75C74B556C16C538F98B /* FoundationSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoundationSnapshotTests.swift; sourceTree = "<group>"; };
 		B19D9F9BBDC3A85D4655334F /* DesktopDesignRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDesignRoutingTests.swift; sourceTree = "<group>"; };
 		B3B62D06AFB41600C134CA94 /* SnapshotArtifactStills.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotArtifactStills.swift; sourceTree = "<group>"; };
 		B46A514B20B2D71B076DE706 /* WorkCardSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkCardSnapshotTests.swift; sourceTree = "<group>"; };
@@ -383,6 +383,7 @@
 			isa = PBXGroup;
 			children = (
 				E5F6CE06AAFAA4C045CEC702 /* FinalSnapshotTests.swift */,
+				AFEC75C74B556C16C538F98B /* FoundationSnapshotTests.swift */,
 				EFF3752CD70FDA49FAE186AD /* RunSnapshotFixtures.swift */,
 				B3B62D06AFB41600C134CA94 /* SnapshotArtifactStills.swift */,
 				58DB0AEA26152BA4A960CDD3 /* SnapshotStills.swift */,
@@ -438,7 +439,6 @@
 				CA6CA1CD6B6E4B59B90B0F34 /* DesktopQuickEntry.swift */,
 				1993A9494C8380785278132D /* DesktopScreenshotCapture.swift */,
 				18E25C3C510164E4281E592D /* DesktopSearchScreen.swift */,
-				524F462202D5559551BED6F0 /* DesktopSegmented.swift */,
 				A5B8BB4BEB0D113319C846F6 /* DesktopSettingsScreen.swift */,
 				88507E1D875658E5393307BD /* DesktopSettingsWindow.swift */,
 				0BCD0C57F737A1BCE0B8D622 /* DesktopShortcutsWindow.swift */,
@@ -790,7 +790,6 @@
 				C77C5C9887B99078E911B211 /* DesktopQuickEntry.swift in Sources */,
 				EFA69F6076E6748752E50D81 /* DesktopScreenshotCapture.swift in Sources */,
 				157B182726D958C47128E4B3 /* DesktopSearchScreen.swift in Sources */,
-				9542990B0387C601D6DB550B /* DesktopSegmented.swift in Sources */,
 				6C5FD3E41B08E1098C21DEFB /* DesktopSettingsScreen.swift in Sources */,
 				586A45504366EAA8EA359258 /* DesktopSettingsWindow.swift in Sources */,
 				8E2435051941860781351E14 /* DesktopShortcutsWindow.swift in Sources */,
@@ -863,6 +862,7 @@
 				4C3C218723E4BC294E43678A /* DesktopWorkRegistrationTests.swift in Sources */,
 				1B46A1B43FDEAD27C36E97FB /* DesktopWorkStartPathSnapshots.swift in Sources */,
 				AF2DE4C4968362BE0C3AE67C /* FinalSnapshotTests.swift in Sources */,
+				8DDEC6DFC7D07093973197DF /* FoundationSnapshotTests.swift in Sources */,
 				C7182D3BF762DDD9FB6E64AB /* JunoDesktopSmokeTests.swift in Sources */,
 				64C49D1A1D002E04CD50D4E0 /* MessageMenuModelTests.swift in Sources */,
 				BA63DFDBBB3DD89C5D4231AF /* RunBlockTests.swift in Sources */,

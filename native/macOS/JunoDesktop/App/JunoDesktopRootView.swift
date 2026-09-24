@@ -496,8 +496,7 @@ private struct JunoDesktopSignInView: View {
             // The card's one coral action, as the system's prominent button:
             // the card is opaque content, and glass laid on it would be a
             // second material on the first (§0.1).
-            .buttonStyle(.borderedProminent)
-            .junoAccentTint()
+            .buttonStyle(.junoProminent)
             .controlSize(.large)
             .disabled(!canSubmitPassword)
             .accessibilityIdentifier("Sign in")

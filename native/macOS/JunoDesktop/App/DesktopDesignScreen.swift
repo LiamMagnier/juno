@@ -219,7 +219,7 @@ struct DesktopDesignScreen: View {
     /// grid can make.
     @State private var starting: DesktopDesignPreset?
     @State private var startErrorDescription: String?
-    @State private var deleteTarget: NativeArtifact?
+    @State private var deleteConfirmation: JunoConfirmation?
     /// Bumped to re-read the document from storage. ``DesktopDesignSurface``
     /// reads its body once and treats the editor as the authority afterwards, so
     /// discarding an edit has to say so out loud or the canvas carries on drawing
@@ -263,19 +263,9 @@ struct DesktopDesignScreen: View {
                 if gone { closeDesign() }
             }
             .onAppear { closeDesign() }
-            .alert("Delete design?", isPresented: Binding(
-                get: { deleteTarget != nil },
-                set: { if !$0 { deleteTarget = nil } }
-            )) {
-                Button("Cancel", role: .cancel) { deleteTarget = nil }
-                Button("Delete", role: .destructive) {
-                    guard let target = deleteTarget else { return }
-                    deleteTarget = nil
-                    Task { await delete(target) }
-                }
-            } message: {
-                Text("Every version of this design and its history will be removed.")
-            }
+            // A destructive choice is a confirmation dialog, not an alert —
+            // `.alert` is for errors (§7.1).
+            .junoConfirmation($deleteConfirmation)
             .accessibilityIdentifier("juno.desktop.design")
     }
 
@@ -524,7 +514,13 @@ struct DesktopDesignScreen: View {
     }
 
     private func requestDelete(_ design: NativeArtifact) {
-        deleteTarget = design
+        deleteConfirmation = JunoConfirmation(
+            title: "Delete design?",
+            message: "Every version of this design and its history will be removed.",
+            confirmTitle: "Delete"
+        ) {
+            Task { await delete(design) }
+        }
     }
 
     private func delete(_ design: NativeArtifact) async {

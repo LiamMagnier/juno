@@ -586,24 +586,17 @@ private struct DesktopConversationRow: View {
     let acknowledgeRename: () -> Void
 
     @State private var isHovering = false
-    @State private var draft = ""
-    @FocusState private var fieldFocused: Bool
 
     private var isRenaming: Bool { hostsRename && renamingConversationID == conversation.id }
 
     var body: some View {
         HStack(spacing: JunoSpace.tight) {
             if isRenaming {
-                TextField("Name", text: $draft)
-                    .textFieldStyle(.plain)
-                    .focused($fieldFocused)
-                    .onSubmit(commitRename)
-                    .onExitCommand { renamingConversationID = nil }
-                    .task {
-                        draft = conversation.title
-                        fieldFocused = true
-                    }
-                    .accessibilityLabel("Rename chat")
+                JunoInlineRenameField(conversation.title, accessibilityLabel: "Rename chat") { name in
+                    actions.commitRename(conversation, name)
+                } end: {
+                    renamingConversationID = nil
+                }
             } else {
                 Text(conversation.title)
                     .lineLimit(1)
@@ -618,11 +611,6 @@ private struct DesktopConversationRow: View {
         .onHover { isHovering = $0 }
         .onChange(of: conversation.title) { _, _ in
             if justRenamed { acknowledgeRename() }
-        }
-        // Losing focus commits, as on the web; Esc has already cleared the
-        // rename by the time focus leaves, so it cannot commit a cancel.
-        .onChange(of: fieldFocused) { wasFocused, isFocused in
-            if wasFocused, !isFocused, isRenaming { commitRename() }
         }
         .help(conversation.title)
         .contextMenu {
@@ -659,12 +647,6 @@ private struct DesktopConversationRow: View {
         }
     }
 
-    private func commitRename() {
-        let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        renamingConversationID = nil
-        guard !name.isEmpty, name != conversation.title else { return }
-        actions.commitRename(conversation, name)
-    }
 }
 
 /// The row menu, the hover menu and (minus Rename's ellipsis) the title menu:
@@ -765,8 +747,6 @@ private struct DesktopPinnedProjectRow<ConversationRow: View>: View {
 
     @State private var isExpanded = false
     @State private var showsAll = false
-    @State private var draft = ""
-    @FocusState private var fieldFocused: Bool
 
     private var isRenaming: Bool { renamingProjectID == project.id }
 
@@ -808,19 +788,11 @@ private struct DesktopPinnedProjectRow<ConversationRow: View>: View {
         let ink = isSelected ? Color.junoForeground : Color.junoSidebarInk
         return Label {
             if isRenaming {
-                TextField("Name", text: $draft)
-                    .textFieldStyle(.plain)
-                    .focused($fieldFocused)
-                    .onSubmit(commitRename)
-                    .onExitCommand { renamingProjectID = nil }
-                    .task {
-                        draft = project.name
-                        fieldFocused = true
-                    }
-                    .onChange(of: fieldFocused) { wasFocused, isFocused in
-                        if wasFocused, !isFocused, isRenaming { commitRename() }
-                    }
-                    .accessibilityLabel("Rename project")
+                JunoInlineRenameField(project.name, accessibilityLabel: "Rename project") { name in
+                    rename(name)
+                } end: {
+                    renamingProjectID = nil
+                }
             } else {
                 Text(project.name)
                     .lineLimit(1)
@@ -833,12 +805,6 @@ private struct DesktopPinnedProjectRow<ConversationRow: View>: View {
         .foregroundStyle(ink)
     }
 
-    private func commitRename() {
-        let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        renamingProjectID = nil
-        guard !name.isEmpty, name != project.name else { return }
-        rename(name)
-    }
 }
 
 // MARK: - Loading

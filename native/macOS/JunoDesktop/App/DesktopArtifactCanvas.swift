@@ -787,8 +787,8 @@ struct DesktopArtifactCanvas: View {
 
     // MARK: View bar
 
-    private var options: [DesktopSegmented<InlineArtifactView>.Option] {
-        var options: [DesktopSegmented<InlineArtifactView>.Option] = []
+    private var options: [JunoSegmented<InlineArtifactView>.Option] {
+        var options: [JunoSegmented<InlineArtifactView>.Option] = []
         if hasPreview { options.append(.init(.preview, runtimeInfo.mode == .console ? "Output" : "Preview")) }
         options.append(.init(.code, "Code"))
         if runtimeInfo.mode == .web, !isMarkdown, !runtime.entries.isEmpty || view == .console {
@@ -813,7 +813,7 @@ struct DesktopArtifactCanvas: View {
                     .padding(.horizontal, 10)
                     .frame(height: 28)
             } else if options.count > 1 {
-                DesktopSegmented(
+                JunoSegmented(
                     options: options,
                     selection: Binding(get: { resolvedView }, set: { view = $0 }),
                     accessibilityLabel: "Artifact view"
@@ -889,7 +889,7 @@ struct DesktopArtifactCanvas: View {
                     }
                     // The canvas's one prominent button, and only while there
                     // is something to save.
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.junoProminent)
                     .controlSize(.small)
                     .contentShape(.rect)
                     .keyboardShortcut("s", modifiers: .command)
@@ -1109,49 +1109,28 @@ struct DesktopDesignSurface: View {
     @State private var host: DesktopDesignEditorHost?
     @State private var openError: String?
     /// An edit the editor made and this view could not turn back into an artifact
-    /// body. See ``editWarning`` for why it is a banner and not a replacement.
+    /// body, posted to the window's toast host and kept there until it clears.
     @State private var editError: String?
 
     var body: some View {
         surface
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay(alignment: .top) { editWarning }
+            // Said in the window's toast host (§7.7), and kept there until the
+            // edit that caused it is gone: the work is still on screen, and
+            // replacing the canvas with a notice would lose it.
+            .junoToastStatus(id: "design.edit-error", editError) { error in
+                JunoToast(tone: .warning, title: "This edit can\u{2019}t be saved: \(error)", duration: nil)
+            }
             .accessibilityIdentifier("juno.desktop.design-surface")
     }
 
-    /// An edit that cannot be encoded, said out loud.
-    ///
-    /// `JSONEncoder` refuses a non-conforming float, and a design carries plenty
-    /// of them — x, y, width, opacity, rotation — so a degenerate transform in the
-    /// editor can produce a document that will not serialise. Swallowing that
-    /// would leave the reader dragging shapes around a canvas whose Save button
-    /// never lights and never says why.
-    ///
-    /// It is drawn *over* the editor rather than in place of it, for the same
-    /// reason the host's own failures are: the work is still on screen, and
-    /// replacing the canvas with a notice would be the one action guaranteed to
-    /// lose it.
-    @ViewBuilder
-    private var editWarning: some View {
-        if let editError {
-            JunoDesktopGlass(spacing: JunoSpace.snug) {
-                HStack(spacing: JunoSpace.snug) {
-                    JunoIconView(.triangleAlert, size: 16)
-                        .foregroundStyle(Color.junoCaution)
-                        .accessibilityHidden(true)
-                    Text("This edit can\u{2019}t be saved: \(editError)")
-                        .junoCaption()
-                        .lineLimit(2)
-                        .frame(maxWidth: 420, alignment: .leading)
-                }
-                .padding(.horizontal, JunoSpace.cozy)
-                .padding(.vertical, JunoSpace.snug)
-                .junoFloatingChrome()
-            }
-            .padding(.top, JunoSpace.cozy)
-            .accessibilityIdentifier("juno.desktop.design-surface.edit-error")
-        }
-    }
+    // An edit that cannot be encoded, said out loud.
+    //
+    // `JSONEncoder` refuses a non-conforming float, and a design carries plenty
+    // of them — x, y, width, opacity, rotation — so a degenerate transform in the
+    // editor can produce a document that will not serialise. Swallowing that
+    // would leave the reader dragging shapes around a canvas whose Save button
+    // never lights and never says why; `editError` is posted as a toast above.
 
     @ViewBuilder
     private var surface: some View {

@@ -63,8 +63,8 @@ struct MessageRowActions {
     /// (`GET /api/messages/{id}/versions`), for its version pager. Nil on a
     /// turn with no row on the server.
     var loadVersions: (() async throws -> [NativeMessageVersion])? = nil
-    /// Says that something asked of this turn failed, until the toast host
-    /// lands (Phase 3): the transcript's six-second failure box.
+    /// Says that something asked of this turn failed — in the window's toast
+    /// host (§7.7).
     var reportFailure: ((String) -> Void)? = nil
     /// Re-asks this question with new wording, as a new branch. Nil on answers
     /// and on turns with no row on the server.

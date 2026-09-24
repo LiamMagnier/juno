@@ -3,18 +3,18 @@ import path from "node:path";
 import process from "node:process";
 
 /*
- * All four native design gates, in one run, reporting all four outcomes.
+ * All five native design gates, in one run, reporting all five outcomes.
  *
  * Deliberately NOT `a && b && c && d` in package.json. Chaining stops at the
  * first failure, so a PR that regresses type AND targets is told about type,
  * fixed, re-run, and told about targets — two round trips for one review. These
  * are cheap source scans; run them all and print everything.
  *
- * Arguments pass straight through, so `--baseline` re-records all four and
+ * Arguments pass straight through, so `--baseline` re-records all five and
  * `--list` prints every violation each of them can see.
  */
 
-const GATES = ["type", "motion", "glass", "targets"];
+const GATES = ["type", "motion", "glass", "targets", "prominent"];
 
 const results = [];
 for (const rule of GATES) {
@@ -22,7 +22,7 @@ for (const rule of GATES) {
     const child = spawn(
       process.execPath,
       // Resolved against this file rather than the cwd, so the runner still
-      // finds its four gates when it is invoked from somewhere other than the
+      // finds its five gates when it is invoked from somewhere other than the
       // repo root. The gates themselves stay cwd-relative — that is what lets
       // them be pointed at a fixture tree.
       [path.join(import.meta.dirname, `check-native-${rule}.mjs`), ...process.argv.slice(2)],
@@ -45,4 +45,4 @@ if (failed.length > 0) {
   process.exit(1);
 }
 
-console.log(`[native-design] all ${GATES.length} gates hold: type, motion, glass, targets.`);
+console.log(`[native-design] all ${GATES.length} gates hold: ${GATES.join(", ")}.`);

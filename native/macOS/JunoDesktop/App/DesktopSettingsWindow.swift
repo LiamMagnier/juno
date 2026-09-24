@@ -228,12 +228,17 @@ struct DesktopSettingsShell<Detail: View>: View {
 
     @State private var query = ""
     @State private var columns = NavigationSplitViewVisibility.all
+    /// This window's toasts (§7.7): a conflict or a failed sync, said once,
+    /// over the pane — the Settings window is a window of its own, so it has
+    /// its own host.
+    @State private var toasts = JunoToastCenter()
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             DesktopSettingsSidebar(selection: $section, query: $query)
         } detail: {
             detail(section)
+                .junoToastHost(toasts)
                 .navigationTitle(section.label)
                 .navigationSubtitle(section.summary)
                 .junoReadingCanvas()

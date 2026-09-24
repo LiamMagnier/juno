@@ -45,6 +45,8 @@ struct ChatDetail<Content: View>: View {
     let offline: DesktopOfflineState?
     let retryConnection: () -> Void
     let toolbar: ChatToolbar
+    /// The window's toasts, drawn once over this column (§7.7).
+    let toasts: JunoToastCenter
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -57,6 +59,9 @@ struct ChatDetail<Content: View>: View {
                     DesktopOfflineCaption(state: offline, retry: retryConnection)
                 }
             }
+            // The window's one toast host: 12pt above the composer where one
+            // is docked, 24pt above the bottom otherwise — never in a sheet.
+            .junoToastHost(toasts)
             .junoAccentTint()
             .navigationTitle(title)
             .navigationSubtitle(subtitle)

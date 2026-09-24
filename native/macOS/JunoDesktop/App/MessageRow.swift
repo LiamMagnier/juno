@@ -483,7 +483,7 @@ struct DesktopMessageRow: View {
                 // is tinted with — bordered, not glass: the editor is content
                 // on the transcript (§0.1).
                 Button("Send", action: submitEdit)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.junoProminent)
                     .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .contentShape(.rect)
             }

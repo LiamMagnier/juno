@@ -111,11 +111,11 @@ struct DesktopUsageScreen: View {
                 }
             }
 
-            // `DesktopSegmented`, not `Picker(.segmented)`: the AppKit control
+            // `JunoSegmented`, not `Picker(.segmented)`: the AppKit control
             // is the app's toolbar segmented; a switcher sitting *inside*
             // content gets the quiet track with the one glass knob, which also
             // sizes itself — the fixed 280pt the picker needed goes with it.
-            DesktopSegmented(
+            JunoSegmented(
                 options: DesktopUsageRange.allCases.map { .init($0, $0.label) },
                 selection: $range,
                 accessibilityLabel: "Range"

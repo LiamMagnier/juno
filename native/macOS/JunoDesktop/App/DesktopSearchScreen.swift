@@ -5,13 +5,11 @@ import JunoDesignSystem
 import JunoStorage
 import SwiftUI
 
-/// Global search over the encrypted account store, as a Mac window's own search.
+/// Global search over the encrypted account store.
 ///
-/// On this platform search is not a page with a text field drawn in it: it is the
-/// window's search field, in the toolbar, with a scope bar under it. That is what
-/// `.searchable` + `.searchScopes` give us, and it is why this view draws no field
-/// of its own — the phone app hand-builds one because iOS 26 relocates the
-/// system field without asking, and a Mac toolbar has no such problem.
+/// A page on the `JunoPage` template (spec §9): its field and its scopes are in
+/// content, and the toolbar is the chat window's alone (§3). The ⌘K panel
+/// replaces this page in Phase 3.
 ///
 /// **The corpus is stated, never implied.** `NativeSearchStore` decrypts the
 /// synchronized snapshot and scores it through a throwaway in-memory index on
@@ -42,38 +40,54 @@ struct DesktopSearchScreen: View {
     }
 
     var body: some View {
-        content
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // No canvas here. The detail column paints it once; repainting it
-            // inside a page is what flattens the window into a single cream field
-            // and leaves floating chrome with nothing to refract.
-            .safeAreaInset(edge: .top, spacing: 0) { researchBar }
-            .safeAreaInset(edge: .bottom, spacing: 0) { statusBar }
-            .searchable(text: query, placement: .toolbar, prompt: "Search Juno")
-            .searchFocused($fieldFocused)
-            // `.onSearchPresentation` rather than `.onTextEntry` on purpose: the
-            // Mac's field is always presented, so the scope bar stays put instead
-            // of being inserted and removed beneath a live window's toolbar as
-            // the reader types.
-            .searchScopes($scope, activation: .onSearchPresentation) {
-                ForEach(DesktopSearchScope.allCases) { option in
-                    Text(option.title).tag(option)
-                }
+        // The page template (spec §9) until the ⌘K panel replaces this page
+        // (Phase 3): the field and the scopes in the controls row, nothing in
+        // the toolbar (§3). They used to be the window's `.searchable` and its
+        // scope bar, which came and went with the destination — the toolbar
+        // rebuild of crash rule 3.
+        JunoPage(measure: .reading, scrolling: .content) {
+            JunoPageHeader(
+                "Search",
+                lede: "Chats, messages, files and artifacts synced to this Mac."
+            )
+        } controls: {
+            JunoPageControls {
+                JunoPageSearchField(
+                    text: query,
+                    prompt: "Search Juno",
+                    isSearching: model.phase == .searching,
+                    accessibilityIdentifier: "juno.desktop.search-field",
+                    focus: $fieldFocused,
+                    // Return opens the highlighted result: focus usually sits
+                    // in the field, where the list's own Return cannot reach.
+                    submit: openPrimaryResult
+                )
+                JunoSegmented(
+                    options: DesktopSearchScope.allCases.map {
+                        JunoSegmented<DesktopSearchScope>.Option($0, $0.title)
+                    },
+                    selection: $scope,
+                    accessibilityLabel: "Search in"
+                )
             }
-            // Return in the field opens the highlighted result. Focus usually sits
-            // in the field, where the list's own Return handling cannot reach.
-            .onSubmit(of: .search) { openPrimaryResult() }
-            // Not `.onAppear`: the toolbar's field does not exist yet at that
-            // point, so the focus request has nothing to land on. This is the
-            // ⌘⇧F path — the menu command switches the window to Search, and the
-            // field takes focus as the screen comes up.
-            .task { fieldFocused = true }
-            .onChange(of: visibleResultIDs) { _, ids in
-                // Keep Return meaningful. A new query throws away the previous
-                // selection, and a list with nothing selected would open nothing.
-                if let current = selection, ids.contains(current) { return }
-                selection = ids.first
-            }
+        } content: {
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // No canvas here. The detail column paints it once; repainting
+                // it inside a page is what flattens the window into a single
+                // cream field.
+                .safeAreaInset(edge: .top, spacing: 0) { researchBar }
+                .safeAreaInset(edge: .bottom, spacing: 0) { statusBar }
+        }
+        // ⇧⌘F switches the window to Search, and the field takes focus as the
+        // page comes up.
+        .task { fieldFocused = true }
+        .onChange(of: visibleResultIDs) { _, ids in
+            // Keep Return meaningful. A new query throws away the previous
+            // selection, and a list with nothing selected would open nothing.
+            if let current = selection, ids.contains(current) { return }
+            selection = ids.first
+        }
     }
 
     // MARK: - Content
@@ -183,6 +197,7 @@ struct DesktopSearchScreen: View {
             return .handled
         }
         .accessibilityIdentifier("juno.desktop.search-results")
+        .junoPageColumn()
     }
 
     private func row(_ result: NativeSearchResult) -> some View {

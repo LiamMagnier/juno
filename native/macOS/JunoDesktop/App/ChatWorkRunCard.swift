@@ -462,7 +462,7 @@ struct ChatWorkApprovalCard: View {
                     .contentShape(.rect)
                     .accessibilityIdentifier("juno.work.approval.deny")
                 Button(verb) { decide(.allowed) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.junoProminent)
                     .contentShape(.rect)
                     .accessibilityIdentifier("juno.work.approval.allow")
                 if approval.allowsStandingGrant {

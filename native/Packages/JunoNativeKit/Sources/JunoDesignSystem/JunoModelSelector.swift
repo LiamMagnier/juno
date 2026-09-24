@@ -514,8 +514,7 @@ struct JunoModelDetailPanel: View {
                     .frame(maxWidth: .infinity)
                     .contentShape(.rect)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Color.junoAccent)
+            .buttonStyle(.junoProminent)
             .controlSize(.large)
             .disabled(isSelected || JunoModelSelectorCatalog.isComingSoon(model) || otherwiseUnavailable)
             .padding(JunoSpace.cozy)

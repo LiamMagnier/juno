@@ -2631,13 +2631,13 @@ private struct DesktopWorkThread: View {
                 .junoSidebarSection()
                 .labelStyle(.titleAndIcon)
             Spacer(minLength: JunoSpace.snug)
-            // `DesktopSegmented`, not `Picker(.segmented)`. The AppKit control
+            // `JunoSegmented`, not `Picker(.segmented)`. The AppKit control
             // draws its selected segment in the *app accent*, so the switcher
             // was a saturated coral slab in the middle of the thread — the same
             // defect the sidebar's selection had, from the same cause, and this
             // file's own sibling component exists precisely to answer it for
             // controls that sit inside content rather than in window chrome.
-            DesktopSegmented(
+            JunoSegmented(
                 options: DesktopWorkSurface.allCases.map { .init($0, $0.title) },
                 selection: $surface,
                 accessibilityLabel: "Task details",
@@ -3357,8 +3357,7 @@ private struct DesktopWorkArtifactRow: View {
                             JunoIconLabel("Save", icon: .download, size: 12)
                         }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.junoAccent)
+                    .buttonStyle(.junoProminent)
                     .controlSize(.small)
                     .disabled(isDownloading)
                     .help("Save the verified current version")

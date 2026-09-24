@@ -398,11 +398,9 @@ struct NativeAgentHeader: View {
             Button(action: message) {
                 Label("Message", icon: .message)
             }
-            // Opaque and accent-tinted: glass is chrome, never content or a
-            // sheet's body (MACOS_LIQUID_GLASS_REDESIGN.md §0.1). Untinted,
-            // `.borderedProminent` would fill with system blue.
-            .buttonStyle(.borderedProminent)
-            .tint(Color.junoAccent)
+            // Opaque, in the Juno accent: glass is chrome, never content or a
+            // sheet's body (MACOS_LIQUID_GLASS_REDESIGN.md §0.1).
+            .buttonStyle(.junoProminent)
             .frame(minHeight: 44)
             .contentShape(.rect)
             .accessibilityIdentifier("juno.agents.message")
@@ -986,11 +984,9 @@ struct NativeAgentRoutineEditor: View {
                     .contentShape(.rect)
                 Button("Create routine", action: save)
                     .keyboardShortcut(.defaultAction)
-                    // Opaque and accent-tinted: glass is chrome, never content or a
-                    // sheet's body (MACOS_LIQUID_GLASS_REDESIGN.md §0.1). Untinted,
-                    // `.borderedProminent` would fill with system blue.
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.junoAccent)
+                    // Opaque, in the Juno accent: glass is chrome, never content or a
+                    // sheet's body (MACOS_LIQUID_GLASS_REDESIGN.md §0.1).
+                    .buttonStyle(.junoProminent)
                     .disabled(!isReady || isSaving)
                     .frame(minHeight: 44)
                     .contentShape(.rect)

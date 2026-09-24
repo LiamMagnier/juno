@@ -260,11 +260,9 @@ struct NativeAgentHireView: View {
                 }
             }
             .keyboardShortcut(.defaultAction)
-            // Opaque and accent-tinted: glass is chrome, never content or a
-            // sheet's body (MACOS_LIQUID_GLASS_REDESIGN.md §0.1). Untinted,
-            // `.borderedProminent` would fill with system blue.
-            .buttonStyle(.borderedProminent)
-            .tint(Color.junoAccent)
+            // Opaque, in the Juno accent: glass is chrome, never content or a
+            // sheet's body (MACOS_LIQUID_GLASS_REDESIGN.md §0.1).
+            .buttonStyle(.junoProminent)
             .disabled(!draft.isValid || saving)
             .frame(minHeight: 44)
             .contentShape(.rect)

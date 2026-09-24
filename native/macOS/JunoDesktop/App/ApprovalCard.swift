@@ -269,7 +269,7 @@ struct DesktopApprovalCard: View {
         } label: {
             Text(isTask ? "Start task" : "Allow once").frame(minHeight: 28)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.junoProminent)
         .contentShape(.rect)
         .accessibilityIdentifier("juno.chat.approval.allow-once")
         if canAllowScope, !isTask {

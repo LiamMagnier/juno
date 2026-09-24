@@ -135,21 +135,3 @@ struct DesktopTurnError: View {
         .accessibilityElement(children: .contain)
     }
 }
-
-/// A failure of something the reader did to a reply — a rating that did not
-/// save, Read Aloud that could not start — until the window's toast host
-/// lands (Phase 3, spec §7.7). The failure's own box, at the foot of the
-/// transcript, and gone again after a few seconds.
-struct DesktopActionFailure: View {
-    let message: String
-    let dismiss: () -> Void
-
-    var body: some View {
-        DesktopTurnError(message: message)
-            .task(id: message) {
-                try? await Task.sleep(for: .seconds(6))
-                guard !Task.isCancelled else { return }
-                dismiss()
-            }
-    }
-}

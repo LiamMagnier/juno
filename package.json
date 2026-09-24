@@ -38,6 +38,7 @@
     "native:design:motion": "node scripts/check-native-motion.mjs",
     "native:design:glass": "node scripts/check-native-glass.mjs",
     "native:design:targets": "node scripts/check-native-targets.mjs",
+    "native:design:prominent": "node scripts/check-native-prominent.mjs",
     "native:snapshots:transcript": "bash scripts/native-snapshots.sh",
     "code:preview:check": "node scripts/check-code-preview-wiring.mjs",
     "code:remote:check": "node scripts/check-code-remote-wiring.mjs",

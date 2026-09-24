@@ -137,6 +137,12 @@ struct DesktopTranscript: View {
     var workRun: ChatWorkRunState? = nil
     var workActions = ChatWorkRunActions()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The window's toast host (§7.7): where a failed action on a reply, and
+    /// a confirmation with no other evidence, are said.
+    @Environment(\.junoToast) private var toast
+    /// A failed action on a reply — a rating that did not save, Read Aloud
+    /// that could not start. Set, it is posted to the window's toast host and
+    /// cleared.
     @State private var actionError: String?
     /// Where the transcript is scrolled. It starts at the newest turn and
     /// follows the stream only while the reader is there (spec §6.13).
@@ -298,9 +304,6 @@ struct DesktopTranscript: View {
                     )
                 }
 
-                if let actionError {
-                    DesktopActionFailure(message: actionError) { self.actionError = nil }
-                }
             }
             .scrollTargetLayout()
             .modifier(TranscriptColumn())
@@ -308,6 +311,13 @@ struct DesktopTranscript: View {
         }
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
+        // Said in the window's toast host, then let go: the host keeps it for
+        // its four seconds, and the next failure is a new post.
+        .onChange(of: actionError) { _, message in
+            guard let message else { return }
+            toast(.error(message))
+            actionError = nil
+        }
         .contentMargins(.top, JunoSpace.section, for: .scrollContent)
         .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
         .onScrollGeometryChange(for: Bool.self) { geometry in
@@ -813,7 +823,7 @@ struct DesktopTranscript: View {
                 await model.reload()
                 model.isDraftingNewConversation = false
                 model.selectedConversationID = id
-                Self.announce("Branched into a new chat.")
+                toast(.success("Branched into a new chat."))
             } catch {
                 actionError = error.localizedDescription
             }
@@ -841,7 +851,7 @@ struct DesktopTranscript: View {
         }
         guard !turns.isEmpty else { return }
         forkPrivately(turns)
-        Self.announce("Forked from message \(index + 1)")
+        toast(.success("Forked from message \(index + 1)"))
     }
 
     /// Copy Link: the web's own address for this message,
@@ -851,11 +861,11 @@ struct DesktopTranscript: View {
         components?.path = "/chat/\(message.conversationID)"
         components?.queryItems = [URLQueryItem(name: "m", value: message.id)]
         guard let link = components?.url?.absoluteString else {
-            Self.announce("Couldn’t copy the link.")
+            toast(.error("Couldn’t copy the link."))
             return
         }
         Self.copyToPasteboard(link)
-        Self.announce("Link copied.")
+        toast(.success("Link copied."))
     }
 
     /// Reads `content` — the words the turn is showing, which may be an
@@ -878,9 +888,8 @@ struct DesktopTranscript: View {
         }
     }
 
-    /// A confirmation with nowhere to show yet. The window's toast host lands
-    /// in Phase 3 (§7.7); until then VoiceOver hears it, and the result — a new
-    /// chat, a link on the pasteboard — is its own evidence for everyone else.
+    /// Something VoiceOver should hear that has no toast of its own: the end
+    /// of a reply, a phase of the run.
     private static func announce(_ text: String) {
         AccessibilityNotification.Announcement(text).post()
     }

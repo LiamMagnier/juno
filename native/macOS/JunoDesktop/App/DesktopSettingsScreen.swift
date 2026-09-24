@@ -73,7 +73,9 @@ struct DesktopSettingsScreen: View {
                 pane
             }
         }
-        .overlay(alignment: .bottom) { statusChrome }
+        // A conflict, or a save queued behind the network, in the Settings
+        // window's toast host (§7.7) rather than glass of this pane's own.
+        .junoToastStatus(id: "settings.status", statusKey) { _ in statusToast }
         .sheet(item: $sheet) { sheet in
             DesktopSettingsSheetHost(sheet: sheet) {
                 switch sheet {
@@ -398,76 +400,38 @@ struct DesktopSettingsScreen: View {
         Task { await model.updateSettings(patch) }
     }
 
-    /// The one transient thing on this screen, and therefore the one thing that
-    /// floats: a conflict that needs a decision, or a save queued behind the
-    /// network. The controls inside are plain — the capsule already carries the
-    /// material.
-    @ViewBuilder
-    private var statusChrome: some View {
-        if model.conflictedMutationCount > 0 {
-            floatingStatus(
-                icon: .refresh,
-                message: "Memory or settings changed on another device."
-            ) {
-                Button("Keep mine") {
-                    Task { await model.resolveConflicts(keepLocalChanges: true) }
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.junoAccent)
-                .accessibilityIdentifier("juno.desktop.settings.keep-local")
-                .contentShape(.rect)
-
-                Button("Use server version") {
-                    Task { await model.resolveConflicts(keepLocalChanges: false) }
-                }
-                .buttonStyle(.plain)
-                .junoSecondaryInk()
-                .accessibilityIdentifier("juno.desktop.settings.use-server")
-                .contentShape(.rect)
-            }
-        } else if model.phase == .offline || model.phase == .failed,
-            let message = model.lastErrorDescription
-        {
-            floatingStatus(
-                icon: model.phase == .offline ? .connections : .error,
-                message: DesktopStatusCopy(subject: "settings", singular: "setting")
-                    .humanized(
-                        message,
-                        fallback: "Juno couldn't sync your settings."
-                    )
-            ) {
-                Button("Retry") { Task { await model.refresh() } }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.junoAccent)
-                    .accessibilityIdentifier("juno.desktop.settings.retry")
-                    .contentShape(.rect)
-            }
+    /// What the status toast is keyed on: a conflict arriving, or a new
+    /// failure, is a new post.
+    private var statusKey: String? {
+        if model.conflictedMutationCount > 0 { return "conflict" }
+        if model.phase == .offline || model.phase == .failed, let message = model.lastErrorDescription {
+            return "\(model.phase == .offline ? "offline" : "failed")|\(message)"
         }
+        return nil
     }
 
-    private func floatingStatus<Actions: View>(
-        icon: JunoIcon,
-        message: String,
-        @ViewBuilder actions: () -> Actions
-    ) -> some View {
-        JunoDesktopGlass(spacing: JunoSpace.snug) {
-            HStack(spacing: JunoSpace.cozy) {
-                JunoIconView(icon, size: 15)
-                    .junoSecondaryInk()
-                    .accessibilityHidden(true)
-                Text(message)
-                    .junoRowLabel()
-                    .lineLimit(2)
-                actions()
-            }
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.vertical, JunoSpace.cozy)
-            .junoFloatingChrome()
+    /// A conflict that needs a decision — which stays until it is answered —
+    /// or a save queued behind the network, with its Retry.
+    private var statusToast: JunoToast {
+        if model.conflictedMutationCount > 0 {
+            return JunoToast(
+                tone: .warning,
+                title: "Memory or settings changed on another device.",
+                action: JunoToast.Action("Keep mine") {
+                    Task { await model.resolveConflicts(keepLocalChanges: true) }
+                },
+                cancel: JunoToast.Action("Use server version") {
+                    Task { await model.resolveConflicts(keepLocalChanges: false) }
+                },
+                duration: nil
+            )
         }
-        .padding(JunoSpace.roomy)
-        .frame(maxWidth: JunoSettingsMetrics.readingWidth)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("juno.desktop.settings.status")
+        return JunoToast(
+            tone: model.phase == .offline ? .warning : .error,
+            title: DesktopStatusCopy(subject: "settings", singular: "setting")
+                .humanized(model.lastErrorDescription, fallback: "Juno couldn't sync your settings."),
+            action: JunoToast.Action("Retry") { Task { await model.refresh() } }
+        )
     }
 }
 

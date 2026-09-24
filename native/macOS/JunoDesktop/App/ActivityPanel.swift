@@ -20,7 +20,7 @@ struct DesktopPanelShell<Tab: Hashable, Actions: View, Content: View>: View {
     /// it does.
     var ticks = false
     var statusIsWarning = false
-    let tabs: [DesktopSegmented<Tab>.Option]
+    let tabs: [JunoSegmented<Tab>.Option]
     @Binding var tab: Tab
     let close: () -> Void
     @ViewBuilder var actions: () -> Actions
@@ -64,7 +64,7 @@ struct DesktopPanelShell<Tab: Hashable, Actions: View, Content: View>: View {
             .background(Color.junoSurface.opacity(0.5))
             Divider()
             if tabs.count > 1 {
-                DesktopSegmented(options: tabs, selection: $tab, accessibilityLabel: "\(label) view")
+                JunoSegmented(options: tabs, selection: $tab, accessibilityLabel: "\(label) view")
                     .padding(.horizontal, JunoSpace.regular)
                     .padding(.vertical, JunoSpace.snug)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -171,9 +171,9 @@ struct DesktopActivityPanel: View {
             statusIsWarning: message.errorDescription != nil && !live,
             tabs: tabs.map { tab in
                 switch tab {
-                case .timeline: DesktopSegmented<Tab>.Option(.timeline, "Timeline")
-                case .sources: DesktopSegmented<Tab>.Option(.sources, "Sources \(message.sources.count)")
-                case .details: DesktopSegmented<Tab>.Option(.details, "Details")
+                case .timeline: JunoSegmented<Tab>.Option(.timeline, "Timeline")
+                case .sources: JunoSegmented<Tab>.Option(.sources, "Sources \(message.sources.count)")
+                case .details: JunoSegmented<Tab>.Option(.details, "Details")
                 }
             },
             tab: Binding(get: { shown }, set: { storedTab = $0.rawValue }),

@@ -144,6 +144,10 @@ struct DesktopChatWorkspace: View {
     /// ⌘F, ⌘G and ⇧⌘G from the menu bar, on their way to the conversation
     /// column's find bar.
     @State private var findCommand: DesktopFindCommand?
+    /// The window's toasts (§7.7): one host, drawn over the detail column by
+    /// ``ChatDetail``, posted to from the sidebar, the transcript and every
+    /// page through `@Environment(\.junoToast)`.
+    @State private var toasts = JunoToastCenter()
 
     /// The destination in force: the launch override while it stands, otherwise
     /// whatever scene storage restored.
@@ -232,6 +236,9 @@ struct DesktopChatWorkspace: View {
             detail
         }
         .focusedSceneValue(\.junoWorkspaceActions, workspaceActions)
+        // Every part of the window posts to the one host: the sidebar's
+        // archive, the transcript's failed actions, the pages.
+        .junoToastNotifier(toasts)
         // Opener and actions on one line: the targets gate reads a dialog's
         // buttons as system-drawn only when its brace opens on that line.
         .confirmationDialog("Delete this conversation?", isPresented: isConfirmingDeletion, titleVisibility: .visible) {
@@ -331,7 +338,8 @@ struct DesktopChatWorkspace: View {
             isChatRoute: currentDestination == .chat,
             offline: offlineState,
             retryConnection: retryConnection,
-            toolbar: toolbar
+            toolbar: toolbar,
+            toasts: toasts
         ) {
             destinationContent
                 // One media loader per signed-in account, for the transcript
@@ -581,14 +589,23 @@ struct DesktopChatWorkspace: View {
     /// window's undo manager — so Edit › Undo Archive Chat (⌘Z) brings it
     /// back, and Redo sends it away again.
     ///
-    /// The toast that also offers Undo (§2.4, "Chat archived.") needs the
-    /// window-level toast host, which lands in Phase 3; until then the undo
-    /// manager is the way back, alongside the web's archive.
+    /// An archive also says so, as the web does (`app-sidebar.tsx`): "Chat
+    /// archived." with Undo, in the window's toast host (§2.4, §7.7).
     private func setArchived(_ id: String, archived: Bool, undoManager: UndoManager?) {
         if archived, model.selectedConversationID == id {
             beginDraft()
         }
         Self.applyArchive(id, archived: archived, model: model, undoManager: undoManager)
+        guard archived else { return }
+        let model = model
+        toasts.post(
+            .success(
+                "Chat archived.",
+                action: JunoToast.Action("Undo") {
+                    Task { await model.setArchived(id: id, archived: false) }
+                }
+            )
+        )
     }
 
     /// Writes the archive flag and registers its inverse. Static, over the
@@ -824,7 +841,7 @@ struct DesktopNewProjectForm: View {
                     .keyboardShortcut(.cancelAction)
                     .contentShape(.rect)
                 Button("Create Project", action: create)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.junoProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(trimmedName.isEmpty || model.isMutating)
                     .contentShape(.rect)
@@ -1551,6 +1568,10 @@ struct DesktopConversationView: View {
                     .padding(.top, JunoSpace.regular)
                 }
             }
+            // The toast host sits 12pt above a docked composer (§7.7). A
+            // draft's composer is lifted to the middle of the column, so a
+            // toast there sits at the foot like any page's.
+            .junoToastAnchor(!isDraft)
         }
         // The whole column takes a drop (§5.8), and the composer draws the
         // target: a file dragged over the transcript is headed for the draft.

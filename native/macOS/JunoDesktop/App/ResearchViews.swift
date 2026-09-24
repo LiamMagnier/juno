@@ -206,7 +206,7 @@ struct DesktopResearchPlanCard: View {
                 Button(action: start) {
                     Text("Start").frame(minHeight: 28)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.junoProminent)
                 .contentShape(.rect)
                 .accessibilityLabel("Start research")
             }
@@ -273,11 +273,11 @@ struct DesktopResearchPanel: View {
             statusIsWarning: run.phase == .failed,
             tabs: tabs.map { tab in
                 switch tab {
-                case .progress: DesktopSegmented<Tab>.Option(.progress, "Progress")
-                case .report: DesktopSegmented<Tab>.Option(.report, "Report")
-                case .sources: DesktopSegmented<Tab>.Option(.sources, "Sources \(run.sources.count)")
-                case .plan: DesktopSegmented<Tab>.Option(.plan, "Plan")
-                case .details: DesktopSegmented<Tab>.Option(.details, "Details")
+                case .progress: JunoSegmented<Tab>.Option(.progress, "Progress")
+                case .report: JunoSegmented<Tab>.Option(.report, "Report")
+                case .sources: JunoSegmented<Tab>.Option(.sources, "Sources \(run.sources.count)")
+                case .plan: JunoSegmented<Tab>.Option(.plan, "Plan")
+                case .details: JunoSegmented<Tab>.Option(.details, "Details")
                 }
             },
             tab: Binding(get: { shown }, set: { chosen = $0 }),

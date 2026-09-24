@@ -230,7 +230,9 @@ struct DesktopArtifactsScreen: View {
                 artifactDocument
             }
         }
-        .overlay(alignment: .bottom) { statusControl }
+        // A failure, in the window's toast host (§7.7) rather than floating
+        // glass of this page's own.
+        .junoToastStatus(id: "artifacts.status", artifactStatus) { status in statusToast(status) }
         .task(id: model.selectedArtifactID) {
             draft = nil
             selectedVersion = nil
@@ -615,56 +617,37 @@ struct DesktopArtifactsScreen: View {
         return parts.joined(separator: " · ")
     }
 
-    /// A failure, as floating glass over the column rather than a caption welded
-    /// to its bottom edge.
+    /// A failure, said in the window's toast host.
     ///
-    /// Two things were wrong with the old footer. It printed the server's own
-    /// wording verbatim — an artifact whose fetch 404s put the bare words "Not
-    /// found" under the list, which tells a reader nothing about what was not
-    /// found or what to do — and it offered no way out, so the only recovery was
-    /// to quit the app. ``DesktopArtifactStatus`` now turns the raw string into a
+    /// Two things were wrong with the old footer, and both stay fixed: it
+    /// printed the server's own wording verbatim — an artifact whose fetch
+    /// 404s put the bare words "Not found" under the list — and it offered no
+    /// way out. ``DesktopArtifactStatus`` turns the raw string into a
     /// sentence, and anything retryable carries the retry.
-    @ViewBuilder
-    private var statusControl: some View {
-        if let status = DesktopArtifactStatus(
+    private var artifactStatus: DesktopArtifactStatus? {
+        DesktopArtifactStatus(
             localError: localErrorDescription,
             phase: loadPhase,
             serverError: model.lastErrorDescription
-        ) {
-            JunoDesktopGlass(spacing: JunoSpace.snug) {
-                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                    JunoIconView(status.icon, size: 16)
-                        .foregroundStyle(status.tint)
-                        .accessibilityHidden(true)
-                    Text(status.message)
-                        .junoCaption()
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 520, alignment: .leading)
-                        .textSelection(.enabled)
-                    if localErrorDescription != nil {
-                        Button("Dismiss") {
-                            localErrorDescription = nil
-                        }
-                        .controlSize(.small)
-                    } else if status.isRetryable {
-                        Button("Try Again") {
-                            localErrorDescription = nil
-                            Task { await model.reload() }
-                        }
-                        .controlSize(.small)
-                        .disabled(model.phase == .loading)
-                    }
-                }
-                .padding(.horizontal, JunoSpace.cozy)
-                .padding(.vertical, JunoSpace.snug)
-                .junoFloatingChrome(cornerRadius: JunoRadius.well)
-            }
-            .padding(.horizontal, JunoSpace.roomy)
-            .padding(.bottom, JunoSpace.roomy)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("juno.artifact-status")
+        )
+    }
+
+    private func statusToast(_ status: DesktopArtifactStatus) -> JunoToast {
+        // A local failure (an export, a save) has nothing to retry: the
+        // toast's own dismiss is the old Dismiss.
+        if localErrorDescription != nil {
+            return JunoToast(tone: .error, title: status.message)
         }
+        return JunoToast(
+            tone: .error,
+            title: status.message,
+            action: status.isRetryable
+                ? JunoToast.Action("Try Again") {
+                    localErrorDescription = nil
+                    Task { await model.reload() }
+                }
+                : nil
+        )
     }
 
     /// The web's mono meta line: what the artifact is, which version, when it
@@ -1383,6 +1366,7 @@ struct DesktopArtifactsScreen: View {
                 Button("Cancel") { renaming = false }
                     .keyboardShortcut(.cancelAction)
                 Button("Rename") { commitRename() }
+                    .buttonStyle(.junoProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(
                         renameValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

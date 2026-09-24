@@ -50,7 +50,7 @@ final class DesktopTasksSurface {
 /// No surface on this page is glass. A table of runs is a reading surface and
 /// an inspector is a column; glass is reserved for chrome that floats — which
 /// is exactly what the editor sheet's cadence switcher spends it on, one
-/// travelling ``DesktopSegmented`` knob and nothing else.
+/// travelling ``JunoSegmented`` knob and nothing else.
 ///
 /// Everything here is wired to ``NativeScheduledTaskModel``. There is
 /// deliberately **no Run-now**: `/api/tasks` publishes GET/POST and
@@ -877,13 +877,13 @@ private struct DesktopTaskEditor: View {
                 }
 
                 Section("When it runs") {
-                    // `DesktopSegmented`, not `Picker(.segmented)`: the AppKit
+                    // `JunoSegmented`, not `Picker(.segmented)`: the AppKit
                     // control is for window toolbars; a switcher inside content
                     // gets the quiet track with the one glass knob.
                     // `LabeledContent` keeps the form's label column, which the
                     // picker used to provide for free.
                     LabeledContent("Repeats") {
-                        DesktopSegmented(
+                        JunoSegmented(
                             options: NativeTaskCadence.allCases.map {
                                 .init($0, $0.label)
                             },
@@ -965,8 +965,7 @@ private struct DesktopTaskEditor: View {
                     .keyboardShortcut(.cancelAction)
                 Button(isEditing ? "Save Changes" : "Create Task", action: save)
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.junoAccent)
+                    .buttonStyle(.junoProminent)
                     .disabled(!draft.isValid || isSaving || modelOptions.isEmpty)
                     .accessibilityIdentifier("juno.desktop.task-save")
             }

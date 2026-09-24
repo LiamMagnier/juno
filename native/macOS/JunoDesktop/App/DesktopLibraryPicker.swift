@@ -75,10 +75,10 @@ struct DesktopLibraryPicker: View {
                 // header is content inside a sheet, and `NSSegmentedControl`
                 // draws its pre-Tahoe slab there — hard dividers, a knob whose
                 // radius does not match its track — which is exactly the weight
-                // ``DesktopSegmented`` exists to replace everywhere else in the
+                // ``JunoSegmented`` exists to replace everywhere else in the
                 // app. The control sizes itself to its labels, so the fixed
                 // 220pt frame the picker needed goes with it.
-                DesktopSegmented(
+                JunoSegmented(
                     options: NativeLibraryModel.Filter.allCases.map {
                         .init($0, $0.title)
                     },
@@ -138,11 +138,9 @@ struct DesktopLibraryPicker: View {
                             .contentShape(.rect)
                     }
                 }
-                // Untinted, `.borderedProminent` fills with the system accent —
-                // system blue beside the coral selection stroke this same grid
-                // draws two dozen points away.
-                .buttonStyle(.borderedProminent)
-                .tint(Color.junoAccent)
+                // The style carries the Juno accent; the system's own would be
+                // blue beside the coral selection stroke two dozen points away.
+                .buttonStyle(.junoProminent)
                 .disabled(model.selection.isEmpty || model.isAttaching)
             }
             .padding(16)
