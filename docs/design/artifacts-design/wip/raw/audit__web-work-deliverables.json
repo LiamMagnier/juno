@@ -1,0 +1,789 @@
+{
+ "area": "Web: Work deliverables (docs, sheets, decks, reports, sites) and how they appear in Chat after the Work merge",
+ "summary": "The deliverables engine is Juno's closest equivalent to Claude Docs and Slides, and it is well built. A typed zod spec union with five kinds (document to .docx, spreadsheet to .xlsx, presentation to .pptx, report to .md, site to a script-free .zip) goes through `generateDeliverable` in this order: build, byte cap, SHA-256, then re-open with a reader that did not write the file (src/lib/work/deliverables/index.ts:176-223, validate.ts:320-361). Bytes go to object storage as append-only `WorkArtifactVersion` rows keyed by (sessionId, identifier) (prisma/schema.prisma:2608-2665). Downloads and the spreadsheet preview re-hash the stored bytes before serving anything (src/app/api/work/artifacts/[id]/download/route.ts:93-112, preview/route.ts:91-106). Sites preview in an opaque-origin iframe under a nonce CSP (src/components/work/work-site-preview.tsx:254-276, 590-603). Reports are prepared carefully for the chat markdown renderer (report-preview.ts). All 60 tests in the four related test files pass (work-deliverables, work-report-preview, work-spreadsheet-preview, artifact-export-verification).\n\nThe surfaces did not survive the Sept 17 merge of Work into Chat (commit ff3963ec retired /work). The rich deliverable UI is no longer mounted anywhere: `WorkDocuments`, with per-file cards for download, validator verdict, provenance and version history plus the Preview dialogs, is only defined (work-documents.tsx:111; rg found no other reference). In a conversation, the only surviving view is `WorkDeliverableStage`, and three limits apply:\n- It appears only once the task has finished (work-run-panel.tsx:356-358). LiveRun at 212-307 has no deliverable view.\n- It shows only the newest previewable file, meaning a site, report or spreadsheet (work-deliverable-stage.tsx:33-39).\n- It shows only the newest task in the conversation (use-conversation-work.ts:63-70; chat-view.tsx:2267).\n\nAs a result, a .docx, .pptx or .pdf a task produces cannot be reached anywhere in the web UI. The stage tells the reader \"N more files under Outputs\" (work-deliverable-stage.tsx:74-78), but the chat's Outputs popover lists only chat Artifacts and generated images (session-outputs.tsx:97-106, 286). The one surviving surface also drops the validator verdict that the whole pipeline exists to show.\n\nDeliverables cannot be edited. No PATCH, restore, delete, rename or share route exists (only GET list/detail/download/preview and an unused POST). `origin: edit|restore|import` is declared in the schema but never written. The typed spec is thrown away after the build: no column holds it, and the tool_started event records only a summary (runner/agent-core/src/work/session.ts:915-923). So a deck or doc can never be re-rendered, edited in place or previewed faithfully. Iterating from the conversation is also structurally impossible:\n- Every `start_task` creates a new WorkSession (task-tool.ts:198-204), so a follow-up request writes a new artifact at v1 instead of v2 of the same file.\n- The task \"cannot read this conversation\" (system-prompt.ts, Tasks section), and the runner has no tool that reads an earlier deliverable. Its tools are web_search, web_fetch, browser, create_deliverable and cloud_files (tools.ts).\n- The chat model never sees what a task produced: no chat code reads WorkArtifact (rg over src/app/api/chat/route.ts and src/lib/chat).\n\nProvenance is modelled, rendered into reports and shown in the (dead) UI, but it is never recorded. The runner's tool takes no provenance field (tools.ts:949-952), and the runner parses `{ spec: request.spec }` only (scripts/work-runner.ts:1826).\n\nThe duplication with chat Artifacts is the heart of the merge. The chat prompt sends \"a single document or artifact\" to chat (system-prompt.ts:66) and asks for documents, spreadsheets and decks as ONE MARKDOWN artifact (293-297). office-export.ts then infers .docx/.xlsx/.pptx from that markdown at download time. Anything \"built from many sources\" goes to a task and becomes a typed WorkArtifact in S3. That leaves two ways to make a deck, and two of each of the following:\n- OOXML renderers, where the .docx code is a near line-for-line copy (document.ts vs office-export.ts:450-611).\n- Storage models: Postgres text versions vs S3 blobs with hashes.\n- Preview stacks, share models (Share links only to Artifact, schema.prisma:1808-1828), libraries (/artifacts lists only chat Artifacts) and vocabularies (\"Sites\" and \"Documents\" mean different things in each).\n\nThe one shared piece is the validator: chat Office exports are verified with the Work `validateDeliverable` (office-export-verify.ts:42-62). That shared validator is the natural seed of a merged \"typed artifact\" layer.\n\nOther defects I verified with scratch probes against the real generators:\n- The site validator rejects ordinary prose such as \"one = true\", \"javascript: the good parts\" and \"fetch (and cache)\", so benign sites are stored as unvalidated and the model is told to warn the user.\n- The POST replay path cannot dedupe .docx/.xlsx/.pptx, because those builders embed timestamps.\n- A document with a subtitle prints it above the body's first H1.\n- Report list items and quotes are not escaped at line start.\n- Date-only ISO cells are refused, although the tool guide says ISO 8601.\n- The spreadsheet preview shows 0.256 where Excel shows 25.6%.\n\nTwo further defects come from reading the code:\n- Account deletion leaves every deliverable object in the bucket (delete-account.ts:41-53 purges attachments and the avatar only).\n- A new version produced within a run never refreshes the staged preview, because the refetch is keyed on a count of distinct artifact ids (use-conversation-work.ts:233,244; work-documents.tsx:100-103).",
+ "files_read": [
+  "src/lib/work/deliverables/index.ts",
+  "src/lib/work/deliverables/document.ts",
+  "src/lib/work/deliverables/presentation.ts",
+  "src/lib/work/deliverables/spreadsheet.ts",
+  "src/lib/work/deliverables/spreadsheet-preview.ts",
+  "src/lib/work/deliverables/spreadsheet-preview-shape.ts",
+  "src/lib/work/deliverables/report.ts",
+  "src/lib/work/deliverables/report-preview.ts",
+  "src/lib/work/deliverables/site.ts",
+  "src/lib/work/deliverables/validate.ts",
+  "src/app/api/work/artifacts/route.ts",
+  "src/app/api/work/artifacts/[id]/route.ts",
+  "src/app/api/work/artifacts/[id]/download/route.ts",
+  "src/app/api/work/artifacts/[id]/preview/route.ts",
+  "prisma/schema.prisma (1125-1160 Artifact/ArtifactVersion, 1808-1828 Share, 2600-2665 WorkArtifact/WorkArtifactVersion)",
+  "src/components/work/work-documents.tsx",
+  "src/components/work/work-site-preview.tsx",
+  "src/components/work/work-detail-panels.tsx",
+  "src/components/work/detail/work-deliverable-stage.tsx",
+  "src/components/work/work-transport.tsx (1495-1610)",
+  "src/components/chat/use-conversation-work.ts",
+  "src/components/chat/work-run-panel.tsx",
+  "src/components/chat/chat-view.tsx (425-470, 2250-2285)",
+  "src/components/chat/session-outputs.tsx (1-140)",
+  "src/lib/chat/task-tool.ts",
+  "src/lib/chat/system-prompt.ts (40-80, 240-300)",
+  "src/lib/office-export.ts",
+  "src/lib/office-export-verify.ts",
+  "src/app/api/artifacts/[id]/export/route.ts",
+  "src/components/canvas/canvas-panel.tsx (240-370, 465-520, 878-890)",
+  "src/lib/work/domain.ts (1085-1145)",
+  "src/lib/work/serializers.ts (425-465)",
+  "src/lib/storage.ts",
+  "src/lib/sync-entities.ts (530-600)",
+  "src/app/(app)/work/[[...segments]]/page.tsx",
+  "src/app/(app)/artifacts/page.tsx (1-60)",
+  "src/app/(app)/chat/[id]/page.tsx (55-80)",
+  "src/app/api/account/delete-account.ts",
+  "src/app/api/account/export/route.ts (60-100, grep)",
+  "scripts/work-runner.ts (1760-2100)",
+  "runner/agent-core/src/work/tools.ts (930-1080)",
+  "runner/agent-core/src/work/session.ts (575-600, 905-935)",
+  "src/components/ui/button.tsx (grep sizes)",
+  "docs/design/TWO_PRODUCTS.md (80-160)",
+  "docs/design/ICONS_AND_MOTION.md (180-297)",
+  "tests/work-deliverables.test.ts (ran; read 260-300)",
+  "tests/work-report-preview.test.ts (ran; read 380-405)",
+  "tests/work-spreadsheet-preview.test.ts (ran)",
+  "tests/artifact-export-verification.test.ts (ran)"
+ ],
+ "inventory": [
+  {
+   "feature": "Typed deliverable spec union (5 kinds) + provenance envelope",
+   "description": "deliverableSpecSchema is a zod discriminatedUnion of document/spreadsheet/presentation/report/site; deliverableRequestSchema adds optional provenance (max 200). GENERATED_DELIVERABLE_KINDS excludes pdf/image/bundle/archive, which have no generator.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/work/deliverables/index.ts:97-129"
+   ]
+  },
+  {
+   "feature": "Document (.docx) generator",
+   "description": "7 block types (heading 1-6, paragraph, list, quote, code, table, pageBreak) with rich-text runs (bold/italic/code). Title paragraph skipped if body opens with H1; tables are refused if ragged; ordered lists restart numbering; headers repeat across pages. Subtitle is emitted before the first H1 (defect). No images, links, footnotes, TOC, styles/themes.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/work/deliverables/document.ts:102-358"
+   ]
+  },
+  {
+   "feature": "Spreadsheet (.xlsx) generator",
+   "description": "Typed cells (string/number/boolean/null/{date}), per-column format (text/number/integer/currency/percent/date), width or autofit (10-60), frozen header by default, wrap when value exceeds width, no formulas by design. Refuses duplicate sheet names (case-insensitive), apostrophe names, ragged rows. Currency is hard-coded \"$\"; date cells need full datetime.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/work/deliverables/spreadsheet.ts:61-271"
+   ]
+  },
+  {
+   "feature": "Presentation (.pptx) generator",
+   "description": "Closed set of 5 layouts (title, section, bullets, body, table) on 16:9 with fixed geometry; speaker notes. No images, charts, themes/brand, layout variety, or autofit; schema maxima allow content far larger than the fixed boxes.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/work/deliverables/presentation.ts:30-221"
+   ]
+  },
+  {
+   "feature": "Report (.md) + printable HTML",
+   "description": "Markdown with inline escaping, backtick-safe code spans, pipe-escaped tables, rendered Sources section from provenance; the same blocks render to a self-contained print-styled HTML page. The HTML is returned as `printableHtml` but never persisted or served (only tests read it).",
+   "maturity": "partial",
+   "where": [
+    "src/lib/work/deliverables/report.ts:163-425",
+    "src/lib/work/deliverables/index.ts:148-155,196-201"
+   ]
+  },
+  {
+   "feature": "Site (.zip) static bundle",
+   "description": "Multi-page (<=100) script-free site from typed blocks, 3 named themes (neutral/warm/cool), nav with aria-current, deterministic zip (fixed entry dates), strict base64 image assets (png/jpeg/webp/gif, no SVG) but no image block exists to reference them.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/work/deliverables/site.ts:65-339"
+   ]
+  },
+  {
+   "feature": "Validator (re-open + caps + path safety + package budgets)",
+   "description": "Per-kind byte caps; bundle path allowlist; zip-bomb budgets; OOXML relationship target checks; docx paragraph/text count; pptx slide count; xlsx full exceljs load with formula/overflow/named-range checks; strict UTF-8 for reports; site markup scan for script/iframe/handlers/remote subresources. Verdict never throws; stamped validator id. The site scan has false positives on ordinary prose.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/work/deliverables/validate.ts:98-773"
+   ]
+  },
+  {
+   "feature": "Provenance (citations per version)",
+   "description": "Schema, storage helpers, rendering into report Sources and a UI list exist, but the only production writer (cloud runner) never passes provenance and the tool has no field for it; every stored version has provenance [].",
+   "maturity": "stub",
+   "where": [
+    "src/lib/work/deliverables/validate.ts:208-241",
+    "src/lib/work/deliverables/index.ts:237-263",
+    "scripts/work-runner.ts:1826",
+    "runner/agent-core/src/work/tools.ts:949-952"
+   ]
+  },
+  {
+   "feature": "Versioning",
+   "description": "Append-only versions per (sessionId, identifier); highest+1 allocation; head pointer + validatedAt move in the same transaction; kind fixed per artifact; soft-deleted identifiers refuse new versions. No restore/edit/import writer exists; each chat task is a new session so versions cannot span follow-up requests.",
+   "maturity": "partial",
+   "where": [
+    "src/app/api/work/artifacts/route.ts:247-429",
+    "scripts/work-runner.ts:1985-2078",
+    "prisma/schema.prisma:2608-2665"
+   ]
+  },
+  {
+   "feature": "POST /api/work/artifacts (user-side generate)",
+   "description": "Session/run ownership checks, rate limit 20/min (owner exempt), generate, identical-bytes replay, S3 put before rows, 4-try version allocation. No client (web or native) calls it; replay never matches OOXML kinds.",
+   "maturity": "partial",
+   "where": [
+    "src/app/api/work/artifacts/route.ts:185-430"
+   ]
+  },
+  {
+   "feature": "GET list / detail",
+   "description": "List by user (+sessionId, +kind validated), limit clamp 1-100, soft-deleted hidden, ordered by updatedAt. Detail returns up to 100 versions without storageKey, provenance via tolerant reader, stored verdict and an unvalidated warning sentence.",
+   "maturity": "solid",
+   "where": [
+    "src/app/api/work/artifacts/route.ts:118-163",
+    "src/app/api/work/artifacts/[id]/route.ts:34-79"
+   ]
+  },
+  {
+   "feature": "Hash-verified download",
+   "description": "Version param strictly parsed, whole object buffered and SHA-256 compared (409 on mismatch), MIME from ARTIFACT_MIME, RFC 5987 Content-Disposition, no-store, X-Juno-Validated/-Warning headers.",
+   "maturity": "solid",
+   "where": [
+    "src/app/api/work/artifacts/[id]/download/route.ts:49-160"
+   ]
+  },
+  {
+   "feature": "Spreadsheet preview route + reader",
+   "description": "Server-side exceljs read of hash-verified bytes, windowed to 8 sheets x 200 rows x 40 cols x 200 chars with omission sentences. Ignores cell number formats (shows raw values).",
+   "maturity": "solid",
+   "where": [
+    "src/app/api/work/artifacts/[id]/preview/route.ts:35-134",
+    "src/lib/work/deliverables/spreadsheet-preview.ts:79-158",
+    "src/lib/work/deliverables/spreadsheet-preview-shape.ts"
+   ]
+  },
+  {
+   "feature": "Site previewer (sandboxed)",
+   "description": "Downloads zip, lazy-inflates pages with JSZip (dynamic import), injects CSP meta (default-src none, nonce script) + stylesheet + navigation bridge; sandbox allow-scripts/popups without same-origin; parent validates postMessage source and path. Generation counter guards races. No page list, back/forward or open-in-tab chrome.",
+   "maturity": "solid",
+   "where": [
+    "src/components/work/work-site-preview.tsx:198-632"
+   ]
+  },
+  {
+   "feature": "Report previewer",
+   "description": "prepareReportPreview rewrites $, \\[ \\] ( ) \\\\ and ! outside code so the chat Markdown renderer (remark-math, normalizeMathDelimiters, image fetch) cannot corrupt or beacon; 200k-char cap stated on screen; image-as-link notice.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/work/deliverables/report-preview.ts:131-337",
+    "src/components/work/work-site-preview.tsx:653-793"
+   ]
+  },
+  {
+   "feature": "Spreadsheet previewer UI",
+   "description": "All sheets stacked vertically as plain tables (first row as header), omission sentences; no sheet tabs, sticky header, column letters, numeric alignment or format fidelity.",
+   "maturity": "partial",
+   "where": [
+    "src/components/work/work-site-preview.tsx:812-946"
+   ]
+  },
+  {
+   "feature": "In-chat deliverable stage (post-merge)",
+   "description": "In a finished task panel: newest previewable (site/report/spreadsheet) artifact inline with title, ext/version/age and Download; 'N more files under Outputs'. Not shown while live, no validation state, no docx/pptx/pdf, only the newest task.",
+   "maturity": "broken",
+   "where": [
+    "src/components/work/detail/work-deliverable-stage.tsx:33-81",
+    "src/components/chat/work-run-panel.tsx:309-389",
+    "src/components/chat/use-conversation-work.ts:233-244"
+   ]
+  },
+  {
+   "feature": "Document cards (download, verdict, provenance, version history, preview dialog)",
+   "description": "Complete UI for every kind including Office cards with verdict and problems, per-version downloads and a Preview dialog. Unmounted since the /work pages were retired; no importer of WorkDocuments exists.",
+   "maturity": "broken",
+   "where": [
+    "src/components/work/work-documents.tsx:111-518",
+    "src/components/work/work-site-preview.tsx:353-357,607-632,762-793"
+   ]
+  },
+  {
+   "feature": "Task reference panels (settings, budget, references, actions performed)",
+   "description": "WorkRunSettings, WorkPlannedSettings, WorkActionsPerformed, deriveReferences have no importers after the merge; only deriveArtifacts and WorkLiveMeter are used.",
+   "maturity": "broken",
+   "where": [
+    "src/components/work/work-detail-panels.tsx:73-142,217-401,562-602"
+   ]
+  },
+  {
+   "feature": "Cloud runner create_deliverable tool",
+   "description": "Tool description embeds the spec guide; runner validates with the same zod union, generates, stores (duplicate write path) and records artifact_created/updated events; tells the model whether the validator passed.",
+   "maturity": "partial",
+   "where": [
+    "runner/agent-core/src/work/tools.ts:939-1051",
+    "scripts/work-runner.ts:1824-2096"
+   ]
+  },
+  {
+   "feature": "start_task chat delegation",
+   "description": "Model-decided handoff to a background task with gating, idempotency per user message, preflight estimate, approval card, one live task per conversation. Goal is self-contained; task cannot read the conversation.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/chat/task-tool.ts:82-787",
+    "src/lib/chat/system-prompt.ts:57-72"
+   ]
+  },
+  {
+   "feature": "Chat MARKDOWN artifact -> Office export (the duplicate path)",
+   "description": "Canvas asks the server which formats fit (docx always; xlsx if a table; pptx if divider or >=2 H2), builds on click from the latest version via markdown inference, verifies with the Work validator before streaming; not stored, not versioned as a file.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/office-export.ts:363-875",
+    "src/app/api/artifacts/[id]/export/route.ts:63-164",
+    "src/lib/office-export-verify.ts:42-62",
+    "src/components/canvas/canvas-panel.tsx:347-367,478-505,878"
+   ]
+  },
+  {
+   "feature": "Editing a deliverable (doc/deck/sheet)",
+   "description": "No editor, no PATCH route, no 'edit' origin writer; the spec is not persisted so nothing can be re-rendered.",
+   "maturity": "absent",
+   "where": [
+    "src/app/api/work/artifacts/**",
+    "prisma/schema.prisma:2637-2665"
+   ]
+  },
+  {
+   "feature": "Sharing / public link / comments on deliverables",
+   "description": "Share relates only to Artifact (conversationId/artifactId); no WorkArtifact share or comment model or route.",
+   "maturity": "absent",
+   "where": [
+    "prisma/schema.prisma:1808-1828"
+   ]
+  },
+  {
+   "feature": "Deliverables in Library (/artifacts) or the chat Outputs popover",
+   "description": "Both list only chat Artifact rows (and generated images); no fetch of WorkArtifact.",
+   "maturity": "absent",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:42-60",
+    "src/components/chat/session-outputs.tsx:55-63,97-106"
+   ]
+  },
+  {
+   "feature": "Delete / rename / restore deliverable",
+   "description": "Schema has deletedAt and 'restore' origin; no route or UI writes either.",
+   "maturity": "absent",
+   "where": [
+    "prisma/schema.prisma:2627,2649"
+   ]
+  },
+  {
+   "feature": "PDF generation or export; docx/pptx preview",
+   "description": "No PDF builder; canPreviewArtifact refuses document/presentation/pdf with written arguments.",
+   "maturity": "absent",
+   "where": [
+    "src/components/work/work-site-preview.tsx:112-166"
+   ]
+  },
+  {
+   "feature": "Account erasure of deliverable objects",
+   "description": "Account deletion purges attachment objects, thumbnails and avatar only; WorkArtifactVersion objects (and cloud_file objects) are left in the bucket once rows cascade.",
+   "maturity": "broken",
+   "where": [
+    "src/app/api/account/delete-account.ts:41-72"
+   ]
+  }
+ ],
+ "architecture": "WHAT I READ:\n\n1) Production path. A chat turn can carry the `start_task` tool (task-tool.ts:82-110; gate at 158-175). The model calls it, and task-tool.ts:552-770 creates a WorkSession linked to the conversation (conversationId at 613) through dispatch.ts, with idempotency keyed on the user message (198-204). The cloud runner (scripts/work-runner.ts) gives the agent `create_deliverable` (runner/agent-core/src/work/tools.ts:989-1051), which takes `{identifier, spec}` only.\n\n2) Generation. The runner parses the spec with `deliverableRequestSchema` and drops provenance (work-runner.ts:1826). It then calls `generateDeliverable`, which runs build, cap, hash, validate (index.ts:176-223), and `storeDeliverable` (1985-2078):\n- putObject to `work-artifacts/<user>/<uuid>-<identifier>.<ext>` with an attachment Content-Disposition;\n- one transaction that finds or creates the WorkArtifact (refusing a deletedAt identifier or a kind change), creates WorkArtifactVersion with version = highest+1, origin \"generated\", validation minus details and runId, and updates the head's currentVersion, title, mimeType and validatedAt;\n- a WorkRunIO row with refKind artifact_version.\nIt then emits `artifact_created` or `artifact_updated` with ref {id: WorkArtifact.id, kind, title, version, byteSize} (session.ts:580-590).\n\nThe POST route is a second, independent copy of this write path (route.ts:185-430). Its storage key prefix is `uploads/`, and it adds identifier regex validation, stored details, an identical-hash replay and P2002 retries. No client calls it.\n\n3) Persistence (schema.prisma:2608-2665). WorkArtifact belongs to WorkSession and User. It holds identifier (unique per session), title, kind (TEXT), mimeType, currentVersion, validatedAt and deletedAt. WorkArtifactVersion holds storageKey, byteSize, contentHash, origin, provenance JSON, provenanceVersion, validation JSON and runId. There is no content or spec column: the bytes are the only representation.\n\nChat Artifact (schema.prisma:1125-1160) is a separate model keyed on (conversationId, identifier), with text content per version and Share relations. Sync to native goes through DB-trigger change capture and sync-entities.ts:547-580, which strips storageKey.\n\n4) Reading.\n- GET /api/work/artifacts?sessionId=&kind=&limit= returns list rows through serializeArtifact. GET /[id] returns up to 100 versions with provenance and verdict. GET /[id]/download?version= streams hash-verified bytes. GET /[id]/preview?version= returns spreadsheet text windows. Every route scopes by userId and deletedAt null.\n- Client transport: work-transport.tsx:1571-1607.\n\n5) Chat surface after the merge.\n- ChatView owns `useConversationWork(conversationId)` (chat-view.tsx:464).\n- That hook polls `fetchWorkSessions({conversationId, limit:1})` every 4 s, subscribes to the newest session's SSE events, derives artifacts from events (deriveArtifacts, keyed by WorkArtifact id), and calls `useWorkArtifactList(sessionId, distinctArtifactCount, run!==null)`, which refetches the list whenever that count changes.\n- `WorkRunPanel` is placed in the transcript by session createdAt (chat-view.tsx:2267). In the terminal state it renders `WorkDeliverableStage`, which picks the newest site, report or spreadsheet and renders `WorkDeliverableInlinePreview`: a report via the chat Markdown renderer after prepareReportPreview, a spreadsheet via the /preview JSON, a site in the sandboxed iframe.\n- Nothing else in chat reads WorkArtifact. The chat model's context never includes deliverables. The Canvas side panel, session Outputs and /artifacts all operate on chat Artifact only.\n\n6) Duplicate chat path. A MARKDOWN chat Artifact is converted on demand by `/api/artifacts/[id]/export?format=` using office-export.ts, which infers blocks from markdown. The result is verified with the Work validator through office-export-verify.ts and streamed, never stored.\n\nINFERRED: the natural merged model is a single typed artifact with the spec or markdown as the stored, editable source, rendered exports as derived and validated blobs, the Work validator as the shared gate, and share/comment/version semantics from chat Artifact. WorkArtifact currently has none of the source-of-truth half.",
+ "ux": [
+  {
+   "observation": "After the merge the only web view of a task's output is one inline block, and only once the task has finished. A task that produces only a .docx, .pptx or .pdf shows no file at all: the stage returns null and `empty:hidden` removes the slot. The 'N more files under Outputs' line sends the reader to the chat's Outputs popover, which never contains Work files.",
+   "severity": "major",
+   "where": [
+    "src/components/work/detail/work-deliverable-stage.tsx:33-43,74-78",
+    "src/components/chat/work-run-panel.tsx:356-358",
+    "src/components/chat/session-outputs.tsx:97-106,286"
+   ]
+  },
+  {
+   "observation": "While a task is running, files it has already written are invisible. LiveRun renders the current action, plan, meter, words and questions/approvals, but no deliverables. Cowork and Claude show artifacts as they appear.",
+   "severity": "major",
+   "where": [
+    "src/components/chat/work-run-panel.tsx:212-307"
+   ]
+  },
+  {
+   "observation": "Beyond Download, the staged deliverable has no actions: no open in Canvas or full screen, no version picker, no copy, share, rename, delete, edit, 'ask Juno to change this' or comment. For a site there is no page list, back/forward or open-in-tab.",
+   "severity": "major",
+   "where": [
+    "src/components/work/detail/work-deliverable-stage.tsx:46-79",
+    "src/components/work/work-site-preview.tsx:562-605"
+   ]
+  },
+  {
+   "observation": "The stage never shows whether the file was validated. An unvalidated file gets the same Download button as a validated one. This contradicts the schema's 'shown as such rather than offered for download as though it were fine' (schema.prisma:2621-2624) and the dead VerdictLine UI.",
+   "severity": "major",
+   "where": [
+    "src/components/work/detail/work-deliverable-stage.tsx:41-80"
+   ]
+  },
+  {
+   "observation": "A failed list request is silent in chat. `stagedArtifact` sees `artifacts === null` and renders nothing, and `list.failed` and `reload` are never read. The error/retry state (WorkLoadError) lives only in the unmounted WorkDocuments.",
+   "severity": "minor",
+   "where": [
+    "src/components/work/detail/work-deliverable-stage.tsx:33-43",
+    "src/components/work/work-documents.tsx:130-163"
+   ]
+  },
+  {
+   "observation": "Loading states are a centred spinner plus mono label (PreviewWait, min-h-24) rather than skeletons shaped like a table, page or frame, against ICONS_AND_MOTION \u00a73 ('Skeletons match the shape'). Report and spreadsheet boxes are max-height, so the transcript jumps from ~96px to the content height when a preview lands.",
+   "severity": "minor",
+   "where": [
+    "src/components/work/work-site-preview.tsx:383-393,948-957"
+   ]
+  },
+  {
+   "observation": "The Download button is forced to h-7 (28px) over Button sm's h-8, below the 32px pointer hit-target rule. Its coarse:h-10 is also under 44px.",
+   "severity": "minor",
+   "where": [
+    "src/components/work/detail/work-deliverable-stage.tsx:56",
+    "src/components/ui/button.tsx:72"
+   ]
+  },
+  {
+   "observation": "The spreadsheet preview stacks every sheet vertically with no tabs. Numbers are left-aligned and shown raw (0.256 instead of 25.6%, 1234.5 instead of $1,234.50). The header scrolls away.",
+   "severity": "minor",
+   "where": [
+    "src/components/work/work-site-preview.tsx:884-945",
+    "src/lib/work/deliverables/spreadsheet-preview.ts:79-96"
+   ]
+  },
+  {
+   "observation": "Fixed-height inline iframes (h-[min(36rem,70vh)]) and max-h scroll boxes put a nested scroll area inside the scrolling transcript, which is awkward on phones.",
+   "severity": "minor",
+   "where": [
+    "src/components/work/work-site-preview.tsx:383,390,396"
+   ]
+  },
+  {
+   "observation": "A conversation that delegated twice shows only the newest task. The earlier task's panel and deliverables vanish from the transcript, unlike research, which keeps HistoricalResearchRunPanel.",
+   "severity": "major",
+   "where": [
+    "src/components/chat/use-conversation-work.ts:63-70",
+    "src/components/chat/chat-view.tsx:2262-2267"
+   ]
+  },
+  {
+   "observation": "Naming collides with the chat library. /artifacts filters 'Sites' and 'Documents' mean HTML and MARKDOWN chat artifacts, while Work 'site' and 'document' are a zip and a .docx that appear in no list. Site bundles still stamp 'Generated by Juno Work' although Work is no longer a product.",
+   "severity": "minor",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:52-60",
+    "src/lib/work/deliverables/site.ts:265"
+   ]
+  },
+  {
+   "observation": "The error copy is good and specific: hash mismatch explains itself, truncation and image-as-link are stated on screen, and PreviewProblem follows the one-glyph, one-sentence, one-action pattern.",
+   "severity": "info",
+   "where": [
+    "src/components/work/work-site-preview.tsx:307-323,733-751,959-982"
+   ]
+  }
+ ],
+ "motion": [
+  {
+   "observation": "WorkRunPanel enters with a framer fade plus 4px rise on transition.base, fade only under reduced motion. The header status line re-keys with a fast fade. Stop enters and exits via AnimatePresence. The live and terminal bodies cross-fade with mode=\"wait\" (exit rung, then base). This is compliant with ICONS_AND_MOTION \u00a72 rules 7 and 10.",
+   "where": [
+    "src/components/chat/work-run-panel.tsx:103-172"
+   ]
+  },
+  {
+   "observation": "WorkDeliverableStage adds its own `motion-safe:animate-rise-in` inside a terminal body that is already fading in. That is a double entrance on the same frame, and the stage appears again on each remount.",
+   "where": [
+    "src/components/work/detail/work-deliverable-stage.tsx:49",
+    "src/components/chat/work-run-panel.tsx:158-170"
+   ]
+  },
+  {
+   "observation": "Moving from one version to the next, or from spinner to content, has no transition. The inline preview hard-swaps PreviewWait for the rendered content, and a new version (when it refreshes at all) re-downloads and hard-swaps again.",
+   "where": [
+    "src/components/work/work-site-preview.tsx:575-604,727-759,866-945"
+   ]
+  },
+  {
+   "observation": "Loader2 animate-spin appears in the waiting states. The globals.css reduced-motion rule slows it to a fade (per the doc), so this is compliant.",
+   "where": [
+    "src/components/work/work-site-preview.tsx:954",
+    "src/components/work/work-documents.tsx:328,356"
+   ]
+  },
+  {
+   "observation": "PreviewProblem fades in with motion-safe:animate-fade-in. Carets in the dead DocumentCard and in RunWords rotate with duration-base ease-in-out, and Collapse is used for disclosure (\u00a72 rule 6).",
+   "where": [
+    "src/components/work/work-site-preview.tsx:971",
+    "src/components/work/work-documents.tsx:267-271,353",
+    "src/components/chat/work-run-panel.tsx:416-426"
+   ]
+  },
+  {
+   "observation": "Nothing marks the moment a deliverable is created or updated mid-run: no toast, no chip entrance, no count animation. That is where Claude and Cowork animate an artifact card into the thread.",
+   "where": [
+    "src/components/chat/work-run-panel.tsx:212-307"
+   ]
+  }
+ ],
+ "defects": [
+  {
+   "id": "web-work-deliverables-1",
+   "title": "Word/PowerPoint/PDF deliverables have no web surface after the Work merge; stage points to an 'Outputs' that does not contain them",
+   "severity": "high",
+   "file": "src/components/work/detail/work-deliverable-stage.tsx",
+   "line": 34,
+   "evidence": "READ: stagedArtifact filters to canPreviewArtifact kinds, which are site, report and spreadsheet only (work-deliverable-stage.tsx:34; work-site-preview.tsx:164-166). The stage is the only deliverable UI mounted in chat (work-run-panel.tsx:356-358). WorkDocuments, which listed every kind with a Download, has no importer (rg for 'WorkDocuments' in src and tests finds only its definition at work-documents.tsx:111), because commit ff3963ec retired the /work pages. Line 76 prints '{n} more files under Outputs.', but the chat Outputs popover builds its tiles from chat Artifacts and images only (session-outputs.tsx:97-106, label at 286).",
+   "failure_scenario": "A user asks for 'a competitor pricing deck'. The model calls start_task, and the runner calls create_deliverable with kind presentation. The task completes, and the chat panel shows the status, the task's words and the meter, but no file and no link. If the task also wrote a report, the report is staged and the text reads '1 more file under Outputs.' The user opens Outputs, which lists only chat artifacts. The .pptx can be downloaded only by hand-crafting /api/work/artifacts/<id>/download, or from the native apps."
+  },
+  {
+   "id": "web-work-deliverables-2",
+   "title": "Account deletion leaves every Work deliverable object in object storage",
+   "severity": "high",
+   "file": "src/app/api/account/delete-account.ts",
+   "line": 43,
+   "evidence": "READ: the purge collects only `prisma.attachment` storage keys, their thumbnails and the avatar (delete-account.ts:41-53), then `prisma.user.delete` runs (68). WorkArtifact and WorkArtifactVersion cascade on the user relation (schema.prisma:2631,2659), so their rows disappear while the objects under `work-artifacts/<userId>/...` (work-runner.ts:1988) and `uploads/<userId>/...` (route.ts:311) are never deleted. The runner's cloud_file objects (work-runner.ts:1914-1919) are likewise not purged.",
+   "failure_scenario": "A user whose tasks produced spreadsheets of their financial data deletes their account. The report says the objects were purged, but the .xlsx/.docx/.pptx/zip bytes stay in the bucket forever, with no row referencing them. That is an erasure failure no later sweep can find by user."
+  },
+  {
+   "id": "web-work-deliverables-3",
+   "title": "Site validator marks benign prose as unsafe, so ordinary sites are stored unvalidated and the model is told to warn the user",
+   "severity": "medium",
+   "file": "src/lib/work/deliverables/validate.ts",
+   "line": 647,
+   "evidence": "READ: UNSAFE_MARKUP regexes are run over whole escaped page HTML, including text content (validate.ts:643-654, 698-700). Escaping does not touch letters, '=', ':' or '('. VERIFIED by a scratch probe through generateDeliverable. A one-paragraph site with 'Set the flag one = true to enable it.' returned ok=false with 'index.html contains an inline event handler attribute.' Likewise 'Read javascript: the good parts.' gave 'a javascript: URL', 'We fetch (and cache) the data nightly.' gave 'a browser network call', and 'Use @import in your stylesheet.' gave 'a CSS @import'. The runner then tells the model 'the validator could not re-open it: \u2026 Say so rather than presenting it as finished.' (work-runner.ts:2082-2084), and validatedAt is set to null.",
+   "failure_scenario": "A task builds a documentation site for a JS library. Any page mentioning 'fetch (' or 'javascript:' fails. The model reports the site as broken or retries uselessly, and the version is permanently recorded as 'not confirmed to open' although it is perfectly safe."
+  },
+  {
+   "id": "web-work-deliverables-4",
+   "title": "A new version produced within the same run never refreshes the staged deliverable",
+   "severity": "medium",
+   "file": "src/components/chat/use-conversation-work.ts",
+   "line": 244,
+   "evidence": "READ: `useWorkArtifactList(sessionId, artifacts.length, run !== null)` refetches only when `produced` changes (work-documents.tsx:100-103). `artifacts` comes from deriveArtifacts, a Map keyed by WorkArtifact id in which artifact_updated replaces the row (work-detail-panels.tsx:181-202). The runner reuses the same id across versions and emits artifact_updated (session.ts:580-588; work-runner.ts:2087-2093). No other trigger reloads the list: `reload` is never called by the stage.",
+   "failure_scenario": "The model publishes report v1, the validator flags a problem, and the model calls create_deliverable again with the same identifier (as the tool description invites). The event count stays 1, so the list is not refetched. When the run ends, the stage shows 'v1' and previews v1's bytes. The Download link (no version param) serves v2, so the preview and the download disagree until the page is reloaded."
+  },
+  {
+   "id": "web-work-deliverables-5",
+   "title": "The only surviving deliverable UI drops the validation verdict",
+   "severity": "medium",
+   "file": "src/components/work/detail/work-deliverable-stage.tsx",
+   "line": 56,
+   "evidence": "READ: WorkDeliverableStage renders title, extension, version, age and a Download button, and never reads `artifact.validatedAt` (lines 41-80). The download route serves unvalidated bytes with only an X-Juno-Validation-Warning header (download/route.ts:156-157), which a plain <a href> download never shows. The component that surfaced verdicts (VerdictLine, work-documents.tsx:441-482) is unmounted.",
+   "failure_scenario": "A site fails validation (for example web-work-deliverables-3, or a real problem). The chat shows it with a normal Download button and no warning, and the user forwards it. That is the exact failure validate.ts:17-21 says the column exists to prevent."
+  },
+  {
+   "id": "web-work-deliverables-6",
+   "title": "Earlier tasks in a conversation, and their deliverables, disappear from the chat",
+   "severity": "medium",
+   "file": "src/components/chat/use-conversation-work.ts",
+   "line": 179,
+   "evidence": "READ: discovery asks `fetchWorkSessions({ conversationId, limit: 1 })` and adopts only the newest (179-186). ChatView inserts a single WorkRunPanel (chat-view.tsx:2267), while research also renders history (2263). The limitation is acknowledged in the header comment (63-70) but has no workaround, and no other web surface lists a session's artifacts.",
+   "failure_scenario": "The user delegates 'build the Q3 report' and gets report.md plus a .xlsx. Next day they delegate 'draft the board deck' in the same chat. The first task's panel, staged report and every link to the Q3 files vanish from the transcript, and nothing in the web UI can reach them."
+  },
+  {
+   "id": "web-work-deliverables-7",
+   "title": "Provenance is never recorded for any real deliverable",
+   "severity": "medium",
+   "file": "scripts/work-runner.ts",
+   "line": 1826,
+   "evidence": "READ: the runner parses `deliverableRequestSchema.safeParse({ spec: request.spec })` with no provenance. The tool's `create(request: { identifier; spec })` has no provenance field, and its inputSchema declares only identifier and spec (tools.ts:949-952, 1017-1030). storeDeliverable writes `provenanceForStorage(generated.provenance)`, which is always []. Report Sources rendering (report.ts:337-366) and the Provenance UI (work-documents.tsx:485-518) therefore never have data. Citations are recorded separately as source_cited events (work-runner.ts:1821) but are never attached to the version.",
+   "failure_scenario": "A research task produces a 'market sizing' report from 12 web pages. The stored .md has no Sources section and the version's provenance is []. A reviewer, or a forwarded copy, cannot see where any figure came from, although the header docs (validate.ts:198-207) call unsourced figures a bigger problem than a file that won't open."
+  },
+  {
+   "id": "web-work-deliverables-8",
+   "title": "Deck layouts allow content far larger than their fixed boxes; tables overflow the slide",
+   "severity": "medium",
+   "file": "src/lib/work/deliverables/presentation.ts",
+   "line": 194,
+   "evidence": "READ: the schema allows 20 bullets of 500 chars, 10 paragraphs of 2,000 chars, and tables of 20 rows x 10 cols (30-39). Text goes into fixed 9x3.6in boxes at 16pt with no fit/shrink option (178-192). The table starts at y=1.4in on a 5.625in slide with no height cap (194-206). The header claims the closed layout set prevents 'text running off the slide' (14-18). VERIFIED by probe: a 20-row table slide writes 21 `<a:tr h=\"0\">` auto-height rows in a graphicFrame at y=1280160 EMU (1.4in). INFERRED: at 12pt with pptxgenjs' default 0.05in top and bottom cell margins, each row is at least about 0.3in, so 21 rows is about 6.3in, far past the 4.2in left on the slide. The validator cannot see this (it only counts slide parts, validate.ts:515-539).",
+   "failure_scenario": "A task makes a 'Top 20 vendors' table slide. In PowerPoint or Keynote the table runs off the bottom of the slide, yet the file is marked 'opens'. A 'body' slide with the allowed 10 x 600-character paragraphs likewise spills out of its box."
+  },
+  {
+   "id": "web-work-deliverables-9",
+   "title": "POST replay/idempotency can never match .docx/.xlsx/.pptx, so retries append duplicate versions",
+   "severity": "low",
+   "file": "src/app/api/work/artifacts/route.ts",
+   "line": 288,
+   "evidence": "READ: the replay compares the new contentHash with the head version's (287-305) and claims a retried request 'produces' the same bytes. The test suite itself says 'the OOXML kinds embed a creation timestamp, so two runs of the same spec are legitimately different files' (tests/work-deliverables.test.ts:268-270), and spreadsheet.ts:225 sets workbook.created = new Date(). VERIFIED by probe: two generations of the same document, spreadsheet and presentation spec 1.1s apart gave different hashes (report was stable). Low severity only because no web or native client calls POST today (native uses GET only, NativeWorkClient.swift:433-474).",
+   "failure_scenario": "A client POSTs a spreadsheet spec, the response is lost, and it retries. v2 is appended with identical content, and the history now shows a change that never happened."
+  },
+  {
+   "id": "web-work-deliverables-10",
+   "title": "Document subtitle is printed above the body's first H1",
+   "severity": "low",
+   "file": "src/lib/work/deliverables/document.ts",
+   "line": 249,
+   "evidence": "READ: the title is skipped when blocks[0] is an H1 (243-248), but the subtitle is still pushed before any block (249-253). VERIFIED: the spec {title:'Title', subtitle:'Sub', blocks:[H1 'Body H1', p]} produced w:t order [\"Sub\",\"Body H1\",\"p\"].",
+   "failure_scenario": "An agent writes a memo whose body opens with its own H1. The .docx opens with a grey italic subtitle line above the title heading."
+  },
+  {
+   "id": "web-work-deliverables-11",
+   "title": "Report markdown does not escape list-item and quote line starts, so text becomes headings or nested lists",
+   "severity": "low",
+   "file": "src/lib/work/deliverables/report.ts",
+   "line": 176,
+   "evidence": "READ: paragraphs and the summary go through escapeMarkdownLineStart (172, 381), but list items (175-177) and quotes (181) use inlineMarkdown only. VERIFIED: items ['3. Third step','- dash lead','# not a heading'] plus quote '# quoted hash' rendered as '- 3. Third step\\n- - dash lead\\n- # not a heading\\n\\n> # quoted hash'. Under CommonMark these are a nested ordered list starting at 3, a nested bullet, a heading inside a list item, and a heading inside a quote. This is the exact renumbering hazard the function's own comment describes (80-87).",
+   "failure_scenario": "A checklist item '1. Confirm invoice totals' inside an unordered list renders as a nested numbered list. A quoted '# of units' becomes a heading in the downloaded .md and in the preview."
+  },
+  {
+   "id": "web-work-deliverables-12",
+   "title": "Spreadsheet date cells refuse date-only ISO strings although the tool guide says ISO 8601",
+   "severity": "low",
+   "file": "src/lib/work/deliverables/spreadsheet.ts",
+   "line": 66,
+   "evidence": "READ: `z.object({ date: z.string().datetime() })`, and the tool guide says `{ date: \"<ISO 8601>\" }` (tools.ts:971). VERIFIED: {date:'2026-03-04'} fails with 'Invalid ISO datetime'.",
+   "failure_scenario": "The model writes a date column the natural way ('2026-03-04'), the spec is rejected, and a whole create_deliverable round trip is spent on a retry, or the model falls back to text dates that do not sort."
+  },
+  {
+   "id": "web-work-deliverables-13",
+   "title": "Currency format is hard-coded to US dollars",
+   "severity": "low",
+   "file": "src/lib/work/deliverables/spreadsheet.ts",
+   "line": 85,
+   "evidence": "READ: `currency: '\"$\"#,##0.00'`, and the spec has no currency code field (78-95).",
+   "failure_scenario": "A task for a European user builds a budget in EUR with format 'currency'. Excel shows every amount with a $ sign."
+  },
+  {
+   "id": "web-work-deliverables-14",
+   "title": "Spreadsheet preview ignores number formats, so reviewers see different numbers from Excel",
+   "severity": "low",
+   "file": "src/lib/work/deliverables/spreadsheet-preview.ts",
+   "line": 95,
+   "evidence": "READ: cellText returns String(value) for numbers and never consults cell.numFmt (79-96). The header claims 'nothing lost that a reviewer was going to check' (5-13). VERIFIED: currency 1234.5, percent 0.256 and integer 1234567 preview as \"1234.5\",\"0.256\",\"1234567\".",
+   "failure_scenario": "A market-share column shows 0.256 in the chat preview and 25.6% in Excel, and a reviewer approves or rejects figures they have misread."
+  },
+  {
+   "id": "web-work-deliverables-15",
+   "title": "Preview dialog routes spreadsheets to the site previewer (latent, in unmounted code)",
+   "severity": "low",
+   "file": "src/components/work/work-site-preview.tsx",
+   "line": 356,
+   "evidence": "READ: WorkDeliverablePreview handles report, then falls back to WorkSitePreview for every other previewable kind (353-357). canPreviewArtifact includes spreadsheet (164-166), which was added in 0494aa42. DocumentCard shows Preview for any previewable kind (work-documents.tsx:284-293, 419-428).",
+   "failure_scenario": "If the document cards are re-mounted in a merged surface, pressing Preview on a .xlsx loads it as a site zip and shows 'This bundle has no index.html, so there is no page to open', under a description saying 'this page runs no script'. This is exactly the misrouting the component's comment (342-352) warns about."
+  },
+  {
+   "id": "web-work-deliverables-16",
+   "title": "Runner leaves orphaned objects when the version write is refused, and no sweeper exists",
+   "severity": "low",
+   "file": "scripts/work-runner.ts",
+   "line": 1989,
+   "evidence": "READ: putObject runs before the transaction (1988-1994). The transaction then throws DeliverableError for a soft-deleted identifier or a kind conflict (1996-2006) without deleting the object. The comments at 1957-1960 and route.ts:173-178 say 'a sweeper can collect' orphans. rg for sweep/orphan across scripts and src/lib found no sweeper for work-artifacts/ or deliverable uploads/ keys. Other upload routes delete on a failed transaction (src/app/api/upload/route.ts:135).",
+   "failure_scenario": "The model reuses an identifier for a different kind (a 'summary' document and then a 'summary' spreadsheet). Each attempt uploads a file that is refused and then stays in the bucket permanently, billed and unreferenced."
+  },
+  {
+   "id": "web-work-deliverables-17",
+   "title": "Runner does not validate the identifier the route validates",
+   "severity": "low",
+   "file": "scripts/work-runner.ts",
+   "line": 1840,
+   "evidence": "READ: the route enforces `/^[A-Za-z0-9][A-Za-z0-9._-]*$/` and max 120 (route.ts:56,72). The runner passes `request.identifier` (only trimmed in tools.ts:1039) straight into the unique key and the object key (1988). On local-disk storage, localPath throws a plain Error for '..' (storage.ts:30-33). That is not a DeliverableError, so it is rethrown out of the tool (work-runner.ts:1846-1857).",
+   "failure_scenario": "The model sends identifier 'Q3 report/v1..final' or a 2 KB slug. S3 gets a nested or over-long key (a 1024-byte key limit error), or dev storage throws. The error escapes the tool instead of returning a correctable message, and identifiers diverge between the two write paths."
+  },
+  {
+   "id": "web-work-deliverables-18",
+   "title": "Runner and route store different validation shapes",
+   "severity": "low",
+   "file": "scripts/work-runner.ts",
+   "line": 2044,
+   "evidence": "READ: the runner's stored validation omits `details` (2044-2052). The route stores details key by key (route.ts:89-104). Every real version comes from the runner, so sheet names, row counts, slide counts, overflow counts and so on are measured and then discarded.",
+   "failure_scenario": "A client (native or a future merged card) that shows 'sheets: Q1, Q2 \u00b7 3 slides' from `validation.details` finds nothing for any production file, although the route-written rows would have it."
+  },
+  {
+   "id": "web-work-deliverables-19",
+   "title": "Validator rules were tightened without bumping the validator stamp",
+   "severity": "low",
+   "file": "src/lib/work/deliverables/validate.ts",
+   "line": 255,
+   "evidence": "READ: DELIVERABLE_VALIDATOR is still 'juno.work.deliverables.validate.v1'. Its comment says the stamp exists so that tightening a rule does not silently relabel old verdicts (247-254). `git log -p` shows f490ff0e (2026-08-08) added package budgets, relationship checks, formula and overflow checks without changing the constant.",
+   "failure_scenario": "A verdict written on Aug 6 and one written on Aug 9 both say v1, although only the second passed the overflow and relationship rules. An audit cannot tell which rules a stored 'ok' covered."
+  },
+  {
+   "id": "web-work-deliverables-20",
+   "title": "Artifact list survives a session switch; a failed fetch leaves the previous task's file staged under the new task",
+   "severity": "low",
+   "file": "src/components/work/work-documents.tsx",
+   "line": 83,
+   "evidence": "READ: `artifacts` state is never reset when `sessionId` changes (83-98). A failed load keeps the last value and sets failed=true (93-97). useConversationWork's `adopt` switches sessions within a conversation (use-conversation-work.ts:374-385), and the stage renders whatever list it is given (work-deliverable-stage.tsx:42).",
+   "failure_scenario": "In one conversation, task A finished with report A. The user starts task B, and when B finishes its list request fails (a network blip). B's terminal panel stages A's report, titled and downloadable as if B had produced it."
+  },
+  {
+   "id": "web-work-deliverables-21",
+   "title": "Inline previews download and parse full deliverables on every conversation open",
+   "severity": "low",
+   "file": "src/components/work/work-site-preview.tsx",
+   "line": 397,
+   "evidence": "READ: the inline preview is always active (384, 391, 397). The site hook fetches the whole zip, up to ARTIFACT_MAX_BYTES.site of 50 MB (domain.ts:1136-1146), with Cache-Control no-store (download/route.ts:147). The spreadsheet route buffers and fully `xlsx.load`s workbooks of up to 50 MB to return 200 rows (preview/route.ts:78,110; spreadsheet-preview.ts:129). There is no visibility or on-demand gating.",
+   "failure_scenario": "Scrolling back into a chat whose task produced a 40 MB image-heavy site re-downloads 40 MB each time the chat is opened, even though the preview is below the fold. A large workbook costs a full server-side parse on every open."
+  }
+ ],
+ "gaps": [
+  {
+   "title": "No editable source of truth",
+   "description": "WorkArtifactVersion stores only rendered bytes. The typed spec is discarded after build: there is no column for it, and tool_started records only a summary (session.ts:915-923). Nothing can be edited, re-rendered with a theme, converted (deck to doc) or previewed from structure.",
+   "why": "Claude Docs and Slides are typed artifacts whose source is editable in place, on phone and web, with exports derived from it. Juno cannot merge WorkArtifact into an editable artifact without persisting the spec (or markdown) as the version content."
+  },
+  {
+   "title": "No iteration from the conversation",
+   "description": "Each start_task creates a new WorkSession (task-tool.ts:198-204). The task cannot read the conversation (system-prompt.ts:57-72) or prior deliverables (the runner has no read-deliverable tool, tools.ts). The chat model never sees WorkArtifacts (no reads in src/app/api/chat or src/lib/chat). A follow-up like 'make slide 3 shorter' produces a brand-new artifact at v1, or nothing.",
+   "why": "In the merged Claude interface, 'change the deck' in the same thread revises the same artifact. Juno's versioning is scoped to (sessionId, identifier) and can never span turns."
+  },
+  {
+   "title": "No sharing, public link, comments or phone editing for deliverables",
+   "description": "Share only references Artifact (schema.prisma:1808-1828). There is no WorkArtifact comment model and no share or edit route. The iOS work view lists deliverables read-only (JunoMobileWorkView.swift:914-940; native is out of this area).",
+   "why": "These were headline features of the Sept 16 Claude merge: one shareable link, comments, editable on phone."
+  },
+  {
+   "title": "Deliverables absent from Library, Outputs and Canvas",
+   "description": "/artifacts, the chat Outputs popover and the Canvas side panel all operate only on chat Artifacts (artifacts/page.tsx:42-60; session-outputs.tsx:97-106; chat-view.tsx onOpenArtifact).",
+   "why": "The merge needs one list and one viewer for everything made."
+  },
+  {
+   "title": "No preview for .docx/.pptx/.pdf and no PDF export",
+   "description": "canPreviewArtifact refuses document, presentation and pdf with written reasons (work-site-preview.tsx:112-166). The report's print-ready HTML is generated and thrown away (index.ts:148-155; only tests read it).",
+   "why": "Claude renders docs and slides inline. Juno users cannot see the most requested kinds without downloading them."
+  },
+  {
+   "title": "No live deliverables during a run",
+   "description": "LiveRun never renders files (work-run-panel.tsx:212-307).",
+   "why": "Cowork shows the document taking shape beside the chat, and this was the stated goal of the 'deliverable first' commit 4f03aaa0."
+  },
+  {
+   "title": "Thin content model for decks and docs",
+   "description": "No image, chart, link, callout, columns or footnote blocks. Decks have 5 fixed layouts with no theme, brand or design-system hook. Sites have 3 accent themes, and although site assets are accepted, no block can reference them (work-site-preview.tsx:90-94).",
+   "why": "Claude Slides and Design pull a design system into docs and decks. A merged Juno Design + Artifacts surface would need tokens and components shared with DESIGN artifacts."
+  },
+  {
+   "title": "Mac-local runs cannot produce WorkArtifacts",
+   "description": "The only writers of WorkArtifactVersion are the cloud runner and the unused POST route (rg for workArtifactVersion.create).",
+   "why": "It is inconsistent for a task to be able to make a deck only when it runs in the cloud."
+  },
+  {
+   "title": "No delete, rename or restore for deliverables",
+   "description": "The schema has deletedAt and a 'restore' origin, but no route or UI writes them.",
+   "why": "Basic artifact hygiene exists for chat artifacts and not for deliverables."
+  },
+  {
+   "title": "Deliverables missing from account data export",
+   "description": "/api/account/export selects no WorkArtifact (or chat Artifact) data (rg 'artifact' in the route returns nothing).",
+   "why": "Data portability for the things Juno made."
+  }
+ ],
+ "debt": [
+  {
+   "title": "Two OOXML renderers for the same three formats",
+   "description": "document.ts and office-export.ts toDocx are near line-for-line copies: the same DOCX_HEADINGS, the MONO 'Consolas' font, the ORDERED_REF numbering config with indent 720/360, F1F1F1 header shading, the CCCCCC quote border, F6F6F6 code shading, tableHeader:true, and the empty paragraph between tables. The xlsx autofit (min(max(longest+2,10),60)) and wrap logic are duplicated, as is the pptx title and body geometry (0.5/0.35/9/0.8 at 28pt; body at y 1.4). The comments call these 'not forked', but they are maintained twice.",
+   "where": [
+    "src/lib/work/deliverables/document.ts:173-358",
+    "src/lib/office-export.ts:450-611,681-734,828-875",
+    "src/lib/work/deliverables/spreadsheet.ts:155-171,252-262",
+    "src/lib/work/deliverables/presentation.ts:105-207"
+   ]
+  },
+  {
+   "title": "Duplicated helpers",
+   "description": "toNodeBuffer (spreadsheet.ts:131 vs office-export.ts:397) and sanitizeName/encodeRfc5987/Content-Disposition (index.ts:265-314 vs export route 30-50, 140-155) each exist twice, both acknowledged in comments.",
+   "where": [
+    "src/lib/work/deliverables/spreadsheet.ts:124-139",
+    "src/lib/work/deliverables/index.ts:265-314",
+    "src/app/api/artifacts/[id]/export/route.ts:30-50"
+   ]
+  },
+  {
+   "title": "Two diverging write paths for deliverables",
+   "description": "The route and runner storeDeliverable differ in key prefix (uploads/ vs work-artifacts/), identifier validation, stored validation details, identical-hash replay, P2002 retry and the deletedAt check placement.",
+   "where": [
+    "src/app/api/work/artifacts/route.ts:247-429",
+    "scripts/work-runner.ts:1985-2078"
+   ]
+  },
+  {
+   "title": "Dead UI and stale comments after the Work merge",
+   "description": "The following are unmounted: WorkDocuments/DocumentCard/VerdictLine/Provenance/useArtifactDetail, the WorkSitePreview/WorkReportPreview dialogs, WorkRunSettings, WorkPlannedSettings, WorkActionsPerformed and deriveReferences. Comments still describe the task page, the rail and its Outputs section (work-deliverable-stage.tsx:13-30; work-documents.tsx:25-56, which also says .xlsx has no previewer).",
+   "where": [
+    "src/components/work/work-documents.tsx",
+    "src/components/work/work-detail-panels.tsx",
+    "src/components/work/work-site-preview.tsx:607-632,762-793",
+    "src/components/work/detail/work-deliverable-stage.tsx"
+   ]
+  },
+  {
+   "title": "Unused POST generation route",
+   "description": "It is fully implemented with rate limiting and retries but has no caller.",
+   "where": [
+    "src/app/api/work/artifacts/route.ts:185-430"
+   ]
+  },
+  {
+   "title": "Kinds with no producer",
+   "description": "pdf, image, bundle and archive are in WORK_ARTIFACT_KINDS with MIME types, caps and validators (the header-only check for pdf/image), but nothing creates them.",
+   "where": [
+    "src/lib/work/domain.ts:1089-1146",
+    "src/lib/work/deliverables/validate.ts:740-773"
+   ]
+  },
+  {
+   "title": "Reliance on JSZip private internals",
+   "description": "packageBudgetProblems reads `entry._data.uncompressedSize/compressedSize` through a cast. A JSZip upgrade could silently turn the zip-bomb budget into zeros.",
+   "where": [
+    "src/lib/work/deliverables/validate.ts:411-413"
+   ]
+  },
+  {
+   "title": "Two artifact vocabularies and namespaces",
+   "description": "Artifact (conversation-scoped identifier, text versions, types HTML/REACT/CODE/MARKDOWN/SVG/MERMAID/DESIGN) and WorkArtifact (session-scoped identifier, byte versions, kinds document/spreadsheet/...) overlap semantically: MARKDOWN doc/sheet/deck vs document/spreadsheet/presentation/report, HTML vs site. Serializers, sync entities, transports and icons are all separate.",
+   "where": [
+    "prisma/schema.prisma:1125-1160,2608-2665",
+    "src/lib/work/serializers.ts:435-462",
+    "src/components/chat/session-outputs.tsx:55-63"
+   ]
+  },
+  {
+   "title": "Product naming baked into bytes",
+   "description": "Every site page footer says 'Generated by Juno Work.', although Work is no longer a product.",
+   "where": [
+    "src/lib/work/deliverables/site.ts:265"
+   ]
+  },
+  {
+   "title": "Printable HTML computed and discarded",
+   "description": "buildReport renders a full HTML page on every report generation. Its print stylesheet also applies the dark-mode palette inside @media print when printing from a dark-mode OS (inferred), which would matter only if it were ever served.",
+   "where": [
+    "src/lib/work/deliverables/report.ts:278-327,393-418",
+    "src/lib/work/deliverables/index.ts:148-155"
+   ]
+  }
+ ],
+ "strengths": [
+  "The typed spec is the right idea and is executed well: the agent says what a table is rather than hoping a markdown parser guesses it. Ragged rows and duplicate sheet names are refused rather than silently 'repaired' (document.ts:156-167; spreadsheet.ts:189-219).",
+  "An independent-reader validation, run on the exact hashed bytes, is shared by Work deliverables and chat Office exports (validate.ts; office-export-verify.ts). This is ready-made infrastructure for a merged typed-artifact layer.",
+  "Downloads and previews re-hash stored bytes and refuse with a clear 409 on mismatch. Storage keys never leave the server, and Content-Disposition is RFC 5987-correct with an ASCII fallback (download/route.ts:93-158).",
+  "Site security is defence in depth: escaped generator, byte-level markup scan, sandboxed opaque-origin iframe, nonce CSP, a nav bridge validated by the parent, no SVG assets, deterministic zips (site.ts; work-site-preview.tsx:198-276, 544-556).",
+  "Report preview preparation is exceptionally careful about the chat renderer corrupting currency and brackets or beaconing images, and it is pinned by tests that run the real remark stack (report-preview.ts; tests/work-report-preview.test.ts, 15/15 pass).",
+  "Append-only version history with highest+1 allocation, a same-transaction head pointer, and validatedAt that clears when a newer version fails (route.ts:106-116, 356-394).",
+  "Error taxonomy is clean: invalid_spec/unsafe_path/too_large/build_failed map to 400/400/413/500, and library internals are kept out of client messages (validate.ts:54-75; index.ts:323-333; route.ts:229-245).",
+  "Client bundles are guarded: exceljs was moved out of the /chat bundle via spreadsheet-preview-shape.ts, and JSZip is dynamically imported.",
+  "Tests cover generation, validation, injection, traversal, caps, spreadsheet read-back and export verification. All 60 tests in the four files pass."
+ ],
+ "merge_relevance": "This area is the crux of merging \"Artifacts\" and \"Design\", because it is the second, parallel artifact system.\n\nWHAT IT CONTRIBUTES:\n- A typed-spec generator for Docs (.docx), Sheets (.xlsx), Slides (.pptx), Reports and Sites.\n- A byte-level validator already reused by chat Office export.\n- Hash-verified immutable exports and a proven sandbox for rendering untrusted HTML.\nIn a merged model these should become the export and preview layer of typed artifacts: a Doc, Sheet or Slides artifact's version content is the spec, and .docx/.xlsx/.pptx/.pdf are derived, validated, hash-pinned blobs.\n\nWHAT BLOCKS THE MERGE TODAY:\n1) The spec is not persisted. Only bytes exist (schema.prisma:2637-2665), so there is nothing to edit, comment on or re-render. This is the single largest blocker.\n2) Scoping is to WorkSession rather than Conversation. Every chat delegation creates a new session (task-tool.ts:198-204), so a thread-level typed artifact whose identifier survives across turns (as Artifact's (conversationId, identifier) does) cannot be expressed. Folding WorkArtifact into Artifact, or re-keying it to conversationId, is required.\n3) There are two authoring paths for the same thing. The chat prompt sends single docs, sheets and decks to MARKDOWN artifacts with inferred Office export (system-prompt.ts:66, 293-297). Multi-source ones go to tasks and typed WorkArtifacts. A merged surface must pick one representation. Likely the typed spec is the stored form, with markdown as an import/export format and office-export.ts retired or reduced to an importer.\n4) After the merge Work files have no UI home (defects 1, 5, 6). Any merged Artifacts surface must list, open (in Canvas), version, share and comment on them, and must show the validator verdict.\n5) The chat model cannot read or revise task deliverables, and tasks cannot read prior deliverables. The merge needs a read_artifact/update_artifact capability shared by chat and tasks.\n6) Share, comment and phone editing exist only for chat Artifacts (Share at schema.prisma:1808-1828). DESIGN artifacts (Juno Design) already live in the chat Artifact table, so the least-cost path is to extend Artifact with DOC/SHEET/SLIDES/SITE types backed by specs, and to reuse the deliverables generators, validator and previewers for those types.\n7) Dead Work UI (WorkDocuments, preview dialogs, verdict and provenance components) is a ready kit for the merged artifact card and should be salvaged rather than deleted. Fix the spreadsheet preview routing first (defect 15).\n\nThe Mac liquid-glass branch changes none of these files: `git diff main mac/liquid-glass-chat` over the audited paths shows only an unrelated CodeSessionCommand schema hunk, where the branch is behind main.",
+ "tests": "I ran four test files with `npx tsx --test` from the repo root:\n- tests/work-deliverables.test.ts: 15/15 pass. Covers generation and re-open for each kind, docx/xlsx/pptx/report/site contents, script injection, inert citation links, bundle traversal, stored-name judging, byte cap, schema refusal and builder refusal.\n- tests/work-report-preview.test.ts: 15/15 pass. Covers the renderer's assumed properties, currency, brackets, backslash, images, links, raw HTML, code spans, truncation and canPreviewArtifact's kind list.\n- tests/work-spreadsheet-preview.test.ts: 15/15 pass. Covers grid read-back, dates, row/column windowing, cell cap and non-workbook bytes.\n- tests/artifact-export-verification.test.ts: 15/15 pass. Covers the chat Office export verified by the Work validator.\n\nNOT COVERED by any test (searched tests/ for the api/work/artifacts routes and the components):\n- the POST/GET/download/preview routes, including hash mismatch, replay and kind conflict;\n- the runner's storeDeliverable;\n- useWorkArtifactList refetch semantics (defect 4);\n- WorkDeliverableStage and WorkDeliverablePreview dispatch (defect 15);\n- account-deletion purge of deliverable objects;\n- site-validator false positives (defect 3);\n- deck overflow;\n- markdown list-item escaping.\n\nScratch probes, run read-only from the scratchpad against the real generators, confirmed the defects marked VERIFIED:\n- OOXML hashes differ across generations.\n- Site prose false positives.\n- The 20-row deck table has auto-height rows at y=1.4in.\n- The docx subtitle comes before the H1.\n- Date-only ISO is rejected.\n- Report list/quote escaping gaps.\n- The spreadsheet preview ignores numFmt.",
+ "open_questions": [
+  "Does Next.js remount ChatView when navigating /chat/A to /chat/B? The page does not key ChatView, and use-conversation-work resets on conversationId, which suggests the component is reused. If it is reused, defect 20 also shows another conversation's deliverable briefly on every switch.",
+  "Is the typed spec recoverable anywhere, for example in a run checkpoint or model transcript persisted for resume? No column tied to WorkArtifactVersion holds it, and tool_started carries only a summary. If it is recoverable, a backfill for a merged editable model may be possible.",
+  "Does the pptx overflow render as inferred in PowerPoint/Keynote? Row heights are auto (h=0), and the geometry math says a 20-row table exceeds the slide, but no render test exists.",
+  "Is POST /api/work/artifacts meant for a future user-facing 'make a file' action, or for a Mac relay? Its replay semantics (defect 9) matter only once something calls it.",
+  "For the merge, should deliverables fold into Artifact as new ArtifactTypes (DOC/SHEET/SLIDES/SITE, with the spec as content and exports as blobs), or should Artifact gain a blob-backed version kind? The choice decides whether Share, comments, the Canvas and /artifacts come for free.",
+  "Should the chat prompt stop steering documents, sheets and decks into MARKDOWN artifacts (system-prompt.ts:293-297) once typed specs can be authored inline in chat, so one representation serves both chat and tasks?",
+  "The Mac and iOS apps list and download deliverables natively (DesktopWorkWorkspace.swift ~2422-2545, 3312-3449; JunoMobileWorkView.swift:914-940). This is out of my area and I did not audit it. After the merge, is native the only place a .docx/.pptx is reachable?",
+  "Should deliverable provenance come from the run's source_cited events automatically, at store time, rather than from the model?"
+ ]
+}

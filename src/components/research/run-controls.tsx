@@ -463,12 +463,12 @@ export function PlanReview({
   );
 
   // What a person is authorising, in one quiet line under the Start row: the
-  // team and the reading from the tier, the time from the same table the
-  // composer's tooltip reads, and the ceiling the engine will actually stop
-  // at. The ceiling is a limit, not an estimate, and is worded as one.
+  // rough time, and the ceiling the engine will actually stop at. The ceiling
+  // is a limit, not an estimate, and is worded as one. The tier's team and
+  // page counts are not shown: the budget rarely lets a run send them.
   const tier = effort ? RESEARCH_EFFORT_COPY.find((item) => item.value === effort) : undefined;
   const authorised = [
-    tier ? `${tier.summary} · ${PLAN_COPY.about} ${tier.eta.replace(/^~/, "")}` : null,
+    tier ? `${PLAN_COPY.about} ${tier.eta.replace(/^~/, "")}` : null,
     budgetMicroUsd ? `${PLAN_COPY.stopsAt} ${formatMicroUsd(budgetMicroUsd)}` : null,
   ].filter((line): line is string => !!line);
 

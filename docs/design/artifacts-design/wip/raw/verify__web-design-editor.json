@@ -1,0 +1,288 @@
+{
+ "verdicts": [
+  {
+   "id": "web-design-editor-1",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: while state.pending is set, the canvas/inspector/prototype/motion get readOnly (design-editor.tsx:784,819,860,863) but LayersPanel gets only readOnly={readOnly} (747). The window keydown handler (410-516) never checks state.pending: Delete/\u2318D/\u2318G/\u2318]/[/\u2325\u2318K/arrows call apply(), and \u2318Z calls state.undo(). apply/undo only check opts.readOnly (use-design-document.ts:344,401). The canvas and layers draw visibleDocument = pending.preview (474). A readOnly canvas still takes focus on pointerdown (design-canvas.tsx:1041), so the shortcuts reach the handler. A layer the proposal created exists only in the preview, so an updateNode from Layers throws not-found (operations requireNode) and toasts. Also INFERRED: selectNodes canonicalises against the committed document (use-design-document.ts:488), so layers the proposal created cannot even be selected. Severity corrected to medium: the hidden edits are real and persisted, and they appear once the review is resolved. Nothing is lost silently; it is a confusing desync."
+  },
+  {
+   "id": "web-design-editor-2",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: Apply runs `void state.acceptPending(); onResolved?.(\"applied\")` unconditionally (design-editor.tsx:1003-1006). acceptPending catches every error, toasts, and does not clear pending (use-design-document.ts:466-468). On 'applied' the workspace sets reviewing=false, which unblocks the bar, and promotes armed adjustments (design-workspace.tsx:100-107). The adjustment commit uses livingTargets on the committed doc (design-adjustments.tsx:40-46,193), so it writes to the hidden document or is a no-op. It is reachable only when the live doc diverged during review (defect -1, or \u2318Z), which the keyboard allows. A second Apply click re-fires 'applied' with armed now []."
+  },
+  {
+   "id": "web-design-editor-3",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "Reproduced empirically. I bundled a component with the exact NumberField/NameField pattern (draft state; Escape \u2192 setDraft(null); target.blur(); onBlur commits draft) against the repo's react-dom 19.2.7 and drove it with real keystrokes in Chromium. Typing '500' then pressing Escape committed '500' (commits: [\"500\"]). The nested focusout runs on the committed props: batchedUpdates short-circuits when isInsideEventHandler (react-dom-client.development.js:3252). Affected fields: NumberField effects-panel.tsx:1769-1788, OptionalNumberField 1868-1882, TextField 1917-1930, and NameField design-workspace.tsx:313-321, which PATCHes /api/artifacts via rename at 124-145. The Layers page rename (layers-panel.tsx:444-451) and layer rename (588-595) commit e.target.value in onBlur, so Escape renames regardless of React timing. ColorField hex (effects-panel.tsx:2199-2208) follows the same pattern inside a Radix Popover. Escape also dismisses the popover there, so the commit depends on Presence keeping the content mounted for its exit animation (likely, not observed). The canvas LayerRenameField (design-canvas.tsx:1862-1891) is correct."
+  },
+  {
+   "id": "web-design-editor-4",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the row hex input is controlled by value={rgbaToHex(paint.color).slice(0,7)} and commits only when hexToRgba parses (effects-panel.tsx:354-365). hexToRgba accepts only 3/4/6/8 digits (variables.ts:185-190), so select-all then typing 'f' or '#' is rejected and React restores the controlled value, losing the keystroke. Deleting a character from a 6-digit value (5 digits) is also reverted. Partial-selection edits that pass through 3 or 4 digits commit shorthand mid-word. The opacity number input commits on every onChange (369-384): '50' commits 5% then 50%. '' fails parseFloat and is restored. ColorField's own comment (2132-2140) describes this exact bug as fixed for the popover only. One correction: the literal scenario '#abc commits mid-word' after select-all is unreachable, because '#' alone is rejected first."
+  },
+  {
+   "id": "web-design-editor-5",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: every drag commits through apply. GradientRail onPointerMove \u2192 onMove \u2192 commitStops \u2192 onChange \u2192 setPaint \u2192 patchAll \u2192 onApply per move (effects-panel.tsx:513-515,605-608). AxisPad does the same (731-735), and RadialPad too (781-784,793-797). The inspector passes the editor's apply straight through (inspector-panel.tsx:347,356), and apply pushes one undo entry per call, capped at 100 (use-design-document.ts:389). Correction: the save queue is not 'flooded'. persist merges into the tail batch while a request is in flight and coalesceOperations collapses them (use-design-document.ts:310-323,241). The undo-history flood and eviction are real."
+  },
+  {
+   "id": "web-design-editor-6",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "The behaviour is as described. paints = read(nodes[0]) (effects-panel.tsx:283-284), and setPaint \u2192 setPaints \u2192 patchAll assigns that list to every editable layer; the fills writer ignores the node (171). But it is deliberate and documented. The module note says that when layers disagree, 'the rows read the first layer \u2026 and an edit assigns the whole new list to all of them' (effects-panel.tsx:19-23). The auditor misreads 146-150: that comment calls per-layer assembly the old bug, not the fix. So this is a UX-policy problem, not an implementation bug. A destructive overwrite across a mixed selection is guarded only by the Mixed badge (303), whereas Figma hides the rows and offers 'replace mixed'."
+  },
+  {
+   "id": "web-design-editor-7",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the \u2318G branch returns on selection.length < 2 before it checks shiftKey (design-editor.tsx:437-442). ungroupNodes loops over any number of ids, including one (operations.ts:1054-1060). The context menu enables Ungroup for a single container (design-context-menu.tsx:145) and shows the \u21e7\u2318G hint (266-272) under the promise in 108-109. Lowered to low because Ungroup still works from the menu."
+  },
+  {
+   "id": "web-design-editor-8",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: handle and knob presses stopPropagation and beginDrag directly (design-canvas.tsx:1163-1166,1178-1181), so descentRef stays null (it was cleared on the previous pointerup, 741). onPointerUp therefore always runs commitDrag (747). The resize branch has no zero-delta guard, always emits x/y/w/h, and forces widthMode/heightMode 'fixed' (670-702). resizeSelection with dx=dy=0 returns the start boxes (1690-1710). Rotate emits the unchanged rotation (705-718). apply records any non-selection op as history (use-design-document.ts:376-391)."
+  },
+  {
+   "id": "web-design-editor-9",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: descentRef, which carries the CLICK_SLOP protection, is set only when press.kind==='move' && press.select===null (design-canvas.tsx:498-501). A press that re-picks a layer sets select:[hit] (canvasPress 1497) and starts a move drag (512-513). Any pointermove runs snapAxis with threshold 6/zoom (411) and can apply a correction even when the raw delta is ~0 (556-574). On release the drag commits whenever dx||dy is non-zero (652-667). At 25% zoom that is up to a 24pt snap from a jittery selection click."
+  },
+  {
+   "id": "web-design-editor-10",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the move commit writes updateNode {x,y} with no layout awareness (design-canvas.tsx:652-667). Nudge (design-editor.tsx:349-360) and align (362-408) do the same, and so do the inspector's X/Y fields (inspector-panel.tsx:185-186). layout.ts places non-absolute children by the flow and uses child.x/y only for absolute children or when the parent has no layout (layout.ts:229-235,454-461). So the edit is a history entry and a save with no visible effect. No reorder-on-drop exists."
+  },
+  {
+   "id": "web-design-editor-11",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: keyboard Delete/Group/Reorder pass the raw selection (design-editor.tsx:441,463,468,485). deleteNodes, groupNodes and reorderNodes call requireUnlocked per id and throw (operations.ts:780,923,1012). \u2318A selects all page children, locked included (455-459), and Layers clickRow has no lock check (layers-panel.tsx:248-258). The context menu and Layers filter locked layers first (design-context-menu.tsx:215,229,256; layers-panel.tsx:385-394). CORRECTION: Duplicate does not fail, because duplicateNodes uses requireNode, not requireUnlocked (operations.ts:858). It fails safe with a toast naming the locked layer, hence low."
+  },
+  {
+   "id": "web-design-editor-12",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: pathHit(path,false) returns path[0], the outermost layer (design-canvas.tsx:1376-1378). canvasPress yields a marquee only when hit===null (1496), so pressing empty space inside a frame is {kind:'move', select:[frame]} and drags the frame. The marquee collects the outermost intersecting node per root and descends only into non-intersecting containers (593-603). Children can be reached only by shift/\u2318-click or a Layers range."
+  },
+  {
+   "id": "web-design-editor-13",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the ghost is computed only for move/resize/rotate (design-canvas.tsx:962-971). For rotate it returns the unchanged box, and chrome rotation comes from the committed doc (987-988). There is no render branch for drag.kind==='create' (the only drag-kind branch in the chrome is the marquee, 1110-1120). dragReadout is null for create and rotate (997-1006)."
+  },
+  {
+   "id": "web-design-editor-14",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: ghostResize passes preserveRatio=false (design-canvas.tsx:950-960), while commitDrag passes the pointer-up event's shiftKey (672 via 747). The comment at 945-949 says preview and commit must match. The preserveRatio parameter changes the result (resizeSelection \u2192 resizeRotatedBox/resizeBox, 1676-1699)."
+  },
+  {
+   "id": "web-design-editor-15",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the create patch stores min-corner x/y, width=|dx|, and height=|dy| (min 0 for a line) (design-canvas.tsx:611-624). The renderer draws the line horizontally at box.y+height/2 (render.ts:966-969). The line node model has no endpoints (types.ts:543-545), so a diagonal drag yields a horizontal line mid-box. hitPath requires local.y within [box.y, box.y+height] with no tolerance (design-canvas.tsx:1334), so a height-0 line needs an exact float match."
+  },
+  {
+   "id": "web-design-editor-16",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: pan starts only on button===1 or Alt+left with Select (design-canvas.tsx:470-473). Zoom and pan otherwise come only from the wheel listener (858-887), and touchAction:'none' is set (1031). A grep for touches/pinch/gesturestart/pointerType/Space in src/components/design finds nothing. CORRECTION: there is no '+' key zoom binding (the keydown switch at design-editor.tsx:473-512 has none); zooming is only via the ZoomBar buttons or \u2318-wheel."
+  },
+  {
+   "id": "web-design-editor-17",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: surface==='window' forces the rails to 'flex' (design-editor.tsx:549-550). Initial widths are 208+256 and minimums 168+208 (panel-layout.tsx:37-38). The toolbar is a non-wrapping flex with no overflow handling (555) inside an overflow-hidden root (design-workspace.tsx:163). My own width tally is ~865px (~1005px with Ask Juno and Saving\u2026), and icon-sm grows to 40px on coarse pointers (button.tsx:77). CORRECTION: the rails do collapse, manually, via RailToggle (design-editor.tsx:735,833) to 28px stubs. They never auto-collapse, so the canvas is 0px by default on a phone until the user finds those toggles."
+  },
+  {
+   "id": "web-design-editor-18",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: embedded rails, stubs and grips all use 'hidden md:flex' / 'hidden lg:flex' (design-editor.tsx:549-550,714,765,826,870). So below the breakpoint neither the rail nor its re-open control renders. The Mac host mounts DesignEditor with no surface prop (host/main.tsx:65-71), and so does the chat canvas panel (canvas/canvas-panel.tsx:1238-1256). This contradicts PREMIUM_AUDIT rule 11 (docs/design/PREMIUM_AUDIT.md:837-838). The actual WKWebView widths on Mac are INFERRED, not observed."
+  },
+  {
+   "id": "web-design-editor-19",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the bar sends handle.revision(), the local revision (ask-juno-bar.tsx:73). There is no saving check (74). The local document re-adopts the server copy only when the queue empties (use-design-document.ts:280). The edit route 409s on any mismatch with 'Your last change is still saving\u2026' (edit/route.ts:125-133). The client has no 409 re-sync; the GET at transactions/route.ts:71-82 has no client caller. CORRECTION: in the single-tab case the message is accurate (a change IS saving); it is only misleading in the multi-client case. There, the stale tab stays stuck until its own next edit conflicts and rolls back (store 409 \u2192 rollback, use-design-document.ts:265-270) or it reloads."
+  },
+  {
+   "id": "web-design-editor-20",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: a transport throw calls rollback(ackedRef.current) (use-design-document.ts:257-262). rollback clears the queue, resets the document and empties both undo and redo (200-209). There is no retry, offline queue or unsaved state. The same wipe happens on any server refusal (265-270). One example is a 413 'too-large' from store.ts:117-120, which a single near-96 KB image can trigger on a mid-size document."
+  },
+  {
+   "id": "web-design-editor-21",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: loadOwnedDesignArtifact includes every version with no select or take (store.ts:34-37). The page uses one (page.tsx:26). Worse than stated: the same loader runs on EVERY autosave POST (transactions/route.ts:34), every Ask Juno request (edit/route.ts:108), export (export/route.ts:141) and GET (route.ts:21). Checkpoints are never pruned (store.ts:77-81 allocates new rows after pauses and Juno edits). The per-row cap is 200 000 chars (store.ts:63)."
+  },
+  {
+   "id": "web-design-editor-22",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: onChange only sets local state; onPointerUp, onKeyUp and onBlur each call onCommit(value) (design-adjustments.tsx:100-108). adjustmentOperations emits updateNode unconditionally with no equality check (187-214). apply records it as history (use-design-document.ts:376-391). A drag followed by a click elsewhere gives two entries, and a Tab keyup landing on the slider commits the unchanged value."
+  },
+  {
+   "id": "web-design-editor-23",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the comment claims the title makes a frame selectable from outside its bounds (design-canvas.tsx:201-208). The title group is pointerEvents='none' (1058), and hitPath tests only node boxes (1311-1349), so pressing the label starts a marquee (canvasPress 1496)."
+  },
+  {
+   "id": "web-design-editor-24",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: unselected titles use hsl(var(--muted-foreground)) (design-canvas.tsx:1066-1070), which is 40 6% 66% in dark (globals.css:525). The canvas paints the document's page colour regardless of theme (195-199,1034), with default {0.96,0.96,0.97} (operations.ts:73). Computed contrast is 2.12:1 (WCAG luminance formula), below 4.5:1. The light theme (48 4% 40%) is fine."
+  },
+  {
+   "id": "web-design-editor-25",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the native picker's value is always #rrggbb (effects-panel.tsx:2215-2220). PaintEditor's solid onCommit writes {...paint, color: hexToRgba(hex)} with a=1 (495-503), and the page background does the same (inspector-panel.tsx:447-450). The inline row input preserves alpha (362). Alpha IS reachable by typing 8-digit hex in the popover text field, so only the system-picker path drops it. The comment at inspector-panel.tsx:409-414,447-450 overstates it ('the picker's alpha')."
+  },
+  {
+   "id": "web-design-editor-26",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: Button has disabled:pointer-events-none (button.tsx:43). The align keys are disabled below 2 or 3 selected layers (design-editor.tsx:623), and undo/redo on empty stacks (586,597). A disabled button gets neither pointerenter nor focus, so the Radix tooltip never opens. That defeats the discoverability rationale at 607-615."
+  },
+  {
+   "id": "web-design-editor-27",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the instances eligible for set-variant are filtered on component.properties having a variant property (interactions-panel.tsx:223-226), and the option is gated on that list (240). The form also reads properties (546). The inspector documents that properties is absent for promoted and AI-made components and reads component.variants via variantAxes instead (inspector-panel.tsx:491-497; instances.ts:61-76)."
+  },
+  {
+   "id": "web-design-editor-28",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: onPointerCancel={onPointerUp} (design-canvas.tsx:1046), and onPointerUp commits the drag unless a descent candidate is held (739-749). A system-cancelled pointer therefore commits a half-way move, resize or rotate."
+  },
+  {
+   "id": "web-design-editor-29",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the move readout prints chromeBounds.x/y from layout boxes, which are page-absolute (design-canvas.tsx:1002-1004,984). The inspector X/Y show node.x/node.y (inspector-panel.tsx:144-145,185-186), which are parent-relative per the commit comment (design-canvas.tsx:657-658)."
+  },
+  {
+   "id": "web-design-editor-30",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: a drop is 'inside' whenever the target is a container (layers-panel.tsx:541-544), so a frame dropped on a frame nests. 'Above' inserts at indexOf(target)+1 (361-363). The only indicator is a ring on the target (554), and there is no 'below' or end-of-list slot. See also the off-by-one in 'missed'."
+  },
+  {
+   "id": "web-design-editor-31",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the document is parsed in a useEffect (use-design-document.ts:170-188), so SSR and the first client render have document=null, and DesignEditor renders the centred spinner (design-editor.tsx:537-544) under the workspace header. The route skeleton (design/[artifactId]/loading.tsx:39-47) has 7 tools plus 2 keys: no undo/redo, align or zoom groups. Its rails are fixed at w-[208px] and w-64 (53,65), while the editor applies persisted pane sizes and collapse (usePaneSize). That is two visible swaps."
+  },
+  {
+   "id": "web-design-editor-32",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the canvas host is tabIndex=0 role=application with 'outline-none' (design-canvas.tsx:1028,1049-1051). DesignEditor passes no className (773-788). Under Tailwind 3.4, the utilities layer's .outline-none overrides the base-layer :focus-visible outline (globals.css:904-907), because the specificity is equal and utilities come later. editor.css:159 adds only user-select. This contradicts ICONS_AND_MOTION \u00a72.2.3 (docs/design/ICONS_AND_MOTION.md:180-181)."
+  },
+  {
+   "id": "web-design-editor-33",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: nodeId is set for any single selected layer, not only frames (design-editor.tsx:302-303), and the route isolates that layer for PDF/HTML/React/SwiftUI (export/route.ts:185) and SVG/PNG (190,197). The second half is reachable through the server itself: the notes header is JSON.stringify(...).slice(0, 2000) (export/route.ts:213). Past 2000 chars it is invalid JSON, and JSON.parse throws after saveBlob, inside the same try (design-editor.tsx:333-341). See 'missed' for a more severe header bug."
+  },
+  {
+   "id": "web-design-editor-34",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: queued batches live only in refs (use-design-document.ts:162-163), and a grep for beforeunload/visibilitychange/pagehide/sendBeacon/keepalive in src/components/design and the design route finds nothing. INFERRED nuance: in-app navigation does not lose queued work, because drain keeps looping after unmount (generationRef is not bumped on unmount). Tab close or reload does."
+  },
+  {
+   "id": "ux-0",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: moves draw only an outline ghost, by design, for performance (design-canvas.tsx:942-944,1099-1101). Create has no render branch and no readout, and rotate returns an unrotated box with no angle readout (962-1006). Move and resize DO show an outline, handles following the ghost (984) and a numeric readout (997-1004), so the gap is mainly create and rotate, not moves."
+  },
+  {
+   "id": "ux-1",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: there are no touch or pinch handlers (grep empty), touchAction:none is set (design-canvas.tsx:1031), and pan needs a middle button or Alt (470-473). The window rails are forced to flex (design-editor.tsx:549-550), the toolbar does not wrap (555), and coarse sizes widen keys (button.tsx:77). Correction: the rails can be collapsed manually (735,833). The conclusion stands: phone editing of a design is not supported by this code, which blocks the 'editable on phone' merge target."
+  },
+  {
+   "id": "ux-2",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "This duplicates web-design-editor-12. canvasPress returns a marquee only on a null hit (design-canvas.tsx:1496), pathHit returns the outermost layer (1376-1378), and the marquee collect stops at the outermost intersecting node (593-603)."
+  },
+  {
+   "id": "ux-3",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: MAX_IMAGE_BYTES is 96 KB with a hard refusal (use-design-document.ts:578-588). Both entry points use readImageAsset: the canvas (design-canvas.tsx:769) and the inspector (inspector-panel.tsx:1245). A grep finds no downscale, compress or toDataURL path, and no paste or file-drop image import. Assets are inlined as data URLs against the 200 000-char document cap (store.ts:63,117-120). A 96 KB file is ~131K base64 chars, and overshooting the cap after an optimistic placement triggers the history-wiping rollback (defect -20)."
+  },
+  {
+   "id": "ux-4",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: the route runs one generation with no streaming (edit/route.ts:100-101), with single-turn history [{role:USER, content:prompt}] (edit/route.ts:~185-190). It reads the conversation only for its model (136-139) and writes no messages. The bar shows only a spinner in the send key, and abort exists only on unmount (ask-juno-bar.tsx:66,212-235). There is no stop button, no history and no attachments. The review card lists changes and previews but has no before/after toggle (design-editor.tsx:964-1015)."
+  },
+  {
+   "id": "ux-5",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: the workspace header has back, name, version, Chat and a menu with only Delete (design-workspace.tsx:164-207). DesignComment exists in the model (types.ts:738,786), but no component in src/components/design reads comments. There is no presence. The editor has no prototype player, as it states itself (interactions-panel.tsx:19-25,180). CORRECTION: a Share action does exist for design artifacts in the chat canvas panel (canvas/canvas-panel.tsx:842-846,1388-1390, ShareDialog kind ARTIFACT); it is absent only from the /design window."
+  },
+  {
+   "id": "ux-6",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: the keydown handler binds only \u2318Z/\u21e7\u2318Z, \u2318D, \u2318G/\u21e7\u2318G, \u2325\u2318K, \u2318A, \u2318]/[, Escape, Backspace/Delete, arrows and the 7 tool letters. Every other \u2318 chord falls through to the browser (design-editor.tsx:426-512, 471). Copy and Paste exist only as context-menu items (design-context-menu.tsx:208-217). There is no Space/H pan, and Alt+left pans instead of duplicating (design-canvas.tsx:470). The move drag applies no Shift axis lock (546-579). There are no zoom shortcuts, no Enter/Shift+Enter/Tab tree walking, and no Alt-hover measurement (the 'canvas-measure' token is used only for highlights and the readout). Escape clears the selection rather than selecting the parent (478-479)."
+  }
+ ],
+ "missed": [
+  {
+   "id": "missed-1",
+   "title": "Design export returns 500 for any design or layer whose name contains a character above U+00FF (curly quote, em dash, emoji, CJK)",
+   "severity": "medium",
+   "file": "src/app/api/design/[artifactId]/export/route.ts",
+   "line": 176,
+   "evidence": "The download() helper and the PDF branch put the name in Content-Disposition: `filename=\"${fileName.replace(/\"/g, \"\")}\"` (export/route.ts:172-181, 205-208). fileName comes from safeFileName, which strips only \\/:*?\"<>| (src/lib/design/export.ts:57-60). The PDF branch also puts X-Juno-Export-Notes = JSON.stringify(result.unsupported) in a header, and those notes embed layer names (export.ts, exportPdf notes such as `${resolved.name}: rotation not applied`). Response header values must be ByteStrings. Verified in node: `new Response('x',{headers:{'Content-Disposition':'attachment; filename=\"Juno\u2019s design.svg\"'}})` throws 'Cannot convert argument to a ByteString because the character at index 26 has a value of 8217', while Latin-1 'Caf\u00e9' is accepted. The throw is inside the route's try, which returns a generic 500 (export/route.ts:241-249). No test covers non-Latin-1 names.",
+   "failure_scenario": "A design named 'Juno\u2019s onboarding' or 'Landing \u2014 dark' (typical AI or copy-edited titles), or a single selected layer with such a name for SVG. Export \u2192 SVG / PDF / HTML prototype / Design document (JSON) all toast 'Export failed. Please try again.', every time. PDF export also fails for an ASCII-named design if any layer that produces an unsupported-feature note has such a name."
+  },
+  {
+   "id": "missed-2",
+   "title": "Layers-panel 'above' drop lands one slot too far when a layer is dragged upward onto a sibling",
+   "severity": "low",
+   "file": "src/components/design/layers-panel.tsx",
+   "line": 363,
+   "evidence": "drop() computes `index = siblings.indexOf(targetId) + 1` BEFORE the move (layers-panel.tsx:361-363). reparentNodes then detaches each moving node and attaches it at that stale index (operations.ts reparentNodes ~885-906; attach at 622-627 splices at the given index). Probe run with npx tsx against the real operations: start ABCDE, drop [A] above D (index 4) gives BCDEA, when BCDAE is expected. Drop [A,B] above D gives CDEAB, when CDABE is expected. Drop [E] above B gives ABECD, which is correct, so only upward moves are wrong.",
+   "failure_scenario": "The user drags a bottom layer up and drops it on a mid-stack non-container layer to put it just above that layer. It lands above the next layer instead: one position too far, or N positions for N moved layers that sat below the target."
+  },
+  {
+   "id": "missed-3",
+   "title": "Tool shortcut keys ignore readOnly, leaving an old-version view in a disabled draw tool that also breaks Alt-pan",
+   "severity": "low",
+   "file": "src/components/design/design-editor.tsx",
+   "line": 508,
+   "evidence": "The toolbar disables non-select tools when readOnly (design-editor.tsx:567), but the keydown fallthrough calls setTool for any TOOLS key without checking readOnly (508-512). With a non-select tool active, the canvas cursor becomes a crosshair (design-canvas.tsx:1030), and Alt+drag panning requires tool==='select' (470). With readOnly the create branch is skipped (476), so presses act like Select under a crosshair cursor.",
+   "failure_scenario": "The user views an older version in the chat panel (readOnly={!isLatest}, canvas-panel.tsx:1241) and presses R out of habit. The toolbar shows the disabled Rectangle key pressed, the cursor is a crosshair, and Alt-drag no longer pans until they press V or Escape."
+  },
+  {
+   "id": "missed-4",
+   "title": "Layers a pending Juno proposal creates are listed in Layers but cannot be selected or inspected",
+   "severity": "low",
+   "file": "src/components/design/use-design-document.ts",
+   "line": 488,
+   "evidence": "LayersPanel and the inspector draw visibleDocument = pending.preview (design-editor.tsx:741,855; use-design-document.ts:474). But selectNodes canonicalises against the committed `document`, and canonicalSelection drops ids not in doc.nodes (use-design-document.ts:476-491,548-552). The selection-sync effect does the same (505-511).",
+   "failure_scenario": "Juno proposes 'add a badge'. The user clicks the new 'Badge' row in Layers to check its properties before applying. Nothing becomes selected and the inspector stays on the page, so the new layer cannot be reviewed except by eye on the canvas."
+  }
+ ]
+}

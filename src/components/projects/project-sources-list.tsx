@@ -21,7 +21,9 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatBytes, cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
+import type { ArtifactType } from "@/lib/message-content";
 import type { KnowledgeIndexState } from "@/components/library/index-status";
+import { ARTIFACT_NOUN, artifactPath } from "@/lib/artifact-links";
 
 export interface ProjectFileItem {
   id: string;
@@ -317,8 +319,12 @@ export function ProjectSourcesList({
                     className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
                     style={staggerDelay(i, "tight")}
                   >
+                    {/* The artifact's own address. This was `/artifacts?id=`,
+                        which nothing reads, so every row opened the whole
+                        Artifacts list and left the reader to find the one
+                        they had clicked (L27). */}
                     <Link
-                      href={`/artifacts?id=${art.identifier}`}
+                      href={artifactPath(art.id)}
                       className="group flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
                     >
                       <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
@@ -326,7 +332,9 @@ export function ProjectSourcesList({
                       </span>
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span className="truncate text-ui font-medium text-foreground">{art.title}</span>
-                        <span className="font-mono text-caption text-muted-foreground">{art.type}</span>
+                        <span className="font-mono text-caption text-muted-foreground">
+                          {ARTIFACT_NOUN[art.type as ArtifactType] ?? art.type}
+                        </span>
                       </span>
                       {/* An arrow, not the leaves-Juno mark: this row opens the
                           artifact inside the product. It fades in and nudges

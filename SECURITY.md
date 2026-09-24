@@ -148,6 +148,10 @@ as harmless:
 - `Message.sources` — search-result snippets.
 - Conversation and project titles, project instructions, uploaded file bytes in
   object storage.
+- An agent's brief, role, goals and ideas (`Agent.instructions`, `AgentGoal`,
+  `AgentIdea`) — the same class of text as project instructions and titles.
+  What an agent *knows* (`AgentNote.content`) IS encrypted, with the field
+  keyring, and is kept out of the plaintext `AgentEvent` log.
 
 **The first three are a decision, not a backlog item.** Unified search runs
 inside Postgres: `src/lib/search/sql.ts` builds `to_tsvector` and the result

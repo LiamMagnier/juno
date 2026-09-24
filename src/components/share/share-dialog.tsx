@@ -29,7 +29,7 @@ export interface ShareInfo {
   views: number;
 }
 
-type ShareStatus = "idle" | "loading" | "ready" | "revoked" | "error";
+type ShareStatus = "idle" | "loading" | "ready" | "revoked" | "error" | "blocked";
 
 function formatSnapshotDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
@@ -52,6 +52,9 @@ export function ShareDialog({
   const [share, setShare] = React.useState<ShareInfo | null>(null);
   const [copied, setCopied] = React.useState(false);
   const [revoking, setRevoking] = React.useState(false);
+  // Juno took a link to this down (src/lib/share.ts ShareTakenDownError); the
+  // server's sentence says so, and retrying would not change it.
+  const [blockedReason, setBlockedReason] = React.useState("");
 
   const targetId = kind === "CHAT" ? conversationId : artifactId;
 
@@ -66,6 +69,14 @@ export function ShareDialog({
           kind === "CHAT" ? { kind, conversationId: targetId } : { kind, artifactId: targetId }
         ),
       });
+      if (res.status === 403) {
+        const body = (await res.json().catch(() => null)) as { code?: string; error?: string } | null;
+        if (body?.code === "share_taken_down") {
+          setBlockedReason(body.error ?? "This can’t be shared.");
+          setStatus("blocked");
+          return;
+        }
+      }
       if (!res.ok) throw new Error("Create failed");
       const data = (await res.json()) as { share: ShareInfo };
       setShare(data.share);
@@ -147,6 +158,11 @@ export function ShareDialog({
               Try again
             </Button>
           </div>
+        ) : status === "blocked" ? (
+          <p className="flex items-start gap-2 text-body text-destructive motion-safe:animate-fade-in" role="alert">
+            <StatusIcons.error className="mt-1 size-4 shrink-0" aria-hidden />
+            <span className="min-w-0">{blockedReason}</span>
+          </p>
         ) : status === "revoked" ? (
           <div className="space-y-3 motion-safe:animate-fade-in" role="status">
             {/* The broken link, the set's own mark for exactly this state. */}

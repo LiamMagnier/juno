@@ -189,6 +189,15 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // and is reachable only through a watch that does, which is the same reason
   // ResearchClaimLink is not here.
   ["CodeAutoFixWatch", "userId"],
+  // Agents (docs/design/AGENTS.md). Guarded from the first commit, like Work:
+  // an agent's brief, goals and notes are a statement about one person's life,
+  // and its log is what it did on their behalf. Every call site in
+  // src/lib/agents/ and src/app/api/agents/ carries the userId already.
+  ["Agent", "userId"],
+  ["AgentGoal", "userId"],
+  ["AgentIdea", "userId"],
+  ["AgentNote", "userId"],
+  ["AgentEvent", "userId"],
 ]);
 
 /**

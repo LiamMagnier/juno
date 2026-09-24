@@ -4,7 +4,12 @@ import * as React from "react";
 import { toast } from "sonner";
 import { readChatStream, type StreamFrameInfo } from "@/lib/chat-stream";
 import { createFrameSequencer } from "@/lib/chat/stream-replay";
-import { serverTranscriptRevision, settleClientMessage } from "@/lib/chat-client-state";
+import {
+  applyTurnArtifacts,
+  detachArtifactsFromMessages,
+  serverTranscriptRevision,
+  settleClientMessage,
+} from "@/lib/chat-client-state";
 import {
   clearPendingGeneration,
   getPendingGeneration,
@@ -341,18 +346,6 @@ export function useChat(opts: UseChatOptions) {
     status,
   ]);
 
-  const mergeArtifacts = React.useCallback(
-    (incoming: ClientArtifact[]) => {
-      if (incoming.length === 0) return;
-      setArtifacts((prev) => {
-        const map = new Map(prev.map((a) => [a.identifier, a]));
-        for (const a of incoming) map.set(a.identifier, a);
-        return Array.from(map.values());
-      });
-    },
-    []
-  );
-
   /**
    * The server deliberately detaches generation from the request: when the SSE
    * connection drops (flaky network, tab close, route change), the answer is
@@ -452,7 +445,9 @@ export function useChat(opts: UseChatOptions) {
               return [...prev, { ...recovered, streaming: false }];
             });
           }
-          if (Array.isArray(payload.artifacts)) mergeArtifacts(payload.artifacts);
+          // The thread's whole artifact list, read after the answer landed:
+          // taken as it is, so the panel shows exactly what the server holds.
+          if (Array.isArray(payload.artifacts)) setArtifacts(payload.artifacts);
           opts.onDone?.(recovered, { finishReason: recovered.finishReason ?? undefined });
           return;
         } catch {
@@ -462,7 +457,7 @@ export function useChat(opts: UseChatOptions) {
       if (generationSeqRef.current !== seq) return;
       stampTerminalError("Something didn't go well while generating the response. Click Try again to retry.");
     },
-    [mergeArtifacts, opts]
+    [opts]
   );
 
   /**
@@ -675,7 +670,7 @@ export function useChat(opts: UseChatOptions) {
                     : m
                 )
               );
-              mergeArtifacts(chunk.artifacts);
+              setArtifacts((prev) => applyTurnArtifacts(prev, chunk.artifacts, chunk.message.id));
               opts.onQuota?.(chunk.quota);
               if (chunk.memoryUpdated) opts.onMemoryUpdated?.();
               opts.onDone?.(chunk.message, {
@@ -750,7 +745,7 @@ export function useChat(opts: UseChatOptions) {
         },
       };
     },
-    [mergeArtifacts, opts]
+    [opts]
   );
 
   /** Ask the server whether a generation is still running for this conversation. */
@@ -1701,6 +1696,13 @@ export function useChat(opts: UseChatOptions) {
       // The server snapshotted the pre-edit wording as a MessageVersion; append
       // its metadata locally so the "‹ 2/3 ›" pager grows without a refetch.
       const data = (await res.json().catch(() => ({}))) as { version?: ClientMessageVersion };
+      // The server deleted every message after the edited one and kept their
+      // artifacts, detached. Mirror that before truncating locally.
+      const editedIdx = messagesRef.current.findIndex((m) => m.id === messageId);
+      if (editedIdx !== -1) {
+        const dropped = new Set(messagesRef.current.slice(editedIdx + 1).map((m) => m.id));
+        setArtifacts((prev) => detachArtifactsFromMessages(prev, dropped));
+      }
       // Truncate locally to the edited message, update its content.
       const assistantTempId = tempId();
       setMessages((prev) => {

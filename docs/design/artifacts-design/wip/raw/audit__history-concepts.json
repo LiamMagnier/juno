@@ -1,0 +1,643 @@
+{
+ "area": "Decision history, documented intent, and the fragmentation map of \"made things\" (Artifacts / Canvas / Design / deliverables and everything else Juno makes or holds)",
+ "summary": "WHAT EXISTS. Juno runs about ten separate systems for \"a thing Juno made or holds\". Each has its own storage, listing, viewer, versioning, sharing and export. (1) Chat Artifacts (HTML/REACT/CODE/MARKDOWN/SVG/MERMAID): Prisma `Artifact` + `ArtifactVersion`, created by the model's `<juno:artifact>` tag, opened in the Canvas, listed at /artifacts. They have existed since the first production commit (7ff31854, 2026-07-01). (2) DESIGN artifacts (Juno Design, 7c344b96, 2026-08-05) sit on the same tables, but they have their own write path (`/api/design/[id]/transactions`, validated operations, and a 30 s in-place checkpoint fold). They have two web editors (the embedded Canvas and the /design/[id] window), a /design list, and a bundled copy of the React editor in WKWebView on Mac and iPhone that saves through the generic artifact route instead. (3) Work deliverables (`WorkArtifact`/`WorkArtifactVersion`, 469c6c61, introduced the SAME DAY as Juno Design) store bytes in object storage, carry a validator verdict, soft-delete, and have no share. Since the September Work\u2192Chat merge they are drawn only in the terminal panel of a conversation's newest task. (4) Generated images and videos are `Attachment` rows with origin \"generated\" in the Library. (5) Uploaded files, project sources and knowledge documents. (6) Research reports are stored three times: `ResearchRun.report`, `ResearchReportRevision`, and a MARKDOWN chat artifact. (7) Inline `juno-visual` and learning blocks live inside encrypted message text. (8) Share snapshots (`Share` CHAT|ARTIFACT). (9) Code outputs: diffs, PRs, previews, simulator screenshots. (10) Ephemeral sandbox outputs: Pyodide blob downloads and server Python tmp files.\n\nHOW IT GOT HERE (from the git log and the docs). Artifacts grew steadily through July: share links on 07-11, the Canvas redesign with editable code and version origins on 07-18, targeted edits on 07-18, native sync on 07-22. Then on 2026-08-05/06 three things happened in about 36 hours with no joint design: Juno Design, Juno Work's own artifact model, and the Design surface's placement churn (hidden artifact type, then \"New design\" on /artifacts, then a 4th mode segment, then a footer destination, all within one day, 9a842314 \u2192 bd886d59 \u2192 31d50ab9). Design reached its current nav-row slot on 09-13 (9d562a9a) and its mark changed three times (pen nib \u2192 Shapes on 09-21 \u2192 JunoDesign on 09-22). The native rework plan (REWORK_PLAN.md, 08-15) decided \"Artifacts folds into Library as a filter\". It also asked \"Does design survive?\" (Q6). Neither was ever answered in a doc. TWO_PRODUCTS.md (09-17) instead kept Library, Artifacts and Design as three sibling rows, and gave Code its own Artifacts row that leads back into Chat. No document records why WorkArtifact was built beside Artifact rather than on it, and docs/JUNO.md (the canonical reference, updated 09-23) never mentions Juno Design at all.\n\nHOW GOOD IT IS. The individual pieces are unusually well reasoned. The commit messages carry real rationale. DESIGN deliberately reused Artifact \"so history, restore, sharing and the library work unchanged\". The design op layer is validated and invertible. Office exports are re-opened before serving. The iframe, not the CSP, is correctly treated as the security boundary. But most of the stated principles are only half-realised at the seams between systems:\n- The design write rule (\"a validated transaction, not a blob replacement\", store.ts:9-11) is bypassed by the generic POST that the Mac and iPhone use.\n- \"The JSON Schema is the referee\" (DesignDocument.swift:12-16) is read by nothing, and the web added a field without a schemaVersion bump, so the Mac strips it.\n- \"Sharing works unchanged\" shows raw JSON for a design.\n- \"The library works unchanged\" previews a design as one line of minified JSON.\n- The editor embedded in the Canvas remounts on an empty body after the first checkpoint.\n- The shipped Mac editor bundle is stale while a test named \"\u2026and current\" passes.\n\nBIGGEST PROBLEMS FOR THE MERGE GOAL.\n(a) Ownership: an Artifact has no userId and is owned by a Conversation. Deleting a chat hard-deletes its artifacts, designs and share links, and a hand-started design is anchored to an empty \"Untitled design\" chat.\n(b) Two versioning semantics on one table: append-only for artifacts and an in-place fold for designs. Share snapshots and JUNO.md assume append-only.\n(c) Two artifact models (Artifact TEXT vs WorkArtifact bytes). None of /artifacts, the Library, the Outputs panel or search lists deliverables or research reports.\n(d) Four editors for one DESIGN object, with two different save semantics.\n(e) \"Canvas\" means at least five different things, and three different label vocabularies exist for the same ArtifactType enum.\n(f) The design comments schema exists, but nothing can add or resolve a comment, and there are no artifact comments anywhere.\nThe pieces a Claude-style merge needs already exist: one typed-artifact registry (`runtimeFor`), a per-type editor precedent (DESIGN), share snapshots, sync entities, and a per-conversation Outputs index. They need to be joined, not invented.",
+ "files_read": [
+  "docs/design/TWO_PRODUCTS.md",
+  "docs/design/PREMIUM_AUDIT.md (\u00a72b\u20132f, \u00a73 rules)",
+  "docs/design/ICONS_AND_MOTION.md (\u00a71)",
+  "docs/design/REVIEW_2026-09-02.md",
+  "docs/design/CODEX_PROMPT_REMAINING.md",
+  "docs/design/SOFT_UI.md (composer section)",
+  "docs/design/FLAT_UI.md (grep)",
+  "docs/JUNO.md (\u00a72, \u00a73.5, \u00a74.2, \u00a74.3, \u00a74.3b, \u00a75.1, \u00a75.2, \u00a75.6, \u00a79b, \u00a713 artifacts, \u00a717, \u00a718)",
+  "docs/OPEN_DECISIONS.md",
+  "docs/product-completion/JUNO_PRODUCT_COMPLETION.md",
+  "docs/product-completion/status.json",
+  "docs/native/DECISIONS.md",
+  "docs/native/ROADMAP.md",
+  "docs/native/STATUS.md (artifacts sections)",
+  "docs/native/PARITY_MATRIX.md",
+  "docs/native/MACOS_PRODUCT_SPEC.md",
+  "docs/native/MACOS_DESIGN_REVIEW.md",
+  "docs/native/WEB_TO_NATIVE_DESIGN.md (excerpts)",
+  "docs/native/REWORK_PLAN.md",
+  "docs/native/REWORK_VISUAL_AUDIT.md (excerpt)",
+  "docs/native/API_GAPS.md (GAP-023)",
+  "docs/native/NEXT_PROMPT.md (Stage 7)",
+  "docs/native/code-rework/02-AUDIT-UI.md (\u00a71.3)",
+  "docs/design/artifacts-design/HANDOFF.md (untracked, prior paused run) + wip/raw/audit__*.json defect titles",
+  "mac/liquid-glass-chat: docs/native/MACOS_LIQUID_GLASS_REDESIGN.md (grep) and diff of 4 Swift files",
+  "prisma/schema.prisma (Conversation, Attachment, AttachmentVersion, Artifact, ArtifactVersion, ArtifactType, Share, WorkArtifact, WorkArtifactVersion, ResearchReportRevision)",
+  "src/lib/artifacts-store.ts",
+  "src/lib/artifact-runtime.ts",
+  "src/lib/share.ts",
+  "src/lib/design/store.ts",
+  "src/lib/design/operations.ts (checkpoint rule, op list)",
+  "src/lib/design/migrations.ts",
+  "src/lib/design/types.ts (comments, schema version)",
+  "src/lib/chat-artifact-verification.ts",
+  "src/lib/chat/system-prompt.ts (artifact grammar)",
+  "src/lib/search/sql.ts, src/lib/search/types.ts",
+  "src/lib/work/domain.ts (artifact kinds)",
+  "src/lib/sync-entities.ts (entity list)",
+  "src/lib/app-icons.ts (design/library/artifacts)",
+  "src/lib/plans.ts, src/lib/projects/workspace-config.ts",
+  "src/app/api/artifacts/route.ts",
+  "src/app/api/artifacts/[id]/route.ts",
+  "src/app/api/artifacts/[id]/export/route.ts",
+  "src/app/api/design/route.ts",
+  "src/app/api/design/[artifactId]/route.ts",
+  "src/app/api/design/[artifactId]/edit/route.ts (header)",
+  "src/app/api/design/[artifactId]/transactions/route.ts (grep)",
+  "src/app/api/design/[artifactId]/export/route.ts (formats)",
+  "src/app/api/work/artifacts/route.ts (header, GET)",
+  "src/app/api/generate/route.ts (storage)",
+  "src/app/api/files/sandbox/[...key]/route.ts",
+  "src/app/api/chat/route.ts (canvasOn 2098-2114, artifact persistence 3056-3115)",
+  "src/app/api/conversations/[id]/route.ts (DELETE)",
+  "src/app/api/account/export (grep)",
+  "src/app/(app)/artifacts/page.tsx",
+  "src/app/(app)/design/page.tsx",
+  "src/app/(app)/design/[artifactId]/page.tsx",
+  "src/app/(app)/library/page.tsx (header)",
+  "src/app/(app)/work/[[...segments]]/page.tsx",
+  "src/app/(app)/research/page.tsx, [id]/page.tsx",
+  "src/app/(app)/projects/[id]/page.tsx (grep)",
+  "src/components/app/app-sidebar.tsx (destinations, delete copy)",
+  "src/components/app/command-palette.tsx (entries)",
+  "src/components/canvas/canvas-panel.tsx (state, design embed, code tab)",
+  "src/components/canvas/sandbox-frame.tsx (SANDBOX_ALLOW)",
+  "src/components/design/design-workspace.tsx (grep)",
+  "src/components/design/design-editor.tsx (grep)",
+  "src/components/design/use-design-document.ts",
+  "src/components/artifacts/artifact-preview.tsx",
+  "src/components/share/shared-artifact-viewer.tsx",
+  "src/components/chat/session-outputs.tsx",
+  "src/components/chat/artifact-inline-card.tsx (icons, sweep)",
+  "src/components/chat/work-run-panel.tsx (grep)",
+  "src/components/chat/composer.tsx (canvas notes, /artifact)",
+  "src/components/research/report-dialog.tsx, report-reader.tsx",
+  "src/components/work/work-documents.tsx (header)",
+  "src/components/work/work-site-preview.tsx (iframe)",
+  "src/components/code/code-session-view.tsx (grep)",
+  "scripts/build-design-editor.mjs",
+  "scripts/generate-design-contract.ts",
+  "tests/design-host-bridge.test.ts",
+  ".github/workflows/release-ios.yml, release-macos.yml, native.yml (grep)",
+  "native/macOS/JunoDesktop/App/DesktopChatSidebar.swift (DesktopDestination)",
+  "native/macOS/JunoDesktop/App/DesktopProductMode.swift",
+  "native/macOS/JunoDesktop/App/DesktopCodeStudio.swift (sidebar items)",
+  "native/macOS/JunoDesktop/App/DesktopComposer.swift (canvas toggle)",
+  "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift (presets, document, save, footer row)",
+  "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift",
+  "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift (design surface)",
+  "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift (design surface)",
+  "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift (Made section, grep)",
+  "native/macOS/JunoDesktop/project.yml (DesignEditor resource)",
+  "native/iOS/JunoMobile/App/JunoMobileDesignArtifact.swift",
+  "native/iOS/JunoMobile/App/JunoMobileWorkspaceViews.swift (2055-2080)",
+  "native/Packages/JunoNativeKit/Sources/JunoDesignKit/DesignDocument.swift (header)",
+  "native/Packages/JunoNativeKit/Sources/JunoDesignKit/DesignDocumentCodec.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeShareClient.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoBrand.swift (JunoIcon cases)",
+  "contracts/openapi/juno-native-v1.yaml (ArtifactKind)",
+  "contracts/design/design-document.v1.schema.json (header, grep)"
+ ],
+ "inventory": [
+  {
+   "feature": "Chat Artifact (HTML / REACT / CODE / MARKDOWN / SVG / MERMAID)",
+   "description": "CREATED by the model's `<juno:artifact identifier type title language>` tag (src/lib/chat/system-prompt.ts:251-258), verified and repaired (src/lib/chat-artifact-verification.ts:128), then persisted at turn end (src/app/api/chat/route.ts:3108-3112 \u2192 src/lib/artifacts-store.ts:38-95). Reusing an identifier appends a version. Canvas Ask/Modify quotes produce targeted edits (artifacts-store.ts:103-127). Manual saves go through the Canvas Code tab (POST /api/artifacts/[id], route.ts:39-89). Non-design types have no manual create path.\nSTORED in `Artifact` (no userId; owned via Conversation with onDelete Cascade, prisma/schema.prisma:1125-1144) and `ArtifactVersion.content` (TEXT, \u2264200k chars, plaintext for FTS, JUNO.md:2569-2573; origin generated/edit/restore, schema.prisma:1146-1164).\nLISTED at /artifacts (newest 200 only, api/artifacts/route.ts:24-27), in the per-chat Outputs panel (session-outputs.tsx:96-104) and in search (sql.ts:329-353). The project page is meant to list them but reads the wrong key (projects/[id]/page.tsx:305-310). Also on the Mac Artifacts screen and the iOS hidden Artifacts section (PARITY_MATRIX.md:17-21).\nOPENED in the chat Canvas via the inline card or /chat/{id}?artifact= (artifacts/page.tsx:529,596), in the Code session canvas (code-session-view.tsx:17-18), on /share/[token], and in the Mac dock and standalone window.\nVERSIONED append-only, with Canvas history, diff and restore.\nSHARED via Share ARTIFACT (web only; the native share client creates CHAT links only, NativeShareClient.swift:61-62).\nEXPORTED via Download source (artifacts/page.tsx:338-358) and Office export for MARKDOWN only (export/route.ts:94-95), verified before serving (120-138).\nSYNCED as artifact/artifact_version (sync-entities.ts:222-260). Not in the account export.",
+   "maturity": "solid",
+   "where": [
+    "prisma/schema.prisma:1125",
+    "src/lib/artifacts-store.ts:38",
+    "src/components/canvas/canvas-panel.tsx",
+    "src/app/(app)/artifacts/page.tsx",
+    "src/app/api/artifacts/route.ts:24"
+   ]
+  },
+  {
+   "feature": "DESIGN artifact (Juno Design scene document)",
+   "description": "CREATED three ways:\n- The model emits the compact authoring form, expanded on the way in (system-prompt.ts:269-291; artifacts-store.ts:16-25).\n- POST /api/design from the /design presets, from /artifacts \"New design\" and from the Mac Design screen. This creates an empty `kind: chat` conversation to own it and marks v1 origin \"generated\" even though the user made it by hand (api/design/route.ts:69-90).\n- No create path on iOS.\nSTORED in the same Artifact/ArtifactVersion tables. The body is DesignDocument JSON, schemaVersion 1 (types.ts:24). Edits within 30 s REWRITE the newest 'edit' row in place (store.ts:77-81,122-127; operations.ts:511,529-539).\nLISTED on /design, which filters the 200-capped /api/artifacts on the client (design/page.tsx:71-90); on /artifacts under the 'Designs' filter, where the tile shows minified JSON (artifact-preview.tsx:79-84); in the Outputs panel (JSON preview); in search, which indexes JSON keys; on the Mac Design and Artifacts screens; and in the iOS artifacts list.\nOPENED AND EDITED in the /design/[id] window editor (design-workspace.tsx) and the chat Canvas embedded editor (canvas-panel.tsx:1236-1255). Both commit validated transactions through /api/design/[id]/transactions. Also in the Mac Design screen and Mac Artifacts screen through the bundled editor in WKWebView, with an explicit Save to the generic POST (DesktopDesignScreen.swift:419-428,577-581; DesktopArtifactsScreen.swift:940-947), and in the iOS workspace (editable on the latest version, JunoMobileWorkspaceViews.swift:2062-2068).\nAI EDITS: the Ask Juno bar goes to /api/design/[id]/edit (a previewed transaction, billed, with no transcript message). Chat re-emission replaces the whole document.\nVERSIONED as checkpoints, plus DesignDocument.revision, plus an in-memory undo 'History' tab. Version browse and restore exist only in the Canvas and the Mac Artifacts screen, not on /design/[id].\nSHARED via Share ARTIFACT, but the public page shows only a JSON Code tab (shared-artifact-viewer.tsx:29-33; artifact-runtime.ts:98).\nEXPORTED via /api/design/[id]/export as svg/png/pdf/html/react/swiftui/json/tokens/handoff (export/route.ts:25). The handoff bundle has no consumer anywhere (a grep for 'juno-handoff' finds only the editor).\nCOMMENTS: schema only (types.ts:738-752; schema.ts:577). There is no add or resolve operation and no UI.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/store.ts",
+    "src/app/api/design/route.ts",
+    "src/app/(app)/design/page.tsx",
+    "src/app/(app)/design/[artifactId]/page.tsx",
+    "src/components/canvas/canvas-panel.tsx:1236",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift",
+    "native/iOS/JunoMobile/App/JunoMobileDesignArtifact.swift"
+   ]
+  },
+  {
+   "feature": "Work deliverable (WorkArtifact: document / spreadsheet / presentation / pdf / report / bundle / image / site / archive)",
+   "description": "CREATED by the work runner's `create_deliverable` tool and POST /api/work/artifacts from a typed spec (route.ts:66-75; kinds at domain.ts:1090-1115).\nSTORED in `WorkArtifact` (userId + sessionId, validatedAt, soft delete via deletedAt) and `WorkArtifactVersion` (object-storage key, SHA-256, provenance, validation), schema.prisma:2608-2673.\nLISTED on the web ONLY inside WorkRunPanel's terminal state for a conversation's NEWEST task (work-run-panel.tsx:352-357; JUNO.md:1718-1719). Not in /artifacts, /library, the per-chat Outputs panel or search. On Mac and iOS it is listed in the Work product's 'Made' section (DesktopWorkWorkspace.swift:3044).\nOPENED as an inline stage for site and report, or in a preview dialog (work-site-preview.tsx:609). The site preview uses a different sandbox policy from chat artifacts (work-site-preview.tsx:590-600 vs sandbox-frame.tsx:85-86).\nEDITED: none (a new version comes from re-generation under the same identifier).\nSHARED: none (ShareKind is CHAT|ARTIFACT only, schema.prisma:1803-1806).\nEXPORTED as a hash-verified download (work-documents.tsx:25-55).\nSYNCED as work_artifact/work_artifact_version (sync-entities.ts:547-560).",
+   "maturity": "partial",
+   "where": [
+    "prisma/schema.prisma:2608",
+    "src/app/api/work/artifacts/route.ts",
+    "src/components/work/work-documents.tsx",
+    "src/components/chat/work-run-panel.tsx:357",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3044"
+   ]
+  },
+  {
+   "feature": "Generated media (images / videos)",
+   "description": "CREATED by /api/generate. STORED as an `Attachment` with origin \"generated\" plus object storage (generate/route.ts:246-282). The schema comment lists origins as upload|library_clone|replacement|restore and omits 'generated' (schema.prisma ~836). LISTED in /library and the Outputs panel (session-outputs.tsx:135), not /artifacts. OPENED in the file viewer. EDITED through the image edit overlay (region/mask). VERSIONED through AttachmentVersion library revisions. SHARED only through a chat share. SYNCED as an attachment.",
+   "maturity": "solid",
+   "where": [
+    "src/app/api/generate/route.ts:272",
+    "src/app/(app)/library/page.tsx",
+    "src/components/chat/session-outputs.tsx:135"
+   ]
+  },
+  {
+   "feature": "Uploaded files / Library / project sources / knowledge documents (held, not made)",
+   "description": "`Attachment` + `AttachmentVersion` with a soft-delete trash (schema.prisma:818-900), plus KnowledgeDocument/Block/Chunk as the indexed reading. Listed at /library and in project Sources. Opened in DocumentViewer, which occupies the Canvas column (JUNO.md:531-536), and in the /knowledge/documents/[id] inspector. This is a third viewer family alongside the Canvas and /design.",
+   "maturity": "solid",
+   "where": [
+    "src/app/(app)/library/page.tsx",
+    "src/app/(app)/knowledge/documents/[id]/page.tsx",
+    "docs/JUNO.md:519"
+   ]
+  },
+  {
+   "feature": "Research report",
+   "description": "Stored THREE times: `ResearchRun.report`, `ResearchReportRevision` (schema.prisma:3616-3634), and a MARKDOWN chat Artifact parsed from the writer's `<juno:artifact>` (report-dialog.tsx:22-31; chat route 3588-3592). The /research routes only redirect into the chat (research/page.tsx; research/[id]/page.tsx). Two doors to one document: ReportDialog/ReportReader and the Canvas card. Export as .md and print (report-reader.tsx:212-231), plus Office through the artifact. 'Share' copies the private page URL, labelled 'sign-in required' (report-reader.tsx:233-241,304-310). No research sync entity. Not indexed as research in search. No Mac reader on main.",
+   "maturity": "partial",
+   "where": [
+    "src/components/research/report-dialog.tsx",
+    "src/components/research/report-reader.tsx",
+    "prisma/schema.prisma:3616"
+   ]
+  },
+  {
+   "feature": "Inline visual / learning blocks and inline Mermaid",
+   "description": "`juno-visual` fences and :::step-lab / learning-card / process-timeline / comparison / quiz / deep-dive (learning-blocks.ts:332; message-content.ts:302). They live inside encrypted Message.content. They are rendered inline on the web and natively (JunoLearningBlocks.swift, JunoStepLab.swift). They are not listable, separately versioned (only via MessageVersion) or separately shareable. An inline ```mermaid fence renders through the same SandboxFrame as a MERMAID artifact (JUNO.md:517), so a diagram can be two different objects.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/learning-blocks.ts:332",
+    "src/lib/message-content.ts:302",
+    "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoLearningBlocks.swift"
+   ]
+  },
+  {
+   "feature": "Share snapshot",
+   "description": "`Share` (CHAT|ARTIFACT, token, snapshotAt, views, revokedAt; schema.prisma:1803-1834). The public /share/[token] page renders the artifact version with createdAt \u2264 snapshotAt (share.ts:244-266). Links are managed in profile and settings, synced as 'share' (sync-entities.ts:373) and cascade-deleted with the artifact or chat. Native creates CHAT links only. There is no share for deliverables, files or research as research.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/share.ts",
+    "src/components/share/shared-artifact-viewer.tsx",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeShareClient.swift:61"
+   ]
+  },
+  {
+   "feature": "Code outputs (diffs, PRs, previews, simulator screenshots)",
+   "description": "Outside the artifact system. PRs are recorded as CodeTask.prUrl and listed at /code/pulls. On the Mac, Code has an inspector Preview pane and a preview window (docs/native/code-rework/02-AUDIT-UI.md \u00a71.4) and the Juno Simulator (7c344b96). A Code session can also hold chat Artifacts in a Canvas (code-session-view.tsx:162-175). The Code sidebar's 'Artifacts' row opens the Chat product's /artifacts (app-sidebar.tsx:1070-1084).",
+   "maturity": "partial",
+   "where": [
+    "src/components/code/code-session-view.tsx:17",
+    "src/components/app/app-sidebar.tsx:1084"
+   ]
+  },
+  {
+   "feature": "Ephemeral sandbox outputs",
+   "description": "Files written by Pyodide in the Canvas console are offered as blob downloads and never persisted (PREMIUM_AUDIT.md \u00a72f, 'Produce a PDF only finishes when the PDF leaves the sandbox'). The server Python sandbox writes to tmpdir and serves files through /api/files/sandbox (src/lib/sandbox/python.ts:155,425). PREMIUM_AUDIT says it is excluded from the hosted toolset.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/sandbox/python.ts:425",
+    "src/app/api/files/sandbox/[...key]/route.ts"
+   ]
+  },
+  {
+   "feature": "Design \u2192 Juno Code handoff",
+   "description": "Promised by the /design lede ('hand to Juno Code', design/page.tsx:135), the system prompt (system-prompt.ts:269) and 7c344b96 (a node-id \u2192 code-symbol mapping for later targeted edits). It is implemented only as a downloaded `.juno-handoff.json` (design-editor.tsx:315-319). Grepping src, native, scripts and runner for 'juno-handoff' finds no consumer in Code on web or Mac.",
+   "maturity": "stub",
+   "where": [
+    "src/components/design/design-editor.tsx:315",
+    "src/lib/design/export.ts:360"
+   ]
+  },
+  {
+   "feature": "Design comments / artifact comments",
+   "description": "`DesignDocument.comments` (types.ts:738-752; schema.ts:531-577) is read into the AI selection context (selection-context.ts:291-359). There is no operation to create or resolve a comment (full op list in operations.ts) and no UI. Artifacts, shares and deliverables have no comment concept at all.",
+   "maturity": "stub",
+   "where": [
+    "src/lib/design/types.ts:738",
+    "src/lib/design/selection-context.ts:291"
+   ]
+  }
+ ],
+ "architecture": "A. OWNERSHIP AND STORAGE, SIDE BY SIDE\n\nThese models are READ from prisma/schema.prisma:\n- Artifact (1125-1144): no userId. Owned via Conversation, onDelete Cascade. Identity is @@unique([conversationId, identifier]).\n- ArtifactVersion (1146-1164): content is TEXT in Postgres. Plaintext on purpose so Postgres full-text search works (JUNO.md:2569-2573). origin can be generated, edit or restore.\n- WorkArtifact and WorkArtifactVersion (2608-2673): userId + sessionId. Bytes live in object storage with a SHA-256. Each version carries a validation verdict and provenance. Deletion is soft (deletedAt).\n- Attachment and AttachmentVersion (818-900): userId, with optional conversation and project. Bytes live in object storage. Deletion is soft, with a trash view in the Library.\n- ResearchReportRevision (3616-3634) is separate again.\n- Share (1803-1834) can point only at a Conversation or an Artifact.\n\nDeletion semantics differ three ways:\n- An Artifact is hard-deleted, with no trash. It also goes whenever its chat is deleted (conversations/[id]/route.ts DELETE \u2192 prisma.conversation.delete).\n- A WorkArtifact is soft-deleted.\n- An Attachment is soft-deleted and restorable.\n\nB. WRITE PATHS FOR ONE ARTIFACT ROW\n\n1. Chat turn: persistArtifacts (artifacts-store.ts:38-95).\n   - A new identifier creates the artifact. A reused identifier appends version N+1.\n   - It SETS title, type and language unconditionally (61-67).\n   - DESIGN bodies are expanded by normalizeDesignArtifact (16-25).\n2. Targeted edit: persistTargetedArtifactEdit, a compare-and-bump write (103-127).\n3. Generic manual save: POST /api/artifacts/[id] (route.ts:39-89).\n   - Takes any string up to 200k, with an OPTIONAL baseVersion.\n   - Has no per-type validation.\n   - Used by the Canvas Code tab, restore, and the Mac and iOS design editors.\n4. Design transactions: POST /api/design/[id]/transactions \u2192 commitTransaction (store.ts:89-149).\n   - Validates the operations.\n   - Either appends a checkpoint or REWRITES the newest 'edit' row in place when it is under 30 s old (store.ts:122-127,179-203; operations.ts:511,529-539).\n5. Design creation: POST /api/design (route.ts:37-101) creates a Conversation and an Artifact.\n\nC. READ AND LIST PATHS\n\n- GET /api/artifacts returns the newest 200 by updatedAt, plus a left(content, 1200) preview (route.ts:24-78). /artifacts, /design and the project page all consume this one capped list.\n- GET /api/artifacts/[id] returns every version's full content.\n- GET /api/design/[id]?version= has no client caller; its comment says 'what the history panel needs'.\n- Search reads every ArtifactVersion through to_tsvector('simple') on title and content, and links to /chat/{c}?artifact=&v= (sql.ts:329-353; engine.ts:420-434).\n- The per-conversation Outputs panel derives from client state (session-outputs.tsx:28-33).\n\nD. VIEWERS (rendering hosts)\n\n- CanvasPanel (canvas-panel.tsx). It dispatches through runtimeFor (artifact-runtime.ts:93-127):\n  - web \u2192 SandboxFrame\n  - console \u2192 Pyodide/JS\n  - design \u2192 the embedded DesignEditor\n  - Markdown \u2192 the reading measure\n- DocumentViewer, for files, shares the Canvas column slot (JUNO.md:531-536).\n- DesignWorkspace at /design/[id].\n- SharedArtifactViewer at /share/[token].\n- ReportDialog for research.\n- WorkDeliverablePreview dialog and inline stage, with their own iframe policy.\n- /knowledge/documents/[id].\n- Mac: DesktopArtifactCanvas (the chat dock), DesktopArtifactsScreen (standalone, plus 'Open in New Window'), DesktopDesignScreen, and the Work 'Made' section.\n- iOS: the JunoMobileWorkspaceViews artifact view, JunoMobileDesignArtifactBody, and the inline artifact.\n\nE. SYNC\n\n- Entities: artifact, artifact_version, work_artifact, work_artifact_version, attachment, share, message and message_version (sync-entities.ts:137-260, 373, 547-560).\n- There is no research entity.\n- The native OpenAPI ArtifactKind enum lacks DESIGN (contracts/openapi/juno-native-v1.yaml:1866-1868).\n- The design scene contract is contracts/design/design-document.v1.schema.json. It is generated from zod and fresh (`--check` passes). No Swift test reads it.\n\nF. TIMELINE (READ from git log and commit messages)\n\n- 07-01 7ff31854: Artifact, ArtifactVersion and the Canvas exist in the first production commit.\n- 07-04 6c6e91dc: live code streaming inside artifacts.\n- 07-11 f5bf223a: public snapshot share links for chats and artifacts. d5c4211c: Canvas share affordance.\n- 07-17 947a7611: artifact card rebuilt with a 'streaming sweep'. Gallery gets per-type accents, ambient coloured shadows and a sheen (later purged by e47df155 on 09-08).\n- 07-18 cbc94c80: Canvas redesign.\n  - Editable CodeSurface.\n  - Version history with origin (migration 20260718090000_artifact_version_origin).\n  - /artifacts search, filters, rename, duplicate, export, share and delete.\n  - 716feabc, the same day: targeted Canvas edits (artifact-edit.ts).\n- 07-22 719db31c: native library and artifacts (offline history, 409 conflicts).\n- 07-26 d66546a0: JunoDesktop and DesktopArtifactsScreen.\n- 08-05 7c344b96 'Add Juno Design and Juno Simulator'.\n  - DESIGN type (migration 20260805120000_design_artifact_type).\n  - A 25-operation transaction model.\n  - One renderer and six export formats.\n  - The Mac WKWebView host and the JunoDesignKit Swift mirror ('Swift owns the contract, not a second scene graph').\n- 08-05 469c6c61 'Juno Work: the domain', the SAME DAY: 15 tables including WorkArtifact. No reason is recorded for not reusing Artifact.\n- 08-05 3b9f06b0: the model learns to emit DESIGN. 9a842314: 'New design' button on /artifacts and POST /api/design.\n- 08-06 bd886d59: 'Make Design a mode', a 4th segment, the /design list and the pen-nib icon. Intent recorded: 'gives the native icon generator an entry to emit, so the Mac and phone draw the same mark'.\n- 08-06 31d50ab9: 'Design is a destination, not a mode', moved to a footer NavRow plus the palette.\n- 08-06 ea6ed46d: /design/[id] window editor and /api/design/[id]/edit (Ask Juno). The Canvas editor was judged 'a canvas with no way to see or change anything on it'.\n- 08-06 a184ad9d: in-place checkpoint folding. Also e849ef6a (pages, images, one text model), 0c615ff8 (layer export) and 78bef990 (the Mac door into Design).\n- 08-06 390ade91: the last change ever made to the Swift DesignDocument mirror.\n- 08-07 6e5e86b5: iOS design editing (designDraft).\n- 08-08 890bb272, ef366a03, ddbbe6b4: Office export and design export verification.\n- 08-10 3d60db34: Work leaves the mode switch, which becomes Home/Code.\n- 08-15 REWORK_PLAN owner decisions:\n  - 'Artifacts folds into Library as a filter'.\n  - Open question 6: 'Does design survive?'.\n  - The same day, c69ee98e adds cornerSmoothing to the web schema at schemaVersion 1, and 6f9d6cef wires the native artifact Canvas.\n- 09-03 12fe0578: Soft UI v1.5.0. a9648246: ChatGPT-style sidebar (Library, Projects, Artifacts, then Design above the account row).\n- 09-09 d39d652a: Artifacts grid with source previews ('the two pages hold the same kind of thing' as the Library, yet kept separate).\n- 09-12 22059f90: Canvas becomes model-decided and the web toggle is removed.\n- 09-13 9d562a9a: Design becomes a nav row among the destinations.\n- 09-16: Anthropic folds Cowork into Claude (external).\n- 09-17 2853c43f and TWO_PRODUCTS.md: Work stops being a place, and the Code sidebar gains Artifacts. 2fa09d35 is the last design-editor bundle build.\n- 09-20 971ba294: /artifacts had been broken for every account that owned an artifact (int8 left()).\n- 09-21 a0e41c9b: CSP loosened. React artifacts had never rendered until then. Also fd449001 (Design glyph becomes Shapes) and b3f580c6 (Canvas and design lazy-loaded).\n- 09-22 5b2187c8: Design glyph becomes JunoDesign. fcc9fb3a: Python writes a PDF out of the sandbox.\n- 09-23 19941547: DocumentViewer takes the Canvas column. 0a3087fe: Mac 1.6.0 ships with the 09-17 editor bundle.\n- The branch mac/liquid-glass-chat (not on main):\n  - Moves Mac Design to a Chat nav row with the JunoDesign mark.\n  - Its doc MACOS_LIQUID_GLASS_REDESIGN.md records that 'Canvas edits are never saved' on the Mac (line 130), that the editor bundle is stale (211, 1562), and that the Canvas toggle 'does nothing' (97).\n  - Its Swift diff to DesktopArtifactCanvas, ArtifactsScreen and DesignScreen is comments, the icon and footer placement only (55+14+4 lines).\n\nG. STATED DECISIONS AND PRINCIPLES, AND WHETHER THE CODE MATCHES\n\n1. DESIGN shares Artifact 'so history, restore, sharing and the library work unchanged' (schema.prisma:1350-1354; store.ts:3-12). PARTIAL: the share page shows JSON, library tiles show JSON, and restore exists only in the Canvas.\n2. 'An edit is a validated transaction against a named revision, not a blob replacement' (store.ts:9-11). VIOLATED by the generic POST that Mac and iOS use.\n3. 'The generated JSON Schema is the referee' (DesignDocument.swift:12-16; generate-design-contract.ts:5-8). NOT ENFORCED: nothing reads it, and the web added a field without a version bump.\n4. One renderer and editor on all platforms (7c344b96; JunoMobileDesignArtifact.swift:27-35). TRUE BY CONSTRUCTION, but the Mac and iPhone bundle is stale.\n5. Design placement: 'a mode' (bd886d59), then 'a destination' (31d50ab9), then a nav row (9d562a9a). On the Mac it is 'not a product mode' (DesktopChatSidebar.swift:314-322; DesktopProductMode.swift).\n6. '/design is a way in, not a second editor' (design/page.tsx:11-13). Yet the Canvas embeds the full editor, and /artifacts and search route designs into it (artifacts/page.tsx:529,596; engine.ts:434).\n7. Checkpoints are not written per drag (store.ts:65-81). This CONTRADICTS JUNO.md:2522 'ArtifactVersion (append-only)' and the snapshot rule in share.ts:11-13.\n8. Canvas is the model's decision (route.ts:2104-2111; composer.tsx:2944-2947). The Mac still ships a toggle.\n9. A preview is the source, not an iframe; SVG is drawn as an img (d39d652a; artifact-preview.tsx:15-33).\n10. The iframe is the boundary, not the CSP (PREMIUM_AUDIT.md \u00a72e). Contradicted by JUNO.md:507-508,2579-2581 and status.json:155.\n11. Office export is MARKDOWN-only and re-opened before it is served (export/route.ts:94-95,120-138; rule 15). Work generates the same formats through a different generator, deliverables/*.ts.\n12. 'Artifacts is shared with Chat: one library of generated things, not one per product' (app-sidebar.tsx:1070-1073). But deliverables and generated media are not in it.\n13. REWORK_PLAN (08-15): 'Artifacts folds into Library as a filter (both answer \"files I have\")' (REWORK_PLAN.md:153-154; still 'open' at 293). Superseded in practice by TWO_PRODUCTS \u00a73 (three sibling rows) with no recorded reversal.\n14. 'Work is not a place'. Deliverables are drawn in the run's terminal panel (TWO_PRODUCTS.md:30-36,103-110). The known limitation is 'follows a conversation's NEWEST task' (JUNO.md:1718-1719).\n15. Glyphs: 'one concept, one drawing' (ICONS_AND_MOTION.md \u00a71.1). The Design mark's rationale is at PREMIUM_AUDIT.md:614-631 and app-icons.ts:117-141. Four local ArtifactType icon maps exist, and the Mac uses penTool.\n16. 'A control appears only when its backing operation exists' (MACOS_PRODUCT_SPEC.md:40-42). GAP-023 says to omit Canvas from the native composer until a contract exists (API_GAPS.md:388-397).\n17. Private mode never persists artifacts (route.ts:2107-2108; canvas-panel.tsx:243).\n\nSTILL OPEN IN DOCS:\n- REWORK_PLAN Q6 ('Does design survive?', REWORK_PLAN.md:321-322).\n- The Artifacts \u2192 Library fold (REWORK_PLAN.md:293).\n- GAP-023 (native Canvas contract).\n- The tonal pass on Library and Artifacts (REVIEW_2026-09-02.md:54-55; CODEX_PROMPT_REMAINING.md:23).\n- OPEN_DECISIONS.md contains NOTHING about artifacts or design (grep: only a TWO_PRODUCTS reference at :76).\n\nH. ONE USER INTENT, SEVERAL SYSTEMS\n\n- 'Show me what Juno made': /artifacts, /design, /library, the per-chat Outputs panel, the Work terminal stage, the project page (broken) and search. On the Mac: Artifacts, Design, Library and Work \u203a Made.\n- 'Make a document': a MARKDOWN artifact (with Office export), a Work document (.docx typed spec), a Work report (markdown), or a research report.\n- 'Make a website': HTML/REACT artifacts (scripts run), a Work 'site' (zip; the preview blocks the bundle's scripts per the comment at work-site-preview.tsx:594-598), a Design HTML prototype export, or Juno Code.\n- 'Make a diagram': a MERMAID artifact, an inline mermaid fence, a juno-visual block or an SVG artifact.\n- 'Make slides': a Work presentation (.pptx spec) or Markdown \u2192 pptx (office-export.ts toPptx).\n- 'Make a spreadsheet': a Work spreadsheet, Markdown \u2192 xlsx, or Pyodide openpyxl.\n- 'Make an image': a generated image (Attachment), an SVG artifact, a Design PNG export or a Work image kind.\n- 'Edit with AI': chat re-emission (full replace), Canvas Ask/Modify (artifactEdit patch) or the Design Ask Juno bar (a separate route with no transcript).\n- 'Edit by hand': the Canvas Code tab, the Canvas design editor, the /design window, the Mac Design screen, the Mac Artifacts screen or the iOS workspace.\n- 'History': ArtifactVersion, design fold plus the undo History tab, WorkArtifactVersion, AttachmentVersion, MessageVersion and ResearchReportRevision.\n- 'Share': Share ARTIFACT (JSON for designs); research 'copy link (sign-in required)'; none for deliverables; native is chat-only.\n- 'Find later': search covers artifacts (including design JSON) but not deliverables or research.\n\nI. NAMING INCONSISTENCIES\n\n- 'Canvas':\n  (1) the chat side panel, CanvasPanel;\n  (2) the model tool, plan flag and system-prompt section: `PLANS[plan].canvas` gates design creation (api/design/route.ts:42-43) but not chat artifacts;\n  (3) the design editor's drawing surface, design-canvas.tsx;\n  (4) the /api/artifacts comment calls the list 'the Canvas library' (route.ts:19);\n  (5) the Mac composer toggle 'Canvas & artifacts';\n  (6) the native background token junoCanvas;\n  (7) the Mac Code run area ('the canvas is reserved for the actual run', MACOS_DESIGN_REVIEW.md:28-29) and CodeSessionCanvas.\n  The command palette gives BOTH Design and Artifacts the keyword 'canvas' (command-palette.tsx:1168-1169).\n- 'Artifact': the chat Artifact, WorkArtifact (whose UI calls it a deliverable, document or output), 'release artifacts' in native docs (DECISIONS.md:59), and AppIcons.artifactsTool for the Canvas tool. There are two `serializeArtifact` functions (src/lib/serializers vs src/lib/work/serializers).\n- 'Document': DesignDocument, DocumentViewer (files), WorkArtifact kind 'document' (.docx), KnowledgeDocument, and work-documents.tsx (deliverables).\n- 'Design':\n  - Juno Design (the product and editor) and the DESIGN type;\n  - 'the design system' (src/lib/design/tokens.generated.ts sits in the same folder as the scene model; JunoDesignSystem vs JunoDesignKit; design:tokens / design:contract / design:editor scripts);\n  - docs/design/ (the design law);\n  - DesignIcons (editor tools);\n  - the Mac Code launchpad naming Plan mode 'Design' (MACOS_DESIGN_REVIEW.md:30-32).\n- 'Outputs': the per-chat Outputs panel (artifacts plus media) vs the Work rail 'Outputs' (deliverables).\n- 'Library': /library (files), 'the library' in store.ts meaning the artifact list, and REWORK_PLAN's 'Library' meaning files plus artifacts.\n- ArtifactType labels have three vocabularies:\n  - /artifacts filter: Sites / Components / Code / Documents / Graphics / Diagrams / Designs (artifacts/page.tsx:51-59);\n  - Outputs panel: Web page / Component / Code / Doc / Image / Diagram / Design (session-outputs.tsx:54-62);\n  - row metadata from runtimeFor: HTML / React / Markdown / SVG / Mermaid / Design (artifact-runtime.ts:98-103).\n  - The Mac uses 'Designs' and the penTool mark (DesktopArtifactsScreen.swift:2035,2048).\n- Version origin 'generated' is written for a hand-started blank design (api/design/route.ts:88).",
+ "ux": [
+  {
+   "observation": "Three sibling sidebar destinations answer 'what do I have or what did Juno make' with overlapping, incomplete contents. Design is a subset of Artifacts. Generated images are in the Library but not Artifacts. Work deliverables and research reports appear in none of them. A person cannot find a .pptx a chat task made last week except by scrolling back to that chat, and then only if it was the chat's newest task (JUNO.md:1718-1719; app-sidebar.tsx:1086-1100).",
+   "severity": "major",
+   "where": [
+    "src/components/app/app-sidebar.tsx:1086",
+    "docs/JUNO.md:1718",
+    "src/components/chat/session-outputs.tsx:96"
+   ]
+  },
+  {
+   "observation": "The same design opens in two different editors depending on the door. From /design it opens the full-window editor at /design/{id} (design/page.tsx:236). From /artifacts (list and grid), search results, the inline card and the Outputs panel it opens the chat Canvas's embedded editor (artifacts/page.tsx:529,596; engine.ts:434). commit ea6ed46d itself described that editor as 'a canvas with no way to see or change anything on it'.",
+   "severity": "major",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:529",
+    "src/app/(app)/design/page.tsx:236",
+    "src/lib/search/engine.ts:434"
+   ]
+  },
+  {
+   "observation": "A design is shown as raw JSON wherever the generic artifact chrome draws it:\n- the /artifacts grid tile (one clipped line of minified JSON, artifact-preview.tsx:79-84);\n- the Outputs panel tile (session-outputs.tsx:102);\n- the public share page (Code tab only, shared-artifact-viewer.tsx:29-33);\n- search snippets.\nThe renderer that could produce a thumbnail exists (src/lib/design/render.ts).",
+   "severity": "major",
+   "where": [
+    "src/components/artifacts/artifact-preview.tsx:79",
+    "src/components/share/shared-artifact-viewer.tsx:32"
+   ]
+  },
+  {
+   "observation": "The /design copy promises two things the window editor does not give. 'Designs are artifacts, so they keep full version history' (design/page.tsx:290-296), but /design/{id} shows only 'vN' plus an in-session undo list (design-workspace.tsx:178; design-editor.tsx:1017). 'hand to Juno Code' (design/page.tsx:135) is a JSON download.",
+   "severity": "minor",
+   "where": [
+    "src/app/(app)/design/page.tsx:291",
+    "src/components/design/design-workspace.tsx:178"
+   ]
+  },
+  {
+   "observation": "Starting a design adds an empty 'Untitled design' chat to Recents (api/design/route.ts:69-79). Renaming the design never renames that chat (design-workspace.tsx:124-141 PATCHes only the artifact). Deleting the design from /design leaves the empty chat behind (design/page.tsx:112-127).",
+   "severity": "minor",
+   "where": [
+    "src/app/api/design/route.ts:71",
+    "src/app/(app)/design/page.tsx:116"
+   ]
+  },
+  {
+   "observation": "Research report 'Share' copies the account-private /chat URL. It is labelled 'Copy page link (sign-in required)' (report-reader.tsx:304-310), while the same report also exists as a MARKDOWN artifact that CAN be shared publicly through the Canvas. Two doors to one document, with two different sharing answers.",
+   "severity": "minor",
+   "where": [
+    "src/components/research/report-reader.tsx:233",
+    "src/components/research/report-dialog.tsx:22"
+   ]
+  },
+  {
+   "observation": "The Code sidebar's 'Artifacts' row (app-sidebar.tsx:1084) lands on Chat's /artifacts page. The page lists Code-session artifacts but opens them through /chat/{id}?artifact=.",
+   "severity": "minor",
+   "where": [
+    "src/components/app/app-sidebar.tsx:1070"
+   ]
+  },
+  {
+   "observation": "Three label vocabularies for the same seven types. The /artifacts filter says 'Sites' while each row beneath it says 'HTML', and the Outputs panel says 'Web page' (artifacts/page.tsx:51-59; session-outputs.tsx:54-62; artifact-runtime.ts:98-103).",
+   "severity": "minor",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:52",
+    "src/components/chat/session-outputs.tsx:54"
+   ]
+  },
+  {
+   "observation": "Mac: the composer shows a 'Canvas & artifacts' toggle that has no effect, and it counts as an armed tool on the bar (DesktopComposer.swift:688,727-728). The web removed its equivalent on 09-12.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopComposer.swift:727"
+   ]
+  },
+  {
+   "observation": "Mac and web draw Design differently: the Mac uses the SF Symbol pencil.tip (DesktopChatSidebar.swift:369; DesktopArtifactsScreen.swift:2048) and the web uses JunoDesign (app-icons.ts:141). The Mac comment at DesktopChatSidebar.swift:357 still says 'Design is the pen nib the web draws'. mac/liquid-glass-chat fixes this.",
+   "severity": "info",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopChatSidebar.swift:369",
+    "src/lib/app-icons.ts:141"
+   ]
+  },
+  {
+   "observation": "iOS has no Design destination and no way to start a design (no /api/design caller in native/iOS). DESIGN appears only as a type inside Artifacts, where it is editable on the latest version. That contradicts the 'read-only on iPhone' framing in the brief and the doc comment at JunoMobileDesignArtifact.swift:27-35.",
+   "severity": "info",
+   "where": [
+    "native/iOS/JunoMobile/App/JunoMobileWorkspaceViews.swift:2062"
+   ]
+  }
+ ],
+ "motion": [
+  {
+   "observation": "Design history of artifact motion. 947a7611 (07-17) gave the inline card 'live status motion with a streaming sweep' and gave the gallery 'colored ambient hover shadows, sheen'. The sheen and ambient shadows were purged later (e47df155, 09-08, 'Purge the decorative motion'). The /artifacts grid now allows only a tonal hover plus the kind glyph's 'lift' (artifacts/page.tsx:538-545).",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:538"
+   ]
+  },
+  {
+   "observation": "The inline card still runs a gradient band along its hairline while the source streams (artifact-inline-card.tsx:367-372). This is permitted by PREMIUM_AUDIT rule 14 because it is a real loading state. The status dot uses animate-pulse (line 290), which is off the motion ladder.",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:367",
+    "src/components/chat/artifact-inline-card.tsx:290"
+   ]
+  },
+  {
+   "observation": "/design preset tiles: the plus hands over to the Design mark through IconSwap (curve 'spring'), and only that mark breathes while the document is being created, described as 'live state, the one thing allowed to loop' (design/page.tsx:170-187). The recent-designs rows rise in with a tight stagger capped at 8 (221-228).",
+   "where": [
+    "src/app/(app)/design/page.tsx:173",
+    "src/app/(app)/design/page.tsx:227"
+   ]
+  },
+  {
+   "observation": "Glyph articulation. ICONS_AND_MOTION 'parts': Design's circle slides back from the square. The artifacts stack plays 'lift'. The sidebar never assigns a gesture of its own (ICONS_AND_MOTION.md:83-89,100-103).",
+   "where": [
+    "docs/design/ICONS_AND_MOTION.md:87",
+    "docs/design/ICONS_AND_MOTION.md:103"
+   ]
+  },
+  {
+   "observation": "The segmented-control physics (stretch, ease-out-back overshoot, press dip) were designed in 3d60db34 while Design was briefly a mode segment. Design lost the segment the same day (31d50ab9), but the control and its motion live on in the Chat/Code switch.",
+   "where": [
+    "src/components/app/app-sidebar.tsx"
+   ]
+  },
+  {
+   "observation": "The Canvas cross-fades on a version switch through a version-keyed container (canvas-panel.tsx:1237,1260). For DESIGN that same key forces a full editor remount, which is the mechanism behind history-concepts-1.",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:1237"
+   ]
+  },
+  {
+   "observation": "Persistence cadence as a motion decision: a184ad9d stopped writing a version per drag. The editor batches gestures and the store folds edits within CHECKPOINT_WINDOW_MS = 30 s (operations.ts:511).",
+   "where": [
+    "src/lib/design/operations.ts:511"
+   ]
+  }
+ ],
+ "defects": [
+  {
+   "id": "history-concepts-1",
+   "title": "The chat Canvas's embedded Design editor remounts on an empty body after the first saved checkpoint",
+   "severity": "high",
+   "file": "src/components/canvas/canvas-panel.tsx",
+   "line": 1252,
+   "evidence": "READ: onCommitted pushes `{ version, content: \"\", origin: \"edit\" }` into artifact.versions and bumps currentVersion (canvas-panel.tsx:1243-1254). The effect at 313-315 sets selectedVersion = currentVersion. The design editor sits in `<div key={selectedVersion}>` (1237) and receives `content={versionContent}`. versionContent is the found version's content, here \"\" (369-370; `??` does not fall back on \"\"). useDesignDocument re-parses on a content change (use-design-document.ts:170-188), and parseStoredDesignDocument(\"\") throws 'Design document is not valid JSON' (migrations.ts:91-97). The first user edit on a generated design always allocates a checkpoint (operations.ts:535, where latest.origin !== 'edit'), so this happens on the first edit. Independently confirmed; the prior paused run also lists it (web-artifact-surface-1, motion-1).",
+   "failure_scenario": "Ask Juno in chat to design a sign-in screen. The DESIGN artifact opens in the Canvas. Drag any rectangle. The transaction saves as v2, the Canvas re-keys, and the editor shows 'This design document could not be read' with its undo stack wiped. Only closing the Canvas and reopening it after a reload recovers."
+  },
+  {
+   "id": "history-concepts-2",
+   "title": "The generic artifact save route accepts unvalidated bodies for DESIGN, so the design 'write rule' is bypassable and is bypassed by the Mac and iPhone",
+   "severity": "medium",
+   "file": "src/app/api/artifacts/[id]/route.ts",
+   "line": 39,
+   "evidence": "READ: store.ts:9-11 says the design write rule is 'an edit is a validated transaction against a named revision, not a blob replacement'. POST /api/artifacts/[id] takes `content: z.string().max(200_000)` with an OPTIONAL baseVersion and appends a version with no type check (route.ts:7-16,39-89). The Mac design editor re-encodes each transaction and saves the whole body through this route on Save (DesktopDesignScreen.swift:419-428,577-581; DesktopArtifactCanvas.swift:1070-1085; DesktopArtifactsScreen.swift:940-947), and so does iOS (JunoMobileWorkspaceViews.swift:2062-2068). Overlaps web-design-model-21.",
+   "failure_scenario": "Any client can store a DESIGN version that the website cannot open: an older Mac build, a buggy encoder, or a client omitting baseVersion. The web then shows 'This design can't be opened' on /design/{id}, and every later transaction fails, because commitTransaction parses the current row first (store.ts:99-104)."
+  },
+  {
+   "id": "history-concepts-3",
+   "title": "The design contract 'referee' is never read, and the web added a field without a schemaVersion bump, so Mac and iPhone saves silently strip new fields",
+   "severity": "high",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoDesignKit/DesignDocumentCodec.swift",
+   "line": 50,
+   "evidence": "READ: DesignDocument.swift:12-20 says the generated JSON Schema 'is the referee' and that a newer document 'is refused with a stated reason'. generate-design-contract.ts:5-8 says the contract exists 'so a schema change nobody mirrored fails CI'. A grep for 'design-document.v1' finds only the generator script: no Swift test and no workflow reads it. The Swift codec gates ONLY on `version <= DesignSchema.version` (DesignDocumentCodec.swift:47-52). c69ee98e (08-15) added `cornerSmoothing` to the web schema while DESIGN_SCHEMA_VERSION stayed 1 (types.ts:24). The contract contains cornerSmoothing (12 hits) and DesignDocument.swift contains none. The Swift mirror was last changed 08-06 (390ade91), and the round-trip fixture was last regenerated 08-06 and lacks the field, so DesignRoundTripTests still pass. The symptom is mac-design-1; this entry is the governance failure behind it.",
+   "failure_scenario": "Set corner smoothing on a card on the web, then open the design on the Mac Design screen, nudge anything and press Save. The re-encoded body has no cornerSmoothing, the generic POST stores it, and every smoothed corner in the document reverts to a circular arc on every client. No error is shown anywhere."
+  },
+  {
+   "id": "history-concepts-4",
+   "title": "The shipped design-editor bundle is stale, and the test named '\u2026and current' never checks currency",
+   "severity": "medium",
+   "file": "tests/design-host-bridge.test.ts",
+   "line": 77,
+   "evidence": "RAN: `node scripts/build-design-editor.mjs --check` returns 'bundle is stale (expected 1.0.0+9cc1cfa8d4fe)', exit 1. The bundle stamps 1.0.0+2b86e5baaf9d and was last built 2fa09d35 (09-17). 11 editor-source commits followed, none after 0a3087fe (Mac 1.6.0), so 1.6.0 shipped the 09-17 editor. READ: the test 'the bundled editor is present, self-contained and current' (design-host-bridge.test.ts:77-98) checks only the script tag, CSP and remote origins, never the version hash, so `npm test` is green. Only release-ios.yml:76 runs `design:editor:check`; release-macos.yml and native.yml do not. This violates docs/native/DECISIONS.md:59 ('publish only artifacts built from the final commit'). Overlaps mac-design-4 and motion-14; the misleading test is new.",
+   "failure_scenario": "A fix lands in src/components/design, and CI and `npm test` pass. The Mac and iPhone keep hosting the old editor, so web and native users edit the same document with different editors. The next iOS release job then fails at its gate, long after the change merged."
+  },
+  {
+   "id": "history-concepts-5",
+   "title": "Reusing an identifier across types flips an artifact into or out of DESIGN, orphaning its history and its /design entry",
+   "severity": "medium",
+   "file": "src/lib/artifacts-store.ts",
+   "line": 65,
+   "evidence": "READ: for an existing identifier, persistArtifacts updates `type: a.type` unconditionally (artifacts-store.ts:61-67). Nothing compares against the stored type (chat-artifact-verification.ts checks content per type only). The prompt tells the model 'To revise an existing artifact, REUSE its identifier' (system-prompt.ts:257). The Canvas already acknowledges that 'a same-identifier regeneration can flip the runtime (HTML \u2192 Python keeps the artifact id)' (canvas-panel.tsx:328-330). Design surfaces filter on the type: loadOwnedDesignArtifact requires `type: \"DESIGN\"` (store.ts:33-38) and /design filters `item.type === \"DESIGN\"` (design/page.tsx:79). The Canvas picks the runtime from artifact.type, not from each version (canvas-panel.tsx:237).",
+   "failure_scenario": "A user has a DESIGN artifact 'onboarding' and asks 'now build this as a working HTML page'. The model revises with identifier='onboarding' type='HTML'. The design disappears from /design and the Mac Design screen, and /design/{id} returns 404. Opening v1\u2013vN in Canvas history feeds DesignDocument JSON to the HTML sandbox. The editable design is gone unless the user restores a version, which also stays typed HTML."
+  },
+  {
+   "id": "history-concepts-6",
+   "title": "A hand-started design is owned by an empty chat whose deletion silently destroys it; deleting the design leaves the chat",
+   "severity": "medium",
+   "file": "src/app/api/design/route.ts",
+   "line": 71,
+   "evidence": "READ: POST /api/design creates a `kind: \"chat\"` conversation with no messages, titled after the design, to own the artifact (route.ts:69-90). Artifact \u2192 Conversation is onDelete: Cascade (schema.prisma:1137), and the conversation DELETE is a hard `prisma.conversation.delete` (conversations/[id]/route.ts DELETE). The chat delete dialog says only 'This permanently removes the conversation and its messages' (app-sidebar.tsx:2273,2777). /design deletes only the artifact (design/page.tsx:112-127), and renaming a design never renames the chat (design-workspace.tsx:124-141). Overlaps web-library-ia-3 and -11; this entry is the ownership seam that joins them.",
+   "failure_scenario": "A user makes three designs from /design, then tidies Recents by deleting the three empty 'Untitled design' chats. All three designs, every version, and any public share links are permanently deleted with no warning and no trash. Going the other way, deleting a design from /design leaves an empty chat in Recents forever."
+  },
+  {
+   "id": "history-concepts-7",
+   "title": "The Mac composer's 'Canvas & artifacts' toggle is a dead control",
+   "severity": "medium",
+   "file": "native/macOS/JunoDesktop/App/DesktopComposer.swift",
+   "line": 728,
+   "evidence": "READ: the toggle defaults off (`@State private var canvasEnabled = false`, line 55). The send path passes `canvasEnabled: canvas ? true : nil` (1112,1158), so the off state sends nil. The server computes `canvasOn = !input.voiceMode && (input.canvasEnabled ?? true)` (src/app/api/chat/route.ts:2110), so absent means ON. The toggle also counts as an armed tool (DesktopComposer.swift:688). The web removed the toggle on 09-12 (22059f90). MACOS_PRODUCT_SPEC.md:40-42 says 'A control appears only when its backing operation exists'. The liquid-glass branch doc records the same problem (MACOS_LIQUID_GLASS_REDESIGN.md:97), but main still ships it.",
+   "failure_scenario": "A Mac user leaves 'Canvas & artifacts' off because they do not want artifacts, and the model still creates and persists artifacts on every eligible turn. Switching it on changes nothing either, while the composer shows it as an armed tool."
+  },
+  {
+   "id": "history-concepts-8",
+   "title": "Post-share design edits can appear on a 'frozen' public link through in-place checkpoint folding",
+   "severity": "low",
+   "file": "src/lib/design/store.ts",
+   "line": 185,
+   "evidence": "READ: a share renders the newest version with `createdAt <= snapshotAt` (share.ts:244-266) and promises that 'artifact edits stay private' (share.ts:11-13). rewriteVersion updates `content` of the existing newest 'edit' row without touching its createdAt (store.ts:179-197). Folding applies while that row is under 30 s old (store.ts:122-127; operations.ts:529-539). Overlaps web-artifact-surface-19.",
+   "failure_scenario": "Edit a design, share it within the same 30 s, keep dragging. The drags fold into the row the share resolves to, and the public link shows changes made after sharing."
+  },
+  {
+   "id": "history-concepts-9",
+   "title": "Canonical docs contradict the code on the artifact sandbox, on version semantics, and on Juno Design's existence",
+   "severity": "low",
+   "file": "docs/JUNO.md",
+   "line": 507,
+   "evidence": "READ: JUNO.md:506-508 lists `sandbox=\"allow-scripts allow-popups allow-forms allow-modals\"`, and JUNO.md:2579-2581 says `allow-scripts` only. The code is `allow-scripts allow-forms allow-modals allow-downloads allow-pointer-lock`, with popups deliberately excluded (sandbox-frame.tsx:85-86; PREMIUM_AUDIT \u00a72e). status.json:155 marks 'sandbox-egress' verified as 'an enforced per-iframe CSP and allow-scripts-only sandbox', while PREMIUM_AUDIT \u00a72e / a0e41c9b state the CSP is no longer an egress boundary. JUNO.md:2522 says 'ArtifactVersion (append-only\u2026)', but design folding rewrites rows (store.ts:77-81). JUNO.md, updated 2026-09-23, has no section, repository-layout entry (JUNO.md:115-165) or API table row for Juno Design, /design, src/lib/design scene code or /api/design.",
+   "failure_scenario": "A security reviewer or a new session trusts JUNO.md or status.json and concludes that previews cannot exfiltrate through the resource policy, or that version rows are immutable (a basis for share snapshots, audit or sync). Both conclusions are false in the running code. Someone designing the Artifacts+Design merge from JUNO.md would not learn that Design exists."
+  },
+  {
+   "id": "history-concepts-10",
+   "title": "The /design/{id} window has no version history or restore, and the design version-read route has no caller",
+   "severity": "low",
+   "file": "src/app/(app)/design/page.tsx",
+   "line": 291,
+   "evidence": "READ: /design says 'Designs are artifacts, so they keep full version history' (design/page.tsx:290-296). DesignWorkspace shows only `v{currentVersion}` (design-workspace.tsx:178). The editor's 'History' tab is the in-session undo list (design-editor.tsx:1017-1021). GET /api/design/[artifactId]?version= says it is 'what the history panel needs' (route.ts:12-14), but a grep of src/components and src/app/(app) finds no caller. Versions can be browsed and restored only in the chat Canvas, which is the path history-concepts-1 breaks.",
+   "failure_scenario": "A user who works only in the Design window cannot reach yesterday's checkpoint. Restoring it means opening the owning chat's Canvas, whose embedded editor then breaks on the first edit."
+  },
+  {
+   "id": "history-concepts-11",
+   "title": "The Design mark differs between Mac and web, against the recorded intent that both draw the same mark",
+   "severity": "low",
+   "file": "native/macOS/JunoDesktop/App/DesktopChatSidebar.swift",
+   "line": 369,
+   "evidence": "READ: bd886d59 says adding AppIcons.design 'gives the native icon generator an entry to emit, so the Mac and phone draw the same mark'. The web now draws JunoDesign (app-icons.ts:141, since 5b2187c8 on 09-22). The Mac draws `.penTool` (DesktopChatSidebar.swift:369; DesktopArtifactsScreen.swift:2048; DesktopDesignScreen.swift:685) and JunoIcon has no design case (JunoBrand.swift:137). The Mac comment at DesktopChatSidebar.swift:357 still says 'Design is the pen nib the web draws'. DesktopDesignScreen.swift:827 calls it a known gap. mac/liquid-glass-chat replaces it with JunoDesign.",
+   "failure_scenario": "The same destination and artifact kind show a pencil nib on the Mac and a square-and-circle on the web and in the icons doc, which breaks ICONS_AND_MOTION \u00a71.1 'one concept, one drawing' for a top-level destination."
+  }
+ ],
+ "gaps": [
+  {
+   "title": "No single index of made things",
+   "description": "Nothing lists every artifact, design, deliverable, generated media item and research report together. /artifacts lists chat Artifacts only (and at most 200), the Library lists attachments only, and deliverables are visible only in the newest task panel of their chat. Search skips WorkArtifact and ResearchRun (search/sql.ts has no WorkArtifact or Research query).",
+   "why": "This is the precondition for 'one surface' in the merge, and today a finished .pptx from a chat task is effectively unfindable."
+  },
+  {
+   "title": "No decision record for the Artifact vs WorkArtifact split",
+   "description": "469c6c61 introduced WorkArtifact on the same day as Juno Design with no rationale for not extending Artifact. OPEN_DECISIONS.md, TWO_PRODUCTS.md and JUNO.md are silent on it.",
+   "why": "The merge must either unify the models (TEXT versions vs object-storage bytes plus validation) or define a union view. Nobody has written down which, or why."
+  },
+  {
+   "title": "The Artifacts \u2192 Library fold and 'Does design survive?' were never resolved in writing",
+   "description": "REWORK_PLAN.md:153-154 and :293 plan the fold and mark it open. Q6 (REWORK_PLAN.md:321-322) is unanswered. TWO_PRODUCTS.md \u00a73 silently chose three siblings, and OPEN_DECISIONS.md has no artifacts or design entry.",
+   "why": "Two contradictory IA intents coexist (native plan vs web decision) exactly where the merge will cut."
+  },
+  {
+   "title": "Juno Design undocumented in the canonical reference",
+   "description": "docs/JUNO.md has no Design section, route, API, model-grammar or security notes for the WKWebView host. The only prose record of Design is scattered across commit messages and code comments.",
+   "why": "The merge plan needs a baseline document. Today one has to be reconstructed from git log."
+  },
+  {
+   "title": "Comments are schema-only for designs and absent for artifacts",
+   "description": "DesignDocument.comments exists (types.ts:738-752) with no create or resolve operation and no UI. Artifact, Share and WorkArtifact have no comment concept.",
+   "why": "The target (Claude typed artifacts 'with comments') needs a multi-author comment store. Comments embedded in the document JSON would be versioned, and even folded, together with the content."
+  },
+  {
+   "title": "Sharing coverage",
+   "description": "Deliverables cannot be shared. A shared DESIGN renders as JSON. The native share client creates CHAT links only (NativeShareClient.swift:61-62). A research report's 'share' is a private URL.",
+   "why": "'One shareable link per typed artifact' is the merge's headline capability."
+  },
+  {
+   "title": "Design \u2192 Code handoff has no consumer",
+   "description": "A handoff JSON is exported, but no Code path on web or Mac reads it (grep for 'juno-handoff' finds only the editor).",
+   "why": "The product copy and the system prompt promise it."
+  },
+  {
+   "title": "No iOS create path for designs, and GAP-023 is still open",
+   "description": "iOS can view and edit DESIGN artifacts but cannot start one, has no Design destination, and has no Canvas composer contract (API_GAPS.md:388-397).",
+   "why": "'Editable on phone' is a merge goal, and it is half-built."
+  },
+  {
+   "title": "Account export omits artifacts, designs and deliverables",
+   "description": "The account export covers messages and attachments only (src/app/api/account/export grep; also web-artifact-pipeline-14). Hand-made designs and user edits are absent from any export.",
+   "why": "Data portability for the merged object type."
+  },
+  {
+   "title": "No tests on the seams",
+   "description": "No test covers: the Canvas design envelope after a commit, a type flip across DESIGN, the generic POST with a DESIGN body, share snapshots of a folded design, the Swift mirror against the generated contract, or the editor bundle hash (the test named 'current' does not check it).",
+   "why": "Every high-severity finding in this area sits on an untested seam."
+  }
+ ],
+ "debt": [
+  {
+   "title": "Four ArtifactType \u2192 glyph maps and three label vocabularies",
+   "description": "ICONS maps are copied in artifacts/page.tsx:41, artifact-preview.tsx:36, artifact-inline-card.tsx:49 and shared-chat-transcript.tsx:21. Labels are defined in artifacts/page.tsx:52, session-outputs.tsx:54 and artifact-runtime.ts:98-103, plus the Mac's own at DesktopArtifactsScreen.swift:2015-2048. This contradicts ICONS_AND_MOTION \u00a71.1's registry rule.",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:41",
+    "src/components/artifacts/artifact-preview.tsx:36",
+    "src/components/chat/artifact-inline-card.tsx:49",
+    "src/components/share/shared-chat-transcript.tsx:21",
+    "src/components/chat/session-outputs.tsx:54"
+   ]
+  },
+  {
+   "title": "Two write semantics on one table",
+   "description": "ArtifactVersion is append-only for artifacts (artifacts-store.ts; artifacts/[id] POST) and folded in place for designs (store.ts:179-203). Share, docs and sync assume append-only.",
+   "where": [
+    "src/lib/design/store.ts:179",
+    "src/lib/share.ts:257"
+   ]
+  },
+  {
+   "title": "Two design save paths",
+   "description": "Validated transactions on the web (use-design-document.ts:88-106 \u2192 /transactions) vs a whole-body POST on Mac and iOS through the generic route, with an explicit Save.",
+   "where": [
+    "src/components/design/use-design-document.ts:93",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:577"
+   ]
+  },
+  {
+   "title": "Swift Codable mirror of DesignDocument",
+   "description": "It is billed as 'not a second scene graph' but is a second schema. It was frozen on 08-06 while the web schema moved on 08-15.",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoDesignKit/DesignDocument.swift"
+   ]
+  },
+  {
+   "title": "Two Office generators, one validator",
+   "description": "src/lib/office-export.ts converts Markdown to Office for chat artifacts. src/lib/work/deliverables/*.ts builds Office from typed specs for Work. They share only verifyOfficeExport.",
+   "where": [
+    "src/lib/office-export.ts",
+    "src/lib/work/deliverables/document.ts"
+   ]
+  },
+  {
+   "title": "Two sandbox policies for 'a website Juno made'",
+   "description": "SandboxFrame lets scripts run with forms, modals and downloads, and no popups (sandbox-frame.tsx:85-86). The Work site preview uses allow-scripts, allow-popups and allow-popups-to-escape-sandbox, with the bundle's scripts blocked by a nonce (work-site-preview.tsx:590-600).",
+   "where": [
+    "src/components/canvas/sandbox-frame.tsx:85",
+    "src/components/work/work-site-preview.tsx:599"
+   ]
+  },
+  {
+   "title": "Two `serializeArtifact` functions for different models",
+   "description": "src/lib/serializers (chat Artifact) and src/lib/work/serializers (WorkArtifact) share a name.",
+   "where": [
+    "src/lib/serializers.ts",
+    "src/lib/work/serializers.ts"
+   ]
+  },
+  {
+   "title": "src/lib/design mixes the design-system tokens with the Juno Design scene model",
+   "description": "tokens.generated.ts (the UI design system) sits beside schema.ts and operations.ts (the Design product). In the same way, the Swift packages JunoDesignSystem and JunoDesignKit share a prefix.",
+   "where": [
+    "src/lib/design/tokens.generated.ts",
+    "src/lib/design/schema.ts"
+   ]
+  },
+  {
+   "title": "Plan flag named 'canvas' gates design",
+   "description": "`PLANS[plan].canvas` gates only /api/design and /api/design/[id]/edit (route.ts:42; edit/route.ts:96). The chat route never checks it, and it is true on every plan. Project workspaces' 'canvas' permission gates chat artifacts (route.ts:2110-2111) but not the design routes.",
+   "where": [
+    "src/app/api/design/route.ts:42",
+    "src/lib/plans.ts:31"
+   ]
+  },
+  {
+   "title": "The /api/artifacts list is shared by three pages and capped",
+   "description": "/artifacts, /design (filtered on the client) and the project page (which reads the wrong key) all consume one 200-row endpoint with no type or project parameter and no paging.",
+   "where": [
+    "src/app/api/artifacts/route.ts:27",
+    "src/app/(app)/design/page.tsx:75"
+   ]
+  },
+  {
+   "title": "Stale docs",
+   "description": "SOFT_UI.md:112 still lists Canvas as a + menu toggle, removed 09-12. NEXT_PROMPT.md:150-151 says 'the web has no manual-create path', which POST /api/design has contradicted since 08-05. The Mac comment at DesktopChatSidebar.swift:357 mentions a pen nib. The Mac footer-row comments describe the pre-09-13 web.",
+   "where": [
+    "docs/design/SOFT_UI.md:112",
+    "docs/native/NEXT_PROMPT.md:150"
+   ]
+  },
+  {
+   "title": "Unused design route",
+   "description": "GET /api/design/[artifactId] (with ?version=) has no web or native caller.",
+   "where": [
+    "src/app/api/design/[artifactId]/route.ts:16"
+   ]
+  }
+ ],
+ "strengths": [
+  "Commit messages carry real design rationale and often a failure analysis: 7c344b96, a184ad9d, ea6ed46d, 31d50ab9, d39d652a, 971ba294 and a0e41c9b. The decision history can be reconstructed from git alone.",
+  "DESIGN was deliberately built on Artifact/ArtifactVersion ('Nothing new is stored', store.ts:3-12). A typed-artifact platform needs exactly this precedent: a type with its own editor, dispatched through one registry (runtimeFor \u2192 mode 'design').",
+  "The Design operation layer is validated, invertible and deterministically replayable, with revision conflict detection and selection-scoped AI edits (7c344b96; store.ts:89-149). It is a sound basis for multi-client editing and comments.",
+  "Security reasoning about previews is correct and written down: the opaque-origin iframe is the boundary, and the CSP only blocks what an attack needs (PREMIUM_AUDIT \u00a72e; sandbox-frame.tsx:85-86).",
+  "Office bytes are re-opened before they are served, and chat export and Work share one verifier (export/route.ts:120-138).",
+  "The Work \u2192 Chat URL migration is a single tested map with owner-scoped lookups (work/[[...segments]]/page.tsx; 33/33 tests pass across the four suites run, including work-url-migration).",
+  "Both artifact systems are already sync entities, and a per-conversation Outputs panel already derives made things from client state without a fetch (session-outputs.tsx:28-50).",
+  "The design JSON contract is generated from zod and is fresh (`generate-design-contract.ts --check` \u2192 up to date). The machinery for a real Swift gate exists; only the consumer is missing."
+ ],
+ "merge_relevance": "How this area bears on merging Artifacts and Design into one Claude-style surface (typed artifacts inside conversations, one shareable link, editable on phone, with comments):\n\nENABLERS ALREADY IN PLACE\n- One enum, one registry: ArtifactType plus runtimeFor(), where DESIGN already proves a type can own its editor. Docs, Slides and Design System types could be added as ArtifactType values with their own mode.\n- The Canvas already hosts the design editor inside a conversation. This is the 'Claude Design works inside conversations' shape, and its only blocker is history-concepts-1.\n- The Share snapshot model already supports ARTIFACT.\n- Sync entities exist for artifacts.\n- iOS already embeds the same editor bundle and can edit the latest version.\n- The Outputs panel is a per-conversation index to grow into 'this chat's artifacts'.\n\nBLOCKERS AND DECISIONS THE MERGE MUST MAKE FIRST\n1. Ownership. An Artifact has no userId and dies with its chat (history-concepts-6). A shareable, standalone typed artifact needs its own ownership, or at least protection from chat deletion. Hand-started designs already fake a conversation to satisfy this model.\n2. Versioning. Pick one semantics. The design fold (in-place rewrite) breaks share snapshots and the 'append-only' contract (history-concepts-8, -9). Comments and share links need immutable version ids.\n3. One write path per type. Remove the generic blob POST for typed documents, or validate per type (history-concepts-2), and gate the Swift mirror on the generated contract (history-concepts-3).\n4. Model unification. Chat Artifact (TEXT) vs WorkArtifact (object-storage bytes plus validation). A 'Docs/Slides' type overlaps Work's document/presentation kinds and the MARKDOWN \u2192 Office export. Decide whether the Slides type is a WorkArtifact 'presentation', a new ArtifactType, or both behind one list.\n5. IA. Resolve REWORK_PLAN's 'Artifacts folds into Library' against TWO_PRODUCTS' three rows. The Claude precedent argues for one 'Artifacts' place with type filters and a 'New' menu (Design is then a type plus an action, not a destination), with Library remaining for files.\n6. Naming. Retire 'Canvas' as a plan flag, a tool name and a list name. Keep it for the panel only. Unify the three label vocabularies and the four glyph maps before adding more types.\n7. Type identity. Stop identifier reuse from changing an artifact's type (history-concepts-5). With more typed artifacts this collision becomes more likely.\n8. Every index must include every type: /artifacts (no 200 cap), search (render designs as thumbnails, not JSON keys), the Outputs panel, and the project page. Deliverables and research reports are currently invisible there.\n9. Release hygiene. The shared React editor ships to Mac and iPhone as a bundle. A merged surface multiplies the bundled code, so the freshness gate must run on every native release and the misleading test must check the hash (history-concepts-4).\n10. Comments do not exist yet. Designing them against the fold and the in-document `comments` array is a first-order choice. A separate table keyed by artifact version and node id is inferred to fit sharing and multi-user needs better.\n\nTHE LIQUID GLASS BRANCH (mac/liquid-glass-chat) already moves the Mac Design row into Chat's navigation and adopts the JunoDesign mark, and its plan lists Canvas-dock parity. Merge work on the Mac should build on that branch rather than main's footer-row code.",
+ "tests": "RAN (read-only, targeted):\n- `npx tsx --test tests/sandbox-security.test.ts tests/work-url-migration.test.ts tests/design-authoring.test.ts tests/design-host-bridge.test.ts`: 33/33 pass.\n- `npx tsx --test tests/artifact-export-verification.test.ts tests/chat-artifact-verification.test.ts tests/artifact-edit.test.ts tests/work-deliverables.test.ts`: 32/32 pass.\n- `node scripts/build-design-editor.mjs --check`: FAILS, 'bundle is stale (expected 1.0.0+9cc1cfa8d4fe)'; the bundle stamps 1.0.0+2b86e5baaf9d.\n- `npx tsx scripts/generate-design-contract.ts --check`: up to date.\n\nOther suites that exist for this area but were not run: design-ai, design-canvas-interaction, design-editing, design-effects, design-export, design-layout, design-motion(-export), design-operations, design-panels, design-schema, library-and-model-menu, library-quota and python-sandbox.\n\nCoverage gaps (by reading):\n- tests/design-host-bridge.test.ts:77-98 is named '\u2026and current' but never compares the version hash.\n- Nothing tests the Canvas design envelope after onCommitted, cross-type identifier reuse, the generic POST with a DESIGN body, share snapshots of a folded design, or the Swift DesignDocument against contracts/design/design-document.v1.schema.json. DesignRoundTripTests uses a fixture last regenerated 08-06 that predates cornerSmoothing.\n- CI runs design:editor:check only in release-ios.yml:76, not in native.yml or release-macos.yml.",
+ "open_questions": [
+  "Was WorkArtifact built separately from Artifact on purpose (bytes in object storage, validation verdicts, provenance, session scope)? Or was it a parallel-track accident on 2026-08-05? No doc says. The answer decides whether the merge unifies the models or only the list.",
+  "Was REWORK_PLAN's 'Artifacts folds into Library as a filter' (08-15) deliberately reversed by TWO_PRODUCTS \u00a73 (09-17)? Or is it still the native plan? REWORK_PLAN.md:293 still marks it open.",
+  "Is iPhone design editing intended? The brief calls iPhone read-only, and JunoMobileDesignArtifact.swift:27-35 speaks of 'reading'. But JunoMobileWorkspaceViews.swift:2062-2068 enables editing on the latest version, saved through the generic route.",
+  "Inferred from the comment at work-site-preview.tsx:594-598 ('no script from the bundle can ever run'): a Work 'site' deliverable previews without its own JavaScript, while a chat HTML artifact runs its JavaScript. Is that intended fidelity for 'a website Juno made'? Not verified in a browser.",
+  "Should the Design Ask Juno edits (/api/design/[id]/edit) appear in the owning conversation? Today they are billed but write no message. The chat model therefore never learns what was changed, except through the artifact body on a later turn.",
+  "Should the design routes honour project-workspace permissions (the 'canvas' tool) and the design plan flag the way the chat route honours workspacePermits? They currently do not (a grep for workspacePermits in src/app/api/design finds nothing).",
+  "Comments: should they live in DesignDocument.comments, where they are versioned with content and folded, or in a separate table that supports share-page commenting and non-owner authors?",
+  "The untracked docs/design/artifacts-design/ folder (HANDOFF.md, research/, wip/raw/*.json) holds the prior paused audit run. Its HANDOFF names this 'history-concepts' area as the missing piece. It is not committed on main (per the HANDOFF, it lives on ref wip/artifacts-design-audit). The owner should decide whether it becomes the merge-plan home."
+ ]
+}

@@ -241,6 +241,46 @@ export const JunoDesignGlyph = defineGlyph(
 );
 
 // ---------------------------------------------------------------------------
+// Agents — a face: the pebble body the agent roster draws, with the two
+// rounded-square eyes that carry an agent's state everywhere else
+// (docs/design/AGENTS.md §4). The eyes are the moving part: on hover they
+// glance up and over, the way an agent looks up when you walk over. Filled,
+// the face goes solid and the eyes are cut out of it.
+// ---------------------------------------------------------------------------
+
+const FACE = { x: 36, y: 44, w: 184, h: 168, rx: 64 };
+const EYE = { w: 28, h: 40, rx: 13, y: 104, left: 90, right: 138 };
+
+function eyeRects(): string {
+  const rect = (x: number) =>
+    `M${x + EYE.rx},${EYE.y} H${x + EYE.w - EYE.rx} A${EYE.rx},${EYE.rx} 0 0 1 ${x + EYE.w},${EYE.y + EYE.rx} ` +
+    `V${EYE.y + EYE.h - EYE.rx} A${EYE.rx},${EYE.rx} 0 0 1 ${x + EYE.w - EYE.rx},${EYE.y + EYE.h} ` +
+    `H${x + EYE.rx} A${EYE.rx},${EYE.rx} 0 0 1 ${x},${EYE.y + EYE.h - EYE.rx} ` +
+    `V${EYE.y + EYE.rx} A${EYE.rx},${EYE.rx} 0 0 1 ${x + EYE.rx},${EYE.y} Z`;
+  return `${rect(EYE.left)} ${rect(EYE.right)}`;
+}
+
+function faceOutline(): string {
+  const { x, y, w, h, rx } = FACE;
+  return (
+    `M${x + rx},${y} H${x + w - rx} A${rx},${rx} 0 0 1 ${x + w},${y + rx} V${y + h - rx} ` +
+    `A${rx},${rx} 0 0 1 ${x + w - rx},${y + h} H${x + rx} A${rx},${rx} 0 0 1 ${x},${y + h - rx} ` +
+    `V${y + rx} A${rx},${rx} 0 0 1 ${x + rx},${y} Z`
+  );
+}
+
+export const JunoAgentsGlyph = defineGlyph(
+  "JunoAgentsGlyph",
+  () => (
+    <>
+      <rect x={FACE.x} y={FACE.y} width={FACE.w} height={FACE.h} rx={FACE.rx} />
+      <path className="juno-part juno-part--eyes" d={eyeRects()} fill="currentColor" stroke="none" />
+    </>
+  ),
+  () => <path d={`${faceOutline()} ${eyeRects()}`} fill="currentColor" fillRule="evenodd" stroke="none" />,
+);
+
+// ---------------------------------------------------------------------------
 // Library — two volumes on a shelf, the right one leaning toward the left, one
 // head band each. Phosphor's Books carried six bands across two volumes, which
 // at 18px aliased into a grey hatch; one band is enough to say "spine".
