@@ -71,6 +71,29 @@ export const PANEL_COPY_DE: Readonly<Record<string, string>> = {
   "Couldn’t reach the server. Try again.": "Server nicht erreichbar. Versuch es noch einmal.",
   "This was already answered": "Das wurde bereits beantwortet",
   "Only Allow once is possible for this action": "Für diese Aktion ist nur „Einmal erlauben“ möglich",
+  "You’re signed out. Sign in, then answer again.": "Du bist abgemeldet. Melde dich an und antworte dann erneut.",
+  "Review what will be sent": "Prüfen, was gesendet wird",
+  "Review the brief": "Auftrag prüfen",
+  "This call sends no arguments.": "Dieser Aufruf sendet keine Argumente.",
+  "Estimated cost": "Geschätzte Kosten",
+  "The model wrote these arguments from content it read: a web page, a file, or output from another connector. That content can contain text written to steer what gets sent. Check the values below are what you meant before you allow it.":
+    "Das Modell hat diese Argumente aus gelesenen Inhalten geschrieben: einer Webseite, einer Datei oder der Ausgabe einer anderen Verbindung. Solche Inhalte können Text enthalten, der beeinflussen soll, was gesendet wird. Prüfe, ob die Werte unten deinen Absichten entsprechen, bevor du es erlaubst.",
+  "This chat includes content Juno read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you start it.":
+    "Dieser Chat enthält Inhalte, die Juno von außerhalb gelesen hat, etwa eine Webseite, eine Datei oder eine verbundene App. Prüfe, ob der Auftrag unten deiner Anfrage entspricht, bevor du ihn startest.",
+  "Reads only": "Nur lesend",
+  "Reversible change": "Umkehrbare Änderung",
+  "Leaves Juno": "Verlässt Juno",
+  "Cannot be undone": "Nicht rückgängig zu machen",
+  Unverified: "Nicht überprüft",
+  "This reads. Nothing outside Juno changes.": "Das liest nur. Außerhalb von Juno ändert sich nichts.",
+  "This changes something that can be put back, like a label, a folder or a draft.":
+    "Das ändert etwas, das sich zurücksetzen lässt, etwa ein Label, einen Ordner oder einen Entwurf.",
+  "This sends something to another service. Once it lands there, Juno cannot take it back.":
+    "Das sendet etwas an einen anderen Dienst. Ist es dort angekommen, kann Juno es nicht zurückholen.",
+  "This deletes, pays for, or touches something private. Nothing here can undo it afterwards.":
+    "Das löscht, bezahlt oder berührt etwas Privates. Nichts hier kann es danach rückgängig machen.",
+  "Juno could not verify that this only reads, so it is treated as a change that leaves Juno. Read the arguments below before you answer.":
+    "Juno konnte nicht prüfen, ob das nur liest, und behandelt es daher als Änderung, die Juno verlässt. Lies die Argumente unten, bevor du antwortest.",
   Cited: "Zitiert",
   "Also read": "Außerdem gelesen",
   Found: "Gefunden",

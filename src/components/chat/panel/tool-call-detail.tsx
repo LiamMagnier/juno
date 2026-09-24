@@ -4,7 +4,9 @@ import * as React from "react";
 
 import { SourceFavicon } from "@/components/chat/source-chip";
 import { Button } from "@/components/ui/button";
+import { Collapse } from "@/components/ui/collapse";
 import {
+  ChevronRight,
   Clock,
   Code2,
   FileText,
@@ -15,6 +17,7 @@ import {
   Search,
   Sigma,
   Telescope,
+  TriangleAlert,
   Workflow,
   type IconComponent,
 } from "@/components/ui/icons";
@@ -31,8 +34,10 @@ import { PANEL_COPY } from "./copy";
 import {
   answeredPhrase,
   approvalChoices,
+  approvalSummary,
   sendApprovalDecision,
   type ApprovalControlState,
+  type ApprovalSummary,
 } from "./panel-approval";
 import {
   approvalReceiptPhrase,
@@ -219,9 +224,118 @@ export function ApprovalReceipt({ item }: { item: ToolItem }) {
 }
 
 /**
+ * What the reader is approving, before the buttons (SPEC §8.3.1): the request
+ * in one line, where it goes (connector · tool, or a task's estimate), its
+ * risk, the untrusted-content warning, and the redacted detail the digest
+ * covers behind "Review". Everything third-party is verbatim, `translate="no"`
+ * and bidi-isolated.
+ */
+function ApprovalSubject({
+  summary,
+  reviewOpen,
+  onToggleReview,
+}: {
+  summary: ApprovalSummary;
+  reviewOpen: boolean;
+  onToggleReview(): void;
+}) {
+  const reviewId = React.useId();
+  return (
+    <div className="flex flex-col gap-1">
+      <p translate="no" lang="" dir="auto" data-no-auto-translate className="break-words text-ui text-foreground">
+        {summary.headline}
+      </p>
+      {summary.source ? (
+        <p className="flex flex-wrap items-baseline gap-x-1.5 text-caption text-muted-foreground">
+          <span translate="no" data-no-auto-translate className="font-mono">
+            <bdi>{summary.source.connector}</bdi>
+            <span aria-hidden="true"> · </span>
+            <bdi>{summary.source.tool}</bdi>
+          </span>
+          {summary.risk ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className={summary.risk.warn ? "text-warning-foreground" : undefined}>
+                <Phrase text={summary.risk.label} />
+              </span>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      {summary.estimate ? (
+        <p className="text-caption text-muted-foreground">
+          <Phrase text={PANEL_COPY.approval.estimatedCost} />{" "}
+          <span translate="no" data-no-auto-translate className="tabular-nums text-foreground">
+            {summary.estimate}
+          </span>
+        </p>
+      ) : null}
+      {summary.untrusted ? (
+        <p className="flex gap-1.5 text-caption text-warning-foreground">
+          <TriangleAlert className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+          <Phrase text={summary.untrusted} />
+        </p>
+      ) : null}
+      <div>
+        <button
+          type="button"
+          aria-expanded={reviewOpen}
+          aria-controls={reviewOpen ? reviewId : undefined}
+          onClick={onToggleReview}
+          className="-mx-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-caption font-medium text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+        >
+          <ChevronRight
+            aria-hidden="true"
+            className={cn(
+              "size-3 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none rtl:-scale-x-100",
+              reviewOpen && "rotate-90 rtl:-rotate-90"
+            )}
+          />
+          <Phrase text={summary.reviewLabel} />
+        </button>
+        <Collapse open={reviewOpen}>
+          <div id={reviewId} className="mt-1 flex flex-col gap-1.5 rounded-md bg-secondary px-2.5 py-2">
+            {summary.risk ? (
+              <p className="text-caption text-muted-foreground">
+                <Phrase text={summary.risk.detail} />
+              </p>
+            ) : null}
+            {summary.task ? (
+              summary.brief ? (
+                <p translate="no" lang="" dir="auto" data-no-auto-translate className="whitespace-pre-wrap break-words text-caption text-foreground">
+                  {summary.brief}
+                </p>
+              ) : null
+            ) : summary.rows.length === 0 ? (
+              <p className="text-caption text-muted-foreground">
+                <Phrase text={PANEL_COPY.approval.noArguments} />
+              </p>
+            ) : (
+              <dl translate="no" data-no-auto-translate className="flex flex-col gap-1">
+                {summary.rows.map((row) => (
+                  <div key={row.key} className="flex flex-col">
+                    <dt className="font-mono text-micro text-muted-foreground">{row.key}</dt>
+                    <dd dir="auto" className="min-w-0 whitespace-pre-wrap break-words font-mono text-micro text-foreground">
+                      {row.value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+          </div>
+        </Collapse>
+      </div>
+    </div>
+  );
+}
+
+/**
  * The decision a waiting call needs, in the row itself (SPEC §8.3.1): Allow
- * once, Always allow (only when the card would offer it) and Decline, posted
- * to the same endpoint with the same digest as the transcript's card.
+ * once, Always allow and Decline, posted to the same endpoint with the same
+ * digest as the transcript's card — after showing what the card shows. The
+ * detail opens by itself when the request was written from outside content,
+ * because the warning asks the reader to check it; Always allow appears only
+ * once the detail has been shown.
  */
 export function ApprovalControl({
   approval,
@@ -236,7 +350,14 @@ export function ApprovalControl({
 }) {
   const locale = useUiLocale();
   const [state, setState] = React.useState<ApprovalControlState>({ kind: "idle" });
-  const choices = approvalChoices(approval, state);
+  const summary = React.useMemo(() => approvalSummary(approval), [approval]);
+  const [reviewOpen, setReviewOpen] = React.useState(approval.derivedFromUntrusted);
+  const [reviewed, setReviewed] = React.useState(approval.derivedFromUntrusted);
+  const toggleReview = React.useCallback(() => {
+    setReviewOpen((open) => !open);
+    setReviewed(true);
+  }, []);
+  const choices = approvalChoices(approval, state, { reviewed });
   const sending = state.kind === "sending";
 
   const decide = React.useCallback(
@@ -261,7 +382,8 @@ export function ApprovalControl({
   const groupName = phraseText([{ parts: [{ phrase: PANEL_COPY.approval.group }] }, ...presentation.running(item.call)], locale);
 
   return (
-    <div role="group" aria-label={groupName} data-no-auto-translate className="flex flex-col gap-1.5">
+    <div role="group" aria-label={groupName} data-no-auto-translate className="flex flex-col gap-2">
+      <ApprovalSubject summary={summary} reviewOpen={reviewOpen} onToggleReview={toggleReview} />
       {!closed && (
         <div className="flex flex-wrap items-center gap-1.5">
           <Button size="sm" disabled={sending} onClick={() => void decide("allow_once")}>

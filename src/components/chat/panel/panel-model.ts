@@ -204,6 +204,23 @@ export function panelLoopItemKey(view: RunView | null, streaming: boolean): stri
   return null;
 }
 
+/**
+ * The panel's claim on the one loop (SPEC §7.9.1 priority 1, §8.4): held while
+ * the panel has a live item, whatever tab is showing — in sheet mode the
+ * transcript's run line is covered, and an `IntersectionObserver` cannot see
+ * that. One id per panel, so the claim does not change hands when the live item
+ * moves from reasoning to a call. Null when nothing in the panel is working;
+ * the transcript line keeps the loop then.
+ */
+export function panelLoopClaim(renderKey: string, loopKey: string | null): { id: string; priority: 1 } | null {
+  return loopKey ? { id: panelLoopId(renderKey), priority: 1 } : null;
+}
+
+/** The id the panel claims the loop under, and reads its ownership by. */
+export function panelLoopId(renderKey: string): string {
+  return `panel:${renderKey}`;
+}
+
 /** The first `max` lines of a block and how many were left out, for "Show all". */
 export function clampLines(text: string, max: number): { head: string; hidden: number } {
   const lines = text.split("\n");

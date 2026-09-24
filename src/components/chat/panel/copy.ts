@@ -103,6 +103,38 @@ export const PANEL_COPY = {
     unreachable: "Couldn’t reach the server. Try again.",
     alreadyAnswered: "This was already answered",
     onceOnly: "Only Allow once is possible for this action",
+    signedOut: "You’re signed out. Sign in, then answer again.",
+    /** The disclosure that shows the exact detail the answer is bound to (its digest). */
+    review: "Review what will be sent",
+    reviewTask: "Review the brief",
+    noArguments: "This call sends no arguments.",
+    /** A task handoff's estimate, followed by the server's own figure. */
+    estimatedCost: "Estimated cost",
+    /*
+     * The next seven are the transcript card's own sentences (approval-card.tsx),
+     * word for word, so the two surfaces share one catalog entry each and never
+     * describe the same request differently.
+     */
+    untrusted:
+      "The model wrote these arguments from content it read: a web page, a file, or output from another connector. That content can contain text written to steer what gets sent. Check the values below are what you meant before you allow it.",
+    untrustedTask:
+      "This chat includes content Juno read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you start it.",
+    risk: {
+      read_only: "Reads only",
+      reversible_write: "Reversible change",
+      external_write: "Leaves Juno",
+      destructive_or_sensitive: "Cannot be undone",
+      unknown: "Unverified",
+    },
+    riskDetail: {
+      read_only: "This reads. Nothing outside Juno changes.",
+      reversible_write: "This changes something that can be put back, like a label, a folder or a draft.",
+      external_write: "This sends something to another service. Once it lands there, Juno cannot take it back.",
+      destructive_or_sensitive:
+        "This deletes, pays for, or touches something private. Nothing here can undo it afterwards.",
+      unknown:
+        "Juno could not verify that this only reads, so it is treated as a change that leaves Juno. Read the arguments below before you answer.",
+    },
   },
 
   sources: {
