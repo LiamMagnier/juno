@@ -306,7 +306,8 @@ function toolTimeAfter(tools: readonly ToolItem[], from: number, until: number |
   for (const { call } of tools) {
     const start = instant(call.startedAt);
     if (start === null || start < from) continue;
-    const end = instant(call.endedAt) ?? until;
+    // A call still working counts to now; a finished one with no recorded end counts nothing.
+    const end = instant(call.endedAt) ?? (isTerminalStatus(call.status) ? null : until);
     if (end === null || end <= start) continue;
     spans.push([start, end]);
   }

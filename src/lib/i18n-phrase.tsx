@@ -424,10 +424,17 @@ function argText(node: ArgNode, locale: string): string {
  */
 export function phraseText(spec: PhraseSpec | PhraseLine, locale?: string): string {
   const at = locale ?? getUiLocale();
-  return specsOf(spec)
-    .map((one) => one.parts.map((part) => (isPhrase(part) ? formatPhrase(part.phrase, at) : argText(part, at))).join(" "))
-    .join(". ");
+  let out = "";
+  for (const one of specsOf(spec)) {
+    const text = one.parts.map((part) => (isPhrase(part) ? formatPhrase(part.phrase, at) : argText(part, at))).join(" ");
+    if (!text) continue;
+    // A phrase that is already a sentence keeps its own stop: "…left. Resets on", never "left..".
+    out = out ? `${out}${SENTENCE_END.test(out) ? " " : ". "}${text}` : text;
+  }
+  return out;
 }
+
+const SENTENCE_END = /[.!?…。！？]$/u;
 
 // ── Components ────────────────────────────────────────────────────────────────
 

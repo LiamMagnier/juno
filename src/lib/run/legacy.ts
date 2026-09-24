@@ -139,6 +139,10 @@ export function buildLegacyRunView(message: RunMessage, now?: number): RunView {
             : {}),
           status: legacyStatus(event.tool),
           ...(typeof event.tool.durationMs === "number" ? { durationMs: event.tool.durationMs } : {}),
+          // The row was opened when the call started; its end is known only when a duration was measured.
+          ...(typeof event.tool.durationMs === "number" && Number.isFinite(at)
+            ? { endedAt: new Date(at + event.tool.durationMs).toISOString() }
+            : {}),
         });
         items.push({ kind: "tool", key: call.callId, seq, round: 0, call, detail: event.tool, live: false });
         break;

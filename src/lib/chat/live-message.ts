@@ -19,6 +19,7 @@
  */
 
 import { settleClientMessage } from "@/lib/chat-client-state";
+import { appendReasoningDelta } from "@/lib/reasoning-parts";
 import type { ClientActivityEvent, ClientMessage, StreamChunk } from "@/types/chat";
 
 /** One round's live answer-area text, until the server says whether it was commentary. */
@@ -78,25 +79,28 @@ function appendRound(rounds: LiveRound[] | undefined, round: number, text: strin
 }
 
 /**
- * One reasoning delta into the flat text and the parts. A new part, or a new
- * round, starts after a blank line; the parts themselves never carry it.
+ * One reasoning delta into the flat text and the parts, through the route's
+ * own helper (`appendReasoningDelta`), so the segment offsets the server
+ * stamps index this text byte for byte. A new part starts after a blank line
+ * (the helper's rule); so does a new round, when the helper has not already
+ * put one there. The parts themselves never carry it.
  */
 function foldReasoning(state: LiveMessage, text: string, part: number | undefined, round: number | undefined): Partial<LiveMessage> {
   const flat = state.reasoning ?? "";
   const cursor = state.reasoningCursor ?? { part: null, round: null };
-  const newPart = part !== undefined && part !== cursor.part;
+  const folded = appendReasoningDelta(
+    { text: flat, parts: state.reasoningParts ?? [], lastPart: cursor.part },
+    text,
+    part,
+  );
   const newRound = round !== undefined && cursor.round !== null && round !== cursor.round;
-  const sep = flat && (newPart || newRound) ? "\n\n" : "";
+  const separated = folded.text.length > flat.length + text.length;
+  const reasoning = newRound && flat && !separated ? `${flat}\n\n${text}` : folded.text;
   const next: Partial<LiveMessage> = {
-    reasoning: flat + sep + text,
-    reasoningCursor: { part: part ?? cursor.part, round: round ?? cursor.round },
+    reasoning,
+    reasoningCursor: { part: folded.lastPart, round: round ?? cursor.round },
   };
-  if (part !== undefined) {
-    const parts = (state.reasoningParts ?? []).slice();
-    while (parts.length <= part) parts.push("");
-    parts[part] += text;
-    next.reasoningParts = parts;
-  }
+  if (part !== undefined) next.reasoningParts = folded.parts;
   return next;
 }
 

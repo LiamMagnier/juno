@@ -153,3 +153,37 @@ export function heldCommentary(
   }
   return [...byRound].map(([round, text]) => ({ round, text: text.trim() })).filter((entry) => entry.text);
 }
+
+// ── The peek's one open and one collapse (SPEC §7.5) ─────────────────────────
+
+/**
+ * "closed": never opened (mounted closed). "open": showing the latest steps.
+ * "collapsed": it opened once and has folded away; it never opens again, not
+ * even when a tool starts after the answer began (re-entry changes the line
+ * only, §7.3).
+ */
+export type PeekState = "closed" | "open" | "collapsed";
+
+export interface PeekInput {
+  streaming: boolean;
+  /** The run has at least one step to show (a tool row, reasoning, declared commentary). */
+  hasStep: boolean;
+  /** Answer text is about to render (the hold released a round as answer). */
+  answerStarted: boolean;
+}
+
+/**
+ * The peek opens once, when the first step exists and before any answer text,
+ * and collapses at the first answer text or when the run ends (a Stop, a
+ * failure, or done before any answer) — then stays collapsed.
+ */
+export function nextPeekState(state: PeekState, input: PeekInput): PeekState {
+  switch (state) {
+    case "closed":
+      return input.streaming && input.hasStep && !input.answerStarted ? "open" : "closed";
+    case "open":
+      return input.answerStarted || !input.streaming ? "collapsed" : "open";
+    case "collapsed":
+      return "collapsed";
+  }
+}

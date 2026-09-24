@@ -48,7 +48,8 @@ function sameShown(a: PacedPhase, b: PacedPhase): boolean {
     a.stalled === b.stalled &&
     a.calm === b.calm &&
     a.escalation === b.escalation &&
-    a.coalesced === b.coalesced
+    a.coalesced === b.coalesced &&
+    a.stalledSince === b.stalledSince
   );
 }
 
@@ -137,6 +138,7 @@ export function createPhasePacer(
       stalled: next.phase === shown.phase ? next.stalled : shown.stalled,
       calm: next.phase === shown.phase ? next.calm : shown.calm,
       escalation: next.phase === shown.phase ? next.escalation : shown.escalation,
+      stalledSince: next.phase === shown.phase ? next.stalledSince : shown.stalledSince,
       ...(next.phase === shown.phase && next.workingMs !== undefined ? { workingMs: next.workingMs } : {}),
       reveal: "label",
     });

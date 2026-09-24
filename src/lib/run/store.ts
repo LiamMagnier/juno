@@ -19,6 +19,7 @@
 
 import * as React from "react";
 
+import type { Announcement } from "@/lib/run/announcer";
 import type { LiveAnswerState, LoopPriority, PacedPhase } from "@/lib/run/types";
 import type { ResearchPhase } from "@/types/research";
 
@@ -178,6 +179,27 @@ export function useLiveAnswerState(renderKey: string | null): LiveAnswerState | 
     () => (renderKey ? answers.get(renderKey) ?? null : null),
     () => null,
   );
+}
+
+// ── What the chat runs announce ──────────────────────────────────────────────
+
+type AnnouncementListener = (renderKey: string, announcement: Announcement) => void;
+const announcementListeners = new Set<AnnouncementListener>();
+
+/**
+ * A run block says what its message's run just did (a phase boundary, the
+ * summary at done). The one announcer subscribes and speaks it if the message
+ * is the one streaming; the run block never owns a live region itself.
+ */
+export function announceRun(renderKey: string, announcement: Announcement): void {
+  for (const listener of [...announcementListeners]) listener(renderKey, announcement);
+}
+
+export function subscribeRunAnnouncements(listener: AnnouncementListener): () => void {
+  announcementListeners.add(listener);
+  return () => {
+    announcementListeners.delete(listener);
+  };
 }
 
 // ── Research phases for the announcer ────────────────────────────────────────

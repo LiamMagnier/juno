@@ -164,6 +164,26 @@ const config = [
   },
   {
     /*
+     * INV-28 (SPEC §7.7): the run UI and the Activity panel never branch on an
+     * activity row's English title. Behaviour keys on `kind`, the typed
+     * payloads, `status` and `code`; the one place a title is read is the
+     * legacy adapter (src/lib/run/legacy.ts), for rows written before the
+     * rework. A title match in a component would break the day the server's
+     * wording changes, and would never have matched a translated title.
+     */
+    files: ["src/components/chat/run/**/*.{ts,tsx}", "src/components/chat/panel/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.object.property.name='title'][callee.property.name=/^(startsWith|endsWith|includes)$/]",
+          message: "Never branch on an activity title (INV-28): read kind, the typed payload, status or code. Legacy rows go through src/lib/run/legacy.ts.",
+        },
+      ],
+    },
+  },
+  {
+    /*
      * Node tooling under `scripts/` written as CommonJS.
      *
      * The repo's own convention already says which is which: everything meant

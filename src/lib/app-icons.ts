@@ -24,6 +24,8 @@ import {
   Bot,
   CalendarClock,
   Check,
+  Clock,
+  Code2,
   Cube,
   CreditCard,
   Copy,
@@ -47,6 +49,7 @@ import {
   LayoutTemplate,
   Lock,
   Mic,
+  MessagesSquare,
   Info,
   JunoChat,
   JunoCode,
@@ -70,6 +73,7 @@ import {
   Share2,
   ShieldAlert,
   ShieldCheck,
+  Sigma,
   SlidersHorizontal,
   Square,
   SquareDashed,
@@ -84,6 +88,7 @@ import {
   Workflow,
   type IconComponent,
 } from "@/components/ui/icons";
+import type { ToolIconKind } from "@/lib/tools/types";
 
 export const AppIcons = {
   /** Home — the assistant surface, whose default landing is `/chat`.
@@ -495,3 +500,30 @@ export const SettingsIcons = {
 } as const satisfies Record<string, IconComponent>;
 
 export type SettingsIconName = keyof typeof SettingsIcons;
+
+/**
+ * The marks of the run UI's tool rows (SPEC §7.1), one per `ToolIconKind`
+ * (§3.1): the tool registry names a KIND, never a drawing, and this is where
+ * the kind gets its glyph, so a tool row in the transcript, the Activity panel
+ * and Research wears the same mark ("registries come first", design system
+ * §7.1).
+ *
+ * Reused concepts, not new drawings: `search` is the composer's search glyph,
+ * `research` the Research binoculars, `connector` the plug every connections
+ * surface uses, `task` Work's workflow mark (a task IS a Work session).
+ * `calculator` is a sigma: the set has no calculator, and a sigma reads as
+ * "a computed value" at 14px where a keypad would hatch.
+ */
+export const ToolIcons = {
+  search: Search,
+  globe: Globe,
+  document: FileText,
+  image: ImageIcon,
+  code: Code2,
+  chats: MessagesSquare,
+  clock: Clock,
+  calculator: Sigma,
+  task: Workflow,
+  research: Telescope,
+  connector: Plug,
+} as const satisfies Record<ToolIconKind, IconComponent>;

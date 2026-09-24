@@ -148,5 +148,6 @@ export function derivePhase(view: RunView, live: PhaseInputs, options: DeriveOpt
     escalation,
     ...(coalesced ? { coalesced } : {}),
     workingMs,
+    ...(stalled ? { stalledSince: live.lastEventAt } : {}),
   };
 }

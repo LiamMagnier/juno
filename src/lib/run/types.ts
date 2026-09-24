@@ -59,6 +59,8 @@ export interface PhaseState {
   coalesced?: number;
   /** How long the run has been working without a break, in ms (drives calm and escalation). */
   workingMs?: number;
+  /** While `stalled`: the time of the last stream frame, from which "No response for" counts. */
+  stalledSince?: number;
 }
 
 /**
