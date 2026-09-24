@@ -205,6 +205,38 @@ export function readToolDetail(raw: unknown): ClientToolDetail | undefined {
   return detail;
 }
 
+// ── Tool ids ─────────────────────────────────────────────────────────────────
+
+/**
+ * Names a tool was stored or called under before the rework (INV-23). The
+ * registry's own alias map (`src/lib/tools/aliases.ts`) is the authority for
+ * dispatch; this copy only reads stored rows, so it cannot drift into
+ * deciding what runs.
+ */
+const LEGACY_TOOL_ALIASES: Readonly<Record<string, CanonicalToolId>> = {
+  code_interpreter: "run_code",
+  browser_agent: "web_fetch",
+};
+
+const JUNO_TOOL_IDS: ReadonlySet<string> = new Set(
+  CANONICAL_TOOL_IDS.filter((id) => id !== "mcp" && id !== "provider_web_search" && id !== "provider_x_search")
+);
+
+/** The canonical id of a Juno tool called or stored under `name`, or `null` for anything else. */
+export function junoToolIdOf(name: string): CanonicalToolId | null {
+  const aliased = LEGACY_TOOL_ALIASES[name];
+  if (aliased) return aliased;
+  return JUNO_TOOL_IDS.has(name) ? (name as CanonicalToolId) : null;
+}
+
+/** "github__create_issue" → "Create issue": the bare function name, readable. Third-party text. */
+export function humanizeToolName(name: string): string {
+  const bare = name.includes("__") ? name.slice(name.lastIndexOf("__") + 2) : name;
+  const words = bare.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!words) return name;
+  return words[0].toUpperCase() + words.slice(1);
+}
+
 // ── The typed payloads ───────────────────────────────────────────────────────
 
 export function isTerminalToolCallStatus(status: ToolCallStatus): boolean {
