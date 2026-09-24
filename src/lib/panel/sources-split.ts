@@ -144,7 +144,7 @@ interface Read {
  */
 function pagesRead(activity: readonly ClientActivityEvent[] | null | undefined) {
   const read = new Map<string, Read>();
-  const order: Array<{ key: string; url: string; title?: string; at?: string }> = [];
+  const order: Array<{ key: string; aliases: string[]; url: string; title?: string; at?: string }> = [];
   for (const event of activity ?? []) {
     const call = event.call;
     if (!call || call.tool !== "web_fetch" || call.status !== "succeeded") continue;
@@ -157,11 +157,14 @@ function pagesRead(activity: readonly ClientActivityEvent[] | null | undefined) 
     // The legacy `detail` of a fetch row is the host until the page title is known.
     const title = event.detail && event.detail !== domain ? event.detail : undefined;
     const entry: Read = { at: call.endedAt, title };
+    const aliases: string[] = [];
     for (const alias of [url, call.web?.requestedUrl, argUrl]) {
       const aliasKey = alias ? sourceKey(alias) : null;
-      if (aliasKey && !read.has(aliasKey)) read.set(aliasKey, entry);
+      if (!aliasKey) continue;
+      aliases.push(aliasKey);
+      if (!read.has(aliasKey)) read.set(aliasKey, entry);
     }
-    if (!order.some((page) => page.key === key)) order.push({ key, url, title, at: call.endedAt });
+    if (!order.some((page) => page.key === key)) order.push({ key, aliases, url, title, at: call.endedAt });
   }
   return { read, order };
 }
@@ -214,7 +217,8 @@ export function splitSources(message: Pick<ClientMessage, "sources" | "content" 
   });
 
   for (const page of fetched) {
-    if (rows.has(page.key)) continue;
+    // A redirect is one reading: a row for any address the fetch went by is the row for this page.
+    if (page.aliases.some((alias) => rows.has(alias))) continue;
     const domain = sourceDomain(page.url);
     if (!domain) continue;
     rows.set(page.key, {

@@ -37,11 +37,13 @@ export const PANEL_COPY = {
     details: "Details",
   },
 
-  /** The static phase word in the header while the run works (never shimmers). */
+  /** The static phase word in the header while the run works (never shimmers). Status
+   *  words, not the tool rows' verb prefixes ("Searching", "Reading" + an argument): one
+   *  English string has one translation, so a status gets its own source text (§7.6). */
   phase: {
     thinking: "Thinking",
-    searching: "Searching",
-    reading: "Reading",
+    searching: "Searching…",
+    reading: "Reading…",
     tool: "Using a tool",
     waiting: "Waiting for your approval",
     writing: "Writing",
@@ -66,7 +68,6 @@ export const PANEL_COPY = {
     arguments: "Arguments",
     result: "Result",
     output: "Output",
-    errors: "Errors",
     error: "What went wrong",
     approval: "Approval",
     showAll: "Show all",
@@ -74,8 +75,7 @@ export const PANEL_COPY = {
     shortened: "Shortened",
     shown: "Shown",
     fullLength: "Full length",
-    page: "Page",
-    requested: "Requested",
+    pages: "Pages",
     timeLimit: "Time limit",
     cached: "Reused from earlier in this turn",
     injection: "Contained instructions aimed at the assistant; they were ignored",
@@ -131,7 +131,6 @@ export const PANEL_COPY = {
     chosenAutomatically: "Chosen automatically",
     routed: "Picked by Auto",
     forget: "Forget",
-    forgetting: "Forgetting…",
     openSourceChat: "Open source chat",
     manageAll: "Manage all",
     forgotten: "Forgotten. Juno won’t learn this again.",
@@ -158,7 +157,6 @@ export const PANEL_COPY = {
     projectFile: { one: "project file", other: "project files" },
     step: { one: "step", other: "steps" },
     tool: { one: "tool", other: "tools" },
-    source: { one: "source", other: "sources" },
   },
 
   /** What each tool is, for the Details tab's "Tools available" list. */
