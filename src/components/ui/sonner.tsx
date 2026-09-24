@@ -16,8 +16,14 @@ import { ActionIcons, StatusIcons } from "@/lib/app-icons";
  * came out of it — /skills, /automations, /permissions — are ordinary pages
  * with no composer along the bottom edge, so a toast on one of them belongs
  * where every other page's toast sits.
+ *
+ * "/design" became "/a": the design editor, and its Ask Juno bar along the
+ * bottom, is at the artifact's own address now, and `/design` only redirects.
+ * `/a/{id}` also draws the read-only window for every other type, which has no
+ * composer; the path cannot tell the two apart, and a toast lifted over an
+ * empty stage is the smaller fault than one sitting on the editor's prompt.
  */
-const COMPOSER_ROUTES = ["/chat", "/code", "/compare", "/design"];
+const COMPOSER_ROUTES = ["/chat", "/code", "/compare", "/a"];
 
 // "/" is deliberately NOT in the list: it is the marketing front door for a
 // signed-out visitor (app/page.tsx redirects everyone else straight to /chat),

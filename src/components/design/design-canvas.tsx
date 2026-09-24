@@ -25,6 +25,7 @@ import { Minus, Plus } from "@/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { renderPageSvg } from "@/lib/design/render";
 import { rgbaToCss } from "@/lib/design/variables";
+import { ancestorsOf } from "@/lib/design/document";
 import { isContainer, type DesignDocument, type NodeId, type TextNode } from "@/lib/design/types";
 import type { DesignOperation } from "@/lib/design/operations";
 import { cn } from "@/lib/utils";
@@ -983,9 +984,13 @@ export function DesignCanvas({
    */
   const chromeBounds = (ghost ? unionBoxes(ghost.map((entry) => entry.box)) : null) ?? bounds;
 
-  /** The angle the selection chrome is drawn at. Only a lone layer has one. */
-  const selectionRotation =
-    selection.length === 1 ? (doc.nodes[selection[0]]?.rotation ?? 0) % 360 : 0;
+  /**
+   * How the handles are turned: a lone layer's own rotation and every rotated
+   * container's around it (see `nodeSceneTransform`). A multi-selection keeps
+   * the upright union box, which is the frame it resizes along.
+   */
+  const selectionTransform =
+    selection.length === 1 && chromeBounds ? nodeSceneTransform(doc, boxes, selection[0], chromeBounds) : undefined;
 
   /**
    * The live readout: size while resizing, position while moving.
@@ -1079,9 +1084,13 @@ export function DesignCanvas({
 
           {/* Chrome. */}
           <g pointerEvents="none">
+            {/* Hover and selection outlines are drawn where the renderer drew
+                the layer, turned with it and with any rotated frame around it,
+                rather than as its upright layout box. */}
             {hoverId && !selection.includes(hoverId) && boxes.get(hoverId) && (
               <rect
                 {...rectProps(boxes.get(hoverId)!)}
+                transform={nodeSceneTransform(doc, boxes, hoverId, boxes.get(hoverId)!)}
                 fill="none"
                 stroke="hsl(var(--canvas-selection))"
                 strokeWidth={strokeWidth}
@@ -1097,7 +1106,14 @@ export function DesignCanvas({
             })}
 
             {(ghost ?? selectionBoxes).map(({ id, box }) => (
-              <rect key={`sel-${id}`} {...rectProps(box)} fill="none" stroke="hsl(var(--canvas-selection))" strokeWidth={strokeWidth * 1.5} />
+              <rect
+                key={`sel-${id}`}
+                {...rectProps(box)}
+                transform={nodeSceneTransform(doc, boxes, id, box)}
+                fill="none"
+                stroke="hsl(var(--canvas-selection))"
+                strokeWidth={strokeWidth * 1.5}
+              />
             ))}
 
             {drag?.guides.vertical.map((x, i) => (
@@ -1127,18 +1143,10 @@ export function DesignCanvas({
           {!readOnly && chromeBounds && (
             // Rotated with the layer when exactly one is selected, so the eight
             // handles sit on that layer's real corners instead of on the corners
-            // of an axis-aligned box it no longer occupies. A multi-selection
-            // keeps the upright union box, which is the frame it resizes along.
-            <g
-              pointerEvents={drag ? "none" : undefined}
-              {...(selectionRotation
-                ? {
-                    transform: `rotate(${selectionRotation} ${chromeBounds.x + chromeBounds.width / 2} ${
-                      chromeBounds.y + chromeBounds.height / 2
-                    })`,
-                  }
-                : null)}
-            >
+            // of an axis-aligned box it no longer occupies — including the turn
+            // of any rotated frame it sits in. A multi-selection keeps the
+            // upright union box, which is the frame it resizes along.
+            <g pointerEvents={drag ? "none" : undefined} transform={selectionTransform}>
               <rect {...rectProps(chromeBounds)} fill="none" stroke="hsl(var(--canvas-selection))" strokeWidth={strokeWidth * 1.5} />
               {/* The chip fill is literal white in both themes, on purpose: it is
                   not a theme surface but part of the trained handle glyph — a
@@ -1346,6 +1354,40 @@ export function hitPath(
     return null;
   };
   return search(page.children, [], point) ?? [];
+}
+
+/**
+ * The transform that puts a layer's upright layout box where the renderer
+ * draws the layer.
+ *
+ * The renderer turns a layer about its own centre and — since a container's
+ * rotation reaches its children (X-24) — every rotated container around it
+ * about theirs. Chrome drawn with only the layer's own angle sat upright inside
+ * a tilted frame, beside the artwork it was meant to outline. The hit-test
+ * already walks the same chain the other way (`unrotatePoint`, above).
+ *
+ * The list is outermost first because an SVG transform list applies right to
+ * left: the layer turns about its centre, then the whole of its parent turns
+ * about the parent's, and so on out. `box` is the box the chrome is drawn
+ * around, which follows a drag's ghost; the containers' boxes are their
+ * committed ones. Undefined when nothing is turned, so the common case adds no
+ * attribute at all.
+ */
+export function nodeSceneTransform(
+  doc: DesignDocument,
+  boxes: LayoutMap,
+  id: NodeId,
+  box: LayoutBox
+): string | undefined {
+  const turns: string[] = [];
+  for (const ancestor of ancestorsOf(doc, id).reverse()) {
+    const angle = ancestor.rotation % 360;
+    const frame = boxes.get(ancestor.id);
+    if (angle && frame) turns.push(`rotate(${angle} ${frame.x + frame.width / 2} ${frame.y + frame.height / 2})`);
+  }
+  const own = (doc.nodes[id]?.rotation ?? 0) % 360;
+  if (own) turns.push(`rotate(${own} ${box.x + box.width / 2} ${box.y + box.height / 2})`);
+  return turns.length > 0 ? turns.join(" ") : undefined;
 }
 
 /**

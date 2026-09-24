@@ -114,3 +114,18 @@ test("an edit detaches the truncated answers' artifacts and removes none", () =>
   const untouched = [outline];
   assert.equal(detachArtifactsFromMessages(untouched, new Set(["assistant-1"])), untouched);
 });
+
+test("an artifact tag resolves to the artifact that existed when its message was written", async () => {
+  const { resolveArtifactTag } = await import("@/lib/chat-client-state");
+  const art = (id: string, identifier: string, createdAt: string, messageId: string | null) =>
+    ({ id, identifier, createdAt, messageId, type: "HTML", title: id, currentVersion: 1, content: "", versions: [], updatedAt: createdAt }) as never;
+  const design = art("a1", "screen~aaaaaa", "2026-09-24T10:00:00Z", "m1");
+  const page = art("a2", "screen", "2026-09-24T12:00:00Z", "m3");
+  const map = new Map([["screen~aaaaaa", design], ["screen", page]]);
+  assert.equal(resolveArtifactTag(map, "screen", { id: "m1", createdAt: "2026-09-24T09:59:59Z" }), design, "the message that made it");
+  assert.equal(resolveArtifactTag(map, "screen", { id: "m2", createdAt: "2026-09-24T11:00:00Z" }), design, "a revision before the type change");
+  assert.equal(resolveArtifactTag(map, "screen", { id: "m3", createdAt: "2026-09-24T11:59:59Z" }), page, "the message that changed the type");
+  assert.equal(resolveArtifactTag(map, "screen", { id: "m4", createdAt: "2026-09-24T13:00:00Z" }), page, "later revisions");
+  const single = new Map([["screen", page]]);
+  assert.equal(resolveArtifactTag(single, "screen", { id: "m1", createdAt: "2026-09-24T09:00:00Z" }), page, "no retired rows: the one row");
+});
