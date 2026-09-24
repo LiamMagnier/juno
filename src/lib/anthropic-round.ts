@@ -176,6 +176,14 @@ export interface ReadAnthropicRoundOptions {
   final?: boolean;
   /** Issues a client call's id (SPEC §4.3). Default: the provider's own id. */
   callIdFor?: (providerCallId: string, round: number, index: number) => string;
+  /**
+   * The step each surfaced provider search was made in, by its `srvtoolu_…`
+   * id — the TURN's, mutated here, like `seen`. A `pause_turn` can end on a
+   * search that has not run yet; its `web_search_tool_result` then arrives in
+   * the NEXT response, and only a map that outlives the response can pair it
+   * with its call. Default: a fresh map (one response on its own).
+   */
+  searchRound?: Map<string, number>;
 }
 
 /**
@@ -222,7 +230,7 @@ export async function* readAnthropicRound(
   /** Text was written in the current step, so a finished search closes it. */
   let stepHasText = false;
   /** The step each surfaced search was made in, by its `srvtoolu_…` id. */
-  const searchRound = new Map<string, number>();
+  const searchRound = opts.searchRound ?? new Map<string, number>();
   const callIdFor = opts.callIdFor ?? ((id: string) => id);
 
   for await (const event of stream) {

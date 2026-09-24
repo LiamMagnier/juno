@@ -427,6 +427,52 @@ test("pause_turn is continued with the paused content — its search input intac
   ]);
 });
 
+test("a search a pause_turn cut off gets its result in the continuation, paired with its call (SPEC §4.1)", async () => {
+  const { events } = await run(
+    request({ webSearch: true, toolset: undefined, budget: 7 }),
+    [
+      [
+        messageStart(),
+        start(0, { type: "text", text: "" }),
+        textDelta(0, "Searching."),
+        stop(0),
+        start(1, { type: "server_tool_use", id: "srvtoolu_3", name: "web_search", input: {} }),
+        jsonDelta(1, '{"query":"long research"}'),
+        stop(1),
+        messageDelta("pause_turn"),
+      ],
+      [
+        messageStart(),
+        // The paused search ran on the provider's side; its result opens the continuation.
+        start(0, { type: "web_search_tool_result", tool_use_id: "srvtoolu_3", content: [] }),
+        stop(0),
+        start(1, { type: "text", text: "" }),
+        textDelta(1, "Nothing turned up."),
+        stop(1),
+        messageDelta("end_turn"),
+      ],
+    ],
+    null,
+  );
+  // A result event even with no hits: the route counts it against the turn's
+  // search cap and closes the provider-search row with it.
+  assert.deepEqual(
+    ofType(events, "server_tool").map((e) => [e.phase, e.callId, e.round]),
+    [
+      ["call", "srvtoolu_3", 0],
+      ["result", "srvtoolu_3", 0],
+    ],
+  );
+  const result = ofType(events, "server_tool").find((e) => e.phase === "result");
+  assert.deepEqual(result, { type: "server_tool", phase: "result", tool: "provider_web_search", callId: "srvtoolu_3", round: 0, results: 0, ok: true });
+  // The step the search was made in was already closed by the pause: no
+  // mid-response split in the continuation.
+  assert.deepEqual(ofType(events, "round_end").map((r) => [r.round, r.stop]), [
+    [0, "pause_turn"],
+    [1, "end_turn"],
+  ]);
+});
+
 test("the budget running out mid-pause finishes length rather than claiming an answer", async () => {
   const { events } = await run(
     request({ webSearch: true, toolset: undefined, budget: 1 }),

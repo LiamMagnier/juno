@@ -94,6 +94,9 @@ export async function* anthropicLoop(req: AdapterRequest, deps: AnthropicLoopDep
   const labelFor = toolset ? (name: string) => toolset.labelFor(name) : undefined;
   const callIdFor = callIdIssuer(req.batch?.seenCallIds);
   const seen = new Set<string>();
+  // The turn's, not the response's: a search a `pause_turn` cut off gets its
+  // result in the continuation, and must still be paired with its call.
+  const searchRound = new Map<string, number>();
 
   /*
    * Usage is accumulated in two tiers, and the distinction is a billing one:
@@ -124,7 +127,7 @@ export async function* anthropicLoop(req: AdapterRequest, deps: AnthropicLoopDep
     servedFast = opened.fast;
 
     const held: string[] = [];
-    const reader = readAnthropicRound(opened.events, { labelFor, seen, round, final, callIdFor });
+    const reader = readAnthropicRound(opened.events, { labelFor, seen, searchRound, round, final, callIdFor });
     const result = structured ? yield* holdText(reader, held) : yield* reader;
 
     lastStop = result.stopReason;
