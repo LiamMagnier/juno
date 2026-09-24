@@ -22,12 +22,19 @@ import {
   PLANNER_OUTPUT_TOKENS,
   PLANNER_PROMPT_CHARS,
   REVISION_REPORT_CHARS,
-  SEARCH_FEE_MICRO_USD,
   SYNTHESIS_OUTPUT_TOKENS,
   type ResearchEffort,
 } from "@/lib/research/domain";
 import { extractJsonObject, parseStructuredPlan, plannerSystemPrompt } from "@/lib/research/plan-format";
 import { researchLeadModel } from "@/lib/research/agents/worker";
+import { draftResearchPlan, languageName, looksLikeJson, type PlannerCompletion } from "@/lib/research/planner";
+import { packCorpus, writerCorpusBudgetTokens } from "@/lib/research/corpus-pack";
+import { researchSearchFeeMicroUsd } from "@/lib/research/search-metering";
+import { researchLanguageLine } from "@/lib/research/planner.prompt";
+import { getModelMetrics } from "@/lib/model-metrics";
+import { MODEL_LIST } from "@/lib/models";
+import { isProviderConfigured } from "@/lib/providers";
+import type { AdapterRequest } from "@/lib/llm/types";
 
 /**
  * What the durable research job farms out: planning, searching, fetching and
@@ -166,6 +173,11 @@ function parsePlanSections(text: string): { plan: string; queries: string } {
 }
 
 function parsePlanLines(text: string, max: number): string[] {
+  // A (possibly truncated) JSON object is not a list of searches: its lines
+  // are keys and values, and searching `"question": "What is…",` is the B5
+  // failure. The structured planner validates or fails; nothing JSON-looking
+  // ever reaches this parser.
+  if (looksLikeJson(text)) return [];
   const queries: string[] = [];
   const seen = new Set<string>();
   for (const raw of text.split("\n")) {
@@ -220,6 +232,8 @@ async function utilityCompletion(opts: {
   timeoutMs: number;
   signal?: AbortSignal;
   label: string;
+  /** Structured output where the provider can hold a reply to a schema (§5.0). */
+  responseSchema?: AdapterRequest["responseSchema"];
 }): Promise<{ text: string; costMicroUsd: number }> {
   const box = timeboxSignal(opts.signal, opts.timeoutMs);
   let out = "";
@@ -232,6 +246,7 @@ async function utilityCompletion(opts: {
       history: [{ role: "USER", content: opts.prompt, attachments: [] }],
       maxTokens: opts.maxTokens,
       signal: box.signal,
+      ...(opts.responseSchema ? { responseSchema: opts.responseSchema } : {}),
     })) {
       if (ev.type === "text") out += ev.text;
       else if (ev.type === "usage") {
@@ -257,10 +272,13 @@ async function utilityCompletion(opts: {
     promptChars: opts.system.length + opts.prompt.length,
     completionChars: out.length,
   });
+  // `research`, not `chat` (DECISIONS §4c): every engine-side call — the
+  // planner, the expander, the writer — is research spend, which the usage
+  // windows leave out and the monthly total keeps (§9.2).
   await recordSpend({
     userId: opts.userId,
     model: opts.model.id,
-    kind: "chat",
+    kind: "research",
     source: "web",
     promptTokens: billed.promptTokens,
     completionTokens: billed.completionTokens,
@@ -270,6 +288,48 @@ async function utilityCompletion(opts: {
   });
   return { text: out.trim(), costMicroUsd: Math.round(billed.costUsd * 1_000_000) };
 }
+
+/** A configured model by id — the run's frozen lead — or null when it is gone. */
+function configuredModel(id: string | null | undefined): ModelInfo | null {
+  if (!id) return null;
+  const model = MODEL_LIST.find((candidate) => candidate.id === id);
+  return model && isProviderConfigured(model.provider) ? model : null;
+}
+
+/**
+ * PLAN, merged (SPEC §9.5): one structured call on the lead model through
+ * `streamChat`'s `responseSchema`, validated here whatever the provider did
+ * with the schema, retried once, and otherwise `planner_invalid` (B5).
+ */
+export const draftResearchPlanWithModel: NonNullable<ResearchDeps["draftPlan"]> = async (input) => {
+  const model = configuredModel(input.leadModel) ?? researchPlannerModel();
+  if (!model) return { ok: false, reason: "planner_invalid", costMicroUsd: 0 };
+  const complete: PlannerCompletion = (request) =>
+    utilityCompletion({
+      userId: input.userId,
+      model,
+      system: request.system,
+      prompt: request.prompt,
+      maxTokens: request.maxTokens,
+      timeoutMs: PLAN_TIMEOUT_MS,
+      signal: input.signal,
+      label: request.attempt === 1 ? "plan" : "plan (retry)",
+      responseSchema: request.responseSchema,
+    });
+  return draftResearchPlan(
+    {
+      goal: input.goal,
+      context: input.context,
+      constraints: input.constraints,
+      pinnedSources: input.pinnedSources,
+      dateLine: input.dateLine,
+      languageName: input.languageName,
+      revision: input.revision,
+      signal: input.signal,
+    },
+    complete
+  );
+};
 
 /**
  * CLARIFY — what does the goal not say?
@@ -507,12 +567,15 @@ export const searchTheWeb: ResearchDeps["search"] = async ({ query, count, signa
       publishedAt: r.publishedAt,
     }));
 
+    // Each keyed engine that answered, at its own price (§9.3): the flat
+    // SEARCH_FEE_MICRO_USD this used to bill was a quarter of one Tavily call
+    // for a fan-out that had paid several engines. The per-engine request is
+    // the fan-out's own (search-engine.ts `perEngineCount`).
+    const requested = Math.max(5, Math.min(50, count ?? RESULTS_PER_QUERY));
+    const perEngine = Math.max(10, Math.min(50, Math.ceil(requested * 1.5)));
     return {
       hits,
-      // The engine reserves VENDOR_ESTIMATE_MARGIN times this before each wave.
-      // It used to reserve a flat 10,000 against this same 1,000, which is why
-      // the constant now lives beside the estimate that projects it.
-      costMicroUsd: SEARCH_FEE_MICRO_USD,
+      costMicroUsd: researchSearchFeeMicroUsd(engines, perEngine),
       engines,
       providers: {
         keyed: providers.keyed,
@@ -649,13 +712,23 @@ export const expandResearchQueries: NonNullable<ResearchDeps["expandQueries"]> =
   };
 };
 
+/** The writer's timebox when the engine names none: six minutes (R8). */
+const WRITER_TIMEBOX_DEFAULT_MS = 6 * 60_000;
+
 /**
- * WRITE — the report, on the utility model.
+ * WRITE — the report, on the run's lead model.
  *
- * Only the standalone research surface uses this. A research run started from
- * chat stops at `synthesizing` and the chat route streams the report through
- * the model the user picked, so the answer arrives on the same delta path as
- * every other turn instead of appearing all at once when a job finishes.
+ * Only the web engine uses this. A research run started from the native
+ * chat stops at `synthesizing` and the chat route streams the report
+ * through the model the user picked (INV-11).
+ *
+ * The corpus is PACKED to half the lead's context, at most 120k tokens (B7):
+ * every source keeps its number, and the budget decides how much of each
+ * body the writer sees — findings first, the passages they quote, each
+ * question's best passages, then the rest by score. `corpusScale` shrinks it
+ * for the one retry after an unusable report (B6). The call is timeboxed
+ * (R8) and a run planned by the structured planner gets the structured
+ * contract: summary, markers, one section per question (§9.6.3).
  */
 export const writeResearchReport: NonNullable<ResearchDeps["synthesize"]> = async ({
   userId,
@@ -665,18 +738,44 @@ export const writeResearchReport: NonNullable<ResearchDeps["synthesize"]> = asyn
   findings = [],
   signal,
   revision,
+  corpusScale = 1,
+  timeoutMs,
 }) => {
-  const model = researchPlannerModel();
+  const model = configuredModel(plan.envelope?.leadModel) ?? researchPlannerModel();
   // The same function the citation audit numbers against — see `citableSources`.
   const readable = citableSources(sources);
   if (!model || readable.length === 0) return { report: "", costMicroUsd: 0 };
 
+  const scale = Math.max(0.1, Math.min(1, corpusScale));
+  const budget = Math.floor(writerCorpusBudgetTokens(getModelMetrics(model).contextTokens) * scale);
+  const ledger = corpusFindings(plan, readable, findings);
+  const packed = packCorpus(
+    readable,
+    ledger.map((finding) => ({ claim: finding.claim, quote: finding.quote, sourceIndex: finding.sourceIndex })),
+    budget,
+    plan.objectives.map((objective) => objective.question)
+  );
+  // The packer keeps a prefix of the findings; the ledger keeps their objectives.
+  const keptLedger = ledger.slice(0, packed.findings.length);
+  const structured = !!plan.scope;
   const system = [
-    buildResearchCorpus(goal, plan, readable, corpusFindings(plan, readable, findings)),
+    buildResearchCorpus(
+      goal,
+      plan,
+      packed.sources,
+      keptLedger,
+      structured
+        ? {
+            contract: "report",
+            dateLine: plan.today ?? null,
+            languageLine: plan.language ? researchLanguageLine(languageName(plan.language)) : null,
+          }
+        : {}
+    ),
     ...(revision
       ? [
           `# Citation-driven revision (round ${revision.round})
-Rewrite the draft below into a complete replacement report for the original request. Keep only claims that the numbered source material supports, preserve or correct citation numbers, and state any remaining uncertainty plainly. Return the full markdown report only; do not describe the revision process.`,
+Rewrite the draft below into a complete replacement report for the original request. Keep only claims that the numbered source material supports, preserve or correct citation numbers, and state any remaining uncertainty plainly. Return the full reply in the same format, summary included; do not describe the revision process.`,
         ]
       : []),
   ].join("\n\n");
@@ -686,6 +785,7 @@ Rewrite the draft below into a complete replacement report for the original requ
         wrapUntrusted("previous research draft", revision.report.slice(0, REVISION_REPORT_CHARS)),
       ].join("\n\n")
     : truncate(goal, 2_000);
+  const box = timeboxSignal(signal, timeoutMs ?? WRITER_TIMEBOX_DEFAULT_MS);
   let out = "";
   let input: number | undefined;
   let output: number | undefined;
@@ -695,7 +795,7 @@ Rewrite the draft below into a complete replacement report for the original requ
       system,
       history: [{ role: "USER", content: historyContent, attachments: [] }],
       maxTokens: SYNTHESIS_OUTPUT_TOKENS,
-      signal,
+      signal: box.signal,
     })) {
       if (ev.type === "text") out += ev.text;
       else if (ev.type === "usage") {
@@ -706,8 +806,10 @@ Rewrite the draft below into a complete replacement report for the original requ
   } catch (e) {
     console.error("[research] synthesis failed", {
       model: model.id,
-      message: e instanceof Error ? e.message : String(e),
+      message: box.signal.aborted ? "timed out or aborted" : e instanceof Error ? e.message : String(e),
     });
+  } finally {
+    box.release();
   }
 
   const billed = estimateGenerationCostUsd(model, {
@@ -719,7 +821,7 @@ Rewrite the draft below into a complete replacement report for the original requ
   await recordSpend({
     userId,
     model: model.id,
-    kind: "chat",
+    kind: "research",
     source: "web",
     promptTokens: billed.promptTokens,
     completionTokens: billed.completionTokens,

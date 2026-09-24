@@ -14,6 +14,11 @@ import {
 } from "@/lib/research/engine";
 import {
   MAX_PLAN_QUERIES,
+  PLANNER_OUTPUT_TOKENS,
+  PLANNER_PROMPT_CHARS,
+  SYSTEM_PROMPT_CHARS,
+  modelCallEstimateMicroUsd,
+  RESEARCH_TERMINAL_STATES,
   RESEARCH_WORKER_LEASE_MS,
   RESEARCH_WORKING_STATES,
   isResearchEventKind,
@@ -35,6 +40,7 @@ import {
   type ResearchTerminalState,
 } from "@/lib/research/domain";
 import {
+  draftResearchPlanWithModel,
   expandResearchQueries,
   fetchResearchPage,
   clarifyResearchGoal,
@@ -43,10 +49,52 @@ import {
   writeResearchReport,
 } from "@/lib/research/tools";
 import { recordCitationAudit } from "@/lib/research/claims";
-import { researchLeadModel, researchWorkerModel, runResearchWorker } from "@/lib/research/agents/worker";
+import {
+  researchLeadModel,
+  researchStepDownModel,
+  researchWorkerModel,
+  runResearchWorker,
+} from "@/lib/research/agents/worker";
 import { reviewResearchRound } from "@/lib/research/agents/lead";
 import { canonicalUrl } from "@/lib/search/url-safety";
-import type { ResearchRunViewAdditions } from "@/types/research";
+import { searchProviderStatus } from "@/lib/search/search-engine";
+import { getUserPlan } from "@/lib/usage";
+import { checkBudget, eurPerUsd } from "@/lib/spend";
+import { MODEL_LIST } from "@/lib/models";
+import { decryptMessageTextSafe } from "@/lib/message-crypto";
+import {
+  RESEARCH_PLAN_CAPS,
+  researchBudgetFor,
+  targetClaimsFor,
+  type ResearchBudgetRefusal,
+  type ResearchEnvelope,
+} from "@/lib/research/envelope";
+import { researchRoster } from "@/lib/research/search-metering";
+import { buildCompletionWrite } from "@/lib/research/completion-core";
+import { finalizeResearchRun } from "@/lib/research/completion";
+import { researchWebOwner } from "@/lib/research/lease-core";
+import { researchGoalContext, type ContextTurn } from "@/lib/research/planner";
+import { citationOrder } from "@/lib/research/report-structure";
+import {
+  PHASE_EVENT_KINDS,
+  RECENTLY_FINISHED_MS,
+  clarificationViews,
+  countsOf,
+  dtoEffort,
+  estimateOf,
+  latestFindingsOf,
+  pagesReadOf,
+  phaseDetailFor,
+  questionViews,
+  researchPhaseFor,
+  revisingOf,
+  runTitleOf,
+  summaryOf,
+  workingMsOf,
+  type LatestPhaseEvent,
+} from "@/lib/research/view";
+import type { ResearchPlan } from "@/lib/research/domain";
+import type { ResearchRunSummary, ResearchRunViewAdditions, ResearchScope } from "@/types/research";
 
 /**
  * The durable research job, wired to Postgres and to the real search backend.
@@ -85,6 +133,7 @@ interface PrismaResearchRun {
   workerLeaseOwner?: string | null;
   workerLeaseUntil?: Date | null;
   lastHeartbeatAt?: Date | null;
+  assistantMessageId?: string | null;
 }
 
 function toRunRow(row: PrismaResearchRun): ResearchRunRow {
@@ -108,6 +157,7 @@ function toRunRow(row: PrismaResearchRun): ResearchRunRow {
     workerLeaseOwner: row.workerLeaseOwner,
     workerLeaseUntil: row.workerLeaseUntil,
     lastHeartbeatAt: row.lastHeartbeatAt,
+    assistantMessageId: row.assistantMessageId ?? null,
   };
 }
 
@@ -594,6 +644,212 @@ function researchModelRates(): ResearchDeps["modelRates"] {
   return { ...(worker ? { worker } : {}), ...(lead ? { lead } : {}) };
 }
 
+// ---------------------------------------------------------------------------
+// Sizing, planning and completion, bound to the account (SPEC §9.2–§9.6)
+// ---------------------------------------------------------------------------
+
+/** The judge runs on the workers' model; its rates price the audit's reservation. */
+const REFERENCE_RATES: ResearchModelRates = { inputMicroUsdPerToken: 3, outputMicroUsdPerToken: 15 };
+
+/** Results per query the roster is priced at: the middle of the breadth table. */
+const ROSTER_RESULTS_PER_QUERY = 20;
+
+/** The owner's clamp (§9.2): `RESEARCH_CHAT_BUDGET_USD`, now only an override. */
+function ownerOverrideMicroUsd(): number | null {
+  const raw = Number(process.env.RESEARCH_CHAT_BUDGET_USD?.trim());
+  return Number.isFinite(raw) && raw > 0 ? Math.round(Math.min(40, raw) * 1_000_000) : null;
+}
+
+/** Start of the requester's local calendar day, else the UTC day (§9.2 starts per day). */
+export function startOfLocalDay(now: Date, timeZone?: string | null): Date {
+  try {
+    if (!timeZone) throw new Error("no zone");
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hourCycle: "h23",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+        .formatToParts(now)
+        .map((part) => [part.type, part.value])
+    );
+    const localNow = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+    const offset = localNow - Math.floor(now.getTime() / 1000) * 1000;
+    return new Date(Date.UTC(+parts.year, +parts.month - 1, +parts.day) - offset);
+  } catch {
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  }
+}
+
+/** Runs going at once, not counting plans parked at the gate, other than `excludeRunId`. */
+async function liveRunCount(userId: string, excludeRunId?: string): Promise<number> {
+  return prisma.researchRun.count({
+    where: {
+      userId,
+      state: { in: ["accepted", ...RESEARCH_WORKING_STATES, "paused"] },
+      ...(excludeRunId ? { id: { not: excludeRunId } } : {}),
+    },
+  });
+}
+
+async function startsSince(userId: string, since: Date, excludeRunId?: string): Promise<number> {
+  return prisma.researchRun.count({
+    where: { userId, createdAt: { gte: since }, ...(excludeRunId ? { id: { not: excludeRunId } } : {}) },
+  });
+}
+
+/**
+ * The envelope for a run (§9.2): the plan's caps, what is left of the month,
+ * the lead the plan's class allows (the chat's own model when it qualifies),
+ * the keyed engines' prices, and how many runs are going and have started
+ * today. `researchBudgetFor` does the arithmetic; this gathers the facts.
+ */
+export async function sizeResearchRun(input: {
+  run: ResearchRunRow;
+  plan: ResearchPlan;
+  scope: ResearchScope;
+  purpose: "preview" | "confirm";
+}): Promise<ResearchEnvelope | ResearchBudgetRefusal> {
+  const userPlan = await getUserPlan(input.run.userId);
+  const lead = researchLeadModel({ plan: userPlan, preferred: input.plan.preferredLead ?? null });
+  if (!lead) return { refused: true, reason: "not_configured", params: {} };
+  const stepDown = researchStepDownModel({ plan: userPlan, preferred: input.plan.preferredLead ?? null });
+  const now = new Date();
+  const [budget, liveRuns, startsToday] = await Promise.all([
+    checkBudget(input.run.userId, userPlan, undefined, undefined, { reap: false }),
+    liveRunCount(input.run.userId, input.run.id),
+    startsSince(input.run.userId, startOfLocalDay(now, input.plan.timeZone), input.run.id),
+  ]);
+  const worker = ratesOf(researchWorkerModel()) ?? REFERENCE_RATES;
+  const stepDownRates = stepDown ? ratesOf(stepDown) : undefined;
+  return researchBudgetFor({
+    scope: input.scope,
+    plan: userPlan,
+    remaining: {
+      monthMicroUsd: budget.capDisabled ? null : budget.remainingMicroUsd,
+      monthBudgetMicroUsd: budget.budgetMicroUsd,
+      resetsAtMs: budget.resetsAtMs,
+    },
+    rates: { worker, lead: ratesOf(lead) ?? REFERENCE_RATES, judge: worker },
+    roster: researchRoster(searchProviderStatus().keyed, ROSTER_RESULTS_PER_QUERY),
+    liveRuns,
+    startsToday,
+    eurPerUsd: eurPerUsd(),
+    overrideCeilingMicroUsd: userPlan === "OWNER" ? ownerOverrideMicroUsd() : null,
+    leadModel: lead.id,
+    stepDown: stepDown && stepDownRates && stepDown.id !== lead.id ? { leadModel: stepDown.id, rates: stepDownRates } : null,
+  });
+}
+
+/**
+ * The structured planner on the run's lead: the frozen envelope's when there
+ * is one (a revision), else the lead the account's plan allows (§9.5.1).
+ */
+const draftPlanForRun: NonNullable<ResearchDeps["draftPlan"]> = async (input) => {
+  let leadModel = input.leadModel ?? null;
+  if (!leadModel) {
+    const userPlan = await getUserPlan(input.userId).catch(() => null);
+    leadModel = userPlan ? researchLeadModel({ plan: userPlan })?.id ?? null : null;
+  }
+  return draftResearchPlanWithModel({ ...input, leadModel });
+};
+
+/**
+ * The web completion (§9.6.3): the summary and the report renumbered so
+ * `[1]` is the first source cited, the research fact, and the one
+ * transaction that writes the message, its artifact and the run's pointer.
+ */
+async function completeResearchRun(input: {
+  run: ResearchRunRow;
+  plan: ResearchPlan;
+  report: string;
+  sources: Array<{ id: string; url: string; title: string; snapshot: string | null }>;
+  to: "completed" | "partially_completed";
+  error: string | null;
+}): Promise<{ messageId: string | null; raced: boolean; sourceOrder?: string[] }> {
+  const now = new Date();
+  const { write, sourceOrder } = buildCompletionWrite({
+    runId: input.run.id,
+    userId: input.run.userId,
+    conversationId: input.run.conversationId,
+    title: input.plan.title ?? runTitleOf(input.plan, input.run.goal) ?? "Research report",
+    summary: input.plan.summary ?? "",
+    report: input.report,
+    corpus: input.sources.map((source) => ({ id: source.id, title: source.title, url: source.url, snapshot: source.snapshot })),
+    to: input.to,
+    from: [input.run.state],
+    error: input.error,
+    leadModel: input.plan.envelope?.leadModel || researchLeadModel()?.id || "",
+    workedMs: workingMsOf({ createdAt: input.run.createdAt, finishedAt: now, state: input.run.state }, input.plan, now),
+    pages: pagesReadOf(input.plan),
+  });
+  const result = await finalizeResearchRun(write);
+  return { messageId: result.messageId, raced: !!result.raced, sourceOrder };
+}
+
+/**
+ * The checks before a run starts (§9.2): live runs and starts today against
+ * the plan's caps, and room in the month for one planner call. Entitlement
+ * (plan, deployment, surface) is `researchEntitlement`'s, checked first.
+ */
+export async function researchStartCheck(input: {
+  userId: string;
+  plan: import("@prisma/client").Plan;
+  timeZone?: string | null;
+  now?: Date;
+}): Promise<{ ok: true } | ResearchBudgetRefusal> {
+  const caps = RESEARCH_PLAN_CAPS[input.plan];
+  if (!caps.entitled) return { refused: true, reason: "plan", params: {} };
+  const now = input.now ?? new Date();
+  const [live, started, budget] = await Promise.all([
+    liveRunCount(input.userId),
+    startsSince(input.userId, startOfLocalDay(now, input.timeZone)),
+    checkBudget(input.userId, input.plan, undefined, undefined, { reap: false }),
+  ]);
+  if (live >= caps.liveRuns) return { refused: true, reason: "live_runs", params: { limit: caps.liveRuns } };
+  if (caps.startsPerDay !== null && started >= caps.startsPerDay) {
+    return { refused: true, reason: "daily_starts", params: { limit: caps.startsPerDay } };
+  }
+  const lead = ratesOf(researchLeadModel({ plan: input.plan })) ?? REFERENCE_RATES;
+  const plannerCall = modelCallEstimateMicroUsd(PLANNER_PROMPT_CHARS + SYSTEM_PROMPT_CHARS, PLANNER_OUTPUT_TOKENS, lead);
+  if (!budget.capDisabled && budget.remainingMicroUsd !== null && budget.remainingMicroUsd < plannerCall) {
+    return {
+      refused: true,
+      reason: "budget",
+      params: {
+        ...(budget.resetsAtMs ? { resetsOn: new Date(budget.resetsAtMs).toISOString().slice(0, 10) } : {}),
+      },
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * `plan.context` for a run started in a conversation (B20): the last six
+ * turns before the request, oldest first, each cut to 600 characters, at
+ * most 4,000 in all, wrapped as untrusted reference. The goal stays the
+ * person's own words; this is only what "it" and "that" refer to.
+ */
+export async function conversationContextFor(conversationId: string | null | undefined, userId: string): Promise<string | null> {
+  if (!conversationId) return null;
+  const rows = await prisma.message.findMany({
+    where: { conversationId, conversation: { userId } },
+    orderBy: { createdAt: "desc" },
+    take: 6,
+    select: { role: true, content: true },
+  });
+  const turns: ContextTurn[] = rows
+    .reverse()
+    .filter((row) => row.role === "USER" || row.role === "ASSISTANT")
+    .map((row) => ({ role: row.role as ContextTurn["role"], content: decryptMessageTextSafe(row.content) ?? "" }));
+  return researchGoalContext(turns);
+}
+
 /**
  * The one engine the app uses. Memoised because the deps are stateless and
  * building a new closure per request would make the module-level store a lie.
@@ -604,6 +860,9 @@ export function researchEngine(): ResearchEngine {
     store: createPrismaResearchStore(),
     clarify: clarifyResearchGoal,
     plan: planResearchQueries,
+    draftPlan: draftPlanForRun,
+    sizeRun: sizeResearchRun,
+    complete: completeResearchRun,
     search: searchTheWeb,
     fetchPage: fetchResearchPage,
     expandQueries: expandResearchQueries,
@@ -611,12 +870,16 @@ export function researchEngine(): ResearchEngine {
     reviewRound: reviewResearchRound,
     modelRates: researchModelRates(),
     synthesize: writeResearchReport,
-    validateReport: async ({ userId, runId, goal, report, sources }) => {
+    validateReport: async ({ userId, runId, goal, plan, report, sources }) => {
       const audit = await recordCitationAudit({
         userId,
         runId,
         goal,
         report,
+        // The run's own judge budget and claim count (B22); older runs keep
+        // the audit-wide caps.
+        maxJudgeCalls: plan.envelope?.judgeCalls,
+        maxClaims: plan.scope ? targetClaimsFor(plan.scope.questions) : undefined,
         sources: sources.map((source) => ({
           sourceId: source.id,
           url: source.url,
@@ -666,6 +929,10 @@ export function gatheringOnlyEngine(): ResearchEngine {
   return createResearchEngine({
     store: createPrismaResearchStore(),
     plan: planResearchQueries,
+    // The native path plans and sizes like every run (§9.6.4): one structured
+    // call, and an envelope from its scope with `confirmation: "auto"`.
+    draftPlan: draftPlanForRun,
+    sizeRun: sizeResearchRun,
     search: searchTheWeb,
     fetchPage: fetchResearchPage,
     expandQueries: expandResearchQueries,
@@ -780,6 +1047,116 @@ export interface ResearchRunView extends ResearchRunViewAdditions {
   }>;
 }
 
+interface ViewSourceRow {
+  id: string;
+  url: string;
+  title: string;
+  read: boolean;
+  contentHash: string | null;
+  fetchedAt: Date;
+  publishedAt: Date | null;
+  authority: number | null;
+  freshness: number | null;
+  directness: number | null;
+  independence: number | null;
+  composite: number | null;
+  sourceType: string | null;
+}
+
+/**
+ * The run's sources for the view: every column the panel reads, and whether
+ * the page was read as `snapshot IS NOT NULL` — the snapshot itself is never
+ * loaded (research-UI bug 14). Scoped by userId in the WHERE: a raw query
+ * goes around the ownership guard the model operations carry.
+ */
+async function listSourcesForView(runId: string, userId: string): Promise<ViewSourceRow[]> {
+  return prisma.$queryRaw<ViewSourceRow[]>(
+    Prisma.sql`SELECT "id", "url", "title", ("snapshot" IS NOT NULL) AS "read", "contentHash", "fetchedAt", "publishedAt",
+      "authority", "freshness", "directness", "independence", "composite", "sourceType"
+      FROM "ResearchSource" WHERE "runId" = ${runId} AND "userId" = ${userId} ORDER BY "fetchedAt" ASC`
+  );
+}
+
+/**
+ * `GET /api/research?conversationId=` and `?live=1` (§9.4): one summary per
+ * run, newest first, at most 20. `live` is the account's live runs plus the
+ * ones that finished in the last ten minutes — what the completion watcher
+ * needs, in one fetch instead of a poll per conversation.
+ */
+export async function listResearchRunSummaries(input: {
+  userId: string;
+  conversationId?: string | null;
+  live?: boolean;
+  limit?: number;
+}): Promise<Array<ResearchRunSummary & { goal: string; stage: string; costMicroUsd: string; sourceCount: number }>> {
+  const recent = new Date(Date.now() - RECENTLY_FINISHED_MS);
+  const rows = await prisma.researchRun.findMany({
+    where: {
+      userId: input.userId,
+      ...(input.conversationId ? { conversationId: input.conversationId } : {}),
+      ...(input.live
+        ? { OR: [{ state: { notIn: [...RESEARCH_TERMINAL_STATES] } }, { finishedAt: { gte: recent } }] }
+        : {}),
+    },
+    orderBy: { createdAt: "desc" },
+    take: Math.min(20, Math.max(1, input.limit ?? 20)),
+    select: {
+      id: true,
+      goal: true,
+      state: true,
+      plan: true,
+      conversationId: true,
+      costMicroUsd: true,
+      createdAt: true,
+      finishedAt: true,
+      assistantMessageId: true,
+      report: true,
+      _count: { select: { sources: true } },
+    },
+  });
+  // The latest telling event, only for runs still investigating — the one
+  // state whose phase (searching or reading) the row alone cannot say.
+  const investigating = rows.filter((row) => row.state === "investigating").map((row) => row.id);
+  const latestByRun = new Map<string, LatestPhaseEvent>();
+  await Promise.all(
+    investigating.map(async (runId) => {
+      const event = await prisma.researchEvent.findFirst({
+        where: { runId, userId: input.userId, kind: { in: [...PHASE_EVENT_KINDS] } },
+        orderBy: { seq: "desc" },
+        select: { kind: true, payload: true },
+      });
+      if (event) {
+        latestByRun.set(runId, {
+          kind: event.kind,
+          payload: event.payload && typeof event.payload === "object" && !Array.isArray(event.payload) ? (event.payload as Record<string, unknown>) : {},
+        });
+      }
+    })
+  );
+  return rows.map((row) => {
+    const state = isResearchState(row.state) ? row.state : "failed";
+    return {
+      ...summaryOf({
+        id: row.id,
+        conversationId: row.conversationId,
+        state,
+        plan: parsePlan(row.plan),
+        goal: row.goal,
+        createdAt: row.createdAt,
+        finishedAt: row.finishedAt,
+        assistantMessageId: row.assistantMessageId,
+        hasReport: !!row.report?.trim(),
+        latest: latestByRun.get(row.id) ?? null,
+      }),
+      // The pre-rework row's fields, kept so an older client's list still reads.
+      goal: row.goal,
+      stage: stageForState(state),
+      costMicroUsd: row.costMicroUsd.toString(),
+      sourceCount: row._count.sources,
+    };
+  });
+}
+
 /**
  * A run and everything since a cursor, in one round trip.
  *
@@ -816,14 +1193,17 @@ export async function readResearchRun(input: {
   const store = createPrismaResearchStore();
   const run = await store.loadRun(input.runId, input.userId);
   if (!run) return null;
-  const [events, sources, auditEvent, latestEvent] = await Promise.all([
+  const [events, sources, auditEvent, latestEvent, phaseEvent, findings] = await Promise.all([
     store.readEvents({
       runId: run.id,
       userId: run.userId,
       after: Math.max(0, input.after ?? 0),
       limit: Math.min(500, Math.max(1, input.limit ?? 200)),
     }),
-    store.listSources(run.id, run.userId),
+    // Whether each source was read, without loading a single snapshot
+    // (research-UI bug 14): the poll used to pull every page body on every
+    // tick to compute one boolean per row.
+    listSourcesForView(run.id, run.userId),
     // The caller's cursor may be past the audit event. Read the latest audit
     // independently so a reconnect still shows the durable verification
     // receipt instead of silently dropping it from the run header.
@@ -836,9 +1216,60 @@ export async function readResearchRun(input: {
       where: { runId: run.id, userId: run.userId },
       _max: { seq: true },
     }),
+    prisma.researchEvent.findFirst({
+      where: { runId: run.id, userId: run.userId, kind: { in: [...PHASE_EVENT_KINDS] } },
+      orderBy: { seq: "desc" },
+      select: { kind: true, payload: true },
+    }),
+    prisma.researchFinding.findMany({
+      where: { runId: run.id, userId: run.userId },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: { id: true, workerId: true, round: true, objectiveId: true, sourceId: true, claim: true, quote: true, locator: true, confidence: true, createdAt: true, source: { select: { url: true } } },
+    }),
   ]);
   const plan = parsePlan(run.plan);
   const state = isResearchState(run.state) ? run.state : "failed";
+  const now = new Date();
+  const latest: LatestPhaseEvent | null = phaseEvent
+    ? {
+        kind: phaseEvent.kind,
+        payload:
+          phaseEvent.payload && typeof phaseEvent.payload === "object" && !Array.isArray(phaseEvent.payload)
+            ? (phaseEvent.payload as Record<string, unknown>)
+            : {},
+      }
+    : null;
+  const phase = researchPhaseFor(state, latest, !!run.report?.trim());
+  const readCount = sources.filter((source) => source.read).length;
+  const cited = run.report ? citationOrder([run.report]).filter((n) => n >= 1 && n <= readCount).length : 0;
+  const leadId = plan.envelope?.leadModel || null;
+  const additions: ResearchRunViewAdditions = {
+    title: runTitleOf(plan, run.goal),
+    scope: plan.scope ?? null,
+    estimate: estimateOf(plan),
+    estimateCaps: state === "awaiting_plan_confirmation" ? plan.estimateCaps ?? null : null,
+    language: plan.language ?? null,
+    questions: questionViews(plan, state),
+    clarifications: clarificationViews(plan),
+    counts: countsOf({ plan, sources, cited }),
+    phase,
+    phaseDetail: phaseDetailFor(phase, latest),
+    workingMs: workingMsOf(run, plan, now),
+    assistantMessageId: run.assistantMessageId ?? null,
+    leadModel: leadId ? { id: leadId, label: MODEL_LIST.find((model) => model.id === leadId)?.name ?? leadId } : null,
+    latestFindings: latestFindingsOf(
+      findings.map((finding) => ({ ...finding, url: finding.source?.url ?? "" })),
+      sources
+    ),
+    spend: {
+      microUsd: run.costMicroUsd.toString(),
+      ceilingMicroUsd: run.budgetMicroUsd === null ? null : run.budgetMicroUsd.toString(),
+    },
+    steering: plan.steering ?? [],
+    revising: revisingOf(plan, now),
+    finishRequested: !!plan.finishRequestedAt,
+  };
   const auditPayload = auditEvent?.payload;
   const auditSummary =
     auditPayload && typeof auditPayload === "object" && !Array.isArray(auditPayload)
@@ -854,6 +1285,7 @@ export async function readResearchRun(input: {
       : null;
   return {
     run: {
+      ...additions,
       id: run.id,
       conversationId: run.conversationId,
       goal: run.goal,
@@ -882,7 +1314,9 @@ export async function readResearchRun(input: {
         coverage: plan.coverage ?? [],
         conflicts: plan.conflicts ?? [],
         followUpRound: plan.followUpRound ?? 0,
-        effort: plan.effort ?? null,
+        // Null for every run sized by scope (§9.4): the stored tier exists only
+        // for the previous build, and no web component ever shows a depth.
+        effort: dtoEffort(plan),
       },
       auditSummary,
       reportRevision: run.reportRevision ?? 0,
@@ -897,7 +1331,7 @@ export async function readResearchRun(input: {
         id: source.id,
         url: source.url,
         title: source.title,
-        read: !!source.snapshot,
+        read: source.read,
         contentHash: source.contentHash,
         fetchedAt: source.fetchedAt.toISOString(),
         publishedAt: source.publishedAt?.toISOString() ?? null,
@@ -946,10 +1380,24 @@ export function driveResearchInBackground(input: {
     .drive({
       runId: input.runId,
       userId: input.userId,
-      workerId: input.workerId ?? `research-web:${input.runId}:${Date.now()}`,
+      // Stable per run (B1): a nudge after a gate reclaims a lease its own
+      // earlier drive held, instead of waiting two minutes for it to lapse.
+      workerId: input.workerId ?? researchWebOwner(input.runId),
     })
     .catch((e: unknown) => {
       console.error("[research] background drive failed", { runId: input.runId, error: e });
+    });
+}
+
+/**
+ * Reruns the planner for a `revise` at the scope card (§9.4), in the
+ * background: the card shows `revising` until the new plan lands.
+ */
+export function reviseResearchPlanInBackground(input: { runId: string; userId: string }): void {
+  void researchEngine()
+    .revisePlan({ runId: input.runId, userId: input.userId })
+    .catch((e: unknown) => {
+      console.error("[research] background revision failed", { runId: input.runId, error: e });
     });
 }
 

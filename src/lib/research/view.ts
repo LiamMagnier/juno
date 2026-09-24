@@ -1,0 +1,257 @@
+/**
+ * The run as the API shows it (SPEC §9.4): the rework's DTO additions,
+ * derived from the plan, the rows and the latest events. Pure — `run.ts`
+ * reads the database and hands the facts here — so the phase table, the
+ * counts and the clocks are tested without Postgres.
+ */
+
+import {
+  isTerminalResearchState,
+  planIsConfirmed,
+  planIsRevising,
+  type ResearchPlan,
+  type ResearchState,
+} from "@/lib/research/domain";
+import { estimateFor } from "@/lib/research/estimate";
+import type { ResearchFindingRow } from "@/lib/research/agents/protocol";
+import type {
+  ResearchClarificationView,
+  ResearchEstimate,
+  ResearchFinding,
+  ResearchPhase,
+  ResearchQuestionStatus,
+  ResearchQuestionView,
+  ResearchRunCounts,
+  ResearchRunSummary,
+} from "@/types/research";
+
+/** The event kinds that say what an investigating run is doing right now. */
+export const PHASE_EVENT_KINDS = ["query_issued", "follow_up_scheduled", "source_read", "passages_extracted", "worker_spawned"] as const;
+
+export interface LatestPhaseEvent {
+  kind: string;
+  payload: Record<string, unknown>;
+}
+
+/**
+ * The phase from the state and the latest telling event (§9.11.1): the
+ * client maps it to a glyph and a line with one table. A partially completed
+ * run that delivered its report is `done`; one that did not, `stopped`.
+ */
+export function researchPhaseFor(state: string, latest: LatestPhaseEvent | null, hasReport: boolean): ResearchPhase {
+  switch (state as ResearchState) {
+    case "accepted":
+    case "clarifying":
+    case "awaiting_clarification":
+    case "planning":
+      return "planning";
+    case "awaiting_plan_confirmation":
+      return "awaiting_start";
+    case "investigating":
+    case "awaiting_user_input":
+      return latest && (latest.kind === "source_read" || latest.kind === "passages_extracted") ? "reading" : "searching";
+    case "reviewing":
+      return "reviewing";
+    case "synthesizing":
+      return "writing";
+    case "validating_citations":
+      return "checking";
+    case "paused":
+      return "paused";
+    case "completed":
+      return "done";
+    case "partially_completed":
+      return hasReport ? "done" : "stopped";
+    case "cancelled":
+      return "stopped";
+    case "failed":
+    default:
+      return "failed";
+  }
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+/** What the phase sentence names: the query being searched, or the site being read. */
+export function phaseDetailFor(phase: ResearchPhase, latest: LatestPhaseEvent | null): { query?: string; domain?: string } | null {
+  if (!latest) return null;
+  if (phase === "searching") {
+    const query =
+      typeof latest.payload.query === "string"
+        ? latest.payload.query
+        : Array.isArray(latest.payload.queries) && typeof latest.payload.queries[0] === "string"
+          ? latest.payload.queries[0]
+          : "";
+    return query ? { query: query.replace(/\s+/g, " ").trim().slice(0, 200) } : null;
+  }
+  if (phase === "reading" && typeof latest.payload.url === "string") {
+    const domain = hostOf(latest.payload.url);
+    return domain ? { domain } : null;
+  }
+  return null;
+}
+
+const QUESTION_STATUS: Record<string, ResearchQuestionStatus> = {
+  covered: "covered",
+  partially_covered: "partial",
+  blocked: "thin",
+};
+
+/** The plan's questions with their status for the panel (§9.4). */
+export function questionViews(plan: ResearchPlan, state: string): ResearchQuestionView[] {
+  const working = state === "investigating" || state === "reviewing";
+  return plan.objectives.map((objective) => {
+    const mapped = QUESTION_STATUS[objective.status];
+    const status: ResearchQuestionStatus =
+      mapped ??
+      (isTerminalResearchState(state) || state === "synthesizing" || state === "validating_citations"
+        ? "thin"
+        : working
+          ? "searching"
+          : "pending");
+    return {
+      id: objective.id,
+      question: objective.question,
+      ...(objective.rationale ? { rationale: objective.rationale } : {}),
+      status,
+    };
+  });
+}
+
+export function clarificationViews(plan: ResearchPlan): ResearchClarificationView[] {
+  const answers = plan.clarificationAnswers ?? {};
+  return (plan.clarifications ?? []).map((clarification) => ({
+    id: clarification.id,
+    question: clarification.question,
+    ...(clarification.suggestions?.length ? { options: clarification.suggestions } : {}),
+    ...(answers[clarification.id] ? { answer: answers[clarification.id] } : {}),
+  }));
+}
+
+/** Pages the run fetched: the sweep's plus every recorded round's. */
+export function pagesReadOf(plan: ResearchPlan): number {
+  return (plan.seedPagesRead ?? 0) + (plan.rounds ?? []).reduce((total, round) => total + round.pagesRead, 0);
+}
+
+/**
+ * Working time (§9.4): from creation to now (or the finish), less the time
+ * the plan waited at the gate for a person and less every pause (B13).
+ */
+export function workingMsOf(
+  run: { createdAt: Date; finishedAt: Date | null; state: string },
+  plan: ResearchPlan,
+  now: Date
+): number {
+  const end = run.finishedAt ?? now;
+  let working = end.getTime() - run.createdAt.getTime();
+  const drafted = plan.draftedAt ? Date.parse(plan.draftedAt) : NaN;
+  if (Number.isFinite(drafted)) {
+    const confirmed = plan.confirmedAt ? Date.parse(plan.confirmedAt) : NaN;
+    // Still at the gate: the clock stopped when the card appeared.
+    const gateEnd = planIsConfirmed(plan) && Number.isFinite(confirmed) ? confirmed : end.getTime();
+    if (gateEnd > drafted) working -= gateEnd - drafted;
+  }
+  working -= plan.pausedMs ?? 0;
+  const pausedAt = plan.pausedAt ? Date.parse(plan.pausedAt) : NaN;
+  if (Number.isFinite(pausedAt)) working -= Math.max(0, end.getTime() - pausedAt);
+  return Math.max(0, Math.round(working));
+}
+
+/** The estimate line's figures: the frozen envelope's, else recomputed from the card's scope and caps. */
+export function estimateOf(plan: ResearchPlan): ResearchEstimate | null {
+  if (plan.envelope) return plan.envelope.estimate;
+  if (plan.scope && plan.estimateCaps) return estimateFor(plan.scope, plan.estimateCaps);
+  return null;
+}
+
+/** One count vocabulary (§9.4): found → read → cited, and the work behind them. */
+export function countsOf(input: {
+  plan: ResearchPlan;
+  sources: ReadonlyArray<{ read: boolean }>;
+  cited: number;
+}): ResearchRunCounts {
+  return {
+    found: input.sources.length,
+    read: input.sources.filter((source) => source.read).length,
+    cited: input.cited,
+    searches: (input.plan.issuedQueries?.length ?? 0) + (input.plan.workerQueries?.length ?? 0),
+    pages: pagesReadOf(input.plan),
+  };
+}
+
+/** The five newest findings, with the page each quotes (§9.4 "Found so far"). */
+export function latestFindingsOf(
+  findings: readonly ResearchFindingRow[],
+  sources: ReadonlyArray<{ id: string; url: string; title: string }>
+): ResearchFinding[] {
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  return [...findings]
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .slice(0, 5)
+    .map((finding) => {
+      const source = finding.sourceId ? byId.get(finding.sourceId) : undefined;
+      return {
+        id: finding.id,
+        claim: finding.claim,
+        quote: finding.quote,
+        url: source?.url ?? finding.url,
+        title: source?.title ?? hostOf(finding.url),
+      };
+    });
+}
+
+/**
+ * The DTO's `plan.effort` (§9.4): null for every run sized by scope, so no
+ * web component ever sees "deep" or "max". The stored value exists only for
+ * the previous build (INV-22).
+ */
+export function dtoEffort<T>(plan: ResearchPlan & { effort?: T }): T | null {
+  if (plan.envelope || plan.scope) return null;
+  return plan.effort ?? null;
+}
+
+export function revisingOf(plan: ResearchPlan, now: Date): boolean {
+  return planIsRevising(plan, now);
+}
+
+/** A title for a list row: the report's, else the planner's, else the goal's first line. */
+export function runTitleOf(plan: ResearchPlan, goal: string): string | null {
+  if (plan.title) return plan.title;
+  const line = goal.split("\n")[0]?.trim() ?? "";
+  return line ? line.slice(0, 80) : null;
+}
+
+/** One row of `GET /api/research?conversationId=` and `?live=1` (§9.4). */
+export function summaryOf(input: {
+  id: string;
+  conversationId: string | null;
+  state: string;
+  plan: ResearchPlan;
+  goal: string;
+  createdAt: Date;
+  finishedAt: Date | null;
+  assistantMessageId: string | null;
+  hasReport: boolean;
+  latest: LatestPhaseEvent | null;
+}): ResearchRunSummary {
+  return {
+    id: input.id,
+    conversationId: input.conversationId,
+    state: input.state as ResearchRunSummary["state"],
+    phase: researchPhaseFor(input.state, input.latest, input.hasReport),
+    title: runTitleOf(input.plan, input.goal),
+    createdAt: input.createdAt.toISOString(),
+    finishedAt: input.finishedAt?.toISOString() ?? null,
+    live: !isTerminalResearchState(input.state),
+    assistantMessageId: input.assistantMessageId,
+  };
+}
+
+/** How recently a finished run still counts as "live" for `?live=1`: ten minutes (§9.4). */
+export const RECENTLY_FINISHED_MS = 10 * 60_000;

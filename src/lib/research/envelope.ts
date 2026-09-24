@@ -37,7 +37,8 @@ export type { ResearchEnvelope, ResearchEstimateCaps, ResearchScope } from "@/ty
 
 export type ResearchBudgetRefusal = {
   refused: true;
-  reason: "plan" | "live_runs" | "daily_starts" | "budget";
+  /** `not_configured`: no model the plan's lead class allows is configured (§9.5.1). Additive. */
+  reason: "plan" | "live_runs" | "daily_starts" | "budget" | "not_configured";
   /** Copy params for the refusal line, e.g. share left and reset time. */
   params: Record<string, string | number>;
 };

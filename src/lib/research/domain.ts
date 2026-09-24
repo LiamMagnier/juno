@@ -1042,6 +1042,8 @@ export interface ResearchPlan {
   pausedFrom?: string;
   /** The writer's cited summary, kept beside the report until the completion message is written (§9.6.3). */
   summary?: string;
+  /** The chat's selected model, preferred as the lead when the plan's class allows it (§9.5.1). */
+  preferredLead?: string;
   /** Paused time so far, which the clocks do not count (B13). */
   pausedMs?: number;
 }
@@ -1614,6 +1616,7 @@ function parseReworkFields(raw: Record<string, unknown>): Partial<ResearchPlan> 
     ...(isoOrUndefined(raw.pausedAt) ? { pausedAt: isoOrUndefined(raw.pausedAt) } : {}),
     ...(typeof raw.pausedFrom === "string" && isResearchState(raw.pausedFrom) ? { pausedFrom: raw.pausedFrom } : {}),
     ...(typeof raw.summary === "string" && raw.summary.trim() ? { summary: raw.summary.trim().slice(0, MAX_PLAN_SUMMARY_CHARS) } : {}),
+    ...(oneLine(raw.preferredLead, 120) ? { preferredLead: oneLine(raw.preferredLead, 120) } : {}),
     ...(typeof raw.pausedMs === "number" && Number.isFinite(raw.pausedMs) && raw.pausedMs > 0
       ? { pausedMs: Math.floor(raw.pausedMs) }
       : {}),

@@ -163,5 +163,6 @@ test("tools.ts packs the corpus, timeboxes the writer and asks for the structure
   assert.match(tools, /packCorpus\(/);
   assert.match(tools, /writerCorpusBudgetTokens\(/);
   assert.match(tools, /timeboxSignal\(signal, timeoutMs \?\? WRITER_TIMEBOX_DEFAULT_MS\)/);
-  assert.match(tools, /reportWriterContract/);
+  assert.match(tools, /contract: "report"/);
+  assert.match(readSource("src/lib/research/corpus.ts"), /reportWriterContract\(/);
 });

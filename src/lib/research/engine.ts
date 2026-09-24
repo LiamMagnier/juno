@@ -187,6 +187,8 @@ export interface ResearchRunRow {
   workerLeaseOwner?: string | null;
   workerLeaseUntil?: Date | null;
   lastHeartbeatAt?: Date | null;
+  /** The completion message this run wrote (§9.6.3). Absent on stores that do not keep it. */
+  assistantMessageId?: string | null;
 }
 export interface ResearchSourceRow {
   id: string;
@@ -1300,6 +1302,8 @@ export interface StartRunInput {
   locale?: string | null;
   /** The explicit response-language setting, when it is not "auto" (D-1 option C). */
   language?: string | null;
+  /** The chat's selected model, preferred as the lead when the plan's class allows it (§9.5.1). */
+  preferredModel?: string | null;
 }
 
 export type ControlReason =
@@ -4177,6 +4181,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         ...(input.locale ? { locale: input.locale } : {}),
         ...(input.context?.trim() ? { context: input.context.slice(0, MAX_PLAN_CONTEXT_CHARS) } : {}),
         ...(explicitLanguage && explicitLanguage !== "auto" ? { language: explicitLanguage } : {}),
+        ...(input.preferredModel ? { preferredLead: input.preferredModel } : {}),
       };
       const created = await store.createRun({
         userId: input.userId,
