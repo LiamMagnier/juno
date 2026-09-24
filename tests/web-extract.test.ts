@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import test from "node:test";
 
@@ -347,4 +349,12 @@ test("extractUrlDocument: its own deadline is `timeout`, distinct from the calle
   const outcome = await cancelled;
   assert.equal(outcome.ok, false);
   assert.notEqual(!outcome.ok && outcome.failure.reason, "timeout");
+});
+
+test("the extractor modules keep server-only out of a test's import graph (harness rule 1)", () => {
+  for (const file of ["src/lib/web/html-text.ts", "src/lib/web/extract.ts"]) {
+    const source = readFileSync(path.join(process.cwd(), file), "utf8");
+    assert.doesNotMatch(source, /^import "server-only";/m, file);
+    assert.doesNotMatch(source, /^import [^;]*from "@\/lib\/(search\/search-engine|web-search|prisma|db)";/m, file);
+  }
 });

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import * as http from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
@@ -274,4 +276,12 @@ test("chat fetches keep to ports 80 and 443 and off Juno's own hosts", () => {
     ["https://CHAT.JUNO.EXAMPLE./", "own_origin"],
   ];
   for (const [url, reason] of refused) assert.equal(chatFetchBlockReason(url, OWN), reason, url);
+});
+
+test("the transport modules keep server-only out of a test's import graph (harness rule 1)", () => {
+  for (const file of ["src/lib/search/pinned-fetch.ts", "src/lib/search/fetch-safe.ts", "src/lib/web/extract.ts", "src/lib/web/url-guard.ts"]) {
+    const source = readFileSync(path.join(process.cwd(), file), "utf8");
+    assert.doesNotMatch(source, /^import "server-only";/m, file);
+    assert.doesNotMatch(source, /^import [^;]*from "@\/lib\/(search\/search-engine|web-search|prisma|db)";/m, file);
+  }
 });

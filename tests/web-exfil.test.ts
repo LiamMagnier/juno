@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -168,4 +170,12 @@ test("renderCitation wraps each citation chip, and only resolvable ones", () => 
   assert.match(html, /data-card="2"/);
   assert.doesNotMatch(html, /data-card="9"/);
   assert.match(html, /\[9\]/, "an index past the list stays literal text");
+});
+
+test("the exfiltration rules keep server-only out of a test's import graph (harness rule 1)", () => {
+  for (const file of ["src/lib/web/image-policy.ts", "src/lib/web/url-guard.ts", "src/components/chat/markdown.tsx"]) {
+    const source = readFileSync(path.join(process.cwd(), file), "utf8");
+    assert.doesNotMatch(source, /^import "server-only";/m, file);
+    assert.doesNotMatch(source, /^import [^;]*from "@\/lib\/(search\/search-engine|web-search|prisma|db)";/m, file);
+  }
 });

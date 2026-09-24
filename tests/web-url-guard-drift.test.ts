@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 import { blockedFetchAddress, blockedFetchTarget } from "../runner/agent-core/src/work/tools.js";
@@ -84,4 +86,12 @@ test("public addresses stay reachable", () => {
     assert.equal(isDisallowedAddress(address), false, address);
   }
   assert.equal(isDisallowedAddress("not-an-ip"), true, "a resolver answer that is not an address is refused");
+});
+
+test("the SSRF classifier keeps server-only out of a test's import graph (harness rule 1)", () => {
+  for (const file of ["src/lib/search/url-safety.ts"]) {
+    const source = readFileSync(path.join(process.cwd(), file), "utf8");
+    assert.doesNotMatch(source, /^import "server-only";/m, file);
+    assert.doesNotMatch(source, /^import [^;]*from "@\/lib\/(search\/search-engine|web-search|prisma|db)";/m, file);
+  }
 });
