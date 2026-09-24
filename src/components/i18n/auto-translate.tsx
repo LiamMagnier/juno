@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
+import { filterMutations, isExcludedFromTranslation, type MutationRecordLike } from "@/lib/auto-translate-filter";
 import { directionOf, languageOf, localeFromAcceptLanguage } from "@/lib/i18n";
+import { setUiLocale } from "@/lib/i18n-format";
+import { loadCatalog, translationStore, type CatalogItem } from "@/lib/i18n-phrase";
 
-type CatalogItem = { id: string; source: string };
-
-/**
+/*
  * THE CATALOG IS NOT IN THIS BUNDLE ANY MORE.
  *
  * `UI_TRANSLATION_CATALOG` is 4,644 generated entries — ~326 KB raw, ~131 KB
@@ -19,32 +20,31 @@ type CatalogItem = { id: string; source: string };
  * because a module-scope `new Map(...)` runs on import and an import runs
  * whatever the component decides afterwards.
  *
- * Now it is fetched with `await import()` on the far side of that bail-out.
- * A reader who needs translation waits one extra chunk — on a path that is
- * already about to make network calls for the translations themselves — and
- * everyone else never sees it at all.
+ * Now it is fetched with `await import()` on the far side of that bail-out
+ * (`loadCatalog`, which lives with the phrase runtime so `<Phrase>` shares the
+ * one fetch). A reader who needs translation waits one extra chunk — on a path
+ * that is already about to make network calls for the translations themselves
+ * — and everyone else never sees it at all.
+ *
+ * The translations themselves live in `translationStore` (the same module),
+ * which this component used to keep as a private map: the DOM walker below
+ * and the phrase runtime now read, request and cache through one store, so a
+ * string is fetched once whichever of them saw it first.
  */
-let catalogPromise: Promise<{ sourceCatalog: Map<string, CatalogItem>; knownIds: Set<string> }> | null = null;
-function loadCatalog() {
-  catalogPromise ??= import("@/lib/i18n-catalog.generated").then((m) => ({
-    sourceCatalog: new Map<string, CatalogItem>(m.UI_TRANSLATION_CATALOG.map((item) => [item.source, item])),
-    knownIds: new Set<string>(m.UI_TRANSLATION_CATALOG.map((item) => item.id)),
-  }));
-  return catalogPromise;
-}
+export { loadCatalog, translationStore } from "@/lib/i18n-phrase";
+
 const TRANSLATABLE_ATTRIBUTES = ["aria-label", "alt", "placeholder", "title"] as const;
-const EXCLUDED_SELECTOR = [
-  "[data-no-auto-translate]",
-  "[translate='no']",
-  "[contenteditable='true']",
-  "code",
-  "pre",
-  "script",
-  "style",
-  "svg",
-  "math",
-  "textarea",
-].join(",");
+
+/** A scan is scheduled this long after the mutation that asked for it. */
+const SCAN_DELAY_MS = 20;
+/**
+ * While anything on the page is `aria-busy` (a streaming answer, a run
+ * block), scans are at most four a second: a token stream mutates the DOM
+ * dozens of times a second and none of it is translatable.
+ */
+const BUSY_SCAN_INTERVAL_MS = 250;
+/** Past this many dirty roots, one full walk is cheaper than sorting them out. */
+const MAX_DIRTY_ROOTS = 200;
 
 function splitWhitespace(value: string): { before: string; core: string; after: string } {
   const before = /^\s*/.exec(value)?.[0] ?? "";
@@ -56,27 +56,19 @@ function splitWhitespace(value: string): { before: string; core: string; after: 
   };
 }
 
-function excluded(element: Element | null): boolean {
-  return Boolean(element?.closest(EXCLUDED_SELECTOR));
-}
-
-/**
+/*
  * A textarea's *content* is whatever the user typed and must never be
  * translated — but its `placeholder` is UI copy and should be. Sharing one
  * exclusion list between the text walk and the attribute pass meant no textarea
  * placeholder in the app was ever translated, including the composer's
- * "Message Juno…", which sat in the catalog untranslated the whole time.
- *
- * Everything else on the list either has no meaningful translatable attribute
- * (script, style, code, pre) or is opted out on purpose in both senses
- * ([translate='no'], [data-no-auto-translate], contenteditable).
+ * "Message Juno…", which sat in the catalog untranslated the whole time. The
+ * two decisions are `isExcludedFromTranslation(el)` and
+ * `isExcludedFromTranslation(el, "attributes")` (auto-translate-filter.ts).
  */
-const ATTRIBUTE_EXCLUDED_SELECTOR = EXCLUDED_SELECTOR.split(",")
-  .filter((sel) => sel !== "textarea")
-  .join(",");
 
-function excludedForAttributes(element: Element | null): boolean {
-  return Boolean(element?.closest(ATTRIBUTE_EXCLUDED_SELECTOR));
+/** The roots none of whose ancestors is also a root: walking those covers the rest. */
+function outermost(roots: readonly Node[]): Node[] {
+  return roots.filter((root) => !roots.some((other) => other !== root && other.contains(root)));
 }
 
 /**
@@ -100,8 +92,10 @@ export function AutoTranslate({ locale, autoDetect = true }: { locale: string; a
 
     // Set before the English bail-out: switching back to English must clear a
     // previous locale's lang/dir rather than leave the document mislabelled.
+    // The phrase runtime and every Intl formatter follow the same locale.
     document.documentElement.lang = activeLocale;
     document.documentElement.dir = directionOf(activeLocale);
+    setUiLocale(activeLocale);
     if (languageOf(activeLocale) === "en") return;
 
     // Everything from here on needs the catalog, so it is fetched once and the
@@ -109,154 +103,150 @@ export function AutoTranslate({ locale, autoDetect = true }: { locale: string; a
     // the await: an unmount during the fetch must not start a scanner.
     let cancelled = false;
     let teardown: (() => void) | null = null;
-    void loadCatalog().then(({ sourceCatalog, knownIds }) => {
+    void loadCatalog().then(({ sourceCatalog }) => {
       if (cancelled) return;
-      teardown = start(sourceCatalog, knownIds);
+      teardown = start(sourceCatalog);
     });
     return () => {
       cancelled = true;
       teardown?.();
     };
 
-    function start(sourceCatalog: Map<string, CatalogItem>, knownIds: Set<string>) {
-    const storageKey = `juno:ui-translations:${activeLocale}:v1`;
-    const translations = new Map<string, string>();
-    const pending = new Set<string>();
-    // Permanent: the model had nothing usable for this id, so retrying is waste.
-    const failed = new Set<string>();
-    // Transient (429/5xx): ids stay missing and are retried after this deadline.
-    // Marking a throttled chunk `failed` stranded it for the effect's lifetime,
-    // leaving the page permanently half-translated.
-    let retryAfter = 0;
-
-    try {
-      const stored = JSON.parse(localStorage.getItem(storageKey) ?? "{}") as Record<string, unknown>;
-      for (const [id, value] of Object.entries(stored)) {
-        if (knownIds.has(id) && typeof value === "string") {
-          translations.set(id, value);
-        }
-      }
-    } catch {
-      localStorage.removeItem(storageKey);
-    }
-
+    function start(sourceCatalog: Map<string, CatalogItem>) {
     let stopped = false;
     let scanTimer: ReturnType<typeof setTimeout> | null = null;
     // When the pending scanTimer will fire, so a sooner request can preempt it.
     let scanAt = Number.POSITIVE_INFINITY;
+    let lastScanAt = 0;
+    // The first scan, and the one after a translation batch lands, walk the
+    // whole page; every other scan walks only what changed.
+    let fullScan = true;
+    const dirty = new Set<Node>();
 
-    const persist = () => {
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(Object.fromEntries(translations)));
-      } catch {
-        // Storage may be disabled/private; the CDN + in-memory server cache still help.
+    const wanted = (id: string) => !translationStore.isPending(id) && !translationStore.isFailed(id);
+
+    const translateText = (textNode: Text, missing: Set<string>) => {
+      if (!textNode.nodeValue) return;
+      const { before, core, after } = splitWhitespace(textNode.nodeValue);
+      const item = sourceCatalog.get(core);
+      if (!item) return;
+      const translated = translationStore.get(item.id);
+      if (translated && translated !== core) textNode.nodeValue = `${before}${translated}${after}`;
+      else if (!translated && wanted(item.id)) missing.add(item.id);
+    };
+
+    const translateAttributes = (element: Element, missing: Set<string>) => {
+      for (const attribute of TRANSLATABLE_ATTRIBUTES) {
+        const value = element.getAttribute(attribute);
+        if (!value) continue;
+        const item = sourceCatalog.get(value.replace(/\s+/g, " ").trim());
+        if (!item) continue;
+        const translated = translationStore.get(item.id);
+        if (translated && translated !== value) element.setAttribute(attribute, translated);
+        else if (!translated && wanted(item.id)) missing.add(item.id);
       }
     };
 
-    const requestChunk = async (ids: string[]) => {
-      ids.forEach((id) => pending.add(id));
-      try {
-        const params = new URLSearchParams({ locale: activeLocale, ids: [...ids].sort().join(",") });
-        const res = await fetch(`/api/i18n/translations?${params}`, { credentials: "same-origin" });
-        // Throttled, or the model walk is down — both recover on their own, so
-        // leave these ids missing rather than burning them.
-        if (res.status === 429 || res.status >= 500) {
-          retryAfter = Date.now() + (res.status === 429 ? 5 * 60_000 : 30_000);
-          return;
-        }
-        if (!res.ok) throw new Error(`translation request failed (${res.status})`);
-        const data = (await res.json()) as { translations?: Record<string, unknown> };
-        for (const id of ids) {
-          const value = data.translations?.[id];
-          if (typeof value === "string" && value.trim()) translations.set(id, value.trim());
-          else failed.add(id);
-        }
-        persist();
-      } catch {
-        ids.forEach((id) => failed.add(id));
-      } finally {
-        ids.forEach((id) => pending.delete(id));
+    /**
+     * One pass over `root`: text and attributes together, and an excluded
+     * subtree is pruned whole (FILTER_REJECT) instead of walked and then
+     * skipped node by node — a streaming answer or a run clock is never
+     * entered at all.
+     */
+    const walk = (root: Node, missing: Set<string>) => {
+      if (root.nodeType === Node.TEXT_NODE) {
+        if (!isExcludedFromTranslation(root.parentElement)) translateText(root as Text, missing);
+        return;
       }
-    };
-
-    const applyAndCollect = (root: Element): string[] => {
-      const missing = new Set<string>();
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      let node = walker.nextNode();
-      while (node) {
-        const textNode = node as Text;
-        const parent = textNode.parentElement;
-        if (!excluded(parent) && textNode.nodeValue) {
-          const { before, core, after } = splitWhitespace(textNode.nodeValue);
-          const item = sourceCatalog.get(core);
-          if (item) {
-            const translated = translations.get(item.id);
-            if (translated && translated !== core) textNode.nodeValue = `${before}${translated}${after}`;
-            else if (!pending.has(item.id) && !failed.has(item.id)) missing.add(item.id);
-          }
-        }
-        node = walker.nextNode();
-      }
-
-      const elements = [root, ...root.querySelectorAll("*")];
-      for (const element of elements) {
-        if (excludedForAttributes(element)) continue;
-        for (const attribute of TRANSLATABLE_ATTRIBUTES) {
-          const value = element.getAttribute(attribute);
-          if (!value) continue;
-          const item = sourceCatalog.get(value.replace(/\s+/g, " ").trim());
-          if (!item) continue;
-          const translated = translations.get(item.id);
-          if (translated && translated !== value) element.setAttribute(attribute, translated);
-          else if (!pending.has(item.id) && !failed.has(item.id)) missing.add(item.id);
-        }
-      }
-      return [...missing];
+      if (root.nodeType !== Node.ELEMENT_NODE) return;
+      const element = root as Element;
+      if (!isExcludedFromTranslation(element, "attributes")) translateAttributes(element, missing);
+      if (isExcludedFromTranslation(element)) return;
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          if (node.nodeType !== Node.ELEMENT_NODE) return NodeFilter.FILTER_ACCEPT;
+          const child = node as Element;
+          // Collected in the same pass. A textarea is pruned for its text
+          // (what the user typed) but its placeholder is UI copy.
+          if (!isExcludedFromTranslation(child, "attributes")) translateAttributes(child, missing);
+          return isExcludedFromTranslation(child) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
+        },
+      });
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) translateText(node as Text, missing);
     };
 
     const scan = async () => {
       scanTimer = null;
       scanAt = Number.POSITIVE_INFINITY;
       if (stopped) return;
-      const missing = applyAndCollect(document.body);
-      if (!missing.length) return;
-      const cooldown = retryAfter - Date.now();
+      lastScanAt = Date.now();
+      const missing = new Set<string>();
+      if (fullScan || dirty.size > MAX_DIRTY_ROOTS) {
+        fullScan = false;
+        dirty.clear();
+        walk(document.body, missing);
+      } else {
+        const roots = outermost([...dirty]);
+        dirty.clear();
+        for (const root of roots) if (root.isConnected) walk(root, missing);
+      }
+      if (!missing.size) return;
+      const cooldown = translationStore.cooldownMs();
       if (cooldown > 0) {
+        fullScan = true;
         scheduleScan(cooldown);
         return;
       }
-      const chunks: string[][] = [];
-      for (let i = 0; i < missing.length; i += 30) chunks.push(missing.slice(i, i + 30));
-      await Promise.allSettled(chunks.map(requestChunk));
+      // A batch that lands notifies the store, which schedules the full scan
+      // that applies it (below).
+      await translationStore.request([...missing]);
       if (stopped) return;
-      applyAndCollect(document.body);
       // A throttled chunk left its ids missing; come back for them unprompted,
       // since a mutation may never arrive to trigger the next scan.
-      const retry = retryAfter - Date.now();
-      if (retry > 0) scheduleScan(retry);
+      const retry = translationStore.cooldownMs();
+      if (retry > 0) {
+        fullScan = true;
+        scheduleScan(retry);
+      }
     };
 
-    const scheduleScan = (delay = 20) => {
+    const scheduleScan = (delay = SCAN_DELAY_MS) => {
       if (stopped) return;
-      const at = Date.now() + delay;
+      const now = Date.now();
+      // At most four scans a second while anything streams.
+      const busy = document.querySelector('[aria-busy="true"]') !== null;
+      const wait = busy ? Math.max(delay, lastScanAt + BUSY_SCAN_INTERVAL_MS - now) : delay;
+      const at = now + wait;
       if (scanTimer) {
         // Only bail for a request that would fire no sooner than the pending one.
         // A plain `if (scanTimer) return` let the 5-minute post-429 cooldown
         // swallow every ordinary scan behind it, so DOM rendered during those
         // minutes stayed English even when its translations were already cached
         // locally. Preempting is safe: scan() applies cached strings before it
-        // consults retryAfter, so an early run issues no request and re-arms the
-        // cooldown itself.
+        // consults the cooldown, so an early run issues no request and re-arms
+        // the cooldown itself.
         if (at >= scanAt) return;
         clearTimeout(scanTimer);
       }
       scanAt = at;
-      scanTimer = setTimeout(() => void scan(), delay);
+      scanTimer = setTimeout(() => void scan(), wait);
     };
 
     scheduleScan();
-    // Wrapped: the observer would otherwise pass MutationRecord[] as `delay`.
-    const observer = new MutationObserver(() => scheduleScan());
+    // A translation batch arriving (from this walker or from a `<Phrase>`)
+    // re-walks the page once to apply it.
+    const unsubscribe = translationStore.subscribe(() => {
+      fullScan = true;
+      scheduleScan();
+    });
+    // Mutations inside an excluded subtree — every streamed token, every clock
+    // tick — are dropped here, before they can schedule anything.
+    const observer = new MutationObserver((records) => {
+      const roots = filterMutations(records as unknown as ReadonlyArray<MutationRecordLike & { target: Node; addedNodes?: ArrayLike<Node> }>);
+      if (!roots.length) return;
+      for (const root of roots) dirty.add(root);
+      scheduleScan();
+    });
     observer.observe(document.body, {
       subtree: true,
       childList: true,
@@ -268,6 +258,7 @@ export function AutoTranslate({ locale, autoDetect = true }: { locale: string; a
     // `start`'s own teardown, handed back to the effect's cleanup above.
     return () => {
       stopped = true;
+      unsubscribe();
       observer.disconnect();
       if (scanTimer) clearTimeout(scanTimer);
     };

@@ -6,12 +6,12 @@ import * as React from "react";
  * goes through here, so "12s", "1:04", "3 Oct" and "€2.50" follow the reader's
  * conventions instead of being assembled by hand.
  *
- * Pure `Intl` wrappers, safe on the server, plus one hook. An unknown or
+ * Pure `Intl` wrappers, safe on the server, plus the UI locale itself: the
+ * locale AutoTranslate resolved (the explicit setting, or the browser's when
+ * the setting is the English default), published here with `setUiLocale` so
+ * every phrase and figure on the page follows the same one. An unknown or
  * malformed locale or time zone never throws: it falls back to "en" / the
  * runtime's zone, because a formatting error must not take a row down with it.
- *
- * `useUiLocale` reads `<html lang>` until the translation store exists
- * (WS5 wires it to AutoTranslate's resolved locale).
  */
 
 const FALLBACK_LOCALE = "en";
@@ -58,17 +58,50 @@ function validTimeZone(timeZone: string | undefined): string | undefined {
 
 // ── Locale ────────────────────────────────────────────────────────────────────
 
-const subscribeLang = (onChange: () => void) => {
-  const observer = new MutationObserver(onChange);
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] });
-  return () => observer.disconnect();
-};
-const readLang = () => document.documentElement.lang || FALLBACK_LOCALE;
-const serverLang = () => FALLBACK_LOCALE;
+let uiLocale: string | null = null;
+const localeListeners = new Set<() => void>();
+
+/**
+ * Publishes the reader's resolved UI locale. AutoTranslate calls it on mount,
+ * before its English bail-out, so switching back to English is published too.
+ */
+export function setUiLocale(locale: string): void {
+  const next = localeOf(locale);
+  if (next === uiLocale) return;
+  uiLocale = next;
+  for (const listener of [...localeListeners]) listener();
+}
+
+/**
+ * The UI locale outside React: the published one, else `<html lang>`, else
+ * "en". Out-of-DOM text (the announcer, `document.title`, toasts) formats in it.
+ */
+export function getUiLocale(): string {
+  if (uiLocale) return uiLocale;
+  if (typeof document !== "undefined" && document.documentElement?.lang) return localeOf(document.documentElement.lang);
+  return FALLBACK_LOCALE;
+}
+
+export function subscribeUiLocale(listener: () => void): () => void {
+  localeListeners.add(listener);
+  return () => {
+    localeListeners.delete(listener);
+  };
+}
+
+/**
+ * A subtree that renders in another locale than the reader's: the `/dev/*`
+ * galleries' locale toggle. Nothing in the product sets it.
+ */
+export const UiLocaleOverride = React.createContext<string | null>(null);
+
+const serverLocale = () => FALLBACK_LOCALE;
 
 /** The reader's UI locale; "en" during SSR and hydration, so the first client pass matches the server. */
 export function useUiLocale(): string {
-  return React.useSyncExternalStore(subscribeLang, readLang, serverLang);
+  const override = React.useContext(UiLocaleOverride);
+  const published = React.useSyncExternalStore(subscribeUiLocale, getUiLocale, serverLocale);
+  return override ?? published;
 }
 
 // ── Numbers and money ─────────────────────────────────────────────────────────
@@ -99,8 +132,13 @@ interface DurationFormatLike {
 }
 type DurationFormatCtor = new (locale: string, options: { style: "narrow" | "long" }) => DurationFormatLike;
 
-/** Not in the TypeScript lib yet; present in every current engine. */
-const DurationFormat = (Intl as unknown as { DurationFormat?: DurationFormatCtor }).DurationFormat;
+/**
+ * Not in the TypeScript lib yet; present in every current engine, missing in
+ * older Safari. Read at call time so the fallback is testable.
+ */
+function durationFormat(): DurationFormatCtor | undefined {
+  return (Intl as unknown as { DurationFormat?: DurationFormatCtor }).DurationFormat;
+}
 
 const UNITS = [
   ["hours", "hour", 3_600],
@@ -142,6 +180,7 @@ export function formatDuration(ms: number, style: DurationStyle, locale: string)
   const nonZero = amounts.filter((part) => part.amount > 0);
   const shown = nonZero.length ? nonZero.slice(0, 2) : [amounts[2]];
 
+  const DurationFormat = durationFormat();
   if (DurationFormat && nonZero.length) {
     const format = cached("duration", at, { style }, () => new DurationFormat(at, { style }));
     return format.format(Object.fromEntries(shown.map((part) => [part.key, part.amount])));
@@ -149,6 +188,17 @@ export function formatDuration(ms: number, style: DurationStyle, locale: string)
   return shown
     .map((part) => formatNumber(part.amount, at, { style: "unit", unit: part.unit, unitDisplay: style }))
     .join(style === "long" ? ", " : " ");
+}
+
+/**
+ * A live elapsed-time figure (SPEC §7.6.2, D-6): "12s" under a minute,
+ * "1:04" from a minute. Floored to the second, so a ticking clock never runs
+ * ahead of the time it measures and the settled summary can freeze on the
+ * last value it showed.
+ */
+export function formatElapsed(ms: number, locale: string): string {
+  const floored = Math.floor((Number.isFinite(ms) && ms > 0 ? ms : 0) / 1000) * 1000;
+  return floored >= 60_000 ? formatDuration(floored, "digital", locale) : formatDuration(floored, "narrow", locale);
 }
 
 // ── Lists, clock times and dates ──────────────────────────────────────────────
