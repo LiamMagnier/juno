@@ -13,6 +13,14 @@ import { attachmentTextBudget } from "@/lib/knowledge/document-text";
 import { canInlineDocument, isPdfAttachment } from "@/lib/attachment-bytes";
 import { createLoopController } from "@/lib/llm/loop";
 import {
+  attachedFileNote,
+  attachmentUnavailableNote,
+  imageSharedEarlierNote,
+  NO_VISION_REASON,
+  scannedPdfPagesNote,
+  unreadablePdfNote,
+} from "@/lib/llm/openai-attachments.prompt";
+import {
   compatHistoryAssistantMessage,
   compatOffersTools,
   runCompatLoop,
@@ -104,7 +112,7 @@ async function toOpenAIMessages(
             image_url: { url: `data:${att.mimeType};base64,${Buffer.from(bytes).toString("base64")}` },
           });
         } else if (att.kind === "IMAGE" && IMAGE_TYPES.includes(att.mimeType) && vision && !embedBinary) {
-          parts.push({ type: "text", text: `[Image "${att.fileName}" shared earlier in the conversation.]` });
+          parts.push({ type: "text", text: imageSharedEarlierNote(att.fileName) });
         } else if (isPdfAttachment(att) && !att.extractedText && vision && embedBinary) {
           /*
            * THE ONE PLACE LOCAL RASTERISATION IS THE RIGHT ANSWER.
@@ -130,7 +138,7 @@ async function toOpenAIMessages(
           if (pages.length) {
             parts.push({
               type: "text",
-              text: `[The PDF "${att.fileName}" has no text layer, so the first ${pages.length} page${pages.length === 1 ? "" : "s"} follow as images. Read them as the document itself. Use read_document or inspect_image for anything beyond them.]`,
+              text: scannedPdfPagesNote(att.fileName, pages.length),
             });
             for (const page of pages) {
               parts.push({
@@ -141,21 +149,21 @@ async function toOpenAIMessages(
           } else {
             parts.push({
               type: "text",
-              text: `[Attached file "${att.fileName}" (${att.mimeType}) — ${pdfAttachmentFallbackNote(att.parserState)}]`,
+              text: unreadablePdfNote(att.fileName, att.mimeType, pdfAttachmentFallbackNote(att.parserState)),
             });
           }
         } else if (att.extractedText) {
           parts.push({ type: "text", text: attachedFileText(att.fileName, att.extractedText, { maxChars: textBudget }) });
         } else {
-          const note = att.mimeType === "application/pdf"
-            ? ` — ${pdfAttachmentFallbackNote(att.parserState)}`
+          const reason = att.mimeType === "application/pdf"
+            ? pdfAttachmentFallbackNote(att.parserState)
             : att.kind === "IMAGE" && !vision
-            ? " — this model cannot view images"
-            : "";
-          parts.push({ type: "text", text: `[Attached file "${att.fileName}" (${att.mimeType})${note}.]` });
+            ? NO_VISION_REASON
+            : undefined;
+          parts.push({ type: "text", text: attachedFileNote(att.fileName, att.mimeType, reason) });
         }
       } catch {
-        parts.push({ type: "text", text: `[Attachment "${att.fileName}" could not be loaded.]` });
+        parts.push({ type: "text", text: attachmentUnavailableNote(att.fileName) });
       }
     }
 

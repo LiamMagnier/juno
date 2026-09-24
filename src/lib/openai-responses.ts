@@ -17,6 +17,14 @@ import {
 } from "@/lib/attachment-bytes";
 import { createLoopController } from "@/lib/llm/loop";
 import {
+  attachedFileNote,
+  attachmentUnavailableNote,
+  imageSharedEarlierNote,
+  NO_VISION_REASON,
+  scannedPdfPagesNote,
+  unreadablePdfNote,
+} from "@/lib/llm/openai-attachments.prompt";
+import {
   runResponsesLoop,
   type ResponsesDialect,
   type ResponsesInputItem,
@@ -125,7 +133,7 @@ async function toResponsesInput(
             image_url: `data:${att.mimeType};base64,${Buffer.from(bytes).toString("base64")}`,
           });
         } else if (att.kind === "IMAGE" && IMAGE_TYPES.includes(att.mimeType) && vision && !embedBinary) {
-          parts.push({ type: "input_text", text: `[Image "${att.fileName}" shared earlier in the conversation.]` });
+          parts.push({ type: "input_text", text: imageSharedEarlierNote(att.fileName) });
         } else if (isPdfAttachment(att) && vision && embedBinary && documentBytes) {
           /*
            * `input_file` — THE PATH THAT WAS NEVER TAKEN.
@@ -165,7 +173,7 @@ async function toResponsesInput(
           if (pages.length) {
             parts.push({
               type: "input_text",
-              text: `[The PDF "${att.fileName}" has no text layer, so the first ${pages.length} page${pages.length === 1 ? "" : "s"} follow as images. Read them as the document itself. Use read_document or inspect_image for anything beyond them.]`,
+              text: scannedPdfPagesNote(att.fileName, pages.length),
             });
             for (const page of pages) {
               parts.push({
@@ -177,21 +185,21 @@ async function toResponsesInput(
           } else {
             parts.push({
               type: "input_text",
-              text: `[Attached file "${att.fileName}" (${att.mimeType}) — ${pdfAttachmentFallbackNote(att.parserState)}]`,
+              text: unreadablePdfNote(att.fileName, att.mimeType, pdfAttachmentFallbackNote(att.parserState)),
             });
           }
         } else if (att.extractedText) {
           parts.push({ type: "input_text", text: attachedFileText(att.fileName, att.extractedText, { maxChars: attachmentTextMaxChars }) });
         } else {
-          const note = att.mimeType === "application/pdf"
-            ? ` — ${pdfAttachmentFallbackNote(att.parserState)}`
+          const reason = att.mimeType === "application/pdf"
+            ? pdfAttachmentFallbackNote(att.parserState)
             : att.kind === "IMAGE" && !vision
-            ? " — this model cannot view images"
-            : "";
-          parts.push({ type: "input_text", text: `[Attached file "${att.fileName}" (${att.mimeType})${note}.]` });
+            ? NO_VISION_REASON
+            : undefined;
+          parts.push({ type: "input_text", text: attachedFileNote(att.fileName, att.mimeType, reason) });
         }
       } catch {
-        parts.push({ type: "input_text", text: `[Attachment "${att.fileName}" could not be loaded.]` });
+        parts.push({ type: "input_text", text: attachmentUnavailableNote(att.fileName) });
       }
     }
 

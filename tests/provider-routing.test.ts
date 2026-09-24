@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { providerReceivesDocumentBytes } from "@/lib/attachment-bytes";
 import { openAIResponsesEnabled, providerAdapterFor } from "@/lib/provider-routing";
 
@@ -67,3 +68,22 @@ test("who receives a PDF's bytes follows the transport that serves the model", (
   assert.equal(providerReceivesDocumentBytes({ provider: "anthropic", vision: false }), true);
   assert.equal(providerReceivesDocumentBytes({ provider: "deepseek", ...vision }), false);
 });
+
+/*
+ * `streamChat` (src/lib/llm.ts, lane 3a) dispatches on this function's value
+ * with a switch that has no default: a value it has no case for streams
+ * nothing at all. "xai-responses" is served by `streamOpenAIResponses`, which
+ * picks the xAI dialect from the model's provider. A todo until llm.ts gains
+ * the case — Grok turns stream nothing on this branch alone — then an
+ * ordinary test.
+ */
+test(
+  "streamChat has a case for every adapter providerAdapterFor returns",
+  { todo: "lane 3a: add `case \"xai-responses\"` → streamOpenAIResponses in src/lib/llm.ts (SPEC §5.0)" },
+  () => {
+    const llm = readFileSync("src/lib/llm.ts", "utf8");
+    for (const adapter of ["anthropic-native", "gemini-native", "openai-responses", "xai-responses", "openai-compatible"]) {
+      assert.match(llm, new RegExp(`case "${adapter}":`), adapter);
+    }
+  },
+);
