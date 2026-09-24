@@ -111,6 +111,14 @@ export class GenerationAccumulator {
    * ones that do not yet.
    */
   currentRound = 0;
+  /**
+   * The first model step of the provider request in flight: one past the last
+   * `round_end` that ended in client tool calls. A `round_end` with no client
+   * tools inside a turn is a step within the same request (a provider search
+   * inside the response, a `pause_turn` continuation), so when the request
+   * does end in client tools, every step since this one is demoted with it.
+   */
+  requestStartRound = 0;
 
   /**
    * The turn's one list of sources (SPEC §2.11). The route passes the same
@@ -201,11 +209,17 @@ export class GenerationAccumulator {
         return { kind: "reasoning", text: event.text, part: event.part, round };
       }
       case "round_end": {
-        // A round that ended in CLIENT tool calls demotes its undeclared text
-        // to commentary; a provider search inside the response never does
-        // (SPEC §2.8 rule 1).
+        // A request that ended in CLIENT tool calls demotes the undeclared text
+        // of every step it held; a provider search inside the response never
+        // does on its own (SPEC §2.8 rule 1). "Let me search. <search> Let me
+        // open that page. <web_fetch>" is one request that ended in a tool
+        // call, so both sentences are commentary.
         if (event.tools > 0) {
-          for (const segment of this.textSegments) if (segment.round === event.round) segment.endedInTools = true;
+          const from = this.demotedRoundsFrom(event.round);
+          for (const segment of this.textSegments) {
+            if (segment.round >= from && segment.round <= event.round) segment.endedInTools = true;
+          }
+          this.requestStartRound = Math.max(this.requestStartRound, event.round + 1);
         }
         this.currentRound = Math.max(this.currentRound, event.round + 1);
         return { kind: "none" };
@@ -263,6 +277,15 @@ export class GenerationAccumulator {
       default:
         return { kind: "none" };
     }
+  }
+
+  /**
+   * The first step a client-tool `round_end` for `round` demotes: the start of
+   * the request in flight, or `round` itself when an adapter reports an
+   * earlier step than one already closed.
+   */
+  demotedRoundsFrom(round: number): number {
+    return Math.min(this.requestStartRound, round);
   }
 
   /** An event's own round when it has one (and from then on the current one), else the current. */
