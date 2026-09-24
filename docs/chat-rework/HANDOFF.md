@@ -48,8 +48,9 @@ multi-agent workflows. So first came a hotfix branch off origin/main (7f92324f),
 - Gate on this exact tree: typecheck clean, 3,781 tests passing with 0 failures, eslint clean,
   `check-approval-dispatch` OK. The copy is not visually checked, because the browser pane has no
   signed-in session.
-- **Not pushed.** It fast-forwards onto main. Pushing needs one agreed releaser, and deploying
-  needs the owner.
+- **Merged into origin/main at 1633a4b5**, on 2026-09-24, by the web releaser session "Fix dead
+  script previews under enforcing CSP", together with its artifact fixes. The gate on the combined
+  tree passed 3,822 tests. It is **not deployed yet**: that deploy waits for the owner's go-ahead.
 
 The next small slices, if usage allows:
 - stop sending xAI's retired Live Search, once verified live.
