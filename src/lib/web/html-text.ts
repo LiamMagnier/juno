@@ -105,6 +105,11 @@ function isNameChar(code: number): boolean {
   return isNameStart(code) || (code >= 48 && code <= 57) || code === 45 || code === 58 || code === 95;
 }
 
+/** `<` followed by this begins a tag, a comment, a doctype or a processing instruction. */
+function startsMarkup(code: number): boolean {
+  return code === 33 || code === 47 || code === 63 || isNameStart(code);
+}
+
 function isSpace(code: number): boolean {
   return code === 32 || code === 9 || code === 10 || code === 13 || code === 12;
 }
@@ -222,7 +227,16 @@ function* tokenize(html: string): Generator<void, Tokenized> {
       nextYield = i + YIELD_EVERY_CHARS;
       yield;
     }
-    const lt = html.indexOf("<", i);
+    // A `<` that cannot start markup ("a < b") is text: skip it here rather
+    // than emit a token per character, which a page of `<<<<` would exploit.
+    let lt = html.indexOf("<", i);
+    while (lt >= 0 && !startsMarkup(html.charCodeAt(lt + 1))) {
+      if (lt >= nextYield) {
+        nextYield = lt + YIELD_EVERY_CHARS;
+        yield;
+      }
+      lt = html.indexOf("<", lt + 1);
+    }
     if (lt < 0) {
       pushText(i, n);
       break;
@@ -260,13 +274,6 @@ function* tokenize(html: string): Generator<void, Tokenized> {
       tokens.push({ t: CLOSE, name, start: lt, end: i });
       continue;
     }
-    if (!isNameStart(next)) {
-      // A bare `<` in text, e.g. "a < b".
-      pushText(lt, lt + 1);
-      i = lt + 1;
-      continue;
-    }
-
     let j = lt + 1;
     while (j < n && isNameChar(html.charCodeAt(j))) j += 1;
     const name = html.slice(lt + 1, j).toLowerCase();
@@ -317,10 +324,11 @@ function* tokenize(html: string): Generator<void, Tokenized> {
  * For each opening tag of the given names, the index of its matching close,
  * by a depth counter per name. Unmatched tags are absent: they strip nothing.
  */
-function pairTags(tokens: readonly Token[], names: ReadonlySet<string>): Map<number, number> {
+function* pairTags(tokens: readonly Token[], names: ReadonlySet<string>): Generator<void, Map<number, number>> {
   const pairs = new Map<number, number>();
   const stacks = new Map<string, number[]>();
   for (let k = 0; k < tokens.length; k += 1) {
+    if (k % YIELD_EVERY_TOKENS === 0 && k > 0) yield;
     const token = tokens[k];
     if (token.t === TEXT || !names.has(token.name)) continue;
     if (token.t === OPEN) {
@@ -340,10 +348,11 @@ function pairTags(tokens: readonly Token[], names: ReadonlySet<string>): Map<num
  * Anchors, the way a browser closes them: a new `<a>` ends any open one. Maps
  * each `<a>` that is properly closed to its `</a>`; the rest render as a space.
  */
-function pairAnchors(tokens: readonly Token[]): Map<number, number> {
+function* pairAnchors(tokens: readonly Token[]): Generator<void, Map<number, number>> {
   const pairs = new Map<number, number>();
   let open = -1;
   for (let k = 0; k < tokens.length; k += 1) {
+    if (k % YIELD_EVERY_TOKENS === 0 && k > 0) yield;
     const token = tokens[k];
     if (token.name !== "a") continue;
     if (token.t === OPEN) open = token.selfClosing ? -1 : k;
@@ -425,7 +434,7 @@ function* extract(html: string, baseUrl: string | undefined): Generator<void, Ht
   // which is what the old replace put in its place.
   const keep = new Uint8Array(tokens.length).fill(1);
   const removed = new Set<number>();
-  const structural = pairTags(tokens, new Set([...CHROME_TAGS, ...REGION_TAGS]));
+  const structural = yield* pairTags(tokens, new Set([...CHROME_TAGS, ...REGION_TAGS]));
   for (let k = 0; k < tokens.length; k += 1) {
     if (k % YIELD_EVERY_TOKENS === 0 && k > 0) yield;
     const token = tokens[k];
@@ -443,7 +452,14 @@ function* extract(html: string, baseUrl: string | undefined): Generator<void, Ht
   let from = -1;
   let to = tokens.length;
   for (const region of REGION_TAGS) {
-    const open = tokens.findIndex((token, k) => keep[k] === 1 && token.t === OPEN && token.name === region);
+    let open = -1;
+    for (let k = 0; k < tokens.length; k += 1) {
+      if (k % YIELD_EVERY_TOKENS === 0 && k > 0) yield;
+      if (keep[k] === 1 && tokens[k].t === OPEN && tokens[k].name === region) {
+        open = k;
+        break;
+      }
+    }
     if (open < 0) continue;
     const close = structural.get(open);
     if (close === undefined || !keep[close]) continue;
@@ -455,12 +471,12 @@ function* extract(html: string, baseUrl: string | undefined): Generator<void, Ht
   }
   yield;
 
-  const anchors = pairAnchors(tokens);
-  const emphasis = pairTags(tokens, new Set(Object.keys(EMPHASIS)));
+  const anchors = yield* pairAnchors(tokens);
+  const emphasis = yield* pairTags(tokens, new Set(Object.keys(EMPHASIS)));
   const closesEmphasis = new Set(emphasis.values());
   // A heading is converted only when it is closed; `<li>`'s end tag is
   // optional in HTML, so a list item never waits for one.
-  const headings = pairTags(tokens, HEADINGS);
+  const headings = yield* pairTags(tokens, HEADINGS);
   const closesHeading = new Set(headings.values());
 
   // Links, from the body region only: a footer sitemap would otherwise be the

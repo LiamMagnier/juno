@@ -44,6 +44,19 @@ const MUST_BLOCK: Array<[string, string]> = [
   ["http://192.168.1.1/", "RFC 1918"],
   ["http://172.16.0.1/", "RFC 1918, low edge"],
   ["http://172.31.255.255/", "RFC 1918, high edge"],
+  ["http://0.1.2.3/", "all of 0.0.0.0/8, not only 0.0.0.0: Linux routes it to the local host"],
+  ["http://224.0.0.1/", "multicast, and everything above it"],
+  ["http://100.64.0.1/", "CGNAT (100.64.0.0/10)"],
+  ["http://198.18.0.1/", "benchmarking (198.18.0.0/15)"],
+  ["http://[ff02::1]/", "IPv6 multicast, now caught at the host level as the runner does"],
+  ["http://[2001:db8::1]/", "IPv6 documentation, likewise"],
+  ["http://[::127.0.0.1]/", "IPv4-compatible (::/96): URL rewrites it to ::7f00:1, which neither guard used to catch"],
+  ["http://[64:ff9b::a00:1]/", "NAT64 (64:ff9b::/96) translates to the IPv4 address it embeds"],
+  ["http://[64:ff9b:1::1]/", "local-use NAT64 (64:ff9b:1::/48)"],
+  ["http://[2002:7f00:1::1]/", "6to4 embedding 127.0.0.1"],
+  ["http://[fec0::1]/", "deprecated site-local"],
+  ["http://[100::1]/", "discard-only (100::/64)"],
+  ["https://user:pw@example.com/", "credentials go to whoever answers; the runner's guard refuses them too"],
   ["data:text/html,<b>hi", "no host at all: hands the extractor attacker-authored text"],
   ["file:///etc/passwd", "not a network scheme"],
   ["javascript:alert(1)", "not a network scheme"],
@@ -68,6 +81,8 @@ test("the guard does not overblock: public addresses that merely resemble privat
     "http://192.169.1.1/", // not 192.168/16
     "http://126.0.0.1/", // not 127/8
     "https://[2606:4700::1111]/", // a real public resolver
+    "http://[2002:808:808::1]/", // 6to4 of a PUBLIC address is an ordinary route
+    "http://223.255.255.1/", // one below multicast
     "https://sub.localhostage.com/", // contains "localhost" as a substring
     "https://notinternal.example.com/", // ends with "internal" but not ".internal"
   ]) {

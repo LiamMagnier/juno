@@ -167,6 +167,10 @@ export function isDisallowedHost(urlStr: string): boolean {
      * network request to notice, so the allowlist comes first.
      */
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return true;
+    // Credentials in a URL are sent to whoever answers it. The pinned transport
+    // refused them already; refusing them here too keeps them out of the link
+    // lists and result sets this guard filters, as the runner's copy does.
+    if (parsed.username || parsed.password) return true;
     /*
      * The trailing dot is the fully-qualified form of the SAME name and resolves
      * identically, but it is a different string — so `http://localhost./` and
