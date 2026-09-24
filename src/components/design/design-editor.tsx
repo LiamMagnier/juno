@@ -65,6 +65,7 @@ import {
   type PendingProposal,
 } from "@/components/design/use-design-document";
 import { layoutPage } from "@/lib/design/layout";
+import { fileNameFromDisposition } from "@/lib/download-name";
 import { buildSelectionContext } from "@/lib/design/selection-context";
 import { isContainer, type DesignDocument, type NodeId } from "@/lib/design/types";
 import type { DesignOperation } from "@/lib/design/operations";
@@ -164,6 +165,7 @@ export interface DesignEditorHandle {
 export function DesignEditor({
   artifactId,
   content,
+  version,
   transport,
   readOnly,
   surface = "embedded",
@@ -179,23 +181,30 @@ export function DesignEditor({
 }: {
   artifactId: string;
   content: string;
+  /** The artifact version `content` is the body of. Pass it when `onCommitted`
+   *  feeds the stored body back in as `content`, so the editor keeps its
+   *  document and undo stack rather than reloading its own echo — see
+   *  `useDesignDocument`. */
+  version?: number;
   /** Where committed transactions go. Defaults to the website's HTTP transport;
    *  the Mac host supplies the design bridge instead. */
   transport?: DesignTransport;
   readOnly?: boolean;
   /**
-   * How much of the screen the editor has, which is the only thing the layers
-   * and inspector rails need to know.
+   * How much room the editor has, which is the only thing the layers and
+   * inspector rails need to know.
    *
    * "embedded" (the default, and what the chat canvas panel and the Mac host
-   * get) collapses both rails on narrow viewports, because there a transcript
-   * is competing for the same few hundred pixels. That rule is also why a
-   * design opened from the chat panel showed a canvas with no layers and no
-   * inspector at all — so on "window", where the editor *is* the page, the
-   * rails simply stay.
+   * get) folds the rails away when the editor itself is narrow, because there
+   * a transcript is competing for the same few hundred pixels. That rule is
+   * also why a design opened from the chat panel showed a canvas with no
+   * layers and no inspector at all — so on "window", where the editor *is* the
+   * page, the rails simply stay.
    */
   surface?: "embedded" | "window";
-  onCommitted?: (version: number) => void;
+  /** A change was stored: the version it was filed under and the document the
+   *  store now holds. */
+  onCommitted?: (version: number, document: DesignDocument) => void;
   /** Hand the selection to the conversation. Absent in read-only surfaces. */
   onAskJuno?: (context: ReturnType<typeof buildSelectionContext>) => void;
   /** Selection changed. The Mac host forwards this so native chrome can act on
@@ -218,7 +227,7 @@ export function DesignEditor({
   viewportRef?: React.MutableRefObject<DesignViewportHandle | null>;
   editorRef?: React.MutableRefObject<DesignEditorHandle | null>;
 }) {
-  const state = useDesignDocument({ artifactId, initialContent: content, transport, readOnly, onCommitted });
+  const state = useDesignDocument({ artifactId, initialContent: content, version, transport, readOnly, onCommitted });
   const [tool, setTool] = React.useState<CanvasTool>("select");
   const [panel, setPanel] = React.useState<"layers" | "history">("layers");
   const [rightPanel, setRightPanel] = React.useState<"design" | "prototype">("design");
@@ -328,8 +337,9 @@ export function DesignEditor({
         }
 
         const blob = await res.blob();
-        const disposition = res.headers.get("Content-Disposition") ?? "";
-        const named = /filename="([^"]+)"/.exec(disposition)?.[1];
+        // The UTF-8 name first: the quoted `filename=` is only the ASCII
+        // fallback, which saves "登录" as "design.svg" (X-23).
+        const named = fileNameFromDisposition(res.headers.get("Content-Disposition"));
         saveBlob(blob, named ?? `${doc?.name ?? "design"}.${format}`);
 
         const notes = res.headers.get("X-Juno-Export-Notes");
@@ -543,14 +553,21 @@ export function DesignEditor({
     );
   }
 
-  // The responsive rule the rails have always followed, hoisted so the collapsed
-  // stub and the resize grip obey it too — a rail hidden by viewport width must
-  // not leave a grip or a re-open button floating where it used to be.
-  const leftRailVisibility = surface === "window" ? "flex" : "hidden md:flex";
-  const rightRailVisibility = surface === "window" ? "flex" : "hidden lg:flex";
+  // The responsive rule the rails follow, hoisted so the collapsed stub and the
+  // resize grip obey it too — a rail hidden for want of width must not leave a
+  // grip or a re-open button floating where it used to be.
+  //
+  // Measured on the editor, not the window. It was `md:` and `lg:`, which ask
+  // how wide the SCREEN is: a canvas docked at 560px beside a transcript on a
+  // 1440px display passed both, and the two rails left the drawing ~100px.
+  // Each rail now comes in once the canvas it leaves beside its default-width
+  // neighbours is still 27rem — a phone-width frame at 100% with room around
+  // it: the layers rail from a 40rem editor, the inspector from 56rem.
+  const leftRailVisibility = surface === "window" ? "flex" : "hidden @[40rem]/design-editor:flex";
+  const rightRailVisibility = surface === "window" ? "flex" : "hidden @[56rem]/design-editor:flex";
 
   return (
-    <div ref={rootRef} className="flex h-full min-h-0 flex-col" data-juno-design-editor="">
+    <div ref={rootRef} className="@container/design-editor flex h-full min-h-0 flex-col" data-juno-design-editor="">
       {/* Toolbar */}
       <div className="flex items-center gap-1 border-b border-border/60 bg-card/40 px-2 py-1.5">
         <div className="flex items-center gap-0.5" role="toolbar" aria-label="Design tools">

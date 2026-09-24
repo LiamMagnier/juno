@@ -7,7 +7,9 @@ import { sniffImageMime } from "@/lib/uploads";
 import { documentFromArtifact, loadOwnedDesignArtifact } from "@/lib/design/store";
 import {
   buildHandoffBundle,
+  downloadDisposition,
   exportHtmlPrototype,
+  exportNotesHeader,
   exportPdf,
   exportReact,
   exportSvg,
@@ -170,14 +172,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ artifact
     return NextResponse.json({ error: "No such layer" }, { status: 404 });
   }
 
-  const download = (body: string, fileName: string, mimeType: string) =>
+  // Every header below is built from names the person chose, in any script.
+  // A header value is bytes, so each one goes through a helper that makes it
+  // so; a raw name in a header is a TypeError, and a TypeError here is a 500
+  // for a file that was already built (X-23).
+  const download = (body: string, fileName: string, mimeType: string, extra: Record<string, string> = {}) =>
     new NextResponse(body, {
       headers: {
         "Content-Type": mimeType,
-        "Content-Disposition": `attachment; filename="${fileName.replace(/"/g, "")}"`,
+        "Content-Disposition": downloadDisposition(fileName),
         // An export is a snapshot of one revision; a cached copy would quietly
         // hand back an older document after the next edit.
         "Cache-Control": "no-store",
+        ...extra,
       },
     });
 
@@ -203,15 +210,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ artifact
         const result = exportPdf(drawn, pageId);
         const problem = designExportProblem("pdf", result.content);
         if (problem) return NextResponse.json({ error: problem, code: "EXPORT_VERIFICATION_FAILED" }, { status: 500 });
-        return new NextResponse(result.content, {
-          headers: {
-            "Content-Type": result.mimeType,
-            "Content-Disposition": `attachment; filename="${result.fileName.replace(/"/g, "")}"`,
-            "Cache-Control": "no-store",
-            // What the PDF could not carry, so a caller can tell the user
-            // instead of them finding out by looking.
-            "X-Juno-Export-Notes": JSON.stringify(result.unsupported).slice(0, 2_000),
-          },
+        return download(result.content, result.fileName, result.mimeType, {
+          // What the PDF could not carry, so a caller can tell the user
+          // instead of them finding out by looking.
+          "X-Juno-Export-Notes": exportNotesHeader(result.unsupported),
         });
       }
       case "html": {

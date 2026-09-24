@@ -34,7 +34,12 @@ import {
   maybeConsolidateProject,
 } from "@/lib/memory";
 import { memoryReceiptDetail } from "@/lib/memory-lifecycle";
-import { ArtifactVersionConflictError, persistArtifacts, persistTargetedArtifactEdit } from "@/lib/artifacts-store";
+import {
+  ArtifactVersionConflictError,
+  detachArtifactsFromMessage,
+  persistArtifacts,
+  persistTargetedArtifactEdit,
+} from "@/lib/artifacts-store";
 import {
   applyArtifactPatch,
   ArtifactPatchError,
@@ -45,7 +50,9 @@ import {
 } from "@/lib/artifact-edit";
 import { parseArtifacts, parseForgets, parseMemories, rewriteArtifactMarkup } from "@/lib/message-content";
 import {
+  artifactRefusalNotice,
   artifactVerificationDetail,
+  artifactVerificationTitle,
   ChatArtifactVerificationError,
   verifyAndRepairChatArtifacts,
 } from "@/lib/chat-artifact-verification";
@@ -182,6 +189,9 @@ import {
   taskTitleFromArgs,
 } from "@/lib/chat/task-tool";
 import { cheapestWorkModel } from "@/lib/work/models";
+import { agentChatContext } from "@/lib/agents/store";
+import { agentApprovalMode } from "@/lib/agents/domain";
+import { appendAgentBlock } from "@/lib/agents/prompt";
 import { providerAdapterFor } from "@/lib/provider-routing";
 import { isGemini3OrLater } from "@/lib/gemini-core";
 import type { ClientActionApproval } from "@/lib/action-approval";
@@ -437,22 +447,22 @@ function prepareChatArtifactOutput(
   const parsed = parseArtifacts(text);
   if (parsed.length === 0) return null;
   const result = verifyAndRepairChatArtifacts(parsed);
+  // A block that stopped before its closing tag says so in its own words
+  // ("stopped before it was finished"), not "verification failed": the reader
+  // pressed Stop or the reply hit its limit, and nothing the model made was
+  // wrong (X-07). Both lines, and the row's title, come from the verifier so
+  // the message and the activity receipt cannot disagree.
   const updates = [
     ...result.artifacts.map((artifact) => ({ identifier: artifact.identifier, content: artifact.content })),
     ...result.report.refused.map((identifier) => ({
       identifier,
-      refusal: "Artifact unavailable: verification failed, so it was not saved or presented.",
+      refusal: artifactRefusalNotice(result.report, identifier),
     })),
   ];
   const rewritten = rewriteArtifactMarkup(text, updates);
   sendActivity({
     kind: "artifact",
-    title:
-      result.report.status === "verified"
-        ? "Artifact verified"
-        : result.report.status === "repaired"
-          ? "Artifact repaired and verified"
-          : "Artifact refused",
+    title: artifactVerificationTitle(result.report),
     detail: artifactVerificationDetail(result.report),
     artifactVerification: result.report,
   });
@@ -2245,6 +2255,24 @@ async function handleChat(req: Request) {
     lockdown: !!settings?.lockdownMode,
     planHasWorkModel: cheapestWorkModel(MODEL_LIST, plan) !== null,
   });
+  /*
+   * An agent's thread (docs/design/AGENTS.md): the reply is the agent's, with
+   * its brief, goals and notes appended after everything else in the prompt,
+   * and a task it starts carries its id and its autonomy. A private turn never
+   * has one (it has no saved conversation to be a thread), and a failure to
+   * read the agent answers as Juno rather than failing the message — the
+   * thread is still a chat.
+   */
+  const agentContext =
+    conversation.agentId && !input.privateMode
+      ? await agentChatContext(user, conversation.agentId, { taskHandoff: taskToolOn }).catch((err) => {
+          console.error("[chat] could not read the thread's agent", {
+            conversationId: conversation.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return null;
+        })
+      : null;
   const baseSystemSections = buildSystemPromptSections({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
@@ -2268,17 +2296,20 @@ async function handleChat(req: Request) {
       ? buildArtifactEditPrompt(artifactEditTarget, input.artifactEdit)
       : null;
   const system = withRegenerateInstruction(
-    appendSkillBlock(
-      composeSystemPrompt({
-        base: baseSystem,
-        webSearch: useWebSearch,
-        documentTool: attachmentToolToggles.documents,
-        imageTool: attachmentToolToggles.images,
-        codeTool: attachmentToolToggles.code,
-        targetedArtifactEditPrompt,
-        canvasOn,
-      }),
-      appliedSkill
+    appendAgentBlock(
+      appendSkillBlock(
+        composeSystemPrompt({
+          base: baseSystem,
+          webSearch: useWebSearch,
+          documentTool: attachmentToolToggles.documents,
+          imageTool: attachmentToolToggles.images,
+          codeTool: attachmentToolToggles.code,
+          targetedArtifactEditPrompt,
+          canvasOn,
+        }),
+        appliedSkill
+      ),
+      agentContext?.block ?? null
     ),
     input
   );
@@ -2514,13 +2545,13 @@ async function handleChat(req: Request) {
        * A regenerate PRESERVES the previous answer instead of destroying it: the
        * old row's content is snapshotted into an immutable MessageVersion
        * (ciphertext copied verbatim — the crypto is row-independent, see
-       * message-crypto.ts), its artifacts are dropped, and the Message row is
-       * then overwritten in place. The Message row is therefore always the
-       * CURRENT version; MessageVersion rows are append-only, read-only history
-       * rendered by the client's "‹ 2/3 ›" pager. Which version the user was
-       * VIEWING never changes the result: the prompt excludes the answer being
-       * regenerated entirely, so regeneration is deterministic in its inputs and
-       * versions simply accumulate oldest-first.
+       * message-crypto.ts), its artifacts are detached but kept, and the
+       * Message row is then overwritten in place. The Message row is therefore
+       * always the CURRENT version; MessageVersion rows are append-only,
+       * read-only history rendered by the client's "‹ 2/3 ›" pager. Which
+       * version the user was VIEWING never changes the result: the prompt
+       * excludes the answer being regenerated entirely, so regeneration is
+       * deterministic in its inputs and versions simply accumulate oldest-first.
        */
       const persistAssistantTurn = async (data: {
         content: string;
@@ -2561,8 +2592,11 @@ async function handleChat(req: Request) {
         };
         if (mode === "supersede" && stale) {
           // Snapshot the answer being replaced BEFORE overwriting it — a
-          // regenerate must never lose what the user already had. Atomic with
-          // the overwrite so a crash can't leave a duplicate version behind.
+          // regenerate must never lose what the user already had. That covers
+          // its artifacts too: they are detached, not deleted, so hand edits
+          // and share links survive and a re-emission appends to the same row.
+          // Atomic with the overwrite so a crash can't leave a duplicate
+          // version behind.
           const [, , updated] = await prisma.$transaction([
             prisma.messageVersion.create({
               data: versionSnapshot({
@@ -2570,7 +2604,7 @@ async function handleChat(req: Request) {
                 sources: stale.sources as unknown as Prisma.InputJsonValue | null,
               }),
             }),
-            prisma.artifact.deleteMany({ where: { messageId: stale.id } }),
+            detachArtifactsFromMessage(stale.id),
             prisma.message.update({
               where: { id: stale.id },
               data: {
@@ -2844,8 +2878,8 @@ async function handleChat(req: Request) {
         }
       } else if (researchRequested) {
         researchNotice = PLANS[plan].webSearch
-          ? "Deep research is not configured on this deployment. A search provider must be available before I can investigate your question."
-          : "Deep research is available on paid Juno plans. Your research has not started.";
+          ? "Research is not configured on this deployment. A search provider must be available before I can investigate your question."
+          : "Research is available on paid Juno plans. Your research has not started.";
         sendActivity({
           kind: "warning",
           title: "Deep research was skipped",
@@ -2925,6 +2959,9 @@ async function handleChat(req: Request) {
               // starting a task is the one tool whose whole effect is to act
               // later with nobody watching, so it asks first.
               untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
+              agent: agentContext
+                ? { id: agentContext.agent.id, approvalMode: agentApprovalMode(agentContext.agent.approvalMode) }
+                : null,
               generationId,
               onApprovalRequest: requestApproval,
               // The panel appears as soon as the run exists rather than on the
@@ -3106,10 +3143,19 @@ async function handleChat(req: Request) {
           costMicroUsd: researchNotice ? 0 : usage.costMicroUsd || null,
         });
 
-        // Artifacts + memory side effects.
+        // Artifacts + memory side effects. Only a finished artifact becomes a
+        // version: a reply cut off at the output limit ends inside its last
+        // block, verification refuses that block as `incomplete`, and the
+        // artifact keeps its current version (X-07). The filter says so again
+        // at the write itself, so the rule survives a change to the verifier
+        // or to how its output is prepared.
         const artifacts = targetedArtifact
           ? [targetedArtifact]
-          : await persistArtifacts(conversationId, assistant.id, preparedArtifacts?.result.artifacts ?? []);
+          : await persistArtifacts(
+              conversationId,
+              assistant.id,
+              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete)
+            );
         if (targetedArtifact) send({ type: "delta", text: acc.text });
         let memoryUpdated = false;
         // Not when the turn carried untrusted content. A `<juno:memory>` tag is
@@ -3285,10 +3331,13 @@ async function handleChat(req: Request) {
               cacheWriteTokens: acc.tokens.cacheWriteTokens,
               costMicroUsd: researchNotice ? 0 : partialUsage.costMicroUsd || null,
             });
+            // Only finished artifacts, as on the success path. A Stop inside a
+            // block leaves it unfinished: the partial answer is still saved,
+            // and the artifact keeps its current version (X-07).
             const artifacts = await persistArtifacts(
               conversationId,
               assistant.id,
-              preparedArtifacts?.result.artifacts ?? []
+              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete)
             );
             await prisma.conversation.updateMany({
               where: { id: conversationId, userId: user.id },

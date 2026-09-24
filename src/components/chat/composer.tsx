@@ -51,7 +51,6 @@ import {
   type PlusMenuItem,
   type PlusMenuSection,
 } from "@/components/chat/composer-plus-menu";
-import { RESEARCH_EFFORT_COPY, researchEffortLabel } from "@/components/research/effort-copy";
 import { researchEffortFor } from "@/lib/research/auto-effort";
 import type { ResearchEffort } from "@/lib/research/domain";
 import { ScrollFade } from "@/components/ui/scroll-fade";
@@ -1765,7 +1764,7 @@ export function Composer({
               run: researchAvailable
                 ? () => setResearch((v) => !v)
                 : () =>
-                    toast.error("Deep research is available on paid plans."),
+                    toast.error("Research is available on paid plans."),
             },
           ]
         : []),
@@ -2456,7 +2455,7 @@ export function Composer({
   // the menu agree.
   const armedToolsInGroup = [
     skillArmed ? `the ${armedSkill?.name ?? skillSlug} skill` : null,
-    researchArmed ? "deep research" : null,
+    researchArmed ? "research" : null,
     canWebSearch && webSearchEnabled ? "web search" : null,
     settings.memoryEnabled ? "memory" : null,
   ].filter((label): label is string => label !== null);
@@ -2513,16 +2512,12 @@ export function Composer({
       ? [{
           id: "research",
           icon: <ComposerIcons.research className="size-4" />,
-          label: "Deep research",
-          detail: researchEffortLabel(researchEffort),
-          tooltip: (
-            <>
-              {RESEARCH_EFFORT_COPY.find((tier) => tier.value === researchEffort)?.summary}. Depth follows
-              your model and thinking effort. Pick a stronger model or raise thinking for a deeper run.
-            </>
-          ),
-          openLabel: `Deep research on, ${researchEffortLabel(researchEffort)} depth. Depth follows the model and thinking effort you chose. Opens the add menu.`,
-          removeLabel: "Turn off deep research",
+          label: "Research",
+          // No depth word: Research sizes itself, and a level name told people
+          // to pick a model to get a "deeper" run it did not give them.
+          tooltip: <>Plans, reads the web and writes a cited report. Usually 5–15 minutes.</>,
+          openLabel: "Research on. Opens the add menu.",
+          removeLabel: "Turn off research",
           remove: () => setResearch(false),
         }]
       : []),
@@ -2830,14 +2825,9 @@ export function Composer({
       ? {
           kind: "toggle",
           id: "research",
-          label: "Deep research",
+          label: "Research",
           icon: ComposerIcons.research,
           checked: research,
-          // Only while it is ON. A depth label on an off row is a claim about
-          // nothing — it reads as the state rather than as what the state
-          // would be, which is the one thing a row with no switch cannot
-          // afford to get wrong.
-          detail: research ? researchEffortLabel(researchEffort) : undefined,
           onToggle: () => setResearch((on) => !on),
         }
       : null;

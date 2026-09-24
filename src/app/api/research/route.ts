@@ -51,7 +51,7 @@ export async function POST(req: Request) {
   const plan = await getUserPlan(user.id);
   if (!PLANS[plan].webSearch) {
     return NextResponse.json(
-      { error: "Deep research is available on a paid Juno plan." },
+      { error: "Research is available on a paid Juno plan." },
       { status: 402 }
     );
   }

@@ -1,0 +1,111 @@
+{
+ "verdicts": [
+  {
+   "id": "history-concepts-1",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "corrected_location": "src/components/canvas/canvas-panel.tsx:1243-1253 (placeholder push at ~1250), with src/components/canvas/canvas-panel.tsx:313-315 and :369-370",
+   "reasoning": "READ: onCommitted appends `{ version, content: \"\", origin: \"edit\" }` and bumps currentVersion via onArtifactUpdated. chat-view.tsx:1254-1262 stores that object as-is in chat.artifacts. The effect at canvas-panel.tsx:313-315 moves selectedVersion to the new version. The editor is keyed on selectedVersion (canvas-panel.tsx:1237), and versionContent resolves to \"\" because `??` does not fall back on an empty string (369-370). use-design-document.ts:170-188 re-parses on the new initialContent. parseStoredDesignDocument(\"\") throws 'Design document is not valid JSON' (migrations.ts:91-97), and design-editor.tsx:520-534 then shows the error. The trigger is real. Chat-generated designs are stored with origin 'generated' (artifacts-store.ts:59,86), and so are hand-started designs (api/design/route.ts ~88). allocatesCheckpoint returns true when latest.origin !== 'edit' (operations.ts:535), and it also returns true for any edit after 30 s. httpTransport reports the new currentVersion, which fires the early-return guard only for a fold. Two small corrections. First, the on-screen text is 'This design can't be opened' with 'Design document is not valid JSON', not 'could not be read'. Second, the placeholder also leaks elsewhere: while it is current, the Code tab, Copy, Download (displayedContent) and the History diff all read the in-session checkpoint as empty. I searched for a mitigation and found none. A later model turn does replace the artifact wholesale through mergeArtifacts (use-chat.ts:344-352), which is why a restore of the \"\" row is not reachable. The bug hits every door that opens a design in the Canvas: /artifacts, search, Outputs and the inline card."
+  },
+  {
+   "id": "history-concepts-2",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "corrected_location": "src/app/api/artifacts/[id]/route.ts:7-16,39-89",
+   "reasoning": "READ: postSchema is `content: z.string().max(200_000)` with no type check. The POST appends a version for any artifact type, including DESIGN, and never goes through commitTransaction or schema validation. That contradicts store.ts:9-11. The Mac (DesktopDesignScreen.swift:577-581 \u2192 NativeArtifactStore.saveArtifact, NativeArtifactStore.swift:321-336) and iOS (JunoMobileWorkspaceViews.swift:2067 and the Save button in designDraftControls ~2270-2273) do write whole design bodies through this route. So the product context calling iPhone design 'read-only' is out of date: iPhone edits and saves. The native clients do send baseVersion, and the web Canvas's Code tab is read-only for designs (canvas-panel.tsx:1353-1355). Severity is lowered because I found no first-party path that writes a body the web cannot parse. Native bodies are re-encoded from Swift-decoded documents (DesktopArtifactCanvas.swift:1066-1080), and zod defaults fill any key they lack. The owner-only check means an arbitrary body can only corrupt the caller's own design. The real present-day harm is that this route is the conduit for history-concepts-3's field stripping and for the revision rewind described in missed-1."
+  },
+  {
+   "id": "history-concepts-3",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: DesignDocumentCodec.decode gates only on `version <= DesignSchema.version` and then decodes with Codable, which drops unknown keys (DesignDocumentCodec.swift:43-57). DesignDocument.swift:12-20 calls the contract the referee, but nothing reads contracts/design/design-document.v1.schema.json. The only references are the generator script and comments. No workflow runs `design:contract:check` (package.json:82; the only design gate in .github/workflows is release-ios.yml:76 for the editor bundle). cornerSmoothing was added in c69ee98e (2026-08-15) as `cornerSmoothingSchema.default(0)` (schema.ts:332). DESIGN_SCHEMA_VERSION stays 1 (types.ts:24), and DesignSchema.version stays 1 (DesignDocument.swift:23). Swift has no cornerSmoothing, and DesignDocument.swift was last changed in 390ade91 on 08-06. The round-trip fixture sign-in.juno.design.json was also last changed 08-06 and has zero cornerSmoothing keys. On the Mac the document is decoded to Swift before the editor opens it, and each accepted transaction comes back as a Swift DesignDocument that is re-encoded (DesktopDesignEditorHost.swift:132-163; DesktopArtifactCanvas.swift:1066-1080). A Mac save therefore stores a body with no cornerSmoothing, the web parses it back as 0, and the loss is silent. Severity is lowered to medium because today the loss is one visual property. The governance gap itself is systemic."
+  },
+  {
+   "id": "history-concepts-4",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "RAN: `node scripts/build-design-editor.mjs --check` (a read-only branch at build-design-editor.mjs:190-203) printed 'bundle is stale (expected 1.0.0+9cc1cfa8d4fe)' and exited 1. The shipped index.html stamps 1.0.0+2b86e5baaf9d, and the bundle directory was last changed in 2fa09d35 (2026-09-17). `git log 2fa09d35..HEAD` over src/lib/design, src/components/design and src/components/ui/icon-swap.tsx (the hashed sources) lists exactly 11 commits, and `0a3087fe..HEAD` over the same paths is empty. So Mac 1.6.0's tree carried the stale bundle; that it shipped this bundle is inferred. The test at design-host-bridge.test.ts:77-98 is titled '\u2026and current' but asserts only the script tag, CSP and remote origins, never the version hash. Only release-ios.yml:76 runs design:editor:check. I found no editor build or check step in release-macos.yml, native.yml or any .sh/.mjs release script."
+  },
+  {
+   "id": "history-concepts-5",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: for an existing identifier, persistArtifacts writes `type: a.type` unconditionally (artifacts-store.ts:61-67). normalizeForStorage only expands a body that is DESIGN now (artifacts-store.ts:16-25), and I found no comparison with the stored type. rg for existing.type or type-mismatch guards in src/lib and src/app/api/chat found none. system-prompt.ts:257 tells the model to reuse the identifier to revise an artifact. loadOwnedDesignArtifact filters `type: \"DESIGN\"` (store.ts:33-38), and the Canvas picks its runtime from artifact.type (canvas-panel.tsx:237). canvas-panel.tsx:328-330 acknowledges runtime flips. The code path is reachable whenever the model emits the same identifier with a new type. How often that happens depends on model behaviour, so the severity stays medium."
+  },
+  {
+   "id": "history-concepts-6",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: POST /api/design creates a `kind: \"chat\"` conversation with no messages, titled after the design (default 'Untitled design', route.ts:13), to own the artifact (route.ts:69-90). Artifact.conversation is onDelete: Cascade (schema.prisma:1137). The conversation DELETE is a hard delete (conversations/[id]/route.ts:80-90). The chat delete dialog mentions only the conversation and its messages (app-sidebar.tsx:2273,2777). listConversations has no filter on empty chats (queries.ts:39-48), so these chats appear in Recents. /design and /design/{id} delete only the artifact (design/page.tsx:112-127; design-workspace.tsx:147-161). Rename PATCHes only the artifact title (design-workspace.tsx:124-141), so the chat title goes stale."
+  },
+  {
+   "id": "history-concepts-7",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "corrected_location": "native/macOS/JunoDesktop/App/DesktopComposer.swift:726-728 (toggle), 55, 688, 1112, 1158",
+   "reasoning": "READ: `@State private var canvasEnabled = false` (55). The toggle is in the Tools section (~726-728), and it counts toward hasArmedTools (687-689). The send snapshots `canvas` and passes `canvasEnabled: canvas ? true : nil` (1112,1158). The server computes `canvasOn = !input.voiceMode && (input.canvasEnabled ?? true)` (chat/route.ts:2110). Both toggle states therefore produce canvas-on unless a policy says otherwise. ProjectWorkspaceStoreTests.swift:348-372 confirms that only an explicit false turns it off. mac/liquid-glass-chat deletes DesktopComposer.swift entirely (a 1620-line deletion in `git diff main mac/liquid-glass-chat`), but main still ships the toggle."
+  },
+  {
+   "id": "history-concepts-8",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: getSharedArtifactSnapshot picks the newest version with `createdAt <= snapshotAt` (share.ts:244-256) and promises that edits stay private (share.ts:10-16). rewriteVersion updates only `content` of the newest row, and createdAt is never touched (store.ts:179-197). The fold decision uses `Date.now() - latest.createdAt` (store.ts:122-125) against CHECKPOINT_WINDOW_MS = 30_000 (operations.ts:511). The window runs from when the row was created, not from the last edit. Edits made after a share, while that row is under 30 s old, therefore change what the public link renders. The window is narrow, so low is right."
+  },
+  {
+   "id": "history-concepts-9",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: JUNO.md:506-508 lists allow-popups. JUNO.md:2579-2581 says 'allow-scripts only'. The code is SANDBOX_ALLOW = 'allow-scripts allow-forms allow-modals allow-downloads allow-pointer-lock', and a comment there says popups are deliberately excluded (sandbox-frame.tsx:80-86). status.json:155 marks sandbox-egress verified with an 'allow-scripts-only sandbox'. a0e41c9b widened the CSP to `connect-src https: data: blob:`, so the CSP is no longer an egress boundary. JUNO.md:2522 says ArtifactVersion is append-only, but store.ts rewriteVersion folds edits into an existing row. In JUNO.md, 'src/lib/design' appears only for tokens (line 179), and rg finds no /design route, no /api/design and no 'DESIGN' artifact type."
+  },
+  {
+   "id": "history-concepts-10",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the copy at design/page.tsx:290-296 promises full version history. The DesignWorkspace header shows only `v{currentVersion}` (design-workspace.tsx:178), and its actions menu has only 'Delete design' (200-205). The editor's History tab is HistoryList over state.history, the in-session undo list (design-editor.tsx:1017-1030). rg for `api/design/` outside src/app/api and the bundle finds only /transactions, /export and /edit callers (use-design-document.ts:93, design-editor.tsx:304, design-edit-transport.ts:63). No caller uses GET /api/design/[artifactId] with or without ?version, on the web or the Mac. There is also no link from /design/{id} to the Canvas history beyond the 'Chat' link."
+  },
+  {
+   "id": "history-concepts-11",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the web uses `design: JunoDesign` (app-icons.ts:141). The Mac uses `.penTool` at DesktopChatSidebar.swift:369, DesktopArtifactsScreen.swift:2048 and DesktopDesignScreen.swift:685. The JunoIcon enum has penTool and no design or junoDesign case (JunoBrand.swift:137). The DesktopChatSidebar.swift:356-357 comment is stale ('pen nib the web draws'). The DesktopDesignScreen.swift:827 comment is stale too: it calls the mark an SF Symbol, but the code draws JunoIconView(.penTool). bd886d59's message does say the Mac and phone should 'draw the same mark'. mac/liquid-glass-chat changes DesktopChatSidebar and DesktopDesignScreen, which the auditor says adopt JunoDesign. I did not verify that line by line."
+  },
+  {
+   "id": "ux-0",
+   "verdict": "confirmed",
+   "corrected_severity": "n/a",
+   "reasoning": "READ: the Chat nav lists Library, Projects, Artifacts and Design as siblings (app-sidebar.tsx:1088-1100). /design lists the DESIGN subset of /api/artifacts (design/page.tsx:79). Library reads only prisma.attachment and knowledgeDocument (api/library/route.ts:90,116). Generated images are created as message attachments (api/generate/route.ts:254-289), so they appear in Library and not in Artifacts. WorkArtifact rows are read only through /api/work/artifacts?sessionId=\u2026 (work-transport.tsx:1571), so no global list covers them. ResearchRun and ResearchReportRevision are absent from both the Artifacts and Library queries. session-outputs.tsx:98-107 builds tiles from ClientArtifact rows only; rg for work, deliverable or task in that file returns nothing. JUNO.md:1718-1719 states the task panel follows only the newest task."
+  },
+  {
+   "id": "ux-1",
+   "verdict": "confirmed",
+   "corrected_severity": "n/a",
+   "reasoning": "READ: /design rows push `/design/${item.id}` (design/page.tsx:236). The /artifacts grid and list build `/chat/${conversationId}?artifact=${identifier}` (artifacts/page.tsx:529,596), and search hits do the same (engine.ts:434). Those doors open the Canvas's embedded DesignEditor. Its surface defaults to 'embedded', with viewport-gated rails (design-editor.tsx:169,549-550), and it gets no AskJunoBar dock, which only DesignWorkspace passes (design-workspace.tsx:222-233). rg finds no link from the Canvas to /design/{id}. One nuance: the ea6ed46d quote is accurate, but it described the state before that commit. The two-editor split it created is still real, and the embedded editor is the one history-concepts-1 breaks."
+  },
+  {
+   "id": "ux-2",
+   "verdict": "confirmed",
+   "corrected_severity": "n/a",
+   "reasoning": "READ: ArtifactPreview has a special case for SVG only. Every other type, DESIGN included, renders the first lines of the source in a clipped <pre> (artifact-preview.tsx:79-84,100-110). Design bodies are single-line JSON.stringify output (migrations.ts:111-113), so the tile shows one clipped line of minified JSON. The /artifacts grid and the Outputs panel both use this component (artifacts/page.tsx:542; session-outputs.tsx:414, preview = a.content at :105). On the share page, hasPreview is false for rt.mode 'design', so only the Code tab exists (shared-artifact-viewer.tsx:29-33). Search snippets are built from the stored content (engine.ts:431); that the snippet shows JSON is inferred from the storage format. src/lib/design/render.ts exists and is used by the Mac host, but none of these tiles call it."
+  }
+ ],
+ "missed": [
+  {
+   "id": "missed-1",
+   "title": "Restoring a design version through the generic artifact route rewinds the document's `revision`, the design protocol's only concurrency token",
+   "severity": "low",
+   "file": "src/components/canvas/canvas-panel.tsx",
+   "line": 445,
+   "evidence": "READ: Canvas Restore posts the old version's body verbatim through POST /api/artifacts/[id] (canvas-panel.tsx:442-446 \u2192 appendVersion 420-438; route.ts:39-89 stores it unchanged). Mac and iOS restoreArtifact do the same (NativeArtifactStore.swift:339-355). The stored DesignDocument.revision therefore goes back to the old version's value. Transactions are accepted when `transaction.baseRevision === doc.revision` (operations.ts:359), and each one sets revision = doc.revision + 1 (operations.ts:382). After a restore, revision numbers are minted again for different contents. INFERRED: this is an ABA window.",
+   "failure_scenario": "A design is at revision 8. A second tab or the Mac has an editor acked at revision 6 on the old line. Someone restores v2 (revision 5) in the chat Canvas, and one more edit takes the store to a new revision 6. The stale editor's next transaction carries baseRevision 6 and is accepted against a different document. Its operations then apply to content its author never saw, with no conflict reported."
+  },
+  {
+   "id": "missed-2",
+   "title": "A hand-started blank design is recorded as 'Generated' output",
+   "severity": "low",
+   "file": "src/app/api/design/route.ts",
+   "line": 88,
+   "evidence": "READ: POST /api/design creates the starter frame with `versions: { create: { version: 1, content: ..., origin: \"generated\" } }` (route.ts ~81-89). The Canvas history labels origin 'generated' as 'Generated' (canvas-panel.tsx:139-149). The same origin makes the user's first edit always allocate a new checkpoint (operations.ts:535), which feeds history-concepts-1 when the design is opened from /artifacts.",
+   "failure_scenario": "A user starts a blank design from /design or /artifacts and opens its history in the chat Canvas. v1, an empty frame the user created, is labelled 'Generated', as if Juno made it."
+  }
+ ]
+}
