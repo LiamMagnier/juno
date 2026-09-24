@@ -142,7 +142,13 @@ function RunBlockImpl({ message, renderKey, streaming, status: _status, onOpenPa
   const lastRound = liveRounds?.at(-1);
   const liveCommentary =
     streaming && lastRound?.phase === "commentary" ? { round: lastRound.round, text: lastRound.text } : null;
-  const hasStep = view.latestStepKeys.length > 0 || liveCommentary !== null;
+  // What opens the peek is a step the line cannot say alone: a call, or commentary the provider
+  // declared. Thinking on its own is the line's label (fixture 2: the peek never opens); once the
+  // peek is open, the reasoning excerpt takes a slot like any step.
+  const hasStep =
+    view.tools.length > 0 ||
+    liveCommentary !== null ||
+    view.items.some((item) => item.kind === "commentary" && !item.inline);
   const [peek, setPeek] = React.useState<PeekState>("closed");
   const [collapsing, setCollapsing] = React.useState(false);
   const nextPeek = nextPeekState(peek, { streaming, hasStep, answerStarted });
