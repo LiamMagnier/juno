@@ -232,7 +232,14 @@ const TRANSITIONS: Record<ResearchState, readonly ResearchState[]> = {
   awaiting_user_input: [...RESEARCH_WORKING_STATES, "paused", "cancelled", "failed"],
   // Back to the gate as well: a run paused while its plan waited for a person
   // resumes at the plan, not into a paid re-plan that overwrites it (B12).
-  paused: [...RESEARCH_WORKING_STATES, "awaiting_plan_confirmation", "cancelled", "failed", "partially_completed"],
+  paused: [
+    ...RESEARCH_WORKING_STATES,
+    "awaiting_plan_confirmation",
+    "awaiting_clarification",
+    "cancelled",
+    "failed",
+    "partially_completed",
+  ],
   completed: [],
   partially_completed: [],
   failed: [],
@@ -467,6 +474,10 @@ export const RESEARCH_EVENT_KINDS = [
   "run_completed",
   /** The reader asked to revise the plan at the gate; the planner is rerunning with the edits. */
   "plan_revision_requested",
+  /** The revised plan is on the card. */
+  "plan_revised",
+  /** Guidance was queued for the next round boundary; `steering_applied` follows when it takes effect. */
+  "steering_queued",
   /** "Finish now": the engine writes with what it has at the next round boundary. */
   "finish_requested",
 ] as const;
@@ -1027,6 +1038,10 @@ export interface ResearchPlan {
   finishRequestedAt?: string;
   /** Set while paused; the span is added to `pausedMs` on resume (B13). */
   pausedAt?: string;
+  /** The state the run was paused in, so resume can go back to a gate or to the writer (B12). */
+  pausedFrom?: string;
+  /** The writer's cited summary, kept beside the report until the completion message is written (§9.6.3). */
+  summary?: string;
   /** Paused time so far, which the clocks do not count (B13). */
   pausedMs?: number;
 }
@@ -1426,6 +1441,8 @@ export const MAX_PLAN_REVISIONS = 5;
 export const REVISION_STALE_MS = 3 * 60_000;
 /** Questions a reader may leave on the card: the planner's 1–8, edited down or up to six. */
 export const MAX_EDITED_QUESTIONS = 8;
+/** The writer's summary is 120–250 words; this bounds a runaway one on the plan. */
+export const MAX_PLAN_SUMMARY_CHARS = 4_000;
 
 const isoOrUndefined = (value: unknown): string | undefined =>
   typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : undefined;
@@ -1595,6 +1612,8 @@ function parseReworkFields(raw: Record<string, unknown>): Partial<ResearchPlan> 
     ...(steering.length ? { steering } : {}),
     ...(isoOrUndefined(raw.finishRequestedAt) ? { finishRequestedAt: isoOrUndefined(raw.finishRequestedAt) } : {}),
     ...(isoOrUndefined(raw.pausedAt) ? { pausedAt: isoOrUndefined(raw.pausedAt) } : {}),
+    ...(typeof raw.pausedFrom === "string" && isResearchState(raw.pausedFrom) ? { pausedFrom: raw.pausedFrom } : {}),
+    ...(typeof raw.summary === "string" && raw.summary.trim() ? { summary: raw.summary.trim().slice(0, MAX_PLAN_SUMMARY_CHARS) } : {}),
     ...(typeof raw.pausedMs === "number" && Number.isFinite(raw.pausedMs) && raw.pausedMs > 0
       ? { pausedMs: Math.floor(raw.pausedMs) }
       : {}),

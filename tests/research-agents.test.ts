@@ -25,6 +25,9 @@ import { memoryStore } from "./fixtures/research-store";
 
 const PAGE = `${"The adoption rate of the standard reached 42 percent in 2025 according to the registry. ".repeat(12)}\n\n${"A second paragraph about implementation costs and the vendors that published pricing. ".repeat(12)}`;
 
+/** A report the writer's B6 check accepts (400 characters and a `##` heading). */
+const REPORT = `# Report\n\n## Findings\nA finding [1].\n\n${"The corpus supports this finding in detail. ".repeat(10).trim()}`;
+
 function baseDeps(store: ReturnType<typeof memoryStore>["store"], over: Partial<ResearchDeps> = {}): ResearchDeps {
   const searched: string[] = [];
   return {
@@ -48,7 +51,7 @@ function baseDeps(store: ReturnType<typeof memoryStore>["store"], over: Partial<
       return { title: `Page at ${url}`, text: PAGE, costMicroUsd: 500 };
     },
     async synthesize() {
-      return { report: "# Report\n\nA finding [1].", costMicroUsd: 1_000 };
+      return { report: REPORT, costMicroUsd: 1_000 };
     },
     hash: (text) => `h${text.length}`,
     now: () => new Date(),
@@ -169,7 +172,7 @@ test("a round of workers searches, reads, notes findings, is reviewed and record
       runWorker,
       async synthesize({ findings: given }) {
         synthesizedWith = given?.length ?? 0;
-        return { report: "# Report\n\nA finding [1].", costMicroUsd: 1_000 };
+        return { report: REPORT, costMicroUsd: 1_000 };
       },
     })
   );

@@ -69,6 +69,13 @@ import { memoryStore } from "./fixtures/research-store";
  * `costs` is what each stage bills; a test that cares about the ceiling raises
  * one of them rather than reaching into the engine.
  */
+/**
+ * A report the writer's B6 check accepts: 400 characters and a `##` heading.
+ * Shorter than that is "the writer produced nothing usable", which now fails
+ * the run after one retry rather than completing it empty.
+ */
+const REPORT = `# Report\n\n## Findings\nA finding [1].\n\n${"The corpus supports this finding in detail. ".repeat(10).trim()}`;
+
 function deps(
   store: ResearchStore,
   over: Partial<ResearchDeps> & { costs?: Partial<Record<string, number>> } = {}
@@ -96,7 +103,7 @@ function deps(
       };
     },
     async synthesize() {
-      return { report: "# Report\n\nA finding [1].", costMicroUsd: costs.synthesis! };
+      return { report: REPORT, costMicroUsd: costs.synthesis! };
     },
     hash: (text) => `h${text.length}`,
     now: () => new Date("2026-01-01T00:00:00.000Z"),
@@ -286,7 +293,9 @@ test("a worker lease fences a concurrent driver and can be reclaimed after expir
   const engine = createResearchEngine(deps(store));
   const run = await started(engine);
 
-  await engine.drive({ runId: run.id, userId: run.userId, workerId: "worker-a", until: "reviewing" });
+  // Held past `until`, the native hand-off's way (B2); every other stop lets
+  // the lease go (B1, tests/research-lease.test.ts).
+  await engine.drive({ runId: run.id, userId: run.userId, workerId: "worker-a", until: "reviewing", holdLeaseAtUntil: true });
   assert.ok(events.some((event) => event.runId === run.id && event.kind === "worker_lease_acquired"));
 
   const competing = await store.claimRun!({ runId: run.id, userId: run.userId, workerId: "worker-b" });
@@ -626,7 +635,7 @@ test("citation validation automatically revises once and revalidates the durable
   assert.equal(audits, 2, "the replacement must be audited before the run becomes terminal");
   assert.equal(revisions.length, 2, "one initial synthesis and one citation-driven rewrite");
   assert.deepEqual(revisions[1], {
-    report: "# Report\n\nA finding [1].\n\nEvidence is incomplete: the audit found a limitation.",
+    report: `${REPORT}\n\nEvidence is incomplete: the audit found a limitation.`,
     round: 1,
   });
   assert.equal(parsePlan(finished?.plan).revisionRound, 1, "the loop counter is durable in the plan");
@@ -654,7 +663,7 @@ test("a citation validator that keeps repairing cannot create an unbounded paid 
     async synthesize(input) {
       synthesisCalls += 1;
       return {
-        report: input.revision ? `# Revision ${synthesisCalls}\n\nA finding [1].` : "# Draft\n\nA finding [1].",
+        report: input.revision ? `# Revision ${synthesisCalls}\n\nA finding [1].` : REPORT.replace("# Report", "# Draft"),
         costMicroUsd: 1_000,
       };
     },
@@ -1163,7 +1172,7 @@ test("a ceiling with no room for the audit stops the run instead of auditing on 
   assert.equal(short.final.state, "partially_completed");
   assert.equal(
     short.final.report,
-    "# Report\n\nA finding [1].",
+    REPORT,
     "the draft synthesis already paid for stays readable; only the checking is missing"
   );
 
@@ -1191,7 +1200,7 @@ test("a run with no ceiling completes", async () => {
 
   const done = await store.loadRun(run.id, run.userId);
   assert.equal(done?.state, "completed");
-  assert.equal(done?.report, "# Report\n\nA finding [1].");
+  assert.equal(done?.report, REPORT);
   assert.ok(done?.finishedAt);
 });
 
@@ -1201,7 +1210,7 @@ test("a report citing a source that is not in the corpus completes only partiall
   const engine = createResearchEngine({
     ...base,
     async synthesize() {
-      return { report: "# Report\n\nA finding [9].", costMicroUsd: 1_000 };
+      return { report: REPORT.replace("[1]", "[9]"), costMicroUsd: 1_000 };
     },
   });
   const run = await started(engine);
@@ -1477,7 +1486,7 @@ test("the citation audit is numbered over exactly the rows the writer saw", asyn
       },
       async synthesize({ sources }) {
         written = sources.map((source) => source.url);
-        return { report: "# Report\n\nA finding [1].", costMicroUsd: 0 };
+        return { report: REPORT, costMicroUsd: 0 };
       },
       async validateReport({ report, sources }) {
         audited = sources.map((source) => source.url);

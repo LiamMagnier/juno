@@ -10,7 +10,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import { prisma, prismaUnguarded } from "@/lib/prisma";
+import { prismaUnguarded } from "@/lib/prisma";
 import { encryptMessageText } from "@/lib/message-crypto";
 import type { ParsedArtifact } from "@/lib/message-content";
 import { ARTIFACTS_STORE_TAKES_TX, persistArtifactsWithTx } from "@/lib/research/artifacts-shim";
@@ -74,8 +74,12 @@ export async function finalizeResearchRun(
       error: input.error ?? null,
     },
     {
+      // The raw client, as every interactive transaction here is (its `tx` is
+      // the `Prisma.TransactionClient` the artifact store will take); every
+      // statement below is scoped by the run's userId or the conversation it
+      // was checked against, which is what the ownership guard would enforce.
       transaction: (fn) =>
-        prisma.$transaction(async (tx) => fn(prismaCompletionTx(tx, deferred)), {
+        prismaUnguarded.$transaction(async (tx) => fn(prismaCompletionTx(tx, deferred)), {
           // A few rows; the default five seconds would do, but a slow pool
           // should not turn a finished run into a failed one.
           timeout: 15_000,
@@ -131,6 +135,7 @@ function prismaCompletionTx(
       return [];
     },
     async touchConversation(conversationId, at) {
+      // Only ever called after `conversationExists` checked the owner in this transaction.
       await tx.conversation.updateMany({ where: { id: conversationId }, data: { lastMessageAt: at } });
     },
     async finishRun({ runId, userId, from, to, messageId, report, error, at }) {

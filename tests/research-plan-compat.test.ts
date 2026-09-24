@@ -85,7 +85,7 @@ test("the previous build keeps the plan it knows and drops the rest", () => {
   const old = previousParsePlan(JSON.parse(JSON.stringify(reworkPlan())));
   assert.deepEqual(old.queries, reworkPlan().queries);
   assert.equal(old.confirmedAt, "2026-09-24T10:00:00.000Z");
-  assert.equal((old as Record<string, unknown>).envelope, undefined);
+  assert.equal((old as unknown as Record<string, unknown>).envelope, undefined);
 });
 
 test("a plan the previous build rewrote reads here as a legacy run bounded as before", () => {

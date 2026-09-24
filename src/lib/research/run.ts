@@ -164,6 +164,15 @@ export function createPrismaResearchStore(): ResearchStore {
       return row ? toRunRow(row) : null;
     },
 
+    async releaseRun({ runId, userId, workerId }) {
+      // Conditional on the owner: a release never frees a lease another
+      // driver has since taken (B1).
+      await prisma.researchRun.updateMany({
+        where: { id: runId, userId, workerLeaseOwner: workerId },
+        data: { workerLeaseOwner: null, workerLeaseUntil: null },
+      });
+    },
+
     async moveState({ runId, userId, from, to, patch }) {
       // `updateMany` rather than `update`, because the state condition has to be
       // re-evaluated by Postgres against the committed row. Exactly one caller
@@ -178,6 +187,8 @@ export function createPrismaResearchStore(): ResearchStore {
           ...(patch && "report" in patch && patch.report !== undefined
             ? { report: patch.report }
             : {}),
+          // The envelope's ceiling, frozen on the row at confirmation (§9.2).
+          ...(patch && patch.budgetMicroUsd !== undefined ? { budgetMicroUsd: patch.budgetMicroUsd } : {}),
         },
       });
       if (moved.count === 0) return null;
