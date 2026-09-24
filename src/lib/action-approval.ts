@@ -121,7 +121,25 @@ const JunoRules: Readonly<Record<string, ActionRiskClass>> = {
   // "unknown", which asks under every policy, and the turn hung.
   "juno_runtime:read_document": "read_only",
   "juno_runtime:inspect_image": "read_only",
+  // Juno's own chat tools (src/lib/tools/specs). Each entry equals
+  // `toActionRiskClass(spec.risk)` for its registry spec, and no other
+  // `juno_runtime:*` key exists (tests/tool-registry.test.ts pins both).
+  // `browser_agent` deliberately has none: it left chat before the broker
+  // trusted declared risk (DECISIONS §4b), and without a rule it stays
+  // `unknown`, which asks.
+  "juno_runtime:web_fetch": "read_only",
+  "juno_runtime:web_search": "read_only",
+  "juno_runtime:search_chats": "read_only",
+  // A remote sandbox with no network, on the user's own files (DECISIONS §4b).
+  // That rests on the isolation being confirmed, which is a precondition of
+  // ATTACHING the tool (`sandboxEgressIsolated`), never an assumption here.
+  "juno_runtime:run_code": "read_only",
 };
+
+/** The exact-rule keys, for the registry test that pins them to the specs. */
+export function junoRuleKeys(): string[] {
+  return Object.keys(JunoRules);
+}
 
 const READ_VERBS = new Set([
   "browse", "check", "count", "describe", "diff", "download", "export", "fetch", "find", "get",
@@ -267,8 +285,17 @@ export function decideActionPolicy(input: {
   hasStandingApproval?: boolean;
   lockdown?: boolean;
   connectorBlocked?: boolean;
+  /**
+   * The call is one of Juno's own tools (`connectorId: "juno_runtime"`), not a
+   * connected app's. A first-party READ is allowed under every policy short of
+   * `block` and lockdown, `always_ask` included (INV-31): that setting's copy
+   * speaks of "a connected app", which Juno's own readers are not, and a read
+   * that waits on a card is the hang RC-1 fixed.
+   */
+  firstParty?: boolean;
 }): ActionPolicyOutcome {
   if (input.lockdown || input.connectorBlocked || input.policy === "block") return "block";
+  if (input.firstParty && effectiveActionRisk(input.riskClass) === "read_only") return "allow";
   if (input.policy === "always_ask") return "ask";
 
   const effective = effectiveActionRisk(input.riskClass);
@@ -287,6 +314,78 @@ export function decideActionPolicy(input: {
   }
 
   return "ask";
+}
+
+/** The connector id Juno's own chat tools reach the broker under. */
+export const JUNO_RUNTIME_CONNECTOR_ID = "juno_runtime";
+
+/** What the decision needs from a resolved policy (the store's `ResolvedActionPolicy`). */
+export interface ActionPolicySnapshot {
+  policy: ActionPermissionPolicy;
+  lockdown: boolean;
+  connectorBlocked: boolean;
+  /** The connector the snapshot was resolved for. A snapshot for another is never reused. */
+  connectorId?: string;
+}
+
+/**
+ * The decision half of `authorizeExternalAction`, with its two database reads
+ * injected (SPEC §3.3 items 2–3).
+ *
+ * `resolvedPolicy` is the route's once-per-turn resolution: when it is given
+ * and was resolved for the same connector, the policy query is skipped, so a
+ * Juno read costs no query at all (a read never has a standing grant, so that
+ * lookup is skipped too). `receiptless` is the one short-circuit that writes
+ * nothing: an allowed read.
+ */
+export async function decideAuthorization<P extends ActionPolicySnapshot>(
+  request: {
+    connectorId: string;
+    toolName: string;
+    annotations?: ToolAccessHints;
+    args?: Record<string, unknown>;
+    resolvedPolicy?: P | null;
+  },
+  deps: {
+    resolvePolicy: () => Promise<P>;
+    findStandingGrant: (riskClass: ActionRiskClass, policy: P) => Promise<boolean>;
+  },
+): Promise<{
+  classification: ActionClassification;
+  policy: P;
+  outcome: ActionPolicyOutcome;
+  firstParty: boolean;
+  receiptless: boolean;
+}> {
+  const classification = classifyExternalAction({
+    connectorId: request.connectorId,
+    toolName: request.toolName,
+    annotations: request.annotations,
+    args: request.args,
+  });
+  const reusable =
+    request.resolvedPolicy &&
+    (request.resolvedPolicy.connectorId === undefined || request.resolvedPolicy.connectorId === request.connectorId);
+  const policy = reusable ? (request.resolvedPolicy as P) : await deps.resolvePolicy();
+  const hasStandingApproval = mayCreateStandingApproval(classification.riskClass)
+    ? await deps.findStandingGrant(classification.riskClass, policy)
+    : false;
+  const firstParty = request.connectorId === JUNO_RUNTIME_CONNECTOR_ID;
+  const outcome = decideActionPolicy({
+    policy: policy.policy,
+    riskClass: classification.riskClass,
+    hasStandingApproval,
+    lockdown: policy.lockdown,
+    connectorBlocked: policy.connectorBlocked,
+    firstParty,
+  });
+  return {
+    classification,
+    policy,
+    outcome,
+    firstParty,
+    receiptless: classification.riskClass === "read_only" && outcome === "allow",
+  };
 }
 
 export interface ActionProvenance {
@@ -408,12 +507,27 @@ export function actionPreview(input: {
     const title = typeof input.args.title === "string" ? input.args.title.trim().replace(/[.!?]+$/, "") : "";
     const estimate = typeof input.args.estimate === "string" ? input.args.estimate.trim() : "";
     const task = title ? `Start a background task: ${title}.` : "Start a background task.";
-    return estimate ? `${task} Estimated cost ${estimate}.` : task;
+    return singleLine(estimate ? `${task} Estimated cost ${estimate}.` : task);
   }
   const verb = input.toolName.replace(/[_-]+/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2");
   const suffix =
     input.riskClass === "unknown"
       ? " Juno could not verify whether this only reads, so it is treated as a change."
       : "";
-  return `${input.connectorLabel} wants to ${verb}.${suffix}`;
+  return singleLine(`${input.connectorLabel} wants to ${verb}.${suffix}`);
+}
+
+/** The longest preview the approval wire carries (INV-5). */
+export const ACTION_PREVIEW_MAX_CHARS = 8 * 1024;
+
+/**
+ * One line, as every approval text field must be (INV-5, gap-native D8): a
+ * connector label or tool name can carry newlines and control characters, and
+ * the native card renders them raw. Runs of whitespace and control characters
+ * collapse to one space; the result is cut at `max`.
+ */
+export function singleLine(value: string, max = ACTION_PREVIEW_MAX_CHARS): string {
+  // eslint-disable-next-line no-control-regex
+  const flat = value.replace(/[\u0000-\u001f\u007f\u2028\u2029\s]+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
 }

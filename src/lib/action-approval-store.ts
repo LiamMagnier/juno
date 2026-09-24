@@ -13,10 +13,10 @@ import {
   actionPreview,
   actionPreviewDetail,
   actionReceiptDigest,
-  classifyExternalAction,
-  decideActionPolicy,
+  decideAuthorization,
   mayCreateStandingApproval,
   normalizedActionArgs,
+  singleLine,
   type ActionApprovalDecision,
   type ActionPermissionPolicy,
   type ActionProvenance,
@@ -25,6 +25,7 @@ import {
   type ClientActionApproval,
 } from "@/lib/action-approval";
 import type { ToolAccessHints } from "@/lib/tool-access";
+import { canonicalToolId, toolIdAliasesOf } from "@/lib/tools/aliases";
 
 const POLL_MS = 400;
 const RESULT_LIMIT = 30_000;
@@ -79,11 +80,12 @@ export function serializeActionApproval(row: ReceiptRow, connectorLabel = row.co
     sessionId: row.sessionId,
     conversationId: row.conversationId,
     connectorId: row.connectorId,
-    connectorLabel,
-    toolName: row.toolName,
-    action: row.action,
+    // One line each, whatever a connector named itself (INV-5, gap-native D8).
+    connectorLabel: singleLine(connectorLabel, 200) || row.connectorId,
+    toolName: singleLine(row.toolName, 200) || row.toolName,
+    action: singleLine(row.action, 200) || row.action,
     riskClass,
-    preview: row.preview,
+    preview: singleLine(row.preview) || row.action,
     detail: objectValue(row.detail),
     receiptDigest: row.receiptDigest,
     status: statusValue(row.status),
@@ -104,6 +106,8 @@ export interface ResolvedActionPolicy {
   connectorBlocked: boolean;
   policyDigest: string;
   scopeKey: string;
+  /** The connector it was resolved for; a policy resolved for another is never reused. */
+  connectorId?: string;
 }
 
 function validPolicy(value: string | undefined | null): ActionPermissionPolicy {
@@ -133,6 +137,7 @@ export async function resolveActionPolicy(input: {
     connectorBlocked,
     policyDigest: actionPolicyDigest({ policy, lockdown, blockedConnectors, connectorId: input.connectorId, projectId }),
     scopeKey: projectId ? `project:${projectId}` : "account",
+    connectorId: input.connectorId,
   };
 }
 
@@ -183,12 +188,28 @@ export interface AuthorizeActionInput {
    * and why it did not happen.
    */
   unattended?: boolean;
+  /**
+   * The policy the chat route resolved once for this turn (SPEC §3.3 item 3).
+   * Used only when it was resolved for this request's connector; it saves the
+   * policy query, so a Juno read that the policy allows costs no query at all.
+   */
+  resolvedPolicy?: ResolvedActionPolicy | null;
 }
 
 export type ActionAuthorization =
   | { kind: "authorized"; receiptId: string | null; riskClass: ActionRiskClass }
   | { kind: "replay"; receiptId: string; result: string; failed: boolean }
-  | { kind: "refused"; receiptId: string | null; reason: string };
+  | {
+      kind: "refused";
+      receiptId: string | null;
+      reason: string;
+      /**
+       * The receipt's status, when a receipt decided it (SPEC §3.3 item 9):
+       * `denied`, `expired`, `blocked` or `superseded`, so a caller maps the
+       * outcome without reading the sentence.
+       */
+      status?: ActionReceiptStatus;
+    };
 
 async function wait(ms: number, signal?: AbortSignal): Promise<boolean> {
   if (signal?.aborted) return false;
@@ -206,6 +227,15 @@ async function wait(ms: number, signal?: AbortSignal): Promise<boolean> {
   });
 }
 
+/**
+ * The names a standing grant for this tool may be stored under. Juno's own
+ * tools were renamed once (INV-23): a grant made under `code_interpreter` still
+ * covers `run_code`, so the canonical name is tried, then its aliases.
+ */
+function grantToolNames(connectorId: string, toolName: string): string[] {
+  return connectorId === "juno_runtime" ? toolIdAliasesOf(canonicalToolId(toolName)) : [toolName];
+}
+
 async function findStandingGrant(input: {
   userId: string;
   connectorId: string;
@@ -214,12 +244,13 @@ async function findStandingGrant(input: {
   riskClass: ActionRiskClass;
 }): Promise<boolean> {
   if (!mayCreateStandingApproval(input.riskClass)) return false;
+  const names = grantToolNames(input.connectorId, input.toolName);
   return !!(await prisma.actionApprovalGrant.findFirst({
     where: {
       userId: input.userId,
       connectorId: input.connectorId,
       scopeKey: input.scopeKey,
-      toolName: input.toolName,
+      toolName: names.length === 1 ? names[0] : { in: names },
       maxRiskClass: "reversible_write",
       revokedAt: null,
     },
@@ -383,31 +414,25 @@ async function waitForDecision(input: {
 }
 
 export async function authorizeExternalAction(request: AuthorizeActionInput): Promise<ActionAuthorization> {
-  const classification = classifyExternalAction({
-    connectorId: request.connectorId,
-    toolName: request.toolName,
-    annotations: request.annotations,
-    args: request.args,
-  });
-  const policy = await resolveActionPolicy(request);
-  const hasStandingApproval = await findStandingGrant({
-    userId: request.userId,
-    connectorId: request.connectorId,
-    scopeKey: policy.scopeKey,
-    toolName: request.toolName,
-    riskClass: classification.riskClass,
-  });
-  const outcome = decideActionPolicy({
-    policy: policy.policy,
-    riskClass: classification.riskClass,
-    hasStandingApproval,
-    lockdown: policy.lockdown,
-    connectorBlocked: policy.connectorBlocked,
+  // Classification, policy and standing grant, then the decision — first-party
+  // reads allowed under every policy short of block and lockdown (INV-31). The
+  // policy query is skipped when the route already resolved it for this turn.
+  const { classification, policy, outcome } = await decideAuthorization(request, {
+    resolvePolicy: () => resolveActionPolicy(request),
+    findStandingGrant: (riskClass, resolved) =>
+      findStandingGrant({
+        userId: request.userId,
+        connectorId: request.connectorId,
+        scopeKey: resolved.scopeKey,
+        toolName: request.toolName,
+        riskClass,
+      }),
   });
 
-  // Reads need no receipt unless the user deliberately chose Always ask. Every
-  // write or unknown call receives one even when an explicit policy auto-allows
-  // it, so the audit can still name the policy that admitted it.
+  // Reads need no receipt unless the user deliberately chose Always ask (and a
+  // first-party read not even then). Every write or unknown call receives one
+  // even when an explicit policy auto-allows it, so the audit can still name the
+  // policy that admitted it.
   if (classification.riskClass === "read_only" && outcome === "allow") {
     return { kind: "authorized", receiptId: null, riskClass: classification.riskClass };
   }
@@ -442,7 +467,12 @@ export async function authorizeExternalAction(request: AuthorizeActionInput): Pr
     };
   }
   if (["denied", "expired", "superseded", "blocked"].includes(initial.status)) {
-    return { kind: "refused", receiptId: initial.id, reason: initial.executionResult ?? `Action ${initial.status}.` };
+    return {
+      kind: "refused",
+      receiptId: initial.id,
+      reason: initial.executionResult ?? `Action ${initial.status}.`,
+      status: statusValue(initial.status),
+    };
   }
 
   let decided = initial;
@@ -451,7 +481,12 @@ export async function authorizeExternalAction(request: AuthorizeActionInput): Pr
     decided = await waitForDecision({ userId: request.userId, receiptId: initial.id, signal: request.signal });
   }
   if (decided.status !== "allowed") {
-    return { kind: "refused", receiptId: decided.id, reason: decided.executionResult ?? `Action ${decided.status}.` };
+    return {
+      kind: "refused",
+      receiptId: decided.id,
+      reason: decided.executionResult ?? `Action ${decided.status}.`,
+      status: statusValue(decided.status),
+    };
   }
 
   // Re-resolve current policy immediately before consumption. Any policy
@@ -463,7 +498,12 @@ export async function authorizeExternalAction(request: AuthorizeActionInput): Pr
       where: { id: decided.id, userId: request.userId, status: "allowed" },
       data: { status: "superseded", completedAt: new Date(), executionResult: "Arguments or permissions changed after approval." },
     });
-    return { kind: "refused", receiptId: decided.id, reason: "Arguments or permissions changed after approval." };
+    return {
+      kind: "refused",
+      receiptId: decided.id,
+      reason: "Arguments or permissions changed after approval.",
+      status: "superseded",
+    };
   }
 
   // Atomic one-time spend. A second process presenting the same approval loses.

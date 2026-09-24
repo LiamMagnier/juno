@@ -321,22 +321,36 @@ for (const { relativePath, sourceFile, record: sink } of directMcpSinks) {
 // The receipt store must keep using the shared classification, argument digest,
 // and policy domain. A local look-alike broker would otherwise satisfy the MCP
 // import while silently implementing a different permission system.
+//
+// The classification and the policy decision reach the store through
+// `decideAuthorization`, the pure decision half that lives beside them in the
+// domain module (so the chat dispatcher's tests can drive it with fake queries).
+// It must itself call both, or the store would be deciding with something else.
 const storePath = "src/lib/action-approval-store.ts";
 const storeSource = parse(storePath);
 const domainBindings = importBindings(storeSource, "@/lib/action-approval");
-for (const symbol of [
-  "classifyExternalAction",
-  "decideActionPolicy",
-  "actionArgsHash",
-  "actionReceiptDigest",
-]) {
+const storeDomainSymbols = ["decideAuthorization", "actionArgsHash", "actionReceiptDigest"];
+for (const symbol of storeDomainSymbols) {
   if (!domainBindings.has(symbol)) fail(`${storePath} must import ${symbol} from @/lib/action-approval`);
 }
 const storeCalls = callRecords(storeSource);
-for (const symbol of ["classifyExternalAction", "decideActionPolicy", "actionArgsHash", "actionReceiptDigest"]) {
+for (const symbol of storeDomainSymbols) {
   const local = domainBindings.get(symbol);
   if (local && !storeCalls.some((record) => record.name === local)) {
     fail(`${storePath} imports ${symbol} but no production broker path calls it`);
+  }
+}
+const domainPath = "src/lib/action-approval.ts";
+const domainSource = parse(domainPath);
+const decideAuthorizationFunction = findFunction(domainSource, "decideAuthorization");
+if (!decideAuthorizationFunction) {
+  fail(`${domainPath} must define decideAuthorization`);
+} else {
+  const decideCalls = callsInside(decideAuthorizationFunction, domainSource);
+  for (const symbol of ["classifyExternalAction", "decideActionPolicy"]) {
+    if (!decideCalls.some((record) => record.name === symbol)) {
+      fail(`${domainPath} decideAuthorization() must call ${symbol}`);
+    }
   }
 }
 const authorizeFunction = findFunction(storeSource, "authorizeExternalAction");

@@ -12,7 +12,6 @@ import type {
   ToolExecutionResult,
   AgentMode,
 } from "@/lib/agent/types";
-import { browserTool } from "@/lib/agent/browser";
 import { runCodeTool } from "@/lib/agent/code";
 import { readDocumentTool } from "@/lib/agent/document";
 import { inspectImageTool } from "@/lib/agent/image";
@@ -24,7 +23,11 @@ export class UnifiedAgentRegistry {
     // Deliberately no host-Python registration here. `sandbox/python.ts` uses a
     // child process and is retained only for local migration/tests; it is not a
     // tenant isolation boundary and must never be exposed by the hosted toolset.
-    this.registerTool(browserTool as unknown as ToolDefinition<unknown, unknown>);
+    // No page reader: `browser_agent` advertised clicks and typing it never
+    // performed, and it left chat before the broker began trusting declared
+    // risk (DECISIONS §4b). `web_fetch` replaces it through the chat toolset
+    // (`tools/toolset.ts`). `browser.ts` stays until this runtime goes (WS9a).
+    //
     // Both read-only and both scoped to what the person attached to the
     // conversation they are running in (`agent/attachments.ts`). Registering
     // them here does not attach them to anything: `chatRuntimeToolAllowlist`

@@ -20,13 +20,23 @@
  * reach files the person put in this conversation, so a turn with no
  * attachments has nothing to offer them and does not carry them.
  *
+ * The page reader (`browser_agent`) is no longer on it. It advertised clicks
+ * and typing it never performed, and it left chat before the broker began
+ * trusting a tool's declared risk (DECISIONS §4b): the web toggle now brings
+ * `web_search` and `web_fetch` through the chat toolset (`tools/toolset.ts`),
+ * whose fetch opens only URLs that already appeared in the conversation.
+ *
  * `start_task` is not on this list, because it is not a registry tool. It is a
  * native tool the chat route builds per turn (`NativeChatTool` in llm.ts) and
  * gates with `chatTaskToolEnabled` in src/lib/chat/task-tool.ts, so it never
  * passes through the registry's generic approval broker.
  */
 
-/** Registry id of the hosted page-reading tool (`src/lib/agent/browser.ts`). */
+/**
+ * The retired page reader's id (`src/lib/agent/browser.ts`). Still exported for
+ * the readers of stored ids, which map it to `web_fetch` (`tools/aliases.ts`,
+ * INV-23); no turn is offered it any more.
+ */
 export const BROWSER_TOOL_ID = "browser_agent";
 
 /** Registry id of the attached-document reader (`src/lib/agent/document.ts`). */
@@ -35,13 +45,19 @@ export const READ_DOCUMENT_TOOL_ID = "read_document";
 /** Registry id of the crop-and-magnify tool (`src/lib/agent/image.ts`). */
 export const INSPECT_IMAGE_TOOL_ID = "inspect_image";
 
-/** Registry id of the sandboxed Python tool (`src/lib/agent/code.ts`). */
-export const CODE_INTERPRETER_TOOL_ID = "code_interpreter";
+/**
+ * Registry id of the sandboxed Python tool (`src/lib/agent/code.ts`): `run_code`
+ * since the chat rework, `code_interpreter` before it (its stored alias).
+ */
+export const RUN_CODE_TOOL_ID = "run_code";
+/** @deprecated The old name of the constant; the id is `run_code` now. */
+export const CODE_INTERPRETER_TOOL_ID = RUN_CODE_TOOL_ID;
 
 /** An explicit empty allowlist: no runtime tool at all. */
 export const NO_RUNTIME_TOOLS: readonly string[] = Object.freeze([]);
 
 export interface RuntimeToolToggles {
+  /** Read for the skill layer's grant; it attaches no runtime tool (see the header). */
   webSearch: boolean;
   /**
    * This turn's history carries at least one indexed document.
@@ -77,9 +93,8 @@ export interface RuntimeToolToggles {
  */
 export function chatRuntimeToolAllowlist(toggles: RuntimeToolToggles): string[] {
   const allowed: string[] = [];
-  if (toggles.webSearch) allowed.push(BROWSER_TOOL_ID);
   if (toggles.documents) allowed.push(READ_DOCUMENT_TOOL_ID);
   if (toggles.images) allowed.push(INSPECT_IMAGE_TOOL_ID);
-  if (toggles.code) allowed.push(CODE_INTERPRETER_TOOL_ID);
+  if (toggles.code) allowed.push(RUN_CODE_TOOL_ID);
   return allowed;
 }
