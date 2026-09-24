@@ -22,7 +22,7 @@ usage limit. Nothing unfinished is on main, and nothing was deployed.
 
 | Commit | What | Where |
 |---|---|---|
-| `7f92324f` | **Library fix.** Web, server and iOS | **On origin/main**. Not deployed; the next deploy runs its migration |
+| `7f92324f` | **Library fix.** Web, server and iOS | **Live** (deployed with 1633a4b5, 2026-09-24) |
 | `4559ae9c`, `169e6bb1` | Audit (17 reports in `audit/`) and `DECISIONS.md` (§4b resolutions, §4c defaults the owner must confirm) | Branch only |
 | `c899d6f7` | **Pinned-DNS fix.** On Node ≥ 20 every pinned fetch threw `ERR_INVALID_IP_ADDRESS`, breaking Research page reads, the chat page reader and Work fetches | Branch only. **Can ship on its own:** cherry-pick onto main |
 | `f1badf26`, `5f89b888` | `SPEC.md`: 5,600 lines with 3 adversarial reviews applied, plus the bootstrap-advertising addendum agreed with the Mac session | Branch only |
@@ -50,7 +50,8 @@ multi-agent workflows. So first came a hotfix branch off origin/main (7f92324f),
   signed-in session.
 - **Merged into origin/main at 1633a4b5**, on 2026-09-24, by the web releaser session "Fix dead
   script previews under enforcing CSP", together with its artifact fixes. The gate on the combined
-  tree passed 3,822 tests. It is **not deployed yet**: that deploy waits for the owner's go-ahead.
+  tree passed 3,822 tests. **Deployed to chat.liams.dev** on 2026-09-24, by the owner, from origin/main
+  1633a4b5. The Library fix and its `libraryRemovedAt` migration went out in the same deploy.
 
 The next small slices, if usage allows:
 - stop sending xAI's retired Live Search, once verified live.
