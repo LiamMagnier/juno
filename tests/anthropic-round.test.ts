@@ -179,6 +179,67 @@ test("malformed tool JSON degrades to empty arguments rather than throwing", asy
     messageDelta("tool_use"),
   ]);
   assert.deepEqual((round.blocks[0] as { input: unknown }).input, {});
+  // Only the REPLAYED block degrades: the call itself keeps the raw text, so
+  // the dispatcher can tell the model its JSON was invalid (RC-14).
+  assert.equal(round.toolUses[0].json, '{"truncated":');
+});
+
+test("a call is known by the id the turn issues it, with its step and position", async () => {
+  const issued: Array<[string, number, number]> = [];
+  const gen = readAnthropicRound(
+    streamOf([
+      start(0, { type: "tool_use", id: "toolu_1", name: "a" }),
+      stop(0),
+      start(1, { type: "tool_use", id: "toolu_2", name: "b" }),
+      stop(1),
+      messageDelta("tool_use"),
+    ]),
+    {
+      seen: new Set(),
+      round: 4,
+      callIdFor: (id, round, index) => {
+        issued.push([id, round, index]);
+        return `${id}#x`;
+      },
+    },
+  );
+  const yielded: LlmEvent[] = [];
+  let result;
+  for (;;) {
+    const step = await gen.next();
+    if (step.done) {
+      result = step.value;
+      break;
+    }
+    yielded.push(step.value);
+  }
+  assert.deepEqual(issued, [
+    ["toolu_1", 4, 0],
+    ["toolu_2", 4, 1],
+  ]);
+  assert.deepEqual(
+    result.toolUses.map((u) => [u.id, u.callId, u.round, u.index, u.complete]),
+    [
+      ["toolu_1", "toolu_1#x", 4, 0, true],
+      ["toolu_2", "toolu_2#x", 4, 1, true],
+    ],
+  );
+  // The call event names both ids when they differ.
+  assert.deepEqual(yielded[0], { type: "tool", server: "connector", name: "a", phase: "call", callId: "toolu_1#x", providerCallId: "toolu_1", round: 4, index: 0 });
+  assert.equal(result.round, 4);
+});
+
+test("a call cut off mid-stream is kept, marked incomplete, and never replayed", async () => {
+  const { round } = await readAll([
+    start(0, { type: "text" }),
+    delta(0, { type: "text_delta", text: "Closing it." }),
+    stop(0),
+    start(1, { type: "tool_use", id: "a", name: "t" }),
+    delta(1, { type: "input_json_delta", partial_json: '{"n":' }),
+    messageDelta("max_tokens"),
+  ]);
+  assert.deepEqual(round.toolUses.map((u) => [u.id, u.json, u.complete]), [["a", '{"n":', false]]);
+  assert.deepEqual(round.blocks.map((b) => (b as { type: string }).type), ["text"]);
 });
 
 test("safeToolInput only accepts JSON objects", () => {

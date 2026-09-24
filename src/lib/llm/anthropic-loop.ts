@@ -134,8 +134,10 @@ export async function* anthropicLoop(req: AdapterRequest, deps: AnthropicLoopDep
 
     const dispatch = !!runTools && !final && result.stopReason === "tool_use" && result.toolUses.length > 0;
     // A structured call's answer is settled before its step closes, so the
-    // answer text belongs to the step it ends.
-    const settled = structured ? settleStructured(result, held, structured, loop.nextIsFinal()) : null;
+    // answer text belongs to the step it ends. Its one tool is offered on
+    // every request (never a tools-off one), so a retry needs only a request
+    // left in the budget.
+    const settled = structured ? settleStructured(result, held, structured, loop.requests >= loop.budget) : null;
     if (settled?.kind === "answer" && settled.text) yield { type: "text", text: settled.text, round };
     yield {
       type: "round_end",
@@ -427,13 +429,17 @@ async function* resumeIterator(
   }
 }
 
-/** Passes every event through except `text`, which it keeps: a structured call's prose is not its answer. */
+/**
+ * A structured request's events, minus two kinds: `text`, which it keeps — the
+ * call's prose is not its answer — and the `tool` call of the schema's own
+ * tool, which is how the answer arrives rather than an action anyone took.
+ */
 async function* holdText<R>(reader: AsyncGenerator<LlmEvent, R>, held: string[]): AsyncGenerator<LlmEvent, R> {
   for (;;) {
     const step = await reader.next();
     if (step.done) return step.value;
     if (step.value.type === "text") held.push(step.value.text);
-    else yield step.value;
+    else if (step.value.type !== "tool") yield step.value;
   }
 }
 
