@@ -1,4 +1,5 @@
 import "server-only";
+import { spendKindFilter, type SpendScope } from "@/lib/research/spend-windows";
 import { cache } from "react";
 import { Prisma } from "@prisma/client";
 import type { Plan } from "@prisma/client";
@@ -414,10 +415,17 @@ export async function recordWorkRunSpend(input: {
 // billing-period figure in `checkBudget` remains the outer bound, because a
 // window is a slice of it and the month can still refuse.
 
-/** Sum of a user's spend since a given instant, in micro-USD. */
-async function spendSinceMicroUsd(userId: string, since: Date): Promise<number> {
+/**
+ * Sum of a user's spend since a given instant, in micro-USD.
+ *
+ * `scope: "window"` leaves research out (SPEC §9.2): a research run is sized
+ * against its own share of the MONTH, and summed into the five-hour window
+ * one run would close chat for the rest of the sitting. The month (the
+ * default) counts every kind.
+ */
+async function spendSinceMicroUsd(userId: string, since: Date, scope: SpendScope = "month"): Promise<number> {
   const agg = await prisma.apiSpend.aggregate({
-    where: { userId, createdAt: { gte: since } },
+    where: { userId, createdAt: { gte: since }, ...spendKindFilter(scope) },
     _sum: { costMicroUsd: true },
   });
   return agg._sum.costMicroUsd ?? 0;
@@ -689,7 +697,9 @@ async function openReservedMicroUsd(
       state: "open",
       spendPeriod: { userId, period: spendPeriodKey(period) },
       ...(ignoreRef ? { ref: { not: ignoreRef } } : {}),
-      ...(sinceMs != null ? { createdAt: { gte: new Date(sinceMs) } } : {}),
+      // A window's holds leave research out, as its sums do (SPEC §9.2); the
+      // period's (no `sinceMs`) keep every kind.
+      ...(sinceMs != null ? { createdAt: { gte: new Date(sinceMs) }, ...spendKindFilter("window") } : {}),
     },
     _sum: { estimateMicroUsd: true },
   });
@@ -1152,8 +1162,8 @@ export async function getUsageWindows(
     nowMs,
   });
   const [sessionSpent, weekSpent] = await Promise.all([
-    spendSinceMicroUsd(userId, new Date(grid.session.startMs)),
-    spendSinceMicroUsd(userId, new Date(grid.weekly.startMs)),
+    spendSinceMicroUsd(userId, new Date(grid.session.startMs), "window"),
+    spendSinceMicroUsd(userId, new Date(grid.weekly.startMs), "window"),
   ]);
   // `pct` reads the PACE slice and `budgetMicroUsd` the burst allowance, and
   // the two are deliberately different numbers: the meter says whether this
