@@ -38,12 +38,14 @@ This folder is the record of all three. It changes no product code.
   - Three workflows with about 80 agents: area audits with adversarial verifiers and a completeness critic; nine fact-checked research lenses with gap analysis; three competing merge proposals, three judges, two red-team critics and a revision.
   - Research that relied on a leaked Claude Design prompt was removed; nothing here depends on it.
 
-## Status of fixes already in flight (2026-09-24)
+## Status of fixes (2026-09-24)
 
 | Defect | Where | State |
 |---|---|---|
-| X-01 dead previews | `claude/sharp-aryabhata-79fb4b` @ `b7946ff5` | Fixed with share governance. Not merged or deployed; needs a migration deploy |
-| X-02 Canvas editor remount | `claude/suspicious-borg-f3e3b4` @ `499b6afd` | Fix ready to land (fast-forwards from main); waiting for a releaser and a signed-in check |
-| X-03 / X-04 edit and regenerate deletes | `claude/agitated-elion-a15fe9` @ `7243613f` | Fixed. Not merged or deployed |
-| X-08 design size after expansion; M11 type immutability | `artifacts/r0-size-and-type` @ `db3766ab` (stacked on `7243613f`, worktree `../juno-artifacts-r0`) | Fixed with tests. Not merged; lands together with `7243613f` in R0 |
+| X-01 dead previews | origin/main `1633a4b5` (`16fc3009`) | **Shipped and deployed.** Public shares stay static until publish-time screening (X-32) and B11 exist. A separate preview domain and the legal contact are still open |
+| X-02 Canvas editor remount | origin/main `1633a4b5` (`499b6afd`) | **Shipped and deployed.** Needs a signed-in check; the Mac bundle needs a rebuild |
+| X-03 / X-04 edit and regenerate deletes | origin/main `1633a4b5` (`7243613f`) | **Shipped and deployed** |
+| X-08 design size after expansion | origin/main `1633a4b5` (`9161bcbc`) | **Shipped and deployed** |
+| M11 type immutability | `artifacts/r0-size-and-type` @ `db3766ab` | Held back until the Mac and iPhone resolvers follow the same rule |
+| First light (Design as a type, `/a/{id}`, posters) plus X-07, X-10, X-21, X-23, X-24, X-26 | `artifacts/merge-first-light` (worktree `../juno-artifacts-r0`) | Being built |
 | X-11 / X-12 Mac dock designs and stale revision | `mac/liquid-glass-chat` (Phase 2 stage 3) | In progress in the juno-glass worktree |
