@@ -346,3 +346,38 @@ How the two tracks split from here:
 - **Track B (pages, `../juno-glass-pages`, branch `mac/liquid-glass-pages`):** move Projects, Artifacts, Design, Memory, Agents' roster and the Phase 4 pages onto `JunoPage`; detail pages push; list rows rename with `JunoInlineRenameField`; the Artifacts view switch and the shared packages' segmented pickers move to `JunoSegmented` as their screens are rebuilt.
 
 Runtime checks not done (screen control is off): a toast over a live composer (and its glass), hover holding it, Undo restoring an archived chat, a push and pop on the Agents page with the system back button (and the §0.5 crash repro with a popover open while pushing), ⌘R / ⇧⌘I from the new header buttons, focus landing in Search's field on ⇧⌘F, the controls row wrapping as the window narrows.
+
+## Update: paused, 2026-09-24 (the owner's usage at 99%)
+
+**Committed since the last update** (on `mac/liquid-glass-chat`, unpushed, working tree clean):
+
+- `786c7bd6` (API), `da512b74` (composer) and `a709617f` (run card): the Phase 5 minimal slice.
+- `c42ee8a8`: merge of `origin/main` at `f905db81`. It brings in Agents (web, Mac and iOS), the X-01 to X-08 artifact fixes (edit and regenerate no longer delete artifacts), Research without levels, and the tool-call hotfixes.
+- `23b861d5`: merge of `origin/main` at `e5501f65`. It brings in First light (Design becomes a type in Artifacts) and M11 (artifact types are immutable).
+- `22436463`: shared foundations for Phases 3 and 4. They are the toast host and notifier, the `JunoPage` template, `JunoSegmented`, `JunoEmptyState`, the list helpers (confirmation dialog, inline rename), and prominent buttons in the Juno accent instead of system blue.
+
+**Sibling worktree for track B:** `/Users/liammagnier/Developer/project/juno-glass-pages`, branch `mac/liquid-glass-pages` at `22436463`, clean and not yet used.
+
+**Stopped workflow:** `juno-mac-glass-finish`.
+- Script: `~/.claude/projects/-Users-liammagnier-Developer-project-juno/a645690b-6552-4335-aa0f-8149e2f4596b/workflows/scripts/juno-mac-glass-finish-wf_fbef2579-b63.js`
+- Run: `wf_9531992f-2bb`
+- Cached: the merge and the foundations. The two brief writers, `A:brief5` (Phase 5 rest) and `B:brief4` (Phase 4 pages), had not written anything.
+- **Resume in this session:** `Workflow({scriptPath, resumeFromRunId: "wf_9531992f-2bb"})`. It replays the merge and the foundations, then runs these in order:
+  1. Track A (Phase 5 rest, then Phase 3) in parallel with track B (Phase 4 pages, including First light (a) to (c) and Agents pages).
+  2. The integration step.
+  3. Phase 6, sync tooling.
+  4. The final review.
+- **From a new session:** reuse the script as-is; it is self-contained. Drop the merge and foundations agents, since both are done.
+
+**Then ship**, which is the owner's standing instruction:
+1. Tell the other sessions who releases.
+2. Merge into `main`, gate the full tree, and push.
+3. Run `deploy/deploy-from-mac.sh`.
+4. Bump to **1.7.0 / build 88**.
+5. Run `native/Scripts/release-macos.sh 1.7.0 --publish-dev` from a clean worktree of main.
+
+The Juno Code session has agreed not to cut Mac releases and that 1.7.0 is ours.
+
+**Blocking the release:** the live feed (`/api/downloads`) still reports macOS "Not published yet". The owner must make sure `JUNO_RELEASES_GITHUB_TOKEN` (fine-grained, `LiamMagnier/juno`, Contents: read) is in `~/juno/.env` on the VM, then redeploy or restart. Otherwise the release script's feed check reverts the publish to draft.
+
+**Still waiting on the owner:** permission to download the React, Babel and Tailwind browser bundles, and Newsreader Regular Italic.
