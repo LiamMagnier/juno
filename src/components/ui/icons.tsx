@@ -251,6 +251,7 @@ import {
   JunoCodeGlyph,
   JunoDesignGlyph,
   JunoLibraryGlyph,
+  JunoAgentsGlyph,
   JunoSendGlyph,
 } from "@/components/ui/juno-glyphs";
 import { cn } from "@/lib/utils";
@@ -403,6 +404,8 @@ export const JunoDesign = glyph(JunoDesignGlyph, "juno-design", { motion: "parts
  *  at 18px. Under the pointer the leaning volume straightens and lifts, the
  *  way a book comes off a shelf. */
 export const JunoLibrary = glyph(JunoLibraryGlyph, "juno-library", { motion: "parts" });
+/** Agents: a face whose eyes glance up and over on hover (docs/design/AGENTS.md). */
+export const JunoAgents = glyph(JunoAgentsGlyph, "juno-agents", { motion: "parts" });
 
 // ---------------------------------------------------------------------------
 // Direction & navigation

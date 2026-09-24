@@ -182,6 +182,9 @@ import {
   taskTitleFromArgs,
 } from "@/lib/chat/task-tool";
 import { cheapestWorkModel } from "@/lib/work/models";
+import { agentChatContext } from "@/lib/agents/store";
+import { agentApprovalMode } from "@/lib/agents/domain";
+import { appendAgentBlock } from "@/lib/agents/prompt";
 import { providerAdapterFor } from "@/lib/provider-routing";
 import { isGemini3OrLater } from "@/lib/gemini-core";
 import type { ClientActionApproval } from "@/lib/action-approval";
@@ -2245,6 +2248,24 @@ async function handleChat(req: Request) {
     lockdown: !!settings?.lockdownMode,
     planHasWorkModel: cheapestWorkModel(MODEL_LIST, plan) !== null,
   });
+  /*
+   * An agent's thread (docs/design/AGENTS.md): the reply is the agent's, with
+   * its brief, goals and notes appended after everything else in the prompt,
+   * and a task it starts carries its id and its autonomy. A private turn never
+   * has one (it has no saved conversation to be a thread), and a failure to
+   * read the agent answers as Juno rather than failing the message — the
+   * thread is still a chat.
+   */
+  const agentContext =
+    conversation.agentId && !input.privateMode
+      ? await agentChatContext(user, conversation.agentId, { taskHandoff: taskToolOn }).catch((err) => {
+          console.error("[chat] could not read the thread's agent", {
+            conversationId: conversation.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return null;
+        })
+      : null;
   const baseSystemSections = buildSystemPromptSections({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
@@ -2268,17 +2289,20 @@ async function handleChat(req: Request) {
       ? buildArtifactEditPrompt(artifactEditTarget, input.artifactEdit)
       : null;
   const system = withRegenerateInstruction(
-    appendSkillBlock(
-      composeSystemPrompt({
-        base: baseSystem,
-        webSearch: useWebSearch,
-        documentTool: attachmentToolToggles.documents,
-        imageTool: attachmentToolToggles.images,
-        codeTool: attachmentToolToggles.code,
-        targetedArtifactEditPrompt,
-        canvasOn,
-      }),
-      appliedSkill
+    appendAgentBlock(
+      appendSkillBlock(
+        composeSystemPrompt({
+          base: baseSystem,
+          webSearch: useWebSearch,
+          documentTool: attachmentToolToggles.documents,
+          imageTool: attachmentToolToggles.images,
+          codeTool: attachmentToolToggles.code,
+          targetedArtifactEditPrompt,
+          canvasOn,
+        }),
+        appliedSkill
+      ),
+      agentContext?.block ?? null
     ),
     input
   );
@@ -2925,6 +2949,9 @@ async function handleChat(req: Request) {
               // starting a task is the one tool whose whole effect is to act
               // later with nobody watching, so it asks first.
               untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
+              agent: agentContext
+                ? { id: agentContext.agent.id, approvalMode: agentApprovalMode(agentContext.agent.approvalMode) }
+                : null,
               generationId,
               onApprovalRequest: requestApproval,
               // The panel appears as soon as the run exists rather than on the

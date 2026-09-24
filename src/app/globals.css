@@ -140,6 +140,26 @@
     --warning-foreground: 40 57% 32%;
     --source: 187 62% 34%;
     /*
+     * Agent faces (docs/design/AGENTS.md §4). The six hues of the account
+     * accents, lifted to a mid lightness so the dark eyes read on every one of
+     * them: `--agent-ink` is the eyes and the marks, the same warm near-black
+     * in both themes, and every tone clears 4.5:1 against it. A face is never
+     * the only carrier of an agent's state (the sentence beside it is), so
+     * these are identity colours, not status colours. Projected to Swift by
+     * `npm run design:tokens`, so the Mac and the iPhone draw the same face.
+     */
+    --agent-coral: 15 62% 64%;
+    --agent-juniper: 152 36% 56%;
+    --agent-teal: 184 46% 54%;
+    --agent-violet: 249 64% 72%;
+    --agent-amber: 39 80% 62%;
+    --agent-sage: 105 24% 60%;
+    --agent-ink: 30 14% 11%;
+    /* What is drawn OFF the body — the mark, the laptop, the thinking dots —
+       has the page behind it rather than the tone, so it takes the page's
+       contrast: ink on paper here, a warm off-white on charcoal below. */
+    --agent-mark: 30 14% 11%;
+    /*
      * MEASURED AGAINST THE CODE BLOCK, NOT THE PAGE, and both of these used to
      * fail it. `.aicss-cb` paints rgb(242,240,235); at 42% and 46% lightness
      * these landed at 2.68:1 and 2.77:1 against it, where 12px body text needs
@@ -555,6 +575,17 @@
        lighter than the fill so the two never coincide. */
     --warning-foreground: 40 70% 72%;
     --source: 187 58% 49%;
+    /* A notch quieter than light, so a roster of faces does not glow on the
+       charcoal; the ink stays the same near-black, which is what keeps the eyes
+       legible on every tone. */
+    --agent-coral: 15 56% 62%;
+    --agent-juniper: 152 32% 54%;
+    --agent-teal: 184 40% 52%;
+    --agent-violet: 249 56% 70%;
+    --agent-amber: 39 70% 60%;
+    --agent-sage: 105 20% 57%;
+    --agent-ink: 30 14% 11%;
+    --agent-mark: 45 12% 90%;
     --code-string: 152 50% 56%;
     --code-number: 38 90% 60%;
     --ultra: 258 92% 74%;
@@ -794,6 +825,12 @@
   }
   svg.icon .juno-part--disc {
     translate: calc(var(--icon-on, 0) * 14px) calc(var(--icon-on, 0) * -14px);
+  }
+  /* Agents: the eyes glance up and to the right, towards the label, the way an
+     agent looks up when you walk over — never a blink, which held for the
+     length of a hover would read as a face that shut its eyes on you. */
+  svg.icon .juno-part--eyes {
+    translate: calc(var(--icon-on, 0) * 14px) calc(var(--icon-on, 0) * -10px);
   }
   /* Six of the volume's thirteen degrees of lean, about its own centre, and a
      16-unit lift (1px at 16px). The turn runs on the base rung with the lift,
@@ -3681,6 +3718,103 @@
      never selected through an ancestor the portal has left behind. */
 }
 /* A quiet document surface shared by research planning, progress and reports. */
+/*
+ * AGENT FACES (docs/design/AGENTS.md §4, drawn by components/agents/agent-face.tsx).
+ *
+ * The face is an agent's status bar, so its motion is state, never decoration:
+ * only transform and opacity move (ICONS_AND_MOTION.md §2.2 rule 8), a state
+ * change cross-fades the eyes on the fast rung (rule 7), and only the three
+ * live states loop (rule 9) — `working` looks left and right and breathes,
+ * `waiting` lifts the whole face every 2.4s (the one state that asks for the
+ * reader), `thinking` runs the three-dot rhythm. `idle` is still, and blinks
+ * only while the pointer is over the control that holds it. Every loop sits
+ * behind `prefers-reduced-motion: no-preference`, so under the preference the
+ * face stops and the eyes' SHAPE carries the state.
+ *
+ * `transform-box: fill-box` on every moving part, so an eye scales about its
+ * own centre rather than the svg's origin, and `px` inside these transforms is
+ * the drawing's own 64-unit space.
+ */
+@layer components {
+  .agent-face__body { fill: hsl(var(--face-tone)); transform-box: fill-box; transform-origin: center; }
+  .agent-face__all,
+  .agent-face__eyes { transform-box: fill-box; transform-origin: center; }
+  .agent-face__eye {
+    fill: hsl(var(--agent-ink));
+    transform-box: fill-box;
+    transform-origin: center;
+    transition:
+      transform var(--dur-fast) var(--ease-out-soft),
+      opacity var(--dur-fast) var(--ease-out-soft);
+  }
+  .agent-face__happy {
+    stroke: hsl(var(--agent-ink));
+    opacity: 0;
+    transform: scale(0.8);
+    transform-box: fill-box;
+    transform-origin: center;
+    transition:
+      transform var(--dur-fast) var(--ease-spring),
+      opacity var(--dur-fast) var(--ease-out-soft);
+  }
+  .agent-face__mark { fill: hsl(var(--agent-mark)); stroke: hsl(var(--agent-mark)); }
+  .agent-face__visor { fill: hsl(var(--agent-ink) / 0.18); }
+  .agent-face__dots circle { fill: hsl(var(--agent-mark)); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out-soft); }
+  .agent-face__prop { stroke: hsl(var(--agent-mark)); opacity: 0; transition: opacity var(--dur-base) var(--ease-out-soft); }
+  .agent-face__prop rect { fill: hsl(var(--background)); }
+
+  .agent-face[data-state="thinking"] .agent-face__eye { transform: translate(2px, -2px) scale(1, 0.7); }
+  .agent-face[data-state="working"] .agent-face__eye { transform: scale(1, 0.75); }
+  .agent-face[data-state="waiting"] .agent-face__eye { transform: scale(1.2); }
+  .agent-face[data-state="listening"] .agent-face__eye { transform: scale(1.15); }
+  .agent-face[data-state="blocked"] .agent-face__eye { transform: scale(1.3, calc(2 / var(--eye-h))); }
+  .agent-face[data-state="sleeping"] .agent-face__eye { transform: translate(0, 2px) scale(1.3, calc(2 / var(--eye-h))); }
+  .agent-face[data-state="done"] .agent-face__eye { opacity: 0; transform: scale(0.8); }
+  .agent-face[data-state="done"] .agent-face__happy { opacity: 1; transform: none; }
+  .agent-face[data-state="working"] .agent-face__prop { opacity: 1; }
+  /* Reduced motion keeps the dots, still: they are the state, not the loop. */
+  .agent-face[data-state="thinking"] .agent-face__dots circle { opacity: 0.55; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .agent-face[data-state="working"] .agent-face__eyes { animation: agent-face-look 2.4s var(--ease-in-out) infinite; }
+    .agent-face[data-state="working"] .agent-face__body { animation: agent-face-breathe 2.4s var(--ease-breathe) infinite; }
+    .agent-face[data-state="waiting"] .agent-face__all { animation: agent-face-lift 2.4s var(--ease-breathe) infinite; }
+    .agent-face[data-state="done"] .agent-face__all { animation: agent-face-settle var(--dur-emphasis) var(--ease-spring) 1 both; }
+    .agent-face[data-state="thinking"] .agent-face__dots circle { animation: agent-face-dot 1.2s var(--ease-in-out) infinite; }
+    .agent-face[data-state="thinking"] .agent-face__dots circle:nth-child(2) { animation-delay: 0.2s; }
+    .agent-face[data-state="thinking"] .agent-face__dots circle:nth-child(3) { animation-delay: 0.4s; }
+    :is(a, button, [role="link"], [role="button"], [data-face-trigger]):hover .agent-face[data-state="idle"] .agent-face__eyes {
+      animation: agent-face-blink 180ms var(--ease-in-out) 1;
+    }
+  }
+}
+
+@keyframes agent-face-look {
+  0%, 100% { transform: translateX(-2.5px); }
+  50% { transform: translateX(2.5px); }
+}
+@keyframes agent-face-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.015); }
+}
+@keyframes agent-face-lift {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.5px); }
+}
+@keyframes agent-face-settle {
+  0% { transform: scale(0.94); }
+  60% { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
+@keyframes agent-face-dot {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+@keyframes agent-face-blink {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.1); }
+}
+
 @layer components {
   .research-surface { @apply rounded-card border border-border bg-card p-4 sm:p-5; }
   /* `text-body-lg` (17px), not `text-base`: the research field is a reading

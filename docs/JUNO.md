@@ -46,8 +46,9 @@ document the native clients themselves.
 20. [Deployment & operations](#20-deployment--operations)
 21. [Development: scripts & tests](#21-development-scripts--tests)
 
-Plus **[§9b Work: what a conversation can do](#9b-work-what-a-conversation-can-do)**,
-which sits between 9 and 10. It carries a letter rather than a number for the same reason
+Plus **[§9b Work: what a conversation can do](#9b-work-what-a-conversation-can-do)**
+and **[§9c Agents: teammates that work through Work](#9c-agents-teammates-that-work-through-work)**,
+which sit between 9 and 10. It carries a letter rather than a number for the same reason
 §3.4b and §20.2b do: it was written after the numbering was set, and renumbering twelve
 sections would break every anchor anyone has linked to.
 
@@ -115,7 +116,7 @@ as a max-effort reasoning run needs; a 15 s heartbeat keeps nginx's
 ## 2. Repository layout
 
 ```
-prisma/schema.prisma        Data model (92 models, 13 enums) + migrations/
+prisma/schema.prisma        Data model (104 models, 13 enums) + migrations/
 src/
   app/
     (auth)/                 sign-in, sign-up, forgot/reset-password
@@ -123,7 +124,7 @@ src/
                             connections, compare, library, artifacts, tasks,
                             roadmap, profile, settings, upgrade, admin/*
     (legal)/                CGU, privacy, legal notices (French)
-    api/                    127 route handlers (see per-section endpoint tables)
+    api/                    245 route handlers (see per-section endpoint tables)
     app-auth/               browser side of the native PKCE device-authorization flow
     share/[token]/          public read-only share pages (no auth)
     suspended/              banned-account landing
@@ -2014,6 +2015,96 @@ fingerprint would demand a consent press for a change that widens nothing.
 
 ---
 
+## 9c. Agents: teammates that work through Work
+
+**An agent is a named, persistent teammate the account delegates to** — Juno's
+answer to SpaceXAI's Grok Bot and Meta's Muse. The research, the audit of both
+products, the decision and the exact face geometry are
+[`docs/design/AGENTS.md`](design/AGENTS.md); this section is what it means in the
+code. It is **not a third product** and does not reopen `TWO_PRODUCTS.md`: a
+conversation still decides when an ask becomes work, and an agent is *who* it is
+delegated to.
+
+**An identity layer, no second runtime.** Five tables (`Agent`, `AgentGoal`,
+`AgentIdea`, `AgentNote`, `AgentEvent`) and two nullable pointers:
+
+| Piece | Is | Where |
+| --- | --- | --- |
+| Its thread | an ordinary `kind: "chat"` conversation with `Conversation.agentId` (and `Agent.conversationId`, unique) | `ensureAgentThread` — race-safe create-then-claim |
+| Its tasks | ordinary `WorkSession`s with `WorkSession.agentId`, in its thread | `start_task` from the thread, `startAgentTask` from the page |
+| Its routines | ordinary `WorkSchedule`s whose session belongs to it, firing into its thread | `createAgentRoutine` (cloud, five clocks; everything else in Automations) |
+| Its autonomy | a `WorkPermissionPolicy` every task it starts runs under, narrowed by project and host as usual | `Agent.approvalMode` |
+| Its apps | provider ids intersected with the account's linked `Connection`s at every write and dispatch | `Agent.connectorIds` |
+| Its memory | `AgentNote`, encrypted at rest with the field keyring, never copied into the log | `readNote`, `rotate-message-keys.ts` |
+| Its state | derived on read from the agent and its newest task — never stored | `deriveAgentState` (`src/lib/agents/domain.ts`) |
+
+`src/lib/agents/`: `avatar.ts` (the face vocabulary and the FNV-1a seeded
+default the Swift face reproduces bit for bit), `domain.ts` (states, input
+schemas, the state sentence, reflection due-ness), `templates.ts` (the seven
+starting points), `prompt.ts` (the thread's system-prompt block), `reflection.ts`
+(pure prompt and parser), `reflect.ts`, `store.ts` (server), `types.ts` (wire
+shapes). All five models are in `OWNER_COLUMN` (`src/lib/db.ts`).
+
+**A turn in its thread.** `/api/chat` reads `conversation.agentId` and, for a
+live agent, appends `buildAgentPromptBlock` after everything else in the system
+prompt (it is the most specific statement in the turn): who it is, its brief and
+style, its active goals with their last check-in, its notes, its teammates, and
+how it works. It never widens the turn — the block restates the approval floor
+and only describes `start_task` when the turn carries it. A task the model
+starts there is stamped with `agentId` before anything runs and uses the
+agent's `approvalMode` instead of the model-started default. A retired agent's
+thread answers as Juno.
+
+**The face** (`src/components/agents/agent-face.tsx`, `JunoAgentFace.swift`) is
+the status bar: `idle · thinking · working · waiting · blocked · done ·
+sleeping · listening`, eyes reshaped by transform only, loops for live states
+only, everything stopped under reduced motion, and the state always said in
+words beside it. Tones are the `--agent-*` tokens in `globals.css`, projected to
+Swift by `npm run design:tokens`; `tests/agents-contract.test.ts` holds the Swift
+vocabulary, templates and client routes to the TypeScript.
+
+**Reflection** (`reflectAgent`) raises ideas, checks in on goals and keeps up to
+two notes. At most every six hours per agent (claimed with a conditional update),
+lazily on page open or on demand ("Think it over now", rate-limited), on the
+account's background provider under the same policy titles and memory use, and
+billed as utility work. It reads only what the account authored — goals, notes,
+task titles and statuses — never a page a run read. **It never starts work**: an
+idea is a card with Start, and Start goes through Work dispatch with the cost
+preflight asked on the page (`409 confirm_expensive`).
+
+**Pausing** switches off the routines the agent owns and records which, and
+resuming switches back on only those. **Retiring** stops its routines and leaves
+its thread and tasks as ordinary chats and tasks.
+
+**Web.** A sidebar destination (`/agents`, the `JunoAgents` glyph) and an
+**Agents** fold of live 20px faces with the one trailing dot while an agent needs
+you; `/agents` (roster, waiting-first; the empty roster is the starting points),
+`/agents/new` (four questions on one page, face builder with a live state
+preview), `/agents/[id]` (face, state sentence, Message, Pause, and five tabs:
+**Now** embeds `WorkRunPanel` and `WorkActivity` over the thread's run, so its
+questions and approval cards are the Work ones; **Goals**; **Routines**;
+**Activity**; **Profile** with *What it knows*). The thread (`/chat/[id]`) gains
+one header row and greets in the agent's voice.
+
+| Route | Does |
+| --- | --- |
+| `GET/POST /api/agents` | roster · hire (20/h) |
+| `GET/PATCH/DELETE /api/agents/[id]` | page payload · edit, pause/resume · retire |
+| `POST /api/agents/[id]/thread` | its thread, created on first use |
+| `GET/POST …/goals`, `PATCH/DELETE …/goals/[goalId]` | goals |
+| `GET/POST …/notes`, `PATCH/DELETE …/notes/[noteId]` | what it knows |
+| `PATCH …/ideas/[ideaId]` | start (via Work dispatch) · dismiss |
+| `GET/POST …/routines` | its automations (30/h) |
+| `GET …/activity` | its log merged with one line per task |
+| `POST …/reflect` | ideas and check-ins (`force` 12/h) |
+| `POST …/tasks` | start a task as the agent |
+
+All are cookie- or bearer-authenticated through `requireUser`, described in
+`contracts/openapi/juno-native-v1.yaml` under `/api`, and called by
+`NativeAgentsClient` on the Mac and the iPhone.
+
+---
+
 ## 10. Voice
 
 ### 10.1 Read-aloud & dictation
@@ -2474,7 +2565,7 @@ in `SyncCompaction`; `EntityRevision` (current state) is never pruned. A cookie-
 
 ## 17. Data model
 
-Prisma schema: `prisma/schema.prisma` (95 models, 13 enums). Message `content`,
+Prisma schema: `prisma/schema.prisma` (104 models, 13 enums). Message `content`,
 `reasoning`, and `reasoningParts` are **encrypted at rest** (AES-256-GCM,
 `src/lib/message-crypto.ts`); connector tokens and OAuth tokens are likewise encrypted.
 So are `Message.activity`, `MemorySummary.content`, `ProjectMemorySummary.content` and `ScheduledTask.prompt`, through
