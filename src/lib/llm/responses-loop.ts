@@ -42,7 +42,7 @@ import { hostedSearchAllowedAt, toolCapabilitiesFor } from "@/lib/model-tools";
 import type { ModelInfo } from "@/lib/models";
 import { openAIPromptCacheRequestFields, openAIResponsesSystemInput } from "@/lib/openai-prompt-cache";
 import { sendableToolImages, toDataUrl, toolImageIntro, withheldImagesNote } from "@/lib/tool-result-images";
-import type { BatchResult, ToolCallInput } from "@/lib/tools/dispatch";
+import type { BatchResult, executeToolBatch, ToolCallInput } from "@/lib/tools/dispatch";
 import type { ClientSource, ReasoningEffort } from "@/types/chat";
 import type { LlmEvent } from "@/types/llm";
 
@@ -59,6 +59,8 @@ export interface ResponsesLoopInput {
   transport: ProviderTransport;
   /** Deprecated positional path: the `McpToolset` `streamChat` opened itself (until WS9a). */
   legacyToolset?: McpToolset;
+  /** Test seam: stands in for `executeToolBatch`. Absent in production. */
+  dispatch?: typeof executeToolBatch;
   /** Start/finish lines for the server log; absent in tests. */
   log?: (event: "start" | "finish", data: Record<string, unknown>) => void;
 }
@@ -204,7 +206,8 @@ function buildResponsesRequest(
     // catalog-id/provider-id equality every other adapter enforces.
     model: providerRequestModel(model),
     ...(shape.instructions === undefined ? {} : { instructions: shape.instructions }),
-    input,
+    // A copy: the loop appends to its own array after this request is sent.
+    input: [...input],
     stream: true,
     // No server-side persistence: history is resent per request, like every
     // other Juno adapter — nothing about the chat lives in provider storage.
@@ -447,7 +450,7 @@ export async function* runResponsesLoop(opts: ResponsesLoopInput): AsyncGenerato
   const { req, dialect, transport } = opts;
   const { model, loop } = req;
   const signal = turnSignal(req.signal);
-  const source = toolSourceFor(req, opts.legacyToolset);
+  const source = toolSourceFor(req, opts.legacyToolset, opts.dispatch);
   const opening = openingInput(req, dialect, opts.history);
   const shape: TurnShape = { ...turnShape(req, dialect, source), instructions: opening.instructions };
   const input = opening.input;
@@ -629,7 +632,26 @@ export async function* runResponsesLoop(opts: ResponsesLoopInput): AsyncGenerato
     finishRaw = requestFinish;
     if (usage.seen || usage.webSearches > 0) yield usageEvent(usage, round);
 
-    const dispatch = !!source && !step.final && calls.length > 0;
+    // Never run a call from the tools-off request, or from one that ran out of
+    // room: its arguments may be cut mid-JSON.
+    const dispatch = !!source && !step.final && calls.length > 0 && requestFinish !== "length";
+    if (!dispatch) {
+      for (const call of calls) {
+        yield {
+          type: "tool",
+          phase: "result",
+          server: source?.labelFor(call.name) ?? call.name,
+          name: call.name,
+          callId: call.callId,
+          round: call.round,
+          index: call.index,
+          result: "Cancelled.",
+          ok: false,
+          status: "cancelled",
+          error: { code: "cancelled" },
+        };
+      }
+    }
     yield { type: "round_end", round, tools: calls.length, serverTools: stepSearches, final: step.final, stop: requestFinish ?? null };
     if (!dispatch || !source) break;
 

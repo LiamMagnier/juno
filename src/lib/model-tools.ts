@@ -161,6 +161,12 @@ const MODEL_TOOLS: Readonly<Record<string, Partial<ModelToolCapabilities>>> = {
   "openai:gpt-5.6-luna": { chatCompletions: false },
   // The original gpt-5 rejects hosted search at "minimal".
   "openai:gpt-5": { hostedSearchMinEffort: "low" },
+  // Hosted search is documented for GPT-4o, o3, o4-mini and GPT-5 onward, not
+  // for these retiring snapshots: they get Juno's web_search instead of a 400.
+  "openai:o1": { nativeSearch: false },
+  "openai:o3-mini": { nativeSearch: false },
+  "openai:gpt-4-turbo": { nativeSearch: false },
+  "openai:gpt-3.5-turbo": { nativeSearch: false },
 
   // Built-in search and remote MCP only; no client function tools, no Chat Completions.
   "xai:grok-4.20-multi-agent-0309": { supported: false, chatCompletions: false, responses: true },

@@ -48,7 +48,12 @@ export interface ToolSource {
  * toolset (WS9a); it runs through `legacyToolRunner`, which keeps that path's
  * behaviour. Null when the turn offers no function tools.
  */
-export function toolSourceFor(req: AdapterRequest, legacyToolset?: McpToolset): ToolSource | null {
+export function toolSourceFor(
+  req: AdapterRequest,
+  legacyToolset?: McpToolset,
+  /** The dispatcher; a parameter only so a test can stand in for it. */
+  dispatch: typeof executeToolBatch = executeToolBatch,
+): ToolSource | null {
   const { toolset, batch, loop } = req;
   if (toolset && batch && toolset.tools.length > 0) {
     return {
@@ -57,7 +62,7 @@ export function toolSourceFor(req: AdapterRequest, legacyToolset?: McpToolset): 
       run: (calls, signal) =>
         // `nextIsFinal` is read when the batch runs, after this request began:
         // true exactly when the next request will be the tools-off one.
-        executeToolBatch(calls, signal, { ...batch, toolset, nextIsFinal: loop.nextIsFinal() }),
+        dispatch(calls, signal, { ...batch, toolset, nextIsFinal: loop.nextIsFinal() }),
     };
   }
   const legacy = toolset ?? legacyToolset;

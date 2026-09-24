@@ -2,6 +2,7 @@ import type { Plan } from "@prisma/client";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { DISCOVERED, UNAVAILABLE } from "@/lib/models.generated";
 import { labHasNativeSearch, toolCapabilitiesFor, type ModelToolCapabilities } from "@/lib/model-tools";
+import { providerAdapterFor } from "@/lib/provider-routing";
 
 // Canonical model id is "provider:providerModel" (e.g. "anthropic:claude-opus-4-8").
 export type ModelId = string;
@@ -220,9 +221,16 @@ export function providerSupportsWebSearch(p: Provider): boolean {
   return labHasNativeSearch(p);
 }
 
-/** `ModelInfo.webSearch`: provider-native search on Juno's transport (SPEC §5.6). */
+/**
+ * `ModelInfo.webSearch`: provider-native search on Juno's transport (SPEC §5.6).
+ *
+ * OpenAI's hosted search exists only on Responses, so a deployment that keeps
+ * OpenAI on Chat Completions (`OPENAI_RESPONSES=0`) does not advertise it for
+ * the models that stay there.
+ */
 function modelSearchesNatively(model: Pick<ModelInfo, "provider" | "id" | "api">): boolean {
-  return toolCapabilitiesFor(model).nativeSearch;
+  if (!toolCapabilitiesFor(model).nativeSearch) return false;
+  return model.provider !== "openai" || providerAdapterFor(model) === "openai-responses";
 }
 
 interface ModelDef {
