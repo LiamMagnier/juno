@@ -226,3 +226,66 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
 - The tools rework's `SPEC.md` is final at `f1badf26`.
 
 **Preview build for the owner:** `/tmp/jg-preview3-dd/Build/Products/Stable/Juno.app`, built from `ff906c12` (Phase 2).
+
+## Phase 5 slice, 2026-09-24 (Work in Chat: start, watch, answer)
+
+A small Phase 5 slice. It was done frugally because the owner's weekly usage was nearly spent. The branch is still unpushed.
+
+**What landed:**
+- `786c7bd6` — API and data.
+  - `WorkSessionSummary` now carries `conversationID`, `projectID` and `createdAt`.
+  - `NativeWorkClient.createSession(… conversationID:projectID:)` and `sessions(conversationID:projectID:…)` are added, and the OpenAPI create schema and list parameters match (the Swift contract was regenerated).
+  - `NativeWorkModel.startTask(… conversationID:projectID:)` includes both in its retry key.
+  - `NativeWorkModel.followConversation(_:)` opens a chat's newest task. The newest is chosen by `createdAt`, through `newestSession(in:conversationID:)`.
+  - **Fix:** Stop now sends `action: "cancel"`. The web route accepts only `pause | resume | cancel`, so the old `"stop"` got a 400.
+  - Tests: `JunoWorkKitTests/NativeWorkConversationTests`.
+- `da512b74` — Composer.
+  - The `+` menu has a "Do This as a Task" toggle (`JunoIcon.task` / `ph.treestructure`). It is mutually exclusive with Research.
+  - While it is on, a "Task" mark shows first in the field, and the send disc reads "Start this as a task".
+  - `ChatComposer.dispatchTask` follows the web's old order:
+    1. make sure the conversation exists (it never uses a pending id)
+    2. `NativeConversationModel.appendUserTurn(conversationID:prompt:clientID:…)` appends the turn and asks for no reply; the composer holds the client id so a retry reuses it
+    3. `startTask(conversationID:projectID:)` creates the session and starts the run, reusing one idempotency key across retries
+- `a709617f` — the inline run card.
+  - The new `App/ChatWorkRunCard.swift` has:
+    - `ChatWorkRunState`, read from `NativeWorkModel` plus `DesktopWorkHostModel.localApprovals`, local approvals first
+    - `ChatWorkRunCard`, opaque per §6.8: `junoCard`, radius 20, hairline, no glass, and coral only on the live dot
+    - `ChatWorkStatusPill`
+    - `ChatWorkQuestionCard`, with one-press options and "Reply Below", which sends the new `ChatComposerRequest.Kind.focus`
+    - `ChatWorkApprovalCard`, per §6.9: Don't first, then the action's verb, with More › "…, and Stop Asking" when a standing grant is allowed; nothing is bound to `.defaultAction`
+  - `WorkQuestionPrompt` gained `options`, `why` and `askedAt`, read from the `question_asked` payload.
+  - The legacy Work window's private approval card was deleted, and the window now uses `ChatWorkApprovalCard`.
+  - `DesktopTranscript` draws the card after the transcript for the chat's followed task. `DesktopChatWorkspace` follows the chat's newest task through `.task(id:)`.
+  - Approvals from a run on this Mac go through `localApprovalDecider`; the rest go through `NativeWorkModel.decide`.
+  - With an empty field and a live task, the composer disc is Stop ("Stop the task"), which calls `stopOpenRun`. A streaming reply's Stop still wins.
+  - Snapshots are in `Tests/Snapshots/WorkCardSnapshotTests.swift` (running, needs-approval, finished). Render them with `TEST_RUNNER_JUNO_SNAPSHOT_DIR=… -only-testing:JunoDesktopTests/WorkCardSnapshotTests`. The last render is in `/tmp/jg5-shots/work/`.
+
+**Known limits of the slice:**
+- The card goes at the end of the transcript, not after the reply that follows the task's turn (the web's `message-list.tsx` rule).
+- Only one task is followed at a time. The legacy Work window and the chat share `NativeWorkModel.openSession`.
+- A task turn sent while a reply is streaming is queued, and it dispatches as a task when released.
+- Text typed during a live task sends as an ordinary chat turn. Steering (answer or instruction through the composer) is not built.
+- A failed start leaves the appended turn in the chat and the words in the field. The error shows under the composer, and Send retries without a duplicate.
+- The approval verb button is `.borderedProminent`, which renders in the system tint offscreen.
+
+**Left for later (Phase 5):**
+- the sidebar status dot and the Needs-you fold
+- "How Often It Asks"
+- the disclosure line and the delegation offer
+- steering mode and pending steers
+- "Change it…" and "Make all N" on approvals
+- local blockers (Accessibility, Screen Recording) in the card
+- deliverable tiles, Save as a Skill, and the Details dock
+- the research card, the report window and research steering
+- notifications and the dock badge
+- the Projects Tasks tab
+- deleting `DesktopWorkWorkspace.swift` and `.legacyWork`
+- the web's `workHandoff` flag plus the `work` stream frame (`start_task`), which is how the web itself starts tasks now; see `.phase5-research/mac-shell.md` §0
+
+**Verification at `a709617f`:**
+- The Mac build and `JunoDesktopTests` pass.
+- The iOS build passes.
+- `npm run native:test JunoNativeKit` passes.
+- The gates hold: tokens, icons, contract, `work:contract:check`, design, glass and targets.
+- The targets gate went down from 303 to 299 because the legacy approval card was removed. It was not re-baselined.
+- Step 4 of the slice brief (the sidebar dot) was skipped to save budget.
