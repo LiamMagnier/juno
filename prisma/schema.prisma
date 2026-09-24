@@ -1391,6 +1391,11 @@ model ApiSpend {
   promptTokens     Int      @default(0)
   completionTokens Int      @default(0)
   costMicroUsd     Int // request cost in micro-USD (1e-6 $) — integer math only
+  // Grounded Google searches this row's request made, free and billable alike
+  // (the billable ones are priced into costMicroUsd). The deployment's
+  // month-to-date SUM decides how much of the monthly free quota is left
+  // (tools/metering.ts). Null on every row that did no grounding.
+  groundingQueries Int?
   // Set only by writers that can legitimately retry the same charge. The voice
   // relay reports a delta every few seconds and re-sends any post it could not
   // confirm, so without this a dropped acknowledgement would bill the same

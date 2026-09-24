@@ -121,6 +121,21 @@ export const REPLY_ROWS_WHERE = {
   model: { not: { startsWith: JUNO_TOOL_MODEL_PREFIX } },
 } as const;
 
+/** How the usage views name the one group every `juno-tool:*` row folds into. */
+export const TOOL_USAGE_COPY = {
+  group: "Tools",
+} as const;
+
+/**
+ * The model name a usage view shows for a ledger row: Juno's tool fees are
+ * grouped under one "Tools" line instead of one per tool id, which is not a
+ * model a person chose (SPEC §3.9 "Usage views").
+ */
+export function usageModelLabel(model: string | null | undefined): string {
+  if (isJunoToolSpendModel(model)) return TOOL_USAGE_COPY.group;
+  return model?.trim() || "unknown";
+}
+
 /** What one fee row hands `recordSpend` (a structural subset of `RecordSpendInput`). */
 export interface ToolFeeSpendRow {
   userId: string;
@@ -202,6 +217,23 @@ export function splitGroundingQueries(input: {
   const left = Math.max(0, quota - Math.max(0, input.monthToDate));
   const free = Math.min(total, left);
   return { free, billable: total - free, total };
+}
+
+/**
+ * The grounding fields of the turn's token row: the BILLABLE count as
+ * `webSearchRequests` (what `recordSpend` re-prices from and the budget guard
+ * reads) and the total as `groundingQueries` (what the month-to-date sum
+ * reads). A turn that grounded nothing sets neither.
+ */
+export function groundingSpendFields(split: { billable: number; total: number }): {
+  webSearchRequests?: number;
+  groundingQueries?: number;
+} {
+  if (split.total <= 0) return {};
+  return {
+    ...(split.billable > 0 ? { webSearchRequests: split.billable } : {}),
+    groundingQueries: split.total,
+  };
 }
 
 /** The first instant of the calendar month (UTC) that `now` falls in. */
