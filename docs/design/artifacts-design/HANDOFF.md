@@ -1,6 +1,6 @@
-# Artifacts & Design audit — handoff (paused 2026-09-23, late evening)
+# Artifacts & Design audit — handoff (complete 2026-09-24)
 
-**Status: steps 1 and 2 are done. Step 3 is done except its last document (`05-IMPROVEMENTS.md`).**
+**Status (2026-09-24): ALL THREE STEPS ARE DONE.** `05-IMPROVEMENTS.md` was generated with a script (`gen05.py` logic: `04` Appendix B placement over `wip/merge/backlog.clean.json` and `00` §7.1), covering all 101 R-ids and all 33 X-ids. `00-README.md` is written. Nothing below is required to finish. Remaining work is the plan's own phases, starting with R0.
 Paused because the user's usage limit was about to run out; they asked every chat to pause without losing anything.
 This work touched **docs only**. No product code was changed and nothing was committed to main.
 - Everything lives untracked in the main checkout under `docs/design/artifacts-design/`.
@@ -25,19 +25,10 @@ This work touched **docs only**. No product code was changed and nothing was com
 
 How the merge plan was judged: product and design picked claude-faithful (48 vs object-first 47 vs risk-first 39). Engineering risk picked risk-first (51/39/36). Strategy picked risk-first (43/35/33). The final plan uses risk-first's dated release train as its spine, with the claude-faithful product order and the object-first view and Mac design grafted in (see `04` §0).
 
-## Not finished
-- **`05-IMPROVEMENTS.md`** was being written when the run was stopped. It is the backlog organised by the phases in `04`: Phase 0 defect fixes with X-ids, then the R-items per phase, the icebox, anti-patterns, and a coverage table.
-- **`00-README.md`** for this folder, in the style of `docs/native/code-rework/00-README.md`.
-- Final summary to the user and an offer to publish a shareable page.
-
-## Exact next steps
-1. **Same Claude session:** re-run `Workflow({scriptPath: "/Users/liammagnier/.claude/projects/-Users-liammagnier-Developer-project-juno/bfdee244-0283-4629-a3f4-3c603fc89908/workflows/scripts/artifacts-design-merge-plan-wf_7184c904-c30.js", resumeFromRunId: "wf_7184c904-c30", args: {scratch: "<scratchpad>/merge", competitive: "<scratchpad>/competitive"}})`.
-   - Every agent except `write:backlog` replays from cache. The scratchpad is `/private/tmp/claude-501/-Users-liammagnier-Developer-project-juno/bfdee244-0283-4629-a3f4-3c603fc89908/scratchpad`.
-   - If /tmp was wiped, its needed files are copied here: `wip/merge/backlog.clean.json` and the proposals.
-
-   **A new session:** run one agent with the `write:backlog` brief (it is in that script). Point it at `04-MERGE-PLAN.md`, `wip/merge/backlog.clean.json` and `00-AUDIT-OVERVIEW.md` §7.
-2. Write `00-README.md`.
-3. Snapshot to `wip/artifacts-design-audit` again, then ping the juno-glass session ("macOS app installation and upgrade"), which reads this branch.
+## Next steps (the deliverable is complete; these are follow-ups)
+1. **Release coordination (owner's call).** Three fix branches are waiting for one releaser: X-02 `499b6afd`, X-03/X-04 `7243613f` and X-01 `b7946ff5`. X-01 also needs a migration deploy. No session has been named releaser; this one isn't.
+2. **Mac:** after X-02 lands, rebuild the Mac design editor bundle (`scripts/build-design-editor.mjs`). X-19 is already stale, and X-02 changes the editor's rail breakpoints to container widths (640/896 px). Tell the juno-glass session.
+3. Snapshot this folder to `wip/artifacts-design-audit` after any change, and ping the juno-glass session.
 4. **Check the X-01 fix against `04`'s preview requirements.** X-01 is fixed on branch `claude/sharp-aryabhata-79fb4b` (commit `b7946ff5`; handoff `docs/security/PREVIEW-ORIGIN-HANDOFF.md`). That fix adds a sandbox shell with its own CSP, egress allowlists, ban propagation, admin takedown and a Report link. It is not merged. Nobody has told that session about these requirements yet. `04` §9.5 and §13.6 add requirements for the preview origin:
    - every preview response carries a CSP `sandbox` header;
    - it refuses a non-iframe `Sec-Fetch-Dest`;
@@ -51,7 +42,7 @@ How the merge plan was judged: product and design picked claude-faithful (48 vs 
 ## Related work in other sessions (status at pause)
 - **X-03 and X-04** (edit or regenerate deletes artifacts): fixed on branch `claude/agitated-elion-a15fe9`, commit `7243613f`. Not merged or deployed. Session "Stop edit/regenerate from deleting artifacts".
 - **X-01** (CSP-dead previews): session "Fix dead script previews under enforcing CSP".
-- **X-02** (Canvas design editor remount): work in progress at `cd2c3ac2` on branch `claude/suspicious-borg-f3e3b4`. Not merged. Its handoff is `docs/design/artifacts-design/X-02-HANDOFF.md` on that branch. It needs a signed-in check.
+- **X-02** (Canvas design editor remount): fix ready at `499b6afd` on `claude/suspicious-borg-f3e3b4`. It fast-forwards from main `7f92324f`; tests, the full suite and lint pass. Its handoff is `X-02-HANDOFF.md` on that branch. It still needs a signed-in check and a releaser.
 - **X-01:** see step 4 above. Branch `claude/sharp-aryabhata-79fb4b` (`b7946ff5`), not deployed. The migration `20260923180000_share_governance` still has to be deployed.
 - **Mac Liquid Glass Phase 2 stage 3:** branch `mac/liquid-glass-chat` (worktree juno-glass), commit `2b1049c5`, "Run artifacts, designs and diagrams inline in the Mac transcript". It carries X-11, the regenerate confirm and the Mac preview sandbox. Leave that worktree alone.
 
