@@ -51,6 +51,7 @@ test("the kind does not follow you out of the conversation", () => {
     "/library",
     "/projects",
     "/design",
+    "/a/abc",
     "/settings",
     "/memory",
     "/tasks",

@@ -109,11 +109,28 @@ export function httpTransport(artifactId: string): DesignTransport {
 interface Options {
   artifactId: string;
   initialContent: string;
+  /**
+   * The artifact version `initialContent` is the body of, for a host that
+   * records this editor's commits in its own copy of the artifact.
+   *
+   * The chat canvas does that (its version rail, Code tab, Copy and Download
+   * all read the envelope), and so hands the stored body straight back here
+   * after every acknowledged change. For a version this editor wrote, that body
+   * is the document already on screen — or an older copy of it while more
+   * edits are still queued — and reloading it would throw away the undo stack
+   * and whatever is in flight. Naming the version is what lets the editor tell
+   * its own echo from a body it has never seen: another version picked from
+   * the rail, a restore, a new generation. Hosts that never feed a commit back
+   * leave it out.
+   */
+  version?: number;
   /** Defaults to the website's HTTP transport. */
   transport?: DesignTransport;
-  /** Called after a committed change so the canvas shell can refresh the
-   *  artifact envelope (version number, history rail). */
-  onCommitted?: (version: number) => void;
+  /** Called after a committed change with the version the store filed it
+   *  under and the document it stored, so the canvas shell can refresh the
+   *  artifact envelope (version number, history rail, source) without a
+   *  round trip. */
+  onCommitted?: (version: number, document: DesignDocument) => void;
   /** Read-only when an older version is on screen. */
   readOnly?: boolean;
 }
@@ -164,12 +181,25 @@ export function useDesignDocument(opts: Options) {
   /** Bumped whenever a different document is loaded, so a reply that arrives
    *  after the editor moved on cannot write into the new one. */
   const generationRef = React.useRef(0);
+  /** Versions the store filed this editor's changes under since the document
+   *  was loaded — the ones whose stored body can only be this editor's echo. */
+  const ownVersionsRef = React.useRef(new Set<number>());
+  /** Read by the load effect, which runs on a change of body alone. */
+  const hostRef = React.useRef({ version: opts.version, readOnly: opts.readOnly });
+  hostRef.current = { version: opts.version, readOnly: opts.readOnly };
 
   // Parse once per content identity. A failure is a state the editor shows, not
   // an exception that blanks the panel.
   React.useEffect(() => {
+    // The host recording a commit this editor made (see `version`). Only while
+    // editable: an older version put on screen read-only is a different
+    // document, even when this editor wrote it.
+    const { version, readOnly } = hostRef.current;
+    if (!readOnly && version != null && ownVersionsRef.current.has(version)) return;
+
     generationRef.current += 1;
     queueRef.current = [];
+    ownVersionsRef.current = new Set();
     try {
       const parsed = parseStoredDesignDocument(opts.initialContent);
       setDocument(parsed);
@@ -273,7 +303,12 @@ export function useDesignDocument(opts: Options) {
         // The store's copy wins where it offers one; the bridge acknowledges
         // without returning a document, and its copy is what we just computed.
         ackedRef.current = outcome.document ?? applied;
-        if (outcome.version != null) opts.onCommitted?.(outcome.version);
+        if (outcome.version != null) {
+          // Before the host hears of it: recording the commit hands its body
+          // straight back, and the load effect has to know it for an echo.
+          ownVersionsRef.current.add(outcome.version);
+          opts.onCommitted?.(outcome.version, ackedRef.current);
+        }
         // Nothing left to send means the local document and the stored one are
         // the same edits — adopt the stored copy so their revisions agree too,
         // which is what the AI's selection-scoped requests are addressed by.

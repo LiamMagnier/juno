@@ -85,6 +85,15 @@ struct JunoDesktopConfiguration {
     /// configuration with no live Work runtime at all and should not have to name
     /// a dependency it has no use for.
     var workGrantStore: DesktopWorkGrantStore? = nil
+    /// The account's agents (docs/design/AGENTS.md): named teammates whose
+    /// tasks are ordinary Work sessions. Its own model, beside Work's rather
+    /// than inside it, because the roster is an account identity — faces,
+    /// briefs, goals, memory — and polling it must never touch a task stream.
+    ///
+    /// Defaulted, and therefore a `var` among lets, for the reason
+    /// ``workGrantStore`` is: the preview harness and a failed launch have no
+    /// transport to read agents over and should not have to name one.
+    var agentsModel: NativeAgentsModel? = nil
     let libraryModel: NativeLibraryModel?
     /// This Mac's local document index: files read into chunks by
     /// ``DocumentIngestionPipeline`` and ranked by `JunoSearch`.
@@ -356,6 +365,9 @@ struct JunoDesktopConfiguration {
                 // sentences with two different fixes.
                 workHostModel: workHostModel,
                 workGrantStore: workGrantStore,
+                agentsModel: NativeAgentsModel(
+                    client: NativeAgentsClient(sender: runtime)
+                ),
                 libraryModel: NativeLibraryModel(
                     client: NativeLibraryClient(sender: runtime),
                     // The picker draws the file, which means resolving its

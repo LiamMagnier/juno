@@ -1,0 +1,148 @@
+{
+ "verdicts": [
+  {
+   "id": "followup-artifact-scale-performance-telemetry-1",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: queries.ts:117-121 loads artifacts with `include: { versions: true }`. serializers.ts:207-222 emits the latest body as `content` and every version body in `versions[]`. Both the SSR page (chat/[id]/page.tsx:36, props passed to the client ChatView at 64-75) and GET /api/conversations/[id] (route.ts:14) call getConversationThread. use-chat.ts:405 re-fetches that route inside recoverDroppedStream. RESUME_POLL_WINDOW_MS is 6_000 (use-chat.ts:130), and with the backoff at 178-183 (400/1000/2000/3000 ms) that allows about 3-4 GETs per drop. The checkpoint rule (operations.ts:511, 531-541) makes one new row per 30 s of continuous user editing, so 121 rows per hour is realistic. I re-ran audit/thread-payload.ts: raw 9.23/18.53/27.45 MB, which matches the claim. The severity is inflated, though. The same run gives gzip at 0.30/0.53/0.73 MB, and Next compresses responses by default (next.config sets no `compress`). The failure scenario's 'slow client holds the connection for the whole 12 MB transfer' is therefore overstated. The real cost is server side: a Postgres detoast of 9-27 MB, JSON and RSC encoding, and gzip of the double-escaped HTML on the single Node process. The browser then has to parse and hold the whole thing. It is O(history) on every open and every recovery poll, and it grows once design lives inside conversations after the merge. I rate it medium, not high."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-2",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: loadOwnedDesignArtifact includes every version, bodies included (store.ts:33-39). Both handlers in transactions/route.ts call it (POST at :34, GET at :77), and the GET returns only revision and currentVersion (:81-82). appendVersion (store.ts:163-167) and rewriteVersion (store.ts:193-197) both return the artifact with `include: { versions }`, so a committed transaction reads the whole history twice. The conflict path reads it a third time (store.ts:130-133). The fold CAS also sends the old body back to Postgres as a WHERE parameter (`content: row.content`, store.ts:186). I confirmed there is no rateLimit call anywhere in transactions/route.ts; edit/route.ts:102 has one. The same full-history load also serves GET /api/design/[id] (route.ts:21), export (export/route.ts:141), edit (edit/route.ts:108) and the /design/[artifactId] SSR page (page.tsx:23), and each of those uses only the current body. The drain loop sends batches back to back (use-design-document.ts:233-281), so on a single Node process this is per-gesture O(history) load. I keep high."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-3",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ and traced: httpTransport returns version = artifact.currentVersion (use-design-document.ts:104), and drain calls onCommitted with it (:276). A fold returns the same version, so canvas-panel.tsx:1246 exits early. An append (always the case for the first user edit on a 'generated' row, operations.ts:538) calls onArtifactUpdated with `{version, content: \"\"}` (canvas-panel.tsx:1247-1253). chat-view.tsx:1255 replaces the artifact object outright. The effect at canvas-panel.tsx:313-315 then sets selectedVersion to the new version. versionContent at :369-370 resolves to \"\", because `??` does not fall back on an empty string. The `key={selectedVersion}` wrapper (:1237) remounts DesignEditor. useDesignDocument's effect runs parseStoredDesignDocument(\"\") (use-design-document.ts:174), which throws 'Design document is not valid JSON' (migrations.ts:93-96), and design-editor.tsx:520-535 renders 'This design can\u2019t be opened'. Nothing else refreshes the envelope; chat-view and use-chat only call setArtifacts from initial props and stream frames. `git log -S` puts the empty-content append at 7c344b96 (2026-08-05). Blame shows 983dc2ad because that commit moved the code. The same CanvasPanel is used by code-session-view.tsx:1320. The standalone workspace passes setCurrentVersion (design-workspace.tsx:215) and is unaffected."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-4",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the triggers at migration.sql:116-117 have no WHEN clause, and no later migration recreates them. The latest juno_record_account_change (20260815180000_restore_account_delete_guard/migration.sql:31-104) writes an AccountChange row on every UPDATE. A fold updates ArtifactVersion (store.ts:185) and Artifact (store.ts:193), which makes 2 changes. sync-feed.ts:50-51 polls every 2 s and emits one cursor per advance. NativeChangeWakeupStream.swift:230-232 runs a full synchronizeWithRetry per cursor event. NativeSyncCoordinator.swift:232-251 dedupes within a page only. The artifact_version loader returns the full `content` (sync-entities.ts:244-258). The rate is capped at one wake-up per 2 s, and only while a native client holds the live stream. That is the inferred volume the auditor gives, and medium is fair."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-5",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: snapshot(for:) loads every record and decrypts every payload (SQLiteAccountRepository.swift:75-88, 545-570, 656-674). The claim is understated. Per wake-up there is 1 snapshot in synchronize (NativeSyncCoordinator.swift:128) and 1 or more per page in CursorPageApplier.swift:111. Then JunoDesktopRootView.swift:69-85 fans out to conversation, project, projectWorkspace, artifact, memorySettings and search models, and each of those stores calls repository.snapshot in its load: NativeConversationStore.swift:253, NativeProjectStore.swift:167, ProjectWorkspaceStore.swift:383, NativeArtifactStore.swift:90, NativeMemorySettingsStore.swift:278, NativeSearchStore.swift:71. NativeArtifactStore.load also decodes every artifact_version body (:95-107). That is roughly 8 full decrypt passes per wake-up, not 3. See the missed entry on idle reloads."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-6",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the length check at chat-artifact-verification.ts:63 runs on the compact body. The DESIGN branch (:90-102) only confirms that normalizeDesignArtifact does not throw. authoring.ts:215-235 has no total-size cap: nodes max 500, text max 20k. persistArtifacts stores the expanded body (artifacts-store.ts:16-24, 59, 86), and ArtifactVersion.content is unbounded @db.Text. I re-ran audit/expand-ratio.ts: 401 nodes go from 40,917 compact to 266,396 stored (6.5\u00d7), while 301 nodes stay under 200k. Consequences, READ: store.ts:117-120 returns 'too-large' (413) on any transaction. NativeArtifactStore.decodeVersion requires utf16 \u2264 200,000 (:155), and load throws for the whole snapshot, so reload sets phase .failed (:276-285). The REST detail also rejects it (NativeArtifactAPIClient.swift:349). POST /api/artifacts/[id] is capped at 200_000 (route.ts:8). The native storage layer has no payload cap, so the record does get stored."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-7",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: share.ts:10-17 promises that artifact edits after the share stay private. getSharedArtifactSnapshot picks the newest version with createdAt \u2264 snapshotAt (share.ts:257-260; the exact line is 259). rewriteVersion updates `content` in place and never touches createdAt (store.ts:185-188). A fold happens only while the newest row is a user 'edit' less than 30 s old (operations.ts:538-540). The leak is real but narrow. It needs the share to be created while an edit checkpoint is under 30 s old, and at most the remaining part of that window leaks. If the latest row is 'generated', the next edit appends a new row with createdAt after the share, which is excluded. I lower it to low."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-8",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "corrected_location": "src/components/chat/artifact-inline-card.tsx:181",
+   "reasoning": "READ: `inlinePreview = hasContent && (rt.mode !== \"none\" || type === \"MARKDOWN\")` is at line 181, not 184. runtimeFor('DESIGN') returns mode 'design' with lang 'design' (artifact-runtime.ts:98), so inlinePreview is true and the view defaults to 'preview' (:185, :196-202). RuntimePreview renders SandboxFrame for everything except MARKDOWN (:131-146). buildSandboxDoc has no 'design' case and falls to `default`, which is htmlDoc(<pre>escaped</pre>) (sandbox-frame.tsx:800-801), and htmlDoc injects the TAILWIND_CDN script (:580-582). message-item.tsx:1370 passes `artifact?.content`, which is the latest expanded document, for every card that shares the identifier. SandboxFrame has no design special case (grep 'design' in sandbox-frame.tsx finds nothing)."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-9",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the view switches to 'preview' when streaming ends (artifact-inline-card.tsx:196-202). SandboxFrame builds srcDoc eagerly and renders the iframe without loading=lazy or any observer (sandbox-frame.tsx:849-853, 918-930). message-list.tsx:340 maps every message, and there is no virtualization or content-visibility in chat apart from thought-process-panel.tsx:98. The CDNs are unversioned or loose: React/ReactDOM development UMD, Babel standalone with no version, mermaid@11 (sandbox-frame.tsx:7-11). The Python console doc boots Pyodide as soon as it loads (:638-640), and nothing waits for a Run click. Same-identifier cards get the latest content (message-item.tsx:1370). Cache sharing between opaque-origin frames is unverified, as the auditor says."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-10",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: canvas-panel.tsx:44 imports DesignEditor statically, and it is rendered only in the isDesign branch (:1236). chat-view.tsx:15-24 lazy-loads CanvasPanel and its own comment says the canvas 'pulls the whole design editor (~234 KB raw)', so the design code sits in the canvas chunk. The cost is one download of raw JS on the first canvas open, cached after that and gzip-compressible. It is a missed code-split, not a medium-impact defect."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-11",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "VERIFIED: `node scripts/build-design-editor.mjs --check` (read-only) exits 1 with 'bundle is stale (expected 1.0.0+9cc1cfa8d4fe)'. The checked-in stamp is 1.0.0+2b86e5baaf9d (index.html:21), and git status is clean for the editor sources. The bundle was last built at 2fa09d35 (Sep 17). 11 editor-source commits follow it, the last being 31ba2688 on Sep 23 at 01:21, all before the 0a3087fe Mac 1.6.0 release (Sep 23, 11:25). Only release-ios.yml:76 runs design:editor:check. There is nothing in native/Scripts or native/macOS/JunoDesktop/project.yml (:59-63 is only a folder reference). My own esbuild run with the script's flags gives 1,663,525 B, against 950,653 B checked in. @phosphor-icons accounts for 577,119 B, reached through ui/icons.tsx:247. 'duotone' occurs 202 times in the new build and 0 times in the old one."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-12",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: persistArtifacts and persistTargetedArtifactEdit return serializeArtifact with `include: { versions: true }` (artifacts-store.ts:72, 88, 121). chat/route.ts:3110-3112 collects them and puts them in the `done` frame (:3185-3196). isLoggedFrame logs every frame except pings (stream-log.ts:45-47), and each frame's full JSON is stored encrypted in ChatStreamEvent (chat-stream-log-store.ts:33-41) with 10-minute terminal retention (:24). One caveat: the chat model normally revises code/HTML artifacts, and DESIGN edits usually go through the transactions route. A DESIGN revised by the model in chat still takes this path."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-13",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the library download fetches /api/artifacts/[id] and uses only `.artifact.content` (artifacts/page.tsx:338-351). GET, POST and PATCH all use ownedArtifact with `include: { versions: true }` and return serializeArtifact (api/artifacts/[id]/route.ts:20-25, 28-37, 71-89, 103-108). On the Mac, the artifacts screen calls openArtifact on every selection (DesktopArtifactsScreen.swift:247). That re-downloads the full detail over REST (NativeArtifactStore.swift:290-297) even though the synced store already holds the bodies."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-14",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: api/artifacts/route.ts:24-40 has `take: 200` ordered by updatedAt desc, with no cursor and no hasMore. The page filters locally (artifacts/page.tsx:253-265). A grep for hasMore/cursor/load more in the page finds nothing. The artifacts that get dropped are the least recently updated. The Mac lists everything that is synced."
+  },
+  {
+   "id": "followup-artifact-scale-performance-telemetry-15",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the artifact_version sync loader returns id, artifactId, version, content and createdAt, with no origin (sync-entities.ts:244-258). NativeArtifactStore.decodeVersion sets origin: nil (:160-167). REST detail keeps origin (NativeArtifactAPIClient.swift:356), and merge copies it in (NativeArtifactStore.swift:439). reload() then replaces the whole artifacts array (:263). reload runs on every sync generation, and that includes the `.ready` event of each ~55 s stream reconnect (NativeChangeWakeupStream.swift:228-229; NativeSyncModel.swift:180). The Mac shows origin in the version UI (DesktopArtifactsScreen.swift:854-855, 1089-1090), so the labels disappear within about a minute."
+  },
+  {
+   "id": "ux-0",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "This is the same trace as defect 3. The Code tab and Copy/Download read displayedContent = versionContent (canvas-panel.tsx:462, 469, 524, 1348), which is \"\" for the appended version. The Code tab is read-only for design (:1353). A reload fixes it because SSR re-reads the real rows. Reopening the canvas without a reload does not: the envelope in chat state still carries content \"\"."
+  },
+  {
+   "id": "ux-1",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "This is the same trace as defect 8. The DESIGN card defaults to Preview, a white sandbox iframe (SandboxFrame's bg-white for non-console, sandbox-frame.tsx:927) that loads cdn.tailwindcss.com and shows escaped JSON of the latest expanded document from message-item.tsx:1370. That is up to 200k characters, and more for oversized designs (defect 6). Every revision card shows the same latest body."
+  },
+  {
+   "id": "ux-2",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: NativeArtifactStore.swift:155 enforces the \u2264200,000 UTF-16 check, and :159 throws corruptRecord, whose message is 'Juno could not read the locally stored artifact data.' (:72-73). load throws for the whole account, so reload sets phase .failed (:276-285). On the web, store.ts:117-120 refuses every transaction with 'This change would make the document too large to save.' The rollback in use-design-document.ts:266-270 shows that message. How oversized designs get stored in the first place is shown in defect 6 (measured)."
+  },
+  {
+   "id": "ux-3",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "The mechanism is READ: chat/[id]/page.tsx:36 and :64-75 pass thread.artifacts, which includes every version body, as props to the client ChatView, so they are serialized into the RSC payload and parsed before hydration. The magnitude is inferred. I measured gzip transfer at 0.30-0.73 MB for 9-27 MB raw (audit/thread-payload.ts), so the network delay is modest. The cost is server encode/gzip plus client parse and memory, and it delays hydration and interactivity of the whole transcript more than first paint. I rate it medium, not major."
+  }
+ ],
+ "missed": [
+  {
+   "id": "missed-editor-hash-and-tailwind-coverage",
+   "title": "Design editor version hash and Tailwind scan miss 13 shared sources the bundle actually compiles",
+   "severity": "medium",
+   "file": "scripts/build-design-editor.mjs",
+   "line": 77,
+   "evidence": "READ: editorSources() hashes only src/lib/design and src/components/design plus EDITOR_SHARED_SOURCES = [icon-swap.tsx] (build-design-editor.mjs:55-77). Tailwind --content has the same scope (:171-172). MEASURED: an esbuild metafile of the HEAD entry (src/components/design/host/main.tsx) lists 13 inputs outside those roots: ui/button, collapse, dropdown-menu, icons, juno-glyphs, kbd, menu-recipe, popover, select, tooltip, lib/app-icons, lib/motion, lib/utils. The checked-in editor.css has 0 occurrences of z-popper and origin-popper, which are used by ui/tooltip.tsx:59 and ui/popover.tsx:36.",
+   "failure_scenario": "A fix or restyle in ui/tooltip.tsx, dropdown-menu or icons.tsx (the Phosphor swap, for example) leaves the stamp unchanged, so `design:editor:check` (and the iOS release gate at release-ios.yml:76) reports a stale Mac/iPhone bundle as up to date. Utilities that exist only in those files, such as z-popper, origin-popper and the tooltip animations, never reach editor.css. Menus and tooltips in the hosted editor then lose their stacking and motion."
+  },
+  {
+   "id": "missed-host-css-lacks-surface-classes",
+   "title": "Hosted editor stylesheet lacks .surface-float/.overlay-glass, so floating chrome has no background on Mac",
+   "severity": "medium",
+   "file": "src/components/design/host/editor.css",
+   "line": 12,
+   "evidence": "READ: .surface-float and .overlay-glass are component classes defined only in src/app/globals.css (:1137, :1797). tailwind.config.ts does not define them. The host stylesheet declares tokens but not these classes, and index.html links only editor.css. The checked-in editor.css contains 0 occurrences of either. They are used by ui/tooltip.tsx:59, ui/popover.tsx:36, menu-recipe.ts, ask-juno-bar.tsx:119 and :142, and design-canvas.tsx:1932. INFERRED (not observed at runtime): the tooltip class string has no bg-* fallback.",
+   "failure_scenario": "In the Mac design pane (and on iPhone), tooltips, popovers, dropdown menus, the Ask Juno bar and the zoom control render with no background, border or shadow, as bare text and icons over the canvas. The web editor looks correct because globals.css is loaded there."
+  },
+  {
+   "id": "missed-native-idle-full-reloads",
+   "title": "Native clients reload and decrypt the whole store about once a minute even when nothing changed",
+   "severity": "medium",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoSync/NativeChangeWakeupStream.swift",
+   "line": 228,
+   "evidence": "READ: every `.ready` event calls onSynchronized(result) (NativeChangeWakeupStream.swift:228-229). The server ends each stream after 55 s and the client reconnects (sync-feed.ts:50, 131), so `.ready` fires about once a minute. onSynchronized calls recordSynchronization, which bumps synchronizationGeneration unconditionally (NativeSyncModel.swift:129-132, 174-180). JunoDesktopRootView.swift:69-85 then reloads six models, and each one calls repository.snapshot, which decrypts every record, artifact bodies included.",
+   "failure_scenario": "With a Mac left open and idle on an account holding hundreds of MB of artifact and message history, the app runs roughly six full-store decrypt-and-decode passes a minute and republishes the arrays, even though nothing changed. The result is a steady background load on CPU, battery and memory that grows with account size."
+  }
+ ]
+}

@@ -1,0 +1,886 @@
+{
+ "area": "Web: the in-chat artifact surface (Canvas panel, inline cards, previews)",
+ "summary": "WHAT EXISTS (read): In a web chat, the model's `<juno:artifact>` tags become parts (src/lib/message-content.ts:250-291). MessageItem shows each part as an ArtifactInlineCard (src/components/chat/message-item.tsx:1362-1378). The card is a live, fixed-height mini-surface: Preview/Output, Code and Console views, a \"Writing\" state with a hairline sweep while it streams, and an \"Open\" button. Open hands off to the Canvas (src/components/canvas/canvas-panel.tsx), a docked, resizable right column (src/components/chat/chat-view.tsx:2498-2541). It covers the chat below 50rem and can go fullscreen. The Canvas has Preview/Design/Output, Code and Console tabs. The Code tab is always editable on the latest version and saves as a new version (stale-write 409 guard). There is a version rail with a line diff, a movable compare base, Copy diff and Restore-as-new-version. The preview can be pinned to phone or tablet width. An element inspector and text selection produce an Ask/Modify quote in the composer. The More menu has copy/download source and a Word/Excel/PowerPoint export for Markdown. Share creates a public snapshot link. The preview runs in an opaque-origin sandbox iframe (src/components/canvas/sandbox-frame.tsx) with a CSP written with care, console/status/link bridges, Babel+React for REACT and Pyodide for Python. A DESIGN artifact mounts the full DesignEditor inside the Canvas. A session \"Outputs\" popover (session-outputs.tsx) indexes artifacts with source-excerpt tiles (artifact-preview.tsx).\n\nQUALITY: The engineering is thoughtful, and the comments explain why things are built as they are: isolation, CSP, motion tokens, container queries, stale-write guards, lazy chunks. Security of the preview is sound: no allow-same-origin, messages are filtered by source, links are re-validated. Most controls follow the house motion and flat rules. But the surface was built for code artifacts. DESIGN (the type the merge depends on) is broken or second-class at every step. (1) The first saved edit to a freshly generated design in the chat Canvas remounts the editor on a fake version whose content is \"\". The editor then shows \"This design can't be opened\" (canvas-panel.tsx:1236-1257, use-design-document.ts:170-188, migrations.ts:91-99). (2) Inline, a DESIGN card's \"Preview\" is the raw document JSON in a <pre> labelled \"Live\" (sandbox-frame.tsx:801-802, artifact-inline-card.tsx:181). (3) The embedded editor's side panels switch on window width, not Canvas width, so on a laptop they eat the whole ~450px Canvas (design-editor.tsx:549-550). (4) The Canvas has no Ask Juno and no link to the full /design editor. (5) Shared DESIGN links show JSON.\n\nSTREAMING/STATE DEFECTS: Once an artifact's closing tag streams in, its card switches to the destructive \"Source unavailable\" state. It stays there for the rest of the reply, until the `done` frame arrives with the saved artifact (message-item.tsx:1372, use-chat.ts:658-678). While the model rewrites an existing artifact, the card says \"Writing\" but shows the OLD content, because saved content wins over the streaming part. The Canvas never shows a rewrite in progress. Every card for an identifier shows the latest version, not the one its turn produced. The data model cannot say which message made which version: ArtifactVersion has no messageId (prisma/schema.prisma:1146-1159).\n\nUX GAPS vs Claude's panel: no auto-open. No live streaming into the panel. No way to render an older version: the rail only diffs text, and `setSelectedVersion` has just 3 callers (canvas-panel.tsx:314,1142,1231). No \"fix this error\" button. React artifacts get only React globals plus a 17-icon lucide stub, so other icons render as the same fallback circle, and recharts/framer-motion imports fail. No comments. Share reuses the first snapshot link while saying \"as it is now\". Unsaved code edits vanish silently when the Canvas closes. Accessibility: nothing moves focus when the Canvas opens or closes. Fullscreen sets aria-modal without trapping focus. The Ask/Modify toolbar cannot be reached by keyboard.\n\nPERFORMANCE: ChatView passes a non-memoized `openArtifactByIdentifier` to every memoized MessageItem (chat-view.tsx:969 \u2192 message-list.tsx:353). That defeats the memo that message-item.tsx:762-786 depends on, so every message re-renders on every SSE chunk. Inline cards also mount live sandboxes as soon as a conversation loads (React+Babel from CDN per card) and auto-run Python and JS code artifacts. Every version of every artifact, with full content, is sent to the client on load (src/lib/queries.ts:117-127).\n\nTESTS: Only the sandbox capability strings, split-layout class steps and document/artifact quote serialisation are covered. All pass (2+4+14+28+3+12 across 6 files). No test exercises CanvasPanel, ArtifactInlineCard, CodeSurface, the design-in-Canvas commit path or the stream-to-card wiring. There is no /dev gallery for the surface.",
+ "files_read": [
+  "src/components/canvas/canvas-panel.tsx",
+  "src/components/canvas/sandbox-frame.tsx",
+  "src/components/canvas/code-surface.tsx",
+  "src/components/chat/artifact-inline-card.tsx",
+  "src/components/chat/inline-visual-block.tsx",
+  "src/components/chat/session-outputs.tsx",
+  "src/components/chat/message-item.tsx (lines 760-800, 990-1010, 1290-1420)",
+  "src/components/chat/message-list.tsx (lines 340-360)",
+  "src/components/chat/chat-view.tsx (lines 20-50, 640-720, 760-780, 860-1270, 1400-1500, 1560-1590, 1910-1935, 1975-2010, 2410-2589)",
+  "src/components/artifacts/artifact-preview.tsx",
+  "src/lib/quote-context.ts",
+  "src/lib/message-content.ts (1-300)",
+  "src/lib/artifact-runtime.ts (runtimeFor)",
+  "src/hooks/use-chat.ts (180-230, 295-470, 640-700, 1380-1420, 1613-1740 grep)",
+  "src/hooks/use-split-pane.ts (grep)",
+  "src/components/chat/split-layout.ts (grep)",
+  "src/components/design/design-editor.tsx (160-220, 515-560, rail lines)",
+  "src/components/design/use-design-document.ts (80-290)",
+  "src/components/design/panel-layout.tsx (grep)",
+  "src/lib/design/store.ts (60-200)",
+  "src/lib/design/migrations.ts (91-121)",
+  "src/lib/design/operations.ts (505-540)",
+  "src/app/api/design/[artifactId]/transactions/route.ts (1-90)",
+  "src/app/api/artifacts/[id]/route.ts (1-92)",
+  "src/app/api/chat/route.ts (425-460, 960-1000, 1130-1230, 1450-1485, 2555-2590, 2990-3130)",
+  "src/lib/artifacts-store.ts (36-110)",
+  "src/lib/serializers.ts (207-223)",
+  "src/lib/queries.ts (grep 100-127)",
+  "src/lib/share.ts (59-110, 240-276)",
+  "src/components/share/share-dialog.tsx",
+  "src/components/share/shared-artifact-viewer.tsx (30-90)",
+  "src/components/chat/markdown.tsx (180-200)",
+  "src/components/chat/composer.tsx (795-812 + grep)",
+  "src/lib/chat/system-prompt.ts (240-300)",
+  "src/types/chat.ts (266-285)",
+  "prisma/schema.prisma (1125-1160)",
+  "tailwind.config.ts (1-60, 575-600, 765-780)",
+  "src/app/globals.css (grep; 880-1010, 2790-2815)",
+  "docs/design/ICONS_AND_MOTION.md (150-297)",
+  "docs/design/FLAT_UI.md (15-60, 160-200)",
+  "docs/design/PREMIUM_AUDIT.md (650-873)",
+  "tests/sandbox-security.test.ts, tests/split-layout.test.ts, tests/document-viewer.test.ts (grep)"
+ ],
+ "inventory": [
+  {
+   "feature": "Inline artifact card in transcript",
+   "description": "Per artifact part: type glyph, title, runtime label, vN (v2+), 'Updated', one status word (Writing/Loading/Running/Live/Done/Error). The header button and the 'Open' button both open the Canvas. A SegmentedControl switches Preview/Output, Code and Console (Console appears once it has entries). Fixed height min(44vh,360px), min 240. The sandbox preview sits on a white sheet inset in a dark mat. Markdown renders natively.",
+   "maturity": "partial",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:156-457",
+    "src/components/chat/message-item.tsx:1362-1378"
+   ]
+  },
+  {
+   "feature": "Streaming state of an artifact",
+   "description": "While the tag is open: status 'Writing' (coral, pulsing dot), breathing glyph, a gen-sweep band on the hairline under the header, and a read-only CodeSurface pinned to the bottom while the reader stays near it. If no content has arrived yet: ThinkingDots and 'Writing artifact'. After the closing tag and before `done`, the card falls into the 'Source unavailable' error state (defect 2). The Canvas has no streaming state at all.",
+   "maturity": "partial",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:231-239,367-373,428-437",
+    "src/components/canvas/code-surface.tsx:185-193",
+    "src/lib/message-content.ts:264-288"
+   ]
+  },
+  {
+   "feature": "Canvas open/close/placement",
+   "description": "Opens only on click (card, Outputs tile) or via the ?artifact= deep link; there is no auto-open. Docked right column with a persisted width (juno:canvas-width), 46% reset, 420px minimum, a separator that responds to pointer and keyboard, and a request to collapse the sidebar. Below the 50rem split it replaces the chat column. Opening the Canvas closes the thought dock and the file viewer (coexistence rule). Close keeps it mounted for a 200ms exit.",
+   "maturity": "solid",
+   "where": [
+    "src/components/chat/chat-view.tsx:897-917,951-993,1145-1200,2479-2541"
+   ]
+  },
+  {
+   "feature": "Fullscreen",
+   "description": "Header toggle, shown only at @[50rem]/split. The panel becomes `fixed inset-0 z-modal` inside the split container, with role=dialog aria-modal. Escape exits unless a nearer layer handled it. There is no focus trap.",
+   "maturity": "partial",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:744-754,784-790,906-932"
+   ]
+  },
+  {
+   "feature": "Preview/Code/Console tabs",
+   "description": "Radix Tabs. The first tab is labelled 'Output' for console runtimes, 'Design' for DESIGN, otherwise 'Preview'. A Console tab with a count badge (red when there are errors) appears once logs arrive. Switching versions clears the console. The tab falls back to the primary view if the runtime changes.",
+   "maturity": "solid",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:1112-1137,317-334"
+   ]
+  },
+  {
+   "feature": "Sandboxed live preview",
+   "description": "srcdoc iframe with an opaque origin (allow-scripts forms modals downloads pointer-lock, no allow-same-origin). A CSP meta goes first in the head. A storage/history shim, a status reporter, a console bridge and a link bridge are injected early, and a dormant element inspector late. Per-type document builders: React (Tailwind CDN, React 18 dev UMD, unpinned Babel standalone, eval), HTML, SVG, CSS sample page, Mermaid ESM, JS/TS console, Pyodide Python with package import and micropip wheels. Files a Python script writes are offered as downloads.",
+   "maturity": "solid",
+   "where": [
+    "src/components/canvas/sandbox-frame.tsx:1-931"
+   ]
+  },
+  {
+   "feature": "Run/reload and render status",
+   "description": "Reload (web) or Run (console) bumps runNonce to rebuild the srcdoc. A header status word (Loading/Running/Live/Done/Error) with a status-glow dot. When a newer version fails and a previous one rendered, a banner offers Console or 'View vN'.",
+   "maturity": "solid",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:548-566,756-771,1193-1235"
+   ]
+  },
+  {
+   "feature": "Console views",
+   "description": "Canvas ConsoleView keeps 500 entries (trims to the last 400), auto-scrolls and has a Clear button. The inline ConsolePreview shows the last 80 of up to 150. Levels are coloured by semantic tokens, but the two views use different tokens for warn.",
+   "maturity": "solid",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:164-217,556-558",
+    "src/components/chat/artifact-inline-card.tsx:67-104,241-243"
+   ]
+  },
+  {
+   "feature": "Preview width presets",
+   "description": "Icon-only segmented control: Fit, Tablet 834, Phone 390. The pinned frame is centred on a muted gutter with an edge. Shown only when the panel is wider than 390 and the artifact is a web type (not Markdown or Design).",
+   "maturity": "solid",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:64-72,776-781,1155-1172,1283-1311"
+   ]
+  },
+  {
+   "feature": "Edit in place (Code tab)",
+   "description": "Transparent-textarea-over-highlight.js editor. Always writable on the latest version and read-only for older versions and DESIGN. Tab indents, Esc blurs, Cmd/Ctrl+S or Cmd/Ctrl+Enter saves. A save bar rises in ('Unsaved changes \u00b7 saves as vN+1', Discard, Save version). A stale base returns 409, which shows a 'Saved elsewhere' banner with Discard my draft / Save anyway. The preview does not reflect the draft until it is saved.",
+   "maturity": "partial",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:249-255,505-546,1320-1382",
+    "src/components/canvas/code-surface.tsx:141-361",
+    "src/app/api/artifacts/[id]/route.ts:40-90"
+   ]
+  },
+  {
+   "feature": "Version history / diff / restore",
+   "description": "History toggles from the header 'vN' pill or the More menu. A w-48 rail (newest first) with origin labels (Generated/Edited/Restored) and relative times. Any row can become the compare 'base'. A line diff shows +/- counts and two gutters, and 'No changes' is its empty state. Copy diff produces a unified diff. Restore saves an older version as a new one. The rail cannot RENDER an older version (see gaps).",
+   "maturity": "partial",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:374-459,943-1102"
+   ]
+  },
+  {
+   "feature": "Copy / download / Office export",
+   "description": "Copy source (IconSwap check plus a toast) and Download source (blob, extension from language or type). Markdown can be exported as .docx/.xlsx/.pptx; the server decides which formats are available, only the latest version can be exported, and the More button shows a spinner while exporting. There is no PDF/PNG export and no open-in-new-tab.",
+   "maturity": "partial",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:346-367,461-503,849-902"
+   ]
+  },
+  {
+   "feature": "Share artifact",
+   "description": "Header 'Share' button; hidden in private mode. Opening the dialog immediately creates or reuses a public snapshot link. It has Copy and Revoke. The public page is /share/[token] (SharedArtifactViewer).",
+   "maturity": "partial",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:842-847,1388-1390",
+    "src/components/share/share-dialog.tsx:77-85",
+    "src/lib/share.ts:85-110,248-276"
+   ]
+  },
+  {
+   "feature": "Select text / element \u2192 quote into composer (Ask/Modify)",
+   "description": "Selecting text in Markdown gives a DOM range; a selection in the code textarea gives exact line numbers. Either shows a floating Ask/Modify toolbar, portalled with z-toolbar and pop-in. A 'Select' crosshair inspector in HTML/React/SVG/CSS previews picks an element and returns a CSS path and outerHTML snippet (always 'modify'). The quote becomes a composer chip; 'modify' sends an artifactEdit and gets a targeted server patch. Below the split, the Canvas closes so the composer is visible.",
+   "maturity": "partial",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:568-740,1392-1420",
+    "src/lib/quote-context.ts:1-344",
+    "src/components/chat/chat-view.tsx:1202-1210",
+    "src/components/chat/composer.tsx:802-808"
+   ]
+  },
+  {
+   "feature": "DESIGN artifact inline",
+   "description": "The inline card treats DESIGN as a sandbox 'Preview'. buildSandboxDoc falls to its default branch and renders the stored document JSON inside a <pre>, with status 'Live'. There is no thumbnail or visual preview.",
+   "maturity": "broken",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:181-185",
+    "src/components/canvas/sandbox-frame.tsx:786-803",
+    "src/lib/artifact-runtime.ts:98"
+   ]
+  },
+  {
+   "feature": "DESIGN artifact in Canvas (hand-off to editor)",
+   "description": "The 'Design' tab mounts the full DesignEditor (embedded surface), read-only on old versions, saving through /api/design/:id/transactions. The Code tab shows the JSON read-only. There is no Ask Juno, no link to /design/[id], and the rails are keyed to the viewport. After the first committed checkpoint the editor remounts on content \"\" and shows a load error.",
+   "maturity": "broken",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:1236-1257,1346-1359",
+    "src/components/design/design-editor.tsx:160-221,549-550"
+   ]
+  },
+  {
+   "feature": "Session Outputs popover",
+   "description": "A chip in the chat header shows a rolling count. The popover has an Outputs grid (artifacts plus generated images, newest first, staggered in) and a 'Used in this session' list (models, uploads, web search, memory, connectors). Tiles open the Canvas or the file viewer. It is hidden when a side panel is open or in private mode.",
+   "maturity": "solid",
+   "where": [
+    "src/components/chat/session-outputs.tsx:1-433",
+    "src/components/chat/chat-view.tsx:1910-1930"
+   ]
+  },
+  {
+   "feature": "Artifact tile preview",
+   "description": "SVG is rendered as a data-URL <img>. Other types show the first 20 source lines in mono under a fade, or the type glyph as a fallback. DESIGN shows one line of minified JSON.",
+   "maturity": "partial",
+   "where": [
+    "src/components/artifacts/artifact-preview.tsx:36-132"
+   ]
+  },
+  {
+   "feature": "Legacy inline visual block (juno-visual fence)",
+   "description": "JSON rendered as interactive cards, flow, comparison table, quiz, callout or timeline. Steps delegate to StepLabBlock. It has streaming and parse-failure notices.",
+   "maturity": "solid",
+   "where": [
+    "src/components/chat/inline-visual-block.tsx:1-589",
+    "src/components/chat/markdown.tsx:188-194"
+   ]
+  },
+  {
+   "feature": "Keyboard shortcuts",
+   "description": "In the code editor, Cmd/Ctrl+S or Cmd/Ctrl+Enter saves, Tab indents and Esc blurs. Esc exits fullscreen, inspect mode and the selection toolbar. Arrow keys and Home work on the resize separator. There is no shortcut to open or close the Canvas or switch tabs, and Esc does not close the docked Canvas, unlike the thought dock.",
+   "maturity": "partial",
+   "where": [
+    "src/components/canvas/code-surface.tsx:242-274",
+    "src/components/canvas/canvas-panel.tsx:639-657,730-754",
+    "src/components/chat/chat-view.tsx:1108-1121"
+   ]
+  },
+  {
+   "feature": "Mobile layout",
+   "description": "Below 50rem the Canvas is full-bleed and replaces the chat. Header labels collapse by panel width. Coarse-pointer hit sizes are enlarged on several controls. The history rail stays a fixed w-48 beside the diff. Width presets hide below 390px of panel. The design editor hides its rails below md/lg viewports.",
+   "maturity": "partial",
+   "where": [
+    "src/components/chat/chat-view.tsx:1996-2000",
+    "src/components/canvas/canvas-panel.tsx:271-276,963"
+   ]
+  },
+  {
+   "feature": "Comments on artifacts",
+   "description": "Absent. There is no model (prisma/schema.prisma has only FeatureComment) and no UI in the Canvas. Searched with grep -i comment over canvas-panel and the schema.",
+   "maturity": "absent"
+  },
+  {
+   "feature": "Auto-fix of a failed preview",
+   "description": "Absent. A failure offers only 'Console' and 'View vN'; nothing sends the error to the model.",
+   "maturity": "absent",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:1223-1235"
+   ]
+  }
+ ],
+ "architecture": "WIRE \u2192 PARTS: The model streams raw text containing `<juno:artifact identifier type title language>` tags as `delta` frames (src/app/api/chat/route.ts:3016). A targeted 'modify' edit sends NO deltas and emits the whole text once saved (route.ts:3016,3113). On the client, use-chat appends the deltas to message.content (src/hooks/use-chat.ts:640-645). MessageItem memo-computes `splitMessageContent(view.content)` (message-item.tsx:1002-1008). A closed tag becomes `{type:'artifact', identifier}` with no content. An unclosed tail becomes `{streaming:true, title, artifactType, language, content}` (message-content.ts:250-291).\n\nCARD DATA: MessageList builds `artifactsByIdentifier` from `chat.artifacts`. Each card reads `artifact?.content ?? part.content`, `artifact?.currentVersion` and `updated = artifact.messageId !== message.id` (message-item.tsx:1364-1376). So persisted content (always the LATEST version) wins over streamed content.\n\nPERSISTENCE: At the end of a turn, `prepareChatArtifactOutput` verifies and repairs bodies synchronously (route.ts:433-460). `persistArtifacts` (src/lib/artifacts-store.ts:38-94) upserts Artifact by (conversationId, identifier). The same identifier gets a new ArtifactVersion with origin 'generated'; messageId stays pinned to the creator. The result goes out as ClientArtifact[] in the `done` frame, and use-chat `mergeArtifacts` replaces entries by identifier and never removes one (use-chat.ts:344-354, 658-678). A regenerate deletes the stale message's artifacts server-side (route.ts:2573); the client does not mirror that. The initial load ships every artifact with ALL versions' full content (src/lib/queries.ts:117-127, serializers.ts:207-223). Private mode is prompted with canvas:false and returns `artifacts: []` (route.ts:972,1224).\n\nCANVAS: ChatView holds `openArtifactId`; `openArtifact` is derived from chat.artifacts (chat-view.tsx:871-874), and `closingArtifact` keeps it mounted through the exit. CanvasPanel is `nextDynamic` with ssr:false and no loading fallback (chat-view.tsx:37-40). It imports DesignEditor statically (canvas-panel.tsx:44). Width comes from `useSplitPane` (chat-view.tsx:1145-1159) inside a `@container/split` box; layout rules are in split-layout.ts. CanvasPanel dispatches on `runtimeFor(type, language)` \u2192 mode web|console|design (artifact-runtime.ts:93-127; 'none' is never returned).\n- Web/console go to `SandboxFrame`. `buildSandboxDoc` produces a srcdoc; the iframe's sandbox has no allow-same-origin. The protocol is postMessage in both directions: `juno:console|status|selected|inspect-off|open` up, `juno:inspect` down, with `e.source` checked (sandbox-frame.tsx:863-913).\n- Markdown renders natively inside a max-w-3xl reading measure.\n- Design mounts `DesignEditor` \u2192 `useDesignDocument` \u2192 POST /api/design/:id/transactions. The store either folds a transaction into the newest checkpoint within 30s or appends a checkpoint (src/lib/design/store.ts:89-148, operations.ts:529-539). `onCommitted(version)` makes the Canvas append a synthetic `{version, content:\"\"}` to the envelope (canvas-panel.tsx:1243-1255).\n\nVERSION WRITES: Code edits and restores POST /api/artifacts/:id `{content, origin, baseVersion}`. The route is type-agnostic: it accepts empty content, does no DESIGN validation, and returns 409 with the latest artifact when stale (src/app/api/artifacts/[id]/route.ts:7-90). `onArtifactUpdated` \u2192 ChatView `handleArtifactUpdated` replaces the artifact in chat.artifacts (chat-view.tsx:1254-1263).\n\nQUOTES: A Markdown DOM range, CodeSurface textarea offsets or an iframe inspector pick is built into `ComposerQuote` (src/lib/quote-context.ts:24-40) \u2192 ChatView `handleQuote` \u2192 the composer chip \u2192 `serializeQuote` wraps a fenced block. `mode:'modify'` adds `artifactEdit` (composer.tsx:802-808); the server checks the base version and returns 409 if it moved (route.ts:1450-1483). `parseQuotedMessage` reads the block back for the transcript.\n\nEXPORT/SHARE: `/api/artifacts/:id/export` serves Markdown as docx/xlsx/pptx. ShareDialog \u2192 /api/share \u2192 `createShare` reuses the newest active link, whose snapshotAt is frozen at creation (src/lib/share.ts:85-110). /share/[token] renders the version current at snapshotAt with SharedArtifactViewer; DESIGN there is code-only JSON (shared-artifact-viewer.tsx:30-33).\n\nSIDE INDEX: SessionOutputs derives tiles and provenance from chat.artifacts and messages with no fetch.\n\nKEY TYPES: ClientArtifact {id, identifier, type, title, language, currentVersion, content, versions[{version, content, origin, createdAt}], messageId} (src/types/chat.ts:266-285); Prisma Artifact/ArtifactVersion (prisma/schema.prisma:1125-1159). The version row has no messageId, author or comment linkage.",
+ "ux": [
+  {
+   "observation": "The Canvas never opens on its own. A new artifact lives only in the fixed-height inline card until the user presses Open. Claude opens its panel on creation and streams into it. This is a deliberate choice (the system prompt says to never mention panels), but the transcript then carries nested 360px scroll boxes.",
+   "severity": "major",
+   "where": [
+    "src/components/chat/chat-view.tsx:969-993",
+    "src/components/chat/artifact-inline-card.tsx:378"
+   ]
+  },
+  {
+   "observation": "No way to SEE an older version rendered. The history rail selects diff targets only (selectTarget sets compareTarget). Only the failure banner and the back-to-latest pill ever change selectedVersion, so the read-only old-version machinery is almost unreachable. Claude has version arrows that re-render the preview.",
+   "severity": "major",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:407-410,1142,1231"
+   ]
+  },
+  {
+   "observation": "History for DESIGN (minified single-line JSON) and for any large artifact is a text diff of whole lines. For a design it is one removed line and one added line, and useless. There is no visual diff or side-by-side preview.",
+   "severity": "major",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:388-391,1057-1089",
+    "src/lib/design/migrations.ts:111-113"
+   ]
+  },
+  {
+   "observation": "No 'fix it' affordance when a preview errors. The banner offers Console and 'View vN' only; the user must copy the error into the composer by hand.",
+   "severity": "major",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:1223-1235"
+   ]
+  },
+  {
+   "observation": "The Canvas shows nothing while the model is rewriting the open artifact, whether a full regeneration or a 'modify' patch. There is no progress indicator; the new version replaces the old with a fade when `done` lands.",
+   "severity": "major",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:313-315",
+    "src/app/api/chat/route.ts:3016"
+   ]
+  },
+  {
+   "observation": "The history rail is a fixed w-48 beside the diff even on a phone-width full-bleed Canvas: at 375px the diff gets about 183px. There is no stacked mobile layout.",
+   "severity": "minor",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:963"
+   ]
+  },
+  {
+   "observation": "Several hit targets fall under the 32px pointer minimum in ICONS_AND_MOTION \u00a73: the inline card view segments (h-6), the failure banner buttons (h-6), the stale-conflict buttons (h-6), the history 'base' chip (py-0.5, about 20px), and the Console 'Clear' button (py-1, about 24px).",
+   "severity": "minor",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:343",
+    "src/components/canvas/canvas-panel.tsx:186,1005,1227,1231,1334,1338"
+   ]
+  },
+  {
+   "observation": "The Ask/Modify toolbar and the inspector cover only Markdown text, code text and web previews. Text selected inside an HTML/React iframe produces nothing, and an element pick is always 'modify' (there is no 'ask about this element').",
+   "severity": "minor",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:588-595,709-726"
+   ]
+  },
+  {
+   "observation": "Esc does not close the docked Canvas, although it closes the thought dock beside it, so the two right-hand columns behave differently. Esc also cannot exit fullscreen while focus is inside the preview iframe, because the keydown never reaches the parent document.",
+   "severity": "minor",
+   "where": [
+    "src/components/chat/chat-view.tsx:1108-1121",
+    "src/components/canvas/canvas-panel.tsx:744-754"
+   ]
+  },
+  {
+   "observation": "The first Canvas open shows an empty sliding column until the dynamic chunk arrives: no `loading` fallback, and the chunk includes the whole design editor even for an HTML artifact.",
+   "severity": "minor",
+   "where": [
+    "src/components/chat/chat-view.tsx:37-40",
+    "src/components/canvas/canvas-panel.tsx:44"
+   ]
+  },
+  {
+   "observation": "`panelWidth` starts at 9999, so contextual labels (Select/Reload/Copy, 'back to latest') render wide on the first frame and then collapse once the ResizeObserver fires.",
+   "severity": "info",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:275-276,336-344"
+   ]
+  },
+  {
+   "observation": "The Code tab for DESIGN is one minified line of up to 200k chars. It exceeds HIGHLIGHT_LIMIT, so it is shown unhighlighted and scrolls horizontally forever. It should be pretty-printed for reading.",
+   "severity": "minor",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:1347-1359",
+    "src/components/canvas/code-surface.tsx:54"
+   ]
+  },
+  {
+   "observation": "Output tiles for HTML/React/DESIGN show a source excerpt, not a picture (a documented choice). For DESIGN this is a single clipped line of JSON. Claude and Figma show rendered thumbnails.",
+   "severity": "minor",
+   "where": [
+    "src/components/artifacts/artifact-preview.tsx:81-121"
+   ]
+  },
+  {
+   "observation": "Nothing on a card shows that its artifact is the one currently open in the Canvas, so with several cards the handoff is not traceable.",
+   "severity": "info",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:300-365"
+   ]
+  },
+  {
+   "observation": "The inline card has two adjacent open controls ('Open X in canvas' and 'Open in canvas'), which doubles the tab stops. Every preview iframe has the same title 'Artifact preview'. Status changes (Error/Live) and console output are not in live regions.",
+   "severity": "minor",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:316-363",
+    "src/components/canvas/sandbox-frame.tsx:920"
+   ]
+  },
+  {
+   "observation": "The inline card sizes by the viewport (`h-[min(44vh,360px)]`), against PREMIUM_AUDIT rule 11 ('Size by the container, never the viewport').",
+   "severity": "info",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:378"
+   ]
+  },
+  {
+   "observation": "The selected history row and the active inline-visual cards use an accent tint (`bg-primary/10`). FLAT_UI \u00a73.1/\u00a76 says a selected row is `bg-selected`, and commit 983dc2ad introduced that token for exactly this.",
+   "severity": "info",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:983",
+    "src/components/chat/inline-visual-block.tsx:276,328"
+   ]
+  },
+  {
+   "observation": "Radius drift. The inline card's white sheet is `rounded-md` (8px, off the ladder, which the inline-visual-block comment itself calls 'not on the ladder at all'). The inline-visual comment says card = 14, but tailwind.config says card = 16.",
+   "severity": "info",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:401",
+    "src/components/chat/inline-visual-block.tsx:213-226",
+    "tailwind.config.ts:28"
+   ]
+  },
+  {
+   "observation": "Stacking uses `z-40` on the Canvas and file wrappers, not one of the four named rungs (z-popper, z-modal, z-toolbar, z-toast) required by ICONS_AND_MOTION \u00a73.",
+   "severity": "info",
+   "where": [
+    "src/components/chat/chat-view.tsx:2502,2549"
+   ]
+  },
+  {
+   "observation": "The inspector overlay inside previews is a hard-coded blue (rgba(82,110,240)), not the canvas-selection token that the design editor uses for the same purpose (globals.css --canvas-selection).",
+   "severity": "info",
+   "where": [
+    "src/components/canvas/sandbox-frame.tsx:323-326",
+    "src/app/globals.css:471"
+   ]
+  }
+ ],
+ "motion": [
+  {
+   "observation": "Canvas dock entrance: 16px slide plus fade from the right on duration-base / ease-drawer; under reduced motion only the fade plays (correct). The exit uses absolute positioning so the chat reflows underneath, animate-out plus fade-out and slide-out-to-right-4 on duration-exit / ease-in, followed by a 200ms unmount timer. The exit has NO motion-reduce split, so reduced-motion users still get the 16px slide (defect 8).",
+   "where": [
+    "src/components/chat/chat-view.tsx:2479-2508,951-967"
+   ]
+  },
+  {
+   "observation": "The entrance classes are removed while resizing and re-added on pointer-up, so the whole Canvas replays its fade-and-slide after every resize drag. The thought dock fixed this with `animateDock`; the Canvas and the file viewer did not (defect 7).",
+   "where": [
+    "src/components/chat/chat-view.tsx:2503-2506,2550-2553,1180-1182"
+   ]
+  },
+  {
+   "observation": "Fullscreen: entering adds `motion-safe:animate-fade-in` to the root; leaving snaps back with no exit.",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:789"
+   ]
+  },
+  {
+   "observation": "History and the workspace swap through framer AnimatePresence mode='wait' with variants.fade (opacity only, initial={false}). Version rows are dealt with staggered fade-in-up on the tight rung. The diff region fades in when the base/target pair changes.",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:953-962,976-983,1050-1056"
+   ]
+  },
+  {
+   "observation": "A version switch cross-fades the content: the preview, Markdown and design containers are keyed by selectedVersion with motion-safe:animate-fade-in. This also remounts the iframe and the DesignEditor, which is the root of defect 1.",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:1237,1260,1284"
+   ]
+  },
+  {
+   "observation": "The header status word re-mounts with a fade on each change. Its dot breathes with animate-status-glow while live (the token-ladder loop). The inline card's identical dot still uses Tailwind's stock `animate-pulse`, which the Canvas comment calls off-ladder, so the two status dots breathe on different curves.",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:827-838",
+    "src/components/chat/artifact-inline-card.tsx:283-293"
+   ]
+  },
+  {
+   "observation": "IconSwap cross-fades: More \u21c4 spinner during Office export, Maximize \u21c4 Minimize, copy \u21c4 check for Copy source and Copy diff. useFlash holds each check for 1.5s with a restartable timer (law \u00a72.2.7 compliant). ShareDialog's copy uses a bare setTimeout, not useFlash.",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:106-136,859-863,924-928,1033-1037,1208-1212",
+    "src/components/share/share-dialog.tsx:88-93"
+   ]
+  },
+  {
+   "observation": "The save bar rises in (animate-rise-in) but snaps out on save or discard. The stale-conflict and render-failure banners fade in and snap out. The selection toolbar pops in (animate-pop-in, spring) and disappears in one frame. Enter-without-exit breaks the 'floating layers ... pop-out' and 'never an instant hidden' rules in ICONS_AND_MOTION \u00a72.2.4/\u00a72.2.6.",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:1223-1224,1322-1323,1362-1367,1393-1404"
+   ]
+  },
+  {
+   "observation": "Inline card: animate-rise-in on mount, a tonal border hover, a view switch keyed with fade-in, and a glyph that breathes (animate-icon-breathe) plus a primary gen-sweep band on the header hairline (1.8s loop) while streaming. Both are live-state loops, allowed by \u00a72.2.9. The SegmentedControl thumb glides.",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:258-265,310-313,367-373,378"
+   ]
+  },
+  {
+   "observation": "Session Outputs: the tiles are dealt in with staggered rise-in, then the 'Used' rows follow on the tight rung offset after the tiles. The count chip uses RollingNumber, and tile hover is an opacity dip (hover:opacity-80, not the tonal hover recipe).",
+   "where": [
+    "src/components/chat/session-outputs.tsx:269,296-301,337-344,428"
+   ]
+  },
+  {
+   "observation": "Inline visual block: the section rises in, focus/detail panels are keyed with fade-in, timeline rows are staggered rise-in (staggerDelay, no cap at 8 rows), and quiz feedback rises in. The parse-pending spinner uses bare `animate-spin` without motion-safe; globals.css's unlayered block does neutralise it.",
+   "where": [
+    "src/components/chat/inline-visual-block.tsx:291,354,476,520-524,557,584"
+   ]
+  },
+  {
+   "observation": "Resize handle: the hover tint on the edge and the grip fade in with transition-opacity, and motion-reduce disables that transition. The drag uses pointer capture and the split transitions are off while resizing.",
+   "where": [
+    "src/components/chat/chat-view.tsx:2516-2530"
+   ]
+  },
+  {
+   "observation": "No skeletons anywhere on the surface. Loading states are the ThinkingDots block in the card, the 'Loading design\u2026' spinner in the editor, and the header status word. The first open of the Canvas chunk has no placeholder.",
+   "where": [
+    "src/components/chat/artifact-inline-card.tsx:428-437",
+    "src/components/design/design-editor.tsx:536-543"
+   ]
+  }
+ ],
+ "defects": [
+  {
+   "id": "web-artifact-surface-1",
+   "title": "DESIGN editor in the chat Canvas breaks after the first saved checkpoint (synthetic version with empty content)",
+   "severity": "high",
+   "file": "src/components/canvas/canvas-panel.tsx",
+   "line": 1252,
+   "evidence": "onCommitted appends `{ version, content: \"\", origin: \"edit\" }` and bumps currentVersion (canvas-panel.tsx:1243-1255). An effect then moves selectedVersion to currentVersion (313-315). versionContent = versions.find(v=>v.version===selected)?.content ?? artifact.content returns \"\" because ?? does not catch an empty string (369-370). The DesignEditor wrapper is keyed by selectedVersion (1237), so it remounts with content \"\". useDesignDocument parses it (use-design-document.ts:170-183), and parseStoredDesignDocument('') throws 'Design document is not valid JSON' (migrations.ts:91-97). The store ALWAYS allocates a new checkpoint for the first user edit on top of generated output (store.ts:122-127, operations.ts:535), so onCommitted fires with version > currentVersion on the very first edit. Present since 7c344b96 (2026-08-05).",
+   "failure_scenario": "Ask Juno in chat to 'design a sign-in screen' and click Open on the card. Drag a layer in the Design tab. The transaction saves as v2, the Canvas remounts the editor, and 'This design can't be opened: Design document is not valid JSON' replaces the canvas. Closing and reopening the Canvas shows the same error, because chat.artifacts still holds the synthetic v2. Copy source and Download source produce an empty file, and history diffs v1 against \"\". Only a page reload recovers."
+  },
+  {
+   "id": "web-artifact-surface-2",
+   "title": "Inline card shows the destructive 'Source unavailable' state from the artifact's closing tag until the turn's `done` frame",
+   "severity": "medium",
+   "file": "src/components/chat/message-item.tsx",
+   "line": 1372,
+   "evidence": "A closed tag becomes `{type:'artifact', identifier}` with no content and no streaming flag (message-content.ts:256-261; verified with a tsx probe). The card gets `content={artifact?.content ?? part.content}` and `streaming={part.streaming && message.streaming}` (message-item.tsx:1368-1372). For a new identifier, `artifact` is undefined until mergeArtifacts runs on `done` (use-chat.ts:658-678); no earlier frame carries artifacts. hasContent and streaming are both false, so the EmptyState renders with tone='error': 'Source unavailable \u2026 isn't available here yet' (artifact-inline-card.tsx:438-454).",
+   "failure_scenario": "Ask for 'a pomodoro timer in React'. The model streams the component, closes the tag, then writes 'Press Start to begin; the timer\u2026'. For the whole of that trailing prose, plus message and artifact persistence, the card that just showed streaming code flips to a red-bordered 'Source unavailable' error. It then snaps to the live preview when `done` arrives."
+  },
+  {
+   "id": "web-artifact-surface-3",
+   "title": "While an existing artifact is being rewritten, its streaming card shows the OLD saved content and title under a 'Writing' status",
+   "severity": "medium",
+   "file": "src/components/chat/message-item.tsx",
+   "line": 1369,
+   "evidence": "The card data prefers the persisted artifact: `title={artifact?.title ?? part.title}`, `type={artifact?.type ?? part.artifactType}` and `content={artifact?.content ?? part.content}` (message-item.tsx:1369-1372). For an update, the identifier already exists in artifactsByIdentifier, so `part.content` (the live stream) is never used. The CodeSurface `streaming` pin therefore follows unchanging text.",
+   "failure_scenario": "Turn 1 makes identifier 'landing-page'. In turn 2 you ask 'make the hero dark'. The model re-emits `<juno:artifact identifier=\"landing-page\">`, and the new card says 'Writing' with the sweep running, but its code view shows the v1 source frozen. Nothing visibly streams until `done` swaps in v2."
+  },
+  {
+   "id": "web-artifact-surface-4",
+   "title": "DESIGN artifacts preview inline as raw JSON in a <pre>, labelled 'Preview' with status 'Live'",
+   "severity": "medium",
+   "file": "src/components/canvas/sandbox-frame.tsx",
+   "line": 801,
+   "evidence": "runtimeFor('DESIGN') returns {mode:'design', lang:'design'} (artifact-runtime.ts:98). The card computes inlinePreview = hasContent && rt.mode !== 'none', which is true, and defaults to the 'preview' view (artifact-inline-card.tsx:181-185,200). RuntimePreview \u2192 SandboxFrame \u2192 buildSandboxDoc, where lang 'design' matches no case and falls to the default: an escaped <pre> of the content (sandbox-frame.tsx:789-803; probe output confirmed `<body><pre \u2026>{\"schemaVersion\"\u2026`). STATUS_LITE posts 'done', so the header says 'Live'.",
+   "failure_scenario": "Any chat reply that produces a DESIGN artifact, which the system prompt encourages for 'design/mock up a screen' (system-prompt.ts:269): the transcript card shows a white sheet full of minified document JSON instead of the screen. The Code view shows the same JSON."
+  },
+  {
+   "id": "web-artifact-surface-5",
+   "title": "Embedded design editor keys its rails to the window, not the Canvas, so on laptop widths the rails consume the whole docked Canvas",
+   "severity": "medium",
+   "file": "src/components/design/design-editor.tsx",
+   "line": 549,
+   "evidence": "The embedded rails use `hidden md:flex` (layers) and `hidden lg:flex` (inspector) (design-editor.tsx:549-550). Both are shrink-0 at widths of 208 and 256 (719-720, 829-830; panel-layout.tsx:37-38), 464px combined. The docked Canvas defaults to 46% of the split container with a 420px minimum (chat-view.tsx:1150-1151; split-layout.ts:30). tests/split-layout.test.ts:70-77 forbids `lg:` in canvas-panel but does not see the editor it mounts. canvas-panel's own comment says 'Viewport breakpoints can't see the panel' (271-274).",
+   "failure_scenario": "1280px window, sidebar open, container \u2248 976px, Canvas \u2248 449px. Open a DESIGN artifact: both rails render (viewport \u2265 lg) and leave roughly 0px for the design canvas, so the user sees two side panels and no design until a rail is collapsed or the Canvas is dragged wider."
+  },
+  {
+   "id": "web-artifact-surface-6",
+   "title": "Non-memoized onOpenArtifact defeats MessageItem's React.memo, so every message re-renders on every stream chunk",
+   "severity": "medium",
+   "file": "src/components/chat/chat-view.tsx",
+   "line": 969,
+   "evidence": "`const openArtifactByIdentifier = (identifier, opts) => {\u2026}` is a plain function recreated on every ChatView render (chat-view.tsx:969). It is passed as `onOpenArtifact={openArtifactByIdentifier}` (2272) and forwarded unchanged to every row (message-list.tsx:353). MessageItem's doc comment states that the memo only bites if 'Every handler reaching this component is a useCallback' (message-item.tsx:762-786). ChatView re-renders on every delta because chat.messages changes.",
+   "failure_scenario": "In a 40-turn conversation with several artifact cards and code blocks, each of the 30-60 SSE chunks per second reconciles all 40 MessageItems, including their Markdown and cards. This brings back the long-conversation jank the memo was added to remove."
+  },
+  {
+   "id": "web-artifact-surface-7",
+   "title": "Canvas replays its entrance (fade + 16px slide) after every resize drag",
+   "severity": "low",
+   "file": "src/components/chat/chat-view.tsx",
+   "line": 2505,
+   "evidence": "The entrance classes are conditional on `!canvas.resizing` (2504-2505). use-split-pane sets resizing true on pointerdown and false at the end (use-split-pane.ts:368,414), so `animate-in fade-in slide-in-from-right-4` is removed and re-added, which restarts the CSS animation. The thought dock documents this exact bug and guards it with `animateDock` (chat-view.tsx:2440-2447,1180-1182). The file viewer wrapper has the same issue (2550-2553).",
+   "failure_scenario": "Drag the Canvas edge to widen it and release. The whole panel, preview iframe included, fades from transparent and slides 16px in again, on every release."
+  },
+  {
+   "id": "web-artifact-surface-8",
+   "title": "Canvas and file-viewer close animation slides under prefers-reduced-motion",
+   "severity": "low",
+   "file": "src/components/chat/chat-view.tsx",
+   "line": 2506,
+   "evidence": "The exit branch is `animate-out fade-out slide-out-to-right-4` with no motion-safe or motion-reduce split (2506, and 2553 for files). The comment above admits tailwindcss-animate's slide is a hard-coded translate that --motion-shift cannot reach (2483-2486), and globals.css has no rule neutralising the tw exit translate (grep found none). ICONS_AND_MOTION \u00a72.2.10: 'Under reduced motion, travel and scale collapse.'",
+   "failure_scenario": "A user with Reduce Motion enabled closes the Canvas and sees a 16px slide-out; the opening correctly fades only."
+  },
+  {
+   "id": "web-artifact-surface-9",
+   "title": "Unsaved Code-tab edits are silently discarded when the Canvas closes or is replaced",
+   "severity": "medium",
+   "file": "src/components/canvas/canvas-panel.tsx",
+   "line": 252,
+   "evidence": "The draft is local state in CanvasPanel (252-254). Close calls onClose \u2192 closeArtifact, which unmounts after 200ms (chat-view.tsx:951-967). Opening a file, the thought dock or voice also closes the Canvas (1017-1033, 1063-1065, 1570-1572), and opening another artifact resets the draft (canvas-panel.tsx:296-311). None of these paths checks `dirty` or asks for confirmation, and there is no beforeunload guard.",
+   "failure_scenario": "Edit 30 lines in the Code tab, then click a PDF attachment in the transcript to check something. The file viewer takes the column, the Canvas unmounts, and the edits are gone without a prompt."
+  },
+  {
+   "id": "web-artifact-surface-10",
+   "title": "Modify from a non-latest version is offered but always rejected with a misleading 'canvas changed' error",
+   "severity": "low",
+   "file": "src/components/canvas/canvas-panel.tsx",
+   "line": 707,
+   "evidence": "`canInspect` and `captureSelection` do not check isLatest (707, 570-602), and quotes carry `baseVersion: selectedVersion` (668, 717). The server rejects any artifactEdit whose baseVersion is not currentVersion with 409: 'This canvas changed after you made the selection. Select the part again\u2026' (route.ts:1469-1473). The code-selection path is gated on isLatest (1356), so the behaviour is inconsistent.",
+   "failure_scenario": "A newer version fails to render, and the user clicks 'View v2' (1231), then Select \u2192 click a button \u2192 types 'make it blue' \u2192 send. The request fails with 409 telling them the canvas changed, but they did nothing wrong, and reselecting on v2 fails again."
+  },
+  {
+   "id": "web-artifact-surface-11",
+   "title": "Ask/Modify selection toolbar cannot be reached by keyboard",
+   "severity": "medium",
+   "file": "src/components/canvas/canvas-panel.tsx",
+   "line": 1393,
+   "evidence": "The toolbar is portalled to the end of document.body (1393-1420), with no focus hand-off and no shortcut. In the code editor, plain Tab inserts spaces (code-surface.tsx:256-265), Escape blurs, and blur clears the selection bar (code-surface.tsx:266-273, 342). In read-only mode Tab moves in DOM order, never into a portal at the end of body. The Markdown preview container is not focusable.",
+   "failure_scenario": "A keyboard or screen-reader user selects lines 10-20 with Shift+arrows. The toolbar appears, but there is no key path to 'Ask' or 'Modify'; leaving the textarea dismisses it (WCAG 2.1.1)."
+  },
+  {
+   "id": "web-artifact-surface-12",
+   "title": "No focus management: focus is lost when the Canvas opens below the split, and fullscreen is aria-modal without containment",
+   "severity": "medium",
+   "file": "src/components/chat/chat-view.tsx",
+   "line": 1999,
+   "evidence": "Opening only sets state (969-993). Below 50rem the chat column, which holds the focused Open button, becomes `hidden` (1996-2000), so focus falls to <body>. canvas-panel.tsx contains no .focus(), autoFocus or FocusScope (grep). Fullscreen sets role=dialog aria-modal (786-788), but Tab still reaches the chat controls rendered underneath the fixed panel. Close returns no focus to the card.",
+   "failure_scenario": "On a phone or narrow window, a keyboard user activates 'Open' on a card: the Canvas covers the screen, focus is on body, and the next Tab starts from the top of the document. In fullscreen, tabbing walks into invisible composer buttons behind the Canvas."
+  },
+  {
+   "id": "web-artifact-surface-13",
+   "title": "Console-runtime artifacts (Python/JS/TS) auto-execute inline on every render of the transcript, including history loads, with modal dialogs allowed",
+   "severity": "medium",
+   "file": "src/components/chat/artifact-inline-card.tsx",
+   "line": 181,
+   "evidence": "inlinePreview is true for console mode, and the initial and post-stream view is 'preview' (181, 185, 196-202). RuntimePreview mounts SandboxFrame immediately; there is no IntersectionObserver or click-to-run, and the message list does not virtualise. consoleDoc runs JS at load via eval (sandbox-frame.tsx:699-714) or boots Pyodide from jsdelivr (637-697). SANDBOX_ALLOW includes allow-modals (85-86). The public share viewer deliberately does NOT execute console runtimes (shared-artifact-viewer.tsx:31-32).",
+   "failure_scenario": "Reopen a conversation containing a JS number-guessing game that calls prompt() at top level: a native prompt dialog pops the moment the transcript renders. A conversation with four Python artifacts downloads and boots Pyodide four times and re-runs every script, including any that write files, on every visit."
+  },
+  {
+   "id": "web-artifact-surface-14",
+   "title": "Every card for an identifier shows the latest version (content, vN) instead of what that turn produced, and Open always opens latest",
+   "severity": "low",
+   "file": "src/components/chat/message-item.tsx",
+   "line": 1372,
+   "evidence": "The card uses `artifact.content` (latest) and `artifact.currentVersion` for every message that references the identifier (1370-1375). onOpen opens by identifier, and the Canvas sets selectedVersion to currentVersion (canvas-panel.tsx:313-315). ArtifactVersion has no messageId (prisma/schema.prisma:1146-1159), so the mapping cannot be reconstructed.",
+   "failure_scenario": "Turn 1 builds v1 of a chart; turns 3 and 5 revise it. Scrolling up to turn 1 shows the v3 chart labelled 'v3'. There is no way from the transcript to see or open what turn 1 actually produced, which Claude's per-message cards allow."
+  },
+  {
+   "id": "web-artifact-surface-15",
+   "title": "Code artifacts without a browser runtime default to an 'Output' terminal saying execution is unavailable, reported as 'Done'",
+   "severity": "low",
+   "file": "src/lib/artifact-runtime.ts",
+   "line": 125,
+   "evidence": "Every language outside JS/TS/Python/web maps to mode 'console', engine 'unsupported' (artifact-runtime.ts:124-125); 'none' is never returned. The card and Canvas therefore default to the Output view (artifact-inline-card.tsx:181,185; canvas-panel.tsx:246), where consoleDoc prints 'Browser execution is not available for Swift artifacts yet.' and posts status done/'Ready' (sandbox-frame.tsx:632-636).",
+   "failure_scenario": "Ask for a SwiftUI view or a Go HTTP server as an artifact: the transcript card opens on a black terminal with a yellow 'not available' line and a green 'Done' status instead of the code, and the user has to click 'Code' every time."
+  },
+  {
+   "id": "web-artifact-surface-16",
+   "title": "React previews render any lucide icon outside a 17-entry stub as the same fallback glyph; other library imports throw",
+   "severity": "low",
+   "file": "src/components/canvas/sandbox-frame.tsx",
+   "line": 225,
+   "evidence": "`__JunoLucideShapes[iconName] || __JunoLucideShapes.default` (225), and the table has 17 icons (188-207). stripImports removes every import (129-134), so `framer-motion`, `recharts` and similar become undefined globals. The system prompt says only 'no imports needed beyond react' (system-prompt.ts:258).",
+   "failure_scenario": "A generated React landing page imports { Heart, Star, Menu, ShoppingCart } from 'lucide-react': all four render as the same circle-with-plus. A dashboard importing recharts shows a red 'LineChart is not defined' error. Claude's runtime supplies lucide, recharts and shadcn/ui."
+  },
+  {
+   "id": "web-artifact-surface-17",
+   "title": "Relative and root-relative links in HTML previews open Juno's own origin in a new tab",
+   "severity": "low",
+   "file": "src/components/canvas/sandbox-frame.tsx",
+   "line": 301,
+   "evidence": "LINK_BRIDGE resolves `new URL(a.href, location.href)` and forwards any http(s) URL (296-304); the parent window.open()s it (878-896). Inferred from the HTML spec: a srcdoc document's fallback base URL is its container document's URL, so href='/pricing' resolves to https://<juno-host>/pricing. CSP `base-uri 'none'` (67) prevents the author from setting a <base> to fix this.",
+   "failure_scenario": "A generated multi-section site with nav links `<a href=\"/about\">` or `about.html`: clicking 'About' in the preview opens a Juno 404 page, or a real Juno route such as /pricing, in a new browser tab."
+  },
+  {
+   "id": "web-artifact-surface-18",
+   "title": "Share says the link shows the artifact 'as it is now' but reuses the first snapshot link",
+   "severity": "medium",
+   "file": "src/lib/share.ts",
+   "line": 95,
+   "evidence": "createShare returns the newest active share for the artifact if one exists (share.ts:91-95); snapshotAt is set only at creation (104). The public page renders the version with createdAt \u2264 snapshotAt (257-265). The dialog creates or reuses the link as soon as it opens (share-dialog.tsx:77-85) and states 'People with the link see this artifact as it is now. Later edits stay private.' (120-122). There is no 'update link' action and no snapshot date in the dialog.",
+   "failure_scenario": "Share v1 on Monday. On Wednesday, after revising to v4, click Share again and send the link to a client. They see v1, while the dialog just told the sender it shows the artifact 'as it is now'."
+  },
+  {
+   "id": "web-artifact-surface-19",
+   "title": "Post-share DESIGN edits can leak into a shared link through in-place checkpoint folding",
+   "severity": "low",
+   "file": "src/lib/design/store.ts",
+   "line": 127,
+   "evidence": "Edits within 30s of the newest user 'edit' checkpoint rewrite that row's content in place without changing createdAt (store.ts:122-127,179-190; operations.ts:511,529-539). The share page selects the version with createdAt \u2264 snapshotAt (share.ts:257-260), so a row created before the share but rewritten after it serves the newer content.",
+   "failure_scenario": "Edit a design (checkpoint v2 at t0), click Share at t0+10s, and keep editing until t0+25s. Those later edits fold into v2 and appear on the public link, contradicting 'Later edits stay private'."
+  },
+  {
+   "id": "web-artifact-surface-20",
+   "title": "Quote block round-trip breaks when the selection contains a line that is exactly three double quotes",
+   "severity": "low",
+   "file": "src/lib/quote-context.ts",
+   "line": 258,
+   "evidence": "readFence closes on the first line equal to three double quotes (256-262), and serializeQuote does not escape the quoted text (220-228). Probe: quoting a Python module docstring at column 0 gives parseQuotedMessage \u2192 text '' and request = the rest of the code plus 'Explain'.",
+   "failure_scenario": "Select the top of a Python artifact (a module docstring plus imports) and choose Ask. The transcript's quote card shows an empty quote, and the user's bubble shows code fragments as though they typed them. The model receives an ambiguous block."
+  },
+  {
+   "id": "web-artifact-surface-21",
+   "title": "Copy actions report success even when the clipboard write failed",
+   "severity": "low",
+   "file": "src/components/canvas/canvas-panel.tsx",
+   "line": 462,
+   "evidence": "`await navigator.clipboard.writeText(...).catch(() => {}); flashCopied(); toast.success('Source copied.')` (461-465). copyDiff does the same (412-417), and ShareDialog copy does too (share-dialog.tsx:88-93).",
+   "failure_scenario": "In a browser that denies clipboard-write (for example a DropdownMenu onSelect after focus moved, or Safari after an async gap), the user sees a green check and 'Source copied.', then pastes nothing or stale content."
+  },
+  {
+   "id": "web-artifact-surface-22",
+   "title": "Touch scroll that starts on an inline-visual quiz option or card selects it",
+   "severity": "low",
+   "file": "src/components/chat/inline-visual-block.tsx",
+   "line": 446,
+   "evidence": "Options, cards and flow nodes set state on `onPointerDown` as well as onClick (271-272, 323-324, 446-447). A touch pointerdown fires at the start of a scroll gesture.",
+   "failure_scenario": "On a phone, a finger scrolling the transcript lands on quiz option B: the quiz immediately locks in B and shows 'Not quite.' before the user has read the question."
+  },
+  {
+   "id": "web-artifact-surface-23",
+   "title": "Regenerate leaves the server-deleted artifact in client state",
+   "severity": "low",
+   "file": "src/hooks/use-chat.ts",
+   "line": 347,
+   "evidence": "The server deletes artifacts whose messageId is the regenerated message (route.ts:2573). mergeArtifacts only adds or replaces by identifier and never removes (use-chat.ts:344-354). regenerate() does not touch artifacts (use-chat.ts:1613-1740, grep), and ChatView does no router.refresh after done (grep).",
+   "failure_scenario": "Turn produces 'todo-list'; Regenerate produces 'task-board'. The Outputs popover still lists 'todo-list'. Opening it works from stale memory, but Save or Restore calls POST /api/artifacts/<deleted id> \u2192 404 \u2192 'Couldn't save the artifact.', and Share fails."
+  }
+ ],
+ "gaps": [
+  {
+   "title": "Auto-open and live streaming into the Canvas",
+   "description": "There is no auto-open on creation and no streaming of new or rewritten content into an open Canvas; the Canvas only updates on `done`. Claude opens the panel and streams the code live.",
+   "why": "The Canvas is the artifact's workspace, but during generation, the moment the user is watching, it is blank or stale. It is also the precondition for a 'Design inside conversation' experience where the model visibly works on the canvas."
+  },
+  {
+   "title": "Version navigation that renders",
+   "description": "Add prev/next (or rail click) that sets selectedVersion and renders the preview or design at that version. Add a visual before/after for web and design types, and per-message version cards.",
+   "why": "The current history is a text diff only (canvas-panel.tsx:407-410), which does not work for designs or visual artifacts. Per-message cards need ArtifactVersion.messageId."
+  },
+  {
+   "title": "Fix-with-Juno on errors and console",
+   "description": "A one-click 'Ask Juno to fix' that sends the console error and the version to the model as an artifactEdit.",
+   "why": "Failures are common with CDN-compiled React. Claude has 'Try fixing'; Juno leaves users copying errors by hand."
+  },
+  {
+   "title": "React runtime breadth",
+   "description": "Only React globals plus a 17-icon lucide stub. There is no recharts, shadcn/ui, framer-motion, d3, three or Papaparse, and no import map. Pinned CDNs are also needed.",
+   "why": "Model-written React commonly imports these; today the result is wrong icons or ReferenceErrors (sandbox-frame.tsx:129-134,188-225)."
+  },
+  {
+   "title": "Type-aware inline and share rendering for DESIGN (and future Docs/Slides)",
+   "description": "Inline cards, Output tiles and /share pages need a rendered DESIGN preview (the server already exports SVG at /api/design/:id/export, design-editor.tsx:304). Instead they show JSON (sandbox-frame.tsx:801-802, artifact-preview.tsx:81-121, shared-artifact-viewer.tsx:30-33).",
+   "why": "Without it, Design has no presence in a conversation or at a shareable link, and that presence is the core of the planned merge."
+  },
+  {
+   "title": "Design parity inside the chat Canvas",
+   "description": "The chat Canvas's DesignEditor has no Ask Juno (onAskJuno is wired only in design-workspace.tsx:217), no link to the full /design/[id] editor, rails keyed to the viewport, and no quote/inspect integration.",
+   "why": "Claude Design now works inside conversations. Juno's in-chat design is a reduced editor with no AI hand-off."
+  },
+  {
+   "title": "Comments and collaboration on artifacts",
+   "description": "There is no comment model or UI (only FeatureComment in prisma/schema.prisma) and no multi-user presence on the Canvas.",
+   "why": "Comments are an explicit feature of the Sept 2026 Claude merge target."
+  },
+  {
+   "title": "Live link / publish model",
+   "description": "The share is a frozen snapshot of the first share with no update or republish action, no remix/duplicate into another chat, no 'open in new tab' full-page view, and no embed.",
+   "why": "'One shareable link' for typed artifacts implies a live or explicitly versioned published link."
+  },
+  {
+   "title": "Draft-aware preview and unsaved-change protection",
+   "description": "The preview ignores the unsaved draft, and closing or replacing the Canvas discards it (defect 9). A live preview of the draft or autosave would fix both.",
+   "why": "Direct editing is a Juno advantage over Claude's read-only code view, but it is unsafe as built."
+  },
+  {
+   "title": "Lazy or deferred execution of inline previews",
+   "description": "No IntersectionObserver, click-to-run or poster frame. Every card mounts and runs its sandbox on load (defect 13).",
+   "why": "Performance and safety on long conversations; the public share page already refuses to run console runtimes."
+  },
+  {
+   "title": "Export breadth",
+   "description": "No PDF, PNG or SVG export of rendered HTML, React, Mermaid or Design from the Canvas More menu. Office export exists only for Markdown.",
+   "why": "Docs and Slides as typed artifacts need real exports; today the Markdown-to-Office path is the only 'document' story."
+  },
+  {
+   "title": "Visual regression / behaviour tests and a /dev gallery for the surface",
+   "description": "No tests import canvas-panel, artifact-inline-card, code-surface or the message-item artifact wiring; no /dev page renders them (src/app/dev has none).",
+   "why": "Defects 1-3 would have been caught by a single state-transition test; memory notes say to verify UI in /dev galleries."
+  },
+  {
+   "title": "Mobile-specific Canvas layout",
+   "description": "No stacked history on phones, no swipe between versions, and the iOS native selection callout may collide with the custom toolbar (inferred).",
+   "why": "The merge target includes 'editable on phone'."
+  }
+ ],
+ "debt": [
+  {
+   "title": "Type-agnostic version write route",
+   "description": "POST /api/artifacts/:id accepts any string, including empty, for any type. It does no DESIGN validation or revision handling, so Canvas restores of DESIGN artifacts bypass the design store that owns checkpoints. It has no min length.",
+   "where": [
+    "src/app/api/artifacts/[id]/route.ts:7-16,40-90",
+    "src/components/canvas/canvas-panel.tsx:420-459"
+   ]
+  },
+  {
+   "title": "Synthetic artifact envelopes from the design editor",
+   "description": "The Canvas fabricates version entries (content \"\", a client-side timestamp) instead of taking the ClientArtifact that the transactions route already returns (serializeDesignArtifact; its versions omit content).",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:1243-1255",
+    "src/lib/design/store.ts:207-223"
+   ]
+  },
+  {
+   "title": "Every version's full content shipped on load",
+   "description": "The conversation thread includes all versions with content for all artifacts (up to 200k chars each); design checkpoints multiply this.",
+   "where": [
+    "src/lib/queries.ts:117-127",
+    "src/lib/serializers.ts:207-223"
+   ]
+  },
+  {
+   "title": "CanvasPanel statically imports DesignEditor",
+   "description": "Every Canvas open pays for the design editor bundle (~234 KB raw per chat-view comment), even for HTML. `designRef` is created and passed but never read.",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:44,242,1242",
+    "src/components/chat/chat-view.tsx:24-40"
+   ]
+  },
+  {
+   "title": "Unpinned / dev CDN runtime",
+   "description": "`@babel/standalone` is unpinned on unpkg (the code already notes Babel 8 API changes). React is loaded as dev UMD builds, Tailwind via the Play CDN, and Mermaid@11 as a floating minor. Offline or CDN failure leaves unstyled or blank previews for HTML and Mermaid without an error.",
+   "where": [
+    "src/components/canvas/sandbox-frame.tsx:7-12,539-548"
+   ]
+  },
+  {
+   "title": "Duplicated console views and inconsistent tokens/caps",
+   "description": "Canvas ConsoleView (500/400 cap, warn = text-warning-foreground) and the inline ConsolePreview (150/120 cap, last 80, warn = text-warning) duplicate each other. The status dot animates with status-glow in one and animate-pulse in the other.",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:164-217,834",
+    "src/components/chat/artifact-inline-card.tsx:67-104,290"
+   ]
+  },
+  {
+   "title": "Triplicated dock wrapper and resize-handle markup",
+   "description": "The Canvas, file viewer and thought dock repeat identical long class strings for the wrapper, entrance/exit and grip, and their fixes drift: the animateDock fix exists only on the dock.",
+   "where": [
+    "src/components/chat/chat-view.tsx:2425-2470,2498-2530,2546-2566"
+   ]
+  },
+  {
+   "title": "Dead branches",
+   "description": "`rt.mode !== 'none'` checks are dead because runtimeFor never returns 'none'. runVerb 'Edit' for design is unused, and the `shareable` comment about incognito artifacts describes a case that cannot occur (private turns return artifacts: []).",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:1173,243",
+    "src/components/chat/artifact-inline-card.tsx:181",
+    "src/lib/artifact-runtime.ts:93-127",
+    "src/app/api/chat/route.ts:1224"
+   ]
+  },
+  {
+   "title": "Parallel extension maps and cross-module helper import",
+   "description": "canvas-panel's EXTENSIONS duplicates artifact-runtime's FILE_EXTENSIONS and design mapping, and `timeAgo` is imported from roadmap-ui.",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:45,53-61",
+    "src/lib/artifact-runtime.ts:50-68"
+   ]
+  },
+  {
+   "title": "Hard-coded palettes inside sandbox chrome",
+   "description": "The terminal hex palette, the inspector blue/black chip and the iframe `bg-[#0b0b0e]` sit outside the token system (acknowledged in comments).",
+   "where": [
+    "src/components/canvas/sandbox-frame.tsx:323-326,613-623,928"
+   ]
+  },
+  {
+   "title": "CodeSurface is a textarea overlay",
+   "description": "Programmatic Tab insertion breaks native undo. There is no find, bracket matching or folding, and a full gutter div is rendered per line. The keyboard-selection toolbar anchors to the last pointer position, which may be stale.",
+   "where": [
+    "src/components/canvas/code-surface.tsx:209-218,256-265,310-314"
+   ]
+  },
+  {
+   "title": "Comment/code disagreement on radii",
+   "description": "Comments cite different ladder values (card 14 vs 16; rounded-md called off-ladder in one file and used in another).",
+   "where": [
+    "src/components/chat/inline-visual-block.tsx:213-226",
+    "src/components/chat/artifact-inline-card.tsx:396-401"
+   ]
+  }
+ ],
+ "strengths": [
+  "Real preview isolation, with the reasoning written down: opaque-origin sandbox (no allow-same-origin), CSP meta placed first, postMessage filtered by e.source, outbound links re-validated and opened with noopener (sandbox-frame.tsx:14-86,863-896). tests/sandbox-security.test.ts pins it.",
+  "Stale-write safety everywhere: baseVersion 409s for code saves and restores, a stale-conflict banner with Discard / Save anyway, and a server-side base check for targeted edits (canvas-panel.tsx:420-440,1322-1342; route.ts:1469-1473).",
+  "Restore is non-destructive (restoring an old version saves it as a new version), there is a movable diff base with a unified-diff copy, and origin labels show Generated/Edited/Restored.",
+  "Genuinely useful runtime breadth for a chat canvas: React with error boundary and component inference, Pyodide with loadPackagesFromImports and micropip wheels, files a script writes offered as downloads, and a console bridge with a count badge.",
+  "Precise select-to-quote: exact line ranges from textarea offsets, an element inspector returning a unique CSS path and snippet, quote cards read back into the transcript, and the modify path wired to a validated server-side patch protocol.",
+  "Device-width preview presets (390/834) with a gutter, and a reading measure for Markdown documents, both driven by panel width rather than the viewport.",
+  "Word/Excel/PowerPoint export from Markdown artifacts, with server-side format detection and the filename taken from Content-Disposition.",
+  "Motion discipline mostly matches ICONS_AND_MOTION: IconSwap for every glyph swap, useFlash timers, framer variants for history, staggered rows, live-only loops, reduced-motion fades on entrance.",
+  "Layout by container: @container/split steps, panel-width labels, coexistence rules between the Canvas, file viewer and thought dock, a keyboard-operable resize separator, and sidebar escalation when space runs out.",
+  "Heavy chunks (Canvas, CodeSurface, SandboxFrame, InlineVisualBlock) are dynamically imported so /chat does not pay for them up front.",
+  "Session Outputs is a derived, fetch-free index of what a conversation made and used, with honest provenance rows."
+ ],
+ "merge_relevance": "ENABLERS for a Claude-style merge (Design, Docs, Slides and Design System as typed artifacts inside the conversation, at one link, editable on phone, with comments):\n- The Canvas is already a type dispatcher (runtimeFor \u2192 web/console/design) and already embeds the real DesignEditor for DESIGN artifacts, so 'Design inside conversations' has a working host: the same React editor the Mac bundles.\n- The version model (Artifact/ArtifactVersion with origin), 409 conflict handling, quote-to-composer and the server-validated targeted edit protocol are the right primitives for AI-in-the-loop editing of any typed artifact.\n- Markdown-to-.docx/.xlsx/.pptx export is a seed for Docs and Slides.\n- ShareDialog plus /share/[token] is a seed for 'one shareable link'.\n\nBLOCKERS to fix first:\n1. Design in the Canvas breaks on first edit (defect 1) and is squeezed on laptops (defect 5). It has no Ask Juno and no route to the full editor.\n2. DESIGN has no visual representation outside the editor: the inline card, Output tiles and share page all show JSON (defect 4, share viewer), although a server SVG export already exists.\n3. The two write paths disagree. Generic POST /api/artifacts/:id (type-agnostic, accepts \"\") and /api/design/:id/transactions (checkpoint folding) both write ArtifactVersion rows. A merged surface needs one type-aware write service. Folding also breaks the snapshot guarantee of shares (defect 19).\n4. The data model cannot express the merge: ArtifactVersion has no messageId, author or comment linkage (per-message versions, attribution and comments are impossible). Artifact requires conversationId, so a standalone design, doc or deck needs a hidden conversation (inferred; /design hub not audited here). Work deliverables (WorkArtifact) are a separate table that the Canvas cannot open.\n5. The stream-to-card wiring hides streaming for updates and shows false errors (defects 2 and 3). Claude's merged interface depends on watching the artifact being made.\n6. Share semantics (frozen first-snapshot, 'as it is now' copy) conflict with 'one link that stays current, with comments' (defect 18).\n7. Mobile: the Canvas is full-bleed below 50rem, which is good, but history and rails are not adapted and focus handling is missing (defect 12). The embedded editor already hides rails below md, which is a partial answer for phone editing.\n\nSUGGESTED SHAPE (inferred):\n- Promote CanvasPanel to the single artifact surface, with a renderer registry keyed by a typed-artifact `kind` (web, code, doc, slides, design, design-system).\n- Give every kind a thumbnail renderer (server-side SVG/PNG) used by the card, Outputs, library and share page.\n- Add ArtifactVersion.messageId, author and a comments table.\n- Move all writes through one service that understands kinds.\n- Make share links live, with explicit 'published version' pinning.",
+ "tests": "Ran with `npx tsx --test` (all pass, read-only):\n- tests/sandbox-security.test.ts: 2/2. Opaque origin; no plugin, base-rewrite or form-post capability.\n- tests/split-layout.test.ts: 4/4. Split step constants. It also asserts canvas-panel, chat-view and the thought panel use no `lg:` classes; it does not cover the DesignEditor that the Canvas mounts, which uses md:/lg: (defect 5).\n- tests/document-viewer.test.ts: 14/14. Includes 'artifact quotes keep their protocol and read back too' (line 173), which does not cover the triple-quote case (defect 20).\n- tests/memory-forget.test.ts: 28/28. Touches splitMessageContent only for memory/forget tags.\n- tests/chat-artifact-verification.test.ts: 3/3. Server verify/repair.\n- tests/design-authoring.test.ts: 12/12.\n\nNOT covered by any test:\n- CanvasPanel (tabs, versions, save/restore, conflict, design onCommitted).\n- ArtifactInlineCard.\n- The message-item card data wiring (artifact vs part precedence, the closed-before-done state).\n- CodeSurface.\n- SandboxFrame document builders beyond the capability strings (LINK_BRIDGE, STATUS_LITE, the lucide stub).\n- SessionOutputs, ArtifactPreview, InlineVisualBlock.\n- use-chat mergeArtifacts and regenerate cleanup.\n\nNo /dev gallery renders the surface (src/app/dev lists none). My own probes in the scratchpad (not in the repo) confirmed that splitMessageContent drops content for closed tags, that buildSandboxDoc renders DESIGN as a <pre> of JSON, and the quote round-trip failure.",
+ "open_questions": [
+  "Download and Office export revoke the blob URL synchronously right after a.click() on a detached anchor (canvas-panel.tsx:474-475,496-497). Is this reliable in Safari and Firefox? It was not tested here.",
+  "Below the split, the chat column becomes display:none while the Canvas is open (chat-view.tsx:1996-2000). Does the transcript keep its scroll position when the Canvas closes, or reset to the top? This is inferred from browser behaviour for display:none scrollers.",
+  "The selection toolbar closes on ANY capture-phase scroll in the window (canvas-panel.tsx:648-651). Does the transcript's stick-to-bottom scrolling during a streaming reply dismiss the toolbar as soon as it appears?",
+  "On iOS, does the native selection callout sit on top of or collide with the custom Ask/Modify toolbar, which is also placed above the selection?",
+  "Does Pyodide's default stdin (input()) in this sandbox trigger window.prompt, and so pop dialogs from auto-run inline Python cards (defect 13)? The JS prompt()/alert() path is certain; the Python path is inferred.",
+  "Does the /design/[artifactId] workspace or the Mac host have the same synthetic-empty-version pattern as the chat Canvas (defect 1)? That is outside this area; worth checking in the Design audit.",
+  "When the message version pager shows an older answer version, do its artifact cards point at artifacts that a regenerate deleted, and show 'Source unavailable'?",
+  "STATUS_LITE marks any uncaught error before `load` as a render failure (sandbox-frame.tsx:441-454). How often do benign script errors in otherwise-rendered HTML trigger the red 'This version failed to render' banner and a 'View vN-1' suggestion?",
+  "For the merge: should Work deliverables (WorkArtifact: document, spreadsheet, presentation, site) open in this same Canvas? docs/design/TWO_PRODUCTS.md was not read in this pass."
+ ]
+}

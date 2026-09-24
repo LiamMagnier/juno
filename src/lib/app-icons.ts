@@ -52,6 +52,7 @@ import {
   JunoCode,
   JunoDesign,
   JunoLibrary,
+  JunoAgents,
   Minus,
   MoreHorizontal,
   NotebookPen,
@@ -175,6 +176,12 @@ export const AppIcons = {
   artifacts: Layers3,
   projects: Folder,
   assistants: Bot,
+  /** Agents — Juno's own drawing (`JunoAgents`): a face, the pebble body and
+   *  rounded-square eyes every agent is drawn with, so the destination wears
+   *  the same mark as the teammates it holds. Not `Bot`: that is Assistants'
+   *  robot, a persona you talk to; an agent is someone you delegate to, and
+   *  giving the two one glyph would say they are one thing. */
+  agents: JunoAgents,
   tasks: CalendarClock,
   connections: Plug,
   pulls: GitPullRequest,

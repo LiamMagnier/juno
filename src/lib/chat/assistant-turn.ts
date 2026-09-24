@@ -4,10 +4,11 @@
  * A normal turn appends a Message row. A regenerate PRESERVES the previous
  * answer instead of destroying it: the old row's content is snapshotted into an
  * immutable MessageVersion (ciphertext copied verbatim — the crypto is
- * row-independent), its artifacts are dropped, and the Message row is then
- * overwritten in place. The Message row is therefore always the CURRENT
- * version; MessageVersion rows are append-only history rendered by the client's
- * "‹ 2/3 ›" pager.
+ * row-independent), its artifacts are detached but kept (with their versions
+ * and share links; a re-emitted identifier appends to the same row), and the
+ * Message row is then overwritten in place. The Message row is therefore
+ * always the CURRENT version; MessageVersion rows are append-only history
+ * rendered by the client's "‹ 2/3 ›" pager.
  *
  * The Prisma calls stay in the route — this is the part of the decision that
  * can be stated without a database, and it is the part that was getting quietly

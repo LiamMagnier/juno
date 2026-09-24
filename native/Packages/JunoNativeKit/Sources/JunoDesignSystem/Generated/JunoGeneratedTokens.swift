@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: f3b4604ff0d690c0
+// tokens-digest: bebb541281f8a79e
 //
 
 import CoreGraphics
@@ -44,6 +44,54 @@ public enum JunoGeneratedColors {
     public static let accentForeground = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.1456, 0.1434, 0.1344),
         dark: JunoColorToken(unchecked: 0.9648, 0.9624, 0.9552)
+    )
+
+    /// `--agent-amber`
+    public static let agentAmber = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.924, 0.7112, 0.316),
+        dark: JunoColorToken(unchecked: 0.88, 0.684, 0.32)
+    )
+
+    /// `--agent-coral`
+    public static let agentCoral = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.8632, 0.5284, 0.4168),
+        dark: JunoColorToken(unchecked: 0.8328, 0.5136, 0.4072)
+    )
+
+    /// `--agent-ink`
+    public static let agentInk = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.1254, 0.11, 0.0946),
+        dark: JunoColorToken(unchecked: 0.1254, 0.11, 0.0946)
+    )
+
+    /// `--agent-juniper`
+    public static let agentJuniper = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.4016, 0.7184, 0.5706),
+        dark: JunoColorToken(unchecked: 0.3928, 0.6872, 0.5498)
+    )
+
+    /// `--agent-mark`
+    public static let agentMark = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.1254, 0.11, 0.0946),
+        dark: JunoColorToken(unchecked: 0.912, 0.906, 0.888)
+    )
+
+    /// `--agent-sage`
+    public static let agentSage = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.552, 0.696, 0.504),
+        dark: JunoColorToken(unchecked: 0.527, 0.656, 0.484)
+    )
+
+    /// `--agent-teal`
+    public static let agentTeal = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.3284, 0.7234, 0.7516),
+        dark: JunoColorToken(unchecked: 0.328, 0.6864, 0.712)
+    )
+
+    /// `--agent-violet`
+    public static let agentViolet = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.5946, 0.5408, 0.8992),
+        dark: JunoColorToken(unchecked: 0.5824, 0.532, 0.868)
     )
 
     /// `--background`
