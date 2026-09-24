@@ -325,7 +325,7 @@ test("Ask to run again: failed third-party calls only, never a refusal", () => {
   assert.equal(canAskToRunAgain({ ...failed, error: { code: "blocked" } }), false);
   assert.equal(canAskToRunAgain({ ...failed, status: "denied", error: { code: "denied" } }), false);
   assert.equal(canAskToRunAgain({ ...failed, status: "expired", error: { code: "expired" } }), false);
-  assert.equal(canAskToRunAgain({ ...failed, origin: "juno", tool: "web_fetch" }), false);
+  assert.equal(canAskToRunAgain({ ...failed, origin: "juno" }), false, "Juno's own tools are retried by the model");
   assert.equal(phraseText(askToRunAgainSpec(failed)), "Try again: ⁨Create issue⁩");
   assertOnePhrase(askToRunAgainSpec(failed), "askToRunAgain");
 });

@@ -191,6 +191,9 @@ export function RightColumnShell(props: RightColumnShellProps) {
         inert={!open}
         onKeyDown={(event) => {
           if (event.key !== "Escape" || event.defaultPrevented) return;
+          // A popover or menu portalled out of the panel closes itself first;
+          // its Escape bubbles here through React but is not the panel's.
+          if (!event.currentTarget.contains(event.target as Node)) return;
           // Handled here, so chat-view's window listener does not close twice.
           event.preventDefault();
           onClose();

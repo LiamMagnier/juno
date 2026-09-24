@@ -81,13 +81,10 @@ test("[n] resolves by position, only on a numbered-corpus message, ordered by fi
 
   // The same text on a message whose sources were never numbered cites nothing:
   // a bracketed number there is prose (markdown.tsx renders no chip either).
-  const unnumbered = splitSources({
-    sources: sources.map(({ cited: _cited, ...rest }) => rest),
-    content: "First [3], then [1].",
-    activity: [],
-  });
+  const plain: ClientSource[] = sources.map(({ cited: _cited, ...rest }) => rest);
+  const unnumbered = splitSources({ sources: plain, content: "First [3], then [1].", activity: [] });
   assert.deepEqual(unnumbered.cited, []);
-  assert.equal(citableSourceCount(sources.map(({ cited: _cited, ...rest }) => rest)), 0);
+  assert.equal(citableSourceCount(plain), 0);
 });
 
 test("markers in code, link labels, definitions and past the list never cite", () => {

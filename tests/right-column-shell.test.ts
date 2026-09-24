@@ -215,9 +215,18 @@ const pane: SplitPane = {
   },
 };
 
+/** `createElement` with children as arguments, typed for components whose props require them. */
+function withChildren<P extends { children?: React.ReactNode }>(
+  type: React.ComponentType<P>,
+  props: Omit<P, "children">,
+  ...children: React.ReactNode[]
+) {
+  return React.createElement(type as unknown as React.ComponentType<Omit<P, "children">>, props, ...children);
+}
+
 function shell(props: Partial<RightColumnShellProps> = {}, children: React.ReactNode = "body") {
   return renderToStaticMarkup(
-    React.createElement(
+    withChildren(
       RightColumnShell,
       { open: true, label: "Activity", header: null, onClose: () => {}, pane, mode: "column", ...props },
       children
@@ -349,23 +358,19 @@ const liveMessage: PanelMessage = {
   streaming: true,
 };
 
+function withPanelContext(portsValue: Partial<PanelPorts>, messages: PanelMessage[], element: React.ReactElement) {
+  return withChildren(PanelPortsProvider, { ports: portsValue }, withChildren(PanelMessagesProvider, { messages }, element));
+}
+
 function panel(message: PanelMessage, props: Partial<React.ComponentProps<typeof ActivityPanel>> = {}) {
   return renderToStaticMarkup(
-    React.createElement(
-      PanelPortsProvider,
-      { ports },
-      React.createElement(
-        PanelMessagesProvider,
-        { messages: [message] },
-        React.createElement(ActivityPanel, {
+    withPanelContext(ports, [message], React.createElement(ActivityPanel, {
           renderKey: message.renderKey ?? message.id,
           onClose: () => {},
           coversChat: () => false,
           seedDraft: () => {},
           ...props,
-        })
-      )
-    )
+        }))
   );
 }
 
@@ -403,15 +408,7 @@ test("a focused call opens expanded, with its error detail verbatim and Ask to r
 test("an empty live run says steps are coming; no message renders nothing", () => {
   const empty: RunView = { ...handBuiltView, items: [], tools: [] };
   const html = renderToStaticMarkup(
-    React.createElement(
-      PanelPortsProvider,
-      { ports: { ...ports, buildRunView: () => empty } },
-      React.createElement(
-        PanelMessagesProvider,
-        { messages: [liveMessage] },
-        React.createElement(ActivityPanel, { renderKey: "tmp-9", onClose: () => {}, coversChat: () => false })
-      )
-    )
+    withPanelContext({ ...ports, buildRunView: () => empty }, [liveMessage], React.createElement(ActivityPanel, { renderKey: "tmp-9", onClose: () => {}, coversChat: () => false }))
   );
   assert.match(html, /No steps yet/);
   assert.match(html, /Steps appear here as Juno works\./);
@@ -456,15 +453,7 @@ test("a waiting row carries its own decision control, named after the call", () 
   };
   const render = (canAllowScope: boolean) =>
     renderToStaticMarkup(
-      React.createElement(
-        PanelPortsProvider,
-        { ports: { ...ports, buildRunView: () => waitingView, phaseOf: () => "waiting" } },
-        React.createElement(
-          PanelMessagesProvider,
-          { messages: [{ ...liveMessage, approvals: [{ ...approvalFrame, canAllowScope }] }] },
-          React.createElement(ActivityPanel, { renderKey: "tmp-9", onClose: () => {}, coversChat: () => true })
-        )
-      )
+      withPanelContext({ ...ports, buildRunView: () => waitingView, phaseOf: () => "waiting" }, [{ ...liveMessage, approvals: [{ ...approvalFrame, canAllowScope }] }], React.createElement(ActivityPanel, { renderKey: "tmp-9", onClose: () => {}, coversChat: () => true }))
     );
   const html = render(false);
   assert.match(html, /role="group" aria-label="Approve this call\. running c3" data-no-auto-translate="true"/);
@@ -490,15 +479,7 @@ test("an opened page read says when it carried instructions aimed at the assista
     tools: [{ kind: "tool", key: "t9", seq: 1, round: 1, call: fetched, live: false }],
   };
   const html = renderToStaticMarkup(
-    React.createElement(
-      PanelPortsProvider,
-      { ports: { ...ports, buildRunView: () => fetchView, phaseOf: () => "done" } },
-      React.createElement(
-        PanelMessagesProvider,
-        { messages: [{ ...liveMessage, streaming: false }] },
-        React.createElement(ActivityPanel, { renderKey: "tmp-9", focusCallId: "f9", onClose: () => {}, coversChat: () => false })
-      )
-    )
+    withPanelContext({ ...ports, buildRunView: () => fetchView, phaseOf: () => "done" }, [{ ...liveMessage, streaming: false }], React.createElement(ActivityPanel, { renderKey: "tmp-9", focusCallId: "f9", onClose: () => {}, coversChat: () => false }))
   );
   assert.match(html, /Contained instructions aimed at the assistant; they were ignored/);
   assert.match(html, /href="https:\/\/lab\.example\.org\/a" target="_blank" rel="noopener noreferrer"/);

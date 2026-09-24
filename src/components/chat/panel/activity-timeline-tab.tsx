@@ -43,6 +43,8 @@ import type { PanelMessage } from "./use-panel-message";
 
 const FOLLOW_SLACK_PX = 24;
 
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? React.useEffect : React.useLayoutEffect;
+
 function prefersReducedMotion(from: Element | null): boolean {
   if (from?.closest('[data-motion="reduce"]')) return true;
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
@@ -60,7 +62,7 @@ function useFollowBottom(listRef: React.RefObject<HTMLElement | null>, size: num
     scroller.addEventListener("scroll", onScroll, { passive: true });
     return () => scroller.removeEventListener("scroll", onScroll);
   }, [listRef]);
-  React.useLayoutEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     const scroller = listRef.current?.closest(".right-shell__scroller");
     if (scroller && pinned.current) scroller.scrollTop = scroller.scrollHeight;
   }, [listRef, size]);
