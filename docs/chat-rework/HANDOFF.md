@@ -40,13 +40,18 @@ multi-agent workflows. So first came a hotfix branch off origin/main (7f92324f),
   - The runtime forwards `onApprovalRequest`, so `browser_agent` and `code_interpreter` show their
     approval card instead of waiting unseen for 120 s.
   - Gemini sends `exec.text`.
+- `ba2b0c4d`: **"Research" with no level words.**
+  - The composer chip, the + menu, the plan gate, the report, the landing page, the project settings
+    and the user-facing messages now say "Research".
+  - The plan gate drops the team and page counts the tier never delivered.
+  - Depth is still derived internally, and the activity titles native reads are unchanged.
 - Gate on this exact tree: typecheck clean, 3,781 tests passing with 0 failures, eslint clean,
-  `check-approval-dispatch` OK.
+  `check-approval-dispatch` OK. The copy is not visually checked, because the browser pane has no
+  signed-in session.
 - **Not pushed.** It fast-forwards onto main. Pushing needs one agreed releaser, and deploying
   needs the owner.
 
 The next small slices, if usage allows:
-- remove the Quick/Standard/Deep/Max words from the web UI, UI only;
 - stop sending xAI's retired Live Search, once verified live.
 
 ## In progress: wave 1 (paused mid-implementation)
