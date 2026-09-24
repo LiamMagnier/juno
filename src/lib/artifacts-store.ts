@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { serializeArtifact } from "@/lib/serializers";
 import { normalizeDesignArtifact } from "@/lib/design/authoring";
+import { CHAT_ARTIFACT_MAX_CHARS } from "@/lib/chat-artifact-verification";
 import { DesignValidationError } from "@/lib/design/schema";
 import type { ParsedArtifact } from "@/lib/message-content";
 import type { ClientArtifact } from "@/types/chat";
@@ -16,7 +17,17 @@ import type { ClientArtifact } from "@/types/chat";
 function normalizeForStorage(artifact: ParsedArtifact): ParsedArtifact | null {
   if (artifact.type !== "DESIGN") return artifact;
   try {
-    return { ...artifact, content: normalizeDesignArtifact(artifact.content, artifact.identifier) };
+    const content = normalizeDesignArtifact(artifact.content, artifact.identifier);
+    // Checked again after expansion, for callers that skip chat verification:
+    // an over-limit row is refused by every later edit and blanks the native
+    // libraries, so it is worse than no row.
+    if (content.length > CHAT_ARTIFACT_MAX_CHARS) {
+      console.warn(
+        `[artifacts] dropped design artifact "${artifact.identifier}": ${content.length} characters once expanded, above ${CHAT_ARTIFACT_MAX_CHARS}`
+      );
+      return null;
+    }
+    return { ...artifact, content };
   } catch (error) {
     const detail = error instanceof DesignValidationError ? error.issues.join("; ") : String(error);
     console.warn(`[artifacts] dropped an unreadable design artifact "${artifact.identifier}": ${detail}`);

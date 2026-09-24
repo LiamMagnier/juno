@@ -89,7 +89,21 @@ function validateArtifact(artifact: ParsedArtifact): ChatArtifactProblem[] {
 
   if (artifact.type === "DESIGN") {
     try {
-      normalizeDesignArtifact(content, artifact.identifier);
+      // The limit applies to what is stored, and a compact design is stored
+      // expanded — five to eleven times larger. Checking only the compact form
+      // let a ~40k-character design through as a 260k-character row that every
+      // later edit refuses and that installed Mac and iPhone builds cannot load.
+      const stored = normalizeDesignArtifact(content, artifact.identifier);
+      if (stored.length > CHAT_ARTIFACT_MAX_CHARS) {
+        return [
+          problem(
+            artifact,
+            "too_large",
+            `The design expands to ${stored.length.toLocaleString()} characters when stored, above the ${CHAT_ARTIFACT_MAX_CHARS.toLocaleString()}-character limit.`,
+            false
+          ),
+        ];
+      }
     } catch (error) {
       return [
         problem(
