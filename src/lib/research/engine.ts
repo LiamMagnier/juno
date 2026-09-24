@@ -114,7 +114,7 @@ import {
   type WorkerTools,
 } from "@/lib/research/agents/protocol";
 import { HostLimiter, isAbortError, runAll } from "@/lib/research/agents/scheduler";
-import { withHeartbeat } from "@/lib/research/lease-core";
+import { RESEARCH_LEASE_RENEW_MS, withHeartbeat } from "@/lib/research/lease-core";
 import {
   contentLanguage,
   isTinyScope,
@@ -683,6 +683,8 @@ export interface ResearchDeps {
   /** Stable hash of fetched text, so a report stays auditable after the page changes. */
   hash(text: string): string;
   now(): Date;
+  /** How often a long stage renews its lease. 45 s in production; the tests shorten it (B3). */
+  heartbeatMs?: number;
 }
 
 export interface ResearchValidationResult {
@@ -1397,6 +1399,9 @@ export interface ResearchEngine {
 
 export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
   const { store } = deps;
+  const heartbeatMs = deps.heartbeatMs ?? RESEARCH_LEASE_RENEW_MS;
+  /** A model stage, with the lease renewed underneath it (B3). */
+  const beat = <T>(fn: () => Promise<T>, heartbeat?: () => Promise<void>): Promise<T> => withHeartbeat(fn, heartbeat, heartbeatMs);
 
   const append = (runId: string, userId: string, events: readonly ResearchEventInput[]) =>
     store.appendEvents({ runId, userId, events });
@@ -1767,7 +1772,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
 
     let drafted: { questions: ResearchClarification[]; costMicroUsd: number };
     try {
-      drafted = await withHeartbeat(
+      drafted = await beat(
         () =>
           deps.clarify!({
             userId: run.userId,
@@ -1879,7 +1884,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     const dateLine = plan.today ?? todayLine(run.createdAt, plan.timeZone);
     let drafted: PlannerDraft;
     try {
-      drafted = await withHeartbeat(
+      drafted = await beat(
         () =>
           deps.draftPlan!({
             userId: run.userId,
@@ -1985,7 +1990,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     if (!(await affordable(run, PLAN_ESTIMATE_MICRO_USD))) {
       return stopForBudget(run, PLAN_ESTIMATE_MICRO_USD);
     }
-    const drafted = await withHeartbeat(
+    const drafted = await beat(
       () =>
         deps.plan({
           userId: run.userId,
@@ -3200,7 +3205,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
 
       // Workers run in parallel up to the tier's width; the heartbeat keeps the
       // lease alive underneath them, since a round comfortably outlives it.
-      const pulse = setInterval(() => void heartbeat?.().catch(() => undefined), 45_000);
+      const pulse = setInterval(() => void heartbeat?.().catch(() => undefined), heartbeatMs);
       let settled: Awaited<ReturnType<typeof runAll<ResearchDelegation, WorkerResult>>>;
       try {
         settled = await runAll(
@@ -3363,7 +3368,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       try {
         review =
           deps.reviewRound && leadAffordable
-            ? await withHeartbeat(() => deps.reviewRound!(reviewInput), heartbeat)
+            ? await beat(() => deps.reviewRound!(reviewInput), heartbeat)
             : fallbackReview(reviewInput);
       } catch (error) {
         console.error("[research] round review failed", { runId: current.id, error });
@@ -3573,7 +3578,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       computed.gaps.length > 0 &&
       (await affordable(run, EXPANSION_ESTIMATE_MICRO_USD + reserve))
     ) {
-      const expanded = await withHeartbeat(
+      const expanded = await beat(
         () =>
           deps.expandQueries!({
             userId: run.userId,
@@ -3710,7 +3715,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     // most, and heartbeats the lease while it writes (B3, R8).
     const timeoutMs = Math.max(60_000, Math.min(WRITER_TIMEBOX_MAX_MS, Math.floor(planBudget(plan).wallClockMs * 0.25)));
     const write = async (corpusScale: number) => {
-      const written = await withHeartbeat(
+      const written = await beat(
         () =>
           deps.synthesize!({
             userId: run.userId,
@@ -3818,12 +3823,16 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
        * skipping the audit while reporting `completed` would tell the reader
        * every citation had been verified when none had.
        */
-      if (!(await affordable(run, CITATION_AUDIT_ESTIMATE_MICRO_USD))) {
-        return stopForBudget(run, CITATION_AUDIT_ESTIMATE_MICRO_USD);
+      // A run with an envelope reserved its audit at its own judge budget
+      // (B22); older runs keep the audit-wide reservation.
+      const auditPlan = parsePlan(run.plan);
+      const auditEstimate = auditPlan.envelope ? auditPlan.envelope.reserve.auditMicroUsd : CITATION_AUDIT_ESTIMATE_MICRO_USD;
+      if (!(await affordable(run, auditEstimate))) {
+        return stopForBudget(run, auditEstimate);
       }
       await append(run.id, run.userId, [{ kind: "citation_audit_started", payload: { sources: sources.length } }]);
       try {
-        validation = await withHeartbeat(
+        validation = await beat(
           () =>
             deps.validateReport!({
               userId: run.userId,

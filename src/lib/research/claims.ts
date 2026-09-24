@@ -273,8 +273,16 @@ export async function recordCitationAudit(opts: {
   conversationProvider?: string | null;
   /** Override the model layer (tests, or a caller with its own judge). */
   judge?: CitationJudge;
+  /**
+   * The run's own judge budget, `envelope.judgeCalls` (B22). Absent: the
+   * audit-wide `MAX_JUDGE_CALLS`, as for every audit before envelopes.
+   */
+  maxJudgeCalls?: number;
+  /** Claims to extract: the scope's `targetClaims` (10 per question). Absent: `MAX_CLAIMS`. */
+  maxClaims?: number;
 }): Promise<CitationAuditResult | null> {
-  const claims = extractClaims(opts.report).slice(0, MAX_CLAIMS);
+  const judgeCap = Math.max(1, Math.floor(opts.maxJudgeCalls ?? MAX_JUDGE_CALLS));
+  const claims = extractClaims(opts.report).slice(0, Math.max(1, Math.floor(opts.maxClaims ?? MAX_CLAIMS)));
   if (claims.length === 0 || opts.sources.length === 0) return null;
 
   // The message id is a user-visible foreign key, not a convenience string.
@@ -380,6 +388,8 @@ export async function recordCitationAudit(opts: {
     const candidates = selectPassagesForClaim(claim, passagesBySource);
     const verdicts: LinkVerdict[] = [];
     let sawFullText = false;
+    /** The cap stopped this claim's checks before any verdict (B4). */
+    let judgeCapReached = false;
     /*
      * The deterministic audit is free, so it runs on every candidate first and
      * the model is spent only on the one it cannot decide. Ranking by the
@@ -405,7 +415,10 @@ export async function recordCitationAudit(opts: {
 
     for (const candidate of ranked) {
       const settledByText = candidate.audit.contradicted;
-      if (!settledByText && judgeCalls >= MAX_JUDGE_CALLS) break;
+      if (!settledByText && judgeCalls >= judgeCap) {
+        judgeCapReached = verdicts.length === 0;
+        break;
+      }
       if (!settledByText) judgeCalls++;
       const verdict = await validateClaimAgainstPassage({
         claim: claim.text,
@@ -424,7 +437,7 @@ export async function recordCitationAudit(opts: {
       if (verdict.status === "supported") break;
     }
 
-    const resolved = resolveClaimStatus(verdicts);
+    const resolved = resolveClaimStatus(verdicts, { judgeCapReached });
     /*
      * A claim checked only against search snippets is UNVERIFIED, not
      * unsupported. Two sentences of preview text failing to contain a figure is

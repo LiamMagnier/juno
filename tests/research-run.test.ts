@@ -64,18 +64,18 @@ import { memoryStore } from "./fixtures/research-store";
  */
 
 /**
- * A run whose every farmed-out call succeeds, cheaply and instantly.
- *
- * `costs` is what each stage bills; a test that cares about the ceiling raises
- * one of them rather than reaching into the engine.
- */
-/**
  * A report the writer's B6 check accepts: 400 characters and a `##` heading.
  * Shorter than that is "the writer produced nothing usable", which now fails
  * the run after one retry rather than completing it empty.
  */
 const REPORT = `# Report\n\n## Findings\nA finding [1].\n\n${"The corpus supports this finding in detail. ".repeat(10).trim()}`;
 
+/**
+ * A run whose every farmed-out call succeeds, cheaply and instantly.
+ *
+ * `costs` is what each stage bills; a test that cares about the ceiling raises
+ * one of them rather than reaching into the engine.
+ */
 function deps(
   store: ResearchStore,
   over: Partial<ResearchDeps> & { costs?: Partial<Record<string, number>> } = {}

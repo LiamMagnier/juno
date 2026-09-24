@@ -650,14 +650,19 @@ export interface ReportRepairResult {
 
 /**
  * Make a report honest without inventing replacement facts. Unsupported
- * language is weakened in place, contradictions stay visible, and claims the
- * bounded judge could not check are labelled as such. Replacements run from
- * the end of the document so the stored answer spans remain valid while the
- * repair is applied.
+ * language is weakened in place and contradictions stay visible.
+ * Replacements run from the end of the document so the stored answer spans
+ * remain valid while the repair is applied.
+ *
+ * A claim nobody checked is never rewritten (B4): `unverified` means the
+ * judge did not look — its cap was reached, or it only had a search snippet —
+ * and prose rewritten on that basis told the reader the evidence failed when
+ * nobody had read it. The reader's support mark says "not checked" instead,
+ * and since nothing changed, no paid revision follows either.
  */
 export function repairReportFromClaims(report: string, claims: readonly RepairableClaim[]): ReportRepairResult {
   const replacements = claims
-    .filter((claim) => claim.status !== "supported")
+    .filter((claim) => claim.status !== "supported" && claim.status !== "unverified")
     .map((claim) => {
       const span = parseAnswerSpan(claim.answerSpan);
       if (!span) return null;
@@ -1191,11 +1196,23 @@ export async function validateClaimAgainstPassage(opts: {
  * load-bearing sentence with no evidence behind it is the single most important
  * thing this whole subsystem exists to surface.
  */
-export function resolveClaimStatus(verdicts: readonly LinkVerdict[]): {
+export function resolveClaimStatus(
+  verdicts: readonly LinkVerdict[],
+  opts: {
+    /**
+     * The audit's judge cap was reached before this claim got a verdict
+     * (B4, B22). No verdict then means nobody looked, not that the evidence
+     * failed: the claim is `unverified`, never `unsupported`.
+     */
+    judgeCapReached?: boolean;
+  } = {}
+): {
   status: ClaimStatus;
   supportStrength: number | null;
 } {
-  if (verdicts.length === 0) return { status: "unsupported", supportStrength: 0 };
+  if (verdicts.length === 0) {
+    return opts.judgeCapReached ? { status: "unverified", supportStrength: null } : { status: "unsupported", supportStrength: 0 };
+  }
   const best = verdicts.reduce((a, b) => (b.strength > a.strength ? b : a));
   if (best.status === "supported") return { status: "supported", supportStrength: best.strength };
   if (verdicts.some((v) => v.status === "contradicted")) return { status: "contradicted", supportStrength: 0 };
