@@ -44,6 +44,9 @@ struct ComposerPlusMenuModel {
     /// Nil hides Research (private mode). One feature, no levels (Tool calls
     /// & research SPEC §9.9).
     var deepResearch: Binding<Bool>?
+    /// Nil hides "Do This as a Task" (private mode, a call, no Work transport).
+    /// The composer keeps it and Research mutually exclusive (§5.4).
+    var task: Binding<Bool>? = nil
     /// Nil hides Web Search, Memory and My Documents (the call's short menu).
     var webSearch: Binding<Bool>?
     var webSearchAvailable: Bool
@@ -198,6 +201,16 @@ struct ComposerPlusMenu: View {
                 }
             }
 
+            if let task = menu.task {
+                Toggle(isOn: task) {
+                    Label {
+                        Text("Do This as a Task")
+                    } icon: {
+                        Image(JunoIcon.task.assetName)
+                    }
+                }
+            }
+
             if let webSearch = menu.webSearch {
                 Toggle(isOn: webSearch) {
                     Label {
@@ -317,6 +330,7 @@ struct ChatComposerMark: Identifiable, Equatable {
     /// window's sentence a third of its own line.
     static let labelMinimumWidth: CGFloat = 480
 
+    static let taskID = "task"
     static let researchID = "research"
     static let webSearchID = "web"
     static let documentsID = "documents"
@@ -330,12 +344,23 @@ struct ChatComposerMark: Identifiable, Equatable {
     /// to stop reading the row. Research has no levels and so no detail
     /// (SPEC §9.9).
     static func marks(
+        task: Bool = false,
         research: Bool,
         webSearch: Bool,
         connectors: [(id: String, label: String)],
         documentCount: Int?
     ) -> [ChatComposerMark] {
         var marks: [ChatComposerMark] = []
+        if task {
+            marks.append(ChatComposerMark(
+                id: taskID,
+                glyph: .icon(.task),
+                label: "Task",
+                detail: nil,
+                help: "This message starts a task. Juno works on it here and asks when it needs you.",
+                removeLabel: "Don\u{2019}t run this as a task"
+            ))
+        }
         if research {
             marks.append(ChatComposerMark(
                 id: researchID,

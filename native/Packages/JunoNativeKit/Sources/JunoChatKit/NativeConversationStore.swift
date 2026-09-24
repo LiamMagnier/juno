@@ -1954,6 +1954,80 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     }
 
     @discardableResult
+    /// Appends the reader's turn and asks for no reply: the first half of
+    /// starting a task from the composer, where the task answers rather than
+    /// `/api/chat`.
+    ///
+    /// `clientID` belongs to the caller's composition, so a retry appends
+    /// nothing twice (`/api/conversations/{id}/messages` dedupes on the chat
+    /// and the client id). The turn shows at once as pending, and leaves again
+    /// if the append fails, so a retry puts back exactly one.
+    ///
+    /// - Returns: the stored message id, or nil with `chatErrorDescription` set.
+    public func appendUserTurn(
+        conversationID: String,
+        prompt: String,
+        clientID: String,
+        attachmentIDs: [String] = [],
+        attachments: [NativeChatAttachment] = []
+    ) async -> String? {
+        guard let accountID, let chatClient,
+            let conversation = conversations.first(where: { $0.id == conversationID }),
+            !conversation.isPending
+        else {
+            chatErrorDescription = conversationPendingMessage(conversationID)
+            return nil
+        }
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            chatErrorDescription = NativeChatAPIError.invalidMessage.localizedDescription
+            return nil
+        }
+        let now = Date()
+        let shown = transientMessagesByConversation[conversationID]?
+            .contains { $0.clientID == clientID } ?? false
+        if !shown {
+            appendTransient(
+                NativeChatMessage(
+                    id: "local-user-\(clientID)",
+                    conversationID: conversationID,
+                    clientID: clientID,
+                    role: .user,
+                    content: trimmed,
+                    reasoning: nil,
+                    model: nil,
+                    createdAt: now,
+                    revision: 0,
+                    isPending: true,
+                    attachments: attachments.filter { attachmentIDs.contains($0.id) }
+                )
+            )
+        }
+        if let index = conversations.firstIndex(where: { $0.id == conversationID }) {
+            conversations[index].lastMessageAt = now
+        }
+        do {
+            let appended = try await chatClient.appendUserMessage(
+                conversationID: conversationID,
+                clientID: clientID,
+                content: trimmed,
+                attachmentIDs: attachmentIDs,
+                for: accountID
+            )
+            guard self.accountID == accountID else { return nil }
+            replaceTransientUser(with: appended, conversationID: conversationID)
+            chatErrorDescription = nil
+            return appended.id
+        } catch {
+            guard self.accountID == accountID else { return nil }
+            transientMessagesByConversation[conversationID]?.removeAll {
+                $0.clientID == clientID && $0.isPending
+            }
+            chatErrorDescription = NativeFailureMessage.presentable(error)
+            return nil
+        }
+    }
+
     public func sendMessage(
         conversationID: String,
         prompt: String,

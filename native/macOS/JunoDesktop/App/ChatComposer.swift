@@ -7,6 +7,7 @@ import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import JunoVoiceKit
+import JunoWorkKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -291,6 +292,9 @@ struct ChatComposerTurn {
     /// them the moment it is sent.
     var attachments: [NativeChatAttachment] = []
     let deepResearch: Bool
+    /// "Do This as a Task": the turn is appended and a Work task answers it,
+    /// in this chat, instead of `/api/chat`.
+    var asTask: Bool = false
     let webSearch: Bool
     let connectors: [String]
     let fastMode: Bool
@@ -498,6 +502,8 @@ struct ComposerPrimaryDisc: View {
     let face: ChatComposerFace
     /// Overrides the face's own name — dictation's "Send what you dictated".
     var label: String? = nil
+    /// Overrides the tooltip; defaults to the label, then the face's own.
+    var help: String? = nil
     /// Overrides the face's automation handle.
     var identifier: String? = nil
     let action: () -> Void
@@ -524,7 +530,7 @@ struct ComposerPrimaryDisc: View {
         .buttonStyle(ComposerDiscStyle())
         .disabled(!face.isEnabled)
         .keyboardShortcut(face == .stop ? KeyboardShortcut(".", modifiers: .command) : nil)
-        .help(label ?? face.help)
+        .help(help ?? label ?? face.help)
         .accessibilityLabel(label ?? face.label)
         .accessibilityIdentifier(identifier ?? face.identifier)
     }
@@ -651,6 +657,8 @@ struct ChatComposer: View {
     /// in the `+` menu at all.
     let documentIndex: NativeDocumentIndexModel?
     let connectorModel: NativeConnectorModel?
+    /// The Work model, for "Do This as a Task". Nil hides the row.
+    var workModel: NativeWorkModel? = nil
     /// The synced account settings, for the `+` menu's Memory switch.
     let memorySettings: NativeMemorySettingsModel<SQLiteAccountRepository>?
     @Binding var draftProjectID: String?
@@ -701,6 +709,10 @@ struct ChatComposer: View {
     @State private var selectedModelID = ""
     @State private var thinkingStopID = ""
     @State private var deepResearch = false
+    @State private var asTask = false
+    /// The client id of a task turn whose start failed, kept so pressing Send
+    /// again appends nothing twice. The work model holds the task's own key.
+    @State private var taskAttempt: (content: String, conversationID: String, clientID: String)?
     @State private var webSearch = false
     // @AppStorage rather than @State: preferences that survive a relaunch, as
     // the web keeps them in localStorage and the phone in UserDefaults.
@@ -942,8 +954,17 @@ struct ChatComposer: View {
         selectedModel?.supportsWebSearch == true
     }
 
+    /// A task needs the Work transport, a chat that is filed (not private),
+    /// and no call in progress.
+    private var taskAvailable: Bool {
+        workModel != nil && !isPrivate && !voiceActive
+    }
+
+    private var taskArmed: Bool { asTask && taskAvailable }
+
     private var marks: [ChatComposerMark] {
         ChatComposerMark.marks(
+            task: taskArmed,
             research: deepResearch && researchAvailable,
             webSearch: webSearch && webSearchAvailable,
             connectors: isPrivate || voiceActive ? [] : connectedConnectors
@@ -1383,6 +1404,7 @@ struct ChatComposer: View {
 
     private func disarm(_ id: String) {
         switch id {
+        case ChatComposerMark.taskID: asTask = false
         case ChatComposerMark.researchID: deepResearch = false
         case ChatComposerMark.webSearchID: webSearch = false
         case ChatComposerMark.documentsID: documentContext = false
@@ -1414,7 +1436,8 @@ struct ChatComposer: View {
             connectorsLoading: connectorModel?.phase == .loading,
             selectedConnectors: $selectedConnectors,
             manageConnections: manageConnections,
-            deepResearch: researchAvailable ? $deepResearch : nil,
+            deepResearch: researchAvailable ? exclusive($deepResearch, clearing: $asTask) : nil,
+            task: taskAvailable ? exclusive($asTask, clearing: $deepResearch) : nil,
             // A private turn carries only its words: the private route takes
             // no web search and no local documents, so the rows are absent
             // rather than on and ignored.
@@ -1424,6 +1447,18 @@ struct ChatComposer: View {
             memoryUnavailableReason: isPrivate ? "Incognito" : nil,
             documents: voiceActive || isPrivate || documentIndex == nil ? nil : $documentContext,
             documentCount: indexedDocumentCount
+        )
+    }
+
+    /// Task and Research are one choice between two ways to answer (§5.4):
+    /// turning one on turns the other off.
+    private func exclusive(_ value: Binding<Bool>, clearing other: Binding<Bool>) -> Binding<Bool> {
+        Binding(
+            get: { value.wrappedValue },
+            set: { on in
+                if on { other.wrappedValue = false }
+                value.wrappedValue = on
+            }
         )
     }
 
@@ -1499,7 +1534,12 @@ struct ChatComposer: View {
     /// The single morphing action (§5.3).
     private var primaryDisc: some View {
         let face = self.face
-        return ComposerPrimaryDisc(face: face) {
+        let startsTask = face == .send && taskArmed
+        return ComposerPrimaryDisc(
+            face: face,
+            label: startsTask ? "Start this as a task" : nil,
+            help: startsTask ? "Start this as a task  \u{21A9}" : nil
+        ) {
             switch face {
             case .stop: stopGeneration()
             // Never waits on a resolved model: a call can start before the
@@ -1893,7 +1933,8 @@ struct ChatComposer: View {
             effort: reasoningEffort,
             attachmentIDs: attachmentModel?.uploadedIDs ?? [],
             attachments: attachmentModel?.messageAttachments ?? [],
-            deepResearch: deepResearch && researchAvailable,
+            deepResearch: deepResearch && researchAvailable && !taskArmed,
+            asTask: taskArmed,
             webSearch: webSearch && webSearchAvailable,
             connectors: isPrivate ? [] : Array(selectedConnectors.prefix(ComposerPlusMenuModel.connectorLimit)),
             fastMode: fastMode,
@@ -1921,6 +1962,7 @@ struct ChatComposer: View {
         draftExpanded = false
         attachmentModel?.clear()
         deepResearch = false
+        asTask = false
     }
 
     /// Puts a queued turn's words back in the field.
@@ -1959,6 +2001,10 @@ struct ChatComposer: View {
     private func dispatch(_ turn: ChatComposerTurn, restoreOnRefusal: Bool) {
         if let privateChat {
             dispatchPrivate(turn, to: privateChat)
+            return
+        }
+        if turn.asTask, let workModel {
+            dispatchTask(turn, to: workModel, restoreOnRefusal: restoreOnRefusal)
             return
         }
         let startsChat = turn.conversationID == nil && fixedProjectID == nil && onFirstTurn != nil
@@ -2025,6 +2071,99 @@ struct ChatComposer: View {
             // is news about something that did not happen.
             if turn.groundDocuments {
                 groundingNote = Self.groundingNote(for: grounding, documentCount: turn.documentCount)
+            }
+            Task { await model.generateTitleIfNeeded(conversationID: conversationID) }
+            didSendConversation?(conversationID)
+        }
+    }
+
+    /// Starts a composed turn as a task in this chat, in the web's order
+    /// (`19941547^:composer.tsx`): make sure the chat exists, append the
+    /// reader's turn under a stable client id, create the session with the
+    /// chat's id, then start its run. The work model reuses one idempotency
+    /// key for the last two while the same turn is retried, and the client id
+    /// is held here for the first, so a second press after a dropped
+    /// response appends and creates nothing twice.
+    private func dispatchTask(
+        _ turn: ChatComposerTurn, to workModel: NativeWorkModel, restoreOnRefusal: Bool
+    ) {
+        let startsChat = turn.conversationID == nil && fixedProjectID == nil && onFirstTurn != nil
+        firstTurnError = nil
+        if startsChat {
+            withAnimation(JunoMotion.handoff(reduceMotion: reduceMotion)) {
+                onFirstTurn?(.began(turn.content, attachments: turn.attachments))
+            }
+        }
+        isDispatching = true
+        groundingNote = nil
+        Task {
+            defer { isDispatching = false }
+            // 1. The chat. A task is never created against a pending id: the
+            //    server 404s a conversation it has no row for.
+            let conversationID: String?
+            if let existing = turn.conversationID {
+                conversationID = existing
+            } else {
+                model.isDraftingNewConversation = true
+                conversationID = await model.createConversationResolvingID(
+                    model: turn.modelID,
+                    projectID: turn.projectID
+                )
+            }
+            guard let conversationID,
+                model.conversations.contains(where: { $0.id == conversationID && !$0.isPending })
+            else {
+                if restoreOnRefusal { restore(turn) }
+                if startsChat { handBack() }
+                return
+            }
+            // 2. The reader's turn, under the same client id on a retry.
+            let clientID: String
+            if let held = taskAttempt, held.content == turn.content,
+                held.conversationID == conversationID
+            {
+                clientID = held.clientID
+            } else {
+                clientID = UUID().uuidString.lowercased()
+            }
+            taskAttempt = (turn.content, conversationID, clientID)
+            guard await model.appendUserTurn(
+                conversationID: conversationID,
+                prompt: turn.content,
+                clientID: clientID,
+                attachmentIDs: turn.attachmentIDs,
+                attachments: turn.attachments
+            ) != nil else {
+                if restoreOnRefusal { restore(turn) }
+                if startsChat { handBack() }
+                return
+            }
+            // 3 and 4. The session, filed under this chat, and its first run.
+            let modelID = turn.modelID
+            let session = await workModel.startTask(
+                goal: turn.content,
+                model: modelID.isEmpty || modelID == ChatComposerModels.autoModelID ? nil : modelID,
+                reasoningEffort: turn.effort?.rawValue,
+                attachmentIDs: turn.attachmentIDs.isEmpty ? nil : turn.attachmentIDs,
+                connectorIDs: turn.connectors,
+                conversationID: conversationID,
+                projectID: turn.projectID
+            )
+            guard session != nil else {
+                firstTurnError = workModel.lastErrorDescription
+                    ?? "Juno couldn\u{2019}t start this task. Your message is saved \u{2014} press Send to try again."
+                if restoreOnRefusal { restore(turn) }
+                if startsChat { onFirstTurn?(.accepted) }
+                return
+            }
+            taskAttempt = nil
+            if startsChat { onFirstTurn?(.accepted) }
+            if !restoreOnRefusal {
+                if prompt == turn.content { prompt = "" }
+                draftExpanded = false
+                attachmentModel?.clear()
+                asTask = false
+                deepResearch = false
             }
             Task { await model.generateTitleIfNeeded(conversationID: conversationID) }
             didSendConversation?(conversationID)

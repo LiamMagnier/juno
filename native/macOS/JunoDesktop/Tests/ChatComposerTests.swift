@@ -120,6 +120,19 @@ struct ChatComposerTests {
         #expect(ChatComposerMark.marks(research: false, webSearch: false, connectors: [], documentCount: nil).isEmpty)
     }
 
+    /// A task is the first thing the sentence is (§5.5): its mark leads, in
+    /// the treestructure glyph, and says how to take it back.
+    @Test
+    func taskMarkLeads() {
+        let marks = ChatComposerMark.marks(
+            task: true, research: false, webSearch: true, connectors: [], documentCount: nil
+        )
+        #expect(marks.map(\.id) == ["task", "web"])
+        #expect(marks[0].label == "Task")
+        #expect(marks[0].glyph == .icon(.task))
+        #expect(marks[0].removeLabel == "Don\u{2019}t run this as a task")
+    }
+
     /// Two, then one mark standing for the rest, which names them all.
     @Test
     func marksStopAtTwoAndCountTheRest() {

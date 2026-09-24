@@ -1752,6 +1752,7 @@ struct DesktopConversationView: View {
             workspaceModel: configuration.projectWorkspaceModel,
             documentIndex: configuration.documentIndexModel,
             connectorModel: configuration.connectorModel,
+            workModel: configuration.workModel,
             memorySettings: configuration.memorySettingsModel,
             draftProjectID: $draftProjectID,
             draftPrompt: $draftPrompt,
