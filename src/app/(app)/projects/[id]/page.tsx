@@ -109,7 +109,7 @@ interface Detail {
 
 const WORKSPACE_TOOL_LABELS: Record<WorkspaceTool, string> = {
   webSearch: "Web search",
-  deepResearch: "Deep research",
+  deepResearch: "Research",
   canvas: "Canvas",
   mediaGeneration: "Image & video",
   connectors: "Connected apps",
