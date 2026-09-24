@@ -15,7 +15,7 @@
  */
 
 import type { ParsedArtifact } from "@/lib/message-content";
-import { bottomLineOf, citationOrder, renumberCitations } from "@/lib/research/report-structure";
+import { bottomLineOf, citationOrder, renumberCitations, stripModelSources } from "@/lib/research/report-structure";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 import type { RunFact } from "@/types/run";
 
@@ -320,8 +320,12 @@ export function buildCompletionWrite(input: {
   workedMs: number;
   pages: number;
 }): { write: CompletionWrite; sourceOrder: string[] } {
-  const summary = completionSummary(input.summary, bottomLineOf(input.report));
-  const ordered = orderCompletionSources({ corpus: input.corpus, summary, report: input.report });
+  // The reader renders sources from rows, cited then read; a list the model
+  // wrote itself is stripped (research-UI bug 7). The run keeps its report as
+  // the audit checked it.
+  const report = stripModelSources(input.report);
+  const summary = completionSummary(input.summary, bottomLineOf(report));
+  const ordered = orderCompletionSources({ corpus: input.corpus, summary, report });
   const title = input.title.trim() || "Research report";
   return {
     write: {

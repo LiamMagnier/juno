@@ -296,3 +296,10 @@ test("completion.ts writes the artifact after commit until the store takes a tra
   assert.match(binding, /encryptMessageText/);
   assert.match(binding, /lastMessageAt: at/);
 });
+
+test("a sources list the model wrote itself leaves the message; the run keeps the audited report", () => {
+  const withList = `${REPORT}\n\n## Sources\n[1] Manufacturer data — https://example.com/data\n[2] Norwegian field trial — https://example.no/trial`;
+  const { write: input } = write({ report: withList });
+  assert.doesNotMatch(input.report, /## Sources/);
+  assert.equal(input.runReport, withList);
+});
