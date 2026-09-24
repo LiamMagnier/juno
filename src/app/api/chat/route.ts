@@ -50,7 +50,9 @@ import {
 } from "@/lib/artifact-edit";
 import { parseArtifacts, parseForgets, parseMemories, rewriteArtifactMarkup } from "@/lib/message-content";
 import {
+  artifactRefusalNotice,
   artifactVerificationDetail,
+  artifactVerificationTitle,
   ChatArtifactVerificationError,
   verifyAndRepairChatArtifacts,
 } from "@/lib/chat-artifact-verification";
@@ -442,22 +444,22 @@ function prepareChatArtifactOutput(
   const parsed = parseArtifacts(text);
   if (parsed.length === 0) return null;
   const result = verifyAndRepairChatArtifacts(parsed);
+  // A block that stopped before its closing tag says so in its own words
+  // ("stopped before it was finished"), not "verification failed": the reader
+  // pressed Stop or the reply hit its limit, and nothing the model made was
+  // wrong (X-07). Both lines, and the row's title, come from the verifier so
+  // the message and the activity receipt cannot disagree.
   const updates = [
     ...result.artifacts.map((artifact) => ({ identifier: artifact.identifier, content: artifact.content })),
     ...result.report.refused.map((identifier) => ({
       identifier,
-      refusal: "Artifact unavailable: verification failed, so it was not saved or presented.",
+      refusal: artifactRefusalNotice(result.report, identifier),
     })),
   ];
   const rewritten = rewriteArtifactMarkup(text, updates);
   sendActivity({
     kind: "artifact",
-    title:
-      result.report.status === "verified"
-        ? "Artifact verified"
-        : result.report.status === "repaired"
-          ? "Artifact repaired and verified"
-          : "Artifact refused",
+    title: artifactVerificationTitle(result.report),
     detail: artifactVerificationDetail(result.report),
     artifactVerification: result.report,
   });
@@ -3114,10 +3116,19 @@ async function handleChat(req: Request) {
           costMicroUsd: researchNotice ? 0 : usage.costMicroUsd || null,
         });
 
-        // Artifacts + memory side effects.
+        // Artifacts + memory side effects. Only a finished artifact becomes a
+        // version: a reply cut off at the output limit ends inside its last
+        // block, verification refuses that block as `incomplete`, and the
+        // artifact keeps its current version (X-07). The filter says so again
+        // at the write itself, so the rule survives a change to the verifier
+        // or to how its output is prepared.
         const artifacts = targetedArtifact
           ? [targetedArtifact]
-          : await persistArtifacts(conversationId, assistant.id, preparedArtifacts?.result.artifacts ?? []);
+          : await persistArtifacts(
+              conversationId,
+              assistant.id,
+              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete)
+            );
         if (targetedArtifact) send({ type: "delta", text: acc.text });
         let memoryUpdated = false;
         // Not when the turn carried untrusted content. A `<juno:memory>` tag is
@@ -3293,10 +3304,13 @@ async function handleChat(req: Request) {
               cacheWriteTokens: acc.tokens.cacheWriteTokens,
               costMicroUsd: researchNotice ? 0 : partialUsage.costMicroUsd || null,
             });
+            // Only finished artifacts, as on the success path. A Stop inside a
+            // block leaves it unfinished: the partial answer is still saved,
+            // and the artifact keeps its current version (X-07).
             const artifacts = await persistArtifacts(
               conversationId,
               assistant.id,
-              preparedArtifacts?.result.artifacts ?? []
+              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete)
             );
             await prisma.conversation.updateMany({
               where: { id: conversationId, userId: user.id },
