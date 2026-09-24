@@ -106,6 +106,10 @@ export class UnifiedAgentRegistry {
         functionName: tool.id,
         args: params,
         callId,
+        // Without this a call the broker asks about waits for a card nobody
+        // is shown, until the stall watchdog kills the turn. The route's
+        // callback sends the card and pauses the watchdog.
+        onApprovalRequest: context.onApprovalRequest,
         provenance: {
           source: "agent_runtime",
           sourceKind: "runtime_tool",
