@@ -1,0 +1,899 @@
+{
+ "area": "Web: Juno Design document model, operations, layout, render, export, AI and API (src/lib/design/**, src/app/api/design/**)",
+ "summary": "WHAT EXISTS (read). Juno Design is a Figma-style scene graph stored as JSON in an ordinary `Artifact` of type DESIGN. Each ArtifactVersion body is a stably serialised `DesignDocument` (migrations.ts:111-124). The model is a flat node map with explicit child order and minted ids (types.ts:1-22). It has 10 node types: frame, group, rectangle, ellipse, line, path, text, image, component, instance (types.ts:436-446). Other parts of the model:\n- Paints: solid, linear, radial and image fills, stacked (types.ts:53-72).\n- An ordered effect stack of 7 kinds: drop and inner shadow, layer and background blur, noise, texture, glass (types.ts:125-282).\n- Per-corner radius plus squircle smoothing.\n- Auto layout: horizontal, vertical, grid and wrap, with hug/fill/fixed sizing and min/max; constraints.\n- Components with variants; variable collections with modes and aliases.\n- Prototype interactions (7 triggers \u00d7 10 actions) and keyframe motion with springs.\n- Comments, image assets and pages.\n\nEvery edit is one of 37 zod-validated operations (operations.ts:124-288). The transaction applier works on a clone, so a transaction is atomic. It returns an inverse and derives new ids from the transaction id, so replays are deterministic (operations.ts:354-392). The server is a revisioned, compare-and-swap store that folds edits into 30-second checkpoints (store.ts:89-203, operations.ts:511-539). One pure layout engine (layout.ts) and one deterministic SVG renderer (render.ts) feed the canvas, the thumbnails and every export: SVG, PNG (rasterised on the client), PDF, an HTML prototype, React, SwiftUI, JSON, tokens and a Juno Code handoff bundle (export.ts). AI editing works like this:\n1. The model returns a `<juno:design-ops>` JSON proposal.\n2. The server validates it, applies it to a clone and checks it against the selection (ai.ts:94-174).\n3. The result is returned as a preview; nothing is saved until the user accepts it (edit/route.ts:248-271).\n\nThe chat model authors designs in a compact form, which the operation layer expands into a full document (authoring.ts). All 14 design test files pass: 277/277 tests. Nothing in these files has changed since 2026-08-15. The only difference on mac/liquid-glass-chat is the header of tokens.generated.ts.\n\nQUALITY. The engineering is careful and heavily commented. It is honest about the limits of each export target through `unsupported` notes, and it is security-minded: escaping, http(s)-only prototype links, an inert HTML runtime and a same-origin asset rule. Determinism is good: the canvas, exports and the AI's view all share one layout engine and one renderer.\n\nI verified many real correctness gaps by running probes against the repo code (scratch scripts in the audit scratchpad):\n- The SVG renderer does not apply a container's opacity, rotation, blend mode or filter to its children. The HTML, React and SwiftUI exports do, because they nest elements. So the canvas and the exports disagree, and a rotated frame leaves its contents upright.\n- Auto layout: in a horizontal row, `widthMode:\"fill\"` overflows the row, cross-axis fill uses the row height instead of the container's inner height, and grid has no column tracks.\n- Batching drops partial typography edits (coalescing).\n- Several inverses lose data: undoing an instance delete brings back a plain frame; undoing a component delete loses its variants; new variants and new component properties cannot be undone; ungrouping a frame and then undoing gives back a plain group.\n- Exports fail with a 500 for any design or layer name containing characters above U+00FF (CJK, emoji, even a curly apostrophe). The cause is the non-ASCII `Content-Disposition` header and `X-Juno-Export-Notes` header.\n\nBIGGEST PRODUCT PROBLEMS.\n1. The AI path is text-only and single-shot. With no selection it is blind below the top-level frames, because the summary lists only page roots. The selection scope check lets document-wide operations through. The prompt's createAsset contract contradicts the schema.\n2. The compact form the chat uses cannot express images (an image node always makes the whole design artifact fail and be dropped). It also cannot express effects, gradients, components, variables or interactions. So a design edited in the chat is re-authored wholesale and loses everything made in the editor.\n3. Scale. A document has a 200,000-character budget (store.ts:63). That is about 300\u2013400 nodes at roughly 500\u2013680 characters each (measured). Images are capped at 96 KB each as inline data URLs (use-design-document.ts:578), so in practice one photo per design.\n4. Components are copy-on-create. Edits to the main component never reach its instances. Overrides and component properties are stored but nothing reads them (instances.ts:4-27).\n5. Comments exist in the model but no operation can write them, so they are unused. There is no multiplayer: the CRDT module is text-only and nothing in Design uses it.\n\nCompared with Figma, the model covers the core of frames, auto layout, variants, variables/modes and prototyping. It lacks component propagation and overrides, rich text, vector networks, boolean operations and masks, and multiplayer. Compared with Claude Design, which is HTML-first with generated tweaks and design systems, Juno already has AI \"adjustments\" (which work like tweaks) and a code handoff. It has no HTML-to-scene import, no cross-document design system, and exports are absolutely positioned rather than responsive.",
+ "files_read": [
+  "src/lib/design/types.ts",
+  "src/lib/design/schema.ts",
+  "src/lib/design/document.ts",
+  "src/lib/design/operations.ts",
+  "src/lib/design/layout.ts",
+  "src/lib/design/render.ts",
+  "src/lib/design/export.ts",
+  "src/lib/design/ai.ts",
+  "src/lib/design/authoring.ts",
+  "src/lib/design/variables.ts",
+  "src/lib/design/instances.ts",
+  "src/lib/design/migrations.ts",
+  "src/lib/design/store.ts",
+  "src/lib/design/selection-context.ts",
+  "src/lib/design/tokens.generated.ts",
+  "src/app/api/design/route.ts",
+  "src/app/api/design/[artifactId]/route.ts",
+  "src/app/api/design/[artifactId]/edit/route.ts",
+  "src/app/api/design/[artifactId]/transactions/route.ts",
+  "src/app/api/design/[artifactId]/export/route.ts",
+  "src/components/design/use-design-document.ts",
+  "src/components/design/inspector-panel.tsx (lines 110-145, 880-1010, 1215-1250)",
+  "src/components/design/design-context-menu.tsx (lines 140-275)",
+  "src/components/design/design-editor.tsx (lines 300-342, 430-445, 1123-1152)",
+  "src/components/design/ask-juno-bar.tsx (lines 60-105)",
+  "src/components/canvas/canvas-panel.tsx (lines 385-460, 800-820, 1080-1100)",
+  "src/app/api/artifacts/[id]/route.ts",
+  "src/lib/artifacts-store.ts (lines 1-40)",
+  "src/lib/chat-artifact-verification.ts (lines 70-125)",
+  "src/lib/chat/system-prompt.ts (lines 250-292)",
+  "src/lib/collaboration/crdt.ts (lines 1-60)",
+  "src/lib/capabilities.ts (lines 40-70)",
+  "src/lib/csp.ts (img-src line)",
+  "prisma/schema.prisma (ArtifactVersion, ArtifactType)",
+  "tests/design-fixtures.ts",
+  "tests/design-operations.test.ts (header)",
+  "tests/design-export.test.ts (mapping test)",
+  "docs/design/ICONS_AND_MOTION.md (headings)",
+  "contracts/design/design-document.v1.schema.json (grep only)"
+ ],
+ "inventory": [
+  {
+   "feature": "Scene document model and schema",
+   "description": "Flat node map plus explicit child order. Ids are minted and stable. A zod contract covers every field, with finite, bounded coordinates. A hierarchy validator checks orphans, cycles and duplicate parents. Old shadows/blur/noise fields are folded into the effect stack when a document is parsed. A JSON Schema mirror exists for the Swift Codable types.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/design/types.ts:436-789",
+    "src/lib/design/schema.ts:310-387",
+    "src/lib/design/schema.ts:563-699",
+    "contracts/design/design-document.v1.schema.json"
+   ]
+  },
+  {
+   "feature": "Node types",
+   "description": "frame, group, rectangle, ellipse, line, path (SVG d plus winding rule), text, image, component, instance. There is no polygon, star, arrow, section, boolean operation, mask, vector network, video or embed.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/types.ts:436-579"
+   ]
+  },
+  {
+   "feature": "Paints and fills",
+   "description": "Solid, linear and radial gradients, and image fill (fill/fit/stretch/tile), each with its own opacity and visibility. The renderer draws stacked fills back to front. There is no angular or diamond gradient, no image crop or filters, and 'tile' draws the same as 'fill'.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/types.ts:53-72",
+    "src/lib/design/render.ts:118-147",
+    "src/lib/design/render.ts:928-942"
+   ]
+  },
+  {
+   "feature": "Strokes",
+   "description": "Weight, dash and inside/center/outside alignment. SVG draws the alignment using clips and masks. The schema allows up to 32 strokes, but only strokes[0] is ever drawn or exported. Per-side strokes are absent.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/types.ts:76-81",
+    "src/lib/design/render.ts:867-913",
+    "src/lib/design/export.ts:577-578"
+   ]
+  },
+  {
+   "feature": "Effect stack",
+   "description": "An ordered list of 7 effect kinds: drop and inner shadow (with spread), layer blur, background blur (backdrop emulated by re-painting what lies behind), noise and texture (feTurbulence), and glass (blur + rim refraction + tint + light). Each has a visibility toggle, and setEffects/addEffect apply across layers. The CSS and SwiftUI exporters report what they cannot express.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/design/types.ts:125-288",
+    "src/lib/design/render.ts:460-806",
+    "src/lib/design/export.ts:521-660",
+    "src/lib/design/operations.ts:170-195"
+   ]
+  },
+  {
+   "feature": "Corner radius and smoothing",
+   "description": "Per-corner tuple and a squircle smoothing value from 0 to 1, drawn as a superellipse fitted with Hermite cubics. The PDF export draws the corners square and says so. SwiftUI snaps to .circular or .continuous and adds a note.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/design/render.ts:155-432",
+    "src/lib/design/export.ts:1479-1522"
+   ]
+  },
+  {
+   "feature": "Text model",
+   "description": "One style per text node: family, size, weight, line height (pt or %), letter spacing, horizontal and vertical alignment, decoration, italic. Text is measured with Helvetica/Times advance-width tables, so layout is deterministic. There are no rich-text ranges, no text styles and no OpenType features. textCase is stored but never used, and 'justify' draws as left-aligned.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/types.ts:364-375",
+    "src/lib/design/layout.ts:35-216",
+    "src/lib/design/render.ts:987-1009"
+   ]
+  },
+  {
+   "feature": "Auto layout",
+   "description": "Horizontal, vertical and grid directions; wrap; padding; gap and cross-axis gap; align (baseline is treated as start); justify with space-between/around/evenly; grow and alignSelf; absolutely positioned children; hug/fill/fixed sizing with min/max. Four defects are verified: horizontal fill overflows, cross-axis fill uses the row height, grid has no column tracks, baseline alignment is not implemented.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/layout.ts:231-523"
+   ]
+  },
+  {
+   "feature": "Constraints",
+   "description": "min/max/center/stretch/scale, applied through resizeWithConstraints, which returns explicit position/size updates. Children of auto-layout containers are skipped. Covered by tests.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/design/layout.ts:529-604"
+   ]
+  },
+  {
+   "feature": "Components, instances, variants",
+   "description": "createComponent converts a container; createInstance copies the main component's subtree once; setInstanceVariant swaps an instance's contents. Edits to the main component never reach existing instances. overrides and ComponentProperty.targetNodeId are stored but nothing reads them. Deleting or ungrouping can leave dangling definitions.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/operations.ts:1246-1425",
+    "src/lib/design/instances.ts:1-100"
+   ]
+  },
+  {
+   "feature": "Variables, modes, tokens",
+   "description": "Collections with ordered modes; variables of type color, number, string or boolean; aliases across collections with cycle and type checks; unset modes fall back to the first mode; bindings are applied at paint time; tokens export as JSON by name. Two problems: bindVariable never checks the type or path, and bindings to width/height/x/y have no effect because layout reads the raw values.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/variables.ts:1-196",
+    "src/lib/design/operations.ts:1428-1492"
+   ]
+  },
+  {
+   "feature": "Prototype interactions",
+   "description": "Triggers: click, hover, press, drag, key, delay, scroll-into-view. Actions: navigate, back, overlay, scroll-to, URL, set-variable, set-mode, set-variant, play-animation. Transitions: instant/dissolve/slide/push/move with easing and smart-animate (matchStableIds). The HTML export only implements navigate, open-url and play-animation, and drops transitions without a note.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/types.ts:645-693",
+    "src/lib/design/export.ts:1075-1112",
+    "src/lib/design/export.ts:1175-1235"
+   ]
+  },
+  {
+   "feature": "Motion (keyframe animations)",
+   "description": "Per-node, per-property tracks for 13 animatable properties. Easing per keyframe (linear, named curves, cubic-bezier, spring). Looping, and state animations such as hover. The HTML export emits real @keyframes, reports springs as unsupported and honours prefers-reduced-motion. React and SwiftUI only describe motion in the handoff bundle.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/types.ts:695-732",
+    "src/lib/design/export.ts:693-1037"
+   ]
+  },
+  {
+   "feature": "Comments",
+   "description": "DesignComment is in the model and schema (anchored to a node or page coordinates, resolvedAt, transactionId), and open comments are passed to the AI context. No operation creates, resolves or deletes a comment, and the transaction endpoint is the only write path, so comments can never be written on the web.",
+   "maturity": "stub",
+   "where": [
+    "src/lib/design/types.ts:738-752",
+    "src/lib/design/selection-context.ts:291-293",
+    "src/lib/design/operations.ts:124-288"
+   ]
+  },
+  {
+   "feature": "Images and assets",
+   "description": "AssetRef stores an app-relative or data:image URL. The web editor inlines PNG/JPEG/GIF/WebP files of 96 KB or less as data URLs. The whole document shares a 200,000-character budget. Export checks that /api/files assets exist in the Library.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/schema.ts:544-557",
+    "src/components/design/use-design-document.ts:567-608",
+    "src/lib/design/store.ts:60-63",
+    "src/app/api/design/[artifactId]/export/route.ts:66-102"
+   ]
+  },
+  {
+   "feature": "Pages",
+   "description": "Create (with caller-chosen id and index), delete (takes its artwork; undo restores it), rename, set background; up to 200 pages.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/design/operations.ts:1082-1158"
+   ]
+  },
+  {
+   "feature": "Operation system (atomic, invertible, deterministic, scoped)",
+   "description": "37 operation kinds validated against both the schema and the document (locks, cycles, missing ids). Atomic because work happens on a clone. Each operation returns its own inverse. Ids derive from the transaction id. touchedNodeIds and transactionIsScopedTo support selection scoping. Several inverses lose data (see defects).",
+   "maturity": "solid",
+   "where": [
+    "src/lib/design/operations.ts:124-392",
+    "src/lib/design/operations.ts:1682-1713"
+   ]
+  },
+  {
+   "feature": "Batching, coalescing, checkpoints",
+   "description": "The client applies edits optimistically and keeps one request in flight; queued work merges into the next batch. coalesceOperations drops superseded updateNode/setEffects operations. The server rewrites the newest checkpoint in place (compare-and-swap) while the user's own edits are less than 30 s apart, and otherwise appends a version. Coalescing loses partial typography patches.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/operations.ts:435-539",
+    "src/components/design/use-design-document.ts:226-326",
+    "src/lib/design/store.ts:89-203"
+   ]
+  },
+  {
+   "feature": "Persistence and API",
+   "description": "POST /api/design creates a conversation plus a DESIGN artifact from a device preset. GET /api/design/[id] (optionally ?version=) reads a document. POST /transactions is the design-specific write path; a conflict returns 409 with the current document. POST /edit makes a metered AI proposal. GET /export serves 9 formats. Ownership is checked through artifact \u2192 conversation \u2192 user.",
+   "maturity": "solid",
+   "where": [
+    "src/app/api/design/route.ts:37-102",
+    "src/app/api/design/[artifactId]/route.ts:16-41",
+    "src/app/api/design/[artifactId]/transactions/route.ts:29-89",
+    "src/lib/design/store.ts:33-39"
+   ]
+  },
+  {
+   "feature": "Migrations",
+   "description": "An ordered migration table that records each version passed through, and refuses documents newer than this build. The table is empty (only v1 exists). Legacy effect fields are folded in at parse time, so no migration was needed for them.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/design/migrations.ts:39-88",
+    "src/lib/design/schema.ts:196-225"
+   ]
+  },
+  {
+   "feature": "Deterministic SVG renderer",
+   "description": "One flat paint list. Backdrops are emulated by copying the markup painted behind a layer, and nested copies are not re-copied. Clipping containers regroup their children afterwards. User text is escaped. Ids are only included for hit-testing. The renderer does not pass a container's opacity, rotation, blend mode or filter down to its children.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/render.ts:812-1162"
+   ]
+  },
+  {
+   "feature": "Exports: SVG, PNG, PDF",
+   "description": "SVG comes straight from the renderer. PNG is returned as SVG plus dimensions, and the browser rasterises it (design-editor.tsx:1123-1152). PDF is a single page in hand-written PDF 1.4 with Helvetica, WinAnsi text and a byte-exact xref table. It has no alpha, no node opacity, no text wrapping or alignment, and square corners.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/export.ts:66-351"
+   ]
+  },
+  {
+   "feature": "Exports: HTML prototype, React, SwiftUI",
+   "description": "Every element is absolutely positioned, taken from the laid-out boxes (no flexbox or responsiveness). Each export maps node ids to generated symbols. The HTML export includes a small script for navigation, URLs, animation and triggers. React emits one component per root. SwiftUI emits ZStack plus offsets, materials and effects. Each target drops some properties (see defects).",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/export.ts:357-1644"
+   ]
+  },
+  {
+   "feature": "Exports: JSON, tokens, handoff bundle",
+   "description": "JSON is the stable serialisation. Tokens are exported by name. The handoff bundle carries the document, tokens, components, the interaction graph, the animation spec, reference SVGs, the three generated code targets with their symbol mappings, unsupported notes and layout notes.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/design/export.ts:1684-1853",
+    "src/lib/design/variables.ts:141-176"
+   ]
+  },
+  {
+   "feature": "Figma / HTML / SVG import, Figma export, JPG/WebP/PPTX export",
+   "description": "Absent. There is no import route under /api/design, and grepping src/lib/design for figma, .fig or import found only comments. The only accepted input is the compact form or a complete document JSON.",
+   "maturity": "absent",
+   "where": [
+    "src/app/api/design/[artifactId]/export/route.ts:24-31",
+    "src/lib/design/authoring.ts:215-235"
+   ]
+  },
+  {
+   "feature": "AI edit path (Ask Juno)",
+   "description": "The route builds a text selection context (no image) and a system contract listing the operation vocabulary. It makes one streamed-then-buffered model call (up to 8k tokens), parses the <juno:design-ops> JSON (at most 60 operations), and previews it on a clone with a scope check. It returns the preview document, a change list and 'adjustments' (slider, colour or segmented controls bound to document properties). Metered like a chat turn; rate-limited to 20 per minute.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/ai.ts:30-395",
+    "src/app/api/design/[artifactId]/edit/route.ts:91-284",
+    "src/lib/design/selection-context.ts:224-361"
+   ]
+  },
+  {
+   "feature": "Compact authoring form (chat-created designs)",
+   "description": "A small tree with fields such as fill, stroke, radius, text, fontSize, layout, widthMode/heightMode and grow. It is expanded through createNode operations. No effects, gradients, components, variables, interactions or assets can be expressed, and 'image' always fails.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/authoring.ts:32-235",
+    "src/lib/chat/system-prompt.ts:269-291"
+   ]
+  },
+  {
+   "feature": "Real-time collaboration / presence",
+   "description": "Absent for Design. Concurrency is single-writer and optimistic, based on baseRevision. crdt.ts is a text (RGA) CRDT that only tests import, yet capabilities.ts:49-55 lists 'Canvas CRDT Collaboration' as stable.",
+   "maturity": "absent",
+   "where": [
+    "src/lib/collaboration/crdt.ts:1-60",
+    "src/lib/capabilities.ts:49-55",
+    "src/lib/design/operations.ts:359-364"
+   ]
+  },
+  {
+   "feature": "Juno UI motion tokens (tokens.generated.ts)",
+   "description": "Juno's own chrome durations, easings and radius ladder, generated from globals.css and tailwind.config.ts and checked in CI. These are not user design tokens. On mac/liquid-glass-chat only the header and digest differ.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/design/tokens.generated.ts:1-53"
+   ]
+  }
+ ],
+ "architecture": "STORAGE: Prisma `Artifact{type: DESIGN}` + `ArtifactVersion.content` (Text) = `serializeDesignDocument(doc)` (sorted keys, migrations.ts:111-124). Ownership = artifact.conversation.userId (store.ts:33-39). Version origins: generated | edit | restore.\n\nKEY TYPES: DesignDocument{schemaVersion, id, name, revision (monotonic), migratedFrom, pages[{id,name,children[],backgroundColor}], nodes: Record<NodeId, DesignNode>, components, collections, variables, activeModes, interactions, animations, comments[], assets, updatedAt} (types.ts:768-789). DesignNode = BaseNode (geometry, opacity, visible, locked, blendMode, fills[], strokes[], cornerRadius, cornerSmoothing, effects[], constraints, width/heightMode, limits, layoutChild, boundVariables) + container fields (children, clipsContent, layout) or type fields (characters/typography, d/windingRule, assetId/scaleMode, componentId/variantProperties/overrides). DesignOperation (37 kinds) \u2192 DesignTransaction{id, baseRevision, operations[\u2264500], author user|juno, summary, commentId}.\n\nCREATION: (a) The chat model emits `<juno:artifact type=\"DESIGN\">` containing compact JSON. chat-artifact-verification.ts:90-118 and artifacts-store.ts:16-24 then call normalizeDesignArtifact \u2192 expandAuthoredDesign, which applies createNode operations with ids seeded from the artifact identifier and stores revision 1. If expansion fails, the artifact is dropped. (b) POST /api/design (route.ts:37-102) creates an empty conversation plus an artifact from a device preset, using the same expansion.\n\nREAD: GET /api/design/[id] \u2192 documentFromArtifact \u2192 parseStoredDesignDocument \u2192 migrateDesignDocument \u2192 parseDesignDocument (fold legacy effects \u2192 zod \u2192 validateHierarchy).\n\nWRITE (the only design-specific path): use-design-document.ts runs applyTransaction on a clone locally (optimistic). It keeps an undo/redo stack of 100 inverse transactions and a queue with one request in flight. Queued batches are merged and coalesced; operations that mint ids stay sealed under their original transaction id. The transport is either HTTP (POST /transactions) or the Mac WKWebView bridge. The server's commitTransaction steps (store.ts:89-149) are:\n1. Parse the transaction.\n2. Load the stored document.\n3. Apply the transaction (409 on a stale baseRevision).\n4. Check the 200,000-character budget (413).\n5. Either rewrite the newest checkpoint in place (compare-and-swap on the stored content) or append a new version (unique (artifactId, version)); losing a race returns 409.\n6. Return the document plus the undo transaction.\n\nThe client rolls back to the stored document on any refusal, which also clears the undo stack (use-design-document.ts:200-209). Separately, the generic POST /api/artifacts/[id] can also append raw content to a DESIGN artifact.\n\nAI: POST /edit applies the canvas plan gate, a 20/min rate limit, and a check that the base revision is current. It builds selection context (compact subtree: depth 2, 120 nodes, 6 siblings, variables, interactions, animations, comments; no image) and a system contract (ai.ts:333-395). It then checks budget and consumes a message, calls streamChat for one reply (8k tokens), and records spend. parseDesignProposal \u2192 previewProposal (applyTransaction on a clone plus transactionIsScopedTo) \u2192 JSON {transaction, preview document, touched ids, changes, adjustments, note}. When the user accepts, the client re-applies the transaction to the live document under a new id and it goes through the ordinary write path.\n\nRENDER: layoutPage/layoutSubtree (pure; boxes in absolute coordinates) \u2192 renderNode (bound variables resolved per node at paint time; effects to an SVG filter chain; backdrop effects rebuilt from already-painted chunks; clipping containers regrouped) \u2192 renderPageSvg / renderNodeSvg / renderSelectionSvg. Consumers: the canvas (design-canvas.tsx:191), layer and component thumbnails, the SVG/PNG exports and the handoff reference images.\n\nEXPORT: GET /export?format= \u2192 validateDesignAssets (every asset in the document) \u2192 per format. Selecting a nodeId for pdf/html/react/swiftui goes through isolateLayer. PDF notes travel in the X-Juno-Export-Notes header. React, SwiftUI, tokens and handoff return JSON; the others download with Content-Disposition.\n\nThe same React editor is bundled for the Mac/iOS host, and the JSON Schema contract is kept in sync for the Swift mirror. tokens.generated.ts holds Juno's own chrome tokens and is unrelated to user variables.",
+ "ux": [
+  {
+   "observation": "Downloads fail with a generic 'Export failed. Please try again.' for designs whose title or layer name contains any character above U+00FF, and the message does not say why. That includes a curly apostrophe (Tom\u2019s app), an em dash, emoji, CJK, Cyrillic and Greek. Model-written and macOS-autocorrected names contain these characters all the time.",
+   "severity": "major",
+   "where": [
+    "src/app/api/design/[artifactId]/export/route.ts:173-182",
+    "src/app/api/design/[artifactId]/export/route.ts:213",
+    "src/lib/design/export.ts:57-60"
+   ]
+  },
+  {
+   "observation": "With no selection, Ask Juno can only see the page's top-level frames, so a request like 'make the title bigger' cannot address the title. The model is told never to invent ids. The user just gets a refusal or a note, and nothing suggests selecting something first.",
+   "severity": "major",
+   "where": [
+    "src/lib/design/selection-context.ts:327-361",
+    "src/lib/design/ai.ts:377-390",
+    "src/components/design/ask-juno-bar.tsx:68-86"
+   ]
+  },
+  {
+   "observation": "Ask Juno is one blocking call of up to 120 s: the reply is streamed from the provider but buffered on the server, with no partial output or progress. The model cannot see the design (includeImage: false). The DESIGN_TOOLS list advertises a render/inspect loop that does not exist.",
+   "severity": "major",
+   "where": [
+    "src/app/api/design/[artifactId]/edit/route.ts:22",
+    "src/app/api/design/[artifactId]/edit/route.ts:150-155",
+    "src/app/api/design/[artifactId]/edit/route.ts:186-201",
+    "src/lib/design/ai.ts:256-270"
+   ]
+  },
+  {
+   "observation": "In practice a design holds one photo: each image must be 96 KB or less, and it is inlined into a 200,000-character document. The inspector explains the limit, but nothing warns as the document gets close to the budget, and a failed save just says 'too large to save'.",
+   "severity": "major",
+   "where": [
+    "src/components/design/use-design-document.ts:569-588",
+    "src/lib/design/store.ts:117-120"
+   ]
+  },
+  {
+   "observation": "If a user asks the chat for a design that includes an image, no artifact appears. The design fails to expand and is dropped with only a server log line. The chat prompt itself lists 'image' as a supported node type.",
+   "severity": "major",
+   "where": [
+    "src/lib/artifacts-store.ts:16-24",
+    "src/lib/chat/system-prompt.ts:285-286",
+    "src/lib/design/authoring.ts:47"
+   ]
+  },
+  {
+   "observation": "What the canvas shows differs from what the exported HTML/React/SwiftUI shows for faded, rotated or blended containers. The canvas does not pass the container's effect to its children; the exports do.",
+   "severity": "major",
+   "where": [
+    "src/lib/design/render.ts:859-866",
+    "src/lib/design/render.ts:1024-1031"
+   ]
+  },
+  {
+   "observation": "A PDF export can succeed and then show an error toast. The download happens first, then the client runs JSON.parse on the notes header, which the server truncated at 2,000 characters.",
+   "severity": "minor",
+   "where": [
+    "src/app/api/design/[artifactId]/export/route.ts:213",
+    "src/components/design/design-editor.tsx:329-339"
+   ]
+  },
+  {
+   "observation": "React and SwiftUI exports come back as JSON, and the client turns them into a text file. All three code exports are absolutely positioned, so the 'handoff' code is not responsive, and the stack structure survives only as layoutNotes.",
+   "severity": "minor",
+   "where": [
+    "src/lib/design/export.ts:505-516",
+    "src/lib/design/export.ts:1639-1641",
+    "src/app/api/design/[artifactId]/export/route.ts:223-230"
+   ]
+  },
+  {
+   "observation": "In the HTML prototype only the first top-level frame is visible. Navigation switches instantly even when a dissolve, slide or smart-animate transition was authored, and the unsupported notes do not mention it.",
+   "severity": "minor",
+   "where": [
+    "src/lib/design/export.ts:1164-1171",
+    "src/lib/design/export.ts:1199-1202"
+   ]
+  },
+  {
+   "observation": "Any rejected save or 409 conflict rolls the canvas back to the stored copy and clears the undo and redo stacks. A second tab, or the Mac, editing the same design turns every overlapping change into lost undo history.",
+   "severity": "minor",
+   "where": [
+    "src/components/design/use-design-document.ts:200-209"
+   ]
+  },
+  {
+   "observation": "Error codes for AI edits are well designed: unusable, conflict, rate-limited, budget, no-model and aborted each come with a plain sentence, and a refusal gives the user's message back.",
+   "severity": "info",
+   "where": [
+    "src/app/api/design/[artifactId]/edit/route.ts:100-146",
+    "src/app/api/design/[artifactId]/edit/route.ts:272-283"
+   ]
+  }
+ ],
+ "motion": [
+  {
+   "observation": "The motion model is expressive: 13 animatable properties, per-keyframe easing (linear, named curves, cubic-bezier, spring with stiffness/damping/mass), looping, and state animations (hover/pressed/selected/loading). Of the three code targets, only the HTML prototype runs animations. It turns the model into real @keyframes with a timing function per stop, holds the value before a late start and after an early end, merges rotation and scale into one transform, and pauses hover or triggered animations until they fire.",
+   "where": [
+    "src/lib/design/types.ts:666-732",
+    "src/lib/design/export.ts:693-1037"
+   ]
+  },
+  {
+   "observation": "Springs have no CSS form, so they export as ease-out and the export says so. Two tracks easing differently out of the same keyframe are also reported, because CSS allows one curve per stop. This matches the 'say it, don't approximate silently' principle.",
+   "where": [
+    "src/lib/design/export.ts:779-799",
+    "src/lib/design/export.ts:846-858",
+    "src/lib/design/export.ts:927-929"
+   ]
+  },
+  {
+   "observation": "The exported HTML honours prefers-reduced-motion: animations are switched off but stay described in the file. This is consistent with rule 10 of docs/design/ICONS_AND_MOTION.md ('Reduced motion is honoured everywhere').",
+   "where": [
+    "src/lib/design/export.ts:1154-1159",
+    "docs/design/ICONS_AND_MOTION.md:223"
+   ]
+  },
+  {
+   "observation": "Prototype transitions (dissolve/slide/push/move, delay, easing, and smart-animate via matchStableIds) exist in the model but are never exported as motion. The HTML runtime toggles `hidden` instantly and adds no unsupported note. React and SwiftUI emit no interaction code; transitions appear only in the handoff bundle's interaction graph.",
+   "where": [
+    "src/lib/design/types.ts:674-685",
+    "src/lib/design/export.ts:1192-1203",
+    "src/lib/design/export.ts:1795-1811"
+   ]
+  },
+  {
+   "observation": "Keyframe values are not type-checked against the property: a colour on a numeric track, or a number on fillColor, passes the schema and is then silently skipped by motionDeclaration. setKeyframes does not check this either.",
+   "where": [
+    "src/lib/design/schema.ts:496-520",
+    "src/lib/design/export.ts:739-777",
+    "src/lib/design/operations.ts:1544-1561"
+   ]
+  },
+  {
+   "observation": "tokens.generated.ts holds Juno's own chrome motion ladder (press 70 ms \u2026 emphasis 560 ms; drawer, spring and outExpo easings), generated from globals.css. The host motion-token tests (4/4 pass) keep the bundled Mac editor on the same ladder. There is no link between these tokens and user-authored design motion; for example, no preset easing library is offered to designers.",
+   "where": [
+    "src/lib/design/tokens.generated.ts:10-31",
+    "tests/design-host-motion-tokens.test.ts"
+   ]
+  },
+  {
+   "observation": "Code activity: the core files in this area (operations, render, export, layout) were last changed on 2026-08-15 in bulk 'accumulated work' commits. The Sept 2026 work (the liquid-glass branch and the Chat merge) has not touched the design library. On mac/liquid-glass-chat only the header and digest of tokens.generated.ts differ.",
+   "where": [
+    "git log -- src/lib/design (8720ffbd 2026-08-15)",
+    "git diff main mac/liquid-glass-chat -- src/lib/design"
+   ]
+  }
+ ],
+ "defects": [
+  {
+   "id": "web-design-model-1",
+   "title": "SVG/PDF/HTML exports 500 when the design or layer name has any character above U+00FF",
+   "severity": "high",
+   "file": "src/app/api/design/[artifactId]/export/route.ts",
+   "line": 177,
+   "evidence": "download() puts `filename=\"${fileName}\"` into the Content-Disposition header (lines 173-182). safeFileName keeps non-ASCII characters (export.ts:57-60). The PDF path also puts JSON.stringify(unsupported), which contains layer names, into the X-Juno-Export-Notes header (line 213). Verified in Node: `new Response('x',{headers:{'Content-Disposition':'attachment; filename=\"\u30db\u30fc\u30e0\u753b\u9762.svg\"'}})` throws 'Cannot convert argument to a ByteString'. The same happens for 'Launch \ud83d\ude80' and for '\u30ab\u30fc\u30c9' in the notes header. The throw happens inside the try block and becomes a generic 500 (lines 241-249).",
+   "failure_scenario": "A design titled \"Tom\u2019s app\" (curly apostrophe U+2019), \"Onboarding \u2014 v2\" or \"\u30db\u30fc\u30e0\" is exported as SVG, PDF or HTML and returns 500 \"Export failed. Please try again.\" every time. Exporting one layer named \"Button \ud83d\udc4d\" as SVG fails the same way. A PDF export of a Latin-titled design fails too if any rounded or effected layer has a CJK or emoji name, because that name goes into the notes header."
+  },
+  {
+   "id": "web-design-model-2",
+   "title": "The renderer does not pass container opacity, rotation, blend mode or layer filters to children, so canvas and code exports disagree",
+   "severity": "high",
+   "file": "src/lib/design/render.ts",
+   "line": 1028,
+   "evidence": "opacityAttr, rotateAttr, blendAttr and filterAttr are attached only to the container's own shape markup via `common` (lines 859-866, 935). Children are rendered afterwards as separate chunks with no wrapping group (lines 1024-1031). Line 814 returns early only when opacity === 0. In the HTML export, children are nested inside the parent div (export.ts:1134-1141), so they do inherit. Probe: a frame with opacity 0.5 and rotation 30 renders its child as `<rect x=\"10\" ... fill=\"rgba(140,153,242,1)\"/>` with no group opacity, while the HTML nests the child inside the parent.",
+   "failure_scenario": "A designer fades a card to 50% or tilts it 8\u00b0. On the canvas, in SVG/PNG export and in the AI preview, the card background fades or tilts but its text and icons stay fully opaque and upright. In HTML, React and SwiftUI the whole card fades or tilts. A layer blur on a frame blurs only the frame's fill, not its contents. At opacity 0.01 the contents are fully visible; at 0 they vanish."
+  },
+  {
+   "id": "web-design-model-3",
+   "title": "Compact-form 'image' nodes always fail, and the chat design artifact is silently dropped",
+   "severity": "high",
+   "file": "src/lib/design/authoring.ts",
+   "line": 47,
+   "evidence": "The authored schema allows type 'image' (line 47), but patchFor never sets assetId (lines 107-151). createNode for an image calls requireAsset(doc, '') and throws 'An image layer needs a picture' (operations.ts:711, 571-576). The chat prompt lists image as a node type (system-prompt.ts:285). artifacts-store.ts:16-24 then drops the artifact and only logs it. Probe: normalizeDesignArtifact of a frame containing an image child throws.",
+   "failure_scenario": "A user asks the chat to 'design a landing hero with a product photo placeholder'. The model follows the documented form and includes {\"type\":\"image\"}. The whole design fails validation, no artifact is stored or shown, and the user sees nothing (or a verification refusal)."
+  },
+  {
+   "id": "web-design-model-4",
+   "title": "coalesceOperations drops earlier partial typography patches, so text edits are lost",
+   "severity": "medium",
+   "file": "src/lib/design/operations.ts",
+   "line": 448,
+   "evidence": "An earlier updateNode is dropped when its keys are a subset of a later one's (line 448), on the assumption that patches assign whole fields (lines 416-425). But typography merges (lines 757-759), and the inspector sends partial typography (inspector-panel.tsx:910). The client calls coalesceOperations on every queued batch (use-design-document.ts:241). Probe: [{typography:{fontSize:40}}, {typography:{fontWeight:800}}] applied in full gives 40/800; after coalescing it gives 16/800.",
+   "failure_scenario": "While one save is in flight, the user sets Size to 40 and then Weight to Bold on a heading, so both land in the same queued batch. The server stores only the weight. When the queue drains, the client adopts the server copy (use-design-document.ts:275-280) and the size visibly snaps back to 16. The same happens with Family followed by Size, or line-height unit followed by Size."
+  },
+  {
+   "id": "web-design-model-5",
+   "title": "Horizontal auto layout: a widthMode 'fill' child is measured at the full row width and overflows its siblings",
+   "severity": "medium",
+   "file": "src/lib/design/layout.ts",
+   "line": 335,
+   "evidence": "arrangeIntoRows measures each child with available width = contentWidth (lines 335-339). measureNode returns available.width for a fill child (lines 251-256). naturalWidth then counts the full width, free space clamps to 0, and the fill child keeps contentWidth (lines 505-514). Probe: a 400-wide row with a 100-wide child and a fill child gives the fill child x=110, width=400, so it ends at 510.",
+   "failure_scenario": "A nav bar or toolbar where one element should 'fill' (a search field between a logo and buttons) renders the fill element at the whole bar width. It overflows off the right edge and pushes later siblings out of the frame. Exports share the same layout, so they carry the same overflow."
+  },
+  {
+   "id": "web-design-model-6",
+   "title": "Horizontal auto layout: cross-axis fill/stretch uses the row height, not the container's inner height",
+   "severity": "medium",
+   "file": "src/lib/design/layout.ts",
+   "line": 516,
+   "evidence": "Line 515 sets stretch = alignSelf 'stretch' or heightMode 'fill', and line 516 then uses childHeight = rowHeight. rowHeight is the tallest measured sibling, and a fill child is measured at height 0 (line 338). Probe: in a 400\u00d750 row, children with heightMode fill or alignSelf stretch come out 20 tall (the sibling's height), not 50. The vertical direction handles the same case correctly (line 496).",
+   "failure_scenario": "A 56-tall toolbar with a 'fill container' divider or button renders them at the height of the tallest other child. The designer sees short elements where Figma would fill the bar."
+  },
+  {
+   "id": "web-design-model-7",
+   "title": "Grid auto layout has no column tracks, so columns misalign across rows",
+   "severity": "medium",
+   "file": "src/lib/design/layout.ts",
+   "line": 348,
+   "evidence": "Grid rows are sliced by column count (lines 348-355) and then placed by the horizontal branch, which advances x by each child's own width (lines 512-520). Hug width assumes widest \u00d7 columns (lines 309-313). Probe: a 2-column grid with widths [100,50],[30,50] puts the column-2 x at 110 in row 1 and 40 in row 2.",
+   "failure_scenario": "A card grid or settings grid whose items have different intrinsic widths renders a ragged second column instead of aligned tracks. 'fill' items grow per row instead of per track."
+  },
+  {
+   "id": "web-design-model-8",
+   "title": "Undoing an instance delete restores a plain frame (component link, variant and overrides lost)",
+   "severity": "medium",
+   "file": "src/lib/design/operations.ts",
+   "line": 1609,
+   "evidence": "restorableType maps 'instance' to 'frame' (line 1609). The deleteNodes inverse re-creates the component identity only for components (lines 806-825), not for instances. The createNode schema strips componentId, variantProperties and overrides. Probe: delete an instance, then undo, and the node has type=frame and componentId=undefined.",
+   "failure_scenario": "A user deletes a button instance, presses \u2318Z, and gets a frame that is no longer an instance. Variant switching and component tracking are gone for good, and redo/undo cannot bring them back."
+  },
+  {
+   "id": "web-design-model-9",
+   "title": "Undoing a component-main delete loses its variant set and leaves its instances dangling",
+   "severity": "medium",
+   "file": "src/lib/design/operations.ts",
+   "line": 814,
+   "evidence": "The inverse re-adds createComponent and setComponentProperty (lines 814-823) but never re-adds component.variants. The definition is deleted (line 824). Probe: variants were {\"State=Default\":\"card\"} before the delete and {} after undo. Instances of the deleted component keep their componentId, so setInstanceVariant later fails with 'No component' (lines 1332-1333).",
+   "failure_scenario": "A designer deletes a main component by mistake and undoes it. Every variant mapping is gone, so the variant switcher on its instances offers nothing, and setInstanceVariant is refused."
+  },
+  {
+   "id": "web-design-model-10",
+   "title": "createVariant and setComponentProperty cannot be undone when they add something new",
+   "severity": "medium",
+   "file": "src/lib/design/operations.ts",
+   "line": 1407,
+   "evidence": "createVariant returns inverse [] when there was no previous key (lines 1407-1410). setComponentProperty returns [] when the property is new (line 1422). Probe: the transaction's inverse is exactly []. The module header promises that every operation is invertible (lines 15-16).",
+   "failure_scenario": "A user (or Juno) adds a 'Size=Large' variant or a 'Label' property and then undoes it. The undo succeeds as a no-op and the variant or property stays in the component set, visible in the variant switcher and the handoff bundle."
+  },
+  {
+   "id": "web-design-model-11",
+   "title": "Ungroup accepts frames, components and instances; undo then recreates a bare group",
+   "severity": "medium",
+   "file": "src/lib/design/operations.ts",
+   "line": 1058,
+   "evidence": "ungroupNodes only checks isContainer (line 1058), and its inverse is groupNodes, which builds a node from nodeDefaultsFor('group') (lines 1026-1037, 1076). The context menu enables Ungroup for any container (design-context-menu.tsx:145). Probe: a card frame with a fill, radius 16 and auto layout comes back from ungroup+undo as a group with 0 fills, radius 0 and no layout. Ungrouping a component root also leaves components[c].rootNodeId pointing at a deleted node.",
+   "failure_scenario": "Right-click \u2192 Ungroup on a styled card frame, then \u2318Z. The children come back inside a transparent, unclipped group with no background, corner radius, shadow or auto layout. If the frame was a component, the component definition now dangles and createInstance on it throws."
+  },
+  {
+   "id": "web-design-model-12",
+   "title": "Group orders its children by selection order instead of z-order (undo keeps the reversed order)",
+   "severity": "low",
+   "file": "src/lib/design/operations.ts",
+   "line": 1041,
+   "evidence": "Members are attached to the group in operation.nodeIds order (lines 1012, 1041-1047), and callers pass the selection as-is (design-editor.tsx:441, design-context-menu.tsx:261). Probe: grouping [button, title] from [title, email, button] gives group children [button, title], so title is now in front of button. The inverse ungroup restores that new order.",
+   "failure_scenario": "Shift-click the top layer, then the bottom one, and press \u2318G. Their stacking flips, so a background can end up in front of the text it sat behind."
+  },
+  {
+   "id": "web-design-model-13",
+   "title": "The selection-scope check misses document-wide changes and any edit to an ancestor",
+   "severity": "medium",
+   "file": "src/lib/design/operations.ts",
+   "line": 1682,
+   "evidence": "transactionIsScopedTo only looks at touchedNodeIds, and it counts every ancestor of the selection as allowed (lines 1687-1696). setVariableMode, renameDocument, setPageBackground, createPage, createVariable and deleteAnimation touch no node. The prompt tells the model that anything touched outside the selection is 'rejected automatically' (ai.ts:341). Probe: scoped to ['button'], a transaction with setVariableMode dark + renameDocument + setPageBackground red + createPage + updateNode(screen fills and width 1000) returns {ok:true}.",
+   "failure_scenario": "The user selects one button and asks Juno to 'make this pop'. The proposal switches the whole theme to Dark, recolours the page and resizes the screen frame, and passes the 'only your selection changes' guarantee shown in the review UI."
+  },
+  {
+   "id": "web-design-model-14",
+   "title": "Without a selection, the AI edit sees only top-level frames and cannot address inner nodes",
+   "severity": "medium",
+   "file": "src/lib/design/selection-context.ts",
+   "line": 327,
+   "evidence": "buildDocumentSummary lists only page.children (lines 335-342). With no selection the prompt says 'CURRENT SELECTION: none' (ai.ts:377-390), and the model is told 'Never invent an id for an existing node' (ai.ts:356). The edit route builds selection context only when scoped (edit/route.ts:150-155). Ask Juno allows unscoped requests (ask-juno-bar.tsx:68-86).",
+   "failure_scenario": "The user asks 'change the headline to \"Welcome\" and make the CTA green' with nothing selected. Juno has no ids for the headline or CTA, so it either returns a note or refusal, or re-creates nodes elsewhere. The request still costs a metered message."
+  },
+  {
+   "id": "web-design-model-15",
+   "title": "The AI prompt's createAsset contract contradicts the schema",
+   "severity": "medium",
+   "file": "src/lib/design/ai.ts",
+   "line": 298,
+   "evidence": "The vocabulary advertises `{\"asset\":{\"id\":\"<optional>\",\"name\":\"<name>\",\"url\":...,\"width\",\"height\"}}`. assetSchema requires id, kind:'image' and mimeType, and has no name field (schema.ts:544-557).",
+   "failure_scenario": "A model that follows the contract literally (omitting id, kind and mimeType) produces a proposal that parseDesignProposal refuses as a whole: 'Juno returned an unusable design operation (operations.N.asset.id: Required)'. Every other operation in that proposal is lost too."
+  },
+  {
+   "id": "web-design-model-16",
+   "title": "bindVariable does not enforce the variable type or the bindable path, which produces NaN geometry",
+   "severity": "medium",
+   "file": "src/lib/design/operations.ts",
+   "line": 1465,
+   "evidence": "bindVariable only checks that the variable exists (lines 1466-1469). isBindable and bindablePaths are never called anywhere (confirmed by grep), although variables.ts:113-114 says the tool layer enforces them. Probe: binding a string variable to cornerRadius renders `<path d=\"MNaN 0 HNaN VNaN HNaN VNaN Z\">`.",
+   "failure_scenario": "The AI (or the Mac bridge) binds the 'label' string variable to cornerRadius, or a colour to 'opacity'. The shape disappears from the canvas and every export, and the document still validates."
+  },
+  {
+   "id": "web-design-model-17",
+   "title": "Variables bound to width, height, x or y change nothing on screen",
+   "severity": "low",
+   "file": "src/lib/design/variables.ts",
+   "line": 125,
+   "evidence": "bindablePaths offers width, height, x and y for number variables. But layout measures the raw node values (layout.ts:250-268), and renderNode draws geometry from the layout `box`, not from the resolved node (render.ts:813-816, 956). Probe: a width bound to 300 still renders width=\"100\".",
+   "failure_scenario": "A designer creates a 'card-width' token with Compact and Wide modes and binds it. Switching modes does nothing on the canvas or in any export, though the inspector and AI context report the binding as resolved."
+  },
+  {
+   "id": "web-design-model-18",
+   "title": "Deleting a prototype target leaves dangling interactions; in the HTML prototype the click then blanks the page",
+   "severity": "medium",
+   "file": "src/lib/design/operations.ts",
+   "line": 830,
+   "evidence": "deleteNodes removes interactions only where the deleted node is the *source* (lines 829-834). A navigate, open-overlay or scroll-to target, and a set-variant instanceNodeId, are left pointing at nothing. validateHierarchy does not check interactions. The HTML runtime hides every root whose id is not the destination (export.ts:1199-1202). Probe: after deleting s2, interaction i1 still navigates to 's2' and the export emits data-navigate=\"s2\" with no unsupported note.",
+   "failure_scenario": "The user deletes 'Screen 2' and exports the prototype. Clicking the button that used to go there hides every screen and leaves a blank page. Navigating to a nested (non-root) frame does the same."
+  },
+  {
+   "id": "web-design-model-19",
+   "title": "The PDF export silently drops alpha, node opacity, text wrapping, alignment, family and weight",
+   "severity": "medium",
+   "file": "src/lib/design/export.ts",
+   "line": 249,
+   "evidence": "pdfColor uses r, g and b only (lines 249-251) and node.opacity is never used. Text is split on \\n only, uses Helvetica with no font weight, and is always drawn from the left (lines 163-175). None of this goes into `unsupported`, even though the docstring promises every loss is stated (lines 105-115). Probe: a 10% black scrim becomes `0 0 0 rg 0 0 300 200 re f` (opaque black over the frame); a long paragraph in a 100 pt box is a single Tj; unsupported = [].",
+   "failure_scenario": "A designer exports a screen that uses a translucent overlay or a 40% opacity layer. The PDF shows a solid black rectangle covering the design. Paragraph text runs off the page on one line. The export reports no problems."
+  },
+  {
+   "id": "web-design-model-20",
+   "title": "Export safety regexes match ordinary user text and block legitimate exports",
+   "severity": "medium",
+   "file": "src/app/api/design/[artifactId]/export/route.ts",
+   "line": 109,
+   "evidence": "The SVG check rejects `\\bon[a-z]+\\s*=` anywhere in the output (line 109), and the HTML check rejects `fetch(`, `XMLHttpRequest(` and `WebSocket(` anywhere (line 121). Both scan escaped user text as well as markup. Probe: a text layer 'Line one = first\\nUse fetch() here' trips both.",
+   "failure_scenario": "A developer-docs mockup containing 'fetch()' in a code sample cannot be exported to HTML (500 EXPORT_VERIFICATION_FAILED). A label such as 'one = 1', 'online = true' or 'onboarding=done' blocks SVG and PNG export of the whole page."
+  },
+  {
+   "id": "web-design-model-21",
+   "title": "The generic artifact POST bypasses design validation, and canvas History restore rewinds `revision`",
+   "severity": "medium",
+   "file": "src/app/api/artifacts/[id]/route.ts",
+   "line": 40,
+   "evidence": "POST /api/artifacts/[id] accepts any content up to 200,000 characters for any artifact type, with no DESIGN check (lines 7-16, 40-76). The canvas panel's History restore uses it for designs too (canvas-panel.tsx:420-446, 1093-1096). That contradicts transactions/route.ts:20-24 ('This is the only write path') and types.ts:772-774 (revision is monotonic).",
+   "failure_scenario": "A user restores v3 of a design that is at revision 40 from the canvas History. The stored document is the old JSON with its old revision (for example 9), so the revision goes backwards. An open Mac or web editor at revision 40 then gets a conflict and rolls back, losing its undo stack. A client posting malformed JSON makes the design unreadable (422 on every read) until another restore."
+  },
+  {
+   "id": "web-design-model-22",
+   "title": "Every design request loads the full content of every stored version",
+   "severity": "medium",
+   "file": "src/lib/design/store.ts",
+   "line": 36,
+   "evidence": "loadOwnedDesignArtifact uses `include: { versions: { orderBy } }`, which fetches every body of up to 200,000 characters (lines 34-37). appendVersion and rewriteVersion include them all again in their results (lines 163-166, 193-196). Only the current row, plus version metadata for the response, is actually needed. Continuous editing makes a new checkpoint at least every 30 s (operations.ts:511, 529-539).",
+   "failure_scenario": "After an hour of editing a 150 KB design (about 120 checkpoints), every save batch reads roughly 18 MB from Postgres twice, and so does every Ask Juno and export call. Latency and database load grow with the length of the history."
+  },
+  {
+   "id": "web-design-model-23",
+   "title": "Protocol-relative asset URLs pass the 'app-relative' rule and load third-party images",
+   "severity": "medium",
+   "file": "src/lib/design/schema.ts",
+   "line": 553,
+   "evidence": "The refine accepts any URL starting with '/' (line 553), so `//tracker.example/p.png` and `/\\tracker.example/p.png` both pass (probe: true). The CSP img-src allows https: (src/lib/csp.ts:39). The rule's own comment says the aim is to prevent 'a callback into a third-party origin' (lines 547-549). Export rejects such URLs (export/route.ts:86), but the canvas and the AI preview render them.",
+   "failure_scenario": "A prompt-injected or malicious Ask Juno proposal adds createAsset {url:'//attacker.example/pixel.png?u=\u2026'}. The pending preview draws it before the user accepts, which pings the attacker's server. Once accepted, every open of the design does the same, including in the Mac and iPhone web views."
+  },
+  {
+   "id": "web-design-model-24",
+   "title": "The SwiftUI export silently drops strokes, typeface, tracking, leading, alignment, italic, clipping and blend mode",
+   "severity": "low",
+   "file": "src/lib/design/export.ts",
+   "line": 1466,
+   "evidence": "exportSwiftUI (lines 1347-1644) has no code for strokes, fontFamily, letterSpacing, lineHeight, textAlign, italic, clipsContent or blendMode (grep of that range). The text font is always .system(size:weight:) (line 1467). Probe: a frame with a 2 pt red stroke and centred Georgia text exports with no stroke and no Georgia, and unsupported = []. The module promises 'Stated, never dropped' (line 1726).",
+   "failure_scenario": "A handoff to Juno Code builds a SwiftUI screen whose bordered inputs have no borders and whose serif, centred headings come out as left-aligned SF. Nothing in the bundle mentions it."
+  },
+  {
+   "id": "web-design-model-25",
+   "title": "HTML/React exports collapse line breaks and let borders inflate element size",
+   "severity": "low",
+   "file": "src/lib/design/export.ts",
+   "line": 578,
+   "evidence": "Text is emitted as escaped characters with no white-space rule (lines 1125 and 1276; no white-space anywhere in export.ts), while SVG draws \\n as separate lines (render.ts:1001). Strokes become `border` with no box-sizing (lines 577-578, 1150), so a 200-wide frame with a 2 pt stroke is 204 wide and its children shift by 2 pt. Stroke align, dash and gradient strokes are ignored without a note. Blend mode and text verticalAlign are never emitted.",
+   "failure_scenario": "A multi-line address block renders as a single line in the prototype. Bordered cards come out 2\u00d7weight larger than designed, with content nudged inward. Middle-aligned button labels sit at the top."
+  },
+  {
+   "id": "web-design-model-26",
+   "title": "React/SwiftUI symbol mappings for nested layers all point to the component's last line",
+   "severity": "low",
+   "file": "src/lib/design/export.ts",
+   "line": 1324,
+   "evidence": "Descendant mappings use `line: lines.length` after the closing brace and blank line have been pushed (lines 1318-1325 and 1625-1632). Probe: node 't' maps to line 11 of an 11-line file. The only test checks the root mapping (tests/design-export.test.ts:413-426).",
+   "failure_scenario": "Juno Code uses findSymbol to make a targeted edit ('make the sign-in button taller'). It opens the generated file at a blank line after the component instead of the element, which defeats the handoff's stated purpose (lines 357-363)."
+  },
+  {
+   "id": "web-design-model-27",
+   "title": "Chat-authored full documents with a newer schemaVersion are stored but can never be opened",
+   "severity": "low",
+   "file": "src/lib/design/authoring.ts",
+   "line": 223,
+   "evidence": "normalizeDesignArtifact passes any schemaVersion > 0 to parseDesignDocument (lines 223-225), which accepts versions up to 1000 (schema.ts:564). Reading goes through migrateDesignDocument, which refuses anything above v1 (migrations.ts:65-69). Probe: normalise with schemaVersion 2 succeeds; opening it throws 'written by a newer version'.",
+   "failure_scenario": "A model that writes a full document with \"schemaVersion\": 2 gets it stored. Every open, edit and export then returns 422, and the user sees the artifact but can never open it."
+  },
+  {
+   "id": "web-design-model-28",
+   "title": "One bad asset blocks every export format, including the JSON backup",
+   "severity": "low",
+   "file": "src/app/api/design/[artifactId]/export/route.ts",
+   "line": 162,
+   "evidence": "validateDesignAssets checks every asset in the document (lines 66-102) and runs before the format switch (lines 162-163). It also runs for json, tokens and handoff, which do not draw anything, and for page or layer exports that never use the asset.",
+   "failure_scenario": "One Library image referenced by an unused asset entry is deleted. From then on the user cannot export anything, including the .juno.design.json backup of the document or the tokens file (422 MISSING_ASSET)."
+  },
+  {
+   "id": "web-design-model-29",
+   "title": "PDF export notes header is truncated mid-JSON, causing an error toast after a successful download",
+   "severity": "low",
+   "file": "src/app/api/design/[artifactId]/export/route.ts",
+   "line": 213,
+   "evidence": "`JSON.stringify(result.unsupported).slice(0, 2_000)` can cut the string in the middle. The client runs JSON.parse on it after saving the file and shows the thrown error in a toast (design-editor.tsx:329-341).",
+   "failure_scenario": "A PDF export of a rich screen with many flattened effects downloads correctly and is then followed by an error toast such as 'Unterminated string in JSON\u2026'. The user believes the export failed."
+  },
+  {
+   "id": "web-design-model-30",
+   "title": "GET ?version=N returns the latest document when version N does not exist",
+   "severity": "low",
+   "file": "src/lib/design/store.ts",
+   "line": 51,
+   "evidence": "documentFromArtifact falls back to `artifact.versions.at(-1)` when the requested version is missing (lines 48-51). The route only checks that N is an integer \u2265 1 (route.ts:24-28).",
+   "failure_scenario": "The history viewer asks for a version that has been folded or no longer exists. It shows the current document labelled as the old version, and a restore from it restores nothing."
+  },
+  {
+   "id": "web-design-model-31",
+   "title": "Shift-Cmd-G does not ungroup a single selected group",
+   "severity": "low",
+   "file": "src/components/design/design-editor.tsx",
+   "line": 439,
+   "evidence": "`if (selection.length < 2) return;` runs before the shift check (lines 437-442), so the Ungroup shortcut needs at least two selected layers. This is in the editor, outside the lib, but it controls the ungroup operation.",
+   "failure_scenario": "The user selects one group and presses \u21e7\u2318G (the shortcut shown in the context menu at design-context-menu.tsx:270), and nothing happens. Only the context menu works."
+  }
+ ],
+ "gaps": [
+  {
+   "title": "Component propagation and overrides",
+   "description": "Instances are copies made at creation. Edits to the main component never reach them. `overrides` and ComponentProperty target fields are stored but nothing reads them, and there is no instance reset, detach or swap-instance operation.",
+   "why": "Figma's core system: without it, a design system cannot be maintained, and a 'Design System' typed artifact would be static snapshots."
+  },
+  {
+   "title": "Comment write path and threads",
+   "description": "DesignComment exists (types.ts:738-752), but no operation creates, replies to, resolves or deletes a comment. There is no author identity beyond an id string, and no mentions or notifications.",
+   "why": "The Claude-style merged surface depends on commenting on artifacts, including from a phone, and on sending a comment to the AI as an edit request (the commentId plumbing already exists)."
+  },
+  {
+   "title": "Multiplayer, presence and a shared link",
+   "description": "Designs are single-writer with optimistic revisions; a conflict rolls the other writer back. There is no presence, no CRDT or operation transform for the scene (crdt.ts is text-only and unused), and no share or public read route under /api/design. Ownership is conversation-owner-only (store.ts:33-39).",
+   "why": "Figma is multiplayer. The Claude merge target is 'one shareable link, editable on phone, with comments'."
+  },
+  {
+   "title": "AI with vision, retrieval and larger edits",
+   "description": "No rendered image is sent (includeImage:false). There is no tool loop, although DESIGN_TOOLS advertises inspect and render. Unscoped requests get no node tree. The limits are 60 operations and 8k output tokens with no streaming. The compact form cannot express effects, gradients, components, variables or interactions, so the chat cannot iterate on a design without re-authoring it and losing editor state.",
+   "why": "Claude Design refines through conversation, inline comments and direct edits over the whole canvas. Juno's AI can only make small edits to a selection it cannot see."
+  },
+  {
+   "title": "Importers (Figma, SVG, HTML \u2192 scene)",
+   "description": "There is no importer of any kind. HTML/REACT/SVG artifacts cannot become an editable DESIGN, and a Figma file cannot be brought in or pushed out.",
+   "why": "Merging Artifacts and Design into one surface needs a path from the chat's HTML artifacts to an editable canvas, which is what Claude Design's HTML artboards provide."
+  },
+  {
+   "title": "Responsive, structural code export",
+   "description": "HTML, React and SwiftUI are all absolutely positioned (export.ts:505-516, 1639-1641). Auto layout is not mapped to flexbox, grid or stacks, and variables are not mapped to CSS custom properties.",
+   "why": "The design-to-code handoff produces throwaway code. Claude Design and Figma Dev Mode produce structured, token-bound output."
+  },
+  {
+   "title": "Asset store and document scale",
+   "description": "Images are inlined as data URLs of 96 KB or less, inside a 200,000-character document (about 300\u2013400 nodes). There is no external asset store, no image crop or filters, and no fonts as assets.",
+   "why": "Blocks real product screens, multi-screen flows, and 'Slides' or 'Docs' as design-backed typed artifacts."
+  },
+  {
+   "title": "Rich text and real font metrics",
+   "description": "There is one style per text node, no text styles, and textCase is not implemented. Measurement uses Helvetica/Times tables, so Inter or any display face wraps differently from how it is drawn.",
+   "why": "Typography fidelity is the first thing designers notice. Figma has styled text ranges and real font metrics."
+  },
+  {
+   "title": "Vector, masks, boolean operations, sections, layout grids",
+   "description": "path is a raw `d` string with no vector network or pen-tool model. There are no masks, boolean operations, polygon/star/arrow primitives, sections or layout grids.",
+   "why": "These are basic Figma primitives, and illustration and icon work depends on them."
+  },
+  {
+   "title": "Cross-document design system and code-token sync",
+   "description": "Variables and components live inside each document. Tokens only export, and nothing imports from code. tokens.generated.ts holds Juno's own UI tokens, not the user's.",
+   "why": "Claude Design builds a design system from your codebase and applies it automatically, and the merged product has a 'Design System' artifact type."
+  },
+  {
+   "title": "Export breadth",
+   "description": "No JPG or WebP, no scale options beyond the fixed 2x PNG, no multi-page PDF, no PPTX, no Figma or Canva export, no video or GIF of motion.",
+   "why": "Figma export settings and Claude Design exports (PDF, PPTX, Canva, HTML) set the baseline users expect."
+  },
+  {
+   "title": "Tests for the store and API routes",
+   "description": "commitTransaction (checkpoint folding, compare-and-swap, 413, 409), the export route (headers, verifiers, isolateLayer, asset validation) and the edit route have no behavioural tests. Only a source-scan test references the edit route (tests/account-security.test.ts:334).",
+   "why": "Defects 1, 20, 22, 28 and 29 all live in untested route code."
+  }
+ ],
+ "debt": [
+  {
+   "title": "Dead or unused model fields and helpers",
+   "description": "Unused fields: Paint.boundVariable (types.ts:54, schema.ts:43), Typography.textCase, InstanceNode.overrides, ComponentProperty.targetNodeId/targetField, and DESIGN_TOOLS (ai.ts:256). Unused exports: makeIdFactory, defaultNodeName (document.ts:136-164), baseNodeDefaults (schema.ts:712), advanceWidth (layout.ts:147), resolveCollection (variables.ts:69). The dead `inFlow` variable is at export.ts:505-506.",
+   "where": [
+    "src/lib/design/types.ts:54",
+    "src/lib/design/ai.ts:256-270",
+    "src/lib/design/document.ts:136-164",
+    "src/lib/design/schema.ts:712-736",
+    "src/lib/design/export.ts:505-506"
+   ]
+  },
+  {
+   "title": "Duplicated defaults and id minters",
+   "description": "Node defaults are defined twice (schema.ts:712-736 and operations.ts:629-684). The djb2 id minter is copied in operations.ts:544-549 and authoring.ts:93-98, next to a third, unused one in document.ts. These can drift.",
+   "where": [
+    "src/lib/design/operations.ts:544-549",
+    "src/lib/design/authoring.ts:93-98",
+    "src/lib/design/schema.ts:712"
+   ]
+  },
+  {
+   "title": "No referential-integrity validation",
+   "description": "validateHierarchy checks only the tree. It does not check component rootNodeId or variant node ids, an instance's componentId, interaction targets, animation track nodes, image assetIds, or roots with a null parent that are on no page. Operations (delete, ungroup, deleteComponent) can leave dangling references, and they persist.",
+   "where": [
+    "src/lib/design/schema.ts:598-657"
+   ]
+  },
+  {
+   "title": "Two binding systems and non-geometric binding resolution",
+   "description": "node.boundVariables (by path) and Paint.boundVariable both exist. Bindings are applied after layout, so geometry bindings cannot work without restructuring layout to resolve variables first.",
+   "where": [
+    "src/lib/design/variables.ts:85-111",
+    "src/lib/design/render.ts:813-817"
+   ]
+  },
+  {
+   "title": "Absolute-positioned code generation",
+   "description": "All three code targets bypass auto layout 'to avoid a second engine'. Adding responsive output later means a second code generator, not a small change.",
+   "where": [
+    "src/lib/design/export.ts:505-516"
+   ]
+  },
+  {
+   "title": "Misleading capability registry",
+   "description": "capabilities.ts lists 'Canvas CRDT Collaboration' as stable on web, macOS and iOS, but only tests import the CRDT module and Design does not use it.",
+   "where": [
+    "src/lib/capabilities.ts:49-55",
+    "src/lib/collaboration/crdt.ts"
+   ]
+  },
+  {
+   "title": "Checkpoint CAS on full content",
+   "description": "rewriteVersion's compare-and-swap is `WHERE content = <200k string>` (store.ts:185-188). A version or hash column would be cheaper and clearer. The budget is counted in UTF-16 code units but named MAX_DOCUMENT_BYTES (store.ts:63, 118).",
+   "where": [
+    "src/lib/design/store.ts:60-63",
+    "src/lib/design/store.ts:179-203"
+   ]
+  },
+  {
+   "title": "Duplicate component nodes via duplicate",
+   "description": "duplicateNodes on a main component clones it as type 'component' with the same componentId (operations.ts:849-884). The result is a second 'main' that is not registered, and nothing reconciles it.",
+   "where": [
+    "src/lib/design/operations.ts:849-884"
+   ]
+  }
+ ],
+ "strengths": [
+  "A single operation layer is the only intended way to change a document. Atomic apply-on-clone, per-operation inverses, deterministic ids and zod validation make undo, replay, AI preview and Mac/web parity work the same way (operations.ts:1-22, 354-392).",
+  "The layout engine and renderer are pure and deterministic, and they feed the canvas, exports, thumbnails and the AI context. Text measurement uses metric tables deliberately so browser and server agree (layout.ts:1-56).",
+  "The effect stack is carefully designed. Its order is chosen by the designer, and glass is one named recipe built from primitives every target has. Backdrops are emulated in SVG without the markup growing multiplicatively (render.ts:680-715, 831-845).",
+  "The exporters are honest about loss: CSS, SwiftUI and PDF record what they cannot express in `unsupported`. The HTML runtime is inert, uses generated animation tokens, and honours reduced motion (export.ts:1154-1159, 1173-1235).",
+  "Security posture: user text is escaped everywhere, prototype URLs are http(s) only, assets are restricted to same-origin or data URLs (apart from the protocol-relative hole), export outputs are verified, and AI edits are preview-then-accept with a scope check.",
+  "AI metering is done properly: budget check, message consumption, spend ledger, refund on refusal, rate limit, and the chat's own model with a fallback (edit/route.ts:164-246).",
+  "Persistence is robust: compare-and-swap checkpoint folding, 409s carrying the current document, the unique-version race handled, and an honest client rollback (store.ts:89-203).",
+  "'Adjustments' (AI-proposed sliders, colour wells and segmented controls bound to validated properties) already match Claude Design's generated tweaks (ai.ts:40-76).",
+  "The handoff bundle to Juno Code carries structure: document, tokens, component metadata, interaction graph, animation spec, reference renders and node-to-symbol mappings (export.ts:1684-1836).",
+  "Tests are thorough and green: 14 files, 277 tests, 0 failures. A generated JSON Schema contract keeps the Swift Codable mirror honest."
+ ],
+ "merge_relevance": "ENABLERS (read):\n1. DESIGN is already an ordinary Artifact type with versions, history, library and ownership (prisma ArtifactType; store.ts:1-12). At the storage layer, 'Design as a typed artifact next to HTML/Markdown' already exists, much as Claude made Design, Docs, Slides and Design System typed artifacts.\n2. The operation vocabulary and the <juno:design-ops> contract are provider-neutral and schema-validated (ai.ts:1-15, 272-299). They can become the in-conversation tool for the chat model with little change. Preview-then-accept plus undo already gives the 'Claude edits your artifact in the chat' loop.\n3. Render and layout are pure and server-safe. Share-link previews, thumbnails in chat bubbles and a read-only phone view can all come from renderPageSvg without the editor.\n4. Adjustments match Claude Design 'tweaks', and the handoff bundle matches Claude Design \u2192 Claude Code handoff.\n5. The Swift JSON Schema contract and the bundled React editor mean phone and Mac editing need no second model.\n\nBLOCKERS:\n1. The chat can only create or replace a design through the compact form (system-prompt.ts:269-291; artifacts-store.ts). A follow-up turn that edits the design re-expands it from scratch and wipes effects, components, variables, interactions and animations. Images always fail (defect 3). A merged surface needs the chat turn to emit design-ops against the current revision, with the full node tree and a rendered image in context.\n2. There is no HTML or REACT \u2192 DesignDocument import. Chat artifacts (HTML) and Design (scene graph) are two unrelated representations. One surface needs either an importer or HTML artboards as a node type, as Claude Design does.\n3. Scale limits: 200,000 characters, about 300\u2013400 nodes, and one image of 96 KB or less. These rule out Slides, multi-screen flows and Docs-like artifacts on the design model.\n4. Comments have no write path, there is no share route, ownership is conversation-owner-only, and there is no multiplayer. Those block 'one shareable link, editable on phone, with comments'.\n5. The generic /api/artifacts POST writes DESIGN bodies without validation (defect 21). A merged artifact API must send DESIGN writes through commitTransaction.\n6. Variables and components are per-document, so a 'Design System' artifact type would need a cross-document library and token import from code.\n7. The export 500 on non-Latin names (defect 1) and the canvas/export disagreement (defect 2) would surface immediately on shared links and phone views.\n\nRecommended sequencing:\n1. Fix defects 1, 2, 3 and 4.\n2. Expose design-ops as a chat tool, with vision and whole-tree retrieval.\n3. Add comment operations and a read-only share route that renders SVG.\n4. Move assets out of the document body.\n5. Build HTML\u2192scene import, or an HTML artboard node, so every visual artifact can open in the design surface.",
+ "tests": "I ran every design test file with `npx tsx --test tests/<name>.test.ts`. All passed: design-operations 24/24, design-layout 17/17, design-editing 18/18, design-authoring 12/12, design-ai 16/16, design-effects 38/38, design-motion-export 11/11, design-host-bridge 6/6, design-host-motion-tokens 4/4, design-export 34/34, design-schema 18/18, design-motion 33/33, design-panels 8/8, design-canvas-interaction 28/28. That is 277 of 277.\n\nWhere the coverage is missing:\n- No test covers commitTransaction or the transactions, edit, export or create routes. tests/account-security.test.ts:334 only scans the edit route's source.\n- No authoring test for image nodes.\n- No layout test for horizontal fill, cross-axis fill, or grid column alignment.\n- No coalescing test for partial typography patches.\n- No undo tests for deleting an instance, deleting a component with variants, createVariant, or ungrouping a frame.\n- No renderer test for container opacity or rotation reaching children.\n- No export test for non-ASCII names or headers, and none for false positives in the export verifiers.\n- The React/SwiftUI mapping-line test checks only roots (design-export.test.ts:413-426).\n\nI also wrote read-only probe scripts in the scratchpad (audit/probe1.mts to probe5.mts) that import the repo's own modules. They reproduced defects 2\u201312, 13, 16\u201320, 23\u201327 and 1 (the Node ByteString check). Nothing in the repo was modified.",
+ "open_questions": [
+  "Does the Mac host (DesktopDesignEditorHost.swift) or the chat model ever store /api/files/\u2026 asset URLs in a design? No web code produces them. If some path does, SVG and PNG exports would reference URLs that do not resolve outside the app (the blob-rasterised PNG cannot load them), and the SVG verifier would not catch it.",
+  "How does the Mac bridge transport react when the revision goes backwards after a generic History restore (defect 21)? Does it keep its own revision cache?",
+  "When a conversation continues, is the full DESIGN JSON (up to 200,000 characters) fed back into the chat model's context? If so, what is the token cost, and does the model then try to re-emit a full document, which the prompt forbids?",
+  "Is the transactions endpoint meant to allow edits from users whose plan lacks `canvas`? Create and edit check PLANS[plan].canvas, but POST /transactions does not.",
+  "Does the pending AI preview load external images (defect 23) in the Mac WKWebView as well, or does the host's content policy block them?",
+  "acceptPending re-applies the AI transaction under a new id (use-design-document.ts:446), so the ids of newly created nodes differ from the preview's. Does any adjustment or selection returned by the model rely on preview-minted ids?",
+  "The schema allows `crossGap` on vertical layouts, where it replaces `gap` as the main-axis spacing (layout.ts:484-487). Is that intended, and does the CSS path agree? (The HTML export does not use flex, so this is currently moot for exports.)"
+ ]
+}

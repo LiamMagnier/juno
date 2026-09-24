@@ -1,38 +1,29 @@
-import { notFound } from "next/navigation";
-import { requireUser } from "@/lib/session";
-import { loadOwnedDesignArtifact } from "@/lib/design/store";
-import { DesignWorkspace } from "@/components/design/design-workspace";
+import { redirect } from "next/navigation";
+import { artifactPath } from "@/lib/artifact-links";
 
 /**
- * One design, in its own window.
+ * `/design/{id}` — one design, now at its own address.
  *
- * The document is read here rather than fetched by the editor for the same
- * reason the chat thread is: the page either has the design or it is a 404, and
- * a route that renders an empty editor and then discovers the artifact does not
- * exist has already told the user something false.
+ * `/a/{id}` is the one link an artifact has (04-MERGE-PLAN.md §5.1), and for a
+ * design it draws the same editor this page drew. This stays as a redirect
+ * because `/design/{id}` is what every design link handed out until now says:
+ * the old Design list, `POST /api/design`'s `url`, and anything somebody
+ * pasted into a message.
  *
- * `loadOwnedDesignArtifact` is the same ownership join every design route uses
- * (artifact → conversation → user), so this page is exactly as private as the
- * conversation the design was made in. A document this build cannot parse is not
- * a 404 — the editor says so itself, with the migration's own reason.
+ * No read and no ownership check here, on purpose. `/a/{id}` makes both, and
+ * doing them twice would mean two places that decide whether a stranger gets a
+ * 404 — the one that answers is the one that draws the page. The id is not
+ * checked for being a design either: `/a/{id}` draws any type, so an old link
+ * that happened to name a page still opens that page.
+ *
+ * 307, not 308, while the merge rolls out (§5.3): a permanent redirect would be
+ * cached by every browser that followed it, and could not be taken back.
  */
-export default async function DesignArtifactPage({ params }: { params: Promise<{ artifactId: string }> }) {
-  const user = await requireUser();
+export default async function DesignArtifactRedirect({
+  params,
+}: {
+  params: Promise<{ artifactId: string }>;
+}): Promise<never> {
   const { artifactId } = await params;
-
-  const artifact = await loadOwnedDesignArtifact(artifactId, user.id);
-  if (!artifact) notFound();
-
-  const current = artifact.versions.find((v) => v.version === artifact.currentVersion) ?? artifact.versions.at(-1);
-  if (!current) notFound();
-
-  return (
-    <DesignWorkspace
-      artifactId={artifact.id}
-      title={artifact.title}
-      version={artifact.currentVersion}
-      content={current.content}
-      conversationId={artifact.conversationId}
-    />
-  );
+  redirect(artifactPath(artifactId));
 }

@@ -15,10 +15,11 @@
  * Paint order is a flat list, not a tree of nested buffers. That is what lets a
  * background blur exist at all: a backdrop is *everything already painted*, and
  * a renderer that hands each container its own private array cannot see it. The
- * one place the tree still matters — a clipping container — splices its own run
- * back out of the flat list once its children are done, which rearranges markup
- * that has already been produced without ever hiding it from a node that was
- * painted inside the run.
+ * two places the tree still matters — a clipping container, and a layer whose
+ * opacity, rotation, blend or effects must reach its children — splice their
+ * own run back out of the flat list once it is complete, which rearranges
+ * markup that has already been produced without ever hiding it from a node that
+ * was painted inside the run.
  */
 
 import { layoutPage, layoutSubtree, lineHeightPx, measureText, wrapText, type LayoutBox, type LayoutMap } from "@/lib/design/layout";
@@ -45,6 +46,15 @@ export interface RenderOptions {
   background?: boolean;
   /** Restrict output to these ids and their descendants (used for crops). */
   onlyIds?: NodeId[];
+  /**
+   * What a whole-page render is cropped to. `"page"` (the default) is the box
+   * from the page origin to the far edge of every layer — the coordinate space
+   * the canvas and the exports have always shared. `"content"` is only what is
+   * actually drawn: visible layers, through their rotations, with the reach of
+   * their shadows and strokes. A poster uses it, because a design whose frames
+   * sit at x = 2000 is a picture of those frames, not of 2000pt of empty page.
+   */
+  fit?: "page" | "content";
 }
 
 const XML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" };
@@ -76,22 +86,119 @@ interface PaintedChunk {
   /** A copy of what is already beneath, re-emitted under a filter. Never sampled
    *  again — see `pushBackdrop`. */
   backdrop?: boolean;
+  /** How many rotated layer groups were open around this chunk when it was
+   *  painted: the coordinate frame its markup and `box` are written in. A
+   *  backdrop sampled from inside a rotated container needs it to put the copy
+   *  back where the original is — see `backdropCopy`. */
+  frame: number;
+  /** What a backdrop copies instead of `markup`, when they differ. A run that
+   *  was collapsed into one group (`collapseRun`) keeps the backdrop copies it
+   *  contains out of its sample, for the reason `backdrop` exists at all. */
+  sample?: string;
+}
+
+/** A rotation about a point, as the renderer emits it: `rotate(angle cx cy)`. */
+interface Rotation {
+  angle: number;
+  cx: number;
+  cy: number;
 }
 
 interface RenderContext {
   defs: Defs;
   /** Everything painted so far, in paint order. */
   painted: PaintedChunk[];
+  /** The rotated layer groups currently open, outermost first. */
+  rotations: Rotation[];
 }
 
 function makeContext(): RenderContext {
   let counter = 0;
   const entries: string[] = [];
-  return { defs: { entries, next: () => `jd${(counter++).toString(36)}` }, painted: [] };
+  return { defs: { entries, next: () => `jd${(counter++).toString(36)}` }, painted: [], rotations: [] };
 }
 
 function intersects(a: LayoutBox, b: LayoutBox): boolean {
   return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+function unionBoxes(boxes: readonly (LayoutBox | null)[]): LayoutBox | null {
+  let union: LayoutBox | null = null;
+  for (const box of boxes) {
+    if (!box) continue;
+    if (!union) {
+      union = { ...box };
+      continue;
+    }
+    const x = Math.min(union.x, box.x);
+    const y = Math.min(union.y, box.y);
+    union = {
+      x,
+      y,
+      width: Math.max(union.x + union.width, box.x + box.width) - x,
+      height: Math.max(union.y + union.height, box.y + box.height) - y,
+    };
+  }
+  return union;
+}
+
+function rotationValue(rotation: Rotation): string {
+  return `rotate(${num(rotation.angle)} ${num(rotation.cx)} ${num(rotation.cy)})`;
+}
+
+/** A layer's rotation about its own centre, or null when it has none. */
+function rotationOf(angle: number, box: LayoutBox): Rotation | null {
+  return angle % 360 !== 0 ? { angle, cx: box.x + box.width / 2, cy: box.y + box.height / 2 } : null;
+}
+
+/** The axis-aligned box around `box` once each rotation in `rotations` has been
+ *  applied to it, first to last — SVG's own convention (a positive angle turns
+ *  clockwise, because y grows downward). */
+function boundsThrough(box: LayoutBox, rotations: readonly Rotation[]): LayoutBox {
+  if (rotations.length === 0) return box;
+  let corners: [number, number][] = [
+    [box.x, box.y],
+    [box.x + box.width, box.y],
+    [box.x + box.width, box.y + box.height],
+    [box.x, box.y + box.height],
+  ];
+  for (const { angle, cx, cy } of rotations) {
+    const radians = (angle * Math.PI) / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    corners = corners.map(([x, y]) => [cx + (x - cx) * cos - (y - cy) * sin, cy + (x - cx) * sin + (y - cy) * cos]);
+  }
+  const xs = corners.map(([x]) => x);
+  const ys = corners.map(([, y]) => y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+}
+
+/**
+ * Lift everything painted since `from` back out of the list and put it back as
+ * one chunk, wrapped by `wrap`.
+ *
+ * The run has to be flat while it is being painted — that is what lets a glass
+ * child sample the card it sits on — and whole once it is done, so a group can
+ * clip it or carry its opacity and rotation. This is the one move that does
+ * both. The collapsed chunk is written in the frame that is open *now*, which
+ * the caller guarantees by closing its own rotation before calling.
+ */
+function collapseRun(ctx: RenderContext, from: number, wrap: (inner: string) => string, box: LayoutBox | null): void {
+  const run = ctx.painted.splice(from);
+  if (run.length === 0) return;
+  ctx.painted.push({
+    markup: wrap(run.map((chunk) => chunk.markup).join("")),
+    sample: wrap(
+      run
+        .filter((chunk) => !chunk.backdrop)
+        .map((chunk) => chunk.sample ?? chunk.markup)
+        .join("")
+    ),
+    box,
+    frame: ctx.rotations.length,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -676,6 +783,12 @@ function clipShape(node: DesignNode, box: LayoutBox): string {
  *  - The copy is stripped of `data-juno-node`. The editor hit-tests by that
  *    attribute, and a duplicated one would make the topmost element under the
  *    pointer a ghost of a layer painted somewhere else entirely.
+ *  - A copy made inside a rotated container is drawn inside that container's
+ *    rotation, but what it copies from outside the container was not. So each
+ *    such chunk is wrapped in the inverse of the rotations it sits outside of,
+ *    innermost first, and lands back exactly where the original is; the region
+ *    test is done in the chunk's own frame for the same reason. Without this, a
+ *    glass bar in a tilted phone frame would blur a tilted copy of the page.
  */
 function backdropCopy(ctx: RenderContext, box: LayoutBox, radius: number): string | null {
   const bleed = radius * 1.5 + 1;
@@ -685,10 +798,25 @@ function backdropCopy(ctx: RenderContext, box: LayoutBox, radius: number): strin
     width: box.width + bleed * 2,
     height: box.height + bleed * 2,
   };
-  // `!chunk.backdrop` is what stops backdrops compounding — see `pushBackdrop`.
-  const behind = ctx.painted.filter((chunk) => !chunk.backdrop && (!chunk.box || intersects(chunk.box, region)));
-  if (behind.length === 0) return null;
-  return behind.map((chunk) => chunk.markup).join("").replace(/ data-juno-node="[^"]*"/g, "");
+  const parts: string[] = [];
+  for (const chunk of ctx.painted) {
+    // `!chunk.backdrop` is what stops backdrops compounding — see `pushBackdrop`.
+    if (chunk.backdrop) continue;
+    // The rotations open now that were not open when this chunk was painted.
+    const between = ctx.rotations.slice(chunk.frame);
+    if (chunk.box && !intersects(chunk.box, boundsThrough(region, [...between].reverse()))) continue;
+    const markup = chunk.sample ?? chunk.markup;
+    parts.push(
+      between.length === 0
+        ? markup
+        : `<g transform="${between
+            .map((rotation) => rotationValue({ ...rotation, angle: -rotation.angle }))
+            .reverse()
+            .join(" ")}">${markup}</g>`
+    );
+  }
+  if (parts.length === 0) return null;
+  return parts.join("").replace(/ data-juno-node="[^"]*"/g, "");
 }
 
 /** A blur (and optional saturation lift) as a reusable filter def. */
@@ -822,7 +950,73 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
   const effects = resolved.effects.filter((effect) => effect.visible !== false);
   const filterId = effectFilter(effects, box, ctx.defs);
 
-  const push = (markup: string) => ctx.painted.push({ markup, box });
+  const idAttr = options.includeNodeIds ? ` data-juno-node="${escapeXml(node.id)}"` : "";
+  const opacityAttr = resolved.opacity < 1 ? ` opacity="${num(resolved.opacity)}"` : "";
+  const filterAttr = filterId ? ` filter="url(#${filterId})"` : "";
+  const blendAttr = resolved.blendMode !== "normal" ? ` style="mix-blend-mode:${resolved.blendMode}"` : "";
+  const rotation = rotationOf(resolved.rotation, box);
+  const rotateAttr = rotation ? ` transform="${rotationValue(rotation)}"` : "";
+  /** Everything that belongs to the layer as a whole rather than to its paint. */
+  const layerAttrs = `${opacityAttr}${filterAttr}${rotateAttr}${blendAttr}`;
+
+  /**
+   * Fills past the first, painted as their own silhouettes over the shape.
+   *
+   * `fills` has been an array since the first slice and this drew `fills[0]`,
+   * which made a second fill something a document could hold, an inspector could
+   * now add, and nothing could ever show. They stack **back to front** — index 0
+   * is the layer's base, matching `children` and the effect stack rather than
+   * contradicting both.
+   *
+   * Text and lines are excluded, and honestly: a glyph run has one `fill` and a
+   * line has none, so a second paint on either has nowhere to go. The exporters
+   * say the same thing in their own words.
+   */
+  const extraFills =
+    resolved.type === "text" || resolved.type === "line" ? [] : resolved.fills.slice(1).filter((paint) => paint.visible !== false);
+  const outsideStroke = !!stroke && stroke.align === "outside" && resolved.type !== "line" && resolved.type !== "text";
+
+  /**
+   * One layer, one group (X-24).
+   *
+   * Opacity, rotation, blend mode and the effect chain used to ride on the
+   * layer's own shape element and nowhere else. Children are painted after
+   * their parent as separate chunks, so none of the four ever reached them: a
+   * frame at 50% drew its contents at full strength, a rotated frame left them
+   * upright, and a group — which usually has no shape at all — applied these
+   * settings to nothing. The HTML, React and SwiftUI exports nest elements, so
+   * they did apply them, and the canvas, the SVG and PNG exports and the AI's
+   * crop all disagreed with the code the same document generates.
+   *
+   * So a layer that draws more than one element — children, stacked fills, an
+   * outside stroke, a backdrop or a glass surface — puts all of it in one group
+   * that carries those attributes once, which is what "the layer's opacity"
+   * means everywhere else: the layer is flattened first and then faded, so a
+   * child over its parent's fill does not let the fill show through it. The
+   * effect chain moves with them, in list order, and reads the layer as drawn:
+   * a layer blur blurs the contents with the card, and a shadow is cast by
+   * everything the layer paints — which is also how a frame's shadow behaves in
+   * Figma and under SwiftUI's `.shadow`. (CSS `box-shadow` casts from the box
+   * alone; for a filled card with its contents inside, the two agree.)
+   *
+   * A layer that is one element keeps the attributes on that element, exactly
+   * as before: it is the overwhelmingly common case, and the markup every
+   * existing snapshot contains. A layer with nothing to carry is not grouped at
+   * all.
+   *
+   * Opening the group's rotation *before* anything in the run is painted is
+   * what keeps backdrops honest inside it: the layer's own backdrop, and any
+   * child's, is sampled from inside the rotated frame and inverse-rotated back
+   * into place (`backdropCopy`), and its clip turns with the layer.
+   */
+  const composite =
+    (isContainer(node) && node.children.length > 0) || extraFills.length > 0 || outsideStroke || effects.some(isBackdropEffect);
+  const grouped = composite && layerAttrs !== "";
+
+  const start = ctx.painted.length;
+  if (grouped && rotation) ctx.rotations.push(rotation);
+
+  const push = (markup: string) => ctx.painted.push({ markup, box, frame: ctx.rotations.length });
 
   // Backdrop effects go down before the layer, in list order among themselves.
   // Each one samples what has been painted so far, so a glass panel over a
@@ -842,7 +1036,7 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
    * by definition a duplicate of chunks that are still in the list on their own
    * account — a later sampler sees the real content either way.
    */
-  const pushBackdrop = (markup: string) => ctx.painted.push({ markup, box, backdrop: true });
+  const pushBackdrop = (markup: string) => ctx.painted.push({ markup, box, backdrop: true, frame: ctx.rotations.length });
 
   const surfaces: string[] = [];
   for (const effect of effects) {
@@ -856,14 +1050,6 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
     }
   }
 
-  const idAttr = options.includeNodeIds ? ` data-juno-node="${escapeXml(node.id)}"` : "";
-  const opacityAttr = resolved.opacity < 1 ? ` opacity="${num(resolved.opacity)}"` : "";
-  const filterAttr = filterId ? ` filter="url(#${filterId})"` : "";
-  const blendAttr = resolved.blendMode !== "normal" ? ` style="mix-blend-mode:${resolved.blendMode}"` : "";
-  const rotateAttr =
-    resolved.rotation % 360 !== 0
-      ? ` transform="rotate(${num(resolved.rotation)} ${num(box.x + box.width / 2)} ${num(box.y + box.height / 2)})"`
-      : "";
   /**
    * Stroke alignment, which the model has always carried and the renderer never
    * honoured.
@@ -912,33 +1098,17 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
   })();
   const strokeAttrs = strokeRender.attrs;
 
-  /**
-   * Fills past the first, painted as their own silhouettes over the shape.
-   *
-   * `fills` has been an array since the first slice and this drew `fills[0]`,
-   * which made a second fill something a document could hold, an inspector could
-   * now add, and nothing could ever show. They stack **back to front** — index 0
-   * is the layer's base, matching `children` and the effect stack rather than
-   * contradicting both.
-   *
-   * Text and lines are excluded, and honestly: a glyph run has one `fill` and a
-   * line has none, so a second paint on either has nowhere to go. The exporters
-   * say the same thing in their own words.
-   */
-  const extraFills =
-    resolved.type === "text" || resolved.type === "line" ? [] : resolved.fills.slice(1).filter((paint) => paint.visible !== false);
-
-  // With extra fills the whole stack has to sit inside one group, or the effect
-  // filter would run once per fill and a single drop shadow would be cast three
-  // times. The single-fill case is left exactly as it was — that is the common
-  // one, and it is the markup the canvas hit-tests against.
-  const common = extraFills.length > 0 ? idAttr : `${idAttr}${opacityAttr}${filterAttr}${rotateAttr}${blendAttr}`;
+  // A composite layer's attributes are on its group (or it has none), so its
+  // shape carries only its id. A lone shape carries them itself.
+  const common = composite ? idAttr : `${idAttr}${layerAttrs}`;
   const pushShape = (markup: string) => {
     if (extraFills.length === 0) return push(markup);
+    // The base shape and its extra fills are one chunk, so a backdrop sampling
+    // this layer copies the whole stack or none of it.
     const layers = extraFills
       .map((paint) => silhouette(resolved, box, ` fill="${paintFill(paint, ctx.defs, doc)}"${paintOpacityAttr(paint)}`))
       .join("");
-    push(`<g${opacityAttr}${filterAttr}${rotateAttr}${blendAttr}>${markup}${layers}</g>`);
+    push(`${markup}${layers}`);
   };
 
   switch (resolved.type) {
@@ -949,7 +1119,10 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
     case "instance": {
       // Groups have no fill of their own unless one was authored. A group that
       // carries effects still needs a box to hang them on, though — a rim light
-      // with nothing to be a rim of draws nothing at all.
+      // with nothing to be a rim of draws nothing at all. Now that the filter
+      // sits on the layer's group, the unpainted box also sets the region it
+      // is measured against, so a shadow on a cluster of small icons is not
+      // cut off at the icons' own edges.
       const hasBox = resolved.type !== "group" || resolved.fills.length > 0 || !!stroke || !!filterId || surfaces.length > 0;
       if (hasBox) {
         pushShape(
@@ -968,11 +1141,21 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
         `<line x1="${num(box.x)}" y1="${num(box.y + box.height / 2)}" x2="${num(box.x + box.width)}" y2="${num(box.y + box.height / 2)}"${strokeAttrs || ' stroke="#000" stroke-width="1"'}${common}/>`
       );
       break;
-    case "path":
+    case "path": {
+      // A path is drawn in its own coordinates and moved into place by a
+      // translate on its group, so a lone rotated path has two transforms to
+      // say on one element. They go in ONE attribute, rotation outermost: the
+      // old markup wrote `transform` twice, which is not well-formed XML — an
+      // SVG export of any rotated vector refused to open, and the canvas, whose
+      // HTML parser keeps the first, silently dropped the rotation.
+      const translate = `translate(${num(box.x)} ${num(box.y)})`;
+      const transform = !composite && rotation ? `${rotationValue(rotation)} ${translate}` : translate;
+      const attrs = composite ? idAttr : `${idAttr}${opacityAttr}${filterAttr}${blendAttr}`;
       pushShape(
-        `<g transform="translate(${num(box.x)} ${num(box.y)})"${common}><path d="${escapeXml(resolved.d)}" fill="${fill}"${fillOpacity} fill-rule="${resolved.windingRule === "evenodd" ? "evenodd" : "nonzero"}"${strokeAttrs}/></g>`
+        `<g transform="${transform}"${attrs}><path d="${escapeXml(resolved.d)}" fill="${fill}"${fillOpacity} fill-rule="${resolved.windingRule === "evenodd" ? "evenodd" : "nonzero"}"${strokeAttrs}/></g>`
       );
       break;
+    }
     case "image": {
       const asset = doc.assets[resolved.assetId];
       if (asset) {
@@ -1012,37 +1195,46 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
   // An outside-aligned stroke, painted over the shape it belongs to. It cannot
   // ride on the shape element itself — the mask that keeps only its outer half
   // would take the fill with it — so it is a sibling drawn immediately after,
-  // carrying the same rotation and opacity as the layer it outlines.
-  if (strokeRender.overlay) push(`<g${rotateAttr}${opacityAttr}>${strokeRender.overlay}</g>`);
+  // inside the layer's group, which is where its rotation and opacity come from.
+  if (strokeRender.overlay) push(strokeRender.overlay);
 
   // The glass surface sits on the layer and *under* its children: a card's
-  // contents are on the glass, not behind it. It carries the node's own rotation
-  // so a tilted panel's rim light tilts with it, and no `data-juno-node`, because
-  // the layer itself is already the hit target and a second one would shadow it.
-  if (surfaces.length > 0) push(`<g${rotateAttr}${opacityAttr}>${surfaces.join("")}</g>`);
+  // contents are on the glass, not behind it. It turns and fades with the layer
+  // because it is inside the layer's group, and it carries no `data-juno-node`,
+  // because the layer itself is already the hit target and a second one would
+  // shadow it.
+  if (surfaces.length > 0) push(surfaces.join(""));
 
-  if (!isContainer(node)) return;
-
-  const clip = node.type !== "group" && node.clipsContent;
-  const start = ctx.painted.length;
-  for (const childId of node.children) {
-    const child = doc.nodes[childId];
-    if (child) renderNode(doc, child, boxes, ctx, options);
+  if (isContainer(node)) {
+    const clip = node.type !== "group" && node.clipsContent;
+    const childStart = ctx.painted.length;
+    for (const childId of node.children) {
+      const child = doc.nodes[childId];
+      if (child) renderNode(doc, child, boxes, ctx, options);
+    }
+    if (clip && ctx.painted.length > childStart) {
+      // The children are already in the flat list — which is what let any of
+      // them sample the ones before it as a backdrop. Now that the run is
+      // complete it is lifted back out and re-inserted as one clipped group,
+      // inside the layer's own group, so the clip turns with it.
+      const clipId = ctx.defs.next();
+      ctx.defs.entries.push(
+        // The clip has to agree with the shape it clips, corner for corner —
+        // otherwise a card with only its top corners rounded clips its children
+        // against a different silhouette than the one it draws.
+        `<clipPath id="${clipId}">${boxMarkup(box, resolved.cornerRadius, "", resolved.cornerSmoothing)}</clipPath>`
+      );
+      collapseRun(ctx, childStart, (inner) => `<g clip-path="url(#${clipId})">${inner}</g>`, box);
+    }
   }
-  if (!clip || ctx.painted.length === start) return;
 
-  // The children are already in the flat list — which is what let any of them
-  // sample the ones before it as a backdrop. Now that the run is complete it is
-  // lifted back out and re-inserted as one clipped group.
-  const chunk = ctx.painted.splice(start);
-  const clipId = ctx.defs.next();
-  ctx.defs.entries.push(
-    // The clip has to agree with the shape it clips, corner for corner —
-    // otherwise a card with only its top corners rounded clips its children
-    // against a different silhouette than the one it draws.
-    `<clipPath id="${clipId}">${boxMarkup(box, resolved.cornerRadius, "", resolved.cornerSmoothing)}</clipPath>`
-  );
-  ctx.painted.push({ markup: `<g clip-path="url(#${clipId})">${chunk.map((c) => c.markup).join("")}</g>`, box });
+  if (!grouped) return;
+  // Close the frame before collapsing, so the group is written in the frame
+  // around it — and its extent, which later backdrops test against, is the
+  // turned box rather than the upright one.
+  if (rotation) ctx.rotations.pop();
+  const extent = unionBoxes(ctx.painted.slice(start).map((chunk) => chunk.box));
+  collapseRun(ctx, start, (inner) => `<g${layerAttrs}>${inner}</g>`, extent && rotation ? boundsThrough(extent, [rotation]) : extent);
 }
 
 // ---------------------------------------------------------------------------
@@ -1058,6 +1250,38 @@ export interface RenderedSvg {
   y: number;
 }
 
+/**
+ * What a page draws, and nothing else: the visible layers' boxes, turned by
+ * their own rotations and every rotated container around them, and grown by
+ * how far their shadows, blurs and strokes reach. A clipping container's
+ * children stop at its edge, so the walk does not descend into them. Null when
+ * nothing on the page is visible.
+ */
+function contentExtent(doc: DesignDocument, pageId: PageId, boxes: LayoutMap): LayoutBox | null {
+  const page = doc.pages.find((p) => p.id === pageId);
+  const extents: LayoutBox[] = [];
+  const visit = (id: NodeId, outer: readonly Rotation[]) => {
+    const node = doc.nodes[id];
+    const box = node ? boxes.get(id) : undefined;
+    if (!node || !box || !node.visible || node.opacity === 0) return;
+    const resolved = applyBoundVariables(doc, node);
+    const reach = Math.max(
+      effectPadding(resolved.effects.filter((effect) => effect.visible !== false && !isBackdropEffect(effect))),
+      resolved.strokes[0]?.weight ?? 0
+    );
+    const own = rotationOf(resolved.rotation, box);
+    const frames = own ? [...outer, own] : outer;
+    const grown = { x: box.x - reach, y: box.y - reach, width: box.width + reach * 2, height: box.height + reach * 2 };
+    // Innermost rotation first: a layer turns about its own centre, and then
+    // the whole of its parent turns about the parent's.
+    extents.push(boundsThrough(grown, [...frames].reverse()));
+    if (!isContainer(node) || (node.type !== "group" && node.clipsContent)) return;
+    for (const childId of node.children) visit(childId, frames);
+  };
+  for (const rootId of page?.children ?? []) visit(rootId, []);
+  return unionBoxes(extents);
+}
+
 /** Render a whole page. */
 export function renderPageSvg(doc: DesignDocument, pageId: PageId, options: RenderOptions = {}): RenderedSvg {
   const page = doc.pages.find((p) => p.id === pageId);
@@ -1068,15 +1292,23 @@ export function renderPageSvg(doc: DesignDocument, pageId: PageId, options: Rend
   let minY = 0;
   let maxX = 0;
   let maxY = 0;
-  for (const box of boxes.values()) {
-    minX = Math.min(minX, box.x);
-    minY = Math.min(minY, box.y);
-    maxX = Math.max(maxX, box.x + box.width);
-    maxY = Math.max(maxY, box.y + box.height);
-  }
-  if (boxes.size === 0) {
-    maxX = 1200;
-    maxY = 800;
+  const content = options.fit === "content" ? contentExtent(doc, pageId, boxes) : null;
+  if (content) {
+    minX = content.x;
+    minY = content.y;
+    maxX = content.x + content.width;
+    maxY = content.y + content.height;
+  } else {
+    for (const box of boxes.values()) {
+      minX = Math.min(minX, box.x);
+      minY = Math.min(minY, box.y);
+      maxX = Math.max(maxX, box.x + box.width);
+      maxY = Math.max(maxY, box.y + box.height);
+    }
+    if (boxes.size === 0) {
+      maxX = 1200;
+      maxY = 800;
+    }
   }
 
   const width = Math.max(1, maxX - minX);
@@ -1089,6 +1321,7 @@ export function renderPageSvg(doc: DesignDocument, pageId: PageId, options: Rend
     ctx.painted.push({
       markup: `<rect x="${num(minX)}" y="${num(minY)}" width="${num(width)}" height="${num(height)}" fill="${rgbaToCss(page.backgroundColor)}"/>`,
       box: null,
+      frame: 0,
     });
   }
 

@@ -73,6 +73,9 @@ type OutputTile = {
   imageUrl?: string;
   /** Generated media, which opens in the file viewer. */
   attachment?: ClientAttachment;
+  /** A design's stored id and version: its tile is the server's picture of
+   *  its first page, never its JSON (X-20). */
+  poster?: { artifactId: string; version: number };
   sortKey: string;
 };
 
@@ -94,15 +97,19 @@ type UsedRow = {
  * are optional in `ClientMessage` because they are genuinely absent on older
  * rows and on private turns, and an absent field is "unknown", never zero —
  * see the cache-token note in types/chat.ts for the same rule stated once.
+ *
+ * Exported for tests/nav-merge.test.ts, which holds a design's tile to its
+ * poster and away from its source.
  */
-function readSession(artifacts: ClientArtifact[], messages: ClientMessage[]) {
+export function readSession(artifacts: ClientArtifact[], messages: ClientMessage[]) {
   const outputs: OutputTile[] = artifacts.map((a) => ({
     id: a.id,
     identifier: a.identifier,
     title: a.title,
     label: a.type === "CODE" && a.language ? a.language : (TYPE_LABEL[a.type] ?? "File"),
     type: a.type,
-    preview: a.content || null,
+    preview: a.type === "DESIGN" ? null : a.content || null,
+    poster: a.type === "DESIGN" ? { artifactId: a.id, version: a.currentVersion } : undefined,
     sortKey: a.updatedAt,
   }));
 
@@ -411,7 +418,18 @@ function OutputCard({ tile, onOpen, wide }: { tile: OutputTile; onOpen?: () => v
           loading="lazy"
         />
       ) : (
-        <ArtifactPreview type={tile.type} preview={tile.preview} title={tile.title} className={cn("w-full", ratio)} />
+        /* A design's tile is its poster, the same picture from the same
+           cached URL as its Artifacts tile and its chat card; ArtifactPreview
+           draws it from the id and falls back to the design glyph, never to
+           the JSON. Only a design's tile carries one. */
+        <ArtifactPreview
+          type={tile.type}
+          preview={tile.preview}
+          title={tile.title}
+          artifactId={tile.poster?.artifactId}
+          version={tile.poster?.version}
+          className={cn("w-full", ratio)}
+        />
       )}
       <p className="mt-2 truncate text-ui text-foreground">{tile.title}</p>
       <p className="truncate text-caption text-muted-foreground">{tile.label}</p>

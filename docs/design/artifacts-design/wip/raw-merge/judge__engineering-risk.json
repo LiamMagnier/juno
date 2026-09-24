@@ -1,0 +1,193 @@
+{
+ "scores": [
+  {
+   "proposal": "proposal-risk-first.md",
+   "criteria": [
+    {
+     "name": "data safety",
+     "score": 9,
+     "why": "Stops the audit's data-loss defects first. R1 ships 7243613f (X-03/X-04), X-02, X-08 and conversation-delete-to-anchor (X-22) in weeks 1-2 with no schema flip. R2 adds X-07 core and a server-side field-preserving DESIGN merge, which fixes X-14 for installed 1.6.0 Mac and iPhone builds without a native release. It adds a Postgres deletion ledger with a target of 0 unexpected deletes, and the legacy re-emit path appends to the same id. The gap: X-05/X-06 (a stale re-emit overwrites hand edits as current) stays uncontained until the AI loop in W14-W22."
+    },
+    {
+     "name": "model soundness",
+     "score": 7,
+     "why": "Ownership, head/seal, Share.versionId pins, the draft/ready status, ArtifactLink, per-user state and WorkArtifact index-plus-persisted-spec are all sound. Weaknesses: anchors are conversations that aren't conversations. The rule for flipping an anchor to a chat on the first Ask is undefined when a deleted-chat anchor holds several artifacts. Doc is MARKDOWN plus a profile with no stable block ids, so comment anchors are quote-only. Deck speaker notes depend on a node-name convention (\"Speaker notes\"). The ArtifactComment schema is left as a placeholder (/* R-040 fields */). Grantee Asks have no per-person thread."
+    },
+    {
+     "name": "migration safety",
+     "score": 9,
+     "why": "Expand, migrate, contract, with idempotent cursor-resumable backfills. canAccess runs in shadow-compare and flips only after 0 mismatches over 7 days. B3 matches holder chats to what /api/design actually writes (titleSource manual, zero messages, one DESIGN) and converts them without deleting. B5 runs the production SQL before anything depends on it. Contraction waits for the window plus 2 releases and a table snapshot. Missing: M10 contraction never mentions rewriting juno_record_account_change's 'conversation' and 'artifact' resolvers."
+    },
+    {
+     "name": "native compatibility",
+     "score": 9,
+     "why": "The only plan that derives an explicit N0 envelope from the code, and the code matches it. decodeArtifact throws on an empty conversationId or an unknown kind, decodeVersion throws on bodies over 200_000 UTF-16 units, requireEntityType throws on unknown types, and conversation kinds other than chat/code are dropped at NativeConversationStore.swift:268. Anchors mean no null conversationId ever reaches N0, profiles add no enum values, and sync is capability-projected per request. DesignDocument additions wait for bridge v2 plus opaque preservation. The window is measured from X-Juno-Client headers and gates only contraction. Weakness: 'omit' is not specified as tombstones or consistent filtering across the changes feed, the entity index and /entities."
+    },
+    {
+     "name": "security/governance",
+     "score": 9,
+     "why": "X-01 is split correctly. X-01a puts owner-only previews on a separate registrable origin with a signed token of 5 minutes or less and connect-src 'self', while /share/* stays static. X-01b (scripted public pages) ships only with G1: suspendedAt, flags that survive account deletion, a Report link, screening at publish and update, and rate limits. It also has click-to-run for untrusted turns, a releaser-checked flag if the in-flight X-01 session loosens CSP, and a privacy-policy copy fix in R1."
+    },
+    {
+     "name": "feasibility & sequencing",
+     "score": 8,
+     "why": "Realistic 1-2 week trains with at most one navigation change per release, a flag registry with a kill switch and removal dates, the telemetry spine first, the eval gate before each ai.editLoop kind, and a clear must-not-ship graph. The cost is real: the anchor guard touches roughly 37 conversation queries plus $queryRaw search, the field-preserving merge needs a schema-diff allowlist, and caps projection spans three endpoints. W2 X-01a also needs the domain and wildcard TLS bought now."
+    }
+   ],
+   "total": 51,
+   "fatal_flaws": []
+  },
+  {
+   "proposal": "proposal-object-first.md",
+   "criteria": [
+    {
+     "name": "data safety",
+     "score": 6,
+     "why": "Phase 0 has the best X-05/X-06 containment: a re-emit that drops DESIGN structure or overwrites an origin=edit version lands as a non-current draft. But the fix for X-22 (the conversation-delete cascade) sits in Phase 1, behind a Phase 0 exit that needs the native build on 95% or more of active devices, so the cascade keeps deleting designs for as long as iPhone adoption lags. There is no interim mitigation. The artifact_detach flag's off-state ('keeps artifacts attached') cannot exist under a cascade."
+    },
+    {
+     "name": "model soundness",
+     "score": 8,
+     "why": "The strongest object model: userId owner, nullable made-in conversation, titleSource, derivedFrom, persisted ArtifactProposal, content-addressed ArtifactAsset, ArtifactPoster and ArtifactExport, and FILE kind versions that point at the same storage objects. Per-person ArtifactThread plus Message.artifactScopeId is the only design in any of the three proposals that keeps a grantee's asks and Juno's owner-context replies apart (R-073). Minus: five new enum kinds and a speakerNotes DesignDocument field widen the contract, and ArtifactVersion.content=\"\" with a storageKey overloads an existing column."
+    },
+    {
+     "name": "migration safety",
+     "score": 6,
+     "why": "It correctly rewrites the change-capture trigger in M2, with a staging parity check on per-account change counts. The other two proposals miss the trigger. But B4 detects holder chats by the title 'Untitled design', while /api/design titles them after the design with titleSource 'manual', so it misses nearly all of them and then deletes conversations. B6 moves bodies over 256 KB into storage and blanks content, which changes existing rows in place. There is no shadow-compare for the auth switch, and rollback is forward-fix only after step 5."
+    },
+    {
+     "name": "native compatibility",
+     "score": 6,
+     "why": "It ships native N first, has a good per-account kinds_v2 gate from SyncClient features, and orders entity types oldest-build-first. But it has no per-request projection for null conversationId, so any residual 1.6.0 or unupdated iPhone device gets corruptRecord and a blank library. The 256 KB body threshold does not match native's 200,000 UTF-16 limit, and content=\"\" decodes as a valid empty design on N0. Gating Phase 0 on 95% adoption in weeks 0-2 is unrealistic for iPhone."
+    },
+    {
+     "name": "security/governance",
+     "score": 8,
+     "why": "G1 private previews, then G2 public previews after governance items 1-8. It gives a concrete CSP and deterministic HTML screening (password inputs, cross-origin form action, external window.location, brand terms). Per-person threads prevent context leaks, and it forces an encryption-at-rest decision before grants. Minor: per-version hostnames {artifactId}-v{n} expose artifact ids in DNS and TLS logs."
+    },
+    {
+     "name": "feasibility & sequencing",
+     "score": 5,
+     "why": "Six phases plus a parallel Figma-grade Track E, SHEET, FILE and DESIGN_SYSTEM kinds, and per-person threads. The proposal admits this is about a year of work. The Phase 0 exit adoption gate can stall the whole data-model phase. It also asks the glass session to drop its Design row mid-flight, and the panel-to-window pushState continuity is flagged as needing a spike."
+    }
+   ],
+   "total": 39,
+   "fatal_flaws": [
+    "Detached, hand-made and holder-cleanup artifacts go out with conversationId null, and there is no per-client projection. NativeArtifactStore.decodeArtifact requires a non-empty non-optional conversationId, so any N0 device still in the field fails the whole artifact snapshot (X-09 again). The 95% global gate leaves the tail exposed.",
+    "The X-22 cascade fix is gated behind 95% native adoption at the Phase 0 exit (weeks 0-2), with no interim mitigation. Chat deletes keep destroying designs, versions and public links until the iPhone fleet updates.",
+    "B4 holder-chat detection (title 'Untitled design') does not match the code (/api/design uses the design's title and titleSource 'manual'), and the step then deletes conversations. A destructive backfill keyed on the wrong predicate.",
+    "B6 rewrites existing ArtifactVersion.content to \"\" for bodies over 256 KB. That changes the meaning of a non-null field that old clients decode. The threshold is also in bytes rather than 200,000 UTF-16 units, so rows between 200k units and 256 KB still blank N0 libraries."
+   ]
+  },
+  {
+   "proposal": "proposal-claude-faithful.md",
+   "criteria": [
+    {
+     "name": "data safety",
+     "score": 6,
+     "why": "Phase 0 deploys 7243613f, X-02, a minimal X-07, X-08, the X-25 remount and the X-26 purge, but X-22 gets only a dialog that names what will be deleted; the real detach waits for the N3 flip after the N1 gate. X-05/X-06 are not contained until Phase 3. Phase 3's transcript reference tags destructively rewrite stored (encrypted) Message.content, which is a new data-loss surface. Per-kind validation does not stop N0 Mac saves stripping cornerSmoothing, because the field is optional and a stripped body still validates."
+    },
+    {
+     "name": "model soundness",
+     "score": 7,
+     "why": "Clean schema. It keeps content NON-NULL for old natives, adds status DRAFTING/READY, a head revision, well-specified comment and grant tables, mayHaveLeaked, and the sensible WorkArtifact hybrid (Doc and Deck from specs, binaries by reference, legacy rows never silently converted). But comments sent to Juno and editors' asks post turns into the owner's made-in conversation, which mixes grantee input with owner context (R-073). DRAFTING rows are not excluded for N0 clients."
+    },
+    {
+     "name": "migration safety",
+     "score": 4,
+     "why": "Backfill 2 (set conversationId NULL on holder-chat artifacts, then delete the conversations) is scheduled in N2, before N3 makes the column nullable. That ordering is impossible, and the step is destructive, with a 'log ids for rollback' that cannot restore deleted conversations. N3 changes the sync-entities loader but not the change-capture triggers. It says the flip can be undone by re-adding NOT NULL 'after re-attaching', but not to what. Rewriting encrypted message content is a high-risk migration of user data."
+    },
+    {
+     "name": "native compatibility",
+     "score": 6,
+     "why": "The N1 tolerance release comes from main, with the artifacts=2 header, content kept non-null and opaque design fields. But down-converting DOC and DECK to MARKDOWN creates a write-back hazard: an N0 client saving the Markdown projection through the generic POST corrupts the typed row. Null-conversation rows are 'omitted' without saying whether that happens in the changes feed or as tombstones (a missingEntity abort risk). Rewriting message references per request for old clients is complex and fragile. The N1 gate falls back to '30 days plus an update prompt'."
+    },
+    {
+     "name": "security/governance",
+     "score": 7,
+     "why": "Governance is thorough: a separate domain, signed tokens, connect-src 'self', granular rate limits, taint provenance so untrusted-input versions need screening before publish, and public pages last after 7 clean days. But every in-app preview waits for the full governance list, quotas included, which prolongs the critical X-01 outage. Comments sent to Juno and editors' asks land in the owner's chat."
+    },
+    {
+     "name": "feasibility & sequencing",
+     "score": 6,
+     "why": "The data-first, surface-next ordering is right in principle. But Phase 0 bundles governance, the preview origin, N1 and a dozen fixes. Tool-based creation with streamed arguments across mixed providers, reference tags and new DOC/DECK editors are XL, and the backfill ordering bug and missed trigger mean the plan would fail at N2/N3 as written."
+    }
+   ],
+   "total": 36,
+   "fatal_flaws": [
+    "It misses the change-capture triggers. The Artifact trigger uses the 'conversation' resolver, and ArtifactVersion uses 'artifact', which joins Artifact to Conversation (migration 20260716200000:116-117; function in 20260815180000). After N3's SetNull, every detached or hand-made artifact and all its later versions resolve account_id NULL and write no AccountChange rows. That is silent, permanent sync loss on every device, and changing sync-entities.ts alone does not prevent it.",
+    "Backfill 2 sets Artifact.conversationId = NULL and deletes holder conversations during N2, while the column is still NOT NULL until N3. The ordering is impossible, and the step deletes user-visible Recents rows with no real rollback.",
+    "Down-converting DOC and DECK to MARKDOWN for old clients lets an N0 client save Markdown back into a DOC or DECK row through POST /api/artifacts/[id]. Nothing refuses or reroutes that write.",
+    "Phase 3 reference tags strip artifact bodies from stored, encrypted Message.content and depend on per-request rewrite-back for old clients. This destructively migrates user messages and ties transcript readability to version retention and pruning."
+   ]
+  }
+ ],
+ "winner": "proposal-risk-first.md",
+ "grafts": [
+  {
+   "from": "proposal-object-first.md",
+   "idea": "Before any conversationId can be NULL, rewrite juno_record_account_change: move the Artifact trigger to the 'direct' resolver (Artifact.userId) and change the 'artifact' branch to SELECT userId FROM Artifact. Switch the sync-entities artifact and artifact_version loaders to userId. Prove it with a staging parity check of per-account change counts before and after.",
+   "why": "Today the artifact triggers resolve the owner through Conversation. Any detach without this silently stops syncing those artifacts and their new versions. Risk-first's Phase 6 contraction (M10) needs this and does not list it."
+  },
+  {
+   "from": "proposal-object-first.md",
+   "idea": "A Phase 0 re-emit guard. A chat re-emit that would drop a DESIGN's components, variables, motion, interactions or comments, or that overwrites a version whose origin is 'edit', lands as a non-current draft with Compare.",
+   "why": "Contains X-05/X-06 (hand edits overwritten as current) in week 1-2 instead of W14-W22, when risk-first's AI loop ships."
+  },
+  {
+   "from": "proposal-object-first.md",
+   "idea": "Per-person ArtifactThread plus Message.artifactScopeId. A grantee's Asks and comments sent to Juno run in their own thread, with a privacy test that a grantee never receives any text from the owner's thread.",
+   "why": "Risk-first and Claude-faithful both route non-owner asks into the made-in (owner's) conversation, which breaks R-073 as soon as grants ship."
+  },
+  {
+   "from": "proposal-object-first.md",
+   "idea": "A per-account client gate from SyncClient features, where every device seen for the account in 30 days must declare the feature, before creating rows of any new shape. Add it alongside risk-first's per-request caps projection.",
+   "why": "A second safety net for Phase 5 profile or kind additions and for any future enum additions. It lets accounts with only updated devices move forward without a global window."
+  },
+  {
+   "from": "proposal-object-first.md",
+   "idea": "The purge job deletes ArtifactVersion rows before the Artifact in one transaction, plus a lint that forbids artifact.delete or deleteMany outside the purge job and account deletion.",
+   "why": "Closes the audit's open question on whether cascaded version tombstones are recorded (00 \u00a77.2), and makes the principle that nothing is destroyed as a side effect enforceable in CI alongside the deletion ledger."
+  },
+  {
+   "from": "proposal-object-first.md",
+   "idea": "Deterministic HTML screening at publish and update (password inputs, cross-origin form action, window.location to external hosts, brand terms against the title), plus a persisted ArtifactProposal table so proposals survive reloads and reach native.",
+   "why": "Concrete, testable anti-phishing checks for X-01b and G1. Proposals that live only in memory get lost on Mac and iPhone."
+  },
+  {
+   "from": "proposal-claude-faithful.md",
+   "idea": "Keep ArtifactVersion.content NON-NULL forever for old native builds, and add a DB trigger that raises on UPDATE of ArtifactVersion.content once the head ships.",
+   "why": "Enforces version immutability (the fix for M31 share leaks) in the database rather than by convention, and protects the N0 decoder."
+  },
+  {
+   "from": "proposal-claude-faithful.md",
+   "idea": "Taint provenance: versions made in a turn that read untrusted web or connector content carry taint untrusted-input and must pass screening before Publish. Add an `answered` flag on comment threads so two sessions never answer twice.",
+   "why": "Governance hooks that cost almost nothing to add at the schema stage."
+  },
+  {
+   "from": "proposal-claude-faithful.md",
+   "idea": "Old-client fixture tests plus a manual check on an installed 1.6.0 build at every phase exit. Legacy WorkArtifact document and presentation rows without a spec stay read-only Files and are never silently converted; 'rebuild as Doc' creates a new artifact with derivedFrom.",
+   "why": "Turns the compatibility window from a claim into a gate, and avoids lossy silent conversion of existing deliverables."
+  },
+  {
+   "from": "proposal-claude-faithful.md",
+   "idea": "Granular rate limits for head commits (per artifact per minute and per account per hour) and sealed versions per artifact per hour, with client-chosen origin:'restore' ignored.",
+   "why": "X-30 and X-33 are DoS levers. Risk-first's limit table has no per-artifact head-commit cap."
+  }
+ ],
+ "must_fix": [
+  "Add the change-capture trigger rewrite to risk-first's plan. The Artifact trigger's 'conversation' resolver and the ArtifactVersion 'artifact' join through Conversation (migrations 20260716200000:116-117 and 20260815180000) must resolve by Artifact.userId, and the sync-entities artifact and artifact_version loaders must authorise by userId, all before M10 or any conversationId=NULL write. Verify with per-account AccountChange parity on a staging copy.",
+  "Specify the N0 'omit' projection exactly. Filter consistently across /api/v1/changes, the entity index and /api/v1/entities, or emit tombstones (deletedAt set, data null) for draft rows, incomplete versions, bodies over 200,000 UTF-16 units (measured as JS string length, not bytes) and new namespaces. NativeSyncAPIClient throws missingEntity and aborts the account's sync if a changed id is not returned by /entities, and throws on any unknown entity type.",
+  "Write a full anchor-conversion contract. In one transaction, explicitly delete every Conversation cascade child except Artifact: Message, MessageVersion, ConversationMemory, CHAT Shares and VoiceTranscriptSession, plus Attachments that no surviving artifact references. Clear content-bearing columns: title, activeConnectors, codeWorkspace*, folderId, pinned and model. Record the conversion in the deletion ledger. Include anchors in account export and account deletion.",
+  "Protect assets referenced by detached artifacts. Designs can reference chat or Library images by /api/files paths. Before detach-on-delete ships, re-parent or move referenced Attachments into a content-addressed asset store so a surviving design never loses its images.",
+  "Define the anchor-flip rule. The first Ask on an artifact inside a multi-artifact anchor (a deleted chat's artifacts) must not rename and expose the whole anchor as a chat titled after one artifact. Either create a new chat and move only that artifact, handling (conversationId, identifier) uniqueness, or keep deleted-chat anchors permanently non-chat.",
+  "Make visibleConversationWhere coverage provable. The guard test must cover the roughly 37 prisma.conversation list and count sites and the $queryRaw search in src/lib/search/sql.ts. Also audit the native ProjectWorkspaceStore and any conversation counts that don't filter by kind.",
+  "Pull X-05/X-06 containment into Phase 0 (the object-first guard). Until the AI loop ships, a re-emit that drops DESIGN structure or overwrites an origin=edit head lands as a non-current draft with Compare.",
+  "Specify the field-preserving merge precisely. Nodes match by id. A node the N0 client deleted stays deleted. Only fields absent from the Swift schema are restored, using an allowlist generated from the JSON Schema diff. Test it against real 1.6.0 Swift encoder output.",
+  "Make type immutability explicit server work. Commit 7243613f still writes `type: a.type` on re-emit in persistArtifacts. A type or profile change must create a new artifact linked by ArtifactLink replaces, not update the row.",
+  "Implement the deletion ledger with SET LOCAL juno.delete_reason inside the same Prisma interactive transaction as the delete. Confirm it works under the production connection-pooling mode. Account-delete cascades must set the reason to 'account' so they don't alert.",
+  "Before grants or comments ship, replace the ArtifactComment placeholder with the full R-040 schema and add per-person threads (graft), so grantee asks never run in the owner's conversation.",
+  "Doc profile: give GFM blocks stable ids (for example hidden anchors) before block ops or comments ship, or accept quote-only anchors with Moved/Lost states. Replace the 'Speaker notes' node-name convention with a typed marker once bridge v2 allows DesignDocument additions.",
+  "Get the X-01a prerequisites decided in W1: owner sign-off on buying the preview domain, wildcard TLS and DNS. If the in-flight X-01 session lands a same-origin fix first, the releaser gate must keep /share/* static and the preview.origin.public flag off until G1 is live."
+ ]
+}

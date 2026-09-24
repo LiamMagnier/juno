@@ -44,6 +44,7 @@ import { useRecordDesignCommit } from "@/components/canvas/use-record-design-com
 import { IconSwap } from "@/components/ui/icon-swap";
 import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
+import { fileNameFromDisposition } from "@/lib/download-name";
 import { diffLines, unifiedDiff } from "@/lib/line-diff";
 import { clampQuoteText, type ComposerQuote } from "@/lib/quote-context";
 import { extensionForLanguage, runtimeFor } from "@/lib/artifact-runtime";
@@ -87,21 +88,6 @@ const OFFICE_FORMATS: Record<OfficeFormat, { label: string; icon: IconComponent 
 
 function isOfficeFormat(v: unknown): v is OfficeFormat {
   return v === "docx" || v === "xlsx" || v === "pptx";
-}
-
-/** Fetching as a blob drops the server's filename, so read it back off the header. */
-function fileNameFromDisposition(header: string | null): string | null {
-  if (!header) return null;
-  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header);
-  if (utf8) {
-    try {
-      return decodeURIComponent(utf8[1]);
-    } catch {
-      // Malformed encoding — fall back to the ASCII name below.
-    }
-  }
-  const ascii = /filename="([^"]+)"/i.exec(header);
-  return ascii?.[1] ?? null;
 }
 
 /** How long a copy control shows its check before it turns back. */

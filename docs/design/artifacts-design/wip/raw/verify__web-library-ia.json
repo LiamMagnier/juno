@@ -1,0 +1,203 @@
+{
+ "verdicts": [
+  {
+   "id": "web-library-ia-1",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "corrected_location": "src/app/(app)/projects/[id]/page.tsx:305-318",
+   "reasoning": "READ: page.tsx:305-308 fetches /api/artifacts and only sets state when Array.isArray(res.artifacts). src/app/api/artifacts/route.ts:80 returns { items: [...] }. I checked every commit that touched that route and none returned an `artifacts` key. No other source fills projectArtifacts: api/projects/[id]/route.ts has no artifact field, and no test covers it. So projectArtifacts stays [] (page.tsx:175), and that feeds sourceCount (726, 815, 908), the header's artifactCount (740 into project-workspace-header.tsx:124) and ProjectSourcesList (969). The API takes no request parameters and filters only by conversation.userId (route.ts:20-25), so fixing only the key would list every artifact the user owns under every project. INFERRED: each project open also runs both artifact queries (up to 200 rows plus 1200-char previews) and throws the result away."
+  },
+  {
+   "id": "web-library-ia-2",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: runtimeFor('DESIGN') returns mode 'design' (artifact-runtime.ts:98), and hasPreview = isMarkdown || rt.mode === 'web' (shared-artifact-viewer.tsx:32), so a design gets only the Code tab: CodeSurface over the raw content, with wrap={isMarkdown}, so no wrapping (76-78). The share page passes every artifact type straight to this viewer with no DESIGN branch (src/app/share/[token]/page.tsx:83-95), and nothing in the share code or APIs special-cases DESIGN. The stored content is JSON.stringify of a key-sorted document (migrations.ts:111-113). /artifacts offers Share for every row (page.tsx:198-200). The public page therefore shows one line of JSON."
+  },
+  {
+   "id": "web-library-ia-3",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: both confirm dialogs mention only 'the conversation and its messages' (app-sidebar.tsx:2273, 2777). DELETE hard-deletes (api/conversations/[id]/route.ts:88). Artifact.conversation (schema.prisma:1137) and Attachment.conversation (schema.prisma:853) are both onDelete: Cascade, and the Artifact model has no deletedAt, so nothing can be restored. POST /api/design creates a message-less holder chat titled after the design, and its comment says the point is to be 'findable in Recents' (api/design/route.ts:69-79). listConversations does not filter out chats with no messages (queries.ts:39-81). Generated images are attachments of their chat too (generate/route.ts:263-272), so deleting a chat also removes them from the Library. The /artifacts delete dialog promises the opposite direction ('The conversation it came from is untouched', artifacts/page.tsx:672), which makes the asymmetry easier to miss."
+  },
+  {
+   "id": "web-library-ia-4",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: findMany with take: 200, no cursor, no request parameters (api/artifacts/route.ts:20-40). /artifacts shows items.length as the total (page.tsx:381-385), and its search and filter run client-side over those rows only (253-265). /design filters the same 200 rows down to DESIGN (design/page.tsx:75-79). The failure needs more than 200 artifacts, so medium is right."
+  },
+  {
+   "id": "web-library-ia-5",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "corrected_location": "src/components/projects/project-sources-list.tsx:321",
+   "reasoning": "READ: href is /artifacts?id=${art.identifier} (project-sources-list.tsx:321). Neither the artifacts nor the design route reads searchParams, useSearchParams or location.search (rg found no matches). identifier is unique only per conversation (schema.prisma:1142). However, these rows cannot render today because of web-library-ia-1: projectArtifacts is always []. The defect is latent and would surface only once ia-1 is fixed, so severity is lowered to low. It should be fixed together with ia-1, linking to /chat/{conversationId}?artifact=..."
+  },
+  {
+   "id": "web-library-ia-6",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: Code's destinations include { href: '/artifacts', active: pathname === '/artifacts' } (app-sidebar.tsx:1084). productOf returns 'code' only for /code* or /chat/* with kind code (product-switch.tsx:130-137). AppShell derives the column from it (app-shell.tsx:184). tests/shell-product-column.test.ts:50-61 asserts /artifacts keeps Chat's column. So clicking Artifacts in Code swaps the column to Chat's, and Code's Artifacts row can never be seen active. The comment at 1071-1072 intends one shared library, but the product swap is not addressed there."
+  },
+  {
+   "id": "web-library-ia-7",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: a code conversation with a workspace renders CodeSessionView with no identifier prop (chat/[id]/page.tsx:49-61). openArtifactId starts null and nothing reads the URL (code-session-view.tsx:693-698; rg for useSearchParams, location.search and artifact= found nothing). Reachability is narrow, though. The only artifact writers are /api/chat via artifacts-store, /api/design and /api/artifacts/[id], and /api/chat refuses code sessions that have a workspace (codeSessionRefusal, chat/route.ts:1445-1449). CodeSessionView never adds artifacts, only resets or updates them (code-session-view.tsx:697, 747). Such a conversation carries artifacts only if it was a chat, or a workspace-less Code chat, that was later retro-marked with kind and workspace through PATCH /api/conversations/[id] (route.ts:28-30). Workspace-less code sessions render ChatView and deep-link correctly. Real but rare, so low."
+  },
+  {
+   "id": "web-library-ia-8",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: artifactSearchSql ranks every stored version and keeps the best-matching one per artifact (sql.ts:316-352), and engine.ts:432-434 emits &v={version} with locator 'v{n}'. The test asserts that href (unified-search.test.ts:530-534). The page reads only { artifact, m, researchRun } (chat/[id]/page.tsx:31-35). ChatView's deep-link effect opens by identifier only (chat-view.tsx:910-917). CanvasPanel starts selectedVersion at currentVersion (canvas-panel.tsx:247, 312-314), and nothing in src/components/canvas reads the URL. The hit's promise ('v2') is not kept."
+  },
+  {
+   "id": "web-library-ia-9",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: submitRename PATCHes { title } only (artifacts/page.tsx:307-311), and the PATCH updates Artifact.title only (api/artifacts/[id]/route.ts:104-108). design-workspace.tsx:113-145 documents this exact bug and fixes it only in the full-window editor, by also applying renameDocument. renameDocument is applied nowhere else (rg). Exports take their file names from doc.name (export.ts:71, 101, 238, 1242, 1258, 1354), and the design page does not reconcile doc.name with artifact.title on load (design/[artifactId]/page.tsx passes the title separately). Real, but the effect is only a stale export file name, so medium is lowered to low."
+  },
+  {
+   "id": "web-library-ia-10",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the preview is left(content, 1200) of the newest version (api/artifacts/route.ts:17, 69-75). ArtifactPreview splits on '\\n' and renders a <pre> with overflow-hidden and default white-space (artifact-preview.tsx:81-110). DESIGN content has no newlines (migrations.ts:111-113), so every design tile shows one clipped line of JSON. Only SVG has a real render path (79). The grid is opt-in, since list is the default (page.tsx:112, 122-129), and the defect is cosmetic, so low."
+  },
+  {
+   "id": "web-library-ia-11",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: POST /api/design creates a message-less Conversation (title = design title, titleSource 'manual') and then the Artifact in a separate, non-transactional call (api/design/route.ts:69-90). A failed artifact create therefore leaves an orphan chat. Workspace rename PATCHes the artifact only (design-workspace.tsx:133-137). Delete from /design or the workspace removes only the artifact (api/artifacts/[id]/route.ts:124; design/page.tsx:116; design-workspace.tsx:151). The holder chat stays in Recents (queries.ts:39-81) under its first name."
+  },
+  {
+   "id": "web-library-ia-12",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: createShare returns the newest non-revoked share if one exists (share.ts:91-95). getSharedArtifactSnapshot serves the newest version created at or before snapshotAt (share.ts:257-265). The dialog says 'as it is now' (share-dialog.tsx:119-122) and offers only Copy and Revoke (180-205). A workaround exists: revoke, then 'Create a new link' (share-dialog.tsx:163-165) produces a fresh snapshot, but nothing tells the user that. The same defect applies to CHAT shares (share.ts:67-71 with 'up to now', share-dialog.tsx:120); see missed."
+  },
+  {
+   "id": "web-library-ia-13",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: typeFilter (page.tsx:116) is never reset when presentTypes (247-251) changes. After a delete, submitDelete updates items only (322). filtered still applies the stale type (257), which yields noResults with 'Nothing fits these filters.' (486-494). The SegmentedControl either disappears (presentTypes.length <= 1, line 415) or shows a value that is not among its options. 'Clear filters' recovers (496-503)."
+  },
+  {
+   "id": "web-library-ia-14",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: Design is marked active only when pathname === '/design' (app-sidebar.tsx:1100), while Projects uses startsWith (1090). /design/[artifactId] sits under (app)/layout.tsx, which wraps everything in AppShell (layout.tsx:23), and app-shell.tsx does not special-case design (rg). No row is active inside a design."
+  },
+  {
+   "id": "web-library-ia-15",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the error branch is EmptyState with tone error and no action (design/page.tsx:207-211). The load runs once in a mount effect (71-90), with no online listener. /artifacts has Try again and an online retry (artifacts/page.tsx:237-244, 439-455). Worse than claimed: when fetch itself rejects (offline or network), the description is err.message from the browser TypeError ('Failed to fetch' in Chrome, 'Load failed' in Safari) (line 82). It repeats the title only on a non-OK HTTP status. /design/error.tsx exists, but it catches render errors, not this fetch."
+  },
+  {
+   "id": "web-library-ia-16",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the library entry's keywords are 'saved prompts snippets' (command-palette.tsx:1170). Matching is word-start on label or keywords (1111-1119). The Library API serves files and images only (api/library/route.ts:23-24 docblock). No action creates a design (1122-1181). A minor correction: typing 'files' does match 'Search everything', whose keywords include 'files' (1150), just not Open Library. 'design' finds 'Open Design', which is one step from the presets."
+  },
+  {
+   "id": "web-library-ia-17",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: download() GETs /api/artifacts/{id} (artifacts/page.tsx:341). ownedArtifact includes versions: true (api/artifacts/[id]/route.ts:20-24), and serializeArtifact maps every version's content (serializers.ts:218), so all versions go over the wire to save one. The evidence overstates growth, though. User design edits fold into the latest checkpoint unless the checkpoint window has passed or the origin or author differs (operations.ts:529-539; store.ts:123-127 rewriteVersion). The per-edit versions in the '300 edits' scenario are therefore unlikely, but version counts still grow over time."
+  },
+  {
+   "id": "web-library-ia-18",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the body is title || ' ' || v.content for every type, with to_tsvector('simple') (sql.ts:330, 347), and the snippet comes from the same raw content (sql.ts:341, snippetOf 68-77). No type filter or DESIGN exclusion exists in src/lib/search (rg). DESIGN content is serialized JSON (api/design/route.ts:52-66; migrations.ts:111-113). INFERRED (standard Postgres parser behaviour, not run here): punctuation splits JSON keys and values into lexemes such as 'frame', 'fill' and 'width'."
+  },
+  {
+   "id": "web-library-ia-19",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: only /chat/ routes get an object title (document-title.tsx:32-35). /design/{id} falls back to ROUTE_TITLES '/design' \u2192 'Design' (route-title.ts:31). The MutationObserver re-asserts that title over anything Next renders (document-title.tsx:52-60), so even a generateMetadata on design/[artifactId]/page.tsx (which has none) would be overwritten. The same applies to /projects/{id}."
+  },
+  {
+   "id": "web-library-ia-20",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: loading.tsx draws a toolbar skeleton row (21-24) above the list skeleton. The client page renders the toolbar only when !loading && !empty && !error (page.tsx:402), and its own loading skeleton is just the list (457-469). The Library keeps LibraryToolbarSkeleton for exactly this reason (library/page.tsx:258-259). Additional shift: the header's 'New design' button is gated on !empty (page.tsx:391), and empty is false while loading. It therefore shows during load and disappears if the library turns out empty (see missed)."
+  },
+  {
+   "id": "ux-0",
+   "verdict": "confirmed",
+   "corrected_severity": "n/a",
+   "reasoning": "READ: the Artifacts lede is 'Everything Juno built with you, newest first.' (artifacts/page.tsx:378), but /api/artifacts reads only the Artifact table (route.ts:24). Generated images are Attachments with origin 'generated' (generate/route.ts:263-272), which the Library lists, since its API has no origin filter (library/route.ts:161 only echoes origin). The Library lede 'Everything you upload or share in chats.' (library/page.tsx:214) does not mention them. WorkArtifact deliverables are fetched per session only (work-transport.tsx:1571). Unified search has no WorkArtifact source (rg in src/lib/search found only WorkSession and steps, sql.ts:398, 439). Designs appear in both /artifacts and /design. The four separate stores are confirmed. Severity is major for IA (a UX claim, so n/a in the defect scale)."
+  },
+  {
+   "id": "ux-1",
+   "verdict": "confirmed",
+   "corrected_severity": "n/a",
+   "reasoning": "READ: TYPE_LABELS gives MARKDOWN 'Documents', HTML 'Sites' and SVG 'Graphics' (artifacts/page.tsx:51-60). Row metadata uses runtimeFor labels such as Markdown, HTML and SVG (artifact-runtime.ts:98-103). session-outputs uses 'Doc', 'Web page' and 'Image' (session-outputs.tsx:53-61) under the heading 'Outputs' (286). project-sources-list prints the raw enum {art.type} (332). The project page falls back to 'document' (projects/[id]/page.tsx:314). The search group is 'Files' (types.ts:45). /knowledge/documents is titled 'Document' (route-title.ts:38). design/error.tsx:38 says 'Juno Design'. SVG adds a fourth name ('Graphics' / 'SVG' / 'Image') beyond those listed."
+  },
+  {
+   "id": "ux-2",
+   "verdict": "confirmed",
+   "corrected_severity": "n/a",
+   "reasoning": "READ: every /artifacts row and tile links to /chat/{conv}?artifact= (page.tsx:529, 596), as do search hits (engine.ts:434). The canvas embeds DesignEditor with no chrome or canvasDock, so no AskJunoBar and no ZoomControls (canvas-panel.tsx:1236-1255). The window surface passes both (design-workspace.tsx:213-235). Embedded rails use viewport breakpoints (design-editor.tsx:549-550). The only links into /design/{id} are the design home (design/page.tsx:236) and the POST redirect (api/design/route.ts:100); rg found no link from the canvas, chat or artifacts to /design/. The workspace's Chat link is /chat/{conversationId} with no ?artifact (design-workspace.tsx:176-181)."
+  },
+  {
+   "id": "ux-3",
+   "verdict": "confirmed",
+   "corrected_severity": "n/a",
+   "reasoning": "READ: the four presets are at design/page.tsx:55-60. /artifacts 'New design' always POSTs preset 'phone' (artifacts/page.tsx:279). It shows in the header whenever the page is not empty, and in the empty state (391, 479), so 'phone-only' means the phone preset, not a phone-only control. The \u2318K actions have no new-design or new-artifact row (command-palette.tsx:1122-1181). '/artifact' prefills 'Create an artifact that ' (composer.tsx:2016-2020). The composer + menu has no design or artifact entry (rg). One correction: the Code starter chip includes 'Build a React table component that sorts by any column.' (starter-chips.tsx:78), so 'building' is mentioned once. Design is never mentioned."
+  },
+  {
+   "id": "ux-4",
+   "verdict": "confirmed",
+   "corrected_severity": "n/a",
+   "reasoning": "READ: the page has no sort control, and filtering is client-side over at most 200 rows (artifacts/page.tsx:253-265; api take 200). There is no pagination, no multi-select, and a hard delete with no trash (api/artifacts/[id]/route.ts:124; the Artifact model has no deletedAt). Filter and query are React state only (116-117), with no URL sync (rg found no searchParams). The Library has server-side search and sort and 'Recently deleted' (library/page.tsx:213-214; api/library/route.ts:23-30). One caveat: the quoted comment (96-102) claims parity only for the list/grid toggle, not for the whole page. The page's own comment does claim 'a search field and a sort control' (363-366), and there is no sort control."
+  }
+ ],
+ "missed": [
+  {
+   "id": "missed-1",
+   "title": "Editing a design in the chat canvas replaces the new version's content with \"\", which remounts the editor on an unreadable document",
+   "severity": "high",
+   "file": "src/components/canvas/canvas-panel.tsx",
+   "line": 1252,
+   "evidence": "READ: on onCommitted(version) with version > currentVersion, the canvas pushes { version, content: \"\", origin: \"edit\" } into artifact.versions and bumps currentVersion (canvas-panel.tsx:1243-1254), in code unchanged since 7c344b96. The effect at 312-314 moves selectedVersion to the new currentVersion. versionContent = versions.find(v => v.version === selectedVersion)?.content ?? artifact.content, and \"\" is not nullish (369-370). The editor wrapper is keyed by selectedVersion (1237), so DesignEditor remounts with content \"\". useDesignDocument then parses initialContent (use-design-document.ts:170-188), and parseStoredDesignDocument(\"\") throws 'Design document is not valid JSON' (migrations.ts:91-97). A new version number is allocated whenever the latest version's origin is not 'edit' (for example an AI-generated design) or the checkpoint window has passed (operations.ts:529-539; store.ts:123-127). Only /design/{id} avoids this, because DesignWorkspace keeps its own version state. INFERRED: I could not observe the runtime and found no test covering canvas-panel.",
+   "failure_scenario": "Juno generates a design in chat, and the user opens it in the canvas and moves a layer. The server allocates v2, and the canvas remounts the editor on an empty string. The panel shows the load error, and undo history is cleared. The v2 row in history also carries empty content in client state until the page reloads."
+  },
+  {
+   "id": "missed-2",
+   "title": "Re-sharing a chat returns the old snapshot while the dialog says 'up to now'",
+   "severity": "medium",
+   "file": "src/lib/share.ts",
+   "line": 71,
+   "evidence": "READ: for CHAT, createShare returns the newest non-revoked share (share.ts:67-71). The public page shows messages created at or before snapshotAt (share.ts:198, 213). The dialog says 'People with the link see the conversation up to now. New messages stay private.' (share-dialog.tsx:120). This is the same mechanism as web-library-ia-12, on the chat side.",
+   "failure_scenario": "A user shares a chat, continues it for a week, then opens Share again to send it to a colleague. They get the same token, which still ends at the first share's messages."
+  },
+  {
+   "id": "missed-3",
+   "title": "/artifacts shows 'New design' in the header while loading, then removes it when the list turns out empty",
+   "severity": "low",
+   "file": "src/app/(app)/artifacts/page.tsx",
+   "line": 391,
+   "evidence": "READ: the header button renders when !empty (391), and empty = !loading && !error && items.length === 0 (293), so it is false during loading. Once an empty response lands, the header button disappears and the same button reappears in the empty state below (479-483). This adds to the skeleton shift in web-library-ia-20.",
+   "failure_scenario": "A new user opens /artifacts. A 'New design' button flashes in the header and then vanishes as the empty state renders its own copy lower on the page."
+  },
+  {
+   "id": "missed-4",
+   "title": "'Download source' names the file after the model's internal identifier, not the artifact's title",
+   "severity": "low",
+   "file": "src/app/(app)/artifacts/page.tsx",
+   "line": 350,
+   "evidence": "READ: a.download = `${item.identifier}.${ext}` (350). identifiers are model-chosen slugs, or design-<base36 timestamp> for hand-started designs (api/design/route.ts:51). DESIGN downloads use ext 'juno.design.json' (DOWNLOAD_EXTENSIONS, 68). A rename through the same page's Rename dialog never affects the download name.",
+   "failure_scenario": "A user renames a design to 'Checkout v2' and downloads it. The file saves as design-m1x9k2a.juno.design.json."
+  },
+  {
+   "id": "missed-5",
+   "title": "Opening or committing a design loads the full content of every version",
+   "severity": "low",
+   "file": "src/lib/design/store.ts",
+   "line": 36,
+   "evidence": "READ: loadOwnedDesignArtifact includes versions ordered by version with full content (store.ts:33-37), and design/[artifactId]/page.tsx:23-26 then uses one row. appendVersion and rewriteVersion both re-include all versions on every committed transaction (store.ts:165, 195), as does the conflict path (131-134). This is the server-side twin of web-library-ia-17.",
+   "failure_scenario": "A long-lived design with many checkpoints makes every page open and every committed edit read every version's full JSON from Postgres to use one of them. Latency grows with history length."
+  }
+ ]
+}
