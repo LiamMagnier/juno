@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   applyTurnArtifacts,
   detachArtifactsFromMessages,
+  replaceArtifactById,
   serverTranscriptRevision,
   settleClientMessage,
 } from "../src/lib/chat-client-state";
@@ -128,4 +129,42 @@ test("an artifact tag resolves to the artifact that existed when its message was
   assert.equal(resolveArtifactTag(map, "screen", { id: "m4", createdAt: "2026-09-24T13:00:00Z" }), page, "later revisions");
   const single = new Map([["screen", page]]);
   assert.equal(resolveArtifactTag(single, "screen", { id: "m1", createdAt: "2026-09-24T09:00:00Z" }), page, "no retired rows: the one row");
+});
+
+const waitingSuggestion = {
+  id: "prop-1",
+  baseVersion: 2,
+  messageId: "assistant-2",
+  summary: "You edited this after Juno's last version",
+  createdAt: "2026-09-02T12:10:00.000Z",
+};
+
+test("a changed artifact takes its own place in the list, by id", () => {
+  const plan = artifact();
+  const outline = artifact({ id: "art-old", identifier: "outline", messageId: "assistant-0" });
+  const saved = artifact({ currentVersion: 3, content: "# Plan, saved again" });
+
+  const next = replaceArtifactById([outline, plan], saved);
+  assert.deepEqual(next.map((a) => a.id), ["art-old", "art-plan"], "same order: cards and an open canvas stay put");
+  assert.equal(next[1].currentVersion, 3);
+  assert.equal(next[0], outline, "the rest are untouched");
+
+  const list = [outline];
+  assert.equal(replaceArtifactById(list, saved), list, "an artifact this chat does not hold is not added");
+});
+
+test("a save that did not read suggestions keeps the one still waiting; a resolution clears it", () => {
+  const waiting = artifact({ pendingSuggestion: waitingSuggestion });
+  const saved = replaceArtifactById([waiting], artifact({ currentVersion: 3 }));
+  assert.equal(saved[0].currentVersion, 3);
+  assert.deepEqual(saved[0].pendingSuggestion, waitingSuggestion, "a person's save never resolves a suggestion");
+
+  const applied = replaceArtifactById([waiting], artifact({ currentVersion: 3, pendingSuggestion: null }));
+  assert.equal(applied[0].pendingSuggestion, null, "Apply and Dismiss answer with an explicit null");
+});
+
+test("a restore from Recently deleted brings the artifact back live", () => {
+  const trashed = artifact({ deletedAt: "2026-09-02T13:00:00.000Z" });
+  const restored = replaceArtifactById([trashed], artifact());
+  assert.equal(restored[0].deletedAt, undefined);
 });

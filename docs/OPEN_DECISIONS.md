@@ -134,6 +134,42 @@ says so out loud.
 
 ---
 
+## 8. The account anchor, an exception to TWO_PRODUCTS §5
+(merge plan D13) — **DECIDED, September 2026, until contraction**
+
+`docs/design/TWO_PRODUCTS.md` §5 says there is no new `Conversation.kind`,
+because the phone drops kinds it does not know and a run is not a different kind
+of conversation. Artifacts R1 adds one anyway: `kind: "anchor"`, one hidden row
+per account with the fixed id `anchor_<userId>`, titled "Your artifacts". When a
+chat is deleted, its artifacts move there instead of being deleted with it
+(`docs/design/artifacts-design/04-MERGE-PLAN.md` §3.5).
+
+Why the rule does not bite here: an anchor *is* a different kind of thing, and
+no client ever receives it. It exists only because every installed Mac and
+iPhone build decodes an artifact's `conversationId` as required, so an artifact
+with no chat needs a conversation to point at until those builds age out.
+
+What keeps it invisible:
+
+- **Never synced.** The conversation change-capture trigger skips it
+  (`prisma/migrations/20260925120000_artifact_lifecycle_r1`), so it has no
+  revision, never reaches the change feed or the entity index, and no build is
+  ever told about an id it cannot fetch.
+- **Never listed, searched, counted or written to.** Every conversation read
+  and write on the web goes through `visibleConversationWhere()` or
+  `visibleConversationSql()` (`src/lib/conversation-visibility.ts`), or carries
+  an `anchor-safe:` comment saying why it may see the anchor; a source-reading
+  test enforces this. The chat, messages, fork, title and share routes answer
+  404 for it, not 409, so there is no existence oracle.
+
+It ends at contraction (M10, Phase 8): anchored artifacts get a null
+`conversationId`, the anchor rows are deleted, and the exception goes with them.
+Until then, **never revert the anchor refusals on their own**: code from before
+R1 lists the anchor as an ordinary chat called "Your artifacts", and deleting
+that chat would delete every artifact kept in it.
+
+---
+
 ## Not a decision — a known scaling limit (review item 39)
 
 Recorded here so it is not rediscovered as a bug.

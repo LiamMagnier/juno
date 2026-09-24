@@ -275,3 +275,7 @@ Suggested cron entry on the VM (Sundays at 04:00):
 ```
 
 Pruning advances the compaction floor served by `/api/v1/bootstrap` and `/api/v1/changes`; clients whose cursor predates the floor receive `410` and resync from bootstrap — that is the protocol working as intended, not an error.
+
+## Maintenance: artifact trash purge
+
+Deleted artifacts sit in Recently deleted for 30 days. The PM2 app `juno-artifact-purge` (`npm run artifacts:purge -- --daemon`) checks every 6 hours and logs one line per pass to `logs/artifact-purge-out.log`: `[artifact-purge] eligible=N purged=M …`. It is **dry unless `JUNO_ARTIFACTS_PURGE=1`**, so until then it only counts what it would remove; keep it unarmed until the deletion ledger lands (docs/design/artifacts-design/04-MERGE-PLAN.md §3.4). To arm it, add the key to the `PROD_ENV` secret (the VM's `.env` is rewritten from it on every deploy) and `pm2 restart juno-artifact-purge --update-env`. By hand: `npm run artifacts:purge -- --dry` previews one pass, and `--days N` (at least 7) widens the window. A purge removes the artifact, every version and its public links for good; apps receive tombstones for each.

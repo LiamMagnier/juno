@@ -1,4 +1,4 @@
-import { normalizeDesignArtifact } from "@/lib/design/authoring";
+import { normalizeDesignArtifactWithNotes } from "@/lib/design/authoring";
 import type { ParsedArtifact } from "@/lib/message-content";
 
 /** One bounded pass is intentional: an artifact check must never become a
@@ -23,6 +23,22 @@ export interface ChatArtifactProblem {
   repairable: boolean;
 }
 
+/**
+ * Something verification changed without it being a problem: today only a
+ * picture in a compact design that became a placeholder rectangle, because the
+ * compact form cannot carry one (d04065c6). The person should hear about it,
+ * on the card, rather than find a grey box and assume Juno broke the design.
+ *
+ * `detail` quotes the layer's name, which the owner wrote, so a note goes only
+ * into the encrypted activity log (Message.activity) and never into a server
+ * log line. Mirrors `ClientArtifactVerificationNote` in types/chat.ts.
+ */
+export interface ChatArtifactNote {
+  identifier: string;
+  code: "image_placeholder";
+  detail: string;
+}
+
 export interface ChatArtifactVerificationReport {
   version: 1;
   status: "verified" | "repaired" | "refused";
@@ -32,6 +48,12 @@ export interface ChatArtifactVerificationReport {
   refused: string[];
   problems: ChatArtifactProblem[];
   repairs: ChatArtifactProblem[];
+  /**
+   * Optional so a report persisted before notes existed still decodes. A note
+   * never moves `status`: a placeholder is a change the person can undo in the
+   * editor, not a failure, and the design is saved either way.
+   */
+  notes?: ChatArtifactNote[];
 }
 
 export interface ChatArtifactVerificationResult {
@@ -58,7 +80,12 @@ function problem(
   return { identifier: artifact.identifier, code, detail, repairable };
 }
 
-function validateArtifact(artifact: ParsedArtifact): ChatArtifactProblem[] {
+/**
+ * Check one artifact. `notes`, when given, collects what a DESIGN's expansion
+ * changed instead of refusing, from the same expansion the size check runs, so
+ * the note and the stored body cannot disagree.
+ */
+function validateArtifact(artifact: ParsedArtifact, notes?: ChatArtifactNote[]): ChatArtifactProblem[] {
   // First, and on its own: an unfinished body is refused whatever it holds.
   // It can pass every check below (a half-written React page is still valid
   // text), and it used to, which is how a stopped revision was saved as
@@ -105,13 +132,19 @@ function validateArtifact(artifact: ParsedArtifact): ChatArtifactProblem[] {
       // expanded — five to eleven times larger. Checking only the compact form
       // let a ~40k-character design through as a 260k-character row that every
       // later edit refuses and that installed Mac and iPhone builds cannot load.
-      const stored = normalizeDesignArtifact(content, artifact.identifier);
-      if (stored.length > CHAT_ARTIFACT_MAX_CHARS) {
+      const stored = normalizeDesignArtifactWithNotes(content, artifact.identifier);
+      // Every note authoring writes today is an image placeholder
+      // (`imagePlaceholder` in design/authoring.ts). A new kind of note needs
+      // its own code here before it is counted as a picture.
+      for (const detail of stored.notes) {
+        notes?.push({ identifier: artifact.identifier, code: "image_placeholder", detail });
+      }
+      if (stored.content.length > CHAT_ARTIFACT_MAX_CHARS) {
         return [
           problem(
             artifact,
             "too_large",
-            `The design expands to ${stored.length.toLocaleString()} characters when stored, above the ${CHAT_ARTIFACT_MAX_CHARS.toLocaleString()}-character limit.`,
+            `The design expands to ${stored.content.length.toLocaleString()} characters when stored, above the ${CHAT_ARTIFACT_MAX_CHARS.toLocaleString()}-character limit.`,
             false
           ),
         ];
@@ -137,10 +170,11 @@ function repairArtifact(artifact: ParsedArtifact, problems: ChatArtifactProblem[
     content = `${content}</svg>`;
   }
   if (artifact.type === "DESIGN") {
-    // normalizeDesignArtifact is also the storage boundary. Applying it here
-    // makes the presented body and the stored body identical, including for a
-    // compact model-authored design that needs expansion.
-    content = normalizeDesignArtifact(content, artifact.identifier);
+    // The same expansion is the storage boundary (artifacts-store.ts).
+    // Applying it here makes the presented body and the stored body identical,
+    // including for a compact model-authored design that needs expansion. Its
+    // notes were already taken on the first pass, from the unexpanded body.
+    content = normalizeDesignArtifactWithNotes(content, artifact.identifier).content;
   }
   return { ...artifact, content };
 }
@@ -164,11 +198,16 @@ export function verifyAndRepairChatArtifacts(parsed: ParsedArtifact[]): ChatArti
         refused: [],
         problems: [],
         repairs: [],
+        notes: [],
       },
     };
   }
 
-  const initialProblems = parsed.flatMap(validateArtifact);
+  // Notes come from the first pass, on the bodies as the model wrote them: a
+  // repaired DESIGN is already expanded, and a full document has nothing left
+  // to note, so the second pass would lose them.
+  const initialNotes: ChatArtifactNote[] = [];
+  const initialProblems = parsed.flatMap((artifact) => validateArtifact(artifact, initialNotes));
   // Repair is decided per artifact: one whose every problem has a safe fix is
   // repaired, whatever is wrong with the others. It was all or nothing, which
   // cost little while unrepairable problems were rare; a Stop inside the
@@ -189,7 +228,7 @@ export function verifyAndRepairChatArtifacts(parsed: ParsedArtifact[]): ChatArti
         initialProblems.filter((item) => item.identifier === artifact.identifier)
       );
     });
-    finalProblems = current.flatMap(validateArtifact);
+    finalProblems = current.flatMap((artifact) => validateArtifact(artifact));
   }
 
   const refused = [...new Set(finalProblems.map((item) => item.identifier))];
@@ -212,6 +251,9 @@ export function verifyAndRepairChatArtifacts(parsed: ParsedArtifact[]): ChatArti
       refused,
       problems: finalProblems.length ? finalProblems : initialProblems,
       repairs,
+      // Only what was kept: a refused artifact is not saved, so nothing of it
+      // became a placeholder.
+      notes: initialNotes.filter((note) => !refused.includes(note.identifier)),
     },
   };
 }
@@ -246,7 +288,18 @@ export function artifactRefusalNotice(report: ChatArtifactVerificationReport, id
     : "Artifact unavailable: verification failed, so it was not saved or presented.";
 }
 
+/** " 1 picture became a placeholder." / " 3 pictures became placeholders.", or "". */
+function placeholderSentence(report: ChatArtifactVerificationReport): string {
+  const count = (report.notes ?? []).filter((note) => note.code === "image_placeholder").length;
+  if (count === 0) return "";
+  return count === 1 ? " 1 picture became a placeholder." : ` ${count} pictures became placeholders.`;
+}
+
 export function artifactVerificationDetail(report: ChatArtifactVerificationReport): string {
+  return `${verificationSentence(report)}${placeholderSentence(report)}`;
+}
+
+function verificationSentence(report: ChatArtifactVerificationReport): string {
   if (report.status === "verified") return `${report.checked} artifact${report.checked === 1 ? "" : "s"} opened and verified.`;
   if (report.status === "repaired") {
     return `${report.checked} artifact${report.checked === 1 ? "" : "s"} verified after one bounded repair pass.`;

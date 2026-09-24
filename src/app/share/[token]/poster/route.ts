@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ipFromHeaders, rateLimit } from "@/lib/rate-limit";
-import { getSharedArtifactSnapshot, peekPublicShare } from "@/lib/share";
+import { getSharedArtifactSnapshot, peekPublicShare, sharedArtifactIsTrashed } from "@/lib/share";
 import { designPosterSvg, posterResponse, POSTER_CACHE_PUBLIC } from "@/lib/design/poster";
 
 // The renderer is plain TypeScript, but the ETag uses Node's crypto.
@@ -14,6 +14,15 @@ function notFound() {
 }
 
 /**
+ * The link is real but its design is in Recently deleted. 410 rather than 404
+ * because the page beside it says "isn't shared any more", and `no-store` so
+ * no cache keeps the answer once the owner restores it.
+ */
+function gone() {
+  return NextResponse.json({ error: "Gone" }, { status: 410, headers: { "Cache-Control": "no-store" } });
+}
+
+/**
  * GET /share/{token}/poster — the picture a shared design is.
  *
  * It lives here rather than under `/api/` because it answers people who are
@@ -24,9 +33,10 @@ function notFound() {
  * It resolves the share the way the page does, through the same two calls in
  * `src/lib/share.ts`, so it can only ever draw the version the page shows: a
  * revoked or unknown token, a chat share, or an artifact that is not a design
- * is a 404, and so is a design this build cannot read. It uses the peek rather
- * than the counting lookup, because fetching the picture on the page is not a
- * second view of it.
+ * is a 404, and so is a design this build cannot read. A design in Recently
+ * deleted is a 410, the poster's half of the page's "isn't shared any more".
+ * It uses the peek rather than the counting lookup, because fetching the
+ * picture on the page is not a second view of it.
  *
  * The five-minute public cache is the same horizon as the page's own content:
  * revoking a link stops new fetches at once and cached copies within five
@@ -45,6 +55,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   const { token } = await params;
   const share = await peekPublicShare(token);
   if (!share || share.kind !== "ARTIFACT") return notFound();
+  if (await sharedArtifactIsTrashed(share)) return gone();
 
   const snapshot = await getSharedArtifactSnapshot(share);
   if (!snapshot || snapshot.type !== "DESIGN") return notFound();

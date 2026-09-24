@@ -7,17 +7,26 @@ import { JunoMark } from "@/components/brand/logo";
 import { SharedChatTranscript } from "@/components/share/shared-chat-transcript";
 import { SharedArtifactViewer } from "@/components/share/shared-artifact-viewer";
 import { ReportShareButton } from "@/components/share/report-share-dialog";
+import { ShareGone } from "@/components/share/share-gone";
 import { SandboxProfileProvider } from "@/components/canvas/sandbox-document-frame";
 import { publicShareProfile } from "@/lib/sandbox-policy";
 import { sharedDesignPosterUrl } from "@/lib/design/poster-url";
-import { getPublicShare, getSharedArtifactSnapshot, getSharedChatSnapshot, peekPublicShare } from "@/lib/share";
+import {
+  getPublicShare,
+  getSharedArtifactSnapshot,
+  getSharedChatSnapshot,
+  peekPublicShare,
+  sharedArtifactIsTrashed,
+} from "@/lib/share";
 import { cn } from "@/lib/utils";
 
 /*
  * Public share page — no auth, works signed out. Renders the frozen snapshot
  * behind an unguessable token; revoked, taken-down, banned-owner or unknown
- * tokens 404. Every share page is noindex/nofollow: sharing is link-visibility,
- * never search-visibility.
+ * tokens 404. A link whose artifact is in Recently deleted renders
+ * `<ShareGone />` instead, and serves again, same token, once it is restored.
+ * Every share page is noindex/nofollow: sharing is link-visibility, never
+ * search-visibility.
  *
  * What is on it was written by someone the visitor does not know. So previews
  * below run no scripts at all (the `static` sandbox profile) until publish-time
@@ -35,6 +44,11 @@ const SHARE_DESCRIPTION = "Shared from Juno — a thoughtful AI assistant for ch
 export async function generateMetadata({ params }: { params: Promise<{ token: string }> }): Promise<Metadata> {
   const { token } = await params;
   const share = await peekPublicShare(token);
+  // A dark link keeps its title to itself, in the tab and in any unfurl: the
+  // owner deleted the thing, and its name is part of it.
+  if (share && (await sharedArtifactIsTrashed(share))) {
+    return { title: "Not shared any more", robots: { index: false, follow: false } };
+  }
   const title = share?.title.trim() || "Shared from Juno";
   return {
     title,
@@ -52,6 +66,13 @@ function formatSharedDate(date: Date): string {
 
 export default async function SharePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
+  // The gone check runs on the peek, before the lookup that counts a view: a
+  // visitor to a dark link has viewed nothing. The lookup is request-cached,
+  // so the peek and the counting call below share one query.
+  const peeked = await peekPublicShare(token);
+  if (!peeked) notFound();
+  if (await sharedArtifactIsTrashed(peeked)) return <ShareGone />;
+
   const share = await getPublicShare(token);
   if (!share) notFound();
 

@@ -91,3 +91,71 @@ test("a design that stays under the limit once expanded is accepted", () => {
   assert.equal(result.report.status, "verified");
   assert.equal(result.artifacts.length, 1);
 });
+
+/** A compact design with `pictures` image layers, the shape a model writes for a photo. */
+function compactWithPictures(pictures: number): string {
+  return JSON.stringify({
+    name: "Profile",
+    nodes: [
+      {
+        type: "frame",
+        name: "Screen",
+        width: 375,
+        height: 812,
+        fill: "#ffffff",
+        children: Array.from({ length: pictures }, (_, i) => ({
+          type: "image",
+          name: `Photo ${i + 1}`,
+          x: 24,
+          y: 24 + i * 140,
+          width: 120,
+          height: 120,
+        })),
+      },
+    ],
+  });
+}
+
+test("a picture that became a placeholder is a note on a verified design, and the detail says so", () => {
+  const result = verifyAndRepairChatArtifacts([
+    { identifier: "profile", type: "DESIGN", title: "Profile", content: compactWithPictures(1) },
+  ]);
+  // A note never moves the status: the design is saved either way.
+  assert.equal(result.report.status, "verified");
+  assert.equal(result.artifacts.length, 1);
+  assert.equal(result.report.notes?.length, 1);
+  assert.equal(result.report.notes?.[0]?.identifier, "profile");
+  assert.equal(result.report.notes?.[0]?.code, "image_placeholder");
+  assert.match(result.report.notes?.[0]?.detail ?? "", /Photo 1/);
+  assert.equal(artifactVerificationDetail(result.report), "1 artifact opened and verified. 1 picture became a placeholder.");
+});
+
+test("several pictures read as one plural sentence; a design without any adds nothing", () => {
+  const three = verifyAndRepairChatArtifacts([
+    { identifier: "profile", type: "DESIGN", title: "Profile", content: compactWithPictures(3) },
+  ]);
+  assert.equal(three.report.notes?.length, 3);
+  assert.match(artifactVerificationDetail(three.report), / 3 pictures became placeholders\.$/);
+
+  const none = verifyAndRepairChatArtifacts([
+    { identifier: "dash", type: "DESIGN", title: "Dashboard", content: compactDashboard(2) },
+  ]);
+  assert.deepEqual(none.report.notes, []);
+  assert.equal(artifactVerificationDetail(none.report), "1 artifact opened and verified.");
+});
+
+test("a refused design leaves no note, and a report from before notes still reads", () => {
+  // Over the stored limit once expanded: refused, so nothing of it was saved.
+  const tooBig = JSON.parse(compactDashboard(100)) as { nodes: Array<{ children: unknown[] }> };
+  tooBig.nodes[0].children.push({ type: "image", name: "Hero", width: 100, height: 100 });
+  const refused = verifyAndRepairChatArtifacts([
+    { identifier: "dash", type: "DESIGN", title: "Dashboard", content: JSON.stringify(tooBig) },
+  ]);
+  assert.equal(refused.report.status, "refused");
+  assert.deepEqual(refused.report.notes, []);
+
+  // An activity row persisted before this release has no `notes` key at all.
+  const legacy = { ...verifyAndRepairChatArtifacts([]).report, checked: 1 };
+  delete legacy.notes;
+  assert.equal(artifactVerificationDetail(legacy), "1 artifact opened and verified.");
+});

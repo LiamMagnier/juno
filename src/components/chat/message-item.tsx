@@ -94,6 +94,7 @@ import { QuotedSelection } from "@/components/chat/quoted-selection";
 import type { ChatMessage, ImageEditInput, RegenerateOptions, SendResult } from "@/hooks/use-chat";
 import type { ClientArtifact, ClientAttachment, ClientMessageVersionDetail, GenerationStatus } from "@/types/chat";
 import { resolveArtifactTag } from "@/lib/chat-client-state";
+import { cardSuggestion, isTrashed, placeholderCount } from "@/lib/artifact-card-state";
 
 function formatStreamElapsed(totalSec: number): string {
   if (totalSec < 60) return `${totalSec}s`;
@@ -727,6 +728,13 @@ interface MessageItemProps {
   animateIn?: boolean;
   artifactsByIdentifier: Map<string, ClientArtifact>;
   onOpenArtifact: (identifier: string, opts?: { fullscreen?: boolean }) => void;
+  /**
+   * An artifact card changed its artifact through a route — restored from
+   * Recently deleted, a suggestion applied or dismissed — and this is the
+   * server's copy. Absent on surfaces that cannot fold it back into their list,
+   * which hides those controls. Must be stable — see the memo note below.
+   */
+  onArtifactChanged?: (artifact: ClientArtifact) => void;
   /** Chat-only turn actions. Omitted on surfaces without a chat pipeline
    *  (code sessions), which hides the corresponding buttons entirely —
    *  an action that cannot run must not render. */
@@ -795,6 +803,7 @@ export const MessageItem = React.memo(function MessageItem({
   animateIn,
   artifactsByIdentifier,
   onOpenArtifact,
+  onArtifactChanged,
   onRegenerate,
   onContinue,
   onEdit,
@@ -1363,6 +1372,11 @@ export const MessageItem = React.memo(function MessageItem({
               ) : part.type === "artifact" ? (
                 (() => {
                   const artifact = resolveArtifactTag(artifactsByIdentifier, part.identifier, message);
+                  const trashed = isTrashed(artifact);
+                  // The suggestion belongs to the answer as it stands: an older
+                  // page of the version carousel is a reply that was replaced,
+                  // and the proposals it made went STALE with it.
+                  const suggestion = viewingOld ? null : cardSuggestion(artifact, message.id);
                   return (
                     <ArtifactInlineCard
                       key={i}
@@ -1373,10 +1387,21 @@ export const MessageItem = React.memo(function MessageItem({
                       title={artifact?.title ?? part.title ?? "Artifact"}
                       type={artifact?.type ?? part.artifactType ?? "CODE"}
                       language={artifact?.language ?? part.language}
+                      // A held tag's body is empty (the suggestion lives in its
+                      // own row), so the card shows the saved version — which
+                      // is the truth about what the artifact is now.
                       content={artifact?.content ?? part.content}
                       version={artifact?.currentVersion}
-                      updated={!!artifact && artifact.messageId != null && artifact.messageId !== message.id}
-                      onOpen={part.identifier && artifact ? () => onOpenArtifact(artifact.identifier, { fullscreen: false }) : undefined}
+                      // Not "Updated" while this reply's update is only waiting:
+                      // the bar under the header says what did happen.
+                      updated={!!artifact && !suggestion && artifact.messageId != null && artifact.messageId !== message.id}
+                      // Nothing opens a trashed artifact: the canvas would sit
+                      // on a row every route answers 404 for.
+                      onOpen={part.identifier && artifact && !trashed ? () => onOpenArtifact(artifact.identifier, { fullscreen: false }) : undefined}
+                      suggestion={suggestion}
+                      trashed={trashed}
+                      placeholderCount={placeholderCount(view.activity, part.identifier)}
+                      onArtifactChanged={onArtifactChanged}
                     />
                   );
                 })()

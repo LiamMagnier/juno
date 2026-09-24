@@ -329,6 +329,27 @@ module.exports = {
       merge_logs: true,
     },
     {
+      // Empties Recently deleted: artifacts trashed 30+ days ago, with their
+      // versions and links, every 6 hours. DRY until JUNO_ARTIFACTS_PURGE=1
+      // (it only logs `[artifact-purge] eligible=… purged=…`), and it stays
+      // unarmed until the deletion ledger lands. A single long-lived loop like
+      // the sweeper above, so two passes can never overlap.
+      name: "juno-artifact-purge",
+      cwd: runRoot,
+      script: "npm",
+      args: "run artifacts:purge -- --daemon",
+      watch: false,
+      max_memory_restart: "400M",
+      env: {
+        ...releaseEnv,
+        NODE_ENV: "production",
+      },
+      error_file: "logs/artifact-purge-err.log",
+      out_file: "logs/artifact-purge-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+    },
+    {
       name: "juno-voice-relay",
       // The relay is its own package inside the release, so it is the one app
       // whose cwd is a subdirectory rather than the release root.

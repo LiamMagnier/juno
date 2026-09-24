@@ -168,6 +168,80 @@ export function rewriteArtifactMarkup(text: string, updates: readonly ArtifactMa
   return rewritten;
 }
 
+/**
+ * The attribute a held tag carries: the id of the `ArtifactProposal` that holds
+ * the body instead of the message (the re-emit guard, src/lib/artifact-proposals.ts).
+ */
+export const HELD_ARTIFACT_ATTR = "suggestion";
+
+/** An attribute value, quoted so `parseAttrs` reads it back unchanged. */
+function quoteAttr(value: string): string {
+  if (!value.includes('"')) return `"${value}"`;
+  if (!value.includes("'")) return `'${value}'`;
+  // Neither quote survives inside the other; a title is the only value that
+  // could hold both, and losing its double quotes beats breaking the tag.
+  return `"${value.replace(/"/g, "")}"`;
+}
+
+/**
+ * Save a held re-emit in the legacy tag form, with its body left out.
+ *
+ * Every tag whose identifier is in `held` becomes a closed, EMPTY-body tag that
+ * keeps `identifier`, `type` and `title` and gains `suggestion="<proposal id>"`
+ * (04-MERGE-PLAN §3.7 E). The body lives in the proposal until a person
+ * applies it, so the message never carries content that is not a version:
+ *  - `parseArtifacts` skips an empty body, so no later re-parse (a reload, an
+ *    import, a re-run) can turn it into a version by accident;
+ *  - `splitMessageContent` still yields a card part, and the web card resolves
+ *    the artifact by identifier and shows its current version with the bar;
+ *  - installed Mac and iPhone builds draw no card and no tag text for an empty
+ *    body, so they never show unapplied work as the artifact.
+ * The identifier is always written out, even when the model omitted it: the
+ * fallback hashes the body, and the body is what is being removed.
+ *
+ * Only closed tags are held; an unfinished one is never a version or a
+ * suggestion (X-07). Every other tag is left exactly as it was.
+ */
+export function holdArtifactBodies(text: string, held: ReadonlyMap<string, string>): string {
+  if (held.size === 0) return text;
+  ARTIFACT_RE.lastIndex = 0;
+  return text.replace(ARTIFACT_RE, (full, rawAttrs: string, content: string) => {
+    const attrs = parseAttrs(rawAttrs);
+    const identifier = artifactId(attrs, content);
+    const suggestion = held.get(identifier);
+    if (!suggestion) return full;
+    const title = attrs.title || "Untitled";
+    const type = attrs.type || normalizeType(attrs.type).toLowerCase();
+    return (
+      `<juno:artifact identifier=${quoteAttr(identifier)} type=${quoteAttr(type)} title=${quoteAttr(title)} ` +
+      `${HELD_ARTIFACT_ATTR}=${quoteAttr(suggestion)}></juno:artifact>`
+    );
+  });
+}
+
+/**
+ * The model's view of a held tag: one line that says a suggestion is waiting,
+ * instead of an empty artifact.
+ *
+ * Without it the next turn reads an empty `<juno:artifact>` in its own history
+ * and has no way to tell "I wrote nothing" from "the person has not reviewed
+ * what I wrote", and either re-emits blind or believes the change landed. A
+ * tag counts as held only when it carries `suggestion` AND has no body: a body
+ * means the server did not write it, and describing it as waiting would be
+ * false.
+ */
+export function describeHeldArtifactsForModel(text: string): string {
+  if (!text.includes(`${HELD_ARTIFACT_ATTR}=`)) return text;
+  ARTIFACT_RE.lastIndex = 0;
+  return text.replace(ARTIFACT_RE, (full, rawAttrs: string, content: string) => {
+    if (content.trim()) return full;
+    const attrs = parseAttrs(rawAttrs);
+    if (!attrs[HELD_ARTIFACT_ATTR] || !attrs.identifier?.trim()) return full;
+    const title = attrs.title || "Untitled";
+    return `[Suggested revision of "${title}" (${attrs.identifier.trim()}) is waiting for the person's review; not applied.]`;
+  });
+}
+
 /** Detect an artifact that has started streaming but not yet closed. */
 export function parseStreamingArtifact(text: string): (Omit<ParsedArtifact, "content"> & { content: string; streaming: true }) | null {
   // Ignore any already-closed artifacts, look only at the tail.

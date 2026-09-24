@@ -6,6 +6,7 @@ import { coerceChatOrigin } from "@/lib/chat-origin";
 import { parseWorkspaceConfig } from "@/lib/projects/workspace-config";
 import { getViewUrl } from "@/lib/storage";
 import type { EntityIndexCursor } from "@/lib/sync-entity-index";
+import { anchorConversationId, visibleConversationWhere } from "@/lib/conversation-visibility";
 
 /*
  * Entity hydration for the native sync contract (GET /api/v1/entities): given
@@ -106,8 +107,14 @@ const loaders: Record<string, EntityLoader> = {
     const rows = await prisma.folder.findMany({ where: { id: { in: ids }, userId: accountId } });
     return new Map(rows.map((row) => [row.id, { id: row.id, name: row.name, createdAt: row.createdAt.toISOString() }]));
   },
+  // Never the account's anchor (conversation-visibility.ts). The change feed
+  // never announces it (its trigger skips kind 'anchor'), so no device asks;
+  // this is the defence in depth for one that does. With no revision behind
+  // it either, buildEntityEnvelopes then omits the id altogether, exactly as
+  // for an id that never existed, rather than sending a tombstone that would
+  // tell a device there was something there.
   conversation: async (accountId, ids) => {
-    const rows = await prisma.conversation.findMany({ where: { id: { in: ids }, userId: accountId } });
+    const rows = await prisma.conversation.findMany({ where: visibleConversationWhere({ id: { in: ids }, userId: accountId }) });
     return new Map(
       rows.map((row) => [
         row.id,
@@ -224,9 +231,19 @@ const loaders: Record<string, EntityLoader> = {
     );
     return new Map(entries);
   },
+  // Recently deleted is projected as a deletion. Trashing is an UPDATE, so
+  // the artifact's revision moves and every device asks for it again; the
+  // loader leaves the trashed row out, and buildEntityEnvelopes turns "has a
+  // revision, no row" into a tombstone, which installed builds already apply
+  // by dropping the artifact. Restoring is another UPDATE, and the row comes
+  // back live. No wire change, no new entity state.
+  //
+  // An artifact whose chat was deleted sits in the anchor and still loads
+  // here: the anchor carries the account's userId, and `conversationId`
+  // stays non-empty, which is all an installed build needs to decode it.
   artifact: async (accountId, ids) => {
     const rows = await prisma.artifact.findMany({
-      where: { id: { in: ids }, conversation: { userId: accountId } },
+      where: { id: { in: ids }, conversation: { userId: accountId }, deletedAt: null },
     });
     return new Map(
       rows.map((row) => [
@@ -246,6 +263,11 @@ const loaders: Record<string, EntityLoader> = {
       ]),
     );
   },
+  // Deliberately NOT filtered on the artifact's trash. Versions stay live on
+  // devices while their artifact is in Recently deleted: nothing announces a
+  // version when an artifact is restored (only the Artifact row changes), so a
+  // device that had dropped them would get the artifact back with none of its
+  // versions. A device that drops the trashed artifact simply never shows them.
   artifact_version: async (accountId, ids) => {
     const rows = await prisma.artifactVersion.findMany({
       where: { id: { in: ids }, artifact: { conversation: { userId: accountId } } },
@@ -705,6 +727,11 @@ export async function listEntityIndex(
       accountId,
       deletedAt: null,
       entityType: { in: SYNC_ENTITY_TYPES },
+      // The anchor never has a revision (its trigger skips it), so this only
+      // matters if one is ever written by hand or by a rolled-back trigger:
+      // the inventory is how a fresh device discovers ids, and the anchor is
+      // not one to discover.
+      NOT: { entityType: "conversation", entityId: anchorConversationId(accountId) },
       ...(after ? {
         OR: [
           { entityType: { gt: after.type } },

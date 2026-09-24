@@ -507,8 +507,11 @@ model Conversation {
   title             String    @default("New chat")
   titleSource       String    @default("default")
   model             String    @default("claude-opus-4-8")
-  // Which surface owns this conversation: "chat" (web + app chat) or "code"
-  // (Juno Code sessions synced from the app).
+  // "chat" (web + app), "code" (Juno Code), or "anchor": the account's one hidden
+  // home for artifacts whose chat was deleted, id `anchor_<userId>`
+  // (src/lib/conversation-visibility.ts). Never listed, searched, counted, synced,
+  // or written to by a chat route (04-MERGE-PLAN §3.5). Exception to TWO_PRODUCTS §5,
+  // recorded in docs/OPEN_DECISIONS.md; ends at contraction (M10).
   kind              String    @default("chat")
   // For kind "code": the app-side workspace (project folder) the session
   // belongs to, so the website can group sessions the way the app does.
@@ -596,6 +599,7 @@ model Project {
   memorySummaries    ProjectMemorySummary[]
   workspace          ProjectWorkspace?
   members            ProjectMember[]
+  artifacts          Artifact[]
 
   @@unique([userId, importSourceId])
   @@index([userId, updatedAt])
@@ -753,6 +757,7 @@ model Message {
   versions                MessageVersion[]
   researchRuns            ResearchRun[]            @relation("ResearchRunAssistantMessage")
   researchReportRevisions ResearchReportRevision[]
+  artifactProposals       ArtifactProposal[]
 
   @@unique([conversationId, clientId])
   @@index([conversationId, createdAt])
@@ -1155,14 +1160,53 @@ model Artifact {
   currentVersion Int          @default(1)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+  /// The artifact's own project once it has no chat (it sits in the anchor).
+  /// Null while it is in a chat, whose projectId is the truth. SetNull on project delete.
+  projectId      String?
+  /// Recently deleted: hidden from lists, search, projects and sync; purged after 30 days.
+  deletedAt      DateTime?
+  /// "user" is the only writer in this release ("conversation" | "project" later).
+  deletedReason  String?
 
-  conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  message      Message?          @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  conversation Conversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message      Message?           @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  project      Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
   versions     ArtifactVersion[]
   shares       Share[]
+  proposals    ArtifactProposal[]
 
   @@unique([conversationId, identifier])
   @@index([conversationId])
+  @@index([projectId])
+  @@index([deletedAt])
+}
+
+/// Juno's work that is not (yet) a version (04-MERGE-PLAN §2.7): a re-emit
+/// held back because a person edited after Juno's last write, or because it
+/// would drop design structure. Never change-captured, never synced, never
+/// shared, never pinned — the Artifact row is not touched when one is written,
+/// so a held suggestion causes no sync churn. M4 (R7) adds the other roles.
+model ArtifactProposal {
+  id          String    @id @default(cuid())
+  artifactId  String
+  baseVersion Int
+  role        String    @default("suggestion") // suggestion | try | draft
+  kind        String    @default("REWRITE") // REWRITE only in R1
+  payload     Json // { content, title, language }; content is the STORED form
+  summary     String    @default("")
+  messageId   String?
+  taint       String? // "untrusted-input" | null
+  status      String    @default("PENDING") // PENDING | APPLIED | DISCARDED | STALE
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+
+  artifact Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  // Cascade on purpose: a suggestion lives only as long as the reply that made
+  // it, which covers edit-truncation and chat deletion with no extra code.
+  message  Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([artifactId, status])
+  @@index([messageId])
 }
 
 model ArtifactVersion {

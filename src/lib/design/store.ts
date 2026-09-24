@@ -29,10 +29,14 @@ import type { DesignDocument } from "@/lib/design/types";
 export type OwnedArtifact = Artifact & { versions: ArtifactVersion[] };
 
 /** Artifacts are owned through their conversation — the same join every other
- *  artifact route uses, so design inherits exactly one ownership model. */
+ *  artifact route uses, so design inherits exactly one ownership model.
+ *
+ *  Live rows only: a design in Recently deleted is not found, so the design
+ *  GET, its transactions and Ask Juno all answer 404 for it, as the artifact
+ *  routes do, until it is restored. */
 export async function loadOwnedDesignArtifact(artifactId: string, userId: string): Promise<OwnedArtifact | null> {
   const artifact = await prisma.artifact.findFirst({
-    where: { id: artifactId, type: "DESIGN", conversation: { userId } },
+    where: { id: artifactId, type: "DESIGN", conversation: { userId }, deletedAt: null },
     include: { versions: { orderBy: { version: "asc" } } },
   });
   return artifact ?? null;

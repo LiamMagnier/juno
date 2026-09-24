@@ -6,6 +6,7 @@ import { listConversations } from "@/lib/queries";
 import { serializeConversation } from "@/lib/serializers";
 import { codeWorkspaceAttributionShape } from "@/lib/code-workspaces";
 import { DEFAULT_CODE_SESSION_TITLE } from "@/lib/title-ownership";
+import { deleteAllConversationsKeepingArtifacts } from "@/lib/artifact-home";
 
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -69,13 +70,18 @@ export async function POST(req: Request) {
   return NextResponse.json({ conversation: serializeConversation(conversation) }, { status: 201 });
 }
 
+/**
+ * "Delete all chats" (Settings → Data & privacy): every chat and Code session,
+ * with their messages. Not the artifacts made in them: those move to the
+ * account's anchor and stay in Artifacts (src/lib/artifact-home.ts), which is
+ * what the dialog promises, with the count GET /api/conversations/kept-artifacts
+ * gave it. The anchor itself is never listed, so pressing this again leaves
+ * everything already kept alone.
+ */
 export async function DELETE() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  await prisma.conversation.deleteMany({
-    where: { userId: user.id },
-  });
-
-  return NextResponse.json({ ok: true });
+  const { deleted, keptArtifacts } = await deleteAllConversationsKeepingArtifacts(user.id);
+  return NextResponse.json({ ok: true, deleted, keptArtifacts });
 }

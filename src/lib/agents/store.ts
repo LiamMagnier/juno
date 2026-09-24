@@ -17,6 +17,7 @@ import "server-only";
 
 import type { Agent } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { visibleConversationWhere } from "@/lib/conversation-visibility";
 import { decryptField, encryptField } from "@/lib/field-crypto";
 import { DEFAULT_MODEL } from "@/lib/models";
 import { normalizeAgentAvatar } from "@/lib/agents/avatar";
@@ -422,7 +423,7 @@ export async function listAgentActivity(userId: string, agentId: string, limit =
 export async function ensureAgentThread(userId: string, agent: Agent): Promise<string> {
   if (agent.conversationId) {
     const existing = await prisma.conversation.findFirst({
-      where: { id: agent.conversationId, userId },
+      where: visibleConversationWhere({ id: agent.conversationId, userId }),
       select: { id: true },
     });
     if (existing) return existing.id;
@@ -450,7 +451,8 @@ export async function ensureAgentThread(userId: string, agent: Agent): Promise<s
     data: { conversationId: conversation.id },
   });
   if (claimed.count === 1) return conversation.id;
-  await prisma.conversation.deleteMany({ where: { id: conversation.id, userId } }).catch(() => undefined);
+  // detach-safe: deletes a thread this call created a moment ago and never wrote to
+  await prisma.conversation.deleteMany({ where: visibleConversationWhere({ id: conversation.id, userId }) }).catch(() => undefined);
   const winner = await prisma.agent.findFirst({ where: { id: agent.id, userId }, select: { conversationId: true } });
   return winner?.conversationId ?? conversation.id;
 }
@@ -611,7 +613,7 @@ export async function updateAgentForUser(
   // and the apps switched on in it are the apps the agent may use.
   if (agent.conversationId && (patch.name !== undefined || connectorIds !== undefined)) {
     await prisma.conversation.updateMany({
-      where: { id: agent.conversationId, userId: user.id },
+      where: visibleConversationWhere({ id: agent.conversationId, userId: user.id }),
       data: {
         ...(patch.name !== undefined ? { title: patch.name, titleSource: "manual" } : {}),
         ...(connectorIds !== undefined ? { activeConnectors: connectorIds } : {}),

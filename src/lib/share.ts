@@ -7,6 +7,7 @@ import { env } from "@/lib/env";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import type { ArtifactType } from "@/lib/message-content";
 import { shareIsServable } from "@/lib/share-policy";
+import { visibleConversationWhere } from "@/lib/conversation-visibility";
 
 /*
  * Public share links for chats and artifacts. A Share is a snapshot pointer:
@@ -20,6 +21,11 @@ import { shareIsServable } from "@/lib/share-policy";
  * takedown of one link (`takenDownAt`, src/lib/share-moderation.ts), and a ban
  * of its owner, which the lookup below reads on every request — so a banned
  * account's pages stop serving at once and come back if the ban is lifted.
+ *
+ * And an artifact link goes dark while its artifact is in Recently deleted
+ * (`sharedArtifactIsTrashed`). That one is read from the artifact, never
+ * written onto the Share row, so a restore brings the same token back with
+ * nothing to undo, and a purge takes the row with it through the cascade.
  */
 
 export interface ClientShare {
@@ -82,11 +88,16 @@ async function assertNotTakenDown(where: { userId: string; conversationId?: stri
  * URL and orphan the old snapshot). Returns null when the target doesn't
  * exist or belongs to someone else — callers map that to 404. Throws
  * ShareTakenDownError when a link to the target was taken down.
+ *
+ * Also null, and so 404, for the account anchor (it is not a chat, and a link
+ * to it would publish every artifact whose chat was deleted) and for an
+ * artifact in Recently deleted (its link must not come back by the side door
+ * of sharing it again).
  */
 export async function createShare(userId: string, kind: ShareKind, targetId: string): Promise<Share | null> {
   if (kind === "CHAT") {
     const conversation = await prisma.conversation.findFirst({
-      where: { id: targetId, userId },
+      where: visibleConversationWhere({ id: targetId, userId }),
       select: { id: true, title: true },
     });
     if (!conversation) return null;
@@ -111,7 +122,7 @@ export async function createShare(userId: string, kind: ShareKind, targetId: str
   }
 
   const artifact = await prisma.artifact.findFirst({
-    where: { id: targetId, conversation: { userId } },
+    where: { id: targetId, conversation: { userId }, deletedAt: null },
     select: { id: true, title: true },
   });
   if (!artifact) return null;
@@ -152,11 +163,17 @@ export async function revokeShare(userId: string, shareId: string): Promise<bool
 /**
  * The user's active shares, newest first. A link Juno took down is not active
  * — it no longer opens — and the owner was told why in a notification
- * (src/lib/share-moderation.ts).
+ * (src/lib/share-moderation.ts). Nor is the link of an artifact in Recently
+ * deleted: it lists again, unchanged, once the artifact is restored.
  */
 export async function listShares(userId: string): Promise<Share[]> {
   return prisma.share.findMany({
-    where: { userId, revokedAt: null, takenDownAt: null },
+    where: {
+      userId,
+      revokedAt: null,
+      takenDownAt: null,
+      OR: [{ artifactId: null }, { artifact: { deletedAt: null } }],
+    },
     orderBy: { createdAt: "desc" },
   });
 }
@@ -184,6 +201,35 @@ const findActiveShare = cache(async (token: string): Promise<Share | null> => {
 /** Metadata-only lookup — same query as getPublicShare, no view-count side effect. */
 export async function peekPublicShare(token: string): Promise<Share | null> {
   return findActiveShare(token);
+}
+
+// Request-scoped like the share lookup: generateMetadata, the page and the
+// poster each ask, and the answer cannot change within one request.
+const artifactIsTrashed = cache(async (artifactId: string): Promise<boolean> => {
+  const artifact = await prisma.artifact.findUnique({
+    where: { id: artifactId },
+    select: { deletedAt: true },
+  });
+  return Boolean(artifact?.deletedAt);
+});
+
+/**
+ * Whether a servable share points at an artifact that is in Recently deleted.
+ *
+ * Such a link is GONE rather than not found: the page renders `<ShareGone />`
+ * ("This page isn't shared any more") and the poster answers 410, because the
+ * token is real and a visitor who had the page open deserves a sentence, not a
+ * 404 that reads as a typo. It says nothing about why; the trash is between
+ * Juno and the owner, exactly like a revocation.
+ *
+ * Ask this BEFORE `getPublicShare`, whose lookup counts a view: a visitor to a
+ * dark link has not viewed anything. A share whose artifact row is missing
+ * altogether is not "trashed"; the snapshot below finds nothing and the page
+ * 404s as it always has.
+ */
+export async function sharedArtifactIsTrashed(share: Pick<Share, "kind" | "artifactId">): Promise<boolean> {
+  if (share.kind !== "ARTIFACT" || !share.artifactId) return false;
+  return artifactIsTrashed(share.artifactId);
 }
 
 /**
@@ -251,8 +297,10 @@ export async function getSharedChatSnapshot(share: Share): Promise<SharedChatSna
       // leak tool payloads. Do not "complete" this select.
       select: { id: true, role: true, content: true, model: true, createdAt: true },
     }),
+    // Trashed artifacts are left out: a chat link must not keep publishing
+    // the title of something its owner has since deleted.
     prisma.artifact.findMany({
-      where: { conversationId: share.conversationId, createdAt: { lte: share.snapshotAt } },
+      where: { conversationId: share.conversationId, createdAt: { lte: share.snapshotAt }, deletedAt: null },
       select: { identifier: true, title: true, type: true },
     }),
   ]);
@@ -286,15 +334,19 @@ export interface SharedArtifactSnapshot {
  * The artifact version current at snapshotAt. Versions created after the
  * share stay private; if none predates it (created in the same instant),
  * fall back to the earliest version rather than 404ing a fresh share.
+ *
+ * Null for a trashed artifact too. Callers ask `sharedArtifactIsTrashed`
+ * first and show the gone page; this is the backstop, so a caller that forgot
+ * still cannot serve what the owner deleted.
  */
 export async function getSharedArtifactSnapshot(share: Share): Promise<SharedArtifactSnapshot | null> {
   if (share.kind !== "ARTIFACT" || !share.artifactId) return null;
 
   const artifact = await prisma.artifact.findUnique({
     where: { id: share.artifactId },
-    select: { title: true, type: true, language: true },
+    select: { title: true, type: true, language: true, deletedAt: true },
   });
-  if (!artifact) return null;
+  if (!artifact || artifact.deletedAt) return null;
 
   const version =
     (await prisma.artifactVersion.findFirst({

@@ -8,6 +8,8 @@ import { mutationRequestSchema, type MutationOperation } from "@/lib/sync-mutati
 import { WORKSPACE_CONFIG_VERSION, writeWorkspaceConfig } from "@/lib/projects/workspace-config";
 import { serializeWorkDefaults, WORK_DEFAULTS_VERSION } from "@/lib/work/projects";
 import { guardedMemoryWrite, type MemoryEntryKind } from "@/lib/memory-suppression";
+import { visibleConversationWhere } from "@/lib/conversation-visibility";
+import { deleteConversationsKeepingArtifacts } from "@/lib/artifact-home";
 
 export const runtime = "nodejs";
 
@@ -99,9 +101,13 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
       } });
       return { entityMappings: op.clientEntityId ? { [op.clientEntityId]: row.id } : {}, entity: { id: row.id, revision: await nextRevision(tx, accountId, "conversation", row.id) } };
     }
+    // Every conversation operation below is limited to visible conversations.
+    // The account's anchor (conversation-visibility.ts) has no revision, so a
+    // device that somehow names it passes requireRevision at base 0; the
+    // filter is what then answers 404, as for an id that does not exist.
     case "conversation.rename": {
       await requireRevision(tx, accountId, "conversation", op.entityId, baseRevision);
-      const updated = await tx.conversation.updateMany({ where: { id: op.entityId, userId: accountId }, data: { title: op.title, titleSource: "user" } });
+      const updated = await tx.conversation.updateMany({ where: visibleConversationWhere({ id: op.entityId, userId: accountId }), data: { title: op.title, titleSource: "user" } });
       if (!updated.count) throw new ApiV1Error("not_found", 404, "The conversation was not found.");
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "conversation", op.entityId) } };
     }
@@ -111,7 +117,7 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
         throw new ApiV1Error("invalid_request", 400, "The model is unknown.");
       }
       await requireOwnedConversationReferences(tx, accountId, op.patch);
-      const updated = await tx.conversation.updateMany({ where: { id: op.entityId, userId: accountId }, data: {
+      const updated = await tx.conversation.updateMany({ where: visibleConversationWhere({ id: op.entityId, userId: accountId }), data: {
         ...op.patch,
         ...(op.patch.title !== undefined ? { titleSource: "user" } : {}),
       } });
@@ -120,21 +126,28 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
     }
     case "conversation.archive": {
       await requireRevision(tx, accountId, "conversation", op.entityId, baseRevision);
-      const existing = await tx.conversation.findFirst({ where: { id: op.entityId, userId: accountId }, select: { id: true } });
+      const existing = await tx.conversation.findFirst({ where: visibleConversationWhere({ id: op.entityId, userId: accountId }), select: { id: true } });
       if (!existing) throw new ApiV1Error("not_found", 404, "The conversation was not found.");
       if (op.archived) {
         // Stamp archivedAt only on the null→now transition so re-archiving
         // never resets "when" (same semantics as the web PATCH).
-        await tx.conversation.updateMany({ where: { id: op.entityId, userId: accountId, archivedAt: null }, data: { archivedAt: new Date() } });
+        await tx.conversation.updateMany({ where: visibleConversationWhere({ id: op.entityId, userId: accountId, archivedAt: null }), data: { archivedAt: new Date() } });
       } else {
-        await tx.conversation.updateMany({ where: { id: op.entityId, userId: accountId, archivedAt: { not: null } }, data: { archivedAt: null } });
+        await tx.conversation.updateMany({ where: visibleConversationWhere({ id: op.entityId, userId: accountId, archivedAt: { not: null } }), data: { archivedAt: null } });
       }
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "conversation", op.entityId) } };
     }
     case "conversation.delete": {
       await requireRevision(tx, accountId, "conversation", op.entityId, baseRevision);
-      const deleted = await tx.conversation.deleteMany({ where: { id: op.entityId, userId: accountId } });
-      if (!deleted.count) throw new ApiV1Error("not_found", 404, "The conversation was not found.");
+      // Through the same helper as the web's deletes, inside this Serializable
+      // transaction: the chat's artifacts move to the anchor and stay in the
+      // library, and the move commits with the delete and its receipt. A
+      // conflict with a concurrent write surfaces as it always has, as the
+      // retryable error the outbox already handles. The response is unchanged
+      // on purpose: installed builds decode it strictly and learn about the
+      // moved artifacts from the change feed, like any other artifact update.
+      const deleted = await deleteConversationsKeepingArtifacts(tx, accountId, [op.entityId]);
+      if (!deleted.deleted) throw new ApiV1Error("not_found", 404, "The conversation was not found.");
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "conversation", op.entityId), deleted: true } };
     }
     case "folder.create": {

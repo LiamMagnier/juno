@@ -5,12 +5,16 @@ import { getCurrentUser } from "@/lib/session";
 import { getConversationThread } from "@/lib/queries";
 import { serializeConversation } from "@/lib/serializers";
 import { codeWorkspaceAttributionShape } from "@/lib/code-workspaces";
+import { visibleConversationWhere } from "@/lib/conversation-visibility";
+import { DELETE_TRANSACTION_TIMEOUT_MS, deleteConversationsKeepingArtifacts } from "@/lib/artifact-home";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  // The account's anchor (conversation-visibility.ts) is refused inside
+  // getConversationThread, with the same 404 as an id that does not exist.
   const thread = await getConversationThread(user.id, id);
   if (!thread) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(thread);
@@ -35,7 +39,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.conversation.findFirst({ where: { id, userId: user.id } });
+  // Every lookup and write here is limited to visible conversations: the
+  // account's anchor answers 404 like a missing id (no hint that it exists),
+  // and can never be given a title, a folder, a project, a pin or an archive
+  // date. Each of those would surface it somewhere a chat is listed.
+  const existing = await prisma.conversation.findFirst({ where: visibleConversationWhere({ id, userId: user.id }) });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
@@ -68,12 +76,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // chat was PATCHed, which defeats the point of storing "when" at all.
   if (archived === true) {
     await prisma.conversation.updateMany({
-      where: { id, userId: user.id, archivedAt: null },
+      where: visibleConversationWhere({ id, userId: user.id, archivedAt: null }),
       data: { archivedAt: new Date() },
     });
   }
 
-  const updated = await prisma.conversation.update({ where: { id, userId: user.id }, data });
+  const updated = await prisma.conversation.update({ where: visibleConversationWhere({ id, userId: user.id }), data });
   return NextResponse.json({ conversation: serializeConversation(updated) });
 }
 
@@ -82,9 +90,15 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.conversation.findFirst({ where: { id, userId: user.id } });
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  await prisma.conversation.delete({ where: { id, userId: user.id } });
-  return NextResponse.json({ ok: true });
+  // The artifacts made here move to the account's anchor and stay in
+  // Artifacts; the chat, its messages and its CHAT share go (artifact-home.ts).
+  // One transaction, so a chat is never gone with its artifacts still in it.
+  // `deleted` is 0 for an id that is not this account's, and for the anchor
+  // itself, which the helper never targets: both answer 404.
+  const { deleted, keptArtifacts } = await prisma.$transaction(
+    (tx) => deleteConversationsKeepingArtifacts(tx, user.id, [id]),
+    { timeout: DELETE_TRANSACTION_TIMEOUT_MS },
+  );
+  if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json({ ok: true, keptArtifacts });
 }

@@ -2,10 +2,12 @@ import "server-only";
 import type {
   Attachment,
   Artifact,
+  ArtifactProposal,
   ArtifactVersion,
   Conversation,
   Message,
   MessageVersion,
+  Prisma,
 } from "@prisma/client";
 import { getViewUrl } from "@/lib/storage";
 import type {
@@ -204,10 +206,52 @@ function normalizeVersionOrigin(raw: string | null): "generated" | "edit" | "res
   return raw === "generated" || raw === "edit" || raw === "restore" ? raw : null;
 }
 
-export function serializeArtifact(art: Artifact & { versions: ArtifactVersion[] }): ClientArtifact {
+/**
+ * What a client-facing artifact read includes: every version, plus the newest
+ * PENDING suggestion (the re-emit guard) as a label, never its content.
+ *
+ * `take: 1` because only the newest can be applied: writing a suggestion marks
+ * every earlier PENDING one for that artifact STALE. The select keeps the
+ * proposed content, which can be a whole design, off every chat load; Compare
+ * fetches it on demand from the proposal route.
+ *
+ * Sync does not use this. Suggestions are never synced, and the sync loader's
+ * `{ versions: true }` keeps its payloads exactly as they were.
+ */
+export const ARTIFACT_CLIENT_INCLUDE = {
+  versions: true,
+  proposals: {
+    where: { status: "PENDING" },
+    orderBy: { createdAt: "desc" },
+    take: 1,
+    select: { id: true, baseVersion: true, messageId: true, summary: true, createdAt: true },
+  },
+} satisfies Prisma.ArtifactInclude;
+
+type SerializableSuggestion = Pick<ArtifactProposal, "id" | "baseVersion" | "messageId" | "summary" | "createdAt">;
+
+/**
+ * Typed by what it reads. The R1 columns are optional here so a caller that
+ * selects narrower than the full row, or a fixture written before they
+ * existed, still type-checks; a full row satisfies this unchanged.
+ */
+type SerializableArtifact = Omit<Artifact, "projectId" | "deletedAt" | "deletedReason"> &
+  Partial<Pick<Artifact, "deletedAt">> & {
+    versions: ArtifactVersion[];
+    proposals?: SerializableSuggestion[];
+  };
+
+/**
+ * `deletedAt` and `pendingSuggestion` are added ONLY WHEN SET. A live artifact
+ * with nothing waiting serializes to exactly the object it did before this
+ * release, so the sync feed's artifact payloads and every fixture that pins one
+ * stay byte-identical, and a client that has never heard of either key reads
+ * an absent one as "live" and "nothing waiting", which is right.
+ */
+export function serializeArtifact(art: SerializableArtifact): ClientArtifact {
   const sorted = [...art.versions].sort((a, b) => a.version - b.version);
   const latest = sorted[sorted.length - 1];
-  return {
+  const out: ClientArtifact = {
     id: art.id,
     identifier: art.identifier,
     type: art.type as ArtifactType,
@@ -220,6 +264,18 @@ export function serializeArtifact(art: Artifact & { versions: ArtifactVersion[] 
     createdAt: art.createdAt.toISOString(),
     updatedAt: art.updatedAt.toISOString(),
   };
+  if (art.deletedAt) out.deletedAt = art.deletedAt.toISOString();
+  const suggestion = art.proposals?.[0];
+  if (suggestion) {
+    out.pendingSuggestion = {
+      id: suggestion.id,
+      baseVersion: suggestion.baseVersion,
+      messageId: suggestion.messageId,
+      summary: suggestion.summary,
+      createdAt: suggestion.createdAt.toISOString(),
+    };
+  }
+  return out;
 }
 
 /**

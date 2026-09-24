@@ -257,7 +257,25 @@ export interface ClientActivityEvent {
     refused: string[];
     problems: Array<{ identifier: string; code: string; detail: string; repairable: boolean }>;
     repairs: Array<{ identifier: string; code: string; detail: string; repairable: boolean }>;
+    /**
+     * What verification changed without it being a problem — today only a
+     * picture that became a placeholder. Optional so every report persisted
+     * before notes existed still decodes, and a note never moves `status`.
+     */
+    notes?: ClientArtifactVerificationNote[];
   };
+}
+
+/**
+ * One thing verification did to an artifact that the person should hear about.
+ *
+ * `detail` can quote a layer name the owner wrote, so a note lives only in the
+ * encrypted activity log — never in a server log line.
+ */
+export interface ClientArtifactVerificationNote {
+  identifier: string;
+  code: "image_placeholder";
+  detail: string;
 }
 
 /** How an artifact version came to be. Null on rows older than the column. */
@@ -282,6 +300,31 @@ export interface ClientArtifact {
   messageId?: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Set only while the artifact is in Recently deleted (ISO time it was
+   * trashed). Absent on every live artifact, so live payloads are unchanged.
+   */
+  deletedAt?: string | null;
+  /**
+   * Juno's newest re-emit that was held back rather than appended as a version
+   * (the re-emit guard). Present only when one is PENDING and the query asked
+   * for it (ARTIFACT_CLIENT_INCLUDE); absent means none is waiting.
+   */
+  pendingSuggestion?: ClientArtifactSuggestion | null;
+}
+
+/**
+ * A held re-emit, as a card or bar needs it: enough to label it and to call
+ * the proposal routes, never the proposed content (that is fetched on Compare).
+ */
+export interface ClientArtifactSuggestion {
+  id: string;
+  /** The version the suggestion was written against; Apply's stale check. */
+  baseVersion: number;
+  /** The assistant message that made it; its card carries the bar. */
+  messageId: string | null;
+  summary: string;
+  createdAt: string;
 }
 
 export interface ClientConversation {

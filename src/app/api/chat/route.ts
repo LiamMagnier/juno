@@ -39,7 +39,10 @@ import {
   detachArtifactsFromMessage,
   persistArtifacts,
   persistTargetedArtifactEdit,
+  planHeldReemits,
 } from "@/lib/artifacts-store";
+import { UNTRUSTED_INPUT_TAINT } from "@/lib/artifact-proposals";
+import { visibleConversationWhere } from "@/lib/conversation-visibility";
 import {
   applyArtifactPatch,
   ArtifactPatchError,
@@ -48,7 +51,15 @@ import {
   parseArtifactPatch,
   type ArtifactSourceForEdit,
 } from "@/lib/artifact-edit";
-import { parseArtifacts, parseForgets, parseMemories, rewriteArtifactMarkup } from "@/lib/message-content";
+import {
+  describeHeldArtifactsForModel,
+  holdArtifactBodies,
+  parseArtifacts,
+  parseForgets,
+  parseMemories,
+  rewriteArtifactMarkup,
+  type ParsedArtifact,
+} from "@/lib/message-content";
 import {
   artifactRefusalNotice,
   artifactVerificationDetail,
@@ -470,6 +481,27 @@ function prepareChatArtifactOutput(
 }
 
 /**
+ * The re-emit guard's plan for a turn: which re-emits will be held as a
+ * suggestion rather than appended (src/lib/artifact-proposals.ts), decided
+ * before the message is saved so the message is saved in its held form.
+ *
+ * A failure costs only that form, never the turn: `persistArtifacts` decides
+ * again inside its own write and still holds what it must, so the message
+ * keeps its full bodies and the store logs `held_unplanned`.
+ */
+async function planTurnHolds(conversationId: string, artifacts: ParsedArtifact[]): Promise<Map<string, string>> {
+  try {
+    return await planHeldReemits(conversationId, artifacts);
+  } catch (err) {
+    console.error("[chat] could not plan held re-emits", {
+      conversationId,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return new Map();
+  }
+}
+
+/**
  * The database side of idempotent submission recovery.
  *
  * Account-scoped by construction: the user id is bound once, here, rather than
@@ -485,7 +517,7 @@ function firstSubmissionRecoveryPort(userId: string): FirstSubmissionRecoveryPor
         select: { conversationId: true },
       }),
     legacyConversation: (clientRequestId) =>
-      prisma.conversation.findFirst({ where: { userId, clientRequestId }, select: { id: true } }),
+      prisma.conversation.findFirst({ where: visibleConversationWhere({ userId, clientRequestId }), select: { id: true } }),
     firstMessage: (conversationId) =>
       prisma.message.findFirst({
         where: { conversationId },
@@ -701,7 +733,7 @@ async function handleChat(req: Request) {
     if (input.conversationId) {
       workspaceProjectID = (
         await prisma.conversation.findFirst({
-          where: { id: input.conversationId, userId: user.id },
+          where: visibleConversationWhere({ id: input.conversationId, userId: user.id }),
           select: { projectId: true },
         })
       )?.projectId ?? null;
@@ -1444,10 +1476,15 @@ async function handleChat(req: Request) {
     newConversationProjectId = project?.id ?? null;
   }
 
+  // The account anchor (04-MERGE-PLAN §3.5) is not a chat: sending to it is
+  // "Conversation not found.", the same 404 as an id that does not exist, so
+  // nothing is ever written to it and nothing says it is there.
   let conversation = input.conversationId
-    ? await prisma.conversation.findFirst({ where: { id: input.conversationId, userId: user.id } })
+    ? await prisma.conversation.findFirst({ where: visibleConversationWhere({ id: input.conversationId, userId: user.id }) })
     : legacyOrphanConversationId
-      ? await prisma.conversation.findFirst({ where: { id: legacyOrphanConversationId, userId: user.id } })
+      ? await prisma.conversation.findFirst({
+          where: visibleConversationWhere({ id: legacyOrphanConversationId, userId: user.id }),
+        })
       : null;
   if (input.conversationId && !conversation) {
     return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
@@ -1468,6 +1505,8 @@ async function handleChat(req: Request) {
         identifier: input.artifactEdit.identifier,
         conversationId: conversation.id,
         conversation: { userId: user.id },
+        // A trashed artifact is not a canvas to edit; the card says so.
+        deletedAt: null,
       },
       include: {
         versions: { where: { version: input.artifactEdit.baseVersion }, take: 1 },
@@ -1531,9 +1570,9 @@ async function handleChat(req: Request) {
         // not its first Message. Lock and finish that orphan using the same
         // atomic acceptance boundary as a brand-new request.
         if (acceptedConversation) {
+          // anchor-safe: this id came from the guarded lookup above, and the anchor never carries a clientRequestId.
           const locked = await tx.$queryRaw<Array<{ id: string }>>`
-            SELECT "id"
-            FROM "Conversation"
+            SELECT "id" FROM "Conversation"
             WHERE "id" = ${acceptedConversation.id}
               AND "userId" = ${user.id}
               AND "clientRequestId" = ${clientRequestId}
@@ -1724,7 +1763,7 @@ async function handleChat(req: Request) {
       !conversation.activeConnectors.every((connector) => connectorSelection.includes(connector)))
   ) {
     await prisma.conversation.updateMany({
-      where: { id: conversation.id, userId: user.id },
+      where: visibleConversationWhere({ id: conversation.id, userId: user.id }),
       data: { activeConnectors: connectorSelection },
     });
     conversation = { ...conversation, activeConnectors: connectorSelection };
@@ -1866,9 +1905,12 @@ async function handleChat(req: Request) {
     include: { attachments: { where: { deletedAt: null } } },
     skip: historyWindowStart(totalMessages),
   });
+  // A held re-emit is saved as an empty tag (the body waits in its
+  // suggestion); the model reads a line that says so instead, or it would take
+  // the empty tag for "I wrote nothing" or for a change that landed.
   const history = recent
     .filter((m) => m.id !== staleAssistantId)
-    .map((m) => ({ ...m, content: decryptMessageText(m.content) }));
+    .map((m) => ({ ...m, content: describeHeldArtifactsForModel(decryptMessageText(m.content)) }));
   // The window before project reference files are added — `modelHistory`
   // below is what the provider receives. Kept apart so the memory query, the
   // knowledge query and the attachment scan read the user's words alone.
@@ -2597,7 +2639,7 @@ async function handleChat(req: Request) {
           // and share links survive and a re-emission appends to the same row.
           // Atomic with the overwrite so a crash can't leave a duplicate
           // version behind.
-          const [, , updated] = await prisma.$transaction([
+          const [, , , updated] = await prisma.$transaction([
             prisma.messageVersion.create({
               data: versionSnapshot({
                 ...stale,
@@ -2605,6 +2647,14 @@ async function handleChat(req: Request) {
               }),
             }),
             detachArtifactsFromMessage(stale.id),
+            // A suggestion lives as long as the reply that made it. The reply
+            // is overwritten in place here, so no cascade fires: the old
+            // answer's waiting suggestions are retired explicitly, and the new
+            // answer's own are written after this under the same message id.
+            prisma.artifactProposal.updateMany({
+              where: { messageId: stale.id, status: "PENDING" },
+              data: { status: "STALE", resolvedAt: new Date() },
+            }),
             prisma.message.update({
               where: { id: stale.id },
               data: {
@@ -3129,6 +3179,18 @@ async function handleChat(req: Request) {
                 targetedArtifactContent
               )
             : null;
+        // The re-emit guard: a re-emit over a person's edit, or one that would
+        // drop a design's structure, is saved as an empty tag naming its
+        // suggestion, and its body goes into the suggestion instead of the
+        // transcript (holdArtifactBodies). A targeted edit is never held: it
+        // names its base, and the person asked for it.
+        const heldReemits = artifactEditTarget
+          ? new Map<string, string>()
+          : await planTurnHolds(
+              conversationId,
+              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete)
+            );
+        if (heldReemits.size > 0) acc.replaceText(holdArtifactBodies(acc.text, heldReemits));
         const assistant = await persistAssistantTurn({
           content: acc.text,
           reasoning: acc.reasoning,
@@ -3154,7 +3216,8 @@ async function handleChat(req: Request) {
           : await persistArtifacts(
               conversationId,
               assistant.id,
-              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete)
+              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete),
+              { heldIds: heldReemits, taint: untrustedContentInTurn ? UNTRUSTED_INPUT_TAINT : null }
             );
         if (targetedArtifact) send({ type: "delta", text: acc.text });
         let memoryUpdated = false;
@@ -3191,7 +3254,7 @@ async function handleChat(req: Request) {
         // Touch the conversation after the assistant message has been persisted.
         // Keep Auto as the sticky selection when the user chose Auto.
         await prisma.conversation.updateMany({
-          where: { id: conversationId, userId: user.id },
+          where: visibleConversationWhere({ id: conversationId, userId: user.id }),
           data: {
             lastMessageAt: new Date(),
             model: conversationModelId,
@@ -3316,6 +3379,13 @@ async function handleChat(req: Request) {
             );
             const preparedArtifacts = prepareChatArtifactOutput(acc.text, sendActivity);
             if (preparedArtifacts) acc.replaceText(preparedArtifacts.text);
+            // Held exactly as on the success path: a finished block before the
+            // Stop is a re-emit like any other.
+            const heldReemits = await planTurnHolds(
+              conversationId,
+              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete)
+            );
+            if (heldReemits.size > 0) acc.replaceText(holdArtifactBodies(acc.text, heldReemits));
             // Same version-preserving persistence as the success path — a
             // partial answer still supersedes (never destroys) the previous one.
             if (!(await renewDurableReceiptLease())) throw new DurableReceiptLeaseLostError();
@@ -3337,10 +3407,11 @@ async function handleChat(req: Request) {
             const artifacts = await persistArtifacts(
               conversationId,
               assistant.id,
-              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete)
+              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete),
+              { heldIds: heldReemits, taint: untrustedContentInTurn ? UNTRUSTED_INPUT_TAINT : null }
             );
             await prisma.conversation.updateMany({
-              where: { id: conversationId, userId: user.id },
+              where: visibleConversationWhere({ id: conversationId, userId: user.id }),
               data: { lastMessageAt: new Date(), model: conversationModelId },
             });
             const assistantWithActivity = await prisma.message.update({

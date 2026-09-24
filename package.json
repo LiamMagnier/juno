@@ -50,6 +50,7 @@
     "crypto:rotate:messages": "NODE_OPTIONS=--conditions=react-server tsx scripts/rotate-message-keys.ts",
     "crypto:encrypt-columns": "NODE_OPTIONS=--conditions=react-server tsx scripts/encrypt-columns.ts",
     "tasks:sweep": "tsx scripts/sweep-stuck-code-tasks.ts",
+    "artifacts:purge": "NODE_OPTIONS=--conditions=react-server tsx scripts/purge-artifact-trash.ts",
     "work:runner": "NODE_OPTIONS=--conditions=react-server tsx scripts/work-runner.ts",
     "work:scheduler": "NODE_OPTIONS=--conditions=react-server tsx scripts/work-scheduler.ts",
     "work:repair-prompts": "NODE_OPTIONS=--conditions=react-server tsx scripts/repair-adopted-prompts.ts",

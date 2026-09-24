@@ -43,6 +43,7 @@ import { CodeSurface, type CodeSelection } from "@/components/canvas/code-surfac
 import { useRecordDesignCommit } from "@/components/canvas/use-record-design-commit";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
+import { SuggestionBar } from "@/components/artifacts/suggestion-bar";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { fileNameFromDisposition } from "@/lib/download-name";
 import { diffLines, unifiedDiff } from "@/lib/line-diff";
@@ -934,6 +935,27 @@ export function CanvasPanel({
           <TooltipContent>Close canvas</TooltipContent>
         </Tooltip>
       </header>
+
+      {/* ——— Juno's suggestion, when one is waiting ———
+          At the top of the panel, above history and the workspace alike, so
+          it is in view whichever the reader has open: a held re-emit is a
+          decision about the artifact, not about the tab on screen. Hidden on
+          an incognito canvas (nothing there is persisted, so nothing can be
+          held) and on a trashed row, which never opens here anyway. Apply
+          lands as a new version through `onArtifactUpdated`, like a restore:
+          the preview follows it, and a draft in the Code tab meets the stale-
+          write guard exactly as it would after any other save. */}
+      {artifact.pendingSuggestion && shareable && !artifact.deletedAt && (
+        <SuggestionBar
+          key={artifact.pendingSuggestion.id}
+          variant="bar"
+          artifactId={artifact.id}
+          type={artifact.type}
+          currentVersion={artifact.currentVersion}
+          suggestion={artifact.pendingSuggestion}
+          onResolved={onArtifactUpdated}
+        />
+      )}
 
       {/* ——— History: version rail + diff ——— */}
       {/* History and the workspace trade places rather than one replacing the
