@@ -1093,7 +1093,7 @@ function CommandMenu() {
      * A QUERY MATCHES AT A WORD START, NEVER INSIDE ONE.
      *
      * This was a raw `includes` over a space-joined keyword blob, and the
-     * blob is where it went wrong: "Open Artifacts" carries the keywords
+     * blob is where it went wrong: "Open Artifacts" carried the keywords
      * "documents canvas generated", so typing `rate` matched it — inside
      * "gene-RATE-d". Actions is the first section and its first row is the
      * default selection, so typing the exact title of a conversation and
@@ -1142,6 +1142,13 @@ function CommandMenu() {
          redirect onto it, so routing through it would spend a round trip to
          arrive at the row's own destination. */
       { id: "new-code", group: "Actions", label: "New code session", icon: AppIcons.code, keywords: "code start workspace session mac task agent", run: () => go("/code") },
+      /* To Artifacts, filtered to designs, with New already open on the
+         presets: choosing a size there is what makes the design, so this row
+         never creates one behind the reader's back from a keystroke. Starting
+         from a preset used to mean opening the Design page first; this is
+         that page's preset grid, one command away
+         (docs/design/artifacts-design/04-MERGE-PLAN.md §4.6). */
+      { id: "new-design", group: "Actions", label: "New design", icon: AppIcons.design, keywords: "mockup wireframe prototype", run: () => go("/artifacts?type=DESIGN&new=design") },
       /* "New scheduled task" is now "New automation" and lands on the editor
          rather than on a list: scheduled tasks are retired into Automations,
          and its old keywords ride along so the words people type for it still
@@ -1165,8 +1172,20 @@ function CommandMenu() {
       { id: "assistants", group: "Actions", label: "Open Assistants", icon: AppIcons.assistants, keywords: "custom assistants bots gpt gems prompts", run: () => go("/assistants") },
       { id: "code-runs", group: "Actions", label: "Open Code", icon: AppIcons.code, keywords: "sessions runs agents executions tasks juno code", run: () => go("/code") },
       { id: "code-pulls", group: "Actions", label: "Open pull requests", icon: AppIcons.pulls, keywords: "pr github review merge code", run: () => go("/code/pulls") },
-      { id: "design", group: "Actions", label: "Open Design", icon: AppIcons.design, keywords: "canvas frames mockup screen figma juno design", run: () => go("/design") },
-      { id: "artifacts", group: "Actions", label: "Open Artifacts", icon: AppIcons.artifacts, keywords: "documents canvas generated", run: () => go("/artifacts") },
+      /* DESIGN IS A TYPE NOW, NOT A PLACE, and this row is the word people
+         already type for it. It lands on Artifacts filtered to designs, which
+         is where `/design` itself redirects, so the palette and an old
+         bookmark agree about where designs live.
+
+         EACH WORD FINDS ONE PLACE. "canvas" used to key both this row and
+         Open Artifacts, so typing it offered two destinations for one
+         thought, and the first of them, the default selection, was the one
+         that is now a filter of the other (L34). The design words live here;
+         Artifacts keeps the words for everything else it holds. Matching is
+         at word starts, so no word here may begin another row's word either:
+         "frame" on one row would still find "frames" on another. */
+      { id: "design", group: "Actions", label: "Open Designs", icon: AppIcons.design, keywords: "canvas frames screens figma", run: () => go("/artifacts?type=DESIGN") },
+      { id: "artifacts", group: "Actions", label: "Open Artifacts", icon: AppIcons.artifacts, keywords: "documents generated made", run: () => go("/artifacts") },
       { id: "library", group: "Actions", label: "Open Library", icon: AppIcons.library, keywords: "saved prompts snippets", run: () => go("/library") },
       { id: "connections", group: "Actions", label: "Open Connections", icon: AppIcons.connections, keywords: "plugins integrations github mcp connectors", run: () => go("/connections") },
       /* The three rooms Work's tab row used to hold. They are destinations in
