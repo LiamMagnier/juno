@@ -31,6 +31,7 @@ import type { ClientSource } from "@/types/chat";
 import type {
   CanonicalToolId,
   ConnectorFailure,
+  RunNotice,
   ToolErrorCode,
   ToolFigure,
   ToolPresentArgs,
@@ -258,4 +259,10 @@ export interface ChatToolset extends McpToolset {
   resolve(name: string): ResolvedTool | undefined;
   /** Per requested connector, in request order (RC-3). */
   connectors: Array<{ id: string; label: string; state: "ready" | ConnectorFailure; tools: number }>;
+  /**
+   * What opening the toolset had to tell the turn: `tools_capped` with
+   * `params.dropped` when tools past the cap were not offered (SPEC §3.4
+   * item 3). Optional so a hand-built toolset (tests, adapters) need not say.
+   */
+  notices?: RunNotice[];
 }
