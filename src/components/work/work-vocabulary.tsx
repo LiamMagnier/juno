@@ -159,8 +159,15 @@ export function statusLabel(status: WorkStatus): string {
   return STATUS_META[status].label;
 }
 
-export function statusSentence(status: WorkStatus): string {
-  return STATUS_META[status].sentence;
+/**
+ * `actor` names who is doing the work when it is not Juno in general — an
+ * agent's name on its own page and in its thread (docs/design/AGENTS.md). Only
+ * a sentence that OPENS with "Juno" is re-voiced; the others do not name an
+ * actor at all.
+ */
+export function statusSentence(status: WorkStatus, actor?: string | null): string {
+  const sentence = STATUS_META[status].sentence;
+  return actor && sentence.startsWith("Juno ") ? `${actor}${sentence.slice("Juno".length)}` : sentence;
 }
 
 /**

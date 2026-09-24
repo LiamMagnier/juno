@@ -1,0 +1,193 @@
+{
+ "verdicts": [
+  {
+   "id": "web-artifact-pipeline-1",
+   "verdict": "confirmed",
+   "corrected_severity": "critical",
+   "corrected_location": "src/middleware.ts:55-77 with src/lib/csp.ts:31 and src/components/canvas/sandbox-frame.tsx:918-929",
+   "reasoning": "READ: middleware applies buildCsp to every non-/api document (middleware.ts:84-88, withRequestContext 59-78). The policy's script-src is 'self' 'nonce-X' 'strict-dynamic' 'unsafe-inline' https:, with 'unsafe-eval' only when isDev (csp.ts:21-31). Because a nonce is present, 'unsafe-inline' and https: are discarded. SandboxFrame renders srcDoc={buildSandboxDoc(...)} with sandbox=SANDBOX_ALLOW (sandbox-frame.tsx:849-854, 918-929). No nonce reaches the sandbox: x-nonce is read only in layout.tsx:114, page.tsx:54 and the engineering page:193. The comment at middleware.ts:55-57 is wrong, because an about:srcdoc document inherits its parent's policy container whatever its sandbox origin. TESTED independently: a scratch Node server sent the exact header from buildCsp({nonce,isDev:false}) and embedded the real buildSandboxDoc('HTML') and buildSandboxDoc('REACT') output in two iframes with SANDBOX_ALLOW. The parent's nonced script ran, but neither frame posted a single message. The HTML frame still showed its static text, since its inline script never ran, and the React frame was blank. The same page without the header gave html loading\u2192console\u2192done and react loading\u2192running(Compiling)\u2192done. INFERRED: dev is also broken, because the nonce still voids 'unsafe-inline' even when 'unsafe-eval' is added. The policy has been enforcing since fb3a42b5 (2026-08-26; ce536b4b was Report-Only). Consumers are the canvas (canvas-panel.tsx:1297), inline cards (artifact-inline-card.tsx:137), the public share (shared-artifact-viewer.tsx:71) and inline mermaid (mermaid-block.tsx:62,119). The Work site preview (work-site-preview.tsx:593-599) inherits the same policy. The glass branch does not change these files."
+  },
+  {
+   "id": "web-artifact-pipeline-2",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: the model's history is Message rows only (route.ts:1851-1861). Nothing puts the current artifact version into a normal turn. The only paths are the targeted edit (route.ts:1450-1483, buildArtifactEditPrompt) and the canvas-on selection nudge (prompt-sections.ts:47,104). Both need a 'modify' quote from a selection (composer.tsx:802-807, quote-context.ts:91). Manual saves append rows with origin edit/restore and touch no message (api/artifacts/[id]/route.ts:61-75). persistArtifacts reads currentVersion and appends currentVersion+1 'generated' with no base check (artifacts-store.ts:48-75). The system prompt says to re-emit complete content under the same identifier (system-prompt.ts:257). So a plain follow-up rebuilds from the model's own v1 text. The user's edit survives only in version history, not in the current version. Race part: persistArtifacts runs after persistAssistantTurn (route.ts:3094-3112). A P2002 there is not caught the way the manual POST catches it (api/artifacts/[id]/route.ts:76-80), so it would throw after the message is written. The window is narrow but real."
+  },
+  {
+   "id": "web-artifact-pipeline-3",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: regenerate targets the newest message when it is an ASSISTANT row (route.ts:1723-1731). The supersede transaction runs prisma.artifact.deleteMany({ where: { messageId: stale.id } }) (route.ts:2562-2593). Artifact.messageId is never reassigned on later versions (artifacts-store.ts:68-70). ArtifactVersion rows and Share.artifact (onDelete: Cascade, schema.prisma Share model) go with the row. MessageVersion keeps only the old message text. Manual edits add no message, so the creating message stays the trailing one. No client-side warning exists; a grep of chat components for regenerate plus confirm, artifact or share found nothing. The new answer's same identifier then creates a fresh v1 (artifacts-store.ts:76-90)."
+  },
+  {
+   "id": "web-artifact-pipeline-4",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: parseArtifacts salvages an unclosed trailing artifact (message-content.ts:104-115). validateArtifact has no completeness check for HTML/REACT/CODE/MARKDOWN (chat-artifact-verification.ts:60-106). resolveTerminalState persists partial output for user_stopped and network_error when the turn is not a targeted edit (terminal-state.ts:97-101). The partial branch then runs prepareChatArtifactOutput and persistArtifacts (route.ts:3263-3292). The success path persists regardless of finishReason (route.ts:3058-3112). PROBE: 'Updated.<juno:artifact identifier=\"site\" type=\"HTML\" ...><h1>Wel' returned status verified, accepted ['site']. rewriteArtifactMarkup then CLOSES the salvaged tag in the saved message (message-content.ts:144-151; probe output ends '<h1>Wel</juno:artifact>'), so the next turn's history shows a complete-looking artifact. Continue only sends the text 'Continue from where you left off.' (use-chat.ts:1862-1864). Mitigation that exists: appendFinishWarning adds a message-level 'stopped' or 'cut off' activity row (chat-responses.ts:75-97), but nothing marks the artifact version as incomplete. How the continuation renders is inferred."
+  },
+  {
+   "id": "web-artifact-pipeline-5",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: RESEARCH_OUTPUT_CONTRACT hard-codes identifier=\"research-report\" (route.ts:233-236), and it is appended to every research synthesis (route.ts:2819). Identifiers are unique per conversation, and a reuse appends a version and overwrites title and type (artifacts-store.ts:48-67). Earlier cards render the artifact's current content and title (message-item.tsx:1362-1374). The collision is real. Downgraded because nothing is destroyed (the first report stays as v1 in history), and it needs two deep-research runs on different topics in one conversation."
+  },
+  {
+   "id": "web-artifact-pipeline-6",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: the 200k check runs on the compact body (chat-artifact-verification.ts:63). Storage then expands it with no size check (artifacts-store.ts:16-25). PROBE with the real normalizeDesignArtifact: a 300-node compact design grew 31,032\u2192206,921 chars (6.7x) and 400 nodes grew 41,466\u2192275,639. Both 'verified'. Downstream: every editor transaction whose serialized result exceeds 200k is refused (design/store.ts:63,117-119), a manual POST is capped by zod at 200,000 (api/artifacts/[id]/route.ts:8), and a targeted edit is refused (artifact-edit.ts:137). Native: NativeArtifactStore.decodeVersion throws corruptRecord when content.utf16.count > 200_000, and load() propagates it (NativeArtifactStore.swift:89-107,151-160). That store IS used by the shipped apps through NativeArtifactModel.reload (NativeArtifactStore.swift:257-289), created in JunoDesktopConfiguration.swift:312 and JunoMobileApp.swift:288. So one oversized version fails the whole Mac/iOS artifact library load and sets phase .failed."
+  },
+  {
+   "id": "web-artifact-pipeline-7",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the allowlist regex is at chat-artifact-verification.ts:84-86, and the renderer is mermaid@11 (sandbox-frame.tsx:11). PROBE: quadrantChart, YAML front-matter before flowchart, a leading '%% comment', xychart-beta, sankey-beta, C4Context, requirementDiagram, block-beta, architecture-beta, packet-beta and kanban were all refused. flowchart and stateDiagram-v2 passed. A refusal replaces the body with the refusal sentence (route.ts:442-447 via message-content.ts:130). A fenced ```mermaid body is also refused (additional probe)."
+  },
+  {
+   "id": "web-artifact-pipeline-8",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: normalizeDesignArtifact calls JSON.parse(content) directly (design/authoring.ts:215-221). parseArtifacts only trims (message-content.ts:100). The patch path does strip fences (artifact-edit.ts:50-54), so the codebase already expects models to fence JSON. PROBE: a fenced body was refused with 'A design artifact must contain JSON.', and the same JSON unfenced was verified. Mitigation: the prompt asks for bare JSON, 'nothing else' (system-prompt.ts:271), so how often this happens is unproven, but when it does the whole design is lost."
+  },
+  {
+   "id": "web-artifact-pipeline-9",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the repair pass runs only when repairable.length > 0 && unrepairable.length === 0 (chat-artifact-verification.ts:152-159). PROBE: an invalid DESIGN plus an SVG missing </svg> gave refused ['bad-design','icon'] with attempts 0, while the same SVG alone gave 'repaired'. Downgraded to low: it needs two artifacts in one reply with separate failures, and the prompt tells the model to emit one artifact per build (system-prompt.ts:256)."
+  },
+  {
+   "id": "web-artifact-pipeline-10",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: hasPreview = isMarkdown || rt.mode === 'web' (shared-artifact-viewer.tsx:30-33). runtimeFor('DESIGN') returns mode 'design' (artifact-runtime.ts:97-98), so only the Code tab renders the raw document (shared-artifact-viewer.tsx:76-78). The share page mounts only SharedArtifactViewer for artifacts (app/share/[token]/page.tsx:47,90). A grep of src/components/share and src/app/share for a design renderer found none."
+  },
+  {
+   "id": "web-artifact-pipeline-11",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: createShare returns the newest active share for the artifact if one exists (share.ts:91-95), and snapshotAt is set only at creation (104). The dialog creates or fetches on open (share-dialog.tsx:78-87) and says 'People with the link see this artifact as it is now. Later edits stay private.' (122). getSharedArtifactSnapshot serves the highest version created at or before snapshotAt (share.ts:257-265). No update path exists, only revoke (share.ts:113-121) and create again."
+  },
+  {
+   "id": "web-artifact-pipeline-12",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: projects/[id]/page.tsx:305-318 requires Array.isArray(res.artifacts). GET /api/artifacts returns { items } (api/artifacts/route.ts:80-96), so projectArtifacts stays [] and feeds sourceCount (726), artifactCount (740) and the sources list (969). The route takes no project filter (route.ts:20-40), so changing the key alone would list every artifact the user owns."
+  },
+  {
+   "id": "web-artifact-pipeline-13",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the query is findMany orderBy updatedAt desc, take 200, with no cursor or type parameter (api/artifacts/route.ts:24-40). The /design page filters that response on the client for type 'DESIGN' (design/page.tsx:75-79). The /artifacts page fetches the same capped endpoint (artifacts/page.tsx:224), and a grep for cursor or load more found no paging."
+  },
+  {
+   "id": "web-artifact-pipeline-14",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the export route calls itself a GDPR full account snapshot (account/export/route.ts:29-34). Its Promise.all (50+) has no artifact or artifactVersion query; a grep for 'artifact|design|share' in the file finds nothing. The only Artifact create paths are artifacts-store.ts:77 and api/design/route.ts:81, so import cannot restore them either. Partial mitigation: generated v1 bodies survive inside the exported message text. Manual edits, restores, design-editor documents and /design-started designs do not."
+  },
+  {
+   "id": "web-artifact-pipeline-15",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the parent accepts 'juno:selected' from its own iframe whenever onElementSelected is set, with no inspect-state check (sandbox-frame.tsx:863-876). CanvasPanel always passes handleElementSelected (canvas-panel.tsx:1304), which sets a 'modify' quote and toasts (709-727). The next send becomes a targeted artifactEdit (composer.tsx:802-807), and the snippet lands in the edit system prompt as 'Selected preview/source excerpt' (artifact-edit.ts:175-177). The incremental injection risk is small, because that same prompt already contains the artifact's full attacker-controlled source as CURRENT SOURCE (artifact-edit.ts:179-182). The real effect is UI spoofing: a chip and a toast, and the next message silently switched to patch mode. Unreachable on web today because of pipeline-1."
+  },
+  {
+   "id": "web-artifact-pipeline-16",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: ARTIFACT_RE uses ([^>]*?) for attributes and a non-greedy body (message-content.ts:29), and parseAttrs does no entity decoding (49-56). PROBES: title=\"Revenue > Costs\" gave title '\"Revenue' and a body starting 'Costs\" language=\"md\"># Hi'. A literal </juno:artifact> in the body cut the body to 'Use `'. title=\"Q&amp;A\" stayed escaped. Two same-identifier blocks were both rewritten to 'second' (rewriteArtifactMarkup keyed by identifier, 123-139), and persistArtifacts would store them as two versions from one message."
+  },
+  {
+   "id": "web-artifact-pipeline-17",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the chat snapshot filters messages by createdAt <= snapshotAt (share.ts:195-199). Regenerate overwrites the row with createdAt: new Date() (route.ts:2589), so the regenerated answer drops out of an existing share, and MessageVersion is never read. Regenerate also deletes the answer's artifacts (route.ts:2573), and recreated rows have a new createdAt, so their inert cards vanish too (share.ts:212-215). Artifact titles are read live (212-215,230). Severity could reasonably be medium, since the viewer sees a question with no answer after a common owner action."
+  },
+  {
+   "id": "web-artifact-pipeline-18",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: useEffect calls createLink() whenever open becomes true (share-dialog.tsx:78-87). createLink POSTs /api/share (60-68), which inserts a Share row if none is active (share.ts:97-106). The same dialog is used for chats from the sidebar and chat view (app-sidebar.tsx:1484, chat-view.tsx:2583), so opening it to read what it does publishes a link."
+  },
+  {
+   "id": "web-artifact-pipeline-19",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the artifact_version sync loader omits origin (sync-entities.ts:244-259), and decodeVersion hard-codes origin: nil (NativeArtifactStore.swift:160-167). Narrower than claimed: openArtifact fetches REST detail, which carries origin (NativeArtifactAPIClient.swift:356), and merge() replaces versions (NativeArtifactStore.swift:433-445). The Mac calls it on selection (DesktopArtifactsScreen.swift:246-247), and the limitation is documented there (1084-1086). So badges show online after opening. They are missing offline, before hydration, and again after each sync-driven reload(), which replaces artifacts from the store (NativeArtifactStore.swift:252-262)."
+  },
+  {
+   "id": "web-artifact-pipeline-20",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the check is /<\\/svg>\\s*$/ (chat-artifact-verification.ts:78) and the repair appends '</svg>' (110-111). PROBE: '<svg></svg>\\n<!-- end -->' \u2192 'repaired', stored as '...<!-- end --></svg>'. Worse case found: a ```svg fenced body is 'repaired and verified' into '```svg\\n<svg ...></svg>\\n```</svg>', keeping the fence text and a stray closing tag."
+  },
+  {
+   "id": "web-artifact-pipeline-21",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: after the stream, persistArtifacts(conversationId, auditedMessageId, parseArtifacts(audit.report)) runs with no verifyAndRepairChatArtifacts and no base-version check (route.ts:3546-3597). A manual edit saved while the audit ran would be superseded by a 'generated' version, the same class as pipeline-2. The 'no client notice' part is partly refuted: the ArtifactVersion trigger (migration 20260716200000_account_change_log:117) feeds /api/sync/stream. app-provider dispatches juno:sync and router.refresh() (app-provider.tsx:185-212), and use-chat resets artifacts when the server transcript changes (use-chat.ts:318-335; the revision is JSON.stringify(messages), chat-client-state.ts:11-12). The refresh is deferred on a soft-routed new chat (app-provider.tsx:197-200)."
+  },
+  {
+   "id": "ux-0",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "Major UX (mapped to high). READ: refused identifiers are rewritten to 'Artifact unavailable: verification failed, so it was not saved or presented.' (route.ts:442-447; message-content.ts:130). The activity receipt keeps only problem codes and details, not the source (route.ts:448-457; chat-artifact-verification.ts:166-177), so the body is unrecoverable. Overstated in one respect: the generic message Regenerate menu exists (message-item.tsx:548-605), so there is a retry of sorts. There is no artifact-level show-source or ask-to-fix. Combined with pipeline-7 and pipeline-8, valid content reaches the user as an error."
+  },
+  {
+   "id": "ux-1",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "Major UX (mapped to high). Same code path as pipeline-4 (message-content.ts:104-115; terminal-state.ts:97-101; route.ts:3263-3292). One nuance: a message-level warning activity is emitted (chat-responses.ts:75-97, route.ts:3265), so there is some hint that the answer stopped. Nothing on the card or canvas says the new current version is incomplete or that the previous one was whole."
+  },
+  {
+   "id": "ux-2",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "Major UX (mapped to high). Same as pipeline-10: shared-artifact-viewer.tsx:30-33 gives DESIGN (mode 'design', artifact-runtime.ts:98) no Preview tab, and the Code tab shows the stored full DesignDocument JSON (76-78)."
+  },
+  {
+   "id": "ux-3",
+   "verdict": "confirmed",
+   "corrected_severity": "critical",
+   "reasoning": "Independently reproduced (see pipeline-1). Every web SandboxFrame consumer inherits the parent CSP: canvas-panel.tsx:1297, artifact-inline-card.tsx:137, shared-artifact-viewer.tsx:71, and mermaid-block.tsx:62,119 for inline mermaid. With Juno's production header, an HTML artifact's inline script never ran and a React artifact stayed blank, with zero status messages. This matches the 'static, doesn't move and doesn't load' report quoted in a0e41c9b, which fixed only the inner meta policy and never removed the inherited outer one."
+  }
+ ],
+ "missed": [
+  {
+   "id": "missed-1",
+   "title": "Editing an earlier user message hard-deletes every later artifact, with its manual versions, design-editor work and public share links",
+   "severity": "high",
+   "file": "src/app/api/messages/[id]/route.ts",
+   "line": 38,
+   "evidence": "READ: the PATCH edit-and-resend transaction runs prisma.artifact.deleteMany({ where: { conversationId, message: { createdAt: { gt: message.createdAt } } } }) and then message.deleteMany for later messages (route.ts:30-45). ArtifactVersion and Share cascade from Artifact (schema.prisma Artifact/Share models, Share.artifact onDelete: Cascade). The header comment says 'an edit never destroys history' (10-15), yet only the edited user message is snapshotted.",
+   "failure_scenario": "The user builds a landing page over several turns, hand-edits it (v4 'edit'), and shares it with a client. They then fix a typo in their first message and resend it. The artifact, every version and the Share row are hard-deleted, and the client's /share link returns 404."
+  },
+  {
+   "id": "missed-2",
+   "title": "Design-editor edits fold into an existing version row in place, so an artifact share can show edits made after sharing",
+   "severity": "low",
+   "file": "src/lib/design/store.ts",
+   "line": 179,
+   "evidence": "READ: when the latest version's origin is 'edit', the transaction is a user one, and the checkpoint is under CHECKPOINT_WINDOW_MS (30_000) old (operations.ts:511,529-539), applyDesignTransaction rewrites that row's content in place (design/store.ts:122-127, rewriteVersion 179-190: artifactVersion.updateMany ... data: { content }). getSharedArtifactSnapshot picks the version by createdAt <= snapshotAt (share.ts:257-261) and assumes the row is immutable.",
+   "failure_scenario": "The user drags a frame (a new 'edit' checkpoint vN), opens Share within the 30 s window, and keeps nudging nodes. The later nudges fold into vN, which the share serves, so post-share edits appear on the public link despite 'Later edits stay private.' (share-dialog.tsx:122)."
+  },
+  {
+   "id": "missed-3",
+   "title": "Artifact share snapshots read the live title and type, so a rename or a type change by identifier reuse leaks or misrenders",
+   "severity": "low",
+   "file": "src/lib/share.ts",
+   "line": 251,
+   "evidence": "READ: getSharedArtifactSnapshot selects title, type and language from the live Artifact row (share.ts:251-255, 268-271) and only pins the version content. persistArtifacts overwrites title, type and language on every reuse of an identifier (artifacts-store.ts:63-66), and PATCH renames (api/artifacts/[id]/route.ts:104-108).",
+   "failure_scenario": "The owner shares an HTML artifact, and the model later reuses the identifier as MARKDOWN (or the owner renames it). The public page shows the new title, and it renders the frozen HTML version through the MARKDOWN runtime as prose instead of a preview."
+  },
+  {
+   "id": "missed-4",
+   "title": "Fenced artifact bodies are mishandled across types: Mermaid refused, SVG stored as corrupt 'repaired' content",
+   "severity": "low",
+   "file": "src/lib/chat-artifact-verification.ts",
+   "line": 78,
+   "evidence": "PROBE: <juno:artifact type=\"MERMAID\">```mermaid\\nflowchart TD\\n A-->B\\n```</juno:artifact> \u2192 refused (mermaid_diagram_missing). <juno:artifact type=\"SVG\">```svg\\n<svg ...></svg>\\n```</juno:artifact> \u2192 status 'repaired', stored content '```svg\\n<svg ...></svg>\\n```</svg>'. No fence stripping in parseArtifacts (message-content.ts:92-101) or in validate/repair (chat-artifact-verification.ts:60-120), unlike artifact-edit.ts:53.",
+   "failure_scenario": "A model that fences code inside the tag produces a logo SVG. The receipt says 'Artifact repaired and verified', but the stored source starts with ```svg and ends in a stray </svg>, so the download is invalid XML and the preview shows the fence text."
+  }
+ ]
+}

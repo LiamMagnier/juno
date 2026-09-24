@@ -639,6 +639,393 @@ paths:
         '404': { $ref: '#/components/responses/GeneralRouteError' }
 
   # ---------------------------------------------------------------------------
+  # Agents (docs/design/AGENTS.md): named, persistent teammates over Work. Like
+  # the Work paths below, these live under /api, not /api/v1, and take the same
+  # bearer. An agent's thread is an ordinary conversation and its tasks are
+  # ordinary Work sessions, so nothing here re-describes a run: `task` is a
+  # glance, and the run itself is read through the Work paths.
+  # ---------------------------------------------------------------------------
+  /agents:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeAgents
+      summary: The roster, each agent with its derived state
+      description: >-
+        `state` and `stateSentence` are derived on read from the agent and its
+        newest task, never stored; `thinking` and `listening` are client-only
+        states the server never reports.
+      responses:
+        '200':
+          description: Every agent the account keeps, in roster order.
+          content: { application/json: { schema: { $ref: '#/components/schemas/AgentsResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: hireNativeAgent
+      summary: Hire an agent, with its thread and optional first goal
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AgentHireRequest' } } }
+      responses:
+        '201':
+          description: The new agent.
+          content: { application/json: { schema: { $ref: '#/components/schemas/AgentResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeAgent
+      summary: Everything the agent's page draws
+      responses:
+        '200':
+          description: The agent, its goals, new ideas, notes, routines and recent tasks.
+          content: { application/json: { schema: { $ref: '#/components/schemas/AgentDetail' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    patch:
+      servers: [{ url: /api }]
+      operationId: updateNativeAgent
+      summary: Edit the profile, autonomy and apps, or pause and resume it
+      description: >-
+        Pausing switches off the routines it owns and records which; resuming
+        switches back on only those, so a routine the person turned off stays off.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AgentPatchRequest' } } }
+      responses:
+        '200':
+          description: The agent after the change.
+          content: { application/json: { schema: { $ref: '#/components/schemas/AgentResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: retireNativeAgent
+      summary: Retire it; its thread and tasks are kept as ordinary chats and tasks
+      responses:
+        '200': { description: Retired. }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}/thread:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+    post:
+      servers: [{ url: /api }]
+      operationId: openNativeAgentThread
+      summary: The agent's thread, created on first use
+      description: POST because the first call writes a conversation.
+      responses:
+        '200':
+          description: The conversation id of its thread.
+          content:
+            application/json:
+              schema: { type: object, required: [conversationId], properties: { conversationId: { type: string } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}/goals:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeAgentGoals
+      responses:
+        '200':
+          description: Every goal, oldest first.
+          content:
+            application/json:
+              schema: { type: object, required: [goals], properties: { goals: { type: array, items: { $ref: '#/components/schemas/AgentGoal' } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: createNativeAgentGoal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, maxLength: 140 }
+                detail: { type: string, maxLength: 2000 }
+                cadence: { type: string, enum: [none, daily, weekly] }
+                dueAt: { type: [string, 'null'], format: date-time }
+      responses:
+        '201':
+          description: The goal.
+          content: { application/json: { schema: { type: object, required: [goal], properties: { goal: { $ref: '#/components/schemas/AgentGoal' } } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}/goals/{goalId}:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+      - { in: path, name: goalId, required: true, schema: { type: string } }
+    patch:
+      servers: [{ url: /api }]
+      operationId: updateNativeAgentGoal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 140 }
+                detail: { type: string, maxLength: 2000 }
+                cadence: { type: string, enum: [none, daily, weekly] }
+                status: { type: string, enum: [active, paused, achieved, dropped] }
+                dueAt: { type: [string, 'null'], format: date-time }
+      responses:
+        '200':
+          description: The goal after the change.
+          content: { application/json: { schema: { type: object, required: [goal], properties: { goal: { $ref: '#/components/schemas/AgentGoal' } } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: deleteNativeAgentGoal
+      responses:
+        '200': { description: Deleted. }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}/notes:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeAgentNotes
+      summary: What it knows — every note, readable by the person it is about
+      responses:
+        '200':
+          description: Notes, newest first.
+          content:
+            application/json:
+              schema: { type: object, required: [notes], properties: { notes: { type: array, items: { $ref: '#/components/schemas/AgentNote' } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: createNativeAgentNote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [content], properties: { content: { type: string, maxLength: 1000 } } }
+      responses:
+        '201':
+          description: The note.
+          content: { application/json: { schema: { type: object, required: [note], properties: { note: { $ref: '#/components/schemas/AgentNote' } } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}/notes/{noteId}:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+      - { in: path, name: noteId, required: true, schema: { type: string } }
+    patch:
+      servers: [{ url: /api }]
+      operationId: updateNativeAgentNote
+      description: An edited note becomes the person's words (`source` = user).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [content], properties: { content: { type: string, maxLength: 1000 } } }
+      responses:
+        '200':
+          description: The note after the change.
+          content: { application/json: { schema: { type: object, required: [note], properties: { note: { $ref: '#/components/schemas/AgentNote' } } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: deleteNativeAgentNote
+      description: Gone from every later turn, which reads notes with `deletedAt` null.
+      responses:
+        '200': { description: Deleted. }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}/ideas/{ideaId}:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+      - { in: path, name: ideaId, required: true, schema: { type: string } }
+    patch:
+      servers: [{ url: /api }]
+      operationId: decideNativeAgentIdea
+      summary: Start or dismiss an idea
+      description: >-
+        Start runs the idea as a task through the same dispatch any task uses.
+        409 `confirm_expensive` carries `estimatedCostMicroUsd`; ask the person,
+        then send the same request with `confirmExpensive: true`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [start, dismiss] }
+                confirmExpensive: { type: boolean }
+      responses:
+        '200':
+          description: The idea after the decision, with the task's ids when it started one.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [idea]
+                properties:
+                  idea: { $ref: '#/components/schemas/AgentIdea' }
+                  sessionId: { type: string }
+                  conversationId: { type: string }
+                  replay: { type: boolean }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}/routines:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeAgentRoutines
+      summary: The automations whose task belongs to this agent
+      responses:
+        '200':
+          description: Routines, soonest first.
+          content:
+            application/json:
+              schema: { type: object, required: [routines], properties: { routines: { type: array, items: { $ref: '#/components/schemas/AgentRoutine' } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: createNativeAgentRoutine
+      summary: A cloud routine on a clock, firing into the agent's thread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, instructions, cadence, timezone]
+              properties:
+                name: { type: string, maxLength: 120 }
+                instructions: { type: string, maxLength: 4000 }
+                cadence: { type: string, enum: [hourly, daily, weekdays, weekly, monthly] }
+                hour: { type: integer, minimum: 0, maximum: 23 }
+                minute: { type: integer, minimum: 0, maximum: 59 }
+                weekday: { type: integer, minimum: 0, maximum: 6 }
+                monthday: { type: integer, minimum: 1, maximum: 31 }
+                timezone: { type: string, description: An IANA zone name. }
+      responses:
+        '201':
+          description: The routine.
+          content: { application/json: { schema: { type: object, required: [routine], properties: { routine: { $ref: '#/components/schemas/AgentRoutine' } } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '403': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}/activity:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeAgentActivity
+      parameters:
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 200, default: 60 } }
+      responses:
+        '200':
+          description: Its own events and one line per task, newest first.
+          content:
+            application/json:
+              schema: { type: object, required: [activity], properties: { activity: { type: array, items: { $ref: '#/components/schemas/AgentActivity' } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}/reflect:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+    post:
+      servers: [{ url: /api }]
+      operationId: reflectNativeAgent
+      summary: Ideas, goal check-ins and notes — a no-op until six hours have passed, unless forced
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { force: { type: boolean } } }
+      responses:
+        '200':
+          description: What happened.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [outcome]
+                properties:
+                  outcome:
+                    type: object
+                    required: [kind]
+                    properties:
+                      kind: { type: string, enum: [reflected, skipped] }
+                      reason: { type: string, enum: [not_due, paused, claimed, no_answer, not_found] }
+                      ideas: { type: integer }
+                      checkIns: { type: integer }
+                      notes: { type: integer }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}/tasks:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+    post:
+      servers: [{ url: /api }]
+      operationId: startNativeAgentTask
+      summary: Start a task as the agent, in its thread, under its autonomy
+      description: >-
+        409 `confirm_expensive` with `estimatedCostMicroUsd` means ask the
+        person; the same request with `confirmExpensive: true` lands on the same
+        idempotency key. Every refusal Work dispatch can give is passed through.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, goal, idempotencyKey]
+              properties:
+                title: { type: string, maxLength: 80 }
+                goal: { type: string, maxLength: 4000 }
+                idempotencyKey: { type: string, minLength: 8, maxLength: 200 }
+                confirmExpensive: { type: boolean }
+      responses:
+        '200':
+          description: This key's task already existed.
+          content: { application/json: { schema: { $ref: '#/components/schemas/AgentTaskStarted' } } }
+        '201':
+          description: Started.
+          content: { application/json: { schema: { $ref: '#/components/schemas/AgentTaskStarted' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '403': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  # ---------------------------------------------------------------------------
   # Juno Work
   #
   # These are the routes the shipped Swift clients already call, and only those.
@@ -2802,3 +3189,182 @@ components:
       properties:
         runs: { type: array, items: { $ref: '#/components/schemas/WorkRun' } }
         nextBefore: { type: string, format: date-time, description: Absent on a short page. }
+    AgentFace:
+      type: object
+      required: [shape, tone, eyes, mark]
+      properties:
+        shape: { type: string, enum: [orb, pebble, capsule, petal, bloom, spark] }
+        tone: { type: string, enum: [coral, juniper, teal, violet, amber, sage] }
+        eyes: { type: string, enum: [soft, round, tall, wide] }
+        mark: { type: string, enum: [none, ring, spark, leaf, antenna, visor] }
+    AgentTaskGlance:
+      type: object
+      required: [sessionId, title, status, needsAttention, lastActivityAt]
+      properties:
+        sessionId: { type: string }
+        title: { type: string }
+        status: { type: string, x-juno-work-vocabulary: statuses }
+        needsAttention: { type: boolean }
+        lastActivityAt: { type: string, format: date-time }
+        conversationId: { type: [string, 'null'] }
+    Agent:
+      type: object
+      additionalProperties: true
+      required: [id, name, role, avatar, style, instructions, approvalMode, connectorIds, status, proactive, state, stateSentence, needsYou, newIdeas, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        role: { type: string }
+        avatar: { $ref: '#/components/schemas/AgentFace' }
+        style: { type: string, enum: [warm, direct, playful, formal] }
+        instructions: { type: string }
+        model: { type: [string, 'null'] }
+        reasoningEffort: { type: [string, 'null'] }
+        approvalMode: { type: string, x-juno-work-vocabulary: permissionPolicies }
+        connectorIds: { type: array, items: { type: string } }
+        projectId: { type: [string, 'null'] }
+        conversationId: { type: [string, 'null'] }
+        status: { type: string, enum: [active, paused] }
+        proactive: { type: boolean }
+        template: { type: [string, 'null'] }
+        lastReflectedAt: { type: [string, 'null'], format: date-time }
+        sortOrder: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        state: { type: string, enum: [idle, thinking, working, waiting, blocked, done, sleeping, listening] }
+        stateSentence: { type: string }
+        task: { oneOf: [{ $ref: '#/components/schemas/AgentTaskGlance' }, { type: 'null' }] }
+        needsYou: { type: integer, minimum: 0 }
+        nextRoutine:
+          oneOf:
+            - type: object
+              required: [scheduleId, name, nextRunAt]
+              properties:
+                scheduleId: { type: string }
+                name: { type: string }
+                nextRunAt: { type: string, format: date-time }
+            - type: 'null'
+        newIdeas: { type: integer, minimum: 0 }
+    AgentsResponse:
+      type: object
+      required: [agents]
+      properties:
+        agents: { type: array, items: { $ref: '#/components/schemas/Agent' } }
+    AgentResponse:
+      type: object
+      required: [agent]
+      properties:
+        agent: { $ref: '#/components/schemas/Agent' }
+    AgentHireRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 40 }
+        role: { type: string, maxLength: 80 }
+        avatar: { $ref: '#/components/schemas/AgentFace' }
+        style: { type: string, enum: [warm, direct, playful, formal] }
+        instructions: { type: string, maxLength: 6000 }
+        model: { type: [string, 'null'] }
+        reasoningEffort: { type: [string, 'null'] }
+        approvalMode: { type: string, x-juno-work-vocabulary: permissionPolicies }
+        connectorIds: { type: array, maxItems: 32, items: { type: string } }
+        projectId: { type: [string, 'null'] }
+        proactive: { type: boolean }
+        template: { type: [string, 'null'] }
+        firstGoal: { type: string, maxLength: 140 }
+    AgentPatchRequest:
+      type: object
+      minProperties: 1
+      properties:
+        name: { type: string, maxLength: 40 }
+        role: { type: string, maxLength: 80 }
+        avatar: { $ref: '#/components/schemas/AgentFace' }
+        style: { type: string, enum: [warm, direct, playful, formal] }
+        instructions: { type: string, maxLength: 6000 }
+        model: { type: [string, 'null'] }
+        reasoningEffort: { type: [string, 'null'] }
+        approvalMode: { type: string, x-juno-work-vocabulary: permissionPolicies }
+        connectorIds: { type: array, maxItems: 32, items: { type: string } }
+        projectId: { type: [string, 'null'] }
+        status: { type: string, enum: [active, paused] }
+        proactive: { type: boolean }
+        sortOrder: { type: integer, minimum: 0, maximum: 10000 }
+    AgentGoal:
+      type: object
+      required: [id, agentId, title, detail, status, cadence, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        agentId: { type: string }
+        title: { type: string }
+        detail: { type: string }
+        status: { type: string, enum: [active, paused, achieved, dropped] }
+        cadence: { type: string, enum: [none, daily, weekly] }
+        lastCheckInAt: { type: [string, 'null'], format: date-time }
+        lastCheckInNote: { type: [string, 'null'] }
+        dueAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AgentIdea:
+      type: object
+      required: [id, agentId, title, detail, prompt, status, createdAt]
+      properties:
+        id: { type: string }
+        agentId: { type: string }
+        title: { type: string }
+        detail: { type: string }
+        prompt: { type: string }
+        status: { type: string, enum: [new, started, dismissed] }
+        goalId: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        decidedAt: { type: [string, 'null'], format: date-time }
+    AgentNote:
+      type: object
+      required: [id, agentId, content, source, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        agentId: { type: string }
+        content: { type: string }
+        source: { type: string, enum: [user, agent, reflection] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AgentRoutine:
+      type: object
+      required: [id, sessionId, name, instructions, enabled, timezone, schedule]
+      properties:
+        id: { type: string, description: The WorkSchedule id. }
+        sessionId: { type: string }
+        name: { type: string }
+        instructions: { type: string }
+        enabled: { type: boolean }
+        timezone: { type: string }
+        schedule: { type: string, description: 'The first time trigger in words, e.g. "Every weekday at 09:00".' }
+        nextRunAt: { type: [string, 'null'], format: date-time }
+        lastRunAt: { type: [string, 'null'], format: date-time }
+    AgentActivity:
+      type: object
+      required: [id, kind, title, at, tone]
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        title: { type: string }
+        detail: { type: [string, 'null'] }
+        at: { type: string, format: date-time }
+        sessionId: { type: [string, 'null'] }
+        tone: { type: string, enum: [neutral, attention, success, danger] }
+    AgentDetail:
+      type: object
+      required: [agent, goals, ideas, notes, routines, tasks]
+      properties:
+        agent: { $ref: '#/components/schemas/Agent' }
+        goals: { type: array, items: { $ref: '#/components/schemas/AgentGoal' } }
+        ideas: { type: array, items: { $ref: '#/components/schemas/AgentIdea' } }
+        notes: { type: array, items: { $ref: '#/components/schemas/AgentNote' } }
+        routines: { type: array, items: { $ref: '#/components/schemas/AgentRoutine' } }
+        tasks: { type: array, items: { $ref: '#/components/schemas/AgentTaskGlance' } }
+    AgentTaskStarted:
+      type: object
+      required: [sessionId, conversationId]
+      properties:
+        sessionId: { type: string }
+        conversationId: { type: string }
+        replay: { type: boolean }

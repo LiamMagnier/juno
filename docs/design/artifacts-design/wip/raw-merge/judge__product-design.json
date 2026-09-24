@@ -1,0 +1,222 @@
+{
+ "scores": [
+  {
+   "proposal": "proposal-claude-faithful.md",
+   "criteria": [
+    {
+     "name": "Claude-fidelity",
+     "score": 9,
+     "why": "The most faithful of the three. It follows Claude's order: data, then surface, then AI loop, then Docs and Decks shipped with the public launch, with the Design door removed last. It has the Output picker as an armed 'Design \u00b7 Phone' pill (Phase 2), a type word on every card, and per-type off switches that answer the HN routing complaint. Its explicit 'Deliberately not copied' list covers card lift, clay, full-width that hides chat, destructive unpublish and irreversible rollout. It then beats Claude where Claude is weak: every type ships with versions, trash and the stepper, and every type gets a commenter role. One point off: day one is stated inconsistently. \u00a71.4 says end of Phase 3, while the summary item 13 and the Phase 2 header say the owner dogfoods from Phase 2."
+    },
+    {
+     "name": "IA simplicity",
+     "score": 8,
+     "why": "The IA is clean. There is one Artifacts row, Library stays a sibling, Design is a filter plus a New action, and Pinned is one fold holding chats and artifacts. The chips are by type, and Work output is split by shape: document, report and presentation become Doc and Deck, and binaries go under Files. That avoids a 'From tasks' origin chip mixed into a type row. Costs: 10 nouns, picture-in-picture as a sixth size in Phase 2, and generated images listed in both Library and Artifacts (defensible)."
+    },
+    {
+     "name": "artifact-view quality",
+     "score": 7,
+     "why": "The size contracts, states table and phone contract are the most complete of the three. The wireframes break the laws the text cites. WF-2 (full window) draws four columns: the made-in chat, Layers, canvas and Inspector. That violates PREMIUM_AUDIT rule 2, 'Two panes maximum'. WF-1 packs full Layers and Inspector rails into a side panel beside the transcript, though R-017 and M17 show rails take about 464px of a 449px panel. /a/{id} has two different layouts depending on ?from=chat, so a reload changes what the reader sees. The \u00a76.1 header is specified as one 44px row but is drawn as two rows. WF-7 and WF-1 put Open on the card twice, in the header and again in the footer."
+    },
+    {
+     "name": "AI-editing UX",
+     "score": 9,
+     "why": "The AI loop is excellent. Edit cards have Apply/Discard, then Undo/Compare. Holding B shows the before state. A guard warns 'Also removes 2 animations\u2026' with 'Keep them' as the default, and a one-sentence note says when the person's edit won. Review versus direct-apply rules are explicit, and large changes go to Compare. Parallel asks on disjoint scopes are capped at 3. The selection chip has a 'What Juno sees' disclosure. Ask Juno folds into the conversation, comments sent to Juno reply in the thread, and 'Fix with Juno' gets one free repair turn. Reference tags in the transcript remove the stale-text source of X-05."
+    },
+    {
+     "name": "motion & visual",
+     "score": 8,
+     "why": "Motion stays on existing tokens and adds only --delay-reveal. It deliberately uses spring.layout, not spring.emphasized, for panel to full window because the user caused it, which is correct against 03 \u00a77 M3 and against big-surface overshoot. It has one live-state animation, no fly-back on close (PREMIUM \u00a72d), no glass on content and no sixth custom glass site on the Mac, and the Motion setting ships in Phase 2. Two debits. 'The chat column narrows on spring.layout' re-wraps transcript text during the tween, which is jank. 'Send becomes Steer' breaks FLAT_UI \u00a74, where the send circle has one verb, send or stop, and TWO_PRODUCTS steers through the placeholder."
+    },
+    {
+     "name": "native experience",
+     "score": 7,
+     "why": "The Mac plan is strong: restorable document windows via NSUserActivity, an NSToolbar, Quick Look on Space, drag-out, File \u203a New Design \u2325\u2318N with \u21e7\u2318N kept for private chat, the glass Design row dropped, opaque dock, and system popovers. The iPhone gets a sheet from the card and a push from Artifacts, and the phone contract is written in v1, v1.1 and desktop-only lines. Two debits. Grid/List on \u23181/\u23182 collides with glass's Chat/Code product switch (MACOS_LIQUID_GLASS_REDESIGN.md:358,467). And N3 would make detached artifacts vanish from every Mac and iPhone (see fatal flaws)."
+    }
+   ],
+   "total": 48,
+   "fatal_flaws": [
+    "N3 makes Artifact.conversationId nullable and detaches artifacts when a chat is deleted, but it changes only the sync loaders. The change trigger still resolves the account through Conversation: juno_record_account_change in prisma/migrations/20260815180000_restore_account_delete_guard/migration.sql joins Artifact to Conversation for 'artifact', and juno_change_artifact is created with the 'conversation' resolver at 20260716200000_account_change_log/migration.sql:116. A detached artifact and its versions then emit no change rows, so it silently disappears from every Mac and iPhone library the moment the owner deletes a chat on the web. As written, the proposal's headline safety promise ('3 artifacts made here stay in Artifacts') becomes a native data-loss bug.",
+    "\u00a79.4 says the preview origin 'does not ship unless every item below is live'. That list includes quotas, the legal contact, owner-visible activity and moving view counts. So the fix for the #1 outage (X-01, dead React, Tailwind and Mermaid previews for every web user) waits on about 10 governance items, even for private owner-only previews that the other two proposals ship in week 2.",
+    "The unified view as drawn breaks PREMIUM_AUDIT rule 2 and R-017. The full window has four columns, the side panel carries full rails, and /a/{id} has two layouts keyed on ?from=chat."
+   ]
+  },
+  {
+   "proposal": "proposal-object-first.md",
+   "criteria": [
+    {
+     "name": "Claude-fidelity",
+     "score": 6,
+     "why": "The canonical /a/{id}, the card-panel-window path, 'Make\u2026' and Share versus Publish all match Claude. But the angle is Figma. It adds per-person ArtifactThreads, a 'Figma-grade' Track E running to week 26, Sheet and File kinds, and it orders Phase 4 collaboration before Phase 5 Docs and Decks (weeks 16\u201326). The typed Docs and Slides that were the headline of Claude's 16 Sept merge arrive last, and the authors call the scope 'a year of work' (risk 6)."
+    },
+    {
+     "name": "IA simplicity",
+     "score": 6,
+     "why": "The IA carries more concepts than the owner asked for. It adds per-person threads ('About <artifact>' chats in grantees' Recents; risk 8 admits the confusion). It has two nouns for one table: 'Pin' in the sidebar and a 'Starred' scope in the home, both backed by ArtifactPin. It has 11 kind chips. The origin chip 'From tasks' sits in a type row, and later the same deliverables move under Doc, Deck and Sheet. It adds a fourth way in, 'Turn into\u2026'."
+    },
+    {
+     "name": "artifact-view quality",
+     "score": 9,
+     "why": "This is the best surface design. It reads PREMIUM rule 2 explicitly: the full window is the stage plus one leading tabbed pane (Chat \u00b7 Layers \u00b7 Assets, Chat \u00b7 Slides, Chat \u00b7 Outline) and one trailing pane, with the composer pinned under the leading pane on every tab and \u2318\\ to toggle. The panel runs the editor's compact container band with a contextual bar and a one-time 'Open full window for layers and inspector \u2318\u21e7\u21a9' hint. A direct load of /a/{id} renders the same ThreadPane, so a reload never changes the view. pushState gives real Back semantics. One state machine drives card, header and native."
+    },
+    {
+     "name": "AI-editing UX",
+     "score": 9,
+     "why": "The AI loop is as rich as the Claude-faithful plan's. Its ArtifactProposal table lets pending proposals survive reloads and reach Mac and iPhone. Rejected hunks are recorded so the next turn knows. 'Undo Juno' applies inverses when the head matches and otherwise appends a restore. Rollout is per kind, Page and Code first. Asks queue as chips, and a taste form runs before a first design. The Phase 0 containment guard sends X-05/X-06 re-emits that would drop structure to a non-current draft with Compare, so the owner is protected before the full loop lands."
+    },
+    {
+     "name": "motion & visual",
+     "score": 8,
+     "why": "It handles the hard detail correctly: during panel to full window the transcript fades instead of re-wrapping, and the composer is the same view (layoutId) moving into the leading pane with its draft and focus. It has LiveMark, a StatusLabel copy ladder keyed to real progress, and a log-space camera. Debits: panel to window uses spring.emphasized (bounce .1), which makes a window-sized surface overshoot, against 03 M3's spring.layout (even though R-070 says emphasized). The 'you came from here' card highlight uses the duration-emphasis rung, which is reserved for changes the user did not cause, and the user caused this close. It also shares 'Send becomes Steer'."
+    },
+    {
+     "name": "native experience",
+     "score": 9,
+     "why": "The native plan is the best. It is the only proposal that caught the change-trigger owner resolution (M2 before artifact_detach, with a parity test). It gates new kinds per account on the devices seen in SyncClient. The Mac document window uses plain HStack panes with no second NavigationSplitView or .inspector, respecting the glass crash notes. It has a full menu-bar map, \u2325[ \u2325] to step versions, Grid/List in the View menu (it spots the \u23181/\u23182 clash), 'Close and keep edits on this Mac', and a minimal pre-glass point release that repoints the Design row. Spotlight indexes artifact titles."
+    }
+   ],
+   "total": 47,
+   "fatal_flaws": [
+    "The owner is promised features before they exist. \u00a71.4 says day one is 'the first release with the Phase 2 flags on', but its narrative includes the selection chip, edit cards and frames streaming in, which are Phase 3 items (R-031, R-010, R-033).",
+    "The sequence and scope put Figma ahead of the Claude merge the owner asked for. Collaboration comes in Phase 4 and typed Docs and Decks in Phase 5 (weeks 16\u201326), alongside a parallel Figma-parity editor track the authors call a year of work.",
+    "Per-person threads plus Pin/Starred dual naming plus a 'From tasks' origin chip add IA concepts Claude does not have, and the proposal itself lists the confusion as a risk."
+   ]
+  },
+  {
+   "proposal": "proposal-risk-first.md",
+   "criteria": [
+    {
+     "name": "Claude-fidelity",
+     "score": 5,
+     "why": "It reaches Claude's end state only slowly and partly. Docs and Decks are profiles: a Doc is GFM Markdown with no block ids or tabs, so comments anchor by quote only and Juno cannot use block operations. Deck speaker notes are a 'hidden text node named Speaker notes'. DesignDocument additions are frozen until bridge v2. The Output picker comes in Phase 4. The stepper, compare, comments, grants, Docs, Decks, Play and Mac document windows all fall in Phase 5 (W18\u2013W32)."
+    },
+    {
+     "name": "IA simplicity",
+     "score": 7,
+     "why": "The web IA is sensible: siblings named inputs and outputs, one Artifacts row, Designs always shown as the redirect target, and 'at most one navigational change per release'. Debits: a 'From tasks' origin chip that stays indefinitely for binaries, and hidden anchor conversations titled 'Your artifacts' that every list, search, export and project query must filter. On the Mac, the glass Design row ships, is repointed, and is then removed, contrary to 03 \u00a78 #7 and 00 \u00a711."
+    },
+    {
+     "name": "artifact-view quality",
+     "score": 6,
+     "why": "The sizes and card state machine are sound, and the full window keeps an overlaid composer with 'Show chat \u25b4' (the MCP Apps rule). But the merged surface of R9\u2013R11 ships without the stepper or compare (R-022 is placed in Phase 5), without Play and without document windows. Wireframe (a) packs Layers, canvas and Inspector into the side panel."
+    },
+    {
+     "name": "AI-editing UX",
+     "score": 7,
+     "why": "The loop is complete but thin, set out in one table. It has read-seal-digest, three verbs, compare-and-swap with the person's edit winning, edit cards, a review policy and a Keep-them guard, and Ask Juno folded in. Rollout is per kind behind the golden eval, and the legacy fallback appends to the same id. It has no compare or branch UX until Phase 5, and no Hold-B before view."
+    },
+    {
+     "name": "motion & visual",
+     "score": 7,
+     "why": "Its motion table has a Mac/iPhone column for every moment, which is a useful format. It replaces canvasEnter's outExpo and uses spring.layout. But the in-app Motion setting is deferred to Phase 5, the design detail is thinner, and it shares 'Send becomes Steer'."
+    },
+    {
+     "name": "native experience",
+     "score": 7,
+     "why": "The installed-build protection is excellent. A field-preserving merge on the generic POST fixes X-14 for every installed build with no native release. Anchors mean N0 clients never see a null conversationId. Capability-projected sync, bootstrap featureFlags, and the glass regenerate confirmation retired by a server flag all help. But Mac document windows wait until Phase 5, the iPhone stays read-only for about 30 weeks, and the Design row churns."
+    }
+   ],
+   "total": 39,
+   "fatal_flaws": [
+    "The owner gets almost nothing Claude-like for months. Day one of the programme is 'the owner notices little change', and the merged surface (R11, W11\u2013W15) arrives without the AI edit loop, the Output picker, the stepper, Docs, Decks, comments or document windows. Most of the Claude merge lands in Phase 5, W18\u2013W32.",
+    "The kinds-as-profiles decision caps fidelity permanently within this programme. A Doc is Markdown plus a profile, a Deck keeps notes in a hidden text node, and there are no schema additions until bridge v2.",
+    "It redirects /design and /design/{id} with 308 behind the ia.merged and route.canonical kill switches. Browsers cache 308s, so the stated rollback ('redirects fall back to rendering the old pages') does not work for anyone who already hit them. This is the one risk mistake in the risk-first plan. The other two use 307 until launch."
+   ]
+  }
+ ],
+ "winner": "proposal-claude-faithful.md",
+ "grafts": [
+  {
+   "from": "proposal-object-first.md",
+   "idea": "Full window reads PREMIUM rule 2 as the stage plus ONE leading tabbed pane (Chat \u00b7 Layers \u00b7 Assets for Design; Chat \u00b7 Slides for Deck; Chat \u00b7 Outline for Doc; Chat \u00b7 Tree for Page) plus ONE trailing pane (Inspector or Comments). The composer is pinned at the bottom of the leading pane on every tab, and \u2318\\ toggles both panes.",
+   "why": "This replaces Claude-faithful's four-column WF-2, which breaks the two-pane law, and keeps the conversation one tab away, which is the MCP Apps rule."
+  },
+  {
+   "from": "proposal-object-first.md",
+   "idea": "The panel runs the design editor in its container band by default: canvas plus contextual bar under 640px, inspector docked and Layers as a drawer from 640 to 1039px. A one-time hint reads 'Open full window for layers and inspector \u2318\u21e7\u21a9'. The mode control collapses to a menu under 560px.",
+   "why": "M17 and R-017 show that full rails do not fit a side panel, and Claude-faithful's WF-1 draws them anyway."
+  },
+  {
+   "from": "proposal-object-first.md",
+   "idea": "A direct load of /a/{id} renders the same leading Chat pane through a ThreadPane (the viewer's thread, or the made-in chat if the viewer owns it), so a reload never changes what the reader sees. This replaces Claude-faithful's ?from=chat column versus composer-strip split.",
+   "why": "One URL, one layout, which gives a coherent artifact view."
+  },
+  {
+   "from": "proposal-object-first.md",
+   "idea": "In panel to full window, the transcript fades out (duration-exit) instead of re-wrapping during a width tween. The composer is the same view (layoutId=\"composer\") and carries its draft and focus into the leading pane.",
+   "why": "It avoids text-reflow jank and makes the handoff read as one object moving."
+  },
+  {
+   "from": "proposal-object-first.md",
+   "idea": "Rewrite juno_record_account_change so Artifact and ArtifactVersion resolve the account via Artifact.userId, and recreate juno_change_artifact with the 'direct' resolver, before any detach or conversationId nulling. Add an account-change parity test on a staging copy.",
+   "why": "Without it, detached artifacts vanish from every Mac and iPhone, a user-visible data loss that Claude-faithful's N3 misses."
+  },
+  {
+   "from": "proposal-object-first.md",
+   "idea": "An ArtifactProposal table: pending proposals survive reloads, sync to Mac and iPhone over SSE, and record rejected hunks so the next turn knows. 'Undo Juno' applies the inverses when the head matches, and otherwise appends a restore version.",
+   "why": "Edit cards need durable state to work across devices and reloads."
+  },
+  {
+   "from": "proposal-object-first.md",
+   "idea": "A Phase 0 containment guard: a chat re-emit that would drop a DESIGN's components, variables, motion or interactions, or overwrite an edit-origin version, lands as a non-current draft with Compare.",
+   "why": "It protects the owner from X-05/X-06 losses during the months before the Phase 3 AI loop."
+  },
+  {
+   "from": "proposal-object-first.md",
+   "idea": "Mac document window built from plain HStack panes (no second NavigationSplitView and no .inspector, per the glass crash notes). A full menu-bar map: File \u203a New \u25b8 Design \u2325\u2318N, Doc, Deck, Page; View \u203a Previous/Next Version \u2325[ \u2325]; Edit routed to bridge commands. Grid/List lives in the View menu, not \u23181/\u23182. Closing asks 'Close and keep edits on this Mac / Discard / Cancel'.",
+   "why": "It gives native document behaviour without colliding with glass's \u23181/\u23182 product switch or its known crash sites."
+  },
+  {
+   "from": "proposal-object-first.md",
+   "idea": "A /dev/artifacts gallery of every kind \u00d7 every size \u00d7 every state, in light and dark, with 'no JSON visible for any design on any surface' as a Phase 0 exit. A StatusLabel copy ladder is keyed to elapsed time and real progress ('Still writing \u00b7 2 of 3 screens').",
+   "why": "It follows the project's web-verification rule and Claude's honest thinking-copy pattern."
+  },
+  {
+   "from": "proposal-risk-first.md",
+   "idea": "A field-preserving merge on the generic POST /api/artifacts/[id] for DESIGN bodies. It copies back fields the Swift schema cannot represent (an allowlist generated from the JSON Schema diff), so X-14 is fixed for every installed Mac and iPhone build with no native release.",
+   "why": "Mac 1.6.0 users keep losing cornerSmoothing until N1 adoption. This ends it in week 1."
+  },
+  {
+   "from": "proposal-risk-first.md",
+   "idea": "A deletion ledger: a Postgres trigger on Artifact DELETE records current_setting('juno.delete_reason'), and an unset reason raises an alert, with a target of 0 per week. 'Nothing the owner made before the switch is missing, and the ledger proves it' becomes an exit criterion for the merged-surface flag.",
+   "why": "Trust is the owner's first day-one question after a data-loss audit."
+  },
+  {
+   "from": "proposal-risk-first.md",
+   "idea": "At most one navigational change per release. The find rate (Artifacts open, then an item open within 30 s), the search zero-result rate, and 'can't find my designs' reports per 1k weekly active users gate each IA rollout step.",
+   "why": "This is the real product metric for removing the Design door, and Claude-faithful has none."
+  },
+  {
+   "from": "proposal-risk-first.md",
+   "idea": "Split the X-01 fix. Owner-only previews on the separate origin ship in week 2 (X-01a), and only scripted public /share pages wait for governance (X-01b).",
+   "why": "It restores the #1 outage fast without widening public exposure."
+  },
+  {
+   "from": "proposal-risk-first.md",
+   "idea": "A motion spec table with a Mac/iPhone column for every moment (matchedGeometryEffect with platformFactor, navigationTransition(.zoom), disablesAnimations during divider drag, and the bridge adopt message with .opacity on JunoMotion.fast).",
+   "why": "It keeps native motion from drifting from the web again (02 \u00a77.1)."
+  },
+  {
+   "from": "proposal-risk-first.md",
+   "idea": "Pre-publish copy states exactly what goes public: 'Anyone with the link will see v9 exactly as it is now. 2 Library images in it become visible too.' The glass regenerate confirmation is retired by a server flag (native.regenerateKeeps) once 7243613f deploys.",
+   "why": "It makes publishing a deliberate act, and it removes a confirmation that becomes wrong once regenerate stops deleting."
+  },
+  {
+   "from": "proposal-claude-faithful.md",
+   "idea": "Keep: spring.layout (bounce 0) for panel to full window because the user caused it, the --delay-reveal 500ms token, the Motion setting in Phase 2, the 'Deliberately not copied' list, Work split by shape (Doc and Deck by type, binaries as Files, no 'From tasks' chip), and 307 redirects until the public launch.",
+   "why": "These are the winner's best product calls and should survive the merge of plans."
+  }
+ ],
+ "must_fix": [
+  "Add the sync-trigger owner rewrite to N3, in the same deploy that nulls conversationId, with a staging parity test. prisma/migrations/20260815180000_restore_account_delete_guard/migration.sql still resolves Artifact and ArtifactVersion accounts through Conversation, and juno_change_artifact uses the 'conversation' resolver (20260716200000_account_change_log/migration.sql:116). As written, a chat delete makes its artifacts vanish from Mac and iPhone.",
+  "Redraw WF-1 and WF-2 to PREMIUM_AUDIT rule 2 and R-017. The panel runs the compact container band (canvas plus contextual bar, with the one-time full-window hint). The full window is the stage plus one leading tabbed pane (Chat \u00b7 Layers) plus one trailing pane. Use one layout for /a/{id} whatever the entry point; drop the ?from=chat versus composer-strip split.",
+  "Decouple X-01. Private owner-only previews on the separate origin ship in Phase 0 week 2. Only scripted public /share pages wait for the \u00a79.4 governance list; quotas, owner activity and moving view counts must not block restoring previews.",
+  "Keep FLAT_UI \u00a74's send circle as send or stop. While streaming, the placeholder reads 'Steer this design\u2026', Enter queues the steer into the existing steering slot, and only the button's accessible name changes, as work-thread-composer.tsx already does. Remove 'Send becomes Steer'. The same fix applies to all three plans.",
+  "Move Mac Grid/List off \u23181/\u23182, which glass uses for Chat and Code (MACOS_LIQUID_GLASS_REDESIGN.md:358,467), to the View menu.",
+  "Fix the card anatomy to show one Open (drop the header Open in WF-1 and WF-7) and at most two actions. Make the panel header the specified single 44px row, with the mode control collapsing to a menu under about 560px of container.",
+  "Card to panel and panel to window: the transcript fades rather than re-wrapping during a width tween, and the composer travels as one layoutId view carrying its draft and focus.",
+  "Add a Phase 0 X-05/X-06 containment guard (a destructive re-emit lands as a non-current draft with Compare) and the risk-first field-preserving generic-POST merge (X-14 for installed builds). Without them the owner keeps losing work on the Mac and in chat follow-ups until Phase 3.",
+  "Resolve the day-one contradiction. \u00a71.4 and Phase 3 say day one is the end of Phase 3, while the summary item 13 and the Phase 2 header say the owner dogfoods from Phase 2. State week estimates per phase, and make Phase 2 an internal cohort behind the find-rate gate.",
+  "Gate the Design-row removal on a find-rate metric and the deletion ledger. Defer picture-in-picture to P2 so the Phase 2 surface scope stays shippable."
+ ]
+}

@@ -36,7 +36,7 @@ import type { ResearchRunView } from "@/components/research/use-research-run";
  */
 
 const RECAP_COPY = {
-  kicker: "Deep research report",
+  kicker: "Research report",
   complete: "Research complete",
   read: "sources read",
   oneRead: "source read",
