@@ -3,6 +3,9 @@
 import * as React from "react";
 import type { ArtifactType } from "@/lib/message-content";
 import { runtimeFor, type RunMode } from "@/lib/artifact-runtime";
+import { SANDBOX_FLAGS, sandboxPolicyMeta, type SandboxProfile } from "@/lib/sandbox-policy";
+import { SandboxDocumentFrame, useSandboxProfile } from "@/components/canvas/sandbox-document-frame";
+import { designPosterUrl } from "@/lib/design/poster-url";
 
 const TAILWIND_CDN = "https://cdn.tailwindcss.com";
 const REACT_CDN = "https://unpkg.com/react@18.3.1/umd/react.development.js";
@@ -12,78 +15,41 @@ const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.mi
 const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
 
 /*
- * ── WHAT ACTUALLY ISOLATES A PREVIEW, AND WHAT THIS POLICY IS FOR ───────────
+ * ── WHAT ISOLATES A PREVIEW, AND WHERE ITS POLICY COMES FROM ────────────────
  *
  * The isolation is the iframe: `sandbox` WITHOUT `allow-same-origin`, so the
  * document has an opaque origin and artifact code can never read the app's
- * cookies, storage, DOM or session. Nothing below weakens that, and nothing
- * below is load-bearing for it. This policy governs which RESOURCES the
- * preview may pull, and the previous one was picked as if it were the
- * isolation — with three consequences, all of them visible:
+ * cookies, storage, DOM or session.
  *
- *   1. `script-src` had no `'unsafe-eval'`, and `reactDoc` compiles with Babel
- *      and runs the output through `eval`. Every React artifact therefore hit
- *      "Refused to evaluate a string as JavaScript" and rendered a red error
- *      box instead of a component — the single most common artifact type in
- *      the product, broken outright. (Verified in Chromium; `new Function`
- *      goes the same way, which is how Babel's own helpers run.)
- *   2. `img-src data: blob:` and `font-src data:` meant a generated website
- *      loaded NO photograph and NO webfont, and `script-src` named three hosts,
- *      so anything from cdnjs — GSAP, AOS, Swiper, three.js, Chart.js, Alpine —
- *      silently never arrived. A site with no images and no animation library
- *      is exactly the "it doesn't load and it doesn't move" that was reported.
- *   3. The meta was injected immediately before `</head>`, so everything the
- *      author had ALREADY put in the head — stylesheets, fonts, scripts —
- *      loaded unpoliced while the body was held to the letter. The policy was
- *      simultaneously too weak to be a boundary and too strong to be usable.
+ * The frame is NOT a srcdoc frame any more. A srcdoc document inherits the
+ * embedding page's Content-Security-Policy, and the app's enforcing nonce policy
+ * blocked every inline script in every preview for a month (audit X-01). The
+ * documents built here are handed to a shell served from its own URL with its
+ * own policy — `SandboxDocumentFrame` and src/lib/sandbox-policy.ts, which also
+ * holds the egress allowlists and the two profiles (your own previews,
+ * `private`; a public share, `public`).
  *
- * SO WHAT IS LEFT OF IT. Exfiltration, honestly accounted for: any policy that
- * lets a preview show a photograph from the web (`img-src https:`) can also be
- * used to send a string out in a URL. That is true of every artifact sandbox
- * that renders real pages, and it is why the origin isolation above — not this
- * list — is the thing that protects the reader. What this keeps is the
- * handful of capabilities that are never needed by a preview and are always
- * needed by an attack: no `object-src` (Flash/plugin content), no `base-uri`
- * (rewriting every relative URL in the document), and no `form-action` — so a
- * form can be typed into and handled by its own script, but cannot POST a
- * password anywhere.
+ * Each document also carries that same policy as a `<meta>`, generated from
+ * the same directives, so a document shown some other way is no less
+ * contained. Three things about it were each once a visible breakage:
+ *
+ *   1. `script-src` has `'unsafe-eval'`: `reactDoc` compiles with Babel and runs
+ *      the output through `eval`. Without it every React artifact rendered a
+ *      "Refused to evaluate a string as JavaScript" error box.
+ *   2. Code, styles and fonts come from an allowlist of public CDNs broad
+ *      enough for what generated pages name (GSAP, AOS, Swiper, three.js,
+ *      Chart.js, Alpine, webfonts) — a list of three hosts once meant "it
+ *      doesn't load and it doesn't move".
+ *   3. The meta goes FIRST in the head (`insertPolicy`), so nothing the author
+ *      put in the head loads before it.
  */
-const SANDBOX_CSP_META =
-  `<meta http-equiv="Content-Security-Policy" content="` +
-  [
-    "default-src 'none'",
-    // 'unsafe-eval' is not optional: the React runtime below compiles JSX with
-    // Babel standalone and evaluates the result.
-    "script-src 'unsafe-inline' 'unsafe-eval' https: blob:",
-    "style-src 'unsafe-inline' https:",
-    "img-src https: data: blob:",
-    "font-src https: data:",
-    "media-src https: data: blob:",
-    "connect-src https: data: blob:",
-    "frame-src https: data: blob:",
-    "worker-src blob:",
-    "child-src blob:",
-    // The three that a preview never needs and an attack always does.
-    "base-uri 'none'",
-    "form-action 'none'",
-    "object-src 'none'",
-  ].join("; ") +
-  `">`;
 
 /**
- * The iframe's own capability list.
- *
- * `allow-same-origin` is absent and must stay absent — it is the whole
- * isolation (see the policy above). Everything else here is a thing a real
- * page does that a preview was silently failing to do: submit a form to its
- * own handler, open a dialog, save a file it generated, lock the pointer for a
- * game. `allow-popups` is deliberately NOT here — a popup inheriting an opaque
- * origin cannot render the site it was opened for, so external links are
- * handed to the parent instead (`LINK_BRIDGE`), which opens them in a real
- * tab.
+ * The iframe's capability list for your own previews. The public profile is
+ * narrower (SANDBOX_FLAGS in src/lib/sandbox-policy.ts, which explains each
+ * flag). `allow-same-origin` is absent from both and must stay absent.
  */
-export const SANDBOX_ALLOW =
-  "allow-scripts allow-forms allow-modals allow-downloads allow-pointer-lock";
+export const SANDBOX_ALLOW = SANDBOX_FLAGS.private;
 
 /**
  * Module name → PyPI wheel, for the libraries Pyodide does not bundle.
@@ -463,26 +429,27 @@ const STATUS_LITE = `<script>
  * the charset declaration when there is one, because that one is required to
  * fall inside the document's first 1024 bytes and this policy is ~450 of them.
  */
-function insertPolicy(doc: string): string {
+function insertPolicy(doc: string, profile: SandboxProfile): string {
+  const meta = sandboxPolicyMeta(profile);
   const charset = doc.match(/<meta[^>]+charset[^>]*>/i);
   if (charset && charset.index !== undefined) {
     const at = charset.index + charset[0].length;
-    return doc.slice(0, at) + SANDBOX_CSP_META + doc.slice(at);
+    return doc.slice(0, at) + meta + doc.slice(at);
   }
   const head = doc.match(/<head[^>]*>/i);
   if (head && head.index !== undefined) {
     const at = head.index + head[0].length;
-    return doc.slice(0, at) + SANDBOX_CSP_META + doc.slice(at);
+    return doc.slice(0, at) + meta + doc.slice(at);
   }
-  return SANDBOX_CSP_META + doc;
+  return meta + doc;
 }
 
 /** Inject the console bridge (early) + inspector (late) into a web document. */
-function withChrome(doc: string, statusLite = false): string {
+function withChrome(doc: string, profile: SandboxProfile, statusLite = false): string {
   // Shim first (before console bridge), so storage/history are safe before any
   // artifact or bridge code runs.
   const chrome = SANDBOX_SHIM + (statusLite ? STATUS_LITE : "") + CONSOLE_BRIDGE + LINK_BRIDGE;
-  const withPolicy = insertPolicy(doc);
+  const withPolicy = insertPolicy(doc, profile);
   const head = withPolicy.indexOf("</head>");
   const out =
     head !== -1
@@ -623,7 +590,13 @@ html,body{margin:0;height:100%;background:#0b0b0e;color:#e7e7ea}
 </style>`;
 
 /** Self-contained dark terminal that executes JS/TS or Python and streams output. */
-function consoleDoc(rawCode: string, engine: "js" | "python" | "unsupported", lang: string, label?: string): string {
+function consoleDoc(
+  rawCode: string,
+  engine: "js" | "python" | "unsupported",
+  lang: string,
+  label: string | undefined,
+  profile: SandboxProfile
+): string {
   // Python keeps its source verbatim; JS/TS get module syntax stripped so the
   // classic-script eval doesn't choke on imports/exports.
   const code = engine === "python" ? rawCode : stripImports(rawCode).replace(/^[ \t]*export\s+(default\s+)?/gm, "");
@@ -713,7 +686,7 @@ function consoleDoc(rawCode: string, engine: "js" | "python" | "unsupported", la
       : `run(body);`
   }`;
 
-  return `<!doctype html><html><head><meta charset="utf-8"/>${SANDBOX_CSP_META}${SANDBOX_SHIM}${TERMINAL_STYLE}${
+  return `<!doctype html><html><head><meta charset="utf-8"/>${sandboxPolicyMeta(profile)}${SANDBOX_SHIM}${TERMINAL_STYLE}${
     lang === "typescript" ? `<script src="${BABEL_CDN}"></script>` : ""
   }</head>
 <body><div id="wrap"><div id="bar"><span id="dot"></span><span id="label">${escapeHtml(label ?? lang)}</span><span id="st" style="margin-left:auto"></span></div><div id="term"></div></div>
@@ -783,23 +756,133 @@ function consoleDoc(rawCode: string, engine: "js" | "python" | "unsupported", la
 </${"script"}></body></html>`;
 }
 
-export function buildSandboxDoc(type: ArtifactType, content: string, language?: string | null): string {
+/**
+ * A document for the `static` profile: a public share while scripted previews
+ * are off (`publicShareProfile` in src/lib/sandbox-policy.ts). The markup and
+ * styles render; the shell's policy admits no script the document brings, so
+ * none of the bridges are injected either. Two things a page can do without a
+ * script are taken away as well: a `<meta http-equiv="refresh">` that would
+ * navigate the frame to another site, and ordinary links, which open nothing
+ * (`target="_blank"` in a frame with no allow-popups).
+ */
+function staticDoc(doc: string): string {
+  const withoutRefresh = doc.replace(/<meta[^>]+http-equiv\s*=\s*["']?refresh["']?[^>]*>/gi, "");
+  return insertPolicy(withoutRefresh, "static").replace(
+    sandboxPolicyMeta("static"),
+    `${sandboxPolicyMeta("static")}<base target="_blank">`
+  );
+}
+
+/** What a static public preview can show faithfully without running anything. */
+export function rendersStatically(type: ArtifactType, language?: string | null): boolean {
+  const lang = runtimeFor(type, language).lang;
+  return lang === "html" || lang === "svg" || lang === "css";
+}
+
+/*
+ * A DESIGN IS NOT A PAGE, SO THIS FRAME DOES NOT RUN ONE (X-20).
+ *
+ * A design document is frames and layers as JSON. It used to fall through to
+ * the default branch below, which set the JSON in a `<pre>` and reported
+ * "done", so every surface that previewed a design through this frame showed
+ * its source under a green "Live". The picture of a design is the server's
+ * render of its first page, an image keyed by the artifact's id:
+ * `SandboxFrame` draws that directly, outside any iframe, when it is given the
+ * id. Without an id there is no picture to show, and this document says so in
+ * one line rather than pretending: no script, no chrome, no status, so nothing
+ * above it claims the preview ran.
+ */
+function designPlaceholderDoc(profile: SandboxProfile): string {
+  return insertPolicy(`<!doctype html><html><head><meta charset="utf-8"/><style>
+html,body{height:100%;margin:0}
+body{display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;
+  font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:#6b6760;text-align:center}
+</style></head><body><p>This preview does not draw designs. Open the design to see it.</p></body></html>`, profile);
+}
+
+/**
+ * A saved design, drawn as its poster in place of the iframe. An `<img>` is
+ * the whole safety story: an image of SVG runs no script and loads nothing,
+ * so it needs no sandbox. It is the same URL, and so the same cached picture,
+ * that the Artifacts grid and the chat card draw, on the neutral mat a card
+ * puts under a preview. `className`, when a caller sizes the frame, sizes the
+ * mat instead.
+ *
+ * The failure is said in words, not with the design glyph the grid's
+ * `DesignPoster` falls back to: this module keeps its imports to the runtime
+ * helpers so `buildSandboxDoc` stays importable anywhere (the learning
+ * blocks' diagram renderer and the sandbox policy test both load it for the
+ * document alone), and the icon set is a component library, not a helper. The
+ * failure is remembered per URL, so a later version gets its own attempt.
+ */
+function DesignPosterFrame({
+  artifactId,
+  version,
+  className,
+}: {
+  artifactId: string;
+  version?: number;
+  className?: string;
+}) {
+  const src = designPosterUrl(artifactId, version);
+  const [failedSrc, setFailedSrc] = React.useState<string | null>(null);
+  return (
+    <div className={className ?? "size-full bg-background p-2"}>
+      {failedSrc === src ? (
+        <p className="grid size-full place-items-center px-5 text-center text-ui text-muted-foreground">
+          Preview unavailable
+        </p>
+      ) : (
+        <img
+          src={src}
+          alt="Design preview, first page"
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailedSrc(src)}
+          className="size-full object-contain"
+        />
+      )}
+    </div>
+  );
+}
+
+export function buildSandboxDoc(
+  type: ArtifactType,
+  content: string,
+  language?: string | null,
+  profile: SandboxProfile = "private"
+): string {
   const rt = runtimeFor(type, language);
-  if (rt.mode === "console" && rt.engine) return consoleDoc(content, rt.engine, rt.lang, rt.label);
+  // Before the static branch too: its fallback sets the source in a <pre>,
+  // which for a design is its JSON.
+  if (rt.mode === "design") return designPlaceholderDoc(profile);
+  if (profile === "static") {
+    if (rt.lang === "html") return staticDoc(htmlDoc(content));
+    if (rt.lang === "svg") return staticDoc(svgDoc(content));
+    if (rt.lang === "css") return staticDoc(cssDoc(content));
+    return staticDoc(
+      htmlDoc(`<pre style="padding:16px;white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace">${escapeHtml(content)}</pre>`)
+    );
+  }
+  if (rt.mode === "console" && rt.engine) return consoleDoc(content, rt.engine, rt.lang, rt.label, profile);
   switch (rt.lang) {
     case "tsx":
     case "jsx":
-      return withChrome(reactDoc(content));
+      return withChrome(reactDoc(content), profile);
     case "html":
-      return withChrome(htmlDoc(content), true);
+      return withChrome(htmlDoc(content), profile, true);
     case "svg":
-      return withChrome(svgDoc(content), true);
+      return withChrome(svgDoc(content), profile, true);
     case "css":
-      return withChrome(cssDoc(content), true);
+      return withChrome(cssDoc(content), profile, true);
     case "mermaid":
-      return withChrome(mermaidDoc(content), true);
+      return withChrome(mermaidDoc(content), profile, true);
     default:
-      return withChrome(htmlDoc(`<pre style="padding:16px;white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace">${escapeHtml(content)}</pre>`), true);
+      return withChrome(
+        htmlDoc(`<pre style="padding:16px;white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace">${escapeHtml(content)}</pre>`),
+        profile,
+        true
+      );
   }
 }
 
@@ -829,10 +912,16 @@ export function SandboxFrame({
   onConsole,
   onStatus,
   className,
+  artifactId,
+  version,
 }: {
   type: ArtifactType;
   content: string;
   language?: string | null;
+  /** A DESIGN's stored id, and the version to picture: the frame shows that
+   *  design's poster instead of running anything. Ignored for other types. */
+  artifactId?: string | null;
+  version?: number;
   /** Bump to force a re-run/reload of the sandbox. */
   runNonce?: number;
   mode?: RunMode;
@@ -845,12 +934,8 @@ export function SandboxFrame({
   className?: string;
 }) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
-  // runNonce participates in the memo so a re-run rebuilds the document.
-  const srcDoc = React.useMemo(() => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    runNonce;
-    return buildSandboxDoc(type, content, language);
-  }, [type, content, language, runNonce]);
+  const profile = useSandboxProfile();
+  const doc = React.useMemo(() => buildSandboxDoc(type, content, language, profile), [type, content, language, profile]);
 
   const postInspect = React.useCallback((on: boolean) => {
     iframeRef.current?.contentWindow?.postMessage({ type: "juno:inspect", on }, "*");
@@ -914,17 +999,25 @@ export function SandboxFrame({
 
   const isDark = mode === "console";
 
+  if (type === "DESIGN" && artifactId) {
+    return <DesignPosterFrame artifactId={artifactId} version={version} className={className} />;
+  }
+
   return (
-    <iframe
+    <SandboxDocumentFrame
+      // A re-run is a new frame even when the document is unchanged.
+      key={runNonce}
       ref={iframeRef}
       title="Artifact preview"
-      srcDoc={srcDoc}
-      onLoad={() => {
+      html={doc}
+      // The inspector lives in the document, so a newly written one needs to
+      // be told the current state.
+      onDocumentLoad={() => {
         if (inspectEnabled) postInspect(true);
       }}
       // Opaque origin (no allow-same-origin) so artifact code cannot touch the
-      // app, cookies, or storage — see SANDBOX_ALLOW for the rest.
-      sandbox={SANDBOX_ALLOW}
+      // app, cookies, or storage — see SANDBOX_FLAGS for the rest.
+      sandbox={SANDBOX_FLAGS[profile]}
       className={className ?? `size-full border-0 ${isDark ? "bg-[#0b0b0e]" : "bg-white"}`}
     />
   );

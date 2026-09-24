@@ -6,6 +6,7 @@ import { PLANS } from "@/lib/plans";
 import { getUserPlan } from "@/lib/usage";
 import { expandAuthoredDesign, authoredDesignSchema } from "@/lib/design/authoring";
 import { serializeDesignDocument } from "@/lib/design/migrations";
+import { artifactPath } from "@/lib/artifact-links";
 
 export const runtime = "nodejs";
 
@@ -96,7 +97,9 @@ export async function POST(req: Request) {
     // chat that owns it with the canvas panel showing, which put the editor in a
     // side panel too narrow to keep its layers rail or inspector — a brand-new
     // design landed as a canvas with nothing to edit it with. The conversation
-    // is still one click away from there.
-    url: `/design/${artifact.id}`,
+    // is still one click away from there. The window is the artifact's own
+    // address, `/a/{id}`, which draws the editor for a design; `/design/{id}`
+    // only redirects there now (04-MERGE-PLAN.md §5.1).
+    url: artifactPath(artifact.id),
   });
 }

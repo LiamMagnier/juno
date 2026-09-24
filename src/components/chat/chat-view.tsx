@@ -51,6 +51,8 @@ import { SPLIT_MIN_WIDTH, THOUGHT_DEFAULT_WIDTH, canvasWidthBounds, splitEngaged
 import { HistoricalResearchRunPanel, ResearchRunPanel } from "@/components/chat/research-run-panel";
 import { useConversationResearch } from "@/components/research/use-conversation-run";
 import { useConversationWork } from "@/components/chat/use-conversation-work";
+import type { ClientAgent } from "@/lib/agents/types";
+import { AgentGreeting, AgentThreadHeader, threadAgentState } from "@/components/agents/agent-thread-header";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
 import { SessionOutputs } from "@/components/chat/session-outputs";
 import { PendingSteers } from "@/components/work/steering/pending-steers";
@@ -82,6 +84,12 @@ interface ChatViewProps {
   initialArtifacts: ClientArtifact[];
   initialModel: string;
   projectId?: string;
+  /**
+   * The agent whose thread this is (docs/design/AGENTS.md §5.3). The view
+   * gains one header row and greets in the agent's voice; everything else is
+   * the chat, unchanged — the server makes the replies the agent's.
+   */
+  agent?: ClientAgent;
   initialPrompt?: string;
   /** Auto-send the initial prompt as a deep-research turn (?research=1). */
   initialPromptResearch?: boolean;
@@ -153,7 +161,7 @@ function titleMessages(messages: ClientMessage[]): { role: "USER" | "ASSISTANT";
     .map((m) => ({ role: m.role as "USER" | "ASSISTANT", content: m.content.slice(0, 4000) }));
 }
 
-export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt, initialPromptResearch, initialResearchRun, initialReasoningEffort, initialConnectors, initialArtifactIdentifier, initialFocusMessageId }: ChatViewProps) {
+export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, agent, initialPrompt, initialPromptResearch, initialResearchRun, initialReasoningEffort, initialConnectors, initialArtifactIdentifier, initialFocusMessageId }: ChatViewProps) {
   const {
     settings,
     quota,
@@ -1425,6 +1433,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // the "working" signal for when the Stop button is NOT in view; while it is,
   // the button is the signal, and a coral sweep above it was one more.
   const showStreamSweep = chat.isBusy && !composerOnScreen;
+  // The face in an agent's thread: thinking while a reply streams, else what its task says.
+  const agentState = agent ? threadAgentState(agent, chat.isBusy, work.session) : null;
   React.useEffect(() => {
     window.dispatchEvent(new CustomEvent("juno:streaming", { detail: showStreamSweep }));
     return () => {
@@ -1874,7 +1884,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 ? "Sending this voice turn…"
                 : voiceOpen
                   ? "Type or attach an image while voice is active…"
-                  : undefined
+                  : agent
+                    ? `Message ${agent.name}…`
+                    : undefined
       }
       selectedProjectId={activeProjectId}
       onPickProject={handlePickProject}
@@ -2220,6 +2232,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               : "m-0 rounded-none border border-transparent bg-transparent shadow-none"
           )}
         >
+          {agent && !privateMode ? (
+            <AgentThreadHeader agent={agent} state={agentState ?? "idle"} taskTitle={work.session?.title ?? null} />
+          ) : null}
           {/* `handoff === "leaving"` holds the empty branch through its one exit
               beat after the first message lands — see the handoff block above. */}
           {hasMessages && handoff !== "leaving" ? (
@@ -2264,7 +2279,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   // Placed by its own createdAt, so it lands under the turn that
                   // asked for it rather than at the end of a transcript the
                   // reader has carried on adding to while it worked.
-                  ...(work.session ? [{ id: work.session.id, createdAt: work.session.createdAt, node: <WorkRunPanel work={work} className="mt-5" /> }] : []),
+                  ...(work.session ? [{ id: work.session.id, createdAt: work.session.createdAt, node: <WorkRunPanel work={work} className="mt-5" actor={agent?.name} /> }] : []),
                 ]}
                 busy={chat.isBusy}
                 status={chat.status}
@@ -2355,7 +2370,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                           : "opacity-100"
                       )}
                     >
-                      <EmptyGreeting />
+                      {agent ? <AgentGreeting agent={agent} /> : <EmptyGreeting />}
                     </div>
                     <div
                       aria-hidden={Boolean(!privateMode || chat.pendingClarification)}

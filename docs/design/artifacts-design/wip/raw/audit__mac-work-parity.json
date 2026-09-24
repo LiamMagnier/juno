@@ -1,0 +1,723 @@
+{
+ "area": "macOS: Work deliverables on Mac, sync, contracts, and cross-platform parity of made things",
+ "summary": "Juno has two separate systems for things it makes, and nothing on any platform brings them together. The first is chat Artifacts: text of 200,000 characters or less in Artifact/ArtifactVersion, of type HTML, REACT, CODE, MARKDOWN, SVG, MERMAID or DESIGN. They are synced to devices as the `artifact`/`artifact_version` entities, can be read offline on Mac and iPhone, and can be shared on the web. The second is Work deliverables: binary WorkArtifact/WorkArtifactVersion files (docx, xlsx, pptx, pdf, md report, zip site, and so on) kept in object storage. They are append-only, SHA-256-verified and checked by a validator. Only a task can reach them. They have no library, no search, no share and no comments on any platform. The Sept 2026 merge (docs/design/TWO_PRODUCTS.md \u00a72) put Work into Chat on the web only. It says outright that \"the Mac and the iPhone keep the product they have\". On main, the Mac still ships Work as a third product (DesktopProductMode.swift:4-11), and native Work sessions carry no conversation at all (WorkContracts.swift:168-197; NativeWorkClient.swift:361-409).\n\nOn the Mac, deliverables sit in the Work product: task thread \u203a \"Files & cost\" (the third segment of the thread's switcher) \u203a \"Made\" (DesktopWorkWorkspace.swift:2367-2392, 2651-2665, 3043-3121). This part is solid: a durable list read from /api/work/artifacts, a version-history disclosure with provenance and validation, per-version Save through NSSavePanel, a confirmation before saving an unvalidated file, and a Finder reveal. There is no preview, no Quick Look and no inline staging, while the web shows the newest site, report or spreadsheet inline in the chat (work-deliverable-stage.tsx). The biggest Mac defects are in the live path. First, the event-derived \"produced\" list reads the raw payload, so it drops every cloud-run artifact event: the cloud runner wraps them under `artifact` (DesktopWorkWorkspace.swift:4961 against scripts/work-runner.ts:3565-3569). Plan and citations fail the same way (:4666, :4852). Second, the durable index is read exactly once, when the task opens (NativeWorkModel.swift:1038). A cloud run watched live on the Mac therefore ends with \"No documents yet\u2026 listed here as it is written\" until you leave the task and come back. The iPhone has only the event-derived list and no download at all, so for cloud runs its \"Made\" section is always empty (JunoMobileWorkView.swift:914-947, 2236-2257). The sanitizer for suggested file names also replaces every digit \"0\" with \"-\" (DesktopWorkWorkspace.swift:3142).\n\nThe platforms also disagree about what counts as made. Tasks started on Mac or iPhone have no conversationId. The merged web drops such sessions from recents (recents.ts:162-178) and sends /work/<id> and search hits to an empty /chat (work-url-migration.ts:185-187; search/engine.ts:489,509). A deck made from the Mac therefore cannot be reached on the web. In the other direction, after the merge the web chat's run panel stages only previewable deliverables. `WorkDocuments`, the only web UI that downloads docx, pptx or pdf files or older versions, is no longer rendered anywhere. So a .docx made by a chat task has no download on the web, and the \"N more files under Outputs\" line points at a page that was removed (work-deliverable-stage.tsx:73-77). Mac-hosted Work runs cannot produce deliverables at all: the `deliverablesAvailable` toggle is never set (WorkCapabilityManifest.swift:76-95, 155; DesktopWorkExecutorAdapter.swift:335-350).\n\nSync and contracts are well engineered in their plumbing. Loaders reuse the REST serializers, and trigger/loader parity is tested; the web tests I ran all pass. The native `entityTypes` allowlist documents a strict ship-before-emit rule (NativeSyncAPIClient.swift:141-190). Three weaknesses stand out:\n1. All 12 `work_*` entity types are synced into the encrypted store and never read. Work on native is REST+SSE only and shows nothing offline.\n2. NativeArtifactStore gives all or nothing. A single version over 200,000 UTF-16 units, or a single unknown artifact type, throws `corruptRecord`. That takes down the whole Artifacts library and the Design launcher on Mac and iPhone, and their Retry re-reads the same rows (NativeArtifactStore.swift:101-167; NativeArtifactModel.reload 255-285). This is the key blocker for a Claude-style merge that adds new typed artifacts (Doc, Slides, Design System).\n3. The contracts have drifted. OpenAPI ArtifactKind has no DESIGN (juno-native-v1.yaml:1866-1868). /api/design and /api/share are used natively but are not declared. The Work contract names event kinds but declares no payload shapes (juno-work-v1.json:495-498), which is the root cause of the envelope bugs. PARITY_MATRIX.md (last touched 2026-09-08) has no Design or deliverable rows and predates the merge.\n\nFor the owner's goal of one Claude-style made-things surface: Artifact already has the right shape (typed, versioned, sharable, synced). WorkArtifact has the richer file model (binary, validated, with provenance). Merging needs one of two approaches. Option A is a unified \"made thing\" index over both tables. Option B is to fold deliverables into typed Artifacts, adding binary-backed version bodies. Both are blocked by the same items:\n1. Native decoding does not tolerate unknown types.\n2. Native Work has no conversation linkage (planned in the Liquid Glass Phase 5).\n3. The web chat is missing Office downloads.\n4. There are no native artifact share links, and a shared DESIGN renders as a JSON dump.\n5. Comments exist only as an unused field in the DesignDocument type, so a new synced entity would have to ship the allowlist first.\n6. Design on iPhone is read-only.\n\nThe Liquid Glass plan leaves the deliverable code untouched, apart from moving Work to `.legacyWork`. It plans \"deliverable tiles (Quick Look thumbnails; opening one opens the canvas dock)\" and an Outputs popover. It does not say how a text-only canvas dock would render binary deliverables.",
+ "files_read": [
+  "docs/design/TWO_PRODUCTS.md",
+  "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift",
+  "native/macOS/JunoDesktop/App/DesktopWorkVocabulary.swift",
+  "native/macOS/JunoDesktop/App/DesktopWorkRunHost.swift",
+  "native/macOS/JunoDesktop/App/DesktopWorkExecutorAdapter.swift",
+  "native/macOS/JunoDesktop/App/DesktopProductMode.swift",
+  "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift",
+  "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift",
+  "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift",
+  "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift",
+  "native/macOS/JunoDesktop/App/DesktopSettingsScreen.swift",
+  "native/macOS/JunoDesktop/App/DesktopSearchScreen.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkModel.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkClient.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoWorkKit/WorkContracts.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoWorkKit/WorkEventPayload.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoWorkKit/JunoWorkVocabulary.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkOutbox.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoWorkContract.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoSync/NativeSyncAPIClient.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactAPIClient.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeShareClient.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeSearchStore.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoAPI/HTTPTypes.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoPreviewSupport/PreviewWorkFixtures.swift",
+  "native/Packages/JunoWork/Sources/JunoWorkCore/WorkCapabilityManifest.swift",
+  "native/iOS/JunoMobile/App/JunoMobileWorkView.swift",
+  "native/iOS/JunoMobile/App/JunoMobileWorkspaceViews.swift",
+  "native/iOS/JunoMobile/App/JunoMobileInlineArtifact.swift",
+  "native/iOS/JunoMobile/App/JunoMobileDesignArtifact.swift",
+  "native/iOS/JunoMobile/App/JunoMobileConversationsView.swift",
+  "native/desktop-electron/README.md",
+  "src/lib/sync-entities.ts",
+  "src/lib/sync-entity-envelope.ts",
+  "src/lib/sync-mutations.ts",
+  "src/lib/artifacts-store.ts",
+  "src/lib/chat-artifact-verification.ts",
+  "src/lib/design/store.ts",
+  "src/lib/design/authoring.ts",
+  "src/lib/design/types.ts",
+  "src/lib/artifact-runtime.ts",
+  "src/lib/work/serializers.ts",
+  "src/lib/work/domain.ts",
+  "src/lib/work/recents.ts",
+  "src/lib/work-url-migration.ts",
+  "src/lib/search/engine.ts",
+  "src/lib/search/sql.ts",
+  "src/lib/plans.ts",
+  "src/app/api/work/artifacts/route.ts",
+  "src/app/api/work/artifacts/[id]/route.ts",
+  "src/app/api/work/artifacts/[id]/download/route.ts",
+  "src/app/api/work/artifacts/[id]/preview/route.ts",
+  "src/app/api/work/sessions/route.ts",
+  "src/app/api/artifacts/[id]/route.ts",
+  "src/app/api/share/route.ts",
+  "src/app/api/design/[artifactId]/export/route.ts",
+  "src/app/api/chat/route.ts",
+  "src/app/(app)/work/[[...segments]]/page.tsx",
+  "src/components/work/work-payload.ts",
+  "src/components/work/work-detail-panels.tsx",
+  "src/components/work/work-documents.tsx",
+  "src/components/work/detail/work-deliverable-stage.tsx",
+  "src/components/work/work-site-preview.tsx",
+  "src/components/chat/work-run-panel.tsx",
+  "src/components/chat/use-conversation-work.ts",
+  "src/components/chat/session-outputs.tsx",
+  "src/components/chat/artifact-inline-card.tsx",
+  "src/components/share/shared-artifact-viewer.tsx",
+  "scripts/work-runner.ts",
+  "runner/agent-core/src/work/session.ts",
+  "runner/agent-core/src/work/types.ts",
+  "prisma/schema.prisma",
+  "prisma/migrations/20260716200000_account_change_log/migration.sql",
+  "contracts/openapi/juno-native-v1.yaml",
+  "contracts/work/juno-work-v1.json",
+  "contracts/design/design-document.v1.schema.json",
+  "docs/native/PARITY_MATRIX.md",
+  "docs/design/ICONS_AND_MOTION.md",
+  "docs/design/FLAT_UI.md",
+  "/Users/liammagnier/Developer/project/juno-glass/docs/native/MACOS_LIQUID_GLASS_REDESIGN.md",
+  "tests/native-contract.test.ts"
+ ],
+ "inventory": [
+  {
+   "feature": "Mac Work: durable deliverable list per task (\"Made\")",
+   "description": "Reads GET /api/work/artifacts?sessionId=\u2026 and shows rows with a kind glyph, title, kind, vN and a Validated/Needs-checking chip. It lives only in the thread's third segment, \"Files & cost\", after the file changes and before the Budget.",
+   "maturity": "partial",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3043-3121",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3315-3440",
+    "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkClient.swift:427-440"
+   ]
+  },
+  {
+   "feature": "Mac Work: save a deliverable (current or any version)",
+   "description": "Downloads bytes the server has hash-verified, then opens an NSSavePanel. An unvalidated file gets a confirmation dialog first. After saving it reveals the file in Finder and shows an \"Artifact saved\" alert. The file name is generated on the Mac rather than taken from the server's Content-Disposition.",
+   "maturity": "partial",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:2519-2549",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3123-3150",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3442-3458",
+    "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkClient.swift:465-494"
+   ]
+  },
+  {
+   "feature": "Mac Work: deliverable version history",
+   "description": "An on-demand disclosure lists each version with its byte size, origin, relative time, provenance labels, validation mark, a per-version Save, and a note when history is cut off at 100.",
+   "maturity": "solid",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3382-3431",
+    "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkModel.swift:702-721",
+    "src/app/api/work/artifacts/[id]/route.ts:34-78"
+   ]
+  },
+  {
+   "feature": "Mac Work: event-derived 'produced' rows (live fallback)",
+   "description": "Built from artifact_created/updated events. The raw payload is read, so cloud-runner events (which wrap the facts under `artifact`) are dropped. Mac-hosted runs emit no artifact events at all, so in practice these rows never appear.",
+   "maturity": "broken",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:4956-4977",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3079-3103"
+   ]
+  },
+  {
+   "feature": "Mac Work: live refresh of deliverables during a run",
+   "description": "The durable index is fetched only in loadOpenSession. Stream frames, the 30-second poll and the `.done` frame never re-read it. The only way to refresh is the Retry button, which appears only after an error.",
+   "maturity": "broken",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkModel.swift:1022-1043",
+    "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkModel.swift:1051-1059",
+    "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkModel.swift:450-473"
+   ]
+  },
+  {
+   "feature": "Mac Work: deliverable preview / Quick Look",
+   "description": "Not built for any kind. The server has a spreadsheet-preview route and the web previews site, report and spreadsheet inline. NativeFilePreview (QuickLookThumbnailing) exists but is not used for deliverables. Searched: grep for QuickLook, preview and openArtifacts in native/macOS.",
+   "maturity": "absent",
+   "where": [
+    "src/app/api/work/artifacts/[id]/preview/route.ts:35-80",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeFilePreview.swift:7-120"
+   ]
+  },
+  {
+   "feature": "Mac-hosted runs producing deliverables",
+   "description": "WorkHostToggles.deliverablesAvailable defaults to false and the Mac manifest never sets it. DesktopWorkRunHost has no deliverable tool (grep for deliverable/artifact in DesktopWorkRunHost, DesktopWorkExecutorAdapter and DesktopWorkHost returns nothing).",
+   "maturity": "absent",
+   "where": [
+    "native/Packages/JunoWork/Sources/JunoWorkCore/WorkCapabilityManifest.swift:76-95",
+    "native/Packages/JunoWork/Sources/JunoWorkCore/WorkCapabilityManifest.swift:155",
+    "native/macOS/JunoDesktop/App/DesktopWorkExecutorAdapter.swift:330-350"
+   ]
+  },
+  {
+   "feature": "iPhone Work: 'Made' section",
+   "description": "Only the event-derived list, with the same raw-payload bug as the Mac. No durable list, no download, no history, no preview.",
+   "maturity": "broken",
+   "where": [
+    "native/iOS/JunoMobile/App/JunoMobileWorkView.swift:914-947",
+    "native/iOS/JunoMobile/App/JunoMobileWorkView.swift:2236-2257"
+   ]
+  },
+  {
+   "feature": "Web chat: inline deliverable stage (Cowork-style)",
+   "description": "The newest previewable deliverable (site, report or spreadsheet) is rendered inline in the chat's run panel, with Download and a rise-in animation. List refetches are keyed on the count of produced events.",
+   "maturity": "solid",
+   "where": [
+    "src/components/work/detail/work-deliverable-stage.tsx:33-81",
+    "src/components/chat/work-run-panel.tsx:349-358",
+    "src/components/chat/use-conversation-work.ts:244",
+    "src/components/work/work-documents.tsx:78-109"
+   ]
+  },
+  {
+   "feature": "Web chat: download Office/PDF/image/archive deliverables and older versions",
+   "description": "`WorkDocuments`, the only UI with Office-kind cards, history and per-version download, is not imported anywhere since the merge. The stage filters to canPreviewArtifact kinds.",
+   "maturity": "broken",
+   "where": [
+    "src/components/work/work-documents.tsx:111-430",
+    "src/components/work/work-site-preview.tsx:164-166",
+    "src/components/work/detail/work-deliverable-stage.tsx:73-77"
+   ]
+  },
+  {
+   "feature": "Native Work REST client for deliverables",
+   "description": "list, detail (with the truncated and warning flags) and download (reads the x-juno-artifact-version, x-juno-validated and x-juno-validation-warning headers). Validates ids and decodes strictly.",
+   "maturity": "solid",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkClient.swift:419-494",
+    "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkClient.swift:1090-1148"
+   ]
+  },
+  {
+   "feature": "Work-session \u2194 conversation link on native",
+   "description": "WorkSessionSummary has no conversationID. createSession sends none and sessions() cannot filter by conversation, so Mac and iPhone cannot show a run inside a chat or open a task's chat.",
+   "maturity": "absent",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoWorkKit/WorkContracts.swift:168-197",
+    "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkClient.swift:361-409"
+   ]
+  },
+  {
+   "feature": "Sync: chat artifacts and versions to devices (offline read)",
+   "description": "The `artifact`/`artifact_version` loaders hydrate into the encrypted store. NativeArtifactStore projects them for the Mac Artifacts and Design screens and the iPhone Artifacts screen. Decoding is strict and all-or-nothing, and the version `origin` is not synced.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/sync-entities.ts:222-260",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:86-167"
+   ]
+  },
+  {
+   "feature": "Sync: Work entities (12 types incl. work_artifact, work_artifact_version)",
+   "description": "The server loaders and triggers exist and are allowlisted natively. No native code reads the synced records (grep for work_ namespaces outside the allowlist finds nothing). NativeWorkModel uses REST only.",
+   "maturity": "stub",
+   "where": [
+    "src/lib/sync-entities.ts:506-671",
+    "native/Packages/JunoNativeKit/Sources/JunoSync/NativeSyncAPIClient.swift:153-190"
+   ]
+  },
+  {
+   "feature": "Offline edits of artifacts/designs",
+   "description": "The offline mutation vocabulary covers conversation, folder, memory, project, project_workspace and settings only. Artifact and design saves need the network.",
+   "maturity": "absent",
+   "where": [
+    "src/lib/sync-mutations.ts:1-70"
+   ]
+  },
+  {
+   "feature": "Work vocabulary contract (generated Swift)",
+   "description": "juno-work-v1.json generates JunoWorkContract.swift (statuses, event kinds with visibility, artifact kinds with MIME and extension) under a CI digest. It has no event payload schemas.",
+   "maturity": "solid",
+   "where": [
+    "contracts/work/juno-work-v1.json:495-575",
+    "native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoWorkContract.swift:1-14",
+    "native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoWorkContract.swift:475-520"
+   ]
+  },
+  {
+   "feature": "Native OpenAPI coverage of artifacts/design/share",
+   "description": "The /artifacts and /work/artifacts paths are declared. ArtifactKind has no DESIGN. /api/design and /api/share (both used natively) are not declared, nor is /work/artifacts/{id}/preview.",
+   "maturity": "partial",
+   "where": [
+    "contracts/openapi/juno-native-v1.yaml:423-530",
+    "contracts/openapi/juno-native-v1.yaml:1082-1165",
+    "contracts/openapi/juno-native-v1.yaml:1866-1868"
+   ]
+  },
+  {
+   "feature": "Design document JSON Schema contract",
+   "description": "Generated from src/lib/design/schema.ts and consumed by JunoDesignKit's DesignDocument codec.",
+   "maturity": "solid",
+   "where": [
+    "contracts/design/design-document.v1.schema.json:1-10",
+    "native/Packages/JunoNativeKit/Sources/JunoDesignKit/DesignDocument.swift:12"
+   ]
+  },
+  {
+   "feature": "Artifact share links on native",
+   "description": "NativeShareClient can create CHAT shares only. The Mac chat canvas's Share is a system ShareLink of the source text, not a Juno link.",
+   "maturity": "absent",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeShareClient.swift:59-80",
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:610-615"
+   ]
+  },
+  {
+   "feature": "Native search of made things",
+   "description": "The on-device index covers artifacts by title plus type/language only, not content. Work sessions and deliverables are not indexed. The web searches artifact content across versions and Work sessions/events, but not deliverables.",
+   "maturity": "partial",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeSearchStore.swift:193-203",
+    "src/lib/search/sql.ts:317-350",
+    "src/lib/search/engine.ts:474-509"
+   ]
+  },
+  {
+   "feature": "Comments on artifacts/designs/deliverables",
+   "description": "DesignDocument has a `comments` field and a DesignComment type, but there is no operation, UI or entity. The editor seeds `comments: []`. No comment model exists for Artifact or WorkArtifact on any platform.",
+   "maturity": "absent",
+   "where": [
+    "src/lib/design/types.ts:738-752",
+    "src/components/design/design-editor.tsx:1094",
+    "prisma/schema.prisma:1125-1160"
+   ]
+  },
+  {
+   "feature": "PARITY_MATRIX artifact/design/deliverable rows",
+   "description": "There is only a generic 'Library, saved prompts, artifacts and Canvas' row from the 2026-07-21 baseline. There are no Design rows and no deliverable rows, and the last update (2026-09-08) predates the Work merge.",
+   "maturity": "stub",
+   "where": [
+    "docs/native/PARITY_MATRIX.md:1-90",
+    "docs/native/PARITY_MATRIX.md:144"
+   ]
+  }
+ ],
+ "architecture": "DATA FLOW OF WORK DELIVERABLES (read):\n- Producer. The cloud runner's deliverable tool (scripts/work-runner.ts:1822-1843) calls storeDeliverable, which puts the object in storage and writes WorkArtifact plus WorkArtifactVersion in a transaction (work-runner.ts:1986-2090), with the version's contentHash, validation and provenance. It then calls session.recordArtifact(ref), which emits {kind:'artifact_created'|'artifact_updated', artifact:{id,kind,title,version,byteSize}} (runner/agent-core/src/work/session.ts:580-589). That object is persisted verbatim as WorkEvent.payload (work-runner.ts:3565-3569). The agent-facing POST /api/work/artifacts (route.ts:185-455) writes the same rows but emits no event. The Mac's local run host has no deliverable tool.\n- Read paths:\n  - Web chat: useConversationWork, then useWorkArtifactList (refetch keyed on the produced-event count), then WorkDeliverableStage (inline preview).\n  - Mac: NativeWorkModel.loadOpenSession, then refreshOpenArtifacts once, then DesktopWorkThread.artifacts (the \"Made\" section in \"Files & cost\"). Save is download, then NSSavePanel, then Data.write.\n  - iPhone: event-derived only.\n- Download route: re-hashes the object before serving; 409 on mismatch, 502 when the object is missing. Response headers are X-Juno-Artifact-Version, X-Juno-Content-Sha256, X-Juno-Validated and X-Juno-Validation-Warning (download/route.ts:49-160).\n- Key types:\n  - Swift: WorkArtifactSummary, WorkArtifactVersion, WorkArtifactDetail, WorkArtifactDownload (WorkContracts.swift:332-470).\n  - JunoWorkArtifactKind, generated (JunoWorkContract.swift:475-520).\n  - WorkEventPayload.fields lifts the envelope (WorkEventPayload.swift:44-82); DesktopWorkLog uses it only in describe, finalAnswer and turns.\n\nSYNC (read):\n- Change capture via DB triggers into /api/v1/changes; hydration via /api/v1/entities using src/lib/sync-entities.ts loaders; envelope invariant `data===null \u21d4 deletedAt` (sync-entity-envelope.ts:48-72).\n- The native client validates strictly and throws on unknown types or missing ids (NativeSyncAPIClient.swift:233-281). Records are stored per namespace.\n- Consumers: NativeArtifactStore (artifact, artifact_version, conversation titles) and NativeSearchStore (artifact titles). Nothing reads work_*.\n- Offline writes use the /api/v1/mutations vocabulary, which has no artifact or design mutations.\n- Design is a DESIGN Artifact, so it syncs as an artifact. The Mac creates designs via POST /api/design and saves them via POST /api/artifacts/[id] with the whole document (DesktopDesignScreen.swift:107, 585-590), not via /api/design/[id]/transactions.\n\nCONTRACTS:\n- contracts/work/juno-work-v1.json generates the Swift enums and the TS contract, with digest and CI.\n- contracts/openapi/juno-native-v1.yaml is the web\u2194native wire, hand-maintained, version 1.3.0.\n- contracts/design/design-document.v1.schema.json is generated from zod.\n- Nothing ties ArtifactKind in OpenAPI to Prisma's ArtifactType. Nothing declares Work event payload shapes.\n\nPARITY TABLE (feature \u00d7 Web \u00d7 Mac \u00d7 iPhone); all read unless marked [infer]:\n\n1. Artifact types rendered\n   - Web: HTML, REACT, SVG, MERMAID and MARKDOWN run live; CODE shows source (runnable languages run); DESIGN opens the editor (artifact-runtime.ts:93-118).\n   - Mac: HTML, MARKDOWN and SVG preview; REACT shows source plus a 'runtime not installed' note; MERMAID and CODE show source; DESIGN opens the bundled editor (NativeArtifactAPIClient.swift:48-53; DesktopArtifactCanvas.swift:104-126).\n   - iPhone: same kind rules; DESIGN opens a read-only editor host.\n\n2. Canvas panel in the conversation\n   - Web: canvas-panel.tsx with versions, diff, restore, fullscreen, console, Office export and share.\n   - Mac: trailing dock built from the message tag, with Preview/Source/Canvas, Copy, Save Source As and a ShareLink of the source. No versions, restore or export; designs are read-only (DesktopArtifactCanvas.swift:34-43, 610-625, 817).\n   - iPhone: inline sheet with view, source and share only (JunoMobileInlineArtifact.swift:1-25).\n\n3. Versions\n   - Web: canvas and library.\n   - Mac: library with versions, diff and restore (DesktopArtifactsScreen.swift:77-78, 925-1000).\n   - iPhone: artifact detail with a version menu and restore (JunoMobileWorkspaceViews.swift:1784-2150).\n\n4. Edit\n   - Web: code edits saved as versions, plus Ask/Modify (artifactEdit).\n   - Mac: library source and design edits via saveArtifact; chat-canvas edits are not saved (redesign doc A2.3).\n   - iPhone: detail 'Edit'.\n\n5. Export\n   - Web: Office export for Markdown; design export in svg, png, pdf, html, react, swiftui, json, tokens and handoff (design export route.ts:25).\n   - Mac: Office export in the library; Save Source As; no design export.\n   - iPhone: Office export via ShareLink; no design export.\n\n6. Share link\n   - Web: ARTIFACT share (api/share/route.ts:18-37). A shared DESIGN renders as source JSON (shared-artifact-viewer.tsx:32).\n   - Mac: none for artifacts; conversation shares only.\n   - iPhone: none for artifacts; conversation shares only.\n\n7. Library\n   - Web: /artifacts with search, type filter, rename, delete, share, New design and open in canvas.\n   - Mac: DesktopArtifactsScreen, a standalone page with search, filter, versions, rename, delete and Open in New Window; no share, no New design.\n   - iPhone: JunoMobileArtifactsView with search, kind filter and detail.\n\n8. Design create\n   - Web: /design presets, or from chat.\n   - Mac: presets via POST /api/design, or from chat.\n   - iPhone: from chat only.\n\n9. Design edit\n   - Web: full editor with transactions and AI edit (/api/design/[id]/edit).\n   - Mac: bundled editor with whole-document save; no AI edit (grep of native for /api/design finds only POST /api/design).\n   - iPhone: read-only (no caller passes readOnly:false).\n\n10. Design view\n    - All three platforms.\n\n11. Deliverables view\n    - Web: chat run panel stages only the newest site, report or spreadsheet.\n    - Mac: Work \u203a task \u203a Files & cost \u203a Made rows, with no preview.\n    - iPhone: event rows only, which are empty for cloud runs.\n\n12. Deliverables download\n    - Web: only the staged previewable file; no Office kinds, no older versions.\n    - Mac: every kind and every version.\n    - iPhone: none.\n\n13. Deliverables edit\n    - No platform (origin 'edit' exists only in the schema, schema.prisma:2648).\n\n14. Comments\n    - No platform.\n\n15. Search\n    - Web: artifact content across versions, plus Work sessions and events (hits for Mac-started tasks go to /chat); no deliverables.\n    - Mac: on-device index of artifact titles and types; no Work.\n    - iPhone: same as Mac.\n\n16. Offline\n    - Web: n/a.\n    - Mac: read artifacts and designs; no edits; Work shows nothing offline.\n    - iPhone: same as Mac.\n\n17. Work \u2194 chat\n    - Web: run card in the chat (use-conversation-work.ts).\n    - Mac: separate Work product with no link to a chat.\n    - iPhone: separate Work tab.",
+ "ux": [
+  {
+   "observation": "On the Mac the thing a task was started for sits two clicks deep. The thread opens on Overview (the plan and the current action) and resets to Overview whenever the task changes. Deliverables live only under the third segment, \"Files & cost\", below the file changes. The web stages the deliverable inline at the top of the run panel, which is the Cowork arrangement.",
+   "severity": "major",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:2516-2518",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:2651-2665",
+    "src/components/work/detail/work-deliverable-stage.tsx:13-30"
+   ]
+  },
+  {
+   "observation": "The Mac cannot preview any deliverable kind. A report (Markdown), a site (zip) or a spreadsheet has to be saved to disk and opened elsewhere, while the web renders all three inline.",
+   "severity": "major",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3315-3440",
+    "src/components/work/work-site-preview.tsx:164-166"
+   ]
+  },
+  {
+   "observation": "The empty state promises something the code does not do. \"No documents yet. Anything Juno produces \u2026 is listed here as it is written\" shows on Mac and iPhone after a cloud run has produced files, because of the envelope and refresh defects.",
+   "severity": "major",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3048-3053",
+    "native/iOS/JunoMobile/App/JunoMobileWorkView.swift:917-920"
+   ]
+  },
+  {
+   "observation": "The accent is used as furniture. Every Made row has an accent-tinted glyph and its own `.borderedProminent` coral Save, so N deliverables means N primary actions on one surface. FLAT_UI \u00a74 reserves the accent for the primary action and state. The web stage's Download is `variant=\"secondary\"`.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3326-3328",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3351-3363",
+    "docs/design/FLAT_UI.md:32-34",
+    "src/components/work/detail/work-deliverable-stage.tsx:56"
+   ]
+  },
+  {
+   "observation": "The Save tooltip always says \"Save the verified current version\", and the save panel always says \"Choose where to save this verified deliverable.\". Both appear even for an unvalidated file the user has just confirmed with \"Save anyway\".",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3364",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3449"
+   ]
+  },
+  {
+   "observation": "Feedback is doubled and modal. After saving, the app reveals the file in Finder and also raises a blocking \"Artifact saved\" alert that says it did so. The web and the redesign spec use a toast.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:2539-2549",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3134-3139"
+   ]
+  },
+  {
+   "observation": "A presentation deliverable is drawn with the generic image glyph, and a PDF with the same file glyph as a Word document.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkVocabulary.swift:20-29"
+   ]
+  },
+  {
+   "observation": "An older version is saved under the same suggested name as the current one (no version suffix), so saving v1 next to v3 invites overwriting it.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3123-3150",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3413"
+   ]
+  },
+  {
+   "observation": "The same things carry different names across platforms. The Mac calls them \"Made\" and the save panel says \"Save Juno artifact\". The web says \"What it produced\", \"Outputs\" and \"Download\". Artifacts and deliverables are both called \"artifact\" in Mac copy, though they are different systems.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3044",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3448",
+    "src/components/work/detail/work-deliverable-stage.tsx:49"
+   ]
+  },
+  {
+   "observation": "A web chat task that produced a .docx, .pptx or .pdf shows nothing to download. The stage's \"N more files under Outputs.\" points to a rail that the merge removed.",
+   "severity": "major",
+   "where": [
+    "src/components/work/detail/work-deliverable-stage.tsx:73-77",
+    "src/components/chat/work-run-panel.tsx:349-358"
+   ]
+  },
+  {
+   "observation": "The native artifact library can get stuck on \"Artifacts unavailable\". Its Try Again re-reads the same local rows, so one bad record leaves the Mac Artifacts page, the Mac Design launcher and the iPhone Artifacts page empty until the offending record changes on the server.",
+   "severity": "major",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:728-736",
+    "native/iOS/JunoMobile/App/JunoMobileWorkspaceViews.swift:778-792",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:229-231"
+   ]
+  },
+  {
+   "observation": "A chat on the Mac that started a task on the web shows only the model's one-line \"I started a task\" reply. There is no run card, no deliverables and no link to the task, which lives in a different product (Work) with no link back to the chat.",
+   "severity": "major",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoWorkKit/WorkContracts.swift:168-197",
+    "src/components/chat/use-conversation-work.ts:38-75"
+   ]
+  }
+ ],
+ "motion": [
+  {
+   "observation": "Made rows are dumped rather than dealt. Durable and produced rows appear with no entrance transition, while ICONS_AND_MOTION rule 5 asks for a rise-in with stagger and the web stage uses `motion-safe:animate-rise-in`.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3055-3103",
+    "docs/design/ICONS_AND_MOTION.md:193-195",
+    "src/components/work/detail/work-deliverable-stage.tsx:47-49"
+   ]
+  },
+  {
+   "observation": "The History disclosure is instant. `isExpanded` flips inside a plain closure with no withAnimation, and the content is an `if` with no transition. Rule 6 says disclosure is continuous.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3061-3069",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3382-3431",
+    "docs/design/ICONS_AND_MOTION.md:196-198"
+   ]
+  },
+  {
+   "observation": "The Save button swaps its label for a ProgressView in a single frame with no cross-fade (rule 7).",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:3354-3358",
+    "docs/design/ICONS_AND_MOTION.md:199-204"
+   ]
+  },
+  {
+   "observation": "Switching the thread segment (Overview/Context/Activity/Files & cost) replaces the content with no transition.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:2640-2665"
+   ]
+  },
+  {
+   "observation": "[infer] The approval card declares `.transition(.opacity)`, but nothing puts an animation in the transaction that inserts it: no withAnimation at the model mutation and no `.animation(value:)` on the safe-area bar. It most likely pops in rather than fading.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:2482-2501"
+   ]
+  },
+  {
+   "observation": "Motion elsewhere in Work follows the tokens: JunoMotion.reduced on the composer's attachment and armed-mark changes, and fast hover animations. Deliverables and history are the unanimated outliers.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:1500-1529",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:1892",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:4289"
+   ]
+  }
+ ],
+ "defects": [
+  {
+   "id": "mac-work-parity-1",
+   "title": "Event-derived deliverables ignore the cloud runner's envelope on Mac and iPhone, so cloud-run artifacts never appear from the stream",
+   "severity": "high",
+   "file": "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift",
+   "line": 4961,
+   "evidence": "READ: `DesktopWorkLog.artifacts` reads `string(event.payload, \"artifactId\", \"id\", \"identifier\")` on the RAW payload (DesktopWorkWorkspace.swift:4961-4972). The iPhone twin does the same (JunoMobileWorkView.swift:2242-2255). The cloud runner persists the runtime event verbatim (scripts/work-runner.ts:3565-3569), and that event is `{kind:'artifact_created', artifact:{id,kind,title,version,byteSize}}` (runner/agent-core/src/work/session.ts:580-589; types.ts:534-541, 727-728). The lifting helper exists and maps artifact_created/updated to `artifact` (WorkEventPayload.swift:51-52, 69-82), and the web uses it (work-detail-panels.tsx:186-188), but this reader does not call it. The preview fixture writes a flat `artifactId` payload (PreviewWorkFixtures.swift:443-449) that no executor produces, so screenshots hide the bug. WorkEventPayloadTests has no artifact case.",
+   "failure_scenario": "A cloud task writes 'Q3 forecast.xlsx'. On iPhone, Work \u203a task \u203a Made keeps saying 'No documents yet\u2026' forever, because the phone has no other source. On the Mac the produced-rows fallback is empty too, so the file appears only if the durable index happens to be re-read (see mac-work-parity-2)."
+  },
+  {
+   "id": "mac-work-parity-2",
+   "title": "Mac reads the durable deliverable index only once per task open; deliverables written during a watched run never appear",
+   "severity": "high",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkModel.swift",
+   "line": 1038,
+   "evidence": "READ: `refreshOpenArtifacts()` is called only from `loadOpenSession` (NativeWorkModel.swift:1038), which runs once before the stream loop (963-1020). `apply(_ update:)` (1051-1059), the `.done` path (986-994) and the 30-second `refresh()` (450-473) never re-read artifacts. `open()` returns early for the task already open (617). The only other caller is the error-row Retry (DesktopWorkWorkspace.swift:3112-3114), which renders only when an error exists. The web refetches whenever the produced-event count changes (work-documents.tsx:78-104; use-conversation-work.ts:244).",
+   "failure_scenario": "The user starts a task from the Mac composer and watches it finish. The run writes a deck. Files & cost \u203a Made still shows 'No documents yet\u2026 listed here as it is written' (DesktopWorkWorkspace.swift:3048-3053), because the index was read before the deck existed and the event fallback drops it (mac-work-parity-1). The deck appears only after the user selects Overview (closeOpenSession) and re-selects the task."
+  },
+  {
+   "id": "mac-work-parity-3",
+   "title": "Tasks (and their deliverables) started on Mac/iPhone are unreachable on the merged web",
+   "severity": "high",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkClient.swift",
+   "line": 361,
+   "evidence": "READ: `createSession` builds a body without `conversationId` (NativeWorkClient.swift:361-409), and WorkSessionSummary has no conversation field (WorkContracts.swift:168-197). The web drops sessions with no conversation from recents as 'a pre-merge row with nowhere to go' (src/lib/work/recents.ts:162-178). `/work/<id>` redirects to `chatPathForSession(null)` = '/chat' (src/app/(app)/work/[[...segments]]/page.tsx; src/lib/work-url-migration.ts:185-187). Web search hits for such sessions use the same href (src/lib/search/engine.ts:489, 509). The only web UI for deliverables is inside a conversation's run panel.",
+   "failure_scenario": "The user asks the Mac Work composer to 'build the board deck'. The run finishes in the cloud with a .pptx. On the web: no sidebar row, and a search for 'board deck' opens an empty new chat. The deck can only be reached from a Mac or iPhone Work screen, and the iPhone cannot download it."
+  },
+  {
+   "id": "mac-work-parity-4",
+   "title": "Web chat lost every download path for non-previewable deliverables and older versions after the merge",
+   "severity": "high",
+   "file": "src/components/work/detail/work-deliverable-stage.tsx",
+   "line": 73,
+   "evidence": "READ: `WorkDocuments` (work-documents.tsx:111-430) is the only web component that lists docx/pptx/pdf/image/archive deliverables with Download and per-version history. It is imported nowhere (`git grep \"<WorkDocuments\\|import.*WorkDocuments\"` is empty). The chat run panel renders only `WorkDeliverableStage` (work-run-panel.tsx:349-358). The stage filters to `canPreviewArtifact` kinds (site, report, spreadsheet: work-site-preview.tsx:164-166), shows only the newest one (work-deliverable-stage.tsx:33-39), and says '{n} more files under Outputs' (73-77) about a rail that lived on the removed /work task page.",
+   "failure_scenario": "A chat task produces 'Board memo.docx' and 'Summary.pdf'. The web chat panel shows neither and offers no download. If it also produced a site, it says '2 more files under Outputs', which cannot be found. Of the three platforms, only the Mac's Work product can save the files."
+  },
+  {
+   "id": "mac-work-parity-5",
+   "title": "Native artifact library is all-or-nothing: one out-of-contract record blanks Artifacts and Design on Mac and iPhone",
+   "severity": "high",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift",
+   "line": 157,
+   "evidence": "READ: `load` calls `try decodeVersion`/`decodeArtifact` for every record (NativeArtifactStore.swift:101-103, 111-113). `decodeVersion` throws corruptRecord when `content.utf16.count > 200_000` (157-158). `decodeArtifact` throws when `NativeArtifactKind(rawValue:)` fails (139-146). `NativeArtifactModel.reload` then sets `.failed` without assigning artifacts (255-285). The Mac Artifacts page (DesktopArtifactsScreen.swift:728-736), the Design launcher (DesktopDesignScreen.swift:229-231, which reads model.artifacts) and the iPhone (JunoMobileWorkspaceViews.swift:778-792) show 'Artifacts unavailable', and Try Again re-reads the same rows. Server paths that can exceed the limit: DESIGN is length-checked before expansion (chat-artifact-verification.ts:61-70) but stored after `normalizeDesignArtifact` expands it (105-110; artifacts-store.ts:16-25), with no second check. The research-audit persist bypasses verification (src/app/api/chat/route.ts:3592). The 200K cap arrived on 2026-08-21 (commit e252e4b5), while paid plans allow 200,000 output tokens (src/lib/plans.ts:77). INFER: whether any such row exists in production is unverified.",
+   "failure_scenario": "Any one stored version over 200,000 UTF-16 units, or a future artifact type added server-side (for example a DOC or SLIDES type as part of the Claude-style merge), reaches the device. Every artifact and design disappears from the Mac and iPhone libraries, and retry cannot recover. Older installed builds break the same way when a new type ships."
+  },
+  {
+   "id": "mac-work-parity-6",
+   "title": "Suggested file name replaces every '0' with '-'",
+   "severity": "medium",
+   "file": "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift",
+   "line": 3142,
+   "evidence": "READ: `CharacterSet(charactersIn: \"/\\\\:\\\\0\")`. The source bytes (checked with od -c) are `/ \\ \\ : \\ \\ 0`, so the set is {'/', '\\', ':', '0'}: the Swift literal `\\\\0` is a backslash followed by the digit zero, not NUL. The title is split on this set and re-joined with '-' (3143-3146).",
+   "failure_scenario": "A deliverable titled 'Q3 2026 forecast (v10)' is offered as 'Q3 2-26 forecast (v1-).xlsx' in the save panel, and users who accept it get corrupted dates and version numbers in their file names. The name also differs from the Content-Disposition name the web download uses."
+  },
+  {
+   "id": "mac-work-parity-7",
+   "title": "Plan and citations are empty on Mac and iPhone for every cloud run (same raw-payload bug)",
+   "severity": "medium",
+   "file": "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift",
+   "line": 4666,
+   "evidence": "READ: `plan(from:)` reads `event.payload[\"steps\"]` (4666), and `references` reads the source_cited title and url from the raw payload (4850-4858). The cloud plan events are `{kind, plan:{version, steps}}` (runner/agent-core/src/work/types.ts:385-388, 692-693; session.ts:601, 639), and citations sit under `citation` (WorkEventPayload.swift:53). iPhone: JunoMobileWorkView.swift:2029, 2140. The doc comment at 4712-4715 claims every reader here lifts the envelope.",
+   "failure_scenario": "A cloud run publishes a 7-step plan. The Mac Overview shows 'Juno hasn't written a plan for this yet\u2026' (2957-2961) for the whole run, and cited sources are missing from 'Read and written'. Liquid Glass Phase 5 plans to extract these views into the chat run card, which would carry the bug with them."
+  },
+  {
+   "id": "mac-work-parity-8",
+   "title": "Made-section Retry retries the list, silently clearing a failed download/history error; failed history spins forever",
+   "severity": "medium",
+   "file": "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift",
+   "line": 3112,
+   "evidence": "READ: Download and detail failures write the shared `artifactErrorDescription` (NativeWorkModel.swift:714-719, 742-749). The error row's Retry calls `refreshOpenArtifacts()` (DesktopWorkWorkspace.swift:3105-3118), which on success sets `artifactErrorDescription = nil` (NativeWorkModel.swift:692-693) without retrying the failed download or detail. An expanded History whose detail load failed keeps `detail == nil` and renders 'Reading version history\u2026' with a spinner (DesktopWorkWorkspace.swift:3425-3430).",
+   "failure_scenario": "Save fails with content_hash_mismatch (409) or bytes_unavailable (502). The user presses Retry, the red line disappears and nothing is saved. Or History fails to load: the row spins 'Reading version history\u2026' indefinitely until it is collapsed and re-expanded."
+  },
+  {
+   "id": "mac-work-parity-9",
+   "title": "Save-panel write failures are swallowed",
+   "severity": "low",
+   "file": "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift",
+   "line": 3451,
+   "evidence": "READ: `DesktopWorkArtifactSavePanel.save` catches the `bytes.write` error and returns nil (3451-3456). `saveArtifact` treats nil as a cancel and returns silently (3134-3139).",
+   "failure_scenario": "The user chooses a full disk or a read-only volume in the save panel. The panel closes, no file is written and no message appears. The user believes the deliverable was saved."
+  },
+  {
+   "id": "mac-work-parity-10",
+   "title": "Concurrent deliverable downloads clobber the single in-flight flag",
+   "severity": "low",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkModel.swift",
+   "line": 733,
+   "evidence": "READ: `artifactDownloadID` is one optional (50). Each download sets it and clears it with `defer` (733-734). Rows compare `model.artifactDownloadID == artifact.artifactID` to disable Save (DesktopWorkWorkspace.swift:3060, 3363, 3416).",
+   "failure_scenario": "The user saves deck A (large, slow), then workbook B. When A finishes, its defer sets the flag to nil while B is still downloading. B's spinner vanishes and its Save re-enables, so a second click starts a duplicate download and a second save panel."
+  },
+  {
+   "id": "mac-work-parity-11",
+   "title": "Artifact version origin badges vanish on the next sync tick",
+   "severity": "low",
+   "file": "src/lib/sync-entities.ts",
+   "line": 249,
+   "evidence": "READ: The `artifact_version` loader omits `origin` (sync-entities.ts:244-259), although the column exists (prisma/schema.prisma:1151-1154). NativeArtifactStore sets `origin: nil` (NativeArtifactStore.swift:160-166). `openArtifact` merges REST versions that carry origins (NativeArtifactStore.swift:295-316, 433-445), but `synchronizationDidAdvance` calls `reload()`, which replaces `artifacts` with the store snapshot (250-262).",
+   "failure_scenario": "The user opens an artifact on the Mac and its history shows 'Edited\u2026' and 'Restored\u2026' labels (DesktopArtifactsScreen.swift:854-855, 1089-1090). A sync generation then lands and the labels disappear. Offline, they never appear."
+  },
+  {
+   "id": "mac-work-parity-12",
+   "title": "Native OpenAPI ArtifactKind omits DESIGN, so the contract no longer describes live responses",
+   "severity": "low",
+   "file": "contracts/openapi/juno-native-v1.yaml",
+   "line": 1868,
+   "evidence": "READ: `ArtifactKind: enum: [HTML, REACT, CODE, MARKDOWN, SVG, MERMAID]` (1866-1868). Prisma has DESIGN (prisma/schema.prisma:1344-1356), GET /api/artifacts/[id] returns it, and native decodes it (NativeArtifactAPIClient.swift:13-22). tests/native-contract.test.ts does not pin ArtifactKind to Prisma.",
+   "failure_scenario": "A client generated from, or validated against, the canonical contract rejects any DESIGN artifact response as out of schema. Adding the next typed artifact will drift the same way without a test catching it."
+  }
+ ],
+ "gaps": [
+  {
+   "title": "No Work\u2194conversation linkage on native",
+   "description": "WorkSessionSummary has no conversationID, createSession sends none, and there is no sessions(conversationID:) call. The Mac and iPhone cannot draw a run inside a chat or open a task's chat.",
+   "why": "This is the prerequisite for Work-into-Chat on Mac (Liquid Glass Phase 5 item 1). Without it, merged 'made things' cannot live in the conversation on native."
+  },
+  {
+   "title": "Mac-hosted runs cannot make deliverables",
+   "description": "`deliverablesAvailable` is never set in the Mac manifest and the local run host has no deliverable tool.",
+   "why": "A task aimed at 'this Mac' cannot produce the workbook, report or deck the composer copy promises. Output would differ by where a task happened to run."
+  },
+  {
+   "title": "No deliverable preview on native",
+   "description": "Neither Mac nor iPhone previews site, report or spreadsheet deliverables. The server's spreadsheet-preview route is not in OpenAPI, and NativeFilePreview/QuickLook is not wired to deliverables.",
+   "why": "The Claude-style merge puts the made thing front and centre, and the web already does this."
+  },
+  {
+   "title": "iPhone cannot download or inspect deliverables",
+   "description": "There is no durable list, no download, no history and no share on the phone.",
+   "why": "Claude's merge makes typed artifacts reachable and editable on phone. Today a phone user cannot get a file Juno made."
+  },
+  {
+   "title": "No library, search or share for Work deliverables anywhere",
+   "description": "WorkArtifact appears only inside a task or chat panel. No /artifacts-style index includes it, search does not index it, ShareKind has no deliverable kind, and the web 'Outputs' popover lists chat Artifacts and media only.",
+   "why": "The deliverables stay a second-class system with separate UI, which blocks the single 'made things' surface."
+  },
+  {
+   "title": "No native artifact share links; shared designs render as JSON",
+   "description": "NativeShareClient creates CHAT shares only. The public share viewer shows a DESIGN artifact's source because `hasPreview` is only markdown or web mode.",
+   "why": "Claude's merged model is one shareable link per artifact, including design."
+  },
+  {
+   "title": "No comments on any made thing",
+   "description": "The DesignComment type and the DesignDocument.comments field exist, but no operation, UI, API or sync entity does.",
+   "why": "Comments are part of the target experience. A new sync entity must ship in the native allowlist before any row exists (NativeSyncAPIClient.swift:141-152)."
+  },
+  {
+   "title": "Offline edits of artifacts/designs unsupported",
+   "description": "There are no artifact or design mutation types in /api/v1/mutations. Edits and design saves need the network.",
+   "why": "A merged surface that is 'editable on phone' needs a sensible offline story, or at least a queued save."
+  },
+  {
+   "title": "Native design parity",
+   "description": "Mac: no design export (the web has nine formats), no AI edit and no transactions route. iPhone: read-only with no create.",
+   "why": "Design as a typed artifact in the conversation needs create, edit and export on each platform."
+  },
+  {
+   "title": "Synced work_* entities are unused natively",
+   "description": "Twelve Work entity types are hydrated into the encrypted store on every device, but NativeWorkModel ignores them and has no offline state.",
+   "why": "It costs sync bandwidth for no benefit. It could give offline task and deliverable lists, and a merged made-things index could read from it."
+  }
+ ],
+ "debt": [
+  {
+   "title": "Work event payload shapes are undeclared",
+   "description": "juno-work-v1.json names event kinds and says they are 'discriminated per payload' but declares no payload schemas. Three hand-written readers (web work-payload.ts, Mac DesktopWorkLog, iOS JunoMobileWorkLog) each decide per reader whether to lift the envelope, and some Mac and iOS readers do not.",
+   "where": [
+    "contracts/work/juno-work-v1.json:495-498",
+    "src/components/work/work-payload.ts:1-80",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:4545-5297",
+    "native/iOS/JunoMobile/App/JunoMobileWorkView.swift:2020-2400"
+   ]
+  },
+  {
+   "title": "DesktopWorkLog and JunoMobileWorkLog are copy-paste twins",
+   "description": "artifacts(in:), plan(from:) and references are duplicated line for line in the two app targets rather than living in JunoWorkKit, so every fix has to land twice.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:4956-4977",
+    "native/iOS/JunoMobile/App/JunoMobileWorkView.swift:2236-2257"
+   ]
+  },
+  {
+   "title": "Preview fixtures use payload shapes no executor writes",
+   "description": "Flat artifact and plan payloads in PreviewWorkFixtures make the screenshot harness render states that real cloud runs never produce.",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoPreviewSupport/PreviewWorkFixtures.swift:443-460"
+   ]
+  },
+  {
+   "title": "Strict all-or-nothing native artifact decoding",
+   "description": "Unknown types and oversized bodies throw for the whole snapshot, instead of skipping the record or marking it unsupported. This goes against the forward-compatibility rule the sync allowlist itself documents.",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:101-167",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactAPIClient.swift:338-351"
+   ]
+  },
+  {
+   "title": "OpenAPI drift",
+   "description": "The contract has no DESIGN in ArtifactKind and no /design or /share paths, though both are used natively. /work/artifacts marks sessionId as required while the server treats it as optional, and /work/artifacts/{id}/preview is missing. No test ties the contract to Prisma enums.",
+   "where": [
+    "contracts/openapi/juno-native-v1.yaml:1082-1105",
+    "contracts/openapi/juno-native-v1.yaml:1866-1868",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:107",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeShareClient.swift:65-102"
+   ]
+  },
+  {
+   "title": "Orphaned web WorkDocuments",
+   "description": "The only web component with Office-kind cards and history download is dead code after the merge.",
+   "where": [
+    "src/components/work/work-documents.tsx:111-430"
+   ]
+  },
+  {
+   "title": "PARITY_MATRIX is stale and missing Design and deliverables",
+   "description": "The 2026-07-21 product table and the re-audit notes up to 2026-09-08 predate the Work merge. They have no Design row, no deliverable row and no Work-into-Chat row. The Liquid Glass Phase 6 plans to generate it from contracts/parity/features.json.",
+   "where": [
+    "docs/native/PARITY_MATRIX.md:1-90",
+    "docs/native/PARITY_MATRIX.md:137-162"
+   ]
+  },
+  {
+   "title": "Two made-thing systems",
+   "description": "Artifact (text, 200K or less, synced, sharable, library, search) and WorkArtifact (binary, object storage, validation, provenance, per-task only) duplicate versioning and history UIs. They have separate naming ('artifact' is used for both in Mac copy) and separate download and share stories.",
+   "where": [
+    "prisma/schema.prisma:1125-1160",
+    "prisma/schema.prisma:2608-2664"
+   ]
+  },
+  {
+   "title": "Mac design saves bypass the design route",
+   "description": "The Mac posts whole DesignDocument bodies to the generic POST /api/artifacts/[id], which does no design schema validation, instead of /api/design/[id]/transactions. That gives two write paths with different guarantees for one document type.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:585-590",
+    "src/app/api/artifacts/[id]/route.ts:7-86"
+   ]
+  },
+  {
+   "title": "5,297-line DesktopWorkWorkspace.swift",
+   "description": "The Work shell, overview, composer, thread, context editor, approval card, log derivations and deliverable rows all live in one file. Phase 5 must extract the thread subviews into a chat card.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift"
+   ]
+  },
+  {
+   "title": "A third desktop client with its own Work contract",
+   "description": "native/desktop-electron (Chat \u00b7 Work \u00b7 Code, touched 2026-09-23) has its own zod Work contract, including artifact_created. Any made-things merge has another surface to keep consistent.",
+   "where": [
+    "native/desktop-electron/README.md:1-20",
+    "native/desktop-electron/src/shared/contracts/work.ts:311"
+   ]
+  }
+ ],
+ "strengths": [
+  "Deliverable integrity is first-rate end to end. Version history is append-only and deduplicated by content hash (work/artifacts/route.ts:287-304). Downloads re-check SHA-256 before a byte is served (download/route.ts:97-116). Validation is stated rather than implied: the X-Juno-Validated header, and the Mac confirmation before saving an unvalidated file (DesktopWorkWorkspace.swift:2519-2538).",
+  "The Mac can already save any version of any deliverable kind, with provenance and validation per version. It is currently the only platform that can reach Office-kind deliverables at all.",
+  "The sync plumbing is disciplined. Loaders reuse the REST serializers, grants withhold paths, the envelope invariant is tested, trigger/loader parity is tested, and the native allowlist documents a ship-before-emit rule (NativeSyncAPIClient.swift:141-190). The web tests I ran all pass.",
+  "The Work vocabulary is a single generated source (juno-work-v1.json to JunoWorkContract.swift) with a digest, and the Mac and phone share one NativeWorkModel.",
+  "A WorkEventPayload lifting helper exists natively and mirrors the web's readEvent, so the envelope defects need about one line each.",
+  "NativeFilePreview (QuickLookThumbnailing) and the bundled design editor host (Mac editable, iPhone read-only) are reusable building blocks for a merged made-things surface.",
+  "Honest empty and error states and strict request validation in NativeWorkClient (id validation, malformed-response errors, idempotency keys on create and start)."
+ ],
+ "merge_relevance": "How this area bears on merging Artifacts and Design into one Claude-style surface (typed artifacts in the conversation, one shareable link, editable on phone, comments):\n\nBLOCKERS (must fix first):\n1. Native artifact decoding must tolerate unknown types and oversized bodies. Tolerant builds must ship before the server emits new types such as Doc, Slides, Sheet or Design System (mac-work-parity-5). Otherwise every installed Mac and iPhone loses its whole artifact and design library.\n2. Native Work needs a conversation link (conversationID on WorkSessionSummary, createSession(conversationID:), sessions(conversationID:)). Without it, runs and their deliverables cannot live in the chat on the Mac (mac-work-parity-3; Liquid Glass Phase 5 item 1). Tasks made on native are otherwise invisible on the web.\n3. Envelope-correct readers are needed (mac-work-parity-1 and -7), plus live refresh of deliverables (mac-work-parity-2). The Phase 5 plan extracts DesktopWorkThread's subviews into the chat card, and without these fixes the bugs move into Chat.\n4. The web chat must regain Office-kind and history downloads (mac-work-parity-4), or the merged web surface is worse than the Mac's legacy Work product.\n\nDESIGN DECISION for the owner: the two made-thing tables.\n- Option A: keep WorkArtifact and add a unified 'made things' index and API (library, search, share) over Artifact and WorkArtifact.\n- Option B: make deliverables typed Artifacts with binary-backed versions. This needs an ArtifactVersion storageKey/contentHash/validation shape, sync that carries metadata but not bytes, and a download route.\n- Either way, share (ShareKind), search and comments must cover both.\n\nWHAT THE LIQUID GLASS PLAN SAYS (juno-glass docs/native/MACOS_LIQUID_GLASS_REDESIGN.md):\n- Plans:\n  - Work stops being a product in Phase 1 and moves to `.legacyWork` under Window \u203a Tasks (Legacy) (\u00a71.6).\n  - Errata change the phase order to 1 \u2192 2 \u2192 5 \u2192 3 \u2192 4 \u2192 6.\n  - Phase 5 adds the Work run card in the transcript, with finished-state 'deliverable tiles (Quick Look thumbnails; opening one opens the canvas dock)' (\u00a76.8 line ~1080).\n  - An Outputs popover shows a grid of tiles that open the canvas dock (\u00a77.5).\n  - Artifacts open in the chat's canvas dock, with Share and New design on the Artifacts page. The canvas dock gets server export, a versions popover with diff, and bundled React and Mermaid (\u00a79, line ~1493).\n  - Design becomes a nav row, and DesktopDesignScreen moves onto JunoPage with 'its own redesign out of scope' (\u00a71.7, \u00a79).\n  - Phase 6 generates PARITY_MATRIX from a features contract.\n  - Errata #14 (Phase 2) says designs draw inline on the Mac while the web inline card shows JSON. That is reported by the doc and not verified by me.\n- Gaps in the plan:\n  - Nothing unifies WorkArtifact with Artifact.\n  - Nothing says how a canvas dock built for text artifacts renders binary docx, pptx or xlsx deliverables.\n  - No artifact share links on native (NativeShareClient is CHAT-only).\n  - No comments.\n  - Nothing about the iPhone.\n\nBRANCH DIFF on the audited files (git diff main mac/liquid-glass-chat):\n- DesktopWorkWorkspace.swift: only Settings routing (DesktopSettingsRouter), greeting typography and comments change. The deliverable code is identical.\n- DesktopWorkbenchRegistry: a Work errand now opens a new chat.\n- DesktopProductMode: `.work` becomes `.legacyWork`.\n- The worktree currently has uncommitted edits by another session, including to the redesign doc. The doc grew from 1861 to 1879 lines during this audit.\n\nENABLERS already in place:\n- Artifact already has typed, versioned, shareable, synced semantics.\n- A design editor bundle is hosted on both Mac (editable) and iPhone (read-only; flipping readOnly needs a save path).\n- NativeFilePreview/QuickLook.\n- Generated Work and design contracts.\n- A disciplined sync allowlist.",
+ "tests": "I ran these web tests (npx tsx --test), and all of them pass:\n- tests/sync-work-entities.test.ts: 9/9. Covers loader\u2194trigger parity, account scoping, grant path withholding, and the two client allowlists.\n- tests/sync-entity-envelope.test.ts: 7/7.\n- tests/sync-entity-index.test.ts: 3/3.\n- tests/work-contract.test.ts: 9/9.\n- tests/native-work-contract.test.ts: 6/6.\n- tests/native-contract.test.ts: 3/3. Checks only the version, redirect allowlist, chat operations and Swift generation determinism. It does not check ArtifactKind or the artifact and design paths.\n- tests/artifact-export-verification.test.ts: 9/9.\n- tests/chat-artifact-verification.test.ts: 3/3.\n\nI did not run Swift tests (no swift build/xcodebuild allowed). What I read of the native tests:\n- native/Packages/JunoNativeKit/Tests/JunoWorkKitTests/WorkEventPayloadTests.swift has no artifact_created or artifact_updated case.\n- No test found for DesktopWorkLog.artifacts, plan or references with enveloped payloads (grep of native tests for `artifacts(in` finds nothing).\n- The preview fixtures use flat payloads (PreviewWorkFixtures.swift:443-460).\n\nUntested:\n- NativeWorkModel's artifact refresh cadence.\n- artifactFileName.\n- NativeArtifactStore's behaviour with one oversized or unknown record.\n- The web's rendering of Office deliverables in chat, which has no mount at all.",
+ "open_questions": [
+  "Do any production ArtifactVersion rows exceed 200,000 UTF-16 units? Candidates: rows from before 2026-08-21, expanded DESIGN documents, and research-audit re-persists. This decides whether mac-work-parity-5 is hurting users today or is latent. It needs a read-only DB query, which I did not run.",
+  "Can `normalizeDesignArtifact` expansion of a compact design under 200K realistically exceed 200K? The code shows no post-expansion size check. I did not measure the expansion ratio.",
+  "Should POST /api/artifacts/[id] validate DESIGN bodies (parseDesignDocument), or should Mac design saves move to /api/design/[id]/transactions? Today the Mac design save path bypasses the design route's checks.",
+  "How should the Liquid Glass 'canvas dock' render binary deliverables (docx, pptx, xlsx, zip site)? Options include Quick Look over a downloaded temp file, the server spreadsheet preview (not in OpenAPI), or the web's sandboxed site previewer.",
+  "Does TWO_PRODUCTS.md's 'the Mac and the iPhone keep the product they have' still hold, given the Liquid Glass plan retires Work on the Mac? The iPhone Work tab has no documented fate.",
+  "Is native/desktop-electron (Chat \u00b7 Work \u00b7 Code) in scope for the made-things merge? It carries its own Work contract and artifact_created handling.",
+  "Should the web 'Outputs' popover (session-outputs.tsx) and /artifacts include a conversation's Work deliverables, as a first step toward one made-things surface?",
+  "Native `artifacts(for:)` passes no limit, so the server default of 30 applies (work/artifacts/route.ts:33, 158). Could a task with more than 30 deliverables silently hide some on Mac? Unverified whether any task reaches this.",
+  "[infer] Does the approval card's `.transition(.opacity)` actually animate on insertion without an animation in the transaction? This needs a runtime check."
+ ]
+}
