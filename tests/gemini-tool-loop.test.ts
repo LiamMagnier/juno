@@ -519,3 +519,27 @@ test("pictures ride in the function response on Gemini 3 and in a separate turn 
   assert.deepEqual(older.images?.parts, [{ inlineData: { mimeType: "image/png", data: "AAAA" } }]);
   assert.ok(older.images?.intro);
 });
+
+test("a consumer that stops reading early closes the provider request", async () => {
+  let closed = false;
+  let pulled = 0;
+  const frames = [frame([{ text: "One." }]), frame([{ text: " Two." }]), frame([{ text: " Three." }], "STOP")];
+  const transport: ProviderTransport = {
+    async *request() {
+      try {
+        for (const payload of frames) {
+          pulled += 1;
+          yield JSON.stringify(payload);
+        }
+      } finally {
+        closed = true;
+      }
+    },
+  };
+  const loop = geminiLoop(request({ toolset: undefined, budget: 1 }), { transport, contents: structuredClone(USER), context: CONTEXT });
+  for await (const event of loop) {
+    if (event.type === "text") break;
+  }
+  assert.equal(closed, true, "the transport's stream was returned, not left generating");
+  assert.ok(pulled < frames.length, "and it was not read to the end");
+});

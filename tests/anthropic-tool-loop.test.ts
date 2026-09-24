@@ -607,3 +607,26 @@ test("two calls in one round run as one batch and come back in call order", asyn
   ]);
   assert.deepEqual((last(messagesOf(bodies[1])).content as Array<{ tool_use_id: string }>).map((b) => b.tool_use_id), ["toolu_a", "toolu_b"]);
 });
+
+test("a consumer that stops reading early closes the provider request", async () => {
+  let closed = false;
+  let pulled = 0;
+  const transport: ProviderTransport = {
+    async *request() {
+      try {
+        for (const event of textResponse("One. Two. Three.")) {
+          pulled += 1;
+          yield event;
+        }
+      } finally {
+        closed = true;
+      }
+    },
+  };
+  const loop = anthropicLoop(request({ toolset: undefined, budget: 1 }), { transport, messages: structuredClone(USER) });
+  for await (const event of loop) {
+    if (event.type === "text") break;
+  }
+  assert.equal(closed, true, "the transport's stream was returned, not left generating");
+  assert.ok(pulled < textResponse("x").length, "and it was not read to the end");
+});

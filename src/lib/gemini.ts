@@ -59,13 +59,21 @@ function fetchTransport(url: string, apiKeys: string[], context: GeminiRequestCo
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const { payloads, rest } = extractGeminiSseEvents(buffer);
-        buffer = rest;
-        yield* payloads;
+      let ended = false;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const { payloads, rest } = extractGeminiSseEvents(buffer);
+          buffer = rest;
+          yield* payloads;
+        }
+        ended = true;
+      } finally {
+        // The loop stopped reading before the body ended: close the request
+        // rather than leave Google streaming into a reader nobody drains.
+        if (!ended) await reader.cancel().catch(() => undefined);
       }
       buffer += decoder.decode();
       if (buffer) yield* extractGeminiSseEvents(buffer, true).payloads;

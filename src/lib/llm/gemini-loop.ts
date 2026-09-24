@@ -162,8 +162,17 @@ export async function* geminiLoop(req: AdapterRequest, deps: GeminiLoopDeps): As
         yield ev;
       }
     };
-    for (let step = opened.first; !step.done; step = await opened.iterator.next()) {
-      if (typeof step.value === "string") yield* drain(step.value);
+    let ended = false;
+    try {
+      for (let step = opened.first; !step.done; step = await opened.iterator.next()) {
+        if (typeof step.value === "string") yield* drain(step.value);
+      }
+      ended = true;
+    } finally {
+      // A consumer that stops reading without aborting must close the request
+      // too: the stream is iterated by hand, so nothing else hands the
+      // transport its `.return()`, and Google would generate — and bill — on.
+      if (!ended) await closeQuietly(opened.iterator);
     }
 
     if (state.finishReason) lastFinishReason = state.finishReason;
@@ -532,6 +541,14 @@ async function openStream(
 ): Promise<{ iterator: AsyncIterator<unknown>; first: IteratorResult<unknown> }> {
   const iterator = transport.request(body, signal)[Symbol.asyncIterator]();
   return { iterator, first: await iterator.next() };
+}
+
+async function closeQuietly(iterator: AsyncIterator<unknown>): Promise<void> {
+  try {
+    await iterator.return?.();
+  } catch {
+    // Closing is best effort; the error that ended the read is the one to see.
+  }
 }
 
 /** `text` cut to at most `max` UTF-8 bytes, never mid-character. */

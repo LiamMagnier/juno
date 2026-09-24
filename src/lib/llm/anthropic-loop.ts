@@ -423,12 +423,32 @@ async function* resumeIterator(
   iterator: AsyncIterator<unknown>,
   first: IteratorResult<unknown>,
 ): AsyncGenerator<StreamEvent> {
-  if (first.done) return;
-  yield first.value as StreamEvent;
-  for (;;) {
-    const next = await iterator.next();
-    if (next.done) return;
-    yield next.value as StreamEvent;
+  let ended = first.done === true;
+  try {
+    if (ended) return;
+    yield first.value as StreamEvent;
+    for (;;) {
+      const next = await iterator.next();
+      if (next.done) {
+        ended = true;
+        return;
+      }
+      yield next.value as StreamEvent;
+    }
+  } finally {
+    // A consumer that stops reading without aborting (`.return()` down the
+    // yield* chain) must close the request too: the first event was pulled by
+    // hand, so nothing else hands the transport its `.return()`, and the
+    // provider would go on generating — and billing — to the end.
+    if (!ended) await closeQuietly(iterator);
+  }
+}
+
+async function closeQuietly(iterator: AsyncIterator<unknown>): Promise<void> {
+  try {
+    await iterator.return?.();
+  } catch {
+    // Closing is best effort; the error that ended the read is the one to see.
   }
 }
 
