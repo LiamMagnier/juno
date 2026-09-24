@@ -267,34 +267,44 @@ export async function* geminiLoop(req: AdapterRequest, deps: GeminiLoopDeps): As
     try {
       let malformedRetried = false;
       for (;;) {
-        const { final } = loop.beginRequest();
+        /*
+         * A continuation of a turn with no client tools is outside the tool
+         * loop: it cannot call anything, so it neither needs a round of the
+         * budget nor may it spend one — a one-request loop would otherwise
+         * refuse the continuation, or report a cut ("rounds") that never
+         * happened. A tool turn's continuation is a request like any other.
+         */
+        const { final } = continuations > 0 && !runTools ? { final: true } : loop.beginRequest();
         roundFinal = final;
-        const answerBefore = sawAnswer;
+        const answerBefore: boolean = sawAnswer;
         const state = yield* readRequest(final);
         yield* searchEvents(state);
 
         /*
          * MALFORMED_FUNCTION_CALL: the model wrote a call Google could not
          * parse. The same request is sent once more (SPEC §5.3 item 8) —
-         * unless answer text already streamed, which a resend would repeat.
-         * A second one ends the turn as it did before.
+         * unless answer text already streamed, which a resend would repeat,
+         * or the budget has no request left for it. A second one ends the
+         * turn as it did before.
          */
-        if (state.finishReason === "MALFORMED_FUNCTION_CALL" && !malformedRetried && sawAnswer === answerBefore) {
+        if (
+          state.finishReason === "MALFORMED_FUNCTION_CALL" &&
+          !malformedRetried &&
+          sawAnswer === answerBefore &&
+          loop.requests < loop.budget
+        ) {
           malformedRetried = true;
           yield usageEvent();
           continue;
         }
 
         const calls = state.functionCalls;
-        const dispatch = !!runTools && !final && calls.length > 0;
+        const dispatch = !!runTools && !!toolset && !final && calls.length > 0;
         if (!dispatch) {
           unansweredCalls = calls.length > 0;
           yield usageEvent();
           break;
         }
-
-        yield { type: "round_end", round, tools: calls.length, serverTools: roundServerTools, final, stop: state.finishReason };
-        yield usageEvent();
 
         const inputs: ToolCallInput[] = calls.map((call, index) => {
           const callId = callIdFor(call.id, round, index);
@@ -304,14 +314,18 @@ export async function* geminiLoop(req: AdapterRequest, deps: GeminiLoopDeps): As
             ...(call.id ? { providerCallId: call.id } : {}),
             round,
             index,
+            // Gemini sends its arguments parsed; they reach the dispatcher as
+            // the JSON text every other adapter hands it.
             argsText: JSON.stringify(call.args),
           };
         });
+        // The calls, then the end of the step they ended — the order every
+        // adapter keeps (Anthropic announces its calls while they stream).
         for (const input of inputs) {
           yield {
             type: "tool",
             phase: "call",
-            server: toolset!.labelFor(input.name),
+            server: toolset.labelFor(input.name),
             name: input.name,
             callId: input.callId,
             ...(input.providerCallId && input.providerCallId !== input.callId ? { providerCallId: input.providerCallId } : {}),
@@ -320,7 +334,10 @@ export async function* geminiLoop(req: AdapterRequest, deps: GeminiLoopDeps): As
             args: input.argsText,
           };
         }
-        const results = yield* runTools!(inputs, signalOrNever(signal), loop.nextIsFinal());
+        yield { type: "round_end", round, tools: calls.length, serverTools: roundServerTools, final, stop: state.finishReason };
+        yield usageEvent();
+
+        const results = yield* runTools(inputs, signalOrNever(signal), loop.nextIsFinal());
         const followUp = geminiToolResponses(inputs, results, { vision: model.vision, gemini3 });
         // Replays the assistant parts UNCHANGED, thought signatures and call ids included.
         appendGeminiToolRound(contents, state.assistantParts, followUp.responses, followUp.images);
@@ -358,8 +375,9 @@ export async function* geminiLoop(req: AdapterRequest, deps: GeminiLoopDeps): As
 
     const canContinue =
       continuations < MAX_GEMINI_CONTINUATIONS &&
-      // The budget is the turn's, continuations included.
-      loop.requests < loop.budget &&
+      // The budget is the turn's, continuations included — for a turn with
+      // tools, whose continuation is another round of the same loop.
+      (!runTools || loop.requests < loop.budget) &&
       // An aborted turn is a reader who has stopped reading.
       !signal?.aborted &&
       !structured &&

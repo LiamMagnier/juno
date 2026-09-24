@@ -133,6 +133,10 @@ export async function* anthropicLoop(req: AdapterRequest, deps: AnthropicLoopDep
     round = result.round;
 
     const dispatch = !!runTools && !final && result.stopReason === "tool_use" && result.toolUses.length > 0;
+    // A structured call's answer is settled before its step closes, so the
+    // answer text belongs to the step it ends.
+    const settled = structured ? settleStructured(result, held, structured, loop.nextIsFinal()) : null;
+    if (settled?.kind === "answer" && settled.text) yield { type: "text", text: settled.text, round };
     yield {
       type: "round_end",
       round,
@@ -152,10 +156,8 @@ export async function* anthropicLoop(req: AdapterRequest, deps: AnthropicLoopDep
      */
     yield usageEvent(acc, round);
 
-    if (structured) {
-      const settled = settleStructured(result, held, structured, loop.nextIsFinal());
+    if (settled) {
       if (settled.kind === "answer") {
-        if (settled.text) yield { type: "text", text: settled.text, round };
         lastStop = settled.stop;
         break;
       }

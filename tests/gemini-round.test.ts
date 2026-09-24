@@ -101,8 +101,8 @@ test("thought parts stream as reasoning, keep their signature, and stay in order
     { candidates: [{ content: { parts: [{ text: "Hello" }] } }, ] },
   ]);
   assert.deepEqual(state.events, [
-    { type: "reasoning", text: "thinking…" },
-    { type: "text", text: "Hello" },
+    { type: "reasoning", text: "thinking…", round: 0 },
+    { type: "text", text: "Hello", round: 0 },
   ]);
   assert.deepEqual(state.assistantParts, [
     { thought: true, text: "thinking…", thoughtSignature: "SIG-T" },
@@ -249,4 +249,86 @@ test("a flushed tail that is genuinely truncated is still discarded", () => {
   applyGeminiChunk(state, cut.payloads[0], new Map());
   assert.equal(state.sawSignal, false);
   assert.equal(state.finishReason, null);
+});
+
+test("a request's text and thinking carry the model step it belongs to", () => {
+  const state = emptyGeminiRound(3);
+  applyGeminiChunk(
+    state,
+    JSON.stringify({ candidates: [{ content: { parts: [{ text: "hm", thought: true }, { text: "Answer" }] } }] }),
+    new Map(),
+  );
+  assert.deepEqual(state.events, [
+    { type: "reasoning", text: "hm", round: 3 },
+    { type: "text", text: "Answer", round: 3 },
+  ]);
+});
+
+test("a functionCall id is kept on the call and on the replayed part (RC-13)", () => {
+  // Gemini pairs parallel responses to their calls by this id. It used to be
+  // dropped here, which left the response unpaired.
+  const { state } = feed([
+    {
+      candidates: [
+        {
+          content: {
+            parts: [
+              { functionCall: { id: "fc-1", name: "web_fetch", args: { url: "https://a.example" } }, thoughtSignature: "S" },
+              { functionCall: { name: "calculate", args: { expression: "1+1" } } },
+            ],
+          },
+        },
+      ],
+    },
+  ]);
+  assert.deepEqual(state.functionCalls, [
+    { id: "fc-1", name: "web_fetch", args: { url: "https://a.example" } },
+    { name: "calculate", args: { expression: "1+1" } },
+  ]);
+  assert.deepEqual(state.assistantParts[0], {
+    functionCall: { id: "fc-1", name: "web_fetch", args: { url: "https://a.example" } },
+    thoughtSignature: "S",
+  });
+  assert.equal("id" in (state.assistantParts[1] as { functionCall: object }).functionCall, false);
+});
+
+test("a tool round's responses echo the call id and carry their own parts", () => {
+  const contents: GeminiContent[] = [];
+  appendGeminiToolRound(
+    contents,
+    [{ functionCall: { id: "fc-1", name: "inspect_image", args: {} } }],
+    [
+      {
+        id: "fc-1",
+        name: "inspect_image",
+        response: { result: "a cat" },
+        parts: [{ inlineData: { mimeType: "image/png", data: "AAAA" } }],
+      },
+    ],
+  );
+  assert.deepEqual(contents[1], {
+    role: "user",
+    parts: [
+      {
+        functionResponse: {
+          id: "fc-1",
+          name: "inspect_image",
+          response: { result: "a cat" },
+          parts: [{ inlineData: { mimeType: "image/png", data: "AAAA" } }],
+        },
+      },
+    ],
+  });
+  assert.equal(contents.length, 2, "no separate image turn when the response carries them");
+});
+
+test("grounding queries are collected once each, even with no grounding chunk", () => {
+  // A search Google ran put outside content in front of the model whether or
+  // not it cited anything, so each query is kept (SPEC §5.3 item 7).
+  const { state, sources } = feed([
+    { candidates: [{ groundingMetadata: { webSearchQueries: ["juno release date", "juno"] } }] },
+    { candidates: [{ groundingMetadata: { webSearchQueries: ["juno release date", "  "] }, finishReason: "STOP" }] },
+  ]);
+  assert.deepEqual(state.webSearchQueries, ["juno release date", "juno"]);
+  assert.equal(sources.size, 0);
 });

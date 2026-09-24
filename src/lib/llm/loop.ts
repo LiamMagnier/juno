@@ -45,6 +45,36 @@ export function providerSearchCapFor(budget: number): number {
   return 16;
 }
 
+/** The round budget of a turn that carries the opened chat toolset and no budget of its own (SPEC §5.0). */
+export const DEFAULT_TOOL_BUDGET = 10;
+/**
+ * Today's six tool rounds plus the forced final request: the budget of a turn on
+ * the toolset `streamChat` still opens from its deprecated options (removed in
+ * WS9a), and of a turn with provider search — Claude's search can pause a long
+ * turn and ask for it back (`pause_turn`), and each continuation is a request.
+ */
+export const LEGACY_TOOL_BUDGET = 7;
+/** A structured call: one answer and one corrective retry (SPEC §5.0 `responseSchema`). */
+export const STRUCTURED_BUDGET = 2;
+
+/**
+ * Requests a `streamChat` call gets when its caller passes no loop controller.
+ * The reworked route always passes its own, sized by `roundBudgetFor`; the
+ * other callers get what their kind of call needs and no more — one request
+ * for a plain completion.
+ */
+export function defaultLoopBudget(input: {
+  toolset: boolean;
+  legacyTools: boolean;
+  webSearch: boolean;
+  structured: boolean;
+}): number {
+  if (input.structured) return STRUCTURED_BUDGET;
+  if (input.toolset) return DEFAULT_TOOL_BUDGET;
+  if (input.legacyTools || input.webSearch) return LEGACY_TOOL_BUDGET;
+  return 1;
+}
+
 export interface LoopController {
   readonly budget: number;
   readonly requests: number;

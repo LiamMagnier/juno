@@ -11,8 +11,9 @@ import {
   type McpToolset,
   type McpToolsetContext,
 } from "@/lib/mcp";
+import { createLoopController, defaultLoopBudget, type LoopController } from "@/lib/llm/loop";
+import { legacyChatToolset } from "@/lib/llm/tool-round";
 import type { AdapterRequest } from "@/lib/llm/types";
-import type { LoopController } from "@/lib/llm/loop";
 import type { ChatToolset, NativeChatTool } from "@/lib/tools/types";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { normalizeProviderError, type ErrorSubject } from "@/lib/provider-error";
@@ -120,15 +121,19 @@ export async function* streamChat(opts: {
    */
   nativeTools?: readonly NativeChatTool[];
   /*
-   * The reworked tool loop's options (SPEC §5.0). Declared now so callers can
-   * be written against the final signature; the adapters wire them in WS3,
-   * and until then they are not read. Nothing passes them yet.
+   * The reworked tool loop's options (SPEC §5.0). `connectors`, `allowedTools`,
+   * `audit` and `nativeTools` above are DEPRECATED: they still open the old
+   * toolset when no `toolset` is passed, until the route switches (WS9a).
    */
-  /** The turn's opened toolset; replaces `connectors`/`allowedTools`/`audit`/`nativeTools` (WS9a). */
+  /**
+   * The turn's opened toolset (`openChatToolset`); replaces
+   * `connectors`/`allowedTools`/`audit`/`nativeTools`. The caller opened it,
+   * so the caller closes it.
+   */
   toolset?: ChatToolset;
-  /** Present iff `toolset` is. */
+  /** Present iff `toolset` is: the dispatcher's context for this turn. */
   batch?: AdapterRequest["batch"];
-  /** Defaults to `createLoopController({ budget: toolset ? 10 : 1 })`. */
+  /** The turn's round budget. Defaults to `defaultLoopBudget` (10 with a `toolset`, 1 with nothing). */
   loop?: LoopController;
   /** Structured output for a tool-less call (the research planner). */
   responseSchema?: AdapterRequest["responseSchema"];
@@ -162,9 +167,11 @@ export async function* streamChat(opts: {
   );
   const active = opts.connectors ?? [];
 
-  // Open the Unified Agent Toolset (Python, Browser, Computer + active MCP connectors)
+  // The DEPRECATED path: open the Unified Agent Toolset (runtime tools + active
+  // MCP connectors) from the old options, only when the caller did not pass
+  // the turn's opened toolset. Removed with those options (WS9a).
   let toolset: McpToolset | undefined;
-  if (opts.audit) {
+  if (opts.audit && !opts.toolset) {
     try {
       const agentContext: AgentExecutionContext = {
         userId: opts.audit.userId,
@@ -185,7 +192,43 @@ export async function* streamChat(opts: {
       toolset = undefined;
     }
   }
-  toolset = withNativeTools(toolset, opts.nativeTools ?? []);
+  if (!opts.toolset) toolset = withNativeTools(toolset, opts.nativeTools ?? []);
+  const legacyTools = !!toolset && toolset.tools.length > 0;
+  const loop =
+    opts.loop ??
+    createLoopController({
+      budget: defaultLoopBudget({
+        toolset: !!opts.toolset,
+        legacyTools,
+        webSearch: !!webSearch,
+        structured: !!opts.responseSchema,
+      }),
+    });
+  // One request shape for every adapter (SPEC §5.0). The old toolset rides in
+  // it seen through the new contract; with no `batch`, the adapters run it the
+  // way they always did — it authorises its own calls — and the reworked
+  // dispatcher runs only the toolset the route opened.
+  const request: AdapterRequest = {
+    model,
+    system,
+    systemStablePrefix: opts.systemStablePrefix,
+    history,
+    maxTokens,
+    signal,
+    reasoningEffort,
+    webSearch: !!webSearch,
+    toolset: opts.toolset ?? (legacyTools && toolset ? legacyChatToolset(toolset) : undefined),
+    batch: opts.toolset ? opts.batch : undefined,
+    loop,
+    dynamicContext,
+    cacheKey,
+    fastMode,
+    proMode,
+    requestContext: opts.requestContext,
+    responseSchema: opts.responseSchema,
+  };
+  // What the adapters not yet on `AdapterRequest` take positionally.
+  const positionalToolset: McpToolset | undefined = opts.toolset ?? toolset;
   try {
     const adapter = providerAdapterFor(model, proMode);
     // Every provider call in the product funnels through the switch below, so
@@ -200,29 +243,25 @@ export async function* streamChat(opts: {
     try {
       switch (adapter) {
         case "anthropic-native":
-          yield* streamAnthropic(
-            model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            toolset, dynamicContext, fastMode, opts.systemStablePrefix
-          );
+          yield* streamAnthropic(request);
           return;
         case "gemini-native":
-          yield* streamGemini(
-            model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            toolset, dynamicContext, opts.requestContext
-          );
-          return;
-        case "openai-responses":
-          // Responses-only snapshots and GPT Pro execution cannot use
-          // /chat/completions; this branch preserves their reasoning controls.
-          yield* streamOpenAIResponses(
-            model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            toolset, dynamicContext, cacheKey, fastMode, proMode
-          );
+          yield* streamGemini(request);
           return;
         case "openai-compatible":
           yield* streamOpenAICompat(
             model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-            toolset, dynamicContext, cacheKey, fastMode
+            positionalToolset, dynamicContext, cacheKey, fastMode
+          );
+          return;
+        case "openai-responses":
+        default:
+          // Responses-only snapshots and GPT Pro execution cannot use
+          // /chat/completions; this branch preserves their reasoning controls.
+          // Every other Responses-served adapter lands here too.
+          yield* streamOpenAIResponses(
+            model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+            positionalToolset, dynamicContext, cacheKey, fastMode, proMode
           );
           return;
       }
