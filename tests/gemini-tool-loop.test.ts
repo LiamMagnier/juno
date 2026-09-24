@@ -451,6 +451,22 @@ test("UNEXPECTED_TOOL_CALL and TOO_MANY_TOOL_CALLS finish length, not unknown", 
   }
 });
 
+test("a tool-budget finish is never resumed as a cut-off answer, however much it thought", async () => {
+  for (const reason of ["UNEXPECTED_TOOL_CALL", "TOO_MANY_TOOL_CALLS"]) {
+    // Thinking at 90% of the ceiling: exactly the share that makes a MAX_TOKENS
+    // finish a thinking-starved answer the loop resumes.
+    const thoughtHeavy = {
+      candidates: [{ content: { role: "model", parts: [{ text: "Partly." }] }, finishReason: reason }],
+      usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 50, thoughtsTokenCount: 900, totalTokenCount: 1050 },
+    };
+    const { events, bodies } = await run(request({ budget: 10, maxTokens: 1000 }), [[thoughtHeavy]], fakeRunner().runner);
+    assert.equal(bodies.length, 1, `${reason}: one request, no continuation`);
+    const [finish] = ofType(events, "finish");
+    assert.deepEqual([finish.reason, finish.raw], ["length", reason]);
+    assert.equal(finish.note, undefined, `${reason}: the thinking level is not blamed for a tool stop`);
+  }
+});
+
 const STARVED = (text: string) => [
   {
     candidates: [{ content: { role: "model", parts: [{ text }] }, finishReason: "MAX_TOKENS" }],

@@ -381,6 +381,9 @@ export async function* geminiLoop(req: AdapterRequest, deps: GeminiLoopDeps): As
       // An aborted turn is a reader who has stopped reading.
       !signal?.aborted &&
       !structured &&
+      // A tool-budget stop is `length` too, but nothing was cut off: resuming
+      // it would tell the model its message ran out of room (SPEC §5.3 item 8).
+      !decision.toolBudget &&
       geminiShouldContinue(decision.reason, {
         sawUsage,
         answerTokens: attemptOutput,
