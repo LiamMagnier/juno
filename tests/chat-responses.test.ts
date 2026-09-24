@@ -6,6 +6,7 @@ import {
   generationFailureCode,
   isAbortLike,
   plural,
+  searchToolLabel,
   sourceHost,
 } from "@/lib/chat-responses";
 import type { ModelInfo } from "@/lib/models";
@@ -104,4 +105,14 @@ test("sourceHost strips www and survives a malformed URL", () => {
   // Citation chips render whatever this returns, so it must never throw.
   assert.equal(sourceHost("not a url"), "not a url");
   assert.equal(sourceHost(""), "");
+});
+
+test("the search row names the search that actually runs; Grok's Live Search is gone", () => {
+  // xAI retired Live Search (410 since 2026-01-12): Grok searches with the
+  // web_search tool on Responses, as OpenAI's models now do (SPEC §5.0).
+  assert.equal(searchToolLabel("xai"), "Grok web search");
+  assert.equal(searchToolLabel("openai"), "OpenAI web search");
+  assert.equal(searchToolLabel("anthropic"), "Claude web search");
+  assert.equal(searchToolLabel("google"), "Google Search grounding");
+  assert.equal(searchToolLabel("deepseek"), "native web search");
 });

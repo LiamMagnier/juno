@@ -3,20 +3,198 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { toolCapabilitiesFor } from "@/lib/model-tools";
+import { hostedSearchAllowedAt, labHasNativeSearch, toolCapabilitiesFor, type ModelToolCapabilities } from "@/lib/model-tools";
+import { MODEL_LIST, providerSupportsWebSearch, resolveModel } from "@/lib/models";
+import { providerAdapterFor } from "@/lib/provider-routing";
+import { PROVIDER_LIST } from "@/lib/providers";
 
 /*
- * The per-model tool capabilities (SPEC §5.6).
+ * The per-model tool capabilities (SPEC §5.6): the record every adapter reads
+ * for what a model's host accepts — whether it takes function tools, how its
+ * last request is made tools-off, what thinking it needs back, whether it
+ * searches natively on Juno's transport.
  *
- * WS0 filled `toolCapabilitiesFor` from the provider capability audit; these
- * are spot checks of that table, one per rule it follows. WS3b owns this file
- * and grows it into the §13.1 test (a record for every current model, and a
- * snapshot of the table) as the probes settle the conservative values.
+ * Values from the provider capability audit
+ * (docs/chat-rework/audit/gap-provider-tool-capabilities.md §2). The items
+ * that audit marks "needs live probe" keep their conservative value until the
+ * probe in scripts/probes/ runs; changing one is a change to this snapshot.
  */
 
 test("the capabilities stay importable by the composer", () => {
   const source = readFileSync(path.join(process.cwd(), "src/lib/model-tools.ts"), "utf8");
   assert.doesNotMatch(source, /^import "server-only";/m);
+});
+
+/** One line per model: the whole record, in a form a diff reads. */
+function signature(id: string, c: ModelToolCapabilities): string {
+  const flags = [
+    c.supported ? "tools" : "no-tools",
+    c.chatCompletions ? "cc" : "no-cc",
+    c.responses ? "responses" : "",
+    `parallel:${c.parallel}`,
+    `final:${c.finalRound === "tool_choice_none" ? "none" : "omit"}`,
+    c.replay === "none" ? "" : `replay:${c.replay}/${c.replayField ?? "-"}`,
+    c.userAfterTool ? "" : "no-user-after-tool",
+    c.nativeSearch ? "search" : "",
+    c.anthropicSearchVersion ? `ws:${c.anthropicSearchVersion}` : "",
+    c.hostedSearchMinEffort ? `search>=${c.hostedSearchMinEffort}` : "",
+    `max:${c.maxTools}`,
+  ];
+  return `${id} ${flags.filter(Boolean).join(" ")}`;
+}
+
+const TABLE = [
+  "anthropic:claude-fable-5-1 tools cc parallel:default final:none search ws:20260318 max:128",
+  "anthropic:claude-fable-5 tools cc parallel:default final:none search ws:20250305 max:128",
+  "anthropic:claude-opus-5-5 tools cc parallel:default final:none search ws:20260318 max:128",
+  "anthropic:claude-opus-5 tools cc parallel:default final:none search ws:20250305 max:128",
+  "anthropic:claude-opus-4-8 tools cc parallel:default final:none search ws:20250305 max:128",
+  "anthropic:claude-sonnet-5 tools cc parallel:default final:none search ws:20260318 max:128",
+  "anthropic:claude-haiku-4-5 tools cc parallel:default final:none search ws:20250305 max:128",
+  "anthropic:claude-sonnet-4-6 tools cc parallel:default final:none search ws:20250305 max:128",
+  "anthropic:claude-opus-4-7 tools cc parallel:default final:none search ws:20250305 max:128",
+  "anthropic:claude-opus-4-6 tools cc parallel:default final:none search ws:20250305 max:128",
+  "anthropic:claude-opus-4-5 tools cc parallel:default final:none search ws:20250305 max:128",
+  "anthropic:claude-sonnet-4-5 tools cc parallel:default final:none search ws:20250305 max:128",
+  "openai:gpt-6-astra tools no-cc responses parallel:default final:none search max:128",
+  "openai:gpt-6-sol tools no-cc responses parallel:default final:none search max:128",
+  "openai:gpt-6-luna tools no-cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.6-sol tools no-cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.6-terra tools no-cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.6-luna tools no-cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.5 tools cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.5-pro tools no-cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.4 tools cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.4-mini tools cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.4-nano tools cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.3-codex tools no-cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.4-pro tools no-cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.2 tools cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.2-pro tools no-cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.2-codex tools no-cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.1 tools cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.1-codex tools no-cc responses parallel:default final:none search max:128",
+  "openai:gpt-5.1-codex-mini tools no-cc responses parallel:default final:none search max:128",
+  "openai:gpt-5 tools cc responses parallel:default final:none search search>=low max:128",
+  "openai:gpt-5-mini tools cc responses parallel:default final:none search max:128",
+  "openai:o3 tools cc responses parallel:default final:none search max:128",
+  "openai:o3-mini tools cc responses parallel:default final:none max:128",
+  "openai:o1 tools cc responses parallel:default final:none max:128",
+  "openai:gpt-4o tools cc responses parallel:default final:none search max:128",
+  "openai:gpt-4o-mini tools cc responses parallel:default final:none search max:128",
+  "openai:gpt-4-turbo tools cc responses parallel:default final:none max:128",
+  "openai:gpt-3.5-turbo tools cc responses parallel:default final:none max:128",
+  "google:gemini-3.8-flash tools cc parallel:default final:none search max:128",
+  "google:gemini-3.7-flash tools cc parallel:default final:none search max:128",
+  "google:gemini-3.6-flash tools cc parallel:default final:none search max:128",
+  "google:gemini-3.5-flash tools cc parallel:default final:none search max:128",
+  "google:gemini-3.1-pro-preview tools cc parallel:default final:none search max:128",
+  "google:gemini-3.5-flash-lite tools cc parallel:default final:none search max:128",
+  "google:gemini-3.1-flash-lite tools cc parallel:default final:none search max:128",
+  "google:gemini-3-flash-preview tools cc parallel:default final:none search max:128",
+  "google:gemini-2.5-pro tools cc parallel:default final:none max:128",
+  "meta:muse-spark-1.3 tools cc parallel:default final:omit max:128",
+  "meta:muse-spark-1.3-contributor tools cc parallel:default final:omit max:128",
+  "meta:muse-spark-1.2 tools cc parallel:default final:omit max:128",
+  "zhipu:glm-5.3 tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-5.2 tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-5-turbo tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-5v-turbo tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-4.7-flash tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-4.7-flashx tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-5.1 tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-5 tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-4.7 tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-4.6 tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-4.6v tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-4.6v-flashx tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-4.6v-flash tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-4.5v tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-4.5-x tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-4.5-air tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-4.5-airx tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-4-32b-0414-128k tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "zhipu:glm-4.5-flash tools cc parallel:unknown final:omit replay:should/reasoning_content max:128",
+  "moonshot:kimi-k3 tools cc parallel:default final:none replay:must/reasoning_content max:128",
+  "moonshot:kimi-k2.6 tools cc parallel:default final:none replay:must/reasoning_content max:128",
+  "moonshot:kimi-k2.7-code tools cc parallel:default final:none replay:must/reasoning_content max:128",
+  "moonshot:kimi-k2.7-code-highspeed tools cc parallel:default final:none replay:must/reasoning_content max:128",
+  "moonshot:kimi-k2.5 tools cc parallel:default final:none replay:must/reasoning_content max:128",
+  "moonshot:moonshot-v1-128k tools cc parallel:default final:none replay:must/reasoning_content max:128",
+  "deepseek:deepseek-flash tools cc parallel:unknown final:none replay:must/reasoning_content max:128",
+  "deepseek:deepseek-v4-pro tools cc parallel:unknown final:none replay:must/reasoning_content max:128",
+  "mistral:mistral-medium-latest tools cc parallel:default final:none replay:should/thinkchunk no-user-after-tool max:128",
+  "mistral:mistral-large-latest tools cc parallel:default final:none no-user-after-tool max:128",
+  "mistral:mistral-small-latest tools cc parallel:default final:none replay:should/thinkchunk no-user-after-tool max:128",
+  "mistral:codestral-latest tools cc parallel:default final:none no-user-after-tool max:128",
+  "mistral:ministral-14b-latest tools cc parallel:default final:none no-user-after-tool max:128",
+  "mistral:ministral-8b-latest tools cc parallel:default final:none no-user-after-tool max:128",
+  "mistral:ministral-3b-latest tools cc parallel:default final:none no-user-after-tool max:128",
+  "mistral:devstral-2512 tools cc parallel:default final:none no-user-after-tool max:128",
+  "xai:grok-4.7 tools cc responses parallel:default final:none search max:350",
+  "xai:grok-4.6 tools cc responses parallel:default final:none search max:350",
+  "xai:grok-4.5 tools cc responses parallel:default final:none search max:350",
+  "xai:grok-4.3 tools cc responses parallel:default final:none search max:350",
+  "xai:grok-4.1-fast tools cc parallel:default final:none max:350",
+  "xai:grok-build-0.1 tools cc responses parallel:default final:none max:350",
+  "xai:grok-4.20-multi-agent-0309 no-tools no-cc responses parallel:default final:none search max:350",
+  "xai:grok-4.20-0309-reasoning tools cc responses parallel:default final:none search max:350",
+  "xai:grok-4.20-0309-non-reasoning tools cc responses parallel:default final:none search max:350",
+  "minimax:MiniMax-M3 tools cc parallel:unknown final:omit replay:should/reasoning_details max:128",
+  "minimax:MiniMax-M2.7-highspeed tools cc parallel:unknown final:omit replay:should/reasoning_details max:128",
+  "minimax:MiniMax-M2.7 tools cc parallel:unknown final:omit replay:should/reasoning_details max:128",
+  "minimax:MiniMax-M2.5 tools cc parallel:unknown final:omit replay:should/reasoning_details max:128",
+  "mimo:mimo-v2.6-pro tools cc parallel:unknown final:omit replay:must/reasoning_content max:128",
+  "mimo:mimo-v2.6-pro-ultraspeed tools cc parallel:unknown final:omit replay:must/reasoning_content max:128",
+  "mimo:mimo-v2.6-flash tools cc parallel:unknown final:omit replay:must/reasoning_content max:128",
+  "mimo:mimo-v2.5 tools cc parallel:unknown final:omit replay:must/reasoning_content max:128",
+  "mimo:mimo-v2.5-pro tools cc parallel:unknown final:omit replay:must/reasoning_content max:128",
+  "mimo:mimo-v2-flash tools cc parallel:unknown final:omit replay:must/reasoning_content max:128",
+  "qwen:qwen3.8-max tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "qwen:qwen3.7-max tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "qwen:qwen3.7-plus tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "qwen:qwen3.8-flash tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "qwen:qwen3.6-flash tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "qwen:qwen3.6-plus tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "qwen:qwen3.5-plus tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "qwen:qwen3.5-flash tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "qwen:qwen-long tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "qwen:qwen3-vl-plus tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "qwen:qwen3-vl-flash tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "qwen:qwen-max tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "qwen:qwen-turbo tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "qwen:qwen-vl-max tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "qwen:qwq-plus tools cc parallel:opt_in final:none replay:should/reasoning_content max:128",
+  "longcat:LongCat-2.0 tools cc parallel:unknown final:omit max:128",
+];
+
+test("every chat model in the catalog has a record, and the table is pinned", () => {
+  const chat = MODEL_LIST.filter((model) => model.modality === "chat");
+  const actual = chat.map((model) => signature(model.id, toolCapabilitiesFor(model)));
+  assert.deepEqual(actual, TABLE);
+  for (const model of chat) {
+    const caps = toolCapabilitiesFor(model);
+    assert.ok(caps.maxTools > 0, model.id);
+    // Only the compat adapter reads `replay`; the native ones replay their own items.
+    if (["anthropic", "openai", "google", "xai"].includes(model.provider)) assert.equal(caps.replay, "none", model.id);
+    if (caps.replay !== "none") assert.ok(caps.replayField, `${model.id} names its replay field`);
+  }
+});
+
+test("ModelInfo.webSearch is the record's native search, not a list of its own", () => {
+  for (const model of MODEL_LIST.filter((m) => m.modality === "chat")) {
+    // OpenAI's hosted search exists only on Responses (OPENAI_RESPONSES=0 keeps it off).
+    const served = model.provider !== "openai" || providerAdapterFor(model) === "openai-responses";
+    assert.equal(model.webSearch, toolCapabilitiesFor(model).nativeSearch && served, model.id);
+  }
+  // RC-2: every current OpenAI model searches on Responses now.
+  for (const id of ["openai:gpt-6-astra", "openai:gpt-6-sol", "openai:gpt-6-luna", "openai:gpt-5.6-terra"]) {
+    assert.equal(resolveModel(id)?.webSearch, true, id);
+  }
+  // A lab-level answer for the places that know only a provider.
+  for (const provider of PROVIDER_LIST) assert.equal(providerSupportsWebSearch(provider), labHasNativeSearch(provider), provider);
+  assert.equal(labHasNativeSearch("openai"), true);
+  assert.equal(labHasNativeSearch("deepseek"), false);
 });
 
 test("toolCapabilitiesFor reads the lab row, the model's own rules and the overrides", () => {
@@ -30,10 +208,24 @@ test("toolCapabilitiesFor reads the lab row, the model's own rules and the overr
   assert.equal(caps("google", "gemini-3.8-flash").nativeSearch, true);
   assert.equal(caps("google", "gemini-2.5-pro").nativeSearch, false, "pre-Gemini-3 keeps its functions");
   assert.equal(caps("xai", "grok-4.20-multi-agent-0309").supported, false);
+  assert.equal(caps("xai", "grok-4.20-multi-agent-0309").responses, true, "Responses is its only route");
+  assert.equal(caps("xai", "grok-build-0.1").nativeSearch, false, "server search unconfirmed (P13b)");
   assert.equal(caps("deepseek", "deepseek-v4-pro").replay, "must");
   assert.equal(caps("meta", "muse-spark-1.3").finalRound, "omit_tools");
   assert.equal(caps("mistral", "mistral-large-latest").userAfterTool, false);
   assert.equal(caps("qwen", "qwen3.8-max").parallel, "opt_in");
   assert.equal(caps("moonshot", "kimi-k9-unreleased").replay, "must", "an unlisted model gets its lab's row");
+  assert.equal(caps("openai", "gpt-9-unreleased").responses, true, "a discovered OpenAI model is a Responses model");
   assert.equal(caps("openai", "gpt-6-sol", { tools: { maxTools: 32 } }).maxTools, 32, "the catalog override wins");
+});
+
+test("hosted search is allowed at an effort only where the model takes it", () => {
+  const gpt5 = toolCapabilitiesFor({ provider: "openai", id: "openai:gpt-5" });
+  assert.equal(hostedSearchAllowedAt(gpt5, "minimal"), false);
+  assert.equal(hostedSearchAllowedAt(gpt5, null), false, "no effort ranks below every tier");
+  assert.equal(hostedSearchAllowedAt(gpt5, "low"), true);
+  assert.equal(hostedSearchAllowedAt(gpt5, "high"), true);
+  const sol = toolCapabilitiesFor({ provider: "openai", id: "openai:gpt-6-sol" });
+  assert.equal(hostedSearchAllowedAt(sol, null), true);
+  assert.equal(hostedSearchAllowedAt(toolCapabilitiesFor({ provider: "deepseek", id: "deepseek:deepseek-flash" }), "high"), false);
 });

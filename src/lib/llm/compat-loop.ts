@@ -526,6 +526,9 @@ export async function* runCompatLoop(opts: CompatLoopInput): AsyncGenerator<LlmE
   const { model, loop } = req;
   const signal = turnSignal(req.signal);
   const caps = toolCapabilitiesFor(model);
+  // A model that does not reason has no thinking to send back, whatever its
+  // lab's rule (Moonshot's v1, Qwen-Long).
+  const replayCaps = model.reasoning ? caps : { ...caps, replay: "none" as const };
   const source: ToolSource | null = caps.supported ? toolSourceFor(req, opts.legacyToolset, opts.dispatch) : null;
   const shape: TurnShape = {
     model,
@@ -666,7 +669,7 @@ export async function* runCompatLoop(opts: CompatLoopInput): AsyncGenerator<LlmE
 
     messages.push(
       compatToolCallMessage(
-        caps,
+        replayCaps,
         assistantText,
         reasoning,
         calls.map((call) => ({ id: call.wireId, name: call.wireName, args: call.args })),
