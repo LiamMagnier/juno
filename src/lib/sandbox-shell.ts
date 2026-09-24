@@ -25,6 +25,10 @@ import {
  * It holds no artifact content and reflects nothing from the request, so the
  * URL on its own is inert: visited directly it has no parent to hear from, and
  * framed by any other site it is refused by `frame-ancestors` before it runs.
+ * It is refused outright unless the browser says it is loading a frame
+ * (`isFrameRequest`), and its CSP `sandbox` directive keeps its origin opaque
+ * even where that header is missing — the merge plan's three acceptance
+ * conditions for a preview response (04-MERGE-PLAN §9.5), with `nosniff`.
  *
  * A reload from inside the preview (`location.reload()`) reloads the SHELL,
  * which says ready again; the parent answers again, so a "restart" button in a
@@ -67,6 +71,17 @@ export function buildSandboxShell({
 }
 
 /**
+ * Whether a request is an iframe loading the shell. Browsers send
+ * `Sec-Fetch-Dest` on every navigation and it cannot be set from script, so
+ * anything else — a top-level visit, a link, a fetch, a client too old to send
+ * it — is refused. `frame-ancestors` only governs framing; this is what keeps a
+ * preview URL from being a page of its own.
+ */
+export function isFrameRequest(headers: Headers): boolean {
+  return headers.get("sec-fetch-dest") === "iframe";
+}
+
+/**
  * The full response for one profile: the shell and the headers that make it a
  * preview origin rather than a page of the app.
  */
@@ -95,6 +110,9 @@ export function sandboxShellResponse({
       // The shell is the same bytes for every preview of a deployment; a
       // re-render remounts the frame, and this keeps that off the network.
       "Cache-Control": "public, max-age=600",
+      // …but only for frames: a cached copy must not answer a top-level visit
+      // that the route itself would refuse.
+      Vary: "Sec-Fetch-Dest",
       "X-Content-Type-Options": "nosniff",
       // A preview's own requests must not tell a CDN which conversation it
       // was opened from.

@@ -52,6 +52,22 @@ error is the pre-existing missing `runner/agent-core/dist`). Both regression tes
 checked by reintroducing the bug. Every runtime ran in Chrome under the real app CSP,
 same-origin and separate-origin (`localhost:3111` app, `127.0.0.1:3111` previews).
 
+## Merge-plan acceptance conditions (04-MERGE-PLAN §9.5), added 2026-09-24
+
+- CSP `sandbox` directive on every shell response: yes. It carries `allow-forms`, which the
+  plan says to leave out: without it the `submit` event never fires, so every form-based
+  artifact (a todo app) breaks. `form-action 'none'` already stops forms posting anywhere.
+- Refuse any request whose `Sec-Fetch-Dest` isn't `iframe`, with `Vary: Sec-Fetch-Dest`
+  so a cached copy can't answer a top-level visit: yes (`isFrameRequest`).
+- `nosniff`: yes.
+- CI test that opens a preview URL top-level: yes, the second test in
+  `tests/sandbox-origin-browser.test.ts`. It gets a 404; a shell served anyway has
+  origin `null` and can't read the cookie.
+- Not met, and an owner decision: the plan keeps `/share/*` static until publish-time
+  screening and legacy-share screening (B11) are live; this branch runs public shares
+  under the `public` profile. The per-version HMAC subdomains and signed tokens need
+  the separate preview domain.
+
 ## Exact next steps
 
 1. **Coordinate the release** with the other sessions (memory:

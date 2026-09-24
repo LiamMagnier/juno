@@ -160,8 +160,9 @@ test("with a separate preview origin, each host serves only its own half", () =>
   assert.match(csp, /frame-src 'self' blob: https:\/\/preview\.example\.test(;|$)/);
 });
 
-async function shellResponse(profile: string): Promise<Response> {
-  return shellRoute(new Request(`http://localhost:3000${SANDBOX_SHELL_PATH}/${profile}`), {
+async function shellResponse(profile: string, dest: string | null = "iframe"): Promise<Response> {
+  const headers = new Headers(dest ? { "sec-fetch-dest": dest } : {});
+  return shellRoute(new Request(`http://localhost:3000${SANDBOX_SHELL_PATH}/${profile}`, { headers }), {
     params: Promise.resolve({ profile }),
   });
 }
@@ -198,4 +199,16 @@ test("the shell's own policy lets an artifact's inline scripts run, and inherits
 
 test("an unknown profile is not a shell", async () => {
   assert.equal((await shellResponse("admin")).status, 404);
+});
+
+test("the shell is served only to a frame, never as a page of its own", async () => {
+  // Merge plan §9.5, acceptance condition 2: a top-level visit, a link, a
+  // fetch, or a client that says nothing is refused.
+  for (const dest of ["document", "empty", "script", null]) {
+    const res = await shellResponse("public", dest);
+    assert.equal(res.status, 404, `Sec-Fetch-Dest: ${dest ?? "(none)"}`);
+    assert.doesNotMatch(await res.text(), /juno:sandbox-render/);
+    assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+  }
+  assert.equal((await shellResponse("public", "iframe")).status, 200);
 });

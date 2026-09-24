@@ -11,6 +11,7 @@ import { renderToString } from "react-dom/server";
 import { SandboxFrame } from "@/components/canvas/sandbox-frame";
 import { middleware } from "@/middleware";
 import { GET as shellRoute } from "@/app/sandbox/v1/[profile]/route";
+import { sandboxShellResponse } from "@/lib/sandbox-shell";
 
 /**
  * AUDIT X-01, END TO END: DOES AN ARTIFACT'S SCRIPT RUN UNDER THE APP'S POLICY?
@@ -31,6 +32,10 @@ import { GET as shellRoute } from "@/app/sandbox/v1/[profile]/route";
  * And it carries its own control: a plain srcdoc frame on the same page, which
  * must stay silent. If the control ever runs, the harness has stopped
  * reproducing the bug and the rest of this file proves nothing.
+ *
+ * The second test opens a preview URL top-level, the merge plan's CI check for
+ * a preview response (04-MERGE-PLAN §9.5): refused outright, and even when a
+ * client gets the shell anyway, it has no origin and runs nothing.
  *
  * Needs a Chromium: PLAYWRIGHT_BROWSERS_PATH's (the test container's), or
  * Chrome on a Mac. Skips without one rather than passing.
@@ -131,7 +136,10 @@ const HYDRATION_DELAY_MS = 1500;
 async function startServer(bundle: string): Promise<{ origin: string; close: () => Promise<void> }> {
   const server = http.createServer(async (req, res) => {
     const url = `http://${req.headers.host}${req.url}`;
-    const decided = middleware(new NextRequest(url, { headers: { host: req.headers.host ?? "" } }));
+    // The browser's own request headers, Sec-Fetch-Dest included, as Next would pass them.
+    const headers = new Headers();
+    for (const [name, value] of Object.entries(req.headers)) if (typeof value === "string") headers.set(name, value);
+    const decided = middleware(new NextRequest(url, { headers }));
     if (decided.status === 404) {
       res.writeHead(404).end();
       return;
@@ -158,9 +166,20 @@ async function startServer(bundle: string): Promise<{ origin: string; close: () 
       res.end(bundle);
       return;
     }
+    // The shell as a client that sent no Sec-Fetch-Dest (or a stale cache)
+    // would get it: past the route's refusal, so the header's sandbox is all
+    // that stands between the URL and a page with an origin.
+    const raw = /^\/raw-shell\/(private|public)$/.exec(pathname);
+    if (raw) {
+      const routed = sandboxShellResponse({ profile: raw[1] as "private" | "public", appOrigin: null, separateOrigin: false });
+      res.setHeader("Content-Security-Policy", routed.headers.get("content-security-policy") ?? "");
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(await routed.text());
+      return;
+    }
     const shell = /^\/sandbox\/v1\/([^/]+)$/.exec(pathname);
     if (shell) {
-      const routed = await shellRoute(new Request(url), { params: Promise.resolve({ profile: shell[1] }) });
+      const routed = await shellRoute(new Request(url, { headers }), { params: Promise.resolve({ profile: shell[1] }) });
       const own = routed.headers.get("content-security-policy");
       if (own) policies.push(own);
       if (policies.length) res.setHeader("Content-Security-Policy", policies);
@@ -237,5 +256,42 @@ test("an artifact's scripts run inside the app's enforcing policy, and its egres
     if (previous.app === undefined) delete process.env.NEXT_PUBLIC_APP_URL;
     else process.env.NEXT_PUBLIC_APP_URL = previous.app;
     if (previous.sandbox !== undefined) process.env.NEXT_PUBLIC_SANDBOX_ORIGIN = previous.sandbox;
+  }
+});
+
+test("a preview URL opened on its own is refused, and has no origin even if served", { skip: NO_BROWSER }, async () => {
+  const bundle = await bundleHarness();
+  const server = await startServer(bundle);
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch({ executablePath: EXECUTABLE as string, headless: true });
+  try {
+    const context = await browser.newContext();
+    // A session cookie on the preview's host, as the app's would be in
+    // same-origin mode: the thing a top-level preview must never reach.
+    await context.addCookies([{ name: "authjs.session-token", value: "secret", url: server.origin }]);
+    const page = await context.newPage();
+
+    for (const profile of ["private", "public"]) {
+      const res = await page.goto(`${server.origin}/sandbox/v1/${profile}`);
+      assert.equal(res?.status(), 404, `${profile}: the shell answered a top-level visit`);
+      assert.doesNotMatch(await page.content(), /juno:sandbox-render/);
+
+      await page.goto(`${server.origin}/raw-shell/${profile}`);
+      const seen = await page.evaluate(() => {
+        let cookie: string;
+        try {
+          cookie = document.cookie;
+        } catch {
+          cookie = "(inaccessible)";
+        }
+        return { origin: self.origin, cookie, body: document.body.innerText };
+      });
+      assert.equal(seen.origin, "null", `${profile}: a top-level shell has a real origin`);
+      assert.equal(seen.cookie, "(inaccessible)", `${profile}: a top-level shell can read the session cookie`);
+      assert.equal(seen.body, "", `${profile}: a top-level shell rendered something`);
+    }
+  } finally {
+    await browser.close();
+    await server.close();
   }
 });

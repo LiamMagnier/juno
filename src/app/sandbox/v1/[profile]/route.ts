@@ -1,5 +1,5 @@
 import { isSandboxProfile, sandboxOrigin } from "@/lib/sandbox-policy";
-import { sandboxShellResponse } from "@/lib/sandbox-shell";
+import { isFrameRequest, sandboxShellResponse } from "@/lib/sandbox-shell";
 
 /*
  * The artifact preview shell. Not a page of the app: the middleware leaves this
@@ -19,9 +19,14 @@ function originOf(raw: string | undefined): string | null {
   }
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ profile: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ profile: string }> }) {
   const { profile } = await params;
-  if (!isSandboxProfile(profile)) return new Response("Not found", { status: 404 });
+  if (!isSandboxProfile(profile) || !isFrameRequest(req.headers)) {
+    return new Response("Not found", {
+      status: 404,
+      headers: { "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store" },
+    });
+  }
   return sandboxShellResponse({
     profile,
     appOrigin: originOf(process.env.NEXT_PUBLIC_APP_URL),
