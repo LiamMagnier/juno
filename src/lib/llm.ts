@@ -65,8 +65,12 @@ function withNativeTools(base: McpToolset | undefined, native: readonly NativeCh
   };
 }
 
-/** Provider-agnostic streaming: routes Anthropic to its native SDK, everything
- *  else through the OpenAI-compatible adapter. Yields text + sources + usage. */
+/**
+ * Provider-agnostic streaming: routes each model to its adapter
+ * (`providerAdapterFor`) and yields the provider-neutral `LlmEvent`s — text,
+ * reasoning, tool acts, sources, usage after every request, `round_end` at every
+ * model step (SPEC §2.9, §5.0).
+ */
 export async function* streamChat(opts: {
   model: ModelInfo;
   system: string;

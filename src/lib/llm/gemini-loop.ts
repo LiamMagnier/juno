@@ -403,6 +403,13 @@ export async function* geminiLoop(req: AdapterRequest, deps: GeminiLoopDeps): As
     generationConfig = baseConfig(geminiContinuationConfig(model, maxTokens));
   }
 
+  if (sources.size > 0) {
+    // Grounding links never enter the provenance ledger: Google's terms forbid
+    // using them to find pages to crawl (SPEC §5.3 item 7). Reported once the
+    // redirects are resolved, still inside the step they grounded.
+    yield { type: "sources", sources: await resolveSources([...sources.values()]), origin: "provider_grounding" };
+  }
+
   // The answer step ends here, after any continuation of it.
   yield {
     type: "round_end",
@@ -412,12 +419,6 @@ export async function* geminiLoop(req: AdapterRequest, deps: GeminiLoopDeps): As
     final: roundFinal,
     stop: lastFinishReason ?? null,
   };
-
-  if (sources.size > 0) {
-    // Grounding links never enter the provenance ledger: Google's terms forbid
-    // using them to find pages to crawl (SPEC §5.3 item 7).
-    yield { type: "sources", sources: await resolveSources([...sources.values()]), origin: "provider_grounding" };
-  }
 
   /*
    * A MISSING TERMINAL MARKER IS NOT A REASON TO DESTROY A DELIVERED ANSWER.
