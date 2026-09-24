@@ -121,3 +121,37 @@ server {
         chunked_transfer_encoding on;
     }
 }
+
+# ── Artifact preview origin (optional) ──────────────────────────────────────
+#
+# Only when NEXT_PUBLIC_SANDBOX_ORIGIN is set (see .env.example). A separate host
+# for the artifact preview shell, so previews never share an origin — or the
+# host-only session cookie — with the app. Uncomment, replace PREVIEW_DOMAIN,
+# issue a certificate for it (certbot --nginx -d PREVIEW_DOMAIN), and rebuild the
+# app with NEXT_PUBLIC_SANDBOX_ORIGIN="https://PREVIEW_DOMAIN". Prefer a different
+# registrable domain from the app's (e.g. juno-preview.net rather than
+# preview.juno.app) if one is available: a sibling subdomain still counts as the
+# same site. The app refuses every other path on this host itself
+# (documentPolicyFor in src/lib/sandbox-policy.ts); nginx refusing them too keeps
+# them off the app entirely.
+#
+# server {
+#     listen 443 ssl http2;
+#     listen [::]:443 ssl http2;
+#     server_name PREVIEW_DOMAIN;
+#     server_tokens off;
+#
+#     location /sandbox/ {
+#         proxy_pass http://127.0.0.1:3000;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#         proxy_hide_header X-Powered-By;
+#     }
+#
+#     location / {
+#         return 404;
+#     }
+# }

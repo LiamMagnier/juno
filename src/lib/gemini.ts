@@ -316,7 +316,10 @@ export async function* streamGemini(
             const images = sendableToolImages(exec.images, model.vision);
             responseParts.push({
               name: call.name,
-              response: { result: withheldImagesNote(exec.body ?? exec.text, exec.images, images.length) },
+              // exec.text, never exec.body: the body is the panel projection without
+              // the untrusted-content envelope the system prompt tells the model
+              // to read; every other adapter sends the model exec.text too.
+              response: { result: withheldImagesNote(exec.text, exec.images, images.length) },
             });
             for (const image of images) {
               toolImages.push({ inlineData: { mimeType: image.mimeType, data: image.base64 } });

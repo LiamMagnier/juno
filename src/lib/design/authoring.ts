@@ -42,7 +42,17 @@ const layoutSchema = z.object({
   columns: z.number().int().min(1).max(12).optional(),
 });
 
-/** One authored node. Everything except `type` is optional. */
+/**
+ * One authored node. Everything except `type` is optional.
+ *
+ * `image` is still accepted here even though the prompt no longer teaches it.
+ * The compact form has no way to name a picture, and an image layer without an
+ * asset is refused by the operation layer, so every design with one used to be
+ * refused whole (X-10). Refusing the type at the schema would do the same. It
+ * parses instead, and `expandAuthoredDesign` turns it into the placeholder the
+ * prompt now asks for. Older prompts, a model that slips, and the prompt
+ * followed correctly all produce the same design.
+ */
 const baseAuthoredNode = {
   type: z.enum(["frame", "group", "rectangle", "ellipse", "line", "text", "image"]),
   id: z.string().min(1).max(120).optional(),
@@ -150,6 +160,36 @@ function patchFor(node: AuthoredNode): Record<string, unknown> {
   return patch;
 }
 
+/** The fill a picture placeholder gets when the model gave it none: a quiet neutral grey. */
+const IMAGE_PLACEHOLDER_FILL = "#e4e4e7";
+
+/**
+ * An authored `image` node, as the rectangle that marks where the picture goes.
+ *
+ * Its geometry, name, corners and sizing are kept, so the layout around it does
+ * not move, and the person can put a real picture in the same slot from the
+ * editor. Container-only fields (layout, clip) go, because they mean nothing on
+ * a rectangle. So do its children, and the note says so: an image layer cannot
+ * hold children, and neither can a rectangle.
+ */
+function imagePlaceholder(node: AuthoredNode, path: string, notes: string[]): AuthoredNode {
+  const name = node.name?.trim() || "Image";
+  const dropped = node.children?.length ?? 0;
+  notes.push(
+    `${path}: image “${name}” became a placeholder rectangle, because the compact form cannot carry a picture. Place one in the editor.` +
+      (dropped === 1 ? " Its 1 child layer was dropped." : dropped > 1 ? ` Its ${dropped} child layers were dropped.` : "")
+  );
+  return {
+    ...node,
+    type: "rectangle",
+    name,
+    fill: node.fill ?? IMAGE_PLACEHOLDER_FILL,
+    layout: undefined,
+    clip: undefined,
+    children: undefined,
+  };
+}
+
 /**
  * Expand an authored design into a full, validated `DesignDocument`.
  *
@@ -157,8 +197,11 @@ function patchFor(node: AuthoredNode): Record<string, unknown> {
  * as anything the editor produces — and an authored design that cannot be
  * expanded fails here, with a reason, rather than being stored and failing to
  * open later.
+ *
+ * `notes`, when given, collects what the expansion changed instead of refusing.
+ * Today that is one thing: an `image` node becomes a placeholder rectangle.
  */
-export function expandAuthoredDesign(authored: AuthoredDesign, seed: string): DesignDocument {
+export function expandAuthoredDesign(authored: AuthoredDesign, seed: string, notes: string[] = []): DesignDocument {
   const pageId = "page-1";
   const mintId = idFactory(seed);
   let document = createDesignDocument({
@@ -175,7 +218,10 @@ export function expandAuthoredDesign(authored: AuthoredDesign, seed: string): De
   }
 
   const operations: DesignOperation[] = [];
-  const walk = (node: AuthoredNode, parentId: NodeId | null) => {
+  // `path` is spelled the way a schema issue is ("nodes.0.children.2"), so a
+  // note and a refusal point at a node in the same words.
+  const walk = (authoredNode: AuthoredNode, parentId: NodeId | null, path: string) => {
+    const node = authoredNode.type === "image" ? imagePlaceholder(authoredNode, path, notes) : authoredNode;
     const id = node.id ?? mintId("n");
     operations.push({
       op: "createNode",
@@ -183,9 +229,9 @@ export function expandAuthoredDesign(authored: AuthoredDesign, seed: string): De
       pageId,
       node: { type: node.type, id, name: node.name, patch: patchFor(node) as never },
     });
-    for (const child of node.children ?? []) walk(child, id);
+    (node.children ?? []).forEach((child, index) => walk(child, id, `${path}.children.${index}`));
   };
-  for (const node of authored.nodes) walk(node, null);
+  authored.nodes.forEach((node, index) => walk(node, null, `nodes.${index}`));
 
   const result = applyTransaction(document, {
     id: `author-${seed.slice(0, 12)}`,
@@ -202,6 +248,13 @@ export function expandAuthoredDesign(authored: AuthoredDesign, seed: string): De
   return parseDesignDocument(JSON.parse(JSON.stringify(document)));
 }
 
+/** A stored design body, and what the expansion changed to get there. */
+export interface NormalizedDesignArtifact {
+  content: string;
+  /** Empty for a full document, and for a compact one that expanded as written. */
+  notes: string[];
+}
+
 /**
  * Normalize whatever a DESIGN artifact body contains into a stored document.
  *
@@ -211,8 +264,11 @@ export function expandAuthoredDesign(authored: AuthoredDesign, seed: string): De
  *  2. The compact authored form — expanded through the operation layer.
  *  3. Anything else — refused with a reason, because storing a body the editor
  *     cannot open would surface much later as data loss.
+ *
+ * The notes say what was changed rather than refused, so a caller can tell the
+ * person that their photo is now a grey box, and why.
  */
-export function normalizeDesignArtifact(content: string, seed: string): string {
+export function normalizeDesignArtifactWithNotes(content: string, seed: string): NormalizedDesignArtifact {
   let raw: unknown;
   try {
     raw = JSON.parse(content);
@@ -221,7 +277,7 @@ export function normalizeDesignArtifact(content: string, seed: string): string {
   }
 
   if (readSchemaVersion(raw) > 0) {
-    return JSON.stringify(parseDesignDocument(raw));
+    return { content: JSON.stringify(parseDesignDocument(raw)), notes: [] };
   }
 
   const authored = authoredDesignSchema.safeParse(raw);
@@ -231,5 +287,20 @@ export function normalizeDesignArtifact(content: string, seed: string): string {
       authored.error.issues.slice(0, 5).map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
     );
   }
-  return JSON.stringify(expandAuthoredDesign(authored.data, seed));
+  const notes: string[] = [];
+  const document = expandAuthoredDesign(authored.data, seed, notes);
+  return { content: JSON.stringify(document), notes };
+}
+
+/**
+ * `normalizeDesignArtifactWithNotes`, for the callers that store the body and
+ * have nowhere yet to show a note. The count goes to the server log rather than
+ * nowhere, so a placeholder that appears is traceable to the expansion. The
+ * notes themselves stay out of it: they quote layer names, which are the
+ * person's content.
+ */
+export function normalizeDesignArtifact(content: string, seed: string): string {
+  const { content: stored, notes } = normalizeDesignArtifactWithNotes(content, seed);
+  if (notes.length > 0) console.warn(`[design] "${seed}" expanded with ${notes.length} change(s) instead of a refusal`);
+  return stored;
 }

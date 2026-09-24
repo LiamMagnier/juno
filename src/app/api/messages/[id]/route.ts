@@ -13,6 +13,11 @@ const schema = z.object({ content: z.string().trim().min(1) });
  * copied verbatim — the crypto is row-independent, see message-crypto.ts), so
  * an edit never destroys history: the pager on the message shows every prior
  * wording, oldest first, with the Message row always holding the newest.
+ *
+ * Artifacts made by the truncated answers are NOT deleted. They can carry
+ * hand edits, design checkpoints and public share links; they stay, detached,
+ * and the next answer that emits the same identifier appends a version to
+ * the same row (see detachArtifactsFromMessage in artifacts-store.ts).
  */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -34,17 +39,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       data: { messageId: message.id, content: message.content },
     });
     await tx.message.update({ where: { id }, data: { content: encryptMessageText(parsed.data.content) } });
-    // Drop later messages (their artifacts cascade via the later messages' deletion is not automatic
-    // for messageId=SetNull, so delete artifacts explicitly below).
-    await tx.artifact.deleteMany({
-      where: { conversationId: message.conversationId, message: { createdAt: { gt: message.createdAt } } },
-    });
-    // Their attachments survive the delete (messageId is SetNull). A file the
-    // reader had taken out of the Library stayed only because one of these
-    // messages used it; with the message gone it is deleted as they asked,
-    // rather than left in Recently deleted with nothing using it.
+    // The later messages' attachments survive their delete (messageId is
+    // SetNull). A file the reader had taken out of the Library stayed only
+    // because one of these messages used it; with the message gone it is
+    // deleted as they asked, rather than left in Recently deleted with
+    // nothing using it.
     await settleLibraryRemovalsBeforeTruncation(tx, user.id, message.id);
-    // Later messages' own MessageVersion rows cascade with them.
+    // Later messages' own MessageVersion rows cascade with them. Their
+    // artifacts do not: Artifact.messageId is SetNull too, so each one is
+    // detached here with its versions and share links intact.
     await tx.message.deleteMany({
       where: { conversationId: message.conversationId, createdAt: { gt: message.createdAt } },
     });

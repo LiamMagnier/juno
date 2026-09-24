@@ -1,0 +1,743 @@
+{
+ "area": "Governance of a public artifact link: abuse, moderation, quotas, permissions, privacy",
+ "summary": "WHAT EXISTS (read). A public link is a `Share` row (prisma/schema.prisma:1808-1828): kind CHAT|ARTIFACT, a 24-byte base64url token, a denormalized title, `snapshotAt`, a `views` counter and a `revokedAt` tombstone. POST /api/share (src/app/api/share/route.ts:26-41) owner-checks the target and reuses the newest active link (src/lib/share.ts:67-71, 91-95). DELETE /api/share/[id] revokes, and the page 404s on the next request (share.ts:113-121, 132-140; page.tsx:18-19 force-dynamic). The public page /share/[token] is noindex/nofollow (page.tsx:30) and not blocked in robots.ts, on purpose (robots.ts:28-31). It renders HTML/React/SVG/Mermaid in the opaque-origin sandbox, Markdown as prose, and everything else as a Code tab (shared-artifact-viewer.tsx:29-78). The owner manages links in Settings > Data & privacy > Shared links on the web (data-privacy.tsx:98-100 mounts shared-links-card.tsx), which gives list, copy, revoke and a view count. The Mac and iPhone have a matching list (NativeSharedLinksView.swift). The native apps can only create CHAT shares (NativeShareClient.swift:61-78). Web can share any artifact, DESIGN included, from /artifacts (artifacts/page.tsx:198) and from the canvas header (canvas-panel.tsx:842-847).\n\nGOVERNANCE IS ALMOST ENTIRELY MISSING. (1) Yes, a banned user's shared HTML keeps serving. `findActiveShare` checks only `revokedAt` (share.ts:137-139), and `banUser`/`unbanUser` touch only User and ModerationFlag (moderation.ts:149-186). The admin API has four route groups: announcements, models, moderation and users. None of them lists, revokes or takes down a share or an artifact. The only lever is deleting the whole account (moderation.ts:192-199 -> delete-account.ts:72). That also cascades away the ModerationFlag evidence (schema.prisma:1410). ModerationFlag cannot reference an artifact or a share. The public page has no report link (page.tsx:99-112), and the legal notice's contact address is literally the placeholder \"[adresse e-mail de contact]\" (legal/mentions-legales/page.tsx:41). Moderation classifies only the user's chat text (chat/route.ts:611-629, 1380, 3526; moderation-ai.ts:249-287). Artifact bodies, manual artifact edits (POST /api/artifacts/[id]), design transactions, share creation and turns appended by native clients are never screened. The sandbox keeps the app safe through origin isolation. It still gives a shared page allow-forms and allow-downloads (sandbox-frame.tsx:85-86), plus img-src/connect-src https: (sandbox-frame.tsx:59, 62), and it has a link bridge that opens any http(s) URL in a new tab (sandbox-frame.tsx:878-896). A phishing or malware page under Juno's header and a \"<title> \u00b7 Juno\" tab title is therefore fully publishable and not removable short of deleting the account.\n\n(2) Quotas: none. POST /api/share, POST /api/artifacts/[id], POST /api/design, POST /api/design/[id]/transactions and GET /api/design/[id]/export call no rate limiter. Compare design edit (20/min, edit/route.ts:102) and Office export (60/h, artifacts/[id]/export/route.ts:72-79). `canvas` is true on every plan (plans.ts:55, 79, 104, 130, 153), and PlanConfig has no artifact, version or storage field (plans.ts:4-36). So FREE accounts create designs and versions without touching their 15-message quota. A version body can be 200,000 chars (artifacts/[id]/route.ts:8; design/store.ts:63), and a client can force a new checkpoint per request with origin:\"restore\" (operations.ts:535). Nothing prunes ArtifactVersion. The load paths make this worse. Every artifact read or write (artifacts/[id]/route.ts:20-25, serializers.ts:218), every design read or write (design/store.ts:33-39) and every thread load (queries.ts:116-120) pulls every version's full content into the Node process, which PM2 restarts at 1400M (deploy/ecosystem.config.js:127). Storage growth turns into memory pressure that affects everyone. Every Share update, including each anonymous view increment (share.ts:156-158), fires the change-capture trigger (migrations/20260716200000_account_change_log/migration.sql:123), so anonymous traffic writes into the owner's sync feed.\n\n(3) The owner UI lists and revokes correctly for CHAT and ARTIFACT. It does not know about DESIGN: every artifact share gets the Code2 glyph and the label \"Artifact\" (shared-links-card.tsx:138, 152), and the ClientShare wire has no artifact type or id (share.ts:19-28). A DESIGN share renders publicly as raw JSON in a Code tab, because `hasPreview` excludes run mode \"design\" (shared-artifact-viewer.tsx:32; artifact-runtime.ts:98). Library images in a design are `/api/files/...` paths that are owner-only (api/files/[...key]/route.ts:19-36), so a design renderer on the share page would still draw holes. View counts include the owner, link unfurlers and bots. Revoked shares' counts are kept but never shown (listShares filters them, share.ts:124-129). The share dialog creates a live link just by opening (share-dialog.tsx:78-87). It says \"as it is now\" while handing back an older reused snapshot (share-dialog.tsx:120-122 vs share.ts:91-95). On native, a failed load renders as \"No shared links\" (NativeShareClient.swift:82-92; NativeSharedLinksView.swift:34-39).\n\n(4) Privacy and permissions for a merged surface. ArtifactVersion.content is deliberately plaintext so Postgres full-text search works (scripts/encrypt-columns.ts:23-28; docs/JUNO.md:2487-2491, 2569-2572; search/sql.ts:329-355). The same body is encrypted inside Message, because the `<juno:artifact>` tag carries it (message-content.ts:6). The privacy policy tells users conversations are encrypted and private while listing artifacts in the same bullet (legal/confidentialite/page.tsx:46-48), and it never mentions public links. Docs, Slides or Design System content stored as typed artifacts would inherit plaintext-at-rest and in-DB search, a noindex anonymous snapshot link, and single-owner access through conversation.userId. There is no viewer, commenter or editor on artifacts. ProjectMember (schema.prisma:595-607) has OWNER/EDITOR/VIEWER as an unvalidated String (members/route.ts:36, 43). It gates only project metadata and memory (checkProjectAccess callers). It has no UI, no invitation or acceptance step, and no COMMENTER role, and it is never consulted by conversation, artifact or design routes. Its own PATCH/DELETE routes trip the ownership guard (projects/[id]/route.ts:191, 221). DesignComment exists in the schema (types.ts:738-752) but no operation creates one. The snapshot contract is also not actually immutable: in-place edits of rows created before `snapshotAt` leak into live links. This covers user-message edits (messages/[id]/route.ts:35), regenerate (chat/route.ts:2574) and design checkpoint folding within 30s (design/store.ts:179-197; operations.ts:511).\n\nREAD vs INFERRED. Everything with a file:line above is read from main at d0997af2. The branch mac/liquid-glass-chat has no diff in any of these files (merge-base == main HEAD). Inferred: the memory-exhaustion arithmetic (about 7,000 x 200 KB versions to reach 1.4 GB), that unfurlers and HEAD requests count as views, and whether the app CSP is inherited by the srcdoc sandbox at runtime (see open_questions).",
+ "files_read": [
+  "src/app/share/[token]/page.tsx",
+  "src/components/share/shared-artifact-viewer.tsx",
+  "src/components/share/shared-links-card.tsx",
+  "src/components/share/share-dialog.tsx",
+  "src/components/share/shared-chat-transcript.tsx",
+  "src/lib/share.ts",
+  "src/lib/db.ts",
+  "src/lib/prisma.ts",
+  "src/lib/moderation.ts",
+  "src/lib/moderation-ai.ts",
+  "src/lib/moderation-policy.ts",
+  "src/app/api/chat/route.ts (lines 595-640, 1365-1395, 1755-1772, 2566-2585, 3510-3540)",
+  "src/app/api/admin/moderation/route.ts",
+  "src/app/api/admin/moderation/[id]/route.ts",
+  "src/app/api/admin/users/[id]/ban/route.ts",
+  "src/app/api/admin/users/[id]/unban/route.ts",
+  "src/app/api/admin/users/[id]/route.ts",
+  "src/app/(app)/admin/page.tsx",
+  "src/app/(app)/admin/moderation/page.tsx",
+  "src/app/(app)/admin/users/page.tsx",
+  "src/app/api/account/delete-account.ts",
+  "src/app/api/share/route.ts",
+  "src/app/api/share/[id]/route.ts",
+  "src/app/api/artifacts/[id]/route.ts",
+  "src/app/api/artifacts/route.ts",
+  "src/app/api/artifacts/[id]/export/route.ts (55-90)",
+  "src/app/api/design/route.ts",
+  "src/app/api/design/[artifactId]/route.ts",
+  "src/app/api/design/[artifactId]/transactions/route.ts",
+  "src/app/api/design/[artifactId]/export/route.ts",
+  "src/app/api/design/[artifactId]/edit/route.ts (85-120)",
+  "src/lib/design/store.ts",
+  "src/lib/design/operations.ts (499-560)",
+  "src/lib/design/types.ts (730-789)",
+  "src/lib/design/schema.ts (538-565)",
+  "src/lib/design/migrations.ts (91-99)",
+  "src/lib/artifact-runtime.ts",
+  "src/lib/artifacts-store.ts (1-40)",
+  "src/lib/serializers.ts (207-223)",
+  "src/lib/queries.ts (85-130)",
+  "src/lib/rate-limit.ts",
+  "src/lib/plans.ts",
+  "src/lib/csp.ts",
+  "src/middleware.ts",
+  "src/components/canvas/sandbox-frame.tsx (10-100, 270-310, 855-931)",
+  "src/components/canvas/canvas-panel.tsx (226-244, 820-860, 1388)",
+  "src/app/(app)/artifacts/page.tsx (140-210, 680-705)",
+  "src/components/settings/sections/data-privacy.tsx",
+  "src/components/chat/markdown.tsx (560-620)",
+  "src/app/api/conversations/[id]/messages/route.ts",
+  "src/lib/message-append.ts",
+  "src/app/api/messages/[id]/route.ts",
+  "src/app/api/files/[...key]/route.ts (1-60)",
+  "src/lib/project-collaboration.ts",
+  "src/app/api/projects/[id]/members/route.ts",
+  "src/app/api/projects/[id]/route.ts (20-60, 160-222)",
+  "src/lib/search/sql.ts (320-355)",
+  "src/lib/sync-feed.ts",
+  "src/app/robots.ts",
+  "src/app/layout.tsx (55-95)",
+  "src/app/(legal)/legal/cgu/page.tsx (120-193)",
+  "src/app/(legal)/legal/mentions-legales/page.tsx (36-80)",
+  "src/app/(legal)/legal/confidentialite/page.tsx (44-50, 84-90, 165-172)",
+  "src/components/design/use-design-document.ts (560-600)",
+  "prisma/schema.prisma (Share 1808-1828, Artifact 1125-1160, ModerationFlag 1397-1414, ProjectMember 595-607, User 60-65)",
+  "prisma/migrations/20260716200000_account_change_log/migration.sql",
+  "prisma/migrations/20260815180000_restore_account_delete_guard/migration.sql",
+  "scripts/encrypt-columns.ts (1-60)",
+  "docs/JUNO.md (2150-2175, 2255-2270, 2470-2500, 2560-2600)",
+  "deploy/ecosystem.config.js (110-140)",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeShareClient.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeSharedLinksView.swift",
+  "tests/sandbox-security.test.ts (25-70)",
+  "tests/field-encryption-coverage.test.ts (90-95)"
+ ],
+ "inventory": [
+  {
+   "feature": "Public share page /share/[token]",
+   "description": "Signed-out snapshot page with a card-rung header (Juno mark, title, 'Shared <date>', an 'Open in Juno' primary button) and a footer ('Made with Juno', 'Create your own account'). Chat shares render a transcript; artifact shares render a fixed-viewport viewer. force-dynamic so a revoke takes effect on the next request. noindex/nofollow. No report link, no legal links, no owner or ban check.",
+   "maturity": "partial",
+   "where": [
+    "src/app/share/[token]/page.tsx:18-115"
+   ]
+  },
+  {
+   "feature": "Share creation, reuse and revocation API",
+   "description": "POST creates or reuses the newest active share per target (owner-checked through conversation.userId). DELETE sets a revokedAt tombstone, idempotently. GET lists active shares with no pagination. No rate limit, no moderation, no expiry, no password or allowlist.",
+   "maturity": "partial",
+   "where": [
+    "src/app/api/share/route.ts:8-41",
+    "src/app/api/share/[id]/route.ts:8-17",
+    "src/lib/share.ts:59-129"
+   ]
+  },
+  {
+   "feature": "Public artifact viewer",
+   "description": "Preview/Code tabs. Web runtimes run in SandboxFrame, Markdown renders as prose at the reading measure, and console runtimes (JS/Python) show code only. DESIGN has no preview and shows raw DesignDocument JSON in the Code tab.",
+   "maturity": "partial",
+   "where": [
+    "src/components/share/shared-artifact-viewer.tsx:18-81",
+    "src/lib/artifact-runtime.ts:98"
+   ]
+  },
+  {
+   "feature": "Public chat transcript",
+   "description": "USER/ASSISTANT messages up to snapshotAt, decrypted. Message.activity is deliberately excluded (pinned by a test). Artifacts appear as inert chips that cannot be opened. Assistant turns show a model eyebrow taken from Message.model.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/share.ts:191-232",
+    "src/components/share/shared-chat-transcript.tsx:31-116",
+    "tests/field-encryption-coverage.test.ts:90-95"
+   ]
+  },
+  {
+   "feature": "Snapshot resolution",
+   "description": "Artifact: the highest version with createdAt <= snapshotAt, falling back to the earliest. Chat: messages with createdAt <= snapshotAt. Resolution is by timestamp rather than a pinned row or version, so in-place rewrites of old rows leak into the link.",
+   "maturity": "broken",
+   "where": [
+    "src/lib/share.ts:248-276",
+    "src/lib/share.ts:194-200"
+   ]
+  },
+  {
+   "feature": "Share dialog (web)",
+   "description": "Creates or fetches the link as soon as it opens. Shows the URL, Copy (IconSwap to a check), a snapshot date with a view count, and Revoke. A revoked state offers 'Create a new link'. Loading skeleton and error state with retry. Copy says 'as it is now' even when an old snapshot is reused.",
+   "maturity": "partial",
+   "where": [
+    "src/components/share/share-dialog.tsx:38-213"
+   ]
+  },
+  {
+   "feature": "Shared links list (web settings)",
+   "description": "Rows show a glyph, title, Chat/Artifact label, snapshot date and view count, plus copy and revoke. Loading skeleton, error with retry, and empty copy. Mounted only under Settings > Data & privacy. Artifact types are not distinguished, there is no link to the source, and revoked links are hidden.",
+   "maturity": "partial",
+   "where": [
+    "src/components/share/shared-links-card.tsx:36-194",
+    "src/components/settings/sections/data-privacy.tsx:98-100"
+   ]
+  },
+  {
+   "feature": "Shared links list (Mac and iPhone)",
+   "description": "Lists shares with views, snapshot and host, a ShareLink to reshare, and one-tap revoke with a danger-colored error. A failed load shows the 'No shared links' empty state. The fallback title is 'Untitled conversation' even for artifacts. Native can create CHAT shares only.",
+   "maturity": "partial",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeSharedLinksView.swift:15-133",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeShareClient.swift:61-110"
+   ]
+  },
+  {
+   "feature": "View counting",
+   "description": "Fire-and-forget views++ on every page render via prismaUnguarded. No dedupe, owner exclusion or bot filter. Each increment fires the Share change-capture trigger.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/share.ts:151-160",
+    "prisma/migrations/20260716200000_account_change_log/migration.sql:123"
+   ]
+  },
+  {
+   "feature": "Search-engine exposure",
+   "description": "Per-page robots noindex,nofollow. /share is deliberately not robots-disallowed so crawlers can see the noindex. Referrer-Policy strict-origin-when-cross-origin keeps the token out of outbound referrers.",
+   "maturity": "solid",
+   "where": [
+    "src/app/share/[token]/page.tsx:30",
+    "src/app/robots.ts:16-32",
+    "next.config.mjs:128"
+   ]
+  },
+  {
+   "feature": "Link unfurl metadata",
+   "description": "Title comes from share.title and the description is fixed. The page's openGraph object replaces the root one, so there is no og:image. The Twitter card is inherited from the root, so X shows the generic 'Juno' title and image.",
+   "maturity": "partial",
+   "where": [
+    "src/app/share/[token]/page.tsx:23-33",
+    "src/app/layout.tsx:65-86"
+   ]
+  },
+  {
+   "feature": "Sandbox isolation for shared HTML",
+   "description": "srcdoc iframe without allow-same-origin (opaque origin), with a meta CSP that forbids form-action, base-uri and object-src. It allows scripts, forms, modals, downloads and pointer lock, plus img/connect/frame to any https host. External links are bridged to window.open in the parent.",
+   "maturity": "partial",
+   "where": [
+    "src/components/canvas/sandbox-frame.tsx:52-86",
+    "src/components/canvas/sandbox-frame.tsx:878-896",
+    "tests/sandbox-security.test.ts:30-70"
+   ]
+  },
+  {
+   "feature": "Automatic content moderation",
+   "description": "A regex quickScreen before generation (403 plus a flag) and an LLM classifier after it, on USER chat text only. The classifier fails open. It never sees model output, artifact bodies, manual artifact edits, design transactions, native appends or share creation.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/moderation-ai.ts:107-287",
+    "src/app/api/chat/route.ts:611-629",
+    "src/app/api/chat/route.ts:1380-1390",
+    "src/app/api/chat/route.ts:3526-3531"
+   ]
+  },
+  {
+   "feature": "Ban and unban",
+   "description": "Sets or clears User.bannedAt, which blocks sign-in and kills sessions, and writes a ModerationFlag audit row. Shares, artifacts and public pages are left untouched.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/moderation.ts:149-186",
+    "src/lib/session.ts:78",
+    "src/app/api/admin/users/[id]/ban/route.ts:12-33"
+   ]
+  },
+  {
+   "feature": "Admin moderation queue",
+   "description": "An owner-only paginated flag list with an all/unreviewed/banned filter and a reviewed toggle. Flags carry a messagePreview but no artifact or share reference.",
+   "maturity": "solid",
+   "where": [
+    "src/app/api/admin/moderation/route.ts:12-77",
+    "src/app/api/admin/moderation/[id]/route.ts:10-36",
+    "prisma/schema.prisma:1397-1414"
+   ]
+  },
+  {
+   "feature": "Admin share or artifact takedown",
+   "description": "Absent. src/app/api/admin contains only announcements, models, moderation and users. A grep for share/artifact/revoke/takedown in src/components/admin finds nothing relevant. The only remedy is account deletion.",
+   "maturity": "absent",
+   "where": [
+    "src/app/api/admin/",
+    "src/components/admin/"
+   ]
+  },
+  {
+   "feature": "Report abuse from a public link",
+   "description": "Absent. The share page footer links only to / and /sign-up. A grep for abuse/report across src/app and src/components finds no report flow. The legal notice's contact email is a placeholder.",
+   "maturity": "absent",
+   "where": [
+    "src/app/share/[token]/page.tsx:99-112",
+    "src/app/(legal)/legal/mentions-legales/page.tsx:41"
+   ]
+  },
+  {
+   "feature": "Rate limits on artifact, design and share writes",
+   "description": "Absent on POST /api/share, POST /api/artifacts/[id], POST /api/design, POST /api/design/[id]/transactions and GET /api/design/[id]/export. Present only on design AI edit (20/min) and Office export (60/h).",
+   "maturity": "absent",
+   "where": [
+    "src/app/api/share/route.ts:26",
+    "src/app/api/artifacts/[id]/route.ts:40",
+    "src/app/api/design/route.ts:37",
+    "src/app/api/design/[artifactId]/transactions/route.ts:29",
+    "src/app/api/design/[artifactId]/export/route.ts:136",
+    "src/app/api/design/[artifactId]/edit/route.ts:102",
+    "src/app/api/artifacts/[id]/export/route.ts:72-79"
+   ]
+  },
+  {
+   "feature": "Plan quotas for artifacts, versions and storage",
+   "description": "Absent. `canvas` is true on all five plans, so the gates in the design routes are dead. There is no count, byte or retention field.",
+   "maturity": "absent",
+   "where": [
+    "src/lib/plans.ts:4-36",
+    "src/lib/plans.ts:55",
+    "src/app/api/design/route.ts:41-44"
+   ]
+  },
+  {
+   "feature": "Version retention",
+   "description": "Only design edit folding exists (30-second checkpoint window). ArtifactVersion rows are never pruned, and there is no per-artifact cap.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/operations.ts:511-539",
+    "src/lib/design/store.ts:122-127"
+   ]
+  },
+  {
+   "feature": "At-rest encryption of artifact bodies",
+   "description": "Deliberately plaintext so in-DB to_tsvector search works. The same bodies are encrypted inside Message.content.",
+   "maturity": "absent",
+   "where": [
+    "scripts/encrypt-columns.ts:23-28",
+    "docs/JUNO.md:2487-2491",
+    "src/lib/search/sql.ts:329-355"
+   ]
+  },
+  {
+   "feature": "Per-artifact permissions (viewer/commenter/editor)",
+   "description": "Absent. Ownership is only artifact -> conversation.userId in every route. No artifact, design or conversation route consults ProjectMember.",
+   "maturity": "absent",
+   "where": [
+    "src/app/api/artifacts/[id]/route.ts:20-25",
+    "src/lib/design/store.ts:33-39"
+   ]
+  },
+  {
+   "feature": "ProjectMember roles",
+   "description": "OWNER/EDITOR/VIEWER stored as an unvalidated String. Added instantly by email with no invite or acceptance. Gates project GET/PATCH/DELETE and memory only. API-only: no web or native UI calls /members.",
+   "maturity": "stub",
+   "where": [
+    "prisma/schema.prisma:595-607",
+    "src/lib/project-collaboration.ts:35-200",
+    "src/app/api/projects/[id]/members/route.ts:27-52"
+   ]
+  },
+  {
+   "feature": "Design comments",
+   "description": "DesignComment (body, authorId, anchor, resolvedAt) exists in the type and schema. No operation or route creates one.",
+   "maturity": "stub",
+   "where": [
+    "src/lib/design/types.ts:738-752",
+    "src/lib/design/schema.ts:538"
+   ]
+  }
+ ],
+ "architecture": "DATA FLOW. Owner clicks Share (web ShareDialog; opening the dialog POSTs immediately) -> POST /api/share {kind, conversationId|artifactId} -> createShare (src/lib/share.ts:59-107): an ownership join through conversation.userId, reuse of the newest non-revoked Share for the target, otherwise a new Share with token=randomBytes(24).base64url, title copied from the conversation or artifact, snapshotAt=now. The response is serializeShare -> ClientShare {id, kind, token, url, title, snapshotAt, views, createdAt}. It carries no artifact id or type.\n\nAnonymous visitor -> GET /share/<token> (middleware adds the enforcing app CSP and a request id; no auth, no rate limit) -> generateMetadata calls peekPublicShare, and the page calls getPublicShare. Both use the React-cached findActiveShare: a length gate of 16-128 chars, then prismaUnguarded.share.findUnique({token}), null if revokedAt. getPublicShare fires views++ -> the AFTER UPDATE trigger juno_change_share -> juno_record_account_change('share','direct'), which inserts into EntityRevision and AccountChange for the owner. The owner's native sync stream polls AccountChange (src/lib/sync-feed.ts). Chat: getSharedChatSnapshot reads Message rows with createdAt <= snapshotAt (USER/ASSISTANT; content/model only) and decrypts them. Artifact: getSharedArtifactSnapshot reads the Artifact type/language and the ArtifactVersion with the highest version whose createdAt <= snapshotAt. The page passes {type, language, content, version} to SharedArtifactViewer, which picks runtimeFor(type). \"web\" goes to SandboxFrame (srcdoc, sandbox=SANDBOX_ALLOW, meta CSP), MARKDOWN to Markdown, and DESIGN/console/none to CodeSurface.\n\nRevocation: DELETE /api/share/[id] -> updateMany({id, userId, revokedAt:null}) sets revokedAt. Deleting an artifact, a conversation or a user cascades to Share (schema.prisma:1821-1823). So do regenerate (chat/route.ts:2573) and message edit (messages/[id]/route.ts:38-40), because they delete artifacts.\n\nPersistence: Share (guarded on userId in db.ts:132; public paths use prismaUnguarded). Artifact and ArtifactVersion are not guarded; they are scoped through Conversation. Version content is a plaintext TEXT column capped at 200,000 chars by the routes. DESIGN versions hold serialized DesignDocument JSON, and image assets are inlined as data URLs (at most 96 KB each, use-design-document.ts:571) or `/api/files/<key>` paths that are owner-only. Moderation state lives in User.bannedAt/strikes and ModerationFlag (userId only, cascades on user delete).\n\nEnforcement points: session.ts:78 (a banned user gets no session), chat route quickScreen (403) and the after() classifier. Nothing on the share read path consults ban state, moderation or quotas.\n\nAPIs in scope: /api/share (GET list, POST create), /api/share/[id] (DELETE); /api/artifacts/[id] (GET, POST version, PATCH title, DELETE); /api/design (POST new), /api/design/[id] (GET), /transactions (POST/GET), /export (GET), /edit (POST, rate-limited); /api/admin/moderation(/[id]), /api/admin/users/[id](/ban|/unban); /api/projects/[id]/members.\n\nNative: NativeShareClient -> the same /api/share endpoints with a bearer token (create is CHAT-only). NativeSharedLinksView renders the list.",
+ "ux": [
+  {
+   "observation": "Opening the share dialog publishes. The effect POSTs /api/share the moment the dialog opens, so a person who opens Share to read the options and cancels has already created a live public URL. It then appears in Shared links. There is no explicit 'Create link' or 'Publish' step, unlike Claude, Google Docs or Figma, where making a link public is a deliberate act.",
+   "severity": "major",
+   "where": [
+    "src/components/share/share-dialog.tsx:18-23",
+    "src/components/share/share-dialog.tsx:78-87"
+   ]
+  },
+  {
+   "observation": "The dialog promises 'People with the link see this artifact as it is now' (and 'the conversation up to now'), but the API returns the existing older snapshot when a live link already exists. The only way to publish the current state is Revoke (which kills the URL already sent) and then 'Create a new link'. There is no 'Update link' action. The 'Snapshot \u00b7 <date>' caption is the only hint.",
+   "severity": "major",
+   "where": [
+    "src/components/share/share-dialog.tsx:120-122",
+    "src/components/share/share-dialog.tsx:193-196",
+    "src/lib/share.ts:91-95"
+   ]
+  },
+  {
+   "observation": "No artifact surface says whether it is public. The /artifacts grid and menu, the canvas header and the design editor show no 'Shared' badge or link state. 'Which of my things are public?' can only be answered in Settings > Data & privacy, and those rows do not link back to the artifact.",
+   "severity": "major",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:156-210",
+    "src/components/canvas/canvas-panel.tsx:842-847",
+    "src/components/share/shared-links-card.tsx:118-194"
+   ]
+  },
+  {
+   "observation": "A shared DESIGN opens on the public page as a 'Code' tab of raw DesignDocument JSON. Base64 image blobs are included and there is no drawing. The canvas and /artifacts still offer 'Share' for designs, so a visitor who follows a design link gets a wall of JSON.",
+   "severity": "major",
+   "where": [
+    "src/components/share/shared-artifact-viewer.tsx:29-33",
+    "src/components/share/shared-artifact-viewer.tsx:76-78",
+    "src/app/(app)/artifacts/page.tsx:198"
+   ]
+  },
+  {
+   "observation": "The public page has no way to report it and no legal or terms link. The footer holds only 'Made with Juno' and 'Create your own account'. Best-in-class public artifact pages (Claude, Notion, Figma community) carry a 'Report' affordance.",
+   "severity": "major",
+   "where": [
+    "src/app/share/[token]/page.tsx:99-112"
+   ]
+  },
+  {
+   "observation": "On Mac and iPhone a failed load of the Shared links list shows 'No shared links'. NativeShareClient.shares returns [] on any failure, so a network error tells the person nothing of theirs is public.",
+   "severity": "major",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeShareClient.swift:82-92",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeSharedLinksView.swift:34-39"
+   ]
+  },
+  {
+   "observation": "The web Shared links rows use the Code2 glyph and the label 'Artifact' for every artifact kind, including DESIGN. The /artifacts page already draws a per-type icon from the registry (AppIcons.design, AppIcons.artifacts). This goes against ICONS_AND_MOTION \u00a71.1, 'registries first, one concept one drawing'. The title is the one copied at share time, so a renamed artifact shows its old name.",
+   "severity": "minor",
+   "where": [
+    "src/components/share/shared-links-card.tsx:5",
+    "src/components/share/shared-links-card.tsx:138",
+    "src/components/share/shared-links-card.tsx:152",
+    "src/lib/share.ts:103",
+    "docs/design/ICONS_AND_MOTION.md:23-25"
+   ]
+  },
+  {
+   "observation": "Revoke is one click on web and one tap on native, with no confirmation and no undo. Revocation is permanent for that URL, and re-sharing mints a different token.",
+   "severity": "minor",
+   "where": [
+    "src/components/share/shared-links-card.tsx:179-191",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeSharedLinksView.swift:79-91"
+   ]
+  },
+  {
+   "observation": "The native empty state reads 'Links you create from a conversation appear here', and the row falls back to 'Untitled conversation'. Artifact shares made on web appear in the same list under that conversation-only language.",
+   "severity": "minor",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeSharedLinksView.swift:38",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeSharedLinksView.swift:61"
+   ]
+  },
+  {
+   "observation": "Link unfurls: og:image is dropped (the page's openGraph replaces the root one), so Slack, iMessage and LinkedIn cards have no image. X cards inherit the root Twitter block and read 'Juno' rather than the shared title.",
+   "severity": "minor",
+   "where": [
+    "src/app/share/[token]/page.tsx:31",
+    "src/app/layout.tsx:65-86"
+   ]
+  },
+  {
+   "observation": "View counts are shown as 'evidence a link was used' (native doc comment), but they include the owner's own opens, link-unfurl fetches and crawlers. The views of revoked links are kept in the DB but never displayed anywhere.",
+   "severity": "minor",
+   "where": [
+    "src/lib/share.ts:151-160",
+    "src/lib/share.ts:124-129",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeSharedLinksView.swift:96-98"
+   ]
+  },
+  {
+   "observation": "Artifacts inside a shared chat are inert chips. A visitor to a shared conversation cannot open the page or diagram the chat produced; the owner has to share each artifact separately.",
+   "severity": "minor",
+   "where": [
+    "src/components/share/shared-chat-transcript.tsx:31-52"
+   ]
+  },
+  {
+   "observation": "The Shared links list is unpaginated (listShares has no take), and the /artifacts library is capped at 200 with no pagination. Beyond 200 artifacts, older ones cannot be found there to share, audit or delete.",
+   "severity": "info",
+   "where": [
+    "src/lib/share.ts:124-129",
+    "src/app/api/artifacts/route.ts:27"
+   ]
+  },
+  {
+   "observation": "Composition of the public page follows FLAT_UI and PREMIUM_AUDIT: card-rung header with a hairline and no glass over a reading surface, the reading measure, a single primary action, and TabsList at its native height.",
+   "severity": "info",
+   "where": [
+    "src/app/share/[token]/page.tsx:56-76",
+    "src/components/share/shared-artifact-viewer.tsx:35-49"
+   ]
+  }
+ ],
+ "motion": [
+  {
+   "observation": "The share page's Juno mark presses with active:scale-[0.97] on duration-press/ease-out-soft and has a motion-reduce fallback that removes both the transition and the scale.",
+   "where": [
+    "src/app/share/[token]/page.tsx:61-67"
+   ]
+  },
+  {
+   "observation": "The footer 'Create your own account' link transitions color on duration-fast/ease-out-soft for both hover and focus-visible.",
+   "where": [
+    "src/app/share/[token]/page.tsx:105-110"
+   ]
+  },
+  {
+   "observation": "In the share dialog, the skeleton is replaced by the ready, error or revoked states with motion-safe:animate-fade-in. The skeleton reserves both rows so the dialog does not resize.",
+   "where": [
+    "src/components/share/share-dialog.tsx:126-168"
+   ]
+  },
+  {
+   "observation": "Copy confirmation is an IconSwap spring cross-fade from copy to check. The dialog adds an aria-live label; the settings row resets after 1.5s.",
+   "where": [
+    "src/components/share/share-dialog.tsx:180-190",
+    "src/components/share/shared-links-card.tsx:160-178"
+   ]
+  },
+  {
+   "observation": "A revoked row is removed from the web list instantly with no exit transition; only a toast confirms it. Native removes the row the same way (removeAll), with no animation specified.",
+   "where": [
+    "src/components/share/shared-links-card.tsx:56-64",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeSharedLinksView.swift:118-131"
+   ]
+  },
+  {
+   "observation": "The Revoke button uses the Button `loading` state on web. The native button swaps its trash icon for a small ProgressView.",
+   "where": [
+    "src/components/share/shared-links-card.tsx:179-191",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeSharedLinksView.swift:79-91"
+   ]
+  }
+ ],
+ "defects": [
+  {
+   "id": "followup-public-link-governance-1",
+   "title": "A banned user's public shares keep serving, and there is no takedown path short of deleting the account",
+   "severity": "high",
+   "file": "src/lib/share.ts",
+   "line": 137,
+   "evidence": "READ: findActiveShare returns any share whose revokedAt is null (share.ts:137-139). Neither it nor getSharedArtifactSnapshot/getSharedChatSnapshot (share.ts:191-276) joins User.bannedAt. banUser and unbanUser update only User and write a ModerationFlag (moderation.ts:149-186). The admin API has only announcements, models, moderation and users route groups (find src/app/api/admin), and none of them references Share or Artifact. ModerationFlag has only a userId and no artifact or share reference (schema.prisma:1397-1414). The only content remedy is deleteUserByAdmin -> deleteAccountPermanently -> prisma.user.delete (moderation.ts:192-199; delete-account.ts:72). That cascades away the user's ModerationFlag rows too (schema.prisma:1410), destroying the audit trail.",
+   "failure_scenario": "A user shares an HTML artifact that impersonates a bank login and is banned for it. /share/<token> keeps rendering the page under Juno's header. The owner, as admin, cannot find or revoke that share from /admin. The banned user can no longer sign in to revoke it (session.ts:78). The only fix is to delete the account, which also erases the flag that recorded why."
+  },
+  {
+   "id": "followup-public-link-governance-2",
+   "title": "Public artifact content is never moderated: manual edits and share creation bypass every classifier",
+   "severity": "high",
+   "file": "src/app/api/artifacts/[id]/route.ts",
+   "line": 40,
+   "evidence": "READ: moderation runs only on USER chat text in the chat route (chat/route.ts:611-629 quickScreen; 1380-1390 and 3526-3531 moderateUserMessages; moderation-ai.ts:249-287). POST /api/artifacts/[id] stores any string up to 200,000 chars as a new version with no type check, moderation or rate limit (route.ts:7-16, 40-90). createShare does no content check (share.ts:85-106). The public sandbox allows forms, downloads and modals (sandbox-frame.tsx:85-86) and loads images from any https host (sandbox-frame.tsx:59; csp.ts:39). The sandbox's own CSP also allows connect-src https: (sandbox-frame.tsx:62), and the parent opens any http(s) URL the frame posts via juno:open (sandbox-frame.tsx:878-896). The tab title becomes '<share title> \u00b7 Juno' through the root template (layout.tsx:59) with og siteName 'Juno' (page.tsx:31).",
+   "failure_scenario": "A FREE account spends 1 of its 15 messages getting any HTML artifact. It overwrites the body with a credential form plus script via POST /api/artifacts/<id> (no quota, no moderation), renames it 'Juno \u00b7 Session expired' and shares it. Visitors to https://<app>/share/<token> see Juno chrome around the form. Typed values can leave as an https image beacon (img-src https: is allowed by both policies), or the page can link out to an attacker-hosted form through the link bridge. Nothing flags it, and see defect 1 for why it cannot be taken down."
+  },
+  {
+   "id": "followup-public-link-governance-3",
+   "title": "Unbounded version storage, loaded wholesale into memory, can take the backend down",
+   "severity": "high",
+   "file": "src/lib/design/store.ts",
+   "line": 36,
+   "evidence": "READ: loadOwnedDesignArtifact includes every version's full content (store.ts:33-39), and so does ownedArtifact in the generic route (artifacts/[id]/route.ts:20-25, include versions:true). serializeArtifact returns every version's content (serializers.ts:218), and getConversationThread loads every artifact's versions on each thread load (queries.ts:116-120), which use-chat polls during recovery (queries.ts:108-110). A version can hold 200,000 chars (artifacts/[id]/route.ts:8; store.ts:63). A client-chosen origin:'restore' always allocates a new checkpoint (transactions/route.ts:14; operations.ts:535), and nothing limits the rate (no rateLimit in either route) or the count, and nothing prunes. juno-backend restarts at max_memory_restart 1400M (deploy/ecosystem.config.js:127). INFERRED: the arithmetic below.",
+   "failure_scenario": "A script POSTs /api/design/<id>/transactions about 7,000 times with origin:'restore' on a document near 200 KB, or POSTs 200 KB bodies to /api/artifacts/<id>. That is about 1.4 GB of rows. The next GET /api/design/<id>, GET /api/artifacts/<id>, or thread load of that conversation materialises all of it in the one Node process. PM2 restarts juno-backend, which aborts every other user's in-flight SSE stream (the comment at ecosystem.config.js:131-133 describes exactly that consequence)."
+  },
+  {
+   "id": "followup-public-link-governance-4",
+   "title": "A share's snapshot is not frozen: in-place edits to pre-snapshot rows leak into the public link",
+   "severity": "medium",
+   "file": "src/lib/share.ts",
+   "line": 258,
+   "evidence": "READ: snapshots resolve by timestamp. Artifact versions are picked by createdAt <= snapshotAt (share.ts:257-265) and chat messages by createdAt <= snapshotAt (share.ts:198), rather than by pinned row ids. Three writers rewrite old rows in place and keep createdAt. (a) User-message edit updates Message.content (messages/[id]/route.ts:35). (b) Regenerate updates the stale assistant message in place (chat/route.ts:2574-2580). (c) Design folding rewrites the newest checkpoint's content for 30s after that row was created (store.ts:122-127, 179-197; operations.ts:511, 529-539). The dialog promises 'New messages stay private' and 'Later edits stay private' (share-dialog.tsx:120-122); JUNO.md:2259-2262 promises the same.",
+   "failure_scenario": "A user shares a chat, then edits their first message to add a private detail, or regenerates an answer. The public page immediately shows the new text, and every later message vanishes from the share because the edit truncates the thread. For designs: checkpoint v4 is created at T, the share is taken at T+5s, and edits made up to T+30s rewrite v4, so the public JSON shows post-share work."
+  },
+  {
+   "id": "followup-public-link-governance-5",
+   "title": "DESIGN artifacts can be shared but render publicly as raw JSON",
+   "severity": "medium",
+   "file": "src/components/share/shared-artifact-viewer.tsx",
+   "line": 32,
+   "evidence": "READ: runtimeFor('DESIGN') returns mode 'design' (artifact-runtime.ts:98). hasPreview = isMarkdown || rt.mode === 'web' (shared-artifact-viewer.tsx:32), so a DESIGN share gets only the Code tab showing the serialized document (lines 76-78). Share is offered for every item on /artifacts (artifacts/page.tsx:198) and on the canvas header without a design exclusion (canvas-panel.tsx:842-847). Even with a renderer, Library image assets are '/api/files/<key>' paths (schema.ts:550-553) that /api/files serves only to the signed-in owner (api/files/[...key]/route.ts:19-36, 'no anonymous path'). The design code comment assumes 'a shared link render[s] the same document' (use-design-document.ts:571-574).",
+   "failure_scenario": "A user clicks Share on a design and sends the link. The recipient sees 'Design' in the tab row and a Code tab of JSON, including multi-kilobyte base64 image data, and no picture of the design."
+  },
+  {
+   "id": "followup-public-link-governance-6",
+   "title": "Share, design-create, version-write and design-export routes have no rate limit",
+   "severity": "medium",
+   "file": "src/app/api/design/[artifactId]/export/route.ts",
+   "line": 136,
+   "evidence": "READ: none of these call rateLimit: api/share/route.ts:26-41, artifacts/[id]/route.ts:40-90, design/route.ts:37-102 (each call creates a Conversation, an Artifact and an ArtifactVersion), design/[artifactId]/transactions/route.ts:29-69, design/[artifactId]/export/route.ts:136-251. The export is CPU-bound (PDF/HTML/React/SwiftUI builders) and per request runs a DB query plus an object-storage HEAD for every Library asset (export/route.ts:66-101). Compare the design AI edit route (edit/route.ts:102, 20/min) and Office export (artifacts/[id]/export/route.ts:72-79, 60/h generate, 400/h detect). The plan gate `PLANS[plan].canvas` is true on every plan (plans.ts:55, 79, 104, 130, 153), so FREE accounts are unbounded here.",
+   "failure_scenario": "One signed-in FREE account loops GET /api/design/<id>/export?format=pdf over a document with many Library images. Each request builds a PDF and issues N storage HEADs, with no 429. Or it loops POST /api/design, creating thousands of empty conversations that flood Recents and the sync feed."
+  },
+  {
+   "id": "followup-public-link-governance-7",
+   "title": "The share dialog says 'as it is now' but hands back an older reused snapshot",
+   "severity": "medium",
+   "file": "src/components/share/share-dialog.tsx",
+   "line": 122,
+   "evidence": "READ: createShare returns the newest active share for the target unchanged, including its original snapshotAt (share.ts:91-95; chat path 67-71). The dialog's description is 'People with the link see this artifact as it is now. Later edits stay private.' (share-dialog.tsx:120-122). No update-snapshot action exists anywhere in the API (share/route.ts; share/[id]/route.ts).",
+   "failure_scenario": "A user shares v1 on 1 Sep, edits to v5 on 20 Sep, opens Share, reads 'as it is now', and pastes the link into an email. The recipient sees v1. Publishing v5 requires revoking the link already given to others."
+  },
+  {
+   "id": "followup-public-link-governance-8",
+   "title": "Every anonymous view writes a sync change into the owner's account feed",
+   "severity": "medium",
+   "file": "src/lib/share.ts",
+   "line": 156,
+   "evidence": "READ: getPublicShare runs prismaUnguarded.share.update({views: {increment: 1}}) on every render (share.ts:156-158). Share carries an AFTER INSERT OR UPDATE OR DELETE trigger (migrations/20260716200000_account_change_log/migration.sql:123). The latest juno_record_account_change (migrations/20260815180000_restore_account_delete_guard/migration.sql:31-) has no no-op filter, so each view upserts EntityRevision and inserts an AccountChange row for the owner. The owner's /api/sync stream polls the max cursor every 2s (sync-feed.ts:47-60). The /share route has no rate limit (middleware.ts:81-86 applies only CSP and a request id).",
+   "failure_scenario": "Someone scripts 100k requests to a public link. That is 100k AccountChange rows for the owner, the owner's Mac and iPhone stream wakes and pulls change pages continuously, and the view counter is meaningless. A popular link does the same thing organically."
+  },
+  {
+   "id": "followup-public-link-governance-9",
+   "title": "Unmoderated, user-authored 'assistant' turns are published with a model label",
+   "severity": "medium",
+   "file": "src/lib/message-append.ts",
+   "line": 25,
+   "evidence": "READ: the native append route accepts role ASSISTANT with arbitrary content and a free-form model string (message-append.ts:23-31), and writes them without moderation (conversations/[id]/messages/route.ts:31-140 has no moderate call). A CHAT share renders ASSISTANT turns with a model eyebrow resolved from Message.model (shared-chat-transcript.tsx:54-62).",
+   "failure_scenario": "A user appends an ASSISTANT turn with model 'claude-opus-\u2026' containing defamatory or dangerous text, shares the chat, and circulates a Juno-domain link that appears to show the model saying it."
+  },
+  {
+   "id": "followup-public-link-governance-10",
+   "title": "The native Shared links screen reports 'No shared links' when loading fails",
+   "severity": "medium",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeShareClient.swift",
+   "line": 92,
+   "evidence": "READ: shares(for:) returns [] on any request or decode failure (NativeShareClient.swift:82-93). NativeSharedLinksView then shows the 'No shared links' ContentUnavailableView (NativeSharedLinksView.swift:34-39). Web distinguishes the error state (shared-links-card.tsx:81-93).",
+   "failure_scenario": "On a flaky connection or an expired token, a Mac or iPhone user checking whether anything of theirs is public is told nothing is, while their links stay live."
+  },
+  {
+   "id": "followup-public-link-governance-11",
+   "title": "Regenerate and message edit silently kill artifact share links",
+   "severity": "low",
+   "file": "src/app/api/chat/route.ts",
+   "line": 2573,
+   "evidence": "READ: regenerate deletes the stale message's artifacts (chat/route.ts:2573), and message edit deletes artifacts of later messages (messages/[id]/route.ts:38-40). Share has onDelete: Cascade on artifact (schema.prisma:1823). Only the explicit Delete dialog on /artifacts warns that 'any public share link stops working' (artifacts/page.tsx:683).",
+   "failure_scenario": "A user shares an artifact, then regenerates the answer that produced it. The link they sent 404s, and the row disappears from Shared links without any notice."
+  },
+  {
+   "id": "followup-public-link-governance-12",
+   "title": "The generic version route writes unvalidated bodies into DESIGN artifacts, contradicting 'the only write path'",
+   "severity": "low",
+   "file": "src/app/api/artifacts/[id]/route.ts",
+   "line": 61,
+   "evidence": "READ: POST /api/artifacts/[id] appends any string as a version regardless of artifact.type (route.ts:40-90). The design transactions route documents 'This is the only write path. There is deliberately no replace-the-document endpoint' (transactions/route.ts:17-24). Reads validate on parse (migrations.ts:91-99), so a bad body makes the design 422 (design/[artifactId]/route.ts:33-38) and blocks further transactions (store.ts:99-104).",
+   "failure_scenario": "A client (or a bug) POSTs non-JSON to /api/artifacts/<designId>. The design is now unreadable in the editor, and its share shows the garbage body."
+  },
+  {
+   "id": "followup-public-link-governance-13",
+   "title": "The share page's openGraph drops the root og:image, and the Twitter card shows a generic title",
+   "severity": "low",
+   "file": "src/app/share/[token]/page.tsx",
+   "line": 31,
+   "evidence": "READ: generateMetadata returns openGraph {title, description, type, siteName} with no images (page.tsx:31). Next replaces the root openGraph (layout.tsx:65-80), so /og.png is lost, while the root twitter block (layout.tsx:81-86: title 'Juno') is inherited unchanged.",
+   "failure_scenario": "Pasting a share link into Slack or iMessage gives an imageless card. On X the card says 'Juno' with the marketing description instead of the shared item's title."
+  },
+  {
+   "id": "followup-public-link-governance-14",
+   "title": "The project collaboration routes trip their own ownership guard (adjacent to the permissions question)",
+   "severity": "low",
+   "file": "src/app/api/projects/[id]/route.ts",
+   "line": 191,
+   "evidence": "READ: PATCH runs prisma.project.update({where: {id}}) (route.ts:191) and DELETE runs prisma.project.delete({where: {id}}) (route.ts:221), both on the guarded client. Project is guarded on userId (db.ts:54), update and delete are guarded operations (db.ts:207-217), and the guard throws in development and logs a stack in production (db.ts:252-262). The members POST passes an unvalidated `role` string straight into storage (members/route.ts:36, 43; project-collaboration.ts:177-187).",
+   "failure_scenario": "On a dev machine, renaming or deleting any project returns 500, so the EDITOR and OWNER collaboration paths the merge might build on cannot be exercised locally. In production every such call logs an ownership-guard stack trace. An owner can also store role 'OWNER' for a member, who then passes the OWNER checks, including deleting the project (route.ts:217-221)."
+  }
+ ],
+ "gaps": [
+  {
+   "title": "Owner-ban propagation to public content",
+   "description": "No suspension of shares when User.bannedAt is set. Nothing in findActiveShare or the snapshot loaders checks it, and there is no suspended-by-moderation state on Share that an unban could lift.",
+   "why": "A ban is the main enforcement lever, and without this it leaves the harmful public artifact up."
+  },
+  {
+   "title": "Admin content takedown",
+   "description": "No admin route or UI to look up a share by token or URL, see a user's shares or artifacts, revoke or suspend one link, or quarantine an artifact version. No ModerationFlag fields for artifactId, shareId or token.",
+   "why": "Takedown today means deleting the whole account, which also destroys the evidence."
+  },
+  {
+   "title": "Report-abuse intake and a legal contact",
+   "description": "No report control on /share pages, no abuse inbox, and the legal notice contact, publisher and host are template placeholders (mentions-legales/page.tsx:36-56). The CGU prohibits disseminating illicit content (cgu/page.tsx:126-141) but gives no notification channel.",
+   "why": "Public hosting of user-generated pages needs a notice-and-action path. INFERRED: likely a LCEN/DSA obligation for the operator; the owner should confirm with counsel."
+  },
+  {
+   "title": "Publish-time and edit-time moderation of artifacts",
+   "description": "Neither the quickScreen nor the LLM classifier runs on artifact bodies, manual edits, design text nodes, native appends, or at share creation.",
+   "why": "The chat classifier sees only the prompt, not what gets published."
+  },
+  {
+   "title": "Quotas and retention",
+   "description": "No per-plan limits on artifacts, versions, bytes, designs or active shares, and no version pruning or retention outside the 30s design fold. There is no share expiry column.",
+   "why": "Storage and memory grow without bound (defect 3), and FREE accounts are not metered on any of these paths."
+  },
+  {
+   "title": "Design rendering and assets on public links",
+   "description": "No server-side or public renderer for DESIGN on /share, even though exportSvg exists server-side (design export route). There is also no anonymous asset path for /api/files images referenced by a shared design.",
+   "why": "This blocks 'Design at one shareable link'."
+  },
+  {
+   "title": "Per-artifact access control and comments",
+   "description": "No viewer, commenter or editor grants on artifacts. DesignComment is schema-only. ProjectMember is API-only, unvalidated, not wired to conversations or artifacts, and has no invitation or acceptance step.",
+   "why": "This blocks the Claude-style 'one link, editable on phone, with comments' model the merge targets."
+  },
+  {
+   "title": "Tests for share governance",
+   "description": "There are no tests for share.ts: revocation, reuse, snapshot resolution, in-place edit leaks, ban behaviour, DESIGN rendering on the share page, or view-count side effects. None of the design, share or artifact write routes has rate-limit tests.",
+   "why": "Every defect above landed without a failing test."
+  },
+  {
+   "title": "Disclosure of public sharing and plaintext artifacts",
+   "description": "The privacy policy states conversations are encrypted at rest and private to the account, lists artifacts in the same bullet, and never mentions public share links or view counting (confidentialite/page.tsx:46-48, 168-170). The legal notice repeats the encryption claim (mentions-legales/page.tsx:57-58).",
+   "why": "ArtifactVersion.content and titles are plaintext at rest, and shares make content public."
+  }
+ ],
+ "debt": [
+  {
+   "title": "Doc drift on sandbox, CSP and ban policy",
+   "description": "JUNO.md:2579-2581 says the sandbox is 'allow-scripts only', but SANDBOX_ALLOW adds forms, modals, downloads and pointer-lock (sandbox-frame.tsx:85-86). JUNO.md:2590-2591 says 'A full CSP is future work' while the middleware enforces one (middleware.ts:48-78). JUNO.md:2166 says critical/high flags ban immediately, whereas decideFlagAction queues the first severe automatic hit for review unless it is CSAM or manual (moderation-policy.ts:68-83; moderation.ts:47-52).",
+   "where": [
+    "docs/JUNO.md:2166",
+    "docs/JUNO.md:2579-2581",
+    "docs/JUNO.md:2590-2591",
+    "src/components/canvas/sandbox-frame.tsx:85-86"
+   ]
+  },
+  {
+   "title": "Misleading security comment in the sandbox CSP",
+   "description": "The comment and the test claim a form 'cannot POST a password anywhere' (sandbox-frame.tsx:44-46; tests/sandbox-security.test.ts:61-63). The same meta policy allows connect-src https: and img-src https: (sandbox-frame.tsx:59, 62), so the page's own script can send the value out. form-action only blocks native form submission.",
+   "where": [
+    "src/components/canvas/sandbox-frame.tsx:41-68",
+    "tests/sandbox-security.test.ts:50-67"
+   ]
+  },
+  {
+   "title": "Dead plan gate",
+   "description": "`canvas` is true on every plan, so the `PLANS[plan].canvas` checks in the design create and edit routes never fire. It is a place where a quota could live but does not.",
+   "where": [
+    "src/lib/plans.ts:31",
+    "src/app/api/design/route.ts:41-44",
+    "src/app/api/design/[artifactId]/edit/route.ts:94-97"
+   ]
+  },
+  {
+   "title": "Denormalized share title with no refresh or back-reference",
+   "description": "Share.title is copied once (share.ts:79, 103). ClientShare has no artifactId, conversationId or type, so the lists cannot link back or draw the right glyph.",
+   "where": [
+    "src/lib/share.ts:19-46",
+    "prisma/schema.prisma:1815"
+   ]
+  },
+  {
+   "title": "Comment promises the owner keeps the view count after revoke",
+   "description": "share.ts:14-15 says revocation is a tombstone 'so ... the owner keeps the view count', but listShares filters out revoked rows and no endpoint returns them.",
+   "where": [
+    "src/lib/share.ts:14-15",
+    "src/lib/share.ts:124-129"
+   ]
+  },
+  {
+   "title": "Full-version includes on hot paths",
+   "description": "`include: { versions: true }` is used on artifact GET/POST/PATCH, design load and thread load, while the library route carefully truncates in SQL (api/artifacts/route.ts:42-78). One helper that returns version metadata plus current content only would remove the O(N) cost.",
+   "where": [
+    "src/app/api/artifacts/[id]/route.ts:23",
+    "src/lib/design/store.ts:36",
+    "src/lib/queries.ts:120",
+    "src/lib/serializers.ts:218"
+   ]
+  },
+  {
+   "title": "No GIN index for artifact search",
+   "description": "artifactSearchSql computes to_tsvector over every version body per query (search/sql.ts:329-355), and there is no GIN index in the migrations. Search cost therefore scales with unbounded version storage, including base64-heavy design JSON.",
+   "where": [
+    "src/lib/search/sql.ts:329-355"
+   ]
+  },
+  {
+   "title": "Unvalidated ProjectMember.role",
+   "description": "A String column with a comment-only enum. The route passes body.role through, and the TS ProjectRole type is not enforced at runtime.",
+   "where": [
+    "prisma/schema.prisma:599",
+    "src/app/api/projects/[id]/members/route.ts:36-43",
+    "src/lib/project-collaboration.ts:146-187"
+   ]
+  }
+ ],
+ "strengths": [
+  "The token is the only capability, which is sound. It is 24 random bytes, not derived from ids, has a cheap length gate, and the public paths use prismaUnguarded explicitly and on purpose (share.ts:48-51, 131-140; db.ts:125-132).",
+  "Revocation is instant and cache-proof: a tombstone plus force-dynamic, with idempotent revoke semantics (share.ts:109-121; page.tsx:18-19).",
+  "The chat snapshot projection deliberately excludes Message.activity (connector payloads), and a test pins it (share.ts:202-210; tests/field-encryption-coverage.test.ts:90-95).",
+  "Search posture is right: per-page noindex, and /share is deliberately left crawlable so the noindex is honoured. The referrer policy keeps tokens out of third-party referrers (page.tsx:30; robots.ts:28-31; next.config.mjs:128).",
+  "Sandbox origin isolation is real and tested. There is no allow-same-origin and no allow-popups, the parent trusts only its own iframe's messages and re-validates bridged URLs, and a test checks that the rendered attribute is the reviewed constant (sandbox-frame.tsx:76-86, 864-896; tests/sandbox-security.test.ts:30-48).",
+  "The owner has a single place listing every live link with copy, revoke and view counts on web and native. The web version handles loading, empty and error states well (shared-links-card.tsx:81-115).",
+  "The moderation core is centralised and auditable (recordFlag/banUser/unbanUser), and the policy is a pure function with a second-hit safeguard against regex false positives (moderation.ts:54-146; moderation-policy.ts:68-83).",
+  "Design writes are validated transactions with compare-and-swap, a 200 KB document cap, and checkpoint folding that already limits version churn from normal editing (store.ts:89-203).",
+  "Rate limiting infrastructure exists and is atomic across instances (rate-limit.ts:17-38), so adding limits is a one-line change per route."
+ ],
+ "merge_relevance": "How this area affects merging Artifacts and Design into one surface (Claude-style: Design, Docs, Slides and Design System as typed artifacts at one shareable link, editable on phone, with comments):\n\n1. LINK MODEL MISMATCH (read). A Juno Share is an anonymous, read-only, frozen snapshot resolved by timestamp (share.ts:10-17, 248-276). Claude's unified link is a live document with collaborator access and comments. The merge needs two concepts: a public published snapshot (the existing Share, fixed to pin an artifactVersion id rather than a time, per defect 4), and access grants (new). The Share enum is CHAT|ARTIFACT only. Typed artifacts would all be ARTIFACT shares with no type on the wire (share.ts:19-28), so the lists and unfurls cannot distinguish Design, Doc or Slides.\n\n2. DESIGN ON PUBLIC LINKS IS BLOCKED (read). The viewer has no DESIGN mode (shared-artifact-viewer.tsx:32), Library assets are owner-only (api/files/[...key]/route.ts:19-36), and comments are schema-only (types.ts:738-752, no operation creates them). A merged surface needs a public renderer (the server-side exportSvg or renderer in src/lib/design could draw it), a capability-scoped asset path, and a comment model with authorship that anonymous and collaborator viewers can use.\n\n3. PERMISSIONS (read). Every artifact and design route authorises only through artifact -> conversation.userId (artifacts/[id]/route.ts:20-25; design/store.ts:33-39). Artifact and ArtifactVersion are deliberately unguarded and scoped through the parent (db.ts:22-25). Any collaborator path must go through Conversation, which is guarded, with prismaUnguarded plus an explicit role check, which is the pattern project-collaboration.ts already uses. ProjectMember could back viewer and editor (EDITOR/VIEWER already exist with a hierarchy check, project-collaboration.ts:69-85). Before it can, it needs: a real enum and validation (the role is an unvalidated String, members/route.ts:36-43), a COMMENTER rung, an invite and acceptance flow, UI (none exists on web or native), fixing the guard trips in projects/[id]/route.ts:191 and 221, and wiring into conversation, artifact and design routes, none of which consult it today. Project-scoped access also only covers artifacts whose conversation sits in a project. Per-artifact grants (a new ArtifactGrant or share-with-role) are the more direct fit for 'one link'.\n\n4. PRIVACY INHERITANCE (read). Typed Docs, Slides and Design System stored as ArtifactVersion would be plaintext at rest and full-text searched inside Postgres (encrypt-columns.ts:23-28; JUNO.md:2487-2491; search/sql.ts:329-355). The identical body is AES-GCM encrypted inside Message (message-content.ts:6). That contradicts the privacy policy's 'conversations encrypted, private to your account' framing (confidentialite/page.tsx:46-48). Public exposure is noindex-only, which is fine for search engines. Title and body flow into OG and the tab title with a '\u00b7 Juno' suffix. INFERRED: moving richer documents (Docs) into artifacts increases the plaintext surface. Searchable encryption, or moving search to an app-side index, becomes a prerequisite if the encryption promise is to hold.\n\n5. GOVERNANCE PREREQUISITES (read). Before artifacts become first-class public objects, Juno needs: ban -> suspend shares (share.ts:137), admin takedown by token, artifact or user (absent), report intake plus a real legal contact (page.tsx:99-112; mentions-legales:41), and publish-time moderation. It also needs rate limits on /api/share, /api/artifacts/[id], /api/design, transactions and export, per-plan artifact, version and storage quotas (plans.ts has none), a version retention policy, and removing full-version includes from hot paths (defect 3). Also stop per-view sync-log writes (defect 8), because a popular public link would otherwise flood its owner's devices.\n\n6. WORK DELIVERABLES (read). WorkArtifact has no public link path (api/work/artifacts has no share/public route, and no Share relation exists). Folding Work 'made things' into the same typed-artifact link would need all of the above, plus its own guard on WorkArtifact (db.ts:154).\n\n7. NATIVE (read). Mac and iPhone create CHAT shares only (NativeShareClient.swift:61-78), list all shares under conversation-only copy, and hide load failures (defect 10). The iPhone design view is read-only. 'Editable on phone' would need native access to transactions under a grant model, not the owner-only join. mac/liquid-glass-chat has no diff in any file in this area (merge-base == main d0997af2).",
+ "tests": "Tests that touch this area (read): tests/field-encryption-coverage.test.ts pins that the public chat snapshot never selects Message.activity (lines 90-95), and that ArtifactVersion.content, Attachment.extractedText and MemoryEntry.content stay plaintext for search. tests/ownership-guard.test.ts checks that Share and ProjectMember are guarded. tests/sandbox-security.test.ts checks opaque origin, no allow-popups, the literal sandbox attribute, and a meta CSP with default-src 'none', base-uri/form-action/object-src 'none'. It does not check connect-src/img-src https:. tests/chat-moderation.test.ts covers preflight and private moderation text selection. tests/csp.test.ts covers the app CSP. tests/design-editing.test.ts covers allocatesCheckpoint (not its interaction with shares). tests/design-operations.test.ts and tests/artifact-edit.test.ts cover edit mechanics.\n\nRun results on d0997af2: `npx tsx --test tests/field-encryption-coverage.test.ts tests/chat-moderation.test.ts tests/ownership-guard.test.ts tests/artifact-edit.test.ts` gave 29/29 pass. tests/csp.test.ts gave 9/9. tests/sandbox-security.test.ts plus tests/design-operations.test.ts gave 26/26. tests/design-editing.test.ts gave 18/18.\n\nNot covered by any test (grep of tests/ for lib/share, api/share, SharedArtifactViewer, SharedLinks): share creation and reuse, revocation, snapshot resolution, in-place edit leaks, ban behaviour on public pages, DESIGN on the share page, view-count side effects, rate limits on share, artifact, design and export routes, and native share-list failure handling. There is no /dev gallery for the public share page. The settings gallery has SharedLinksRows fixtures with no DESIGN case (src/app/dev/settings/gallery.tsx:157-161).",
+ "open_questions": [
+  "Is the app's enforcing CSP (csp.ts: connect-src 'self', script-src nonce + strict-dynamic) inherited by the srcdoc sandbox iframe at runtime, as the HTML policy-container rules suggest? If so, fetch exfiltration from a shared page is blocked but the img-src https: beacon still works. It would also be surprising that inline and Babel/CDN scripts run in previews at all. This needs a browser check on /share/<token>, which this read-only audit could not do.",
+  "Do the target browsers require user activation for blob downloads from a sandboxed iframe with allow-downloads? This decides whether a shared page can push a file to a visitor without a click (sandbox-frame.tsx:85-86, 737-738).",
+  "Is Juno, as the operator publishing /share pages, subject to a notice-and-action obligation (LCEN art. 6 / DSA art. 16)? And what contact should replace the '[adresse e-mail de contact]' placeholder? This is a legal question for the owner.",
+  "Should a ban suspend shares reversibly (so an unban restores them) or revoke them permanently? Should admin deletion keep ModerationFlag rows (currently cascade-deleted) for audit?",
+  "Is a member holding role 'OWNER' through POST /api/projects/[id]/members intended as co-ownership, including the right to delete the project and its files?",
+  "Should views exclude the owner, HEAD requests and unfurl bots? Should the counter move out of the Share row, off the change-capture trigger, into a separate table or aggregate?",
+  "For the merged surface, should the public link stay a frozen snapshot, become live, or offer both as Claude does (published snapshot vs shared-with-people)? The answer decides whether Share gains an artifactVersion pin, access grants, or both.",
+  "Markdown artifacts and chat transcripts on the public page load remote https images (react-markdown default img plus img-src https:), which exposes visitor IPs to hosts the sharer chooses. Is that acceptable, or should public pages proxy or strip remote images?",
+  "Are there production Share rows for DESIGN artifacts today? A read-only DB query was not possible here, so I could not measure how many public links currently show raw JSON."
+ ]
+}

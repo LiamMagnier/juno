@@ -8,6 +8,7 @@ export const CHAT_ARTIFACT_REPAIR_ATTEMPTS = 1;
 export const CHAT_ARTIFACT_MAX_CHARS = 200_000;
 
 export type ChatArtifactProblemCode =
+  | "incomplete"
   | "empty"
   | "too_large"
   | "svg_root_missing"
@@ -58,6 +59,17 @@ function problem(
 }
 
 function validateArtifact(artifact: ParsedArtifact): ChatArtifactProblem[] {
+  // First, and on its own: an unfinished body is refused whatever it holds.
+  // It can pass every check below (a half-written React page is still valid
+  // text), and it used to, which is how a stopped revision was saved as
+  // current and labelled "verified" (X-07). It is not repairable either:
+  // nothing here can write the part that never arrived, and closing the tag
+  // for it would only make the loss look finished.
+  if (artifact.incomplete) {
+    return [
+      problem(artifact, "incomplete", "The reply ended before this artifact's closing tag, so it is unfinished.", false),
+    ];
+  }
   const content = artifact.content.trim();
   if (!content) return [problem(artifact, "empty", "The artifact has no content.", false)];
   if (content.length > CHAT_ARTIFACT_MAX_CHARS) {
@@ -89,7 +101,21 @@ function validateArtifact(artifact: ParsedArtifact): ChatArtifactProblem[] {
 
   if (artifact.type === "DESIGN") {
     try {
-      normalizeDesignArtifact(content, artifact.identifier);
+      // The limit applies to what is stored, and a compact design is stored
+      // expanded — five to eleven times larger. Checking only the compact form
+      // let a ~40k-character design through as a 260k-character row that every
+      // later edit refuses and that installed Mac and iPhone builds cannot load.
+      const stored = normalizeDesignArtifact(content, artifact.identifier);
+      if (stored.length > CHAT_ARTIFACT_MAX_CHARS) {
+        return [
+          problem(
+            artifact,
+            "too_large",
+            `The design expands to ${stored.length.toLocaleString()} characters when stored, above the ${CHAT_ARTIFACT_MAX_CHARS.toLocaleString()}-character limit.`,
+            false
+          ),
+        ];
+      }
     } catch (error) {
       return [
         problem(
@@ -143,25 +169,37 @@ export function verifyAndRepairChatArtifacts(parsed: ParsedArtifact[]): ChatArti
   }
 
   const initialProblems = parsed.flatMap(validateArtifact);
-  const repairable = initialProblems.filter((item) => item.repairable);
-  const unrepairable = initialProblems.filter((item) => !item.repairable);
+  // Repair is decided per artifact: one whose every problem has a safe fix is
+  // repaired, whatever is wrong with the others. It was all or nothing, which
+  // cost little while unrepairable problems were rare; a Stop inside the
+  // second artifact of a reply now refuses that one as unfinished, and must
+  // not also cost the finished first one its missing `</svg>`.
+  const repairTargets = new Set(initialProblems.filter((item) => item.repairable).map((item) => item.identifier));
+  for (const item of initialProblems) if (!item.repairable) repairTargets.delete(item.identifier);
   let attempts = 0;
   let current = parsed;
   let finalProblems = initialProblems;
 
-  if (repairable.length > 0 && unrepairable.length === 0) {
+  if (repairTargets.size > 0) {
     attempts = 1;
     current = parsed.map((artifact) => {
-      const ownProblems = repairable.filter((item) => item.identifier === artifact.identifier);
-      return ownProblems.length ? repairArtifact(artifact, ownProblems) : artifact;
+      if (!repairTargets.has(artifact.identifier)) return artifact;
+      return repairArtifact(
+        artifact,
+        initialProblems.filter((item) => item.identifier === artifact.identifier)
+      );
     });
     finalProblems = current.flatMap(validateArtifact);
   }
 
   const refused = [...new Set(finalProblems.map((item) => item.identifier))];
   const accepted = current.filter((artifact) => !refused.includes(artifact.identifier));
-  const repaired = attempts > 0 && finalProblems.length === 0;
-  const status = refused.length > 0 ? "refused" : repaired ? "repaired" : "verified";
+  // What the one pass actually fixed, kept even when another artifact in the
+  // same reply was refused, so the receipt says both.
+  const repairs = initialProblems.filter(
+    (item) => repairTargets.has(item.identifier) && !refused.includes(item.identifier)
+  );
+  const status = refused.length > 0 ? "refused" : repairs.length > 0 ? "repaired" : "verified";
 
   return {
     artifacts: accepted,
@@ -173,9 +211,39 @@ export function verifyAndRepairChatArtifacts(parsed: ParsedArtifact[]): ChatArti
       accepted: [...new Set(accepted.map((artifact) => artifact.identifier))],
       refused,
       problems: finalProblems.length ? finalProblems : initialProblems,
-      repairs: repaired ? initialProblems : [],
+      repairs,
     },
   };
+}
+
+/** The refused artifacts that were refused only for being unfinished. */
+function unfinishedIdentifiers(report: ChatArtifactVerificationReport): string[] {
+  return report.refused.filter((identifier) =>
+    report.problems.some((item) => item.identifier === identifier && item.code === "incomplete")
+  );
+}
+
+/**
+ * The activity row's title. A stopped or cut-off artifact is not "refused" in
+ * any sense a reader would recognise: nothing was wrong with it except that it
+ * never finished, and the word reads as the model having made something bad.
+ */
+export function artifactVerificationTitle(report: ChatArtifactVerificationReport): string {
+  if (report.status === "verified") return "Artifact verified";
+  if (report.status === "repaired") return "Artifact repaired and verified";
+  return unfinishedIdentifiers(report).length === report.refused.length ? "Artifact not saved" : "Artifact refused";
+}
+
+/**
+ * The line that stands in a message where a refused artifact's block was. An
+ * unfinished one says so, rather than "verification failed": the reader
+ * pressed Stop, or the reply reached its length limit, and should not be told
+ * the model produced something broken.
+ */
+export function artifactRefusalNotice(report: ChatArtifactVerificationReport, identifier: string): string {
+  return unfinishedIdentifiers(report).includes(identifier)
+    ? "Artifact not saved: it stopped before it was finished."
+    : "Artifact unavailable: verification failed, so it was not saved or presented.";
 }
 
 export function artifactVerificationDetail(report: ChatArtifactVerificationReport): string {
@@ -183,5 +251,20 @@ export function artifactVerificationDetail(report: ChatArtifactVerificationRepor
   if (report.status === "repaired") {
     return `${report.checked} artifact${report.checked === 1 ? "" : "s"} verified after one bounded repair pass.`;
   }
-  return `${report.refused.length} artifact${report.refused.length === 1 ? "" : "s"} refused after ${report.attempts} repair attempt${report.attempts === 1 ? "" : "s"}.`;
+  const unfinished = unfinishedIdentifiers(report).length;
+  const otherwise = report.refused.length - unfinished;
+  const parts: string[] = [];
+  if (unfinished > 0) {
+    parts.push(
+      unfinished === 1
+        ? "1 artifact stopped before it was finished, so it was not saved"
+        : `${unfinished} artifacts stopped before they were finished, so they were not saved`
+    );
+  }
+  if (otherwise > 0) {
+    parts.push(
+      `${otherwise} artifact${otherwise === 1 ? "" : "s"} refused after ${report.attempts} repair attempt${report.attempts === 1 ? "" : "s"}`
+    );
+  }
+  return `${parts.join("; ")}.`;
 }
