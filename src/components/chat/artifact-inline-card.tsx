@@ -33,6 +33,7 @@ const SandboxFrame = nextDynamic(
 );
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { runtimeFor } from "@/lib/artifact-runtime";
+import { DesignPoster } from "@/components/artifacts/artifact-preview";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
@@ -147,13 +148,64 @@ function RuntimePreview({
 }
 
 /**
+ * What the body of a DESIGN card shows (X-20).
+ *
+ * A design is data, not a program: there is nothing for a sandbox to run, and
+ * the old path ran it anyway, so the card's "Preview" was the document's JSON
+ * in a `<pre>` with a green "Live" beside it. The picture of a design is the
+ * server's render of its first page, which needs the artifact's id and
+ * nothing else, so the face follows from what has arrived so far:
+ *
+ *   "making"   the model is still writing it. The source arriving is JSON and
+ *              the row has no version yet (an update's row still holds the
+ *              OLD one, whose picture would be a confident preview of what is
+ *              being replaced), so the glyph stands in until the turn lands.
+ *   "poster"   there is a row: show its picture.
+ *   "unsaved"  the block has closed but no row has arrived. Artifacts reach
+ *              the client with the finished turn, so this is usually the
+ *              moment between the tag closing and the reply ending; it says
+ *              what is true in that moment and stays true if no row ever comes.
+ *   "missing"  no row and no source: the same failure every other type shows.
+ */
+export type DesignCardFace = "making" | "poster" | "unsaved" | "missing";
+
+export function designCardFace({
+  streaming,
+  artifactId,
+  hasContent,
+}: {
+  streaming?: boolean;
+  artifactId?: string | null;
+  hasContent: boolean;
+}): DesignCardFace {
+  if (streaming) return "making";
+  if (artifactId) return "poster";
+  return hasContent ? "unsaved" : "missing";
+}
+
+/** The glyph and one line, for every face of a design card that is not its
+ *  picture. Static: the header's breathing mark and the hairline's sweep
+ *  already say "still writing", and a second moving thing would only compete
+ *  with them. */
+function DesignNote({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex size-full flex-col items-center justify-center gap-2.5 px-5 text-center">
+      <AppIcons.design className="size-6 text-muted-foreground" motion="none" aria-hidden />
+      <p className="text-ui text-muted-foreground">{children}</p>
+    </div>
+  );
+}
+
+/**
  * An artifact living inline in the transcript: live preview first (a website
- * runs, a document reads, a program's output streams), with Code and Console a
- * view-switch away, and one labeled action that hands off to the Canvas.
+ * runs, a document reads, a program's output streams, a design shows its
+ * picture), with Code and Console a view-switch away for the types that have
+ * them, and one labeled action that hands off to the Canvas.
  * The chrome stays quiet — hairline frame, flat header, mono metadata — so the
  * artifact's own content is the visual event, not the card.
  */
 export function ArtifactInlineCard({
+  artifactId,
   title,
   type,
   language,
@@ -163,6 +215,10 @@ export function ArtifactInlineCard({
   version,
   onOpen,
 }: {
+  /** The stored row's id. Absent while the block is still being written, and
+   *  until the finished turn delivers its artifacts. A design needs it for its
+   *  picture; every other type previews its own source. */
+  artifactId?: string | null;
   title: string;
   type: ArtifactType;
   language?: string | null;
@@ -178,6 +234,11 @@ export function ArtifactInlineCard({
   const rt = runtimeFor(type, language);
   const resolvedContent = content ?? "";
   const hasContent = resolvedContent.trim().length > 0;
+  // A design has one view, its picture: no sandbox run, so no "Live", and no
+  // Code tab, because its source is JSON, which belongs to the editor and not
+  // to the transcript (04-MERGE-PLAN.md §1.2, "JSON never appears by default").
+  const isDesign = rt.mode === "design";
+  const designFace = isDesign ? designCardFace({ streaming, artifactId, hasContent }) : null;
   const inlinePreview = hasContent && (rt.mode !== "none" || type === "MARKDOWN");
   // Sandbox previews render on a white browser canvas; markdown stays on ours.
   const isSandboxPreview = type !== "MARKDOWN";
@@ -331,7 +392,7 @@ export function ArtifactInlineCard({
 
         <div className="flex shrink-0 items-center gap-1 self-end @[24rem]:self-auto">
           {/* View switcher — hidden while streaming (the write-in IS the view). */}
-          {!streaming && hasContent && viewOptions.length > 1 && (
+          {!isDesign && !streaming && hasContent && viewOptions.length > 1 && (
             <SegmentedControl
               value={view}
               onChange={setView}
@@ -372,7 +433,41 @@ export function ArtifactInlineCard({
         )}
       </div>
 
-      {hasContent ? (
+      {designFace && designFace !== "missing" ? (
+        /* The same stable height and the same mat as a sandbox preview, so a
+           design card does not change size when its picture replaces the
+           glyph, and sits in the transcript at the size every other card does.
+           The mat is `--background`, the neutral ground a poster is drawn on
+           wherever it appears (the Artifacts tiles' well is the same fill);
+           there is no white sheet under it, because the poster carries its own
+           page fill. The poster is the one the Artifacts grid draws, so a
+           design is the same picture, from the same cached URL, in both
+           places, and falls back to the same glyph when it will not load.
+
+           The picture is a second, larger way in for a pointer. The header's
+           two buttons stay the keyboard's ways in, so this adds no third tab
+           stop for the same action. */
+        <div
+          className={cn(
+            "h-[min(44vh,360px)] min-h-[240px] overflow-hidden bg-background p-2",
+            designFace === "poster" && onOpen && "cursor-pointer"
+          )}
+          onClick={designFace === "poster" ? onOpen : undefined}
+        >
+          {designFace === "poster" && artifactId ? (
+            <DesignPoster
+              artifactId={artifactId}
+              version={version}
+              alt={`${title || "Design"}, first page`}
+              glyphClassName="size-6"
+            />
+          ) : designFace === "making" ? (
+            <DesignNote>{updated ? "Updating the design" : "Making a design"}</DesignNote>
+          ) : (
+            <DesignNote>The preview appears once the design is saved.</DesignNote>
+          )}
+        </div>
+      ) : hasContent ? (
         // One stable height across views + a fast cross-fade on switch: the
         // card never jumps, the content quietly trades places.
         <div key={view} className="h-[min(44vh,360px)] min-h-[240px] overflow-hidden motion-safe:animate-fade-in">

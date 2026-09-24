@@ -18,6 +18,13 @@ export interface ParsedArtifact {
   title: string;
   language?: string;
   content: string;
+  /**
+   * The closing tag never arrived: the reply was stopped, or cut off at the
+   * output limit, inside this block. What did arrive is kept so a reader can
+   * still show it, but it is not a finished artifact and must never become a
+   * version — chat verification refuses it (X-07). Absent on a closed block.
+   */
+  incomplete?: boolean;
 }
 
 export interface ArtifactMarkupUpdate {
@@ -83,8 +90,9 @@ function normalizeType(t?: string): ArtifactType {
   return "CODE";
 }
 
-/** Extract artifacts from a message. Closed artifacts plus, when the reply was
- *  truncated, a salvaged trailing artifact whose closing tag never arrived. */
+/** Extract artifacts from a message: every closed block plus, when the reply
+ *  ended inside one, the trailing block whose closing tag never arrived,
+ *  flagged `incomplete`. */
 export function parseArtifacts(text: string): ParsedArtifact[] {
   const out: ParsedArtifact[] = [];
   let m: RegExpExecArray | null;
@@ -101,8 +109,12 @@ export function parseArtifacts(text: string): ParsedArtifact[] {
     });
   }
 
-  // Salvage a truncated (unclosed) trailing artifact so it still gets saved
-  // and becomes openable instead of being stuck on "Writing…".
+  // A reply that ended inside an artifact, at Stop or at the output limit,
+  // still returns its trailing block, so a reader can show what arrived (the
+  // research report dialog does). It is flagged instead of passed off as
+  // finished: it used to come back indistinguishable from a closed block, so
+  // verification passed it and a half-written revision was saved as the
+  // artifact's current version, labelled "verified" (X-07).
   const open = parseStreamingArtifact(text);
   if (open?.identifier && open.content.trim() && !out.some((a) => a.identifier === open.identifier)) {
     out.push({
@@ -111,6 +123,7 @@ export function parseArtifacts(text: string): ParsedArtifact[] {
       title: open.title,
       language: open.language,
       content: open.content.trim(),
+      incomplete: true,
     });
   }
 
@@ -138,16 +151,19 @@ export function rewriteArtifactMarkup(text: string, updates: readonly ArtifactMa
     return replace(rawAttrs, content) ?? full;
   });
 
-  // A truncated trailing block is made explicit after a repair, or removed
-  // after refusal. The original parser intentionally salvages it; the
-  // verifier decides whether that salvaged content is safe to present.
+  // A trailing block that never closed can be withdrawn, never rewritten.
+  // Writing a body into it used to add the missing closing tag, so a stopped
+  // revision read as complete on every later load (X-07). The verifier
+  // refuses such a block; a content update that names it anyway (its
+  // identifier was also used by an earlier, closed block) leaves it exactly
+  // as it arrived rather than sealing it.
   const lastClose = rewritten.lastIndexOf("</juno:artifact>");
   const tailStart = lastClose >= 0 ? lastClose + "</juno:artifact>".length : 0;
   const tail = rewritten.slice(tailStart);
   const open = OPEN_ARTIFACT_RE.exec(tail);
   if (open) {
-    const replacement = replace(open[1], open[2]);
-    if (replacement !== null) rewritten = `${rewritten.slice(0, tailStart + open.index)}${replacement}`;
+    const update = byId.get(artifactId(parseAttrs(open[1]), open[2]));
+    if (update?.refusal) rewritten = `${rewritten.slice(0, tailStart + open.index)}\n\n${update.refusal}\n\n`;
   }
   return rewritten;
 }

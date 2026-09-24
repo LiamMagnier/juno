@@ -1,0 +1,662 @@
+{
+ "area": "macOS: artifacts in chat (docked canvas), the Artifacts screen (library + document), previews/sandbox, native live canvas, detached windows; shared JunoChatKit artifact code; iOS shared-code parity glance",
+ "summary": "What exists (read). The Mac has three separate artifact surfaces that do not know about each other. (1) The **chat dock** (`DesktopArtifactDock` + `DesktopArtifactCanvas`, DesktopArtifactCanvas.swift:301-880) is a resizable column beside the transcript. It is built only from the `<juno:artifact>` tag body carried on the message (`NativeMessageContent.ArtifactReference`). It never looks up the stored row, so it has no versions, no save, no share link and no export beyond Copy / Save Source As, and its designs are read-only. (2) The **Artifacts screen** (`DesktopArtifactsScreen`, 2121 lines) is a searchable, filterable thumbnail grid that swaps in place to a single document. The document has a command bar, Preview/Source/Canvas modes, an editable latest version (\u2318S makes a new version, with a 409 stale-write guard), a version-history pane, \u21e7\u2318D diff with unified-diff copy, restore, rename, delete, Office export and detached snapshot windows. (3) The **Design destination** (`DesktopDesignScreen`) lists DESIGN artifacts from the same `NativeArtifactModel`, with its own draft and Save. All three host designs through one shared `DesktopDesignSurface`, which wraps the bundled web editor in a WKWebView.\n\nHow each type renders natively (read):\n- **HTML**: a WKWebView with a CSP of `default-src 'none'`, inline JS on, a WebKit content-rule list that blocks every `scheme://` URL, a non-persistent store and a nil base URL (NativeArtifactPreview.swift:111-228).\n- **SVG**: the same web view with JS off.\n- **Markdown**: native `JunoMarkdownText` on a card on every Mac surface. Thumbnails, and iPhone by inference, use the flattened `AttributedString` path.\n- **Code**: plain monospaced `Text` (read-only) or a `TextEditor` for the editable latest version in the library, with no syntax highlighting.\n- **React**: source only, plus the sentence \"this build does not bundle a React runtime\" (ArtifactCanvasView.swift:158-167). No runtime ships.\n- **Mermaid**: source only. `MermaidDiagramView` exists in JunoDesignSystem, but no engine is ever registered and the artifact surfaces do not route to it.\n- **Design**: the bundled editor.\n- **Canvas mode** (HTML/SVG/React): `ArtifactCanvasView` shows the source beside a sandboxed run with a console bridge that captures console calls, uncaught errors, rejections and blocked resources.\n\nQuality: the engineering is careful and heavily reasoned. The security of the sandbox is strong and fails closed, the stale-write guard is real, the diff runs off the main thread with a cap that matches the web, the dock never unmounts the composer, and error copy is humanised and tested. Product parity with the web has drifted badly, though. None of the Mac artifact files has changed since 2026-09-03 (db7022f5), while the web canvas, the library and the sandbox kept moving through 2026-09-23.\n\nBiggest problems:\n- **Stale dock content (defect).** The chat dock keeps showing the *previous* revision when you open a revised artifact. The model re-emits revisions under the same identifier (src/lib/chat/system-prompt.ts:257), and the dock only resets its draft on `artifact.id` change (DesktopArtifactCanvas.swift:552-565).\n- **Broken HTML (parity).** The native sandbox blocks all network. The web allows https CDNs, images, fonts, React+Babel, Mermaid and Pyodide (sandbox-frame.tsx:7-12,52-70) after it found that blocking them made generated sites \"not load and not move\". The Mac rebuilt exactly that failure.\n- **Silent edit loss (defect).** Unsaved library edits (including design edits) are discarded without confirmation on switching artifact or leaving the screen.\n- **Wrong error recovery (defect).** Action errors (save, rename, delete, export, validation) go through the collection's error channel. They surface as a floating status whose \"Try Again\" reloads the whole collection, and the status cannot be dismissed.\n- **Wrong document after delete (defect).** Deleting the open artifact drops you into a *different* artifact's document.\n- **Missing features and poor native feel (gaps).** There is no artifact share link (`NativeShareClient` is CHAT-only), no Quick Look, no drag-out, no list view, no \"open in conversation\", no \"New design\" in Artifacts, no keyboard navigation of the grid, no menu-bar commands, and no motion on the library.\n\nFor the merge (the owner's goal): `DesktopDesignSurface`, the shared `NativeArtifactModel` and the `DesktopArtifactViewMode` enum are real enablers. The blockers are:\n- the dock's \"tag body only, no row\" design;\n- three naming tables that disagree;\n- per-platform copies of the view-mode enum;\n- `NativeArtifactStore`'s fail-closed decode, where one unknown `type` (for example a future DOC/SLIDES typed artifact) makes the whole Artifacts *and* Design destinations \"unavailable\" on any installed build that predates it;\n- no comments model anywhere.\n\nThe mac/liquid-glass-chat branch changes only comments in the two artifact files. It does promote Artifacts and Design to adjacent top-level sidebar rows (`sidebarCases [.library, .projects, .artifacts, .design]`) and wraps the draft and private-chat column in the dock too.",
+ "files_read": [
+  "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift",
+  "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift",
+  "native/macOS/JunoDesktop/App/DesktopArtifactStatus.swift",
+  "native/macOS/JunoDesktop/App/DesktopPreviewOverlay.swift",
+  "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift (1-300, 460-670, 1560-1900)",
+  "native/macOS/JunoDesktop/App/DesktopChatSidebar.swift (280-378)",
+  "native/macOS/JunoDesktop/App/DesktopAccountScreens.swift (60-170)",
+  "native/macOS/JunoDesktop/App/DesktopSearchScreen.swift (1-140, 300-420, 480-543)",
+  "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift (195-260, 520-600)",
+  "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift (1-80 + grep)",
+  "native/macOS/JunoDesktop/App/DesktopCommands.swift (80-215)",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/ArtifactCanvasView.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactAPIClient.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactPreview.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeMessageContent.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeShareClient.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/MermaidDiagramView.swift (1-60)",
+  "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesktopChrome.swift (40-60, 225-330)",
+  "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/Generated/JunoGeneratedTokens.swift (420-440)",
+  "native/macOS/JunoDesktop/Tests/DesktopArtifactComponentTests.swift",
+  "native/macOS/JunoDesktop/Tests/DesktopArtifactStatusTests.swift",
+  "native/macOS/JunoDesktop/UITests/JunoDesktopLaunchUITests.swift (370-411)",
+  "native/Packages/JunoNativeKit/Tests/JunoChatKitTests/NativeArtifactStoreTests.swift (test list, 55-80)",
+  "native/Packages/JunoNativeKit/Tests/JunoChatKitTests/ArtifactCanvasTests.swift (test list)",
+  "native/iOS/JunoMobile/App/JunoMobileInlineArtifact.swift (1-60, 140-167)",
+  "native/iOS/JunoMobile/App/JunoMobileDesignArtifact.swift (360-455 + grep)",
+  "src/app/(app)/artifacts/page.tsx (45-110, 273-400, 505-645)",
+  "src/components/artifacts/artifact-preview.tsx (1-40)",
+  "src/components/canvas/sandbox-frame.tsx (1-75 + grep)",
+  "src/components/canvas/canvas-panel.tsx (grep)",
+  "src/components/chat/chat-view.tsx (871-873, 1254-1262)",
+  "src/lib/chat/system-prompt.ts:257",
+  "src/app/api/share/route.ts (grep)",
+  "src/lib/sync-entities.ts (215-262)",
+  "prisma/schema.prisma (ArtifactType enum 1344-1356)",
+  "docs/design/FLAT_UI.md",
+  "docs/design/ICONS_AND_MOTION.md (163-297)",
+  "git diff main...mac/liquid-glass-chat for the audited files"
+ ],
+ "inventory": [
+  {
+   "feature": "Inline artifact card in the transcript",
+   "description": "Opaque card on the card rung: icon tile, title, mono kind/language line, 'Open' ghost with hover tint, junoPress. Disabled while streaming ('Writing' + thinking matrix); the canvas cannot be opened until the closing tag arrives. Kind label from DesktopArtifactKindLabel (no DESIGN title case).",
+   "maturity": "solid",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift:1772-1860",
+    "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift:1588-1592"
+   ]
+  },
+  {
+   "feature": "Chat artifact dock (canvas column)",
+   "description": "A trailing column beside the transcript, not a sheet or inspector. Width model copied from the web (46% default, 420 minimum, 82% maximum, 320 kept for the transcript), persisted under AppStorage juno.chat.canvasWidth. Drag to resize, double-click to reset, resize cursor push/pop. Below 900pt it covers the transcript, which stays mounted (hidden, disabled, a11y-hidden) so the composer and voice state survive. Enters with a 16pt slide plus fade and leaves with a fade; reduced motion is honoured. Closes on conversation switch and when a voice call starts.",
+   "maturity": "solid",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:252-511",
+    "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift:481-526",
+    "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift:562-571",
+    "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift:635-660"
+   ]
+  },
+  {
+   "feature": "Chat dock content: header, view switch, body",
+   "description": "Header: title, mono metadata ('\u2026 \u00b7 From this conversation'), a ShareLink that shares the source TEXT, an overflow menu (Copy Source, Save Source As\u2026 via fileExporter), and Close. View bar: DesktopSegmented Preview/Source/Canvas, or a label for single-view kinds and designs. Body: read-only design editor, live canvas (tabbed), JunoMarkdownText page, TextEditor for 'Edit source' (a local draft only, never saved), or NativeArtifactPreview. No versions, restore, Office export or share link, by stated design, because it is built from the tag body with no stored row.",
+   "maturity": "partial",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:522-880"
+   ]
+  },
+  {
+   "feature": "Component targeting in the dock (HTML/SVG)",
+   "description": "A regex extracts up to 60 unique tags with id/class into a 'Select component' menu. 'Edit' writes 'Edit the <tag> element with id \u2026 Keep the rest unchanged.' into the composer and closes the canvas. The web instead lets you click the element in the live preview, and has a text-selection Modify/Ask bar.",
+   "maturity": "partial",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:748-775",
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:882-951",
+    "src/components/canvas/canvas-panel.tsx:1190",
+    "src/components/canvas/canvas-panel.tsx:1392-1411"
+   ]
+  },
+  {
+   "feature": "Artifacts library grid",
+   "description": "Header: heading, lede, count. Plain-TextField search over title, conversation title, language and kind noun. A kind-filter Menu listing only the kinds present. LazyVGrid of adaptive 210-300pt cards: a 4:3 live thumbnail (inert WKWebView for HTML/SVG, text for others, glyph plus 'Design' for designs), title, and a meta line (kind \u00b7 vN \u00b7 Updated \u2026 \u00b7 in <conversation>). Context menu: Copy Source, Open in New Window, Delete\u2026. No list view, sort, share, rename or download in the menu, New design, multi-select, keyboard navigation, hover/press feedback or entrance motion.",
+   "maturity": "partial",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:366-605"
+   ]
+  },
+  {
+   "feature": "Library states",
+   "description": "Loading (small ProgressView). Failed or offline ('Artifacts unavailable' + Try Again). Ready and empty ('No artifacts yet'). No matches ('Clear Filters'). A floating glass status for errors (humanised copy, Try Again or Dismiss). 'Version unavailable' with Try Again when a version's content is not local.",
+   "maturity": "solid",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:464-486",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:627-668",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:720-755",
+    "native/macOS/JunoDesktop/App/DesktopArtifactStatus.swift:37-142"
+   ]
+  },
+  {
+   "feature": "Library document: command bar and view modes",
+   "description": "Back ('All artifacts'), title and subtitle (kind \u00b7 language \u00b7 vN \u00b7 Unsaved changes), segmented Preview/Source/Canvas (a label for single-mode kinds and designs), Changes toggle \u21e7\u2318D, Copy \u21e7\u2318C (source or unified diff), Reload preview, Save \u2318S, an actions menu (Rename\u2026, Discard Changes, Open in New Window, Save Source As\u2026, Export section docx/xlsx/pptx, Delete\u2026), and History \u2325\u2318I. Everything lives in an in-content strip on junoCanvas. None of it is in the window toolbar or the menu bar.",
+   "maturity": "solid",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1148-1364"
+   ]
+  },
+  {
+   "feature": "Library editing and save",
+   "description": "Editing is not a mode. The latest version's source is a TextEditor bound to `draft` (nil while clean). Design edits come back from the editor as re-encoded JSON into the same draft. Save posts the content with baseVersion; a 409 merges the latest version and keeps the draft. Discard resets the draft and reloads the design editor. Older versions are read-only, with a glass 'Viewing vN \u00b7 read-only / Restore' badge.",
+   "maturity": "partial",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:940-1009",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1400-1415",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:321-355",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactAPIClient.swift:222-253"
+   ]
+  },
+  {
+   "feature": "Version history, compare and restore",
+   "description": "A fixed 300pt pane (not an inspector, to avoid a documented AppKit constraint crash). A List of versions, newest first, with a 'current' tag and origin/date caption. Context menu 'Compare From This Version'. Footer: 'Compare with' picker, a v\u2192v +/\u2212 summary, and 'Restore This Version'. The diff (DesktopArtifactDiffCanvas) is off-main, capped at 1500 middle lines like the web's line-diff.ts, with accessible rows and a 2-axis scroll.",
+   "maturity": "solid",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1016-1141",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1521-1881"
+   ]
+  },
+  {
+   "feature": "Export and share",
+   "description": "Library: Copy Source, Save Source As\u2026 (fileExporter, 'Title vN.ext'), Office export when the server lists formats. Dock: ShareLink of source text, Copy, Save Source As\u2026 (no version suffix). No public share link for artifacts (NativeShareClient only POSTs kind CHAT, although the server accepts ARTIFACT), no print/PDF/PNG, no drag-out, no Quick Look.",
+   "maturity": "partial",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1475-1497",
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:610-646",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeShareClient.swift:61-80",
+    "src/app/api/share/route.ts:18-22"
+   ]
+  },
+  {
+   "feature": "Detached artifact windows",
+   "description": "'Open in New Window' builds an NSWindow (820x620) held by a singleton presenter, showing an immutable snapshot of one version: read-only design, side-by-side canvas, markdown page, or NativeArtifactPreview. No toolbar, actions, restoration or tab identity.",
+   "maturity": "partial",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1449-1473",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1921-1997"
+   ]
+  },
+  {
+   "feature": "Preview sandbox (NativeArtifactPreview)",
+   "description": "WKWebView per preview with a non-persistent store, nil base URL, CSP default-src 'none' (script-src 'unsafe-inline' for HTML documents, 'none' otherwise), a compiled content-rule list blocking every scheme:// URL (fails closed to 'Preview unavailable'), links handed to the system browser. Thumbnail policy disables JS and freezes motion. Markdown uses AttributedString (flattened). Code/React/Mermaid/Design show source.",
+   "maturity": "solid",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactPreview.swift:27-439"
+   ]
+  },
+  {
+   "feature": "Live canvas with console (ArtifactCanvasView)",
+   "description": "Tabs or Split layout pickers. Code pane (read-only source), preview (sandboxed WKWebView with a document-start bridge script), console (500-line cap, discarded count, error/warning badges, Clear). Bridge decoding is strict and tested. React availability reports 'runtime not installed'. State inspection (model.inspect) and isBridgeConnected exist in the model but no UI calls or shows them.",
+   "maturity": "partial",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/ArtifactCanvasView.swift:1-1310",
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:128-149"
+   ]
+  },
+  {
+   "feature": "Design surface shared by dock, library, Design screen and detached window",
+   "description": "Decodes DesignDocument natively first (refuses invalid or newer documents with a stated reason), then hosts the bundled editor. Read-only unless the caller supplies onEdit. Edit-encode failures show as a glass warning over the editor. Editable only in the library (latest version) and the Design screen; read-only in the chat dock (the web canvas lets you edit the latest version there).",
+   "maturity": "solid",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:972-1093",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:940-947",
+    "src/components/canvas/canvas-panel.tsx:1238-1241"
+   ]
+  },
+  {
+   "feature": "Offline-first artifact store",
+   "description": "NativeArtifactStore projects the artifact, artifact_version and conversation records from the encrypted account DB. The model reloads on each sync generation, fetches /api/artifacts/:id for the open artifact (full history plus origin), and runs rename/save/restore/delete/export against the existing owner-scoped routes. Any corrupt or unknown record fails the whole load closed.",
+   "maturity": "partial",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:82-460",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactAPIClient.swift:200-424"
+   ]
+  },
+  {
+   "feature": "Artifacts in global search",
+   "description": "The 'Artifacts' scope exists in the toolbar search. Opening an artifact result only opens its conversation: it neither selects the artifact nor opens the dock. iPhone does select the artifact.",
+   "maturity": "partial",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopSearchScreen.swift:399-419",
+    "native/macOS/JunoDesktop/App/DesktopSearchScreen.swift:504-527",
+    "native/iOS/JunoMobile/App/JunoMobileRootView.swift:1328"
+   ]
+  },
+  {
+   "feature": "Navigation and routing",
+   "description": "`.artifacts` is a sidebar destination (sidebarCases). `.design` is a footer row on main (the Liquid Glass branch makes it a top-level row next to Artifacts). Both route to screens backed by the same configuration.artifactModel.",
+   "maturity": "solid",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopChatSidebar.swift:284",
+    "native/macOS/JunoDesktop/App/DesktopChatSidebar.swift:306-372",
+    "native/macOS/JunoDesktop/App/DesktopAccountScreens.swift:98-134"
+   ]
+  },
+  {
+   "feature": "Mermaid rendering",
+   "description": "Mermaid artifacts show source only. A native MermaidDiagramView (WKWebView, zoom/pan) exists but needs JunoMermaidEngine.register. No engine is registered anywhere in the app and no mermaid JS is bundled, and the artifact surfaces do not route .mermaid to it anyway.",
+   "maturity": "absent",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/MermaidDiagramView.swift:1-60",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactAPIClient.swift:49-54"
+   ]
+  },
+  {
+   "feature": "React rendering",
+   "description": "No runtime ships. The canvas says so and shows source. ArtifactCanvasRuntime injection plumbing exists and is tested.",
+   "maturity": "stub",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/ArtifactCanvasView.swift:95-122",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/ArtifactCanvasView.swift:158-210"
+   ]
+  },
+  {
+   "feature": "Comments on artifacts",
+   "description": "Absent on Mac, and there is no artifact comment model in prisma/schema.prisma (only FeatureComment). Searched with grep -i comment in the schema and the native sources.",
+   "maturity": "absent",
+   "where": []
+  },
+  {
+   "feature": "Quick Look, drag to Finder, print, menu-bar commands, state restoration",
+   "description": "Absent. grep for onDrag/draggable/NSItemProvider/QLPreview/QuickLook/NSSharingService in App/ found only the dock's ShareLink. DesktopCommands has no artifact items. The library always re-enters on the grid (onAppear sets libraryVisible = true). Detached windows are not restorable.",
+   "maturity": "absent",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopCommands.swift:85-215",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:254-257"
+   ]
+  }
+ ],
+ "architecture": "Data flow (read):\n- **Chat dock.** The server persists artifacts from the `<juno:artifact>` tags (src/lib/artifacts-store.ts) and syncs the `artifact` and `artifact_version` entities (src/lib/sync-entities.ts:222-259) into the Mac's encrypted SQLite account store. In the transcript, `NativeMessageContent.parts(of:)` splits each reply into text and `ArtifactReference`s (identifier or djb2 fallback, title, kind normalised to 7 known kinds or CODE, language, streaming flag, body). A card tap calls `DesktopConversationView.open(artifact:)`, which sets `@State openArtifact = DesktopChatArtifact(reference:)`. `DesktopArtifactDock` overlays `DesktopArtifactCanvas`. **The dock never touches NativeArtifactModel**: it is a snapshot of the tag body.\n- **Library.** `DesktopArtifactsScreen(model: configuration.artifactModel)` reads `NativeArtifactModel.artifacts`, which is projected by `NativeArtifactStore.load` (decrypts the snapshot, groups versions per artifact, joins conversation titles, sorts by updatedAt). The model reloads on every sync generation (`synchronizationDidAdvance`) and auto-selects the first artifact when nothing is selected. `.task(id: selectedArtifactID)` calls `openArtifact`, which GETs `/api/artifacts/:id` (full history with origin) and `/api/artifacts/:id/export` (formats) and merges them into the in-memory artifact.\n- **Mutations.** Save and restore POST `{content, baseVersion, origin}`; a 409 throws `.stale(latest)`. Rename is a PATCH and delete a DELETE. Each merges the detail, then runs `syncModel.refresh()` and `reload()`, which replaces `artifacts` with the local projection again (origin is dropped, because the store sets origin nil).\n- **Design screen.** `DesktopDesignScreen` shares the same model instance but keeps its own `openDesignID` and draft.\n- **Rendering.** Designs go to `DesktopDesignSurface` \u2192 `DesktopDesignEditorHost` (bundled web editor in a WKWebView behind a validated bridge). Canvas mode goes to `DesktopArtifactLiveCanvas` \u2192 `ArtifactCanvasModel` + `ArtifactCanvasView` (WKWebView + `junoArtifactCanvas` script handler). Markdown preview goes to `JunoMarkdownText` in `JunoDetailPage`. Everything else goes to `NativeArtifactPreview` (WKWebView sandbox or monospaced Text).\n- **Detached windows.** `DesktopArtifactWindows.shared` owns ad-hoc NSWindows holding NSHostingControllers.\n\nKey types:\n- `NativeArtifactKind` (7 cases, with capability flags `supportsRenderedPreview`, `supportsLiveCanvas`, `isDesignDocument`).\n- `NativeArtifact` / `NativeArtifactVersion` / `NativeArtifactDetail`.\n- `NativeArtifactModel<Repository>` (@Observable, MainActor).\n- `DesktopArtifactViewMode` (Mac); iOS keeps a duplicate, `JunoMobileArtifactViewMode`.\n- `DesktopArtifactKindName` (library nouns: Page/Component/Document/Graphic/Diagram/Design) versus `DesktopArtifactKindLabel` (chat nouns: HTML/React/Markdown/SVG/Diagram, no Design).\n\nPersistence:\n- The encrypted account DB (offline read).\n- UserDefaults `juno.chat.canvasWidth`.\n- No SceneStorage for library state.\n\nAPIs used: GET/POST/PATCH/DELETE `/api/artifacts/:id`, GET `/api/artifacts/:id/export[?format=]`, POST `/api/share` (CHAT only). The design start client lives in DesktopDesignScreen.\n\nSecurity boundaries (read): a CSP meta injected at the head, the WKContentRuleList `com.juno.artifact-preview.network-isolation.v1` shared by preview and canvas, a non-persistent store, a nil base URL, main-frame-only bridge injection, and fail-closed rule compilation.",
+ "ux": [
+  {
+   "observation": "The library grid has no hover state, no tonal press and no entrance stagger: cards use `.buttonStyle(.plain)` with nothing on hover. ICONS_AND_MOTION \u00a72.2 rules 1, 2 and 5 require a tonal hover, a tonal press on large surfaces, and lists that are 'dealt, not dumped'. The web grid has hover:bg-accent, a glyph lift and animate-rise-in with staggerDelay. By contrast, the inline chat card does get hover and junoPress.",
+   "severity": "major",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:514-549",
+    "src/app/(app)/artifacts/page.tsx:523-535",
+    "docs/design/ICONS_AND_MOTION.md:163-196"
+   ]
+  },
+  {
+   "observation": "Library to document is a hard cut (`if libraryVisible {\u2026} else {\u2026}` with no transition or matchedGeometry). The history pane, the read-only badge and the status control also appear and vanish in a frame, against ICONS_AND_MOTION \u00a72.2 rule 6 ('Disclosure is continuous'). Only the diff toggle animates.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:226-233",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:352-359",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:700-704"
+   ]
+  },
+  {
+   "observation": "The same artifact is named three ways. The library says Page/Component/Document/Graphic (DesktopArtifactKindName). The chat card and dock say HTML/React/Markdown/SVG (DesktopArtifactKindLabel), whose own doc claims it exists so the card and canvas 'cannot describe the same object differently'. The web chips say Sites. iPhone uses yet another table, with different glyphs: design .writing versus Mac .penTool, svg .artifacts versus .image, html .code versus .web.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:2006-2037",
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:153-194",
+    "native/iOS/JunoMobile/App/JunoMobileInlineArtifact.swift:144-166",
+    "src/app/(app)/artifacts/page.tsx:52-60"
+   ]
+  },
+  {
+   "observation": "'Edit source' in the chat dock invites edits that can never be saved. There is no Save and no warning, and the draft is dropped on close or on switching conversation. The only edit path to the real artifact is the component menu, which writes a prompt into the composer.",
+   "severity": "major",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:777-792",
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:847-855"
+   ]
+  },
+  {
+   "observation": "The dock stacks up to three segmented controls when Canvas mode is chosen: Preview|Source|Canvas (custom DesktopSegmented), then Tabs|Split and Code|Preview|Console (system .segmented). 'Preview' appears twice, and Source/Code name the same thing twice. Two segmented styles in one column.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:727-733",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/ArtifactCanvasView.swift:905-933"
+   ]
+  },
+  {
+   "observation": "The Canvas mode's layout doc says side-by-side is 'for editing (change a line, watch it land)', but the code pane is read-only NativeArtifactPreview(.source), so nothing can be edited in the canvas. The console pane has no empty state (the web shows 'No console output yet'), and bridge connection state is never shown.",
+   "severity": "minor",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/ArtifactCanvasView.swift:11-16",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/ArtifactCanvasView.swift:977-980",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/ArtifactCanvasView.swift:1012-1036",
+    "src/components/canvas/canvas-panel.tsx:193"
+   ]
+  },
+  {
+   "observation": "Console colours are hard-coded system colours (.red, .orange, .blue, .secondary) rather than Juno tokens (junoDanger, junoCaution, \u2026). The error and warning badges are a bare number and glyph with no noun for VoiceOver.",
+   "severity": "minor",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/ArtifactCanvasView.swift:938-945",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/ArtifactCanvasView.swift:1070-1075",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/ArtifactCanvasView.swift:1094-1096"
+   ]
+  },
+  {
+   "observation": "Native-feel gaps:\n- The grid has no keyboard selection: no arrow keys, no Return to open, no Space for Quick Look, no \u232b to delete.\n- There is no \u2318F into the library's search field (the field is a plain TextField; \u21e7\u2318F goes to global Search).\n- Esc does not close the dock.\n- Artifact actions (Save, Export, Rename, Delete, Version History) are not in the menu bar, so their shortcuts cannot be discovered through the Help menu's search.\n- You cannot drag an artifact to Finder or other apps.\n- There is no Quick Look.\n- Detached windows have no toolbar or actions and are not restored.",
+   "severity": "major",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:398-427",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:488-549",
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:654-660",
+    "native/macOS/JunoDesktop/App/DesktopCommands.swift:85-215",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1921-1997"
+   ]
+  },
+  {
+   "observation": "No way to go from a library artifact to the conversation that made it: 'in <conversation>' is text only and DesktopArtifactsScreen receives no openConversation. The dock has no way to reach the stored copy either ('Open in Artifacts' or history). The web library's primary action opens the artifact *inside* its conversation (/chat/:id?artifact=identifier).",
+   "severity": "major",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopAccountScreens.swift:98-103",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:679-692",
+    "src/app/(app)/artifacts/page.tsx:529"
+   ]
+  },
+  {
+   "observation": "Search results for artifacts open only the conversation. The artifact is neither opened in the dock nor selected in the library, whereas iPhone selects it (JunoMobileRootView.swift:1328).",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopSearchScreen.swift:407-419"
+   ]
+  },
+  {
+   "observation": "Inferred: HTML thumbnails are live WKWebViews sized to the 210-300pt tile with no page zoom. A responsive page lays out at that width (its mobile breakpoint), and a fixed-width page shows its top-left corner, so neither reads as a miniature of the desktop page. The web deliberately shows the first 20 lines of source (and renders SVG through <img>), explicitly rejecting live frames for tiles on cost and honesty grounds.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:560-605",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactPreview.swift:154-156",
+    "src/components/artifacts/artifact-preview.tsx:10-33"
+   ]
+  },
+  {
+   "observation": "Thumbnail nesting breaks the FLAT_UI \u00a76 concentric-radius rule. The outer card is JunoRadius.well (12) with JunoSpace.snug (8) padding, so the inner radius should be 4, but the preview is clipped at JunoRadius.row (8). The anatomy also differs from the web tile: on Mac only the thumbnail is carded and the title sits outside the card.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:586-604",
+    "docs/design/FLAT_UI.md:180-190"
+   ]
+  },
+  {
+   "observation": "The command bar is an opaque in-content strip on junoCanvas with a Divider, not the window's glass toolbar. It is defensible (documented) and consistent with the Liquid Glass branch painting junoCanvas once, but under macOS 26 the document commands would read as more native in a toolbar with scroll-edge glass. Floating status, the read-only badge and design edit warnings do use real Liquid Glass (GlassEffectContainer + glassEffect) appropriately.",
+   "severity": "info",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1148-1311",
+    "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesktopChrome.swift:241-303"
+   ]
+  },
+  {
+   "observation": "Exporting shows no progress: the actions menu just disables while `isExporting`. A failed Office export shows as the collection-level status (see defect mac-artifacts-4).",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1261-1281",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:374-398"
+   ]
+  },
+  {
+   "observation": "Accessibility: the dock resize handle is hidden from VoiceOver and has no keyboard alternative (documented choice). Diff rows are labelled 'Added: \u2026' and 'Removed: \u2026' (good). Library cards expose a combined title and meta label with the thumbnail hidden (good). The 'current' version tag is plain text with no selected trait on the displayed row beyond List selection.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:450-510",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1599-1600"
+   ]
+  },
+  {
+   "observation": "Relative dates ('Updated 3 minutes ago') are formatted at render time with no timer, so they go stale until something else re-renders the view.",
+   "severity": "info",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:682-684",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1088"
+   ]
+  }
+ ],
+ "motion": [
+  {
+   "observation": "Chat dock: insertion is `.offset(x: 16)` plus opacity and removal is opacity, driven by withAnimation(JunoMotion.canvasEnter) and JunoMotion.exit, both through JunoMotion.reduced(..., when: reduceMotion). This matches the web's slide-in-from-right-4 / fade-out and honours reduced motion.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:428-439",
+    "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift:635-660"
+   ]
+  },
+  {
+   "observation": "Inline chat card: hover tint cross-fade (JunoMotion.fast, tier .tint) plus the .junoPress button style, per the \u00a72.2 recipe.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift:1847-1853"
+   ]
+  },
+  {
+   "observation": "Library document: the only animation is `.animation(JunoMotion.standard, value: showingChanges)` on the body. There is no version-switch cross-fade (the web cross-fades a version-keyed container) and no continuity from card to document.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:699-704",
+    "src/components/canvas/canvas-panel.tsx:293-315"
+   ]
+  },
+  {
+   "observation": "Library grid, history pane, status control and read-only badge have no motion at all: no hover, press, stagger or disclosure transition. Nothing loops idle (good).",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:488-549",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:352-359",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:627-668"
+   ]
+  },
+  {
+   "observation": "Code-motion observation: none of the Mac artifact files has changed since db7022f5 (2026-09-03). The web canvas, library and sandbox changed repeatedly between 09-13 and 09-23 (e.g. a0e41c9b 'Canvas: make the preview a page again', 983dc2ad exit motion/selected tone, 31ba2688). The parity gaps are therefore growing, not closing.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift",
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift",
+    "src/components/canvas/canvas-panel.tsx"
+   ]
+  }
+ ],
+ "defects": [
+  {
+   "id": "mac-artifacts-1",
+   "title": "Chat dock keeps showing the previous revision when a revised artifact (same identifier) is opened",
+   "severity": "high",
+   "file": "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift",
+   "line": 552,
+   "evidence": "READ:\n- `DesktopChatArtifact.id` is `reference.id`, which is the tag's `identifier` (NativeMessageContent.swift:50).\n- The system prompt tells the model 'To revise an existing artifact, REUSE its identifier' (src/lib/chat/system-prompt.ts:257).\n- `DesktopArtifactCanvas` seeds `draftContent` only in `.onAppear` when it is empty (563-565) and resets it only in `.onChange(of: artifact.id)` (552-562).\n- `resolvedContent` returns `draftContent` whenever it is non-empty (865-867).\n- The canvas is not keyed by `.id` inside `DesktopArtifactDock.canvasColumn` (403-416), so its @State survives an `openArtifact` change.\n- `DesktopDesignSurface` and the live canvas are keyed `.id(artifact.id)` (818, 832), and the design surface reads its content only once (975-978).",
+   "failure_scenario": "The user opens v1 of 'Landing page' in the dock, then asks 'make the hero blue'. The reply writes v2 under the same identifier, and the user clicks v2's card. openArtifact becomes a new DesktopChatArtifact with the same id, so onChange(of: artifact.id) does not fire and draftContent still holds v1. Preview, Source, Canvas, Copy, Save As and Share all show and export v1. For a design, the editor stays on v1. Only closing and reopening the dock shows v2. The web canvas follows the new version automatically (chat-view.tsx:871-873, 1254-1262)."
+  },
+  {
+   "id": "mac-artifacts-2",
+   "title": "HTML artifacts that load CDN scripts, styles, fonts or images render broken on Mac but work on the web",
+   "severity": "high",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactPreview.swift",
+   "line": 111,
+   "evidence": "READ:\n- The Mac sandbox blocks every `scheme://` URL through a WKContentRuleList (111-118).\n- Its CSP sets `default-src 'none'`, `img-src data: blob:`, `font-src data:` and `script-src 'unsafe-inline'` only (163-176).\n- ArtifactCanvasView shares the same rules (1237-1249).\n- The web sandbox allows `script-src \u2026 https: blob:` (with 'unsafe-eval'), plus img, font and style `https:`. It loads Tailwind, React, Babel, Mermaid and Pyodide from CDNs (sandbox-frame.tsx:7-12, 52-70).\n- The web comment records that blocking these made generated sites 'not load and not move' (sandbox-frame.tsx:30-34).",
+   "failure_scenario": "A model-generated landing page with `<script src=\"https://cdn.tailwindcss.com\">`, a Google Font and an Unsplash hero image renders fully on the web. In the Mac library Preview, the chat dock and thumbnails it appears as unstyled Times text with broken images. In Canvas mode the console lists 'BLOCKED' lines, but Preview mode gives no explanation."
+  },
+  {
+   "id": "mac-artifacts-3",
+   "title": "Unsaved library edits (source or design) are silently discarded when switching artifact or leaving the screen",
+   "severity": "medium",
+   "file": "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift",
+   "line": 234,
+   "evidence": "READ:\n- `.task(id: model.selectedArtifactID)` sets `draft = nil` first (234-236).\n- The card's button sets `model.selectedArtifactID = artifact.id` with no `isDirty` check (514-517).\n- Back only flips `libraryVisible` (1150-1153).\n- `draft` is view @State, so navigating to another sidebar destination unmounts the screen and drops it.\n- There is no confirmation dialog or autosave for a dirty draft anywhere in the file (the only confirmationDialog is Delete, 313-327).",
+   "failure_scenario": "The user edits a design in the library (the subtitle says 'Unsaved changes'), clicks 'All artifacts', and opens another card. The task resets the draft, so the edit is gone with no prompt. The same happens when clicking Chat in the sidebar mid-edit."
+  },
+  {
+   "id": "mac-artifacts-4",
+   "title": "Action failures (save, rename, delete, export, validation) show as a collection failure whose 'Try Again' reloads the collection and cannot be dismissed",
+   "severity": "medium",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift",
+   "line": 447,
+   "evidence": "READ:\n- `performMutation` and `exportArtifact` route errors to `record(error)`, which sets `lastErrorDescription` and `phase = .failed/.offline` for the whole model (447-459). The stale path also sets `phase = .failed` (422-426).\n- `DesktopArtifactStatus` treats `.failed` as retryable (74-78).\n- The screen shows 'Try Again', which calls `model.reload()`, whenever `localErrorDescription` is nil (645-657). 'Dismiss' exists only for local fileExporter errors.\n- The rename field's `.onSubmit { commitRename() }` bypasses the disabled-on-empty Rename button (1372-1385). `NativeArtifactAPIClient.rename` then throws `.invalidTitle` (261-264).",
+   "failure_scenario": "The user opens Rename, clears the field and presses Return. The popover closes and a floating glass status says 'Enter an artifact title between 1 and 200 characters.' with a 'Try Again' button that reloads the library instead of reopening Rename. A 409 on Save likewise shows 'This artifact changed on another device\u2026' with 'Try Again', which reloads the collection rather than re-saving. The notice cannot be dismissed until a reload clears lastErrorDescription."
+  },
+  {
+   "id": "mac-artifacts-5",
+   "title": "Deleting the open artifact lands the reader inside a different artifact's document",
+   "severity": "medium",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift",
+   "line": 365,
+   "evidence": "READ:\n- `deleteArtifact` sets `selectedArtifactID = artifacts.first?.id` when the deleted artifact was selected (365), and `reload()` also auto-selects the first artifact (269).\n- The screen returns to the library only when the selection becomes nil (DesktopArtifactsScreen.swift:258-263).\n- `libraryVisible` stays false after the command-bar Delete (1273-1275, 321-323).",
+   "failure_scenario": "The user opens artifact B, chooses \u2026 > Delete\u2026 > Delete. B is removed, selection moves to the newest artifact A, and the document view now shows A with A's title and the editor active. The user may think the deletion failed, or edit or delete A by mistake. The web returns to the list."
+  },
+  {
+   "id": "mac-artifacts-6",
+   "title": "Opening the library fetches the auto-selected first artifact's detail and export formats, and its failures float over the grid",
+   "severity": "low",
+   "file": "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift",
+   "line": 234,
+   "evidence": "READ:\n- `reload()` auto-selects `artifacts.first` (NativeArtifactStore.swift:269).\n- The screen's `.task(id: model.selectedArtifactID)` calls `model.openArtifact(id:)` unconditionally, even while `libraryVisible` is true (234-247).\n- `openArtifact` makes two authenticated requests (NativeArtifactStore.swift:295-304), sets `phase = .ready` on success (299), which overrides a `.offline` or `.failed` phase that reload() derived from syncModel, and calls record(error) on failure (311).",
+   "failure_scenario": "The newest artifact was deleted on the web but sync has not landed yet. The user opens Artifacts to browse the grid. GET /api/artifacts/:id returns 404, and 'Juno couldn't find this artifact. It may have been deleted from another device.' floats over the library although no artifact was opened. In the other direction, a sync failure reported by reload() is silently replaced by `.ready` once the detail fetch succeeds."
+  },
+  {
+   "id": "mac-artifacts-7",
+   "title": "The dock re-runs the component-extraction regex over the full source twice per render, compiling two regexes per tag",
+   "severity": "medium",
+   "file": "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift",
+   "line": 877,
+   "evidence": "READ:\n- `componentCandidates` is a computed property that calls `DesktopArtifactComponent.extract(from: resolvedContent)` (877-879).\n- `viewBar` reads it twice per body evaluation, in the `!componentCandidates.isEmpty` check (748) and in `ForEach(componentCandidates)` (750).\n- `extract` runs `matches(in:)` over the whole source (914-917). For every non-skipped match it calls `attribute(\"id\")` and `attribute(\"class\")`, each of which compiles a new NSRegularExpression (939-943). The 60-row cap only stops appending; duplicate tags keep the loop running.\n- `TextEditor(text: $draftContent)` (848) re-renders the view on each keystroke.",
+   "failure_scenario": "The user opens a 150 KB generated HTML page (thousands of tags, mostly repeated classes) in the dock and clicks 'Edit source'. Each keystroke re-evaluates the body, which runs two full-document regex scans and thousands of NSRegularExpression compilations on the main actor. Typing lags visibly (inferred; not profiled)."
+  },
+  {
+   "id": "mac-artifacts-8",
+   "title": "Content can come from a different version than the one open",
+   "severity": "low",
+   "file": "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift",
+   "line": 1470,
+   "evidence": "READ: `windowMode(for:)` returns `resolvedMode` (the currently or previously opened artifact's mode, derived from `model.selectedArtifact`) whenever the target kind supports it, otherwise that kind's first mode (1470-1473). The grid context menu calls `openInWindow` for any card (541-542). `resolvedMode` clamps against the selected artifact's kinds (158-171).",
+   "failure_scenario": "The last artifact the user opened was a Code artifact, whose resolvedMode is `.source`. Back in the grid, they right-click an HTML page and choose Open in New Window. The window opens on raw HTML source instead of the rendered page. If the last artifact was left in Canvas mode, the HTML card opens in a split canvas. Which view appears depends on hidden state from another document."
+  },
+  {
+   "id": "mac-artifacts-9",
+   "title": "Design artifacts show the shouted wire value 'DESIGN' in the chat card and dock metadata",
+   "severity": "low",
+   "file": "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift",
+   "line": 168,
+   "evidence": "READ: `DesktopArtifactKindLabel.title(forWireKind:)` has cases for HTML/REACT/CODE/SVG/MARKDOWN/MERMAID and `default: kind` (168-178). DESIGN is missing, although `icon(forWireKind:)` has it (191). `NativeMessageContent.normalizedKind` returns 'DESIGN' (377-384). The chat card metadata (DesktopChatWorkspace.swift:1786-1796) and the dock header metadata (DesktopArtifactCanvas.swift:685-692) both use this function.",
+   "failure_scenario": "The model emits `<juno:artifact type=\"design\" \u2026>`. The inline card's mono line reads 'DESIGN', and the dock header reads 'DESIGN \u00b7 From this conversation'. The library calls the same object 'Design' and the web calls it 'Designs', so the chat surfaces show the enum spelling the file's own comments call an error code."
+  },
+  {
+   "id": "mac-artifacts-10",
+   "title": "Version origins (Generated/Edited/Restored) disappear after any sync-driven reload",
+   "severity": "low",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift",
+   "line": 265,
+   "evidence": "READ: the local projection stores `origin: nil` for every version (162-168). `openArtifact` merges API versions that carry origin (297), but `reload()` replaces `artifacts` wholesale with the projection (265). reload() runs on every sync generation (252-256) and after every mutation (420-421). The screen shows origin in the history caption and document header only 'when present' (DesktopArtifactsScreen.swift:852-858, 1084-1091).",
+   "failure_scenario": "The user opens an artifact, and the history pane shows 'Edited \u00b7 2 minutes ago' and 'Restored \u00b7 \u2026'. The next background sync (seconds later) or their own Save triggers reload(). The captions drop to bare timestamps, and the document header loses 'Edited \u2026', until the artifact is re-selected."
+  },
+  {
+   "id": "mac-artifacts-11",
+   "title": "Artifact library and Design screen fail entirely on one unknown or oversized record (latent merge blocker)",
+   "severity": "medium",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift",
+   "line": 144,
+   "evidence": "READ:\n- `decodeArtifact` throws `corruptRecord` when `NativeArtifactKind(rawValue: wire.type)` is nil (144-147).\n- `decodeVersion` throws for content over 200,000 UTF-16 units (157).\n- `load` uses `try` for every record, so one throw fails the whole snapshot (102, 111-112).\n- `reload` then sets phase `.failed`, and on the first load the artifacts list stays empty (283-287).\n- The test `testCorruptArtifactFailsClosed` pins this behaviour (NativeArtifactStoreTests.swift:58-80).\n- DesktopDesignScreen reads the same model (DesktopAccountScreens.swift:120-134).\n- Prisma ArtifactType has exactly the 7 known cases today (schema.prisma:1344-1356).",
+   "failure_scenario": "As part of the planned merge, the server adds a typed artifact such as DOC or SLIDES, and a user who has not updated the Mac app syncs. Every Mac on an older build then shows 'Artifacts unavailable' on both the Artifacts and Design destinations, hiding all their existing artifacts, instead of skipping or genericising the one new record."
+  },
+  {
+   "id": "mac-artifacts-12",
+   "title": "Clearing the dock's source editor silently reverts the preview to the original content",
+   "severity": "low",
+   "file": "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift",
+   "line": 865,
+   "evidence": "READ: `resolvedContent` is `draftContent.isEmpty ? artifact.reference.content : draftContent` (865-867), and `hasDraftChanges` compares resolvedContent to the reference (869-871). The TextEditor binds `$draftContent` directly (848).",
+   "failure_scenario": "In 'Edit source' the user selects all and deletes, intending to paste a replacement. The editor is empty, but Preview, Copy Source, Save Source As and Share all use the original artifact, and 'Reset' disappears because hasDraftChanges is false. Whatever is saved or shared is not what is on screen."
+  }
+ ],
+ "gaps": [
+  {
+   "title": "Chat dock is not backed by the stored artifact row",
+   "description": "The dock never looks up NativeArtifactModel, although NativeArtifact carries conversationID and identifier (NativeArtifactStore.swift:8-21), so the row is available once sync lands. As a result the dock has no version list, compare, restore, save, rename, Office export, share link or editable design. The web chat canvas has all of these, plus fullscreen, click-to-select an element in the preview, a text-selection Modify/Ask bar and a 'View last good version' fallback (canvas-panel.tsx:219-315, 1190, 1231, 1238-1241, 1392-1411).",
+   "why": "This is the single biggest parity gap, and the prerequisite for 'Design works inside conversations'."
+  },
+  {
+   "title": "Runtime parity with the web sandbox",
+   "description": "React needs a bundled runtime (ArtifactCanvasRuntime plumbing exists, no bundle ships). Mermaid needs an engine (MermaidDiagramView exists, JunoMermaidEngine.register is never called, no mermaid JS in the repo). Python (web: Pyodide), CDN assets (web allows https:) and syntax highlighting for Code are all missing.",
+   "why": "The same artifact renders differently on Mac and web, which undermines 'one shareable artifact'."
+  },
+  {
+   "title": "Public share links for artifacts",
+   "description": "The server supports kind ARTIFACT (src/app/api/share/route.ts:18-22) and the web library and canvas have ShareDialog. NativeShareClient only creates CHAT shares (NativeShareClient.swift:61-80, 116-119). The dock's 'Share' is a ShareLink of raw source text.",
+   "why": "Claude's merged model centres on one shareable link per artifact."
+  },
+  {
+   "title": "Comments",
+   "description": "No comment UI or model exists for artifacts on the Mac, the web or in Prisma (only FeatureComment exists).",
+   "why": "Comments are part of the stated target experience."
+  },
+  {
+   "title": "Library parity with the web",
+   "description": "Missing on Mac:\n- List/Grid toggle, which the web persists in juno:artifacts:view (page.tsx:103-108)\n- Share, Download and Rename in the per-item menu (page.tsx:192-206)\n- The 'New design' button (page.tsx:273-287, 391-395)\n- Opening into the source conversation (page.tsx:529)\n- Stagger and hover motion\n\nMac-only extras: in-library version history, diff, editing, Office export and detached windows (the web library routes to the chat canvas for these).",
+   "why": "Two different mental models of what the library is; the merge must pick one."
+  },
+  {
+   "title": "Native Mac affordances",
+   "description": "Missing: Quick Look (Space), drag out to Finder, Messages or Mail as a file, keyboard grid navigation, menu-bar commands, print/PDF, document-style windows with a toolbar, state restoration of the open artifact, and Handoff/NSUserActivity for an open artifact. Searched App/ for onDrag, draggable, NSItemProvider, QLPreview, QuickLook and NSSharingService: only the dock's ShareLink matched.",
+   "why": "This is where the Mac app can beat the web."
+  },
+  {
+   "title": "Search \u2192 artifact",
+   "description": "Mac search opens only the conversation of an artifact hit. iPhone selects the artifact.",
+   "why": "Artifacts found in search should open as artifacts."
+  },
+  {
+   "title": "Streaming into the canvas",
+   "description": "The inline card is disabled while streaming (DesktopChatWorkspace.swift:1589-1592), and an open dock never updates as a later reply revises the artifact (a snapshot of the tag body). There is no live-writing view.",
+   "why": "Claude-style canvases show the artifact being written and follow revisions."
+  },
+  {
+   "title": "Tests",
+   "description": "No tests cover the dock (the same-identifier reopen), DesktopArtifactViewMode.available, DesktopArtifactKindLabel/KindName (DESIGN is missing), sourceFileName, draft/save/restore flows, delete navigation, or the private diff engine (not unit-testable because it is `private`). One UI smoke test covers library \u2192 document \u2192 back (JunoDesktopLaunchUITests.swift:377-411).",
+   "why": "Most of the defects above would have been caught by small unit tests."
+  }
+ ],
+ "debt": [
+  {
+   "title": "Duplicated vocabulary and file-naming code",
+   "description": "Two Mac naming tables (DesktopArtifactKindName vs DesktopArtifactKindLabel) and two identical `codeExtension` and forbidden-character sanitisers (DesktopArtifactsScreen.swift:2071-2120 vs DesktopArtifactCanvas.swift:201-247), plus a third sanitiser in NativeArtifactAPIClient.safeFileName (415-423). The web's DOWNLOAD_EXTENSIONS maps CODE to 'txt' regardless of language, so it differs again.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:2006-2121",
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:160-248",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactAPIClient.swift:415-423",
+    "src/app/(app)/artifacts/page.tsx:62-70"
+   ]
+  },
+  {
+   "title": "Per-platform copies of the view-mode enum",
+   "description": "DesktopArtifactViewMode (Mac) and JunoMobileArtifactViewMode (iOS) are line-for-line the same logic. They belong in JunoChatKit next to NativeArtifactKind's capability flags.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:70-111",
+    "native/iOS/JunoMobile/App/JunoMobileDesignArtifact.swift:360-395"
+   ]
+  },
+  {
+   "title": "Dead or unwired code",
+   "description": "Several pieces are defined but never used or never wired up:\n- `DesktopArtifactMetrics.tile` is never used; it is left over from the removed list index (DesktopArtifactsScreen.swift:1503-1507).\n- `ArtifactCanvasModel.inspect(path:)`, `readings` and `isBridgeConnected` are implemented and tested, but no UI calls or displays them (ArtifactCanvasView.swift:758-762, 845-852).\n- The command-bar doc still mentions an 'artifact index' (1145-1147).\n- `mode = .preview` is set twice, with the same comment pasted twice (241-252).",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:241-252",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1503-1507",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/ArtifactCanvasView.swift:845-852"
+   ]
+  },
+  {
+   "title": "Model-wide error and phase channel used for per-action errors",
+   "description": "NativeArtifactModel has one lastErrorDescription and one phase for load, open, save, rename, delete and export. That makes per-action UX (retry the save, dismiss) impossible without splitting the channel. See mac-artifacts-4 and mac-artifacts-6.",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:201-206",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:447-459"
+   ]
+  },
+  {
+   "title": "Two design entry points with separate draft state",
+   "description": "The Artifacts library and the Design screen can both open and edit the same design, each with its own @State draft and Save, over the same model. Nothing stops the same design being dirty in both. This is structural duplication the merge should remove.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:940-947",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:207-240",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:577-582"
+   ]
+  },
+  {
+   "title": "Identifier validation allows path characters",
+   "description": "`requireIdentifier` accepts '/', '.', ':' and '@' in an id that is interpolated into `/api/artifacts/\\(id)`. IDs come from the account's own synced data, so the risk is low, but a path segment should be cuid-only.",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactAPIClient.swift:387-396"
+   ]
+  },
+  {
+   "title": "A WKWebView and ephemeral data store per preview",
+   "description": "Each NativeArtifactPreview, ArtifactCanvasWebView and design surface creates its own WKWebViewConfiguration with `.nonPersistent()`. Thumbnails in a LazyVGrid can accumulate many WebContent processes (inferred). A shared process pool or a static thumbnail (snapshot or source excerpt, as the web does) would bound it.",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactPreview.swift:346-371",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:580-589"
+   ]
+  }
+ ],
+ "strengths": [
+  "Strong sandbox in layers that fails closed: CSP injected ahead of author head content, a shared compiled WKContentRuleList blocking every scheme:// URL including file:, a non-persistent store, a nil base URL, main-frame-only bridge, no eval, links handed to the system browser, and inert thumbnails with JS off and motion frozen (NativeArtifactPreview.swift:102-274, ArtifactCanvasView.swift:1197-1250).",
+  "Stale-write protection: saves carry baseVersion, a 409 merges the latest version and keeps the draft (NativeArtifactAPIClient.swift:247-250, NativeArtifactStore.swift:422-426).",
+  "The dock is layout rather than a presentation. It keeps the composer and voice call mounted across compact and expanded widths, its width model mirrors the web, width is persisted and clamped per read, and cursor push/pop is handled cleanly (DesktopArtifactCanvas.swift:301-511).",
+  "Version history and diff: the diff runs off the main thread, its cap matches the web's line-diff.ts (1500), unified-diff copy is patch-applicable, and rows are VoiceOver-labelled (DesktopArtifactsScreen.swift:1521-1881).",
+  "Honest states throughout: 'runtime not installed', design decode failures stated before the editor loads, an edit-encode failure banner over the editor, and humanised error copy with tests (DesktopArtifactStatus.swift, DesktopArtifactCanvas.swift:1004-1092).",
+  "One shared DesktopDesignSurface across the dock, library, Design screen and detached windows. The design editor is one TypeScript implementation shared with the web, which is a direct enabler for the merge.",
+  "Offline-first: artifacts and their full stored history read from the encrypted local DB without a network connection.",
+  "Real Liquid Glass (GlassEffectContainer + glassEffect) is used only for transient floating status, in line with the chrome contract."
+ ],
+ "merge_relevance": "How this area bears on a Claude-style merge (Artifacts + Design as typed artifacts in the conversation, one shareable link, editable on phone, with comments):\n\nENABLERS (read)\n- **Shared editor.** `DesktopDesignSurface` is already the single design host used from chat, library, the Design screen and detached windows. `onEdit` plus the draft/Save path in the library proves designs save through the same `saveArtifact` route as every other kind.\n- **One model.** `NativeArtifactModel` is one shared store for both the Artifacts and Design destinations.\n- **Capability flags.** `DesktopArtifactViewMode` and the flags on `NativeArtifactKind` (`supportsRenderedPreview`, `supportsLiveCanvas`, `isDesignDocument`) are the right seam for more typed artifacts.\n- **Dock layout.** The dock is a real third column. On the Liquid Glass branch it already wraps draft and private chats too.\n- **Phone editing.** iOS already routes designs through `JunoMobileArtifactBody` with `onEdit`.\n\nBLOCKERS (read)\n1. **The dock is not row-backed.** It is built only from the tag body (DesktopArtifactCanvas.swift:33-54). Making it look up `model.artifacts` by (conversationID, identifier), with the tag body as a fallback while syncing, would bring versions, save, share, export and design editing into the conversation, and would fix mac-artifacts-1.\n2. **The store fails closed on any unknown `type`** (mac-artifacts-11). New typed artifacts (Docs, Slides, Design System) would blank the whole library on every older installed build. The fix is to decode unknown kinds into a generic 'unsupported' kind and skip bad records.\n3. **Too many vocabularies.** There are three naming tables and two view-mode enums across Mac and iOS. The merge needs one kind registry in JunoChatKit.\n4. **No artifact share link or comments.** `NativeShareClient` is CHAT-only, and no comment model exists.\n5. **Renderer parity.** The sandbox policy differs from the web (no CDN, React, Mermaid or Python), so 'one link that looks the same everywhere' fails on Mac.\n6. **Duplicate design entry points.** Artifacts and Design keep separate drafts. On the Liquid Glass branch they sit as adjacent sidebar rows (`sidebarCases [.library, .projects, .artifacts, .design]`). A merge would collapse them into one 'Artifacts' surface, with Design as a type filter and a 'New design' action, as the web Artifacts page already offers.\n\nLIQUID GLASS BRANCH (read via `git diff main...mac/liquid-glass-chat`)\n- DesktopArtifactsScreen.swift and DesktopArtifactCanvas.swift change only comments.\n- DesktopChatWorkspace wraps the draft column in `DesktopArtifactDock` too.\n- DesktopChatSidebar promotes Design to a top-level row next to Artifacts.\n- DesktopDesignScreen changes are doc and icon changes (the `.design` JunoDesign mark replaces pencil.tip).\n- None of the artifact defects above is fixed on the branch.",
+ "tests": "Tests that cover this area:\n- **native/macOS/JunoDesktop/Tests/DesktopArtifactComponentTests.swift**: 2 tests on regex component extraction (tags, selectors, dedupe, 60-row bound).\n- **native/macOS/JunoDesktop/Tests/DesktopArtifactStatusTests.swift**: 7 tests on status copy (humanised 404/401/500, prose passthrough, offline not retryable, local error precedence).\n- **native/macOS/JunoDesktop/UITests/JunoDesktopLaunchUITests.swift:377-411** (`testArtifactsOpenAsAPreviewLibraryThenNavigateToADocument`): grid \u2192 card \u2192 document (view-mode, actions, history exist) \u2192 back.\n- **native/Packages/JunoNativeKit/Tests/JunoChatKitTests/NativeArtifactStoreTests.swift**: account scoping, tombstones, corrupt record fails closed, full-history fetch, stale save, rename route, export filename, sandbox escaping, thumbnail JS/motion off, network rule JSON.\n- **ArtifactCanvasTests.swift** (26 tests): bridge decode, page-script containment, React runtime absent/present, inline-script escaping, availability, console caps, inspect.\n- **NativeMessageContentTests.swift**: tag parsing.\n\nNot covered: the dock (including the same-identifier reopen), view-mode availability, kind labels (DESIGN is missing), file names, draft/save/restore/delete navigation in the screen, and the private diff engine.\n\nI did not run any Swift tests: xcodebuild and swift build/test are prohibited by the audit rules. No web test targets this native area; a grep of tests/ for DesktopArtifact, NativeArtifact and ArtifactCanvas found nothing relevant, so none were run.",
+ "open_questions": [
+  "\u2325\u2318I is bound both to the Artifacts 'Version history' button (DesktopArtifactsScreen.swift:1296) and to the Session menu's 'Toggle Side Panel', which is disabled outside Code (DesktopCommands.swift:194). Does AppKit's disabled menu item swallow the key equivalent, making the history shortcut dead? This needs a manual check.",
+  "After Save, performMutation runs syncModel.refresh() and then reload(), and reload replaces the merged detail with the local projection. If refresh has not pulled the new version (e.g. the connection drops right after the POST), does the UI briefly or persistently revert to the old version while save() has already cleared the draft? The code path allows it (NativeArtifactStore.swift:417-421 and 258-270; DesktopArtifactsScreen.swift:1403-1406). Whether refresh guarantees the pull is unknown.",
+  "Does the server ever persist an ArtifactVersion over 200,000 UTF-16 units (for example through normalizeDesignArtifact expanding a design, or a code path that skips chat-artifact-verification)? If it does, mac-artifacts-11 is live today, not latent.",
+  "LazyVGrid thumbnails: how many WKWebView WebContent processes stay alive after scrolling a library of about 200 HTML artifacts? This has not been profiled; the concern is inferred from each preview creating its own non-persistent configuration.",
+  "When a WKWebView (design editor or preview) has focus, do the SwiftUI keyboardShortcut buttons in the command bar (\u2318S, \u21e7\u2318C, \u21e7\u2318D) still fire? Or does WebKit take \u21e7\u2318C and \u2318S first?",
+  "Swift's CollectionDifference (Myers) and the web's LCS (line-diff.ts) can align edits differently. Does 'the same two versions describe the same change on both clients' (DesktopArtifactsScreen.swift:1665-1667) hold in practice?",
+  "iPhone markdown: both iOS artifact surfaces route markdown through JunoMobileArtifactBody \u2192 NativeArtifactPreview, which flattens it with AttributedString. The Mac explicitly moved off that renderer. This is inferred from JunoMobileDesignArtifact.swift:419-425 and has not been verified on device.",
+  "Should the dock resolve the stored row even while an older version's card is clicked, i.e. open *that* version from history rather than the tag body? The product decision affects how the fix for mac-artifacts-1 is shaped."
+ ]
+}

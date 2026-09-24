@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/session";
 import { getConversationThread } from "@/lib/queries";
 import { ChatView } from "@/components/chat/chat-view";
+import { agentForThread } from "@/lib/agents/store";
 
 /**
  * Split, not imported. This route renders ONE of two surfaces and the chat one
@@ -61,9 +62,15 @@ export default async function ConversationPage({
     );
   }
 
+  // An agent's thread (docs/design/AGENTS.md §5.3) draws the agent above the
+  // transcript. Null for every other chat, and for a retired agent's thread,
+  // which reads as the ordinary chat it now is.
+  const agent = await agentForThread(user.id, thread.conversation.id);
+
   return (
     <ChatView
       conversationId={thread.conversation.id}
+      agent={agent ?? undefined}
       initialMessages={thread.messages}
       initialArtifacts={thread.artifacts}
       initialModel={thread.conversation.model}

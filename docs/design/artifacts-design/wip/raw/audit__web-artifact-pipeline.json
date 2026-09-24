@@ -1,0 +1,690 @@
+{
+ "area": "Web: artifact generation, persistence, API, versions, sharing & security",
+ "summary": "WHAT EXISTS (read). A chat artifact starts with the \"# Canvas (artifacts)\" contract in src/lib/chat/system-prompt.ts:238-300. The model decides on its own when to wrap output in `<juno:artifact identifier type title language>`. There are 7 types, and DESIGN uses a compact JSON authoring form. To revise an artifact, the model must reuse the identifier and output the whole thing again (:257). The tag is parsed with regexes in src/lib/message-content.ts:29-171. A trailing tag that never closed is kept anyway (:104-115). Before storage, every artifact goes through one check-and-repair pass (src/lib/chat-artifact-verification.ts): SVG root/close, a list of allowed Mermaid diagram headers, DESIGN expansion, and a 200k-character cap. Refused artifacts are replaced in the saved message by a one-line notice (src/app/api/chat/route.ts:433-462). They are saved as Artifact/ArtifactVersion rows keyed by (conversationId, identifier). A reused identifier adds a version with origin \"generated\" (src/lib/artifacts-store.ts:38-95). There are also targeted canvas edits: the model returns exact search/replace pairs, and the server checks each anchor, applies them, compares the base version and saves inside one transaction (src/lib/artifact-edit.ts; artifacts-store.ts:103-127). The REST side has list, get, append (edit/restore with a stale-version guard), rename and delete (src/app/api/artifacts/**). Markdown can be exported to docx/xlsx/pptx, and each file is opened back up and checked before download (office-export.ts, export/route.ts). Public share links work by snapshot time (src/lib/share.ts, src/app/share/[token]). Syncing to the apps goes through database triggers (sync-entities.ts:222-259). Previews run in an iframe with an opaque origin, built from srcdoc (src/components/canvas/sandbox-frame.tsx).\n\nQUALITY. The engineering is careful and heavily commented. The targeted-edit protocol, the stale-save guard, Office exports that are checked before serving, ownership checks that always go through the conversation, and share payloads that leave out activity are all strong points. The three required test files pass (17/17), and six nearby files pass too (51/51). But the tests only cover the pure helpers. Nothing covers persistence, the API routes, sharing, regenerate, or how the iframe behaves inside the app.\n\nBIGGEST PROBLEM (checked in a real browser, not just read). Since commit fb3a42b5 (26 Aug 2026), the whole app sends an enforcing Content-Security-Policy that uses a nonce and 'strict-dynamic' (middleware.ts:48-77; csp.ts:31). Browsers pass that policy down to srcdoc iframes. I served Juno's exact production CSP header (from buildCsp) on a parent page that embedded the real buildSandboxDoc output, in the Chromium Browser pane. The React preview stayed blank. The HTML preview showed only its static text, its inline script never ran, and no status or console messages arrived. The same page without the header rendered both (React loading\u2192running\u2192done). So on the web today, every artifact preview that needs a script is dead: React, HTML with Tailwind or JS, Mermaid (including inline mermaid in chat), the JS/Python console, and the public share viewer. The iframe's own meta policy was reworked in a0e41c9b, but a meta policy can only add restrictions, so that change cannot fix this.\n\nOTHER HIGH-IMPACT PROBLEMS (read, several reproduced by script):\n- **User edits get dropped.** The model only sees message text, so any version the user made by hand or in the design editor is silently overwritten by the model's next revision.\n- **Regenerate deletes things.** It deletes the artifact row created by that message, with all later user versions and its public share links.\n- **Cut-off revisions become current.** A revision that was stopped or ran out of tokens becomes the current version, and \"Continue\" cannot finish it.\n- **Research reports collide.** Deep research always uses the identifier \"research-report\", so a second report in the same chat overwrites the first.\n- **Designs outgrow the size limit.** A DESIGN of about 300 nodes grows past 200k characters once expanded. After that the user can't save any edit, and the Mac's offline artifact store fails to load.\n- **Valid output is refused.** Nine valid Mermaid diagram forms are refused, and so is a DESIGN wrapped in a ```json fence. Either way the source is erased from the message.\n- **Sharing gaps.** A shared DESIGN shows raw JSON. Sharing again returns the old frozen snapshot, while the dialog says \"as it is now\".\n- **Library gaps.** The library returns at most 200 artifacts with no paging. The project page always shows zero artifacts because it reads `res.artifacts` while the API sends `items`.\n\nFOR THE MERGE. The data model is already the one-table shape Anthropic moved to: DESIGN is a typed Artifact that shares versions, sharing, library and sync (schema.prisma:1344-1356). What blocks it:\n- previews don't run anywhere on the web;\n- every artifact must belong to a conversation;\n- the model gets no artifact list and no current-version context;\n- there are no comments, no collaboration, no remix, and nothing that can edit on a phone;\n- shares are read-only snapshots, and DESIGN shares don't render;\n- WorkArtifact is a second, separate \"made thing\" system.",
+ "files_read": [
+  "src/lib/chat/system-prompt.ts",
+  "src/lib/message-content.ts",
+  "src/lib/answer-completeness.ts",
+  "src/app/api/chat/route.ts (lines 195-245, 425-465, 950-995, 1155-1310, 1440-1490, 1718-1740, 1800-1900, 2100-2118, 2500-2660, 2700-2725, 2995-3200, 3236-3420, 3540-3610)",
+  "src/lib/artifact-edit.ts",
+  "src/lib/artifact-runtime.ts",
+  "src/lib/artifacts-store.ts",
+  "src/lib/chat-artifact-verification.ts",
+  "src/app/api/artifacts/route.ts",
+  "src/app/api/artifacts/[id]/route.ts",
+  "src/app/api/artifacts/[id]/export/route.ts",
+  "src/lib/share.ts",
+  "src/app/api/share/route.ts",
+  "src/app/api/share/[id]/route.ts",
+  "src/app/share/[token]/page.tsx",
+  "src/components/share/shared-artifact-viewer.tsx",
+  "src/components/share/shared-chat-transcript.tsx",
+  "src/components/share/share-dialog.tsx",
+  "src/lib/csp.ts",
+  "src/middleware.ts",
+  "next.config.mjs (headers)",
+  "src/components/canvas/sandbox-frame.tsx",
+  "src/components/canvas/canvas-panel.tsx (save/restore/export/inspector sections)",
+  "src/components/chat/message-item.tsx (artifact card render 1355-1400)",
+  "src/components/chat/artifact-inline-card.tsx (preview)",
+  "src/components/chat/learning/mermaid-block.tsx (grep)",
+  "src/lib/sync-entities.ts",
+  "src/lib/serializers.ts (serializeArtifact)",
+  "src/lib/queries.ts (getConversationThread)",
+  "src/lib/db.ts",
+  "src/lib/office-export.ts",
+  "src/lib/design/authoring.ts",
+  "src/lib/design/store.ts",
+  "src/lib/design/operations.ts (allocatesCheckpoint)",
+  "src/app/api/design/route.ts",
+  "src/lib/chat/prompt-sections.ts",
+  "src/lib/chat/request.ts",
+  "src/lib/chat/terminal-state.ts",
+  "src/lib/chat/context-assembly.ts (history window)",
+  "src/hooks/use-chat.ts (recovery poll, continueResponse)",
+  "src/app/(app)/design/page.tsx",
+  "src/app/(app)/projects/[id]/page.tsx",
+  "src/app/api/conversations/[id]/fork/route.ts",
+  "src/app/api/account/export/route.ts",
+  "src/lib/plans.ts (grep)",
+  "src/lib/message-crypto.ts (header)",
+  "prisma/schema.prisma (1120-1160, 1340-1360, 1795-1830, 2600-2665)",
+  "prisma/migrations/20260716200000_account_change_log/migration.sql (grep)",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactAPIClient.swift (grep)",
+  "docs/JUNO.md (499-520, 2475-2525)",
+  "tests/chat-artifact-verification.test.ts",
+  "tests/csp.test.ts",
+  "tests/sandbox-security.test.ts"
+ ],
+ "inventory": [
+  {
+   "feature": "Model contract: when to use an artifact and how (canvas section)",
+   "description": "The model decides when to use an artifact; the user has no toggle. Types are REACT/HTML/CODE/SVG/MARKDOWN/MERMAID/DESIGN. A revision means the full content again under the same identifier. There are rules for educational artifacts, the compact DESIGN JSON contract, and Markdown shapes for documents, spreadsheets and decks (docs, sheets and decks are exported as Office files). Turned off for voice, private chats, and assistants whose tools exclude canvas.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/chat/system-prompt.ts:238-300",
+    "src/app/api/chat/route.ts:2104-2111"
+   ]
+  },
+  {
+   "feature": "Tag parsing, streaming split and salvage of unclosed tags",
+   "description": "Regex parsing of <juno:artifact> blocks, including one still streaming and a stub for a half-written opening tag. A trailing tag that never closed is kept. An artifact without an identifier gets a hash ID from its content. Edge-case bugs: a '>' in the title, a literal closing tag inside the body, entities not decoded.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/message-content.ts:29-171",
+    "src/lib/message-content.ts:250-291"
+   ]
+  },
+  {
+   "feature": "Check and repair before storage",
+   "description": "Every artifact goes through one pass before storage: empty check, 200k-character cap, SVG root/close (the missing close is auto-repaired), a Mermaid header allowlist, and DESIGN expansion. Refused artifacts are replaced by a notice in the saved message, and the pass writes an activity receipt. The allowlist is too narrow, a fence around DESIGN JSON is not tolerated, one bad artifact blocks repair of the others, and nothing checks HTML/REACT/CODE for completeness.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/chat-artifact-verification.ts:60-179",
+    "src/app/api/chat/route.ts:433-462"
+   ]
+  },
+  {
+   "feature": "Storage and version history (generated / edit / restore)",
+   "description": "Unique per conversation+identifier. Each version is a full copy of the content (the design store is the exception: it rewrites the latest row in place within 30 seconds). Model-written versions carry no base-version check. A reused identifier also rewrites the title and type.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/artifacts-store.ts:38-95",
+    "prisma/schema.prisma:1125-1160",
+    "src/lib/design/store.ts:156-200"
+   ]
+  },
+  {
+   "feature": "Targeted canvas edit (exact-patch protocol)",
+   "description": "The user selects text or an element and asks for a change. The model returns up to 12 unique search/replace anchors. The server applies them (refusing anything over 60% coverage, large additions, or more than 200k characters), rebuilds a normal artifact message, runs the check, and saves with a compare-and-swap on the base version. Partial output after Stop is never saved.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/artifact-edit.ts",
+    "src/lib/artifacts-store.ts:103-127",
+    "src/app/api/chat/route.ts:1450-1484,3049-3070",
+    "src/lib/chat/terminal-state.ts:98-101"
+   ]
+  },
+  {
+   "feature": "Manual edit and restore API",
+   "description": "POST /api/artifacts/[id] with content \u2264200k, an optional baseVersion (a stale save returns 409 plus the latest version), and origin edit|restore. A race on the unique key is also reported as stale. There is no content check by type: a DESIGN artifact accepts any string.",
+   "maturity": "solid",
+   "where": [
+    "src/app/api/artifacts/[id]/route.ts:7-90",
+    "src/components/canvas/canvas-panel.tsx:420-545"
+   ]
+  },
+  {
+   "feature": "Rename and delete",
+   "description": "PATCH renames (title 1-200 characters). DELETE removes the artifact with its history, and its share links go with it.",
+   "maturity": "solid",
+   "where": [
+    "src/app/api/artifacts/[id]/route.ts:92-126"
+   ]
+  },
+  {
+   "feature": "Library list API",
+   "description": "Returns the 200 most recently updated artifacts across all conversations, with a 1200-character preview cut in Postgres. No paging, filter by type/project, or search. The /design page and the project page both depend on it.",
+   "maturity": "partial",
+   "where": [
+    "src/app/api/artifacts/route.ts:20-97",
+    "src/app/(app)/design/page.tsx:75-79",
+    "src/app/(app)/projects/[id]/page.tsx:305-318"
+   ]
+  },
+  {
+   "feature": "Office export (Markdown \u2192 docx/xlsx/pptx)",
+   "description": "The server detects which formats fit (docx always, xlsx when there are tables, pptx for --- or two or more H2s), builds the file, re-opens it with an independent reader, and refuses to serve it on failure. Filenames are safe (RFC 5987) and rate-limited (60 builds/h, 400 detections/h). Always exports the latest version. Links become plain labels, and slides are text-only.",
+   "maturity": "solid",
+   "where": [
+    "src/app/api/artifacts/[id]/export/route.ts",
+    "src/lib/office-export.ts:363-395,497-875"
+   ]
+  },
+  {
+   "feature": "Download source",
+   "description": "Client-side download of the version being viewed (or the unsaved draft), with the file extension taken from the language or type (DESIGN \u2192 .juno.design.json).",
+   "maturity": "solid",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:53-61,467-476",
+    "src/lib/artifact-runtime.ts:65-82"
+   ]
+  },
+  {
+   "feature": "Public artifact share",
+   "description": "A link with a 24-byte random token; the page shows the version current when the link was made. Opening the dialog creates the link, and sharing again reuses the old snapshot. The page is noindex, never cached, can be revoked, and counts views. It has Preview/Code tabs. DESIGN shows only JSON, and React/HTML/Mermaid previews can't run their scripts because of the CSP.",
+   "maturity": "broken",
+   "where": [
+    "src/lib/share.ts:59-107,243-276",
+    "src/app/share/[token]/page.tsx",
+    "src/components/share/shared-artifact-viewer.tsx:29-80",
+    "src/components/share/share-dialog.tsx:58-123"
+   ]
+  },
+  {
+   "feature": "Public chat share",
+   "description": "A snapshot of the conversation's USER and ASSISTANT messages up to the share time, with activity deliberately left out. Artifacts appear as inert chips that can't be opened. A regenerated answer disappears from the share.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/share.ts:191-232",
+    "src/components/share/shared-chat-transcript.tsx:54-99"
+   ]
+  },
+  {
+   "feature": "Preview sandbox for running artifacts (web)",
+   "description": "srcdoc iframe with sandbox set to allow-scripts, forms, modals, downloads and pointer-lock, and NO allow-same-origin. It has its own meta CSP (https: allowed for scripts, images, connections and frames; unsafe-eval), in-memory storage stand-ins, bridges for console, status and links, an element inspector, and a CDN runtime for React/Babel/Tailwind/Mermaid/Pyodide. In the app it is broken because the parent page's enforcing CSP is passed down (tested in a real browser).",
+   "maturity": "broken",
+   "where": [
+    "src/components/canvas/sandbox-frame.tsx:7-70,236-306,484-495,786-931",
+    "src/middleware.ts:48-77",
+    "src/lib/csp.ts:21-51"
+   ]
+  },
+  {
+   "feature": "What an artifact can do at runtime: storage, network, model calls, data",
+   "description": "Storage is in memory only, per load (sandbox-frame.tsx:236-262). Network: the frame's own policy allows any https (connect/img/frame), but the parent policy it inherits cuts that down. There is no API for calling the model, no persistent or shared storage, no reading uploaded files, and no connector access. Absent everywhere (searched for window.claude, fs.readFile, and storage or complete APIs in sandbox-frame.tsx).",
+   "maturity": "absent",
+   "where": [
+    "src/components/canvas/sandbox-frame.tsx:51-70,236-262"
+   ]
+  },
+  {
+   "feature": "Sync to native apps (change feed)",
+   "description": "Database triggers on Artifact and ArtifactVersion; loaders scoped to the owner. The version loader leaves out `origin`. The native store refuses any version over 200,000 UTF-16 units and then fails the whole snapshot.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/sync-entities.ts:222-259",
+    "prisma/migrations/20260716200000_account_change_log/migration.sql:116-117",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:87-166"
+   ]
+  },
+  {
+   "feature": "Deep-research report artifact and citation-audit version",
+   "description": "Research turns must produce a short chat answer plus one MARKDOWN artifact, always with identifier research-report. After the stream ends, the citation audit adds another generated version: no base check, no content check, and the open canvas is not told.",
+   "maturity": "partial",
+   "where": [
+    "src/app/api/chat/route.ts:220-240,2819,3546-3598"
+   ]
+  },
+  {
+   "feature": "Regenerate and fork behaviour for artifacts",
+   "description": "Regenerate deletes the artifacts created by the regenerated message, with their shares. Fork copies messages but not artifacts, so cards in the fork are dead.",
+   "maturity": "partial",
+   "where": [
+    "src/app/api/chat/route.ts:2565-2593",
+    "src/app/api/conversations/[id]/fork/route.ts:17-27"
+   ]
+  },
+  {
+   "feature": "Account export and import of artifacts",
+   "description": "The account data export (\"full account snapshot\") and import skip Artifact and ArtifactVersion entirely.",
+   "maturity": "absent",
+   "where": [
+    "src/app/api/account/export/route.ts:29-60"
+   ]
+  },
+  {
+   "feature": "Comments, collaboration, remix, publish gallery",
+   "description": "No comment model for artifacts (only FeatureComment exists, schema.prisma:1473). Artifacts are reachable only by the conversation's owner, never by project members. No duplicate, remix or embed. Searched the schema and src for comment, duplicate and remix.",
+   "maturity": "absent",
+   "where": [
+    "prisma/schema.prisma:1473",
+    "src/app/api/artifacts/[id]/route.ts:20-25"
+   ]
+  }
+ ],
+ "architecture": "Flow for a saved chat. POST /api/chat builds the system prompt, with the canvas section in the stable cache tier (system-prompt.ts:238-300). A canvas-edit turn instead gets buildArtifactEditPrompt, which replaces the selection-anchor instruction (prompt-sections.ts:95-106; route.ts:2266-2279). The model's history is the last 24-31 messages as text only (route.ts:1853-1861; context-assembly.ts:18,30). No list of artifacts or current versions is added, so the model only knows an artifact through its own earlier messages.\n\nDuring streaming, text deltas go to the client, which splits them into text and artifact parts (message-content.ts:250-291). Canvas-edit turns are the exception: deltas are held back (route.ts:3016). When the provider finishes:\n1. For an edit, parseArtifactPatch then applyArtifactPatch, and the message is rebuilt as a normal artifact tag (route.ts:3049-3056).\n2. prepareChatArtifactOutput runs parseArtifacts (salvaging an unclosed tail), then verifyAndRepairChatArtifacts, then rewriteArtifactMarkup (refused artifacts become a notice), and writes an activity receipt (route.ts:433-462).\n3. Storage: an edit goes through persistTargetedArtifactEdit (compare-and-swap on currentVersion). Otherwise the assistant message is written (encrypted), then persistArtifacts runs. A new identifier creates a row at v1; a reused one adds currentVersion+1 as \"generated\", updating title and type (artifacts-store.ts:38-95). DESIGN bodies are expanded from compact to a full DesignDocument through the design operation layer (authoring.ts:215-235).\n4. The SSE done event carries the fully serialised artifacts, every version with full content (serializers.ts:207-222).\n\nPartial saves on user_stopped or network_error follow the same steps (route.ts:3271-3292). The deep-research audit can add one more version afterwards (route.ts:3592).\n\nData. Artifact (conversationId required, messageId pinned to the first creating message, identifier, title, type enum, currentVersion). ArtifactVersion (full text content, plaintext at rest by design so Postgres full-text search works, origin generated|edit|restore|null, unique on artifactId+version). Share (token, kind CHAT|ARTIFACT, snapshotAt, views, revokedAt; deleted along with the artifact or conversation) (schema.prisma:1125-1160, 1808-1830). WorkArtifact and WorkArtifactVersion are a separate system: stored in object storage, hashed, validated (schema.prisma:2600-2665).\n\nAPIs:\n- GET /api/artifacts: library, top 200.\n- GET, POST, PATCH, DELETE /api/artifacts/[id]: get with full history; append an edit or restore with a stale guard; rename; delete.\n- GET /api/artifacts/[id]/export: formats or a checked Office file.\n- /api/design/*: typed design transactions through lib/design/store.ts, which folds edits into the latest row within 30s.\n- POST /api/share: create or reuse. DELETE /api/share/[id]: revoke.\n- Public page /share/[token].\n\nThe native apps use the same REST routes with bearer tokens (NativeArtifactAPIClient.swift:215-320) plus the change feed (sync-entities.ts:222-259). Ownership is always enforced by joining Artifact \u2192 Conversation.userId; the Prisma ownership guard does not cover Artifact (db.ts:22-25).\n\nRendering. SandboxFrame builds an HTML document per type (React through UMD React plus Babel standalone plus eval; HTML with the Tailwind CDN; SVG; CSS sample; Mermaid ESM; a JS/Python console through Pyodide), adds its own meta CSP, stand-ins and bridges, and loads it as srcDoc in a sandboxed iframe. The parent trusts postMessage only from that iframe's window (sandbox-frame.tsx:849-931). The same component drives the canvas, inline artifact cards, inline mermaid blocks, and the public share viewer.",
+ "ux": [
+  {
+   "observation": "When verification refuses an artifact, the saved message keeps only \"Artifact unavailable: verification failed, so it was not saved or presented.\" The model's source is gone from the message and not stored anywhere, and there is no Retry, no \"show raw source\", and no \"ask Juno to fix it\". A perfectly valid quadrantChart or a fenced DESIGN reaches the user as an error with nothing to recover.",
+   "severity": "major",
+   "where": [
+    "src/app/api/chat/route.ts:443-446",
+    "src/lib/message-content.ts:130"
+   ]
+  },
+  {
+   "observation": "Pressing Stop during a revision, or hitting the token limit, silently makes a half-written page the current canvas version. The user sees a broken preview with no hint that the previous version was complete; only version history recovers it.",
+   "severity": "major",
+   "where": [
+    "src/lib/message-content.ts:104-115",
+    "src/app/api/chat/route.ts:3271-3292"
+   ]
+  },
+  {
+   "observation": "A shared DESIGN link shows visitors a Code tab of raw DesignDocument JSON. There is no Preview tab for designs.",
+   "severity": "major",
+   "where": [
+    "src/components/share/shared-artifact-viewer.tsx:32-33"
+   ]
+  },
+  {
+   "observation": "Interactive previews (React, scripted HTML, Mermaid, console) render blank or static on web chat, the library, inline cards and public shares, because the app CSP is passed down into the iframe. This matches the report quoted in commit a0e41c9b: the preview is 'static, doesn't move and doesn't load'.",
+   "severity": "major",
+   "where": [
+    "src/middleware.ts:48-77",
+    "src/components/canvas/sandbox-frame.tsx:918-925"
+   ]
+  },
+  {
+   "observation": "Opening the Share dialog immediately creates a public link. There is no explicit Create/Publish step, so looking is publishing. Reopening it after edits returns the old snapshot while the copy says 'as it is now'.",
+   "severity": "minor",
+   "where": [
+    "src/components/share/share-dialog.tsx:78-87,119-123",
+    "src/lib/share.ts:91-95"
+   ]
+  },
+  {
+   "observation": "Shared chats show artifacts as inert chips, so a visitor cannot open the page, deck or design the conversation produced. A regenerated answer vanishes from an existing chat share.",
+   "severity": "minor",
+   "where": [
+    "src/components/share/shared-chat-transcript.tsx:31-70",
+    "src/lib/share.ts:196-199",
+    "src/app/api/chat/route.ts:2589"
+   ]
+  },
+  {
+   "observation": "The project page's Sources tab and header always report 0 artifacts. The /design list silently drops designs older than the 200 most recently updated artifacts of any type.",
+   "severity": "minor",
+   "where": [
+    "src/app/(app)/projects/[id]/page.tsx:305-318,740",
+    "src/app/(app)/design/page.tsx:75-79",
+    "src/app/api/artifacts/route.ts:27"
+   ]
+  },
+  {
+   "observation": "Office export quality. pptx slides are a title plus one text box of up to 40 lines at 14pt in a 3.8in box, with no auto-fit set, so overflow is likely (inferred). Tables become 'a | b' bullets. docx turns Markdown links into bare labels, losing URLs.",
+   "severity": "minor",
+   "where": [
+    "src/lib/office-export.ts:743,773-826,847-859,337-339"
+   ]
+  },
+  {
+   "observation": "Error copy for targeted edits is honest and specific ('Nothing in the canvas was changed', 'Select the part again'). Activity receipts name verified, repaired or refused artifacts.",
+   "severity": "info",
+   "where": [
+    "src/app/api/chat/route.ts:3390-3401,448-458"
+   ]
+  },
+  {
+   "observation": "Export covers only Markdown to Office. No PDF, PNG or SVG raster, standalone HTML bundle, or design export from the generic artifact route (design has its own /api/design/[id]/export).",
+   "severity": "info",
+   "where": [
+    "src/app/api/artifacts/[id]/export/route.ts:94-95"
+   ]
+  }
+ ],
+ "motion": [
+  {
+   "observation": "The server and API layer in this area has almost no motion of its own. The public share header's logo link uses press feedback (active:scale-[0.97], duration-press, ease-out-soft) and turns it off under motion-reduce, which matches ICONS_AND_MOTION's press grammar.",
+   "where": [
+    "src/app/share/[token]/page.tsx:61-66"
+   ]
+  },
+  {
+   "observation": "Export and loading spinners are wrapped in motion-safe:animate-spin, so reduced-motion is respected on the export menu items.",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:862,886"
+   ]
+  },
+  {
+   "observation": "The model's instructions ask interactive artifacts to respect prefers-reduced-motion and to 'animate only meaning'. This is the only motion guidance for artifacts, and nothing checks it. With the CSP issue, scripted animations inside previews do not run on web at all.",
+   "where": [
+    "src/lib/chat/system-prompt.ts:262-267"
+   ]
+  },
+  {
+   "observation": "No moment tells the user a version changed. When the audit adds a version after the stream, or the model supersedes a manual edit, the canvas does not animate or announce it.",
+   "where": [
+    "src/app/api/chat/route.ts:3592",
+    "src/lib/artifacts-store.ts:52-75"
+   ]
+  }
+ ],
+ "defects": [
+  {
+   "id": "web-artifact-pipeline-1",
+   "title": "The app's enforcing CSP is passed down into the srcdoc sandbox, so scripts in every artifact preview are blocked",
+   "severity": "critical",
+   "file": "src/middleware.ts",
+   "line": 55,
+   "evidence": "READ: middleware applies the enforcing CSP to every document route (middleware.ts:64-77, matcher 118-122). Its comment claims the srcdoc iframe is 'unaffected by any of this' (55-57). The policy has script-src 'self' 'nonce-X' 'strict-dynamic' 'unsafe-inline' https: and no 'unsafe-eval' (csp.ts:31; tests/csp.test.ts forbids unsafe-eval). The sandbox loads the document as srcDoc (sandbox-frame.tsx:918-925), and its own meta CSP (51-70) can only add restrictions. No nonce is passed into sandbox documents (grep for x-nonce: only layout.tsx, page.tsx, engineering page). TESTED: in the Chromium Browser pane, a parent served with Juno's exact production header from buildCsp embedded the real buildSandboxDoc('HTML', \u2026) and buildSandboxDoc('REACT', \u2026) output. Result: zero status or console messages, the React frame blank, the HTML frame showing static text only (inline script never ran). The same page without the header gave html: loading\u2192console\u2192done and react: loading\u2192running(Compiling)\u2192done. A minimal meta-CSP probe also showed srcdoc inline script and eval blocked. Commit a0e41c9b 'verified' the documents standalone, not embedded.",
+   "failure_scenario": "Any signed-in user in production asks for 'a React todo app' or a Tailwind landing page. The canvas and inline card show a blank or unstyled frame stuck at loading. Mermaid artifacts and inline ```mermaid blocks never render, JS/Python 'Run' does nothing, and public /share/<token> previews of HTML/REACT are equally dead. Inferred: Firefox and Safari behave the same, since the HTML spec clones the parent's policy container for about:srcdoc; only Chromium was tested."
+  },
+  {
+   "id": "web-artifact-pipeline-2",
+   "title": "Model revisions silently discard the user's manual canvas and design-editor edits",
+   "severity": "high",
+   "file": "src/lib/artifacts-store.ts",
+   "line": 52,
+   "evidence": "READ: the model's history is Message text only (route.ts:1853-1861). Manual saves and restores (api/artifacts/[id]/route.ts:61-75) and design-editor transactions (lib/design/store.ts:127,156-167) create ArtifactVersion rows that no message contains, and nothing injects the current version into the prompt (searched lib/chat and route for artifact context; only the quote-context selection header exists, quote-context.ts:221). persistArtifacts adds currentVersion+1 as 'generated' from whatever the model emitted, with no base-version check (artifacts-store.ts:52-75). The system prompt tells the model to 're-emit the complete artifact' (system-prompt.ts:257; prompt-sections.ts:47).",
+   "failure_scenario": "The model makes landing-page v1. The user edits the hero copy in the Code tab and saves v2 ('edit'), or moves frames in the design editor. The user then types 'make the footer dark'. The model rebuilds from its own v1 in history, and v3 'generated' drops the user's edits with no warning. If the manual save lands between persistArtifacts' read and insert, the (artifactId, version) unique constraint throws after the assistant message was already written (route.ts:3099-3112), and the turn errors with the message saved but no artifact version."
+  },
+  {
+   "id": "web-artifact-pipeline-3",
+   "title": "Regenerate deletes the artifact with every later user version and its public share links",
+   "severity": "high",
+   "file": "src/app/api/chat/route.ts",
+   "line": 2573,
+   "evidence": "READ: when superseding, the regenerate transaction runs prisma.artifact.deleteMany({ where: { messageId: stale.id } }) (route.ts:2565-2593). Artifact.messageId stays pinned to the creating message even after later versions (artifacts-store.ts:68-70), and Share.artifact is onDelete: Cascade (schema.prisma:1823). The MessageVersion snapshot keeps only message text (route.ts:2565-2572). Regenerate targets the trailing assistant message (route.ts:1723-1731). Manual edits add no message, so the creating message stays last.",
+   "failure_scenario": "The user asks for a report, edits it by hand (v2, v3), shares the artifact link with a colleague, then presses Regenerate on that answer. The artifact row, v2 and v3, and the Share row are hard-deleted. The colleague's link returns 404, and the new answer starts a fresh v1. The previous answer, reachable through the pager, has only the generated v1 body in its text."
+  },
+  {
+   "id": "web-artifact-pipeline-4",
+   "title": "A stopped or cut-off revision becomes the current version, and Continue cannot complete it",
+   "severity": "high",
+   "file": "src/lib/message-content.ts",
+   "line": 106,
+   "evidence": "READ: parseArtifacts keeps an unclosed trailing artifact (message-content.ts:104-115). Verification has no completeness check for HTML/REACT/CODE/MARKDOWN (chat-artifact-verification.ts:60-106). The partial path saves it on user_stopped and network_error (route.ts:3271-3292), as does the success path on finishReason 'length' (route.ts:3058-3112). Continue just sends the user message 'Continue from where you left off.' (use-chat.ts:1863), with no server-side joining of the continuation into the artifact. PROBE: 'Updated.<juno:artifact identifier=\"site\" type=\"HTML\">\u2026<h1>Wel' \u2192 status 'verified', accepted ['site'] (while looksTruncated() returns true for the same text).",
+   "failure_scenario": "The user asks to 'add a pricing section' to a working 30 KB page and presses Stop halfway, or the provider runs out of output tokens. v(n+1) is saved as 'generated' with a truncated document and shown as current. Continue produces a new message whose continuation renders as chat text (no opening tag) or re-emits the whole artifact and truncates again."
+  },
+  {
+   "id": "web-artifact-pipeline-5",
+   "title": "Deep research always uses identifier 'research-report', so a second report overwrites the first",
+   "severity": "high",
+   "file": "src/app/api/chat/route.ts",
+   "line": 234,
+   "evidence": "READ: RESEARCH_OUTPUT_CONTRACT requires identifier=\"research-report\" (route.ts:220-240, used at 2819). Identifiers are unique per conversation, and a reused one adds a version and overwrites the title and type (artifacts-store.ts:48-75). Every card for an identifier renders the artifact's CURRENT content and title (message-item.tsx:1364-1373).",
+   "failure_scenario": "A user runs deep research on 'EU AI Act', then in the same chat on 'US state privacy laws'. The second report becomes v2 of the first artifact, retitled. The first message's card now shows the privacy report, and the AI Act report survives only as v1 in history. It is also exported, shared and listed as one artifact."
+  },
+  {
+   "id": "web-artifact-pipeline-6",
+   "title": "Generated DESIGN artifacts can outgrow the 200k document limit after expansion, which blocks editing and breaks the native store",
+   "severity": "high",
+   "file": "src/lib/chat-artifact-verification.ts",
+   "line": 63,
+   "evidence": "READ: the size check runs on the compact body (chat-artifact-verification.ts:63). DESIGN is only validated (90-103) and then expanded again at storage with no size check (artifacts-store.ts:16-25). Downstream limits: design store MAX_DOCUMENT_BYTES 200_000 refuses any transaction whose result is larger (design/store.ts:63,117-120); POST zod max 200_000 (api/artifacts/[id]/route.ts:8); targeted edit >200k refused (artifact-edit.ts:137); native decodeVersion requires utf16.count <= 200_000 or throws corruptRecord, which aborts the whole NativeArtifactStore.load (NativeArtifactStore.swift:87-104,155-159). PROBE: the system-prompt example grows 758\u21924,203 chars (5.5x). A 300-node compact design of 19,941 chars grows to 212,946; 499 nodes to 354,004 (the compact schema allows 500 per array).",
+   "failure_scenario": "The user asks for a dense dashboard mockup of about 300 named nodes. It verifies and saves. Every drag in the editor returns 'This change would make the document too large to save', Canvas edits fail, and after sync the Mac's offline artifact library fails to load entirely ('Juno could not read the locally stored artifact data.')."
+  },
+  {
+   "id": "web-artifact-pipeline-7",
+   "title": "Valid Mermaid diagrams are refused, and their source is erased from the reply",
+   "severity": "medium",
+   "file": "src/lib/chat-artifact-verification.ts",
+   "line": 85,
+   "evidence": "READ: the allowlist regex covers only flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph, and strips only a %%{init}%% header (84-87). The renderer is mermaid@11 (sandbox-frame.tsx:11). PROBE: quadrantChart, YAML front-matter '---\\ntitle\u2026\\n---\\nflowchart', a leading '%% comment', xychart-beta, sankey-beta, C4Context, requirementDiagram, block-beta and architecture-beta were all 'refused'. A refused artifact is replaced by the refusal sentence in the saved message (route.ts:441-447; message-content.ts:130).",
+   "failure_scenario": "'Make a quadrant chart of these features by effort/impact' gives a correct quadrantChart artifact. It is refused, the user sees only 'Artifact unavailable: verification failed', and the diagram source cannot be recovered."
+  },
+  {
+   "id": "web-artifact-pipeline-8",
+   "title": "A DESIGN body wrapped in a ```json fence is refused",
+   "severity": "medium",
+   "file": "src/lib/design/authoring.ts",
+   "line": 218,
+   "evidence": "READ: normalizeDesignArtifact calls JSON.parse(content) directly (authoring.ts:216-221). parseArtifacts only trims (message-content.ts:100), and the patch parser strips fences but the artifact path does not (compare artifact-edit.ts:53). PROBE: '```json\\n{\"nodes\":[{\"type\":\"frame\"}]}\\n```' \u2192 refused with 'A design artifact must contain JSON.'",
+   "failure_scenario": "A model that habitually fences JSON (common across providers) answers 'design a sign-in screen'. The design is refused and removed from the reply, and the user gets the verification-failed sentence instead of an editable design."
+  },
+  {
+   "id": "web-artifact-pipeline-9",
+   "title": "One unrepairable artifact stops repairs to every other artifact in the same reply",
+   "severity": "medium",
+   "file": "src/lib/chat-artifact-verification.ts",
+   "line": 152,
+   "evidence": "READ: the repair pass runs only when `repairable.length > 0 && unrepairable.length === 0` (152-159). Otherwise every identifier with a problem is refused (161). PROBE: a reply with an invalid DESIGN and an SVG missing </svg> \u2192 refused ['bad-design','icon'], attempts 0.",
+   "failure_scenario": "A reply contains a logo SVG cut before its closing tag (normally auto-repaired) plus a malformed design. Both are refused and removed, although the SVG had a safe fix."
+  },
+  {
+   "id": "web-artifact-pipeline-10",
+   "title": "A public share of a DESIGN artifact shows only raw JSON",
+   "severity": "medium",
+   "file": "src/components/share/shared-artifact-viewer.tsx",
+   "line": 32,
+   "evidence": "READ: hasPreview = isMarkdown || rt.mode === 'web' (32). runtimeFor('DESIGN') returns mode 'design' (artifact-runtime.ts:98), so only the Code tab renders, with the content in CodeSurface (76-78). Nothing in the share page mounts a design renderer.",
+   "failure_scenario": "The user shares a design with a stakeholder. The stakeholder opens /share/<token> and sees a JSON document of nodes, fills and layout records instead of the screen."
+  },
+  {
+   "id": "web-artifact-pipeline-11",
+   "title": "Sharing again returns the original frozen snapshot while the dialog says 'as it is now'",
+   "severity": "medium",
+   "file": "src/lib/share.ts",
+   "line": 91,
+   "evidence": "READ: createShare returns the newest active share for the artifact if one exists (share.ts:91-95); snapshotAt was set when it was created (104). The dialog creates or fetches on open (share-dialog.tsx:78-87) and states 'People with the link see this artifact as it is now. Later edits stay private.' (122). getSharedArtifactSnapshot serves the version at or before snapshotAt (share.ts:257-261). There is no refresh or update path; only revoke and re-create, which mints a new URL.",
+   "failure_scenario": "The user shares v2, fixes a typo (v3), opens Share again to send the corrected version and copies the link. The recipient still sees v2 with the typo."
+  },
+  {
+   "id": "web-artifact-pipeline-12",
+   "title": "The project page never shows artifacts: it reads `res.artifacts` but the API returns `items`",
+   "severity": "medium",
+   "file": "src/app/(app)/projects/[id]/page.tsx",
+   "line": 308,
+   "evidence": "READ: projects/[id]/page.tsx:305-318 checks Array.isArray(res.artifacts). GET /api/artifacts returns { items: [...] } (api/artifacts/route.ts:80-96). projectArtifacts feeds sourceCount, the artifactCount stat and the ProjectSourcesList (726, 740, 969). The API also has no project filter, so fixing the key alone would list every artifact the user owns.",
+   "failure_scenario": "Any project with chats that produced artifacts shows 'Artifacts 0' and an empty artifacts list in its Sources tab."
+  },
+  {
+   "id": "web-artifact-pipeline-13",
+   "title": "The library list is capped at 200 with no paging, and /design filters that capped list on the client",
+   "severity": "medium",
+   "file": "src/app/api/artifacts/route.ts",
+   "line": 27,
+   "evidence": "READ: findMany orders by updatedAt desc, take 200, with no cursor or type parameter (24-40). The /design page fetches /api/artifacts and keeps item.type === 'DESIGN' (design/page.tsx:75-79).",
+   "failure_scenario": "A user with 250 artifacts cannot reach the 50 oldest in /artifacts. A user whose 200 most recent artifacts are code or pages sees an empty or incomplete /design gallery although their designs exist."
+  },
+  {
+   "id": "web-artifact-pipeline-14",
+   "title": "The account data export and import skip all artifacts and versions",
+   "severity": "medium",
+   "file": "src/app/api/account/export/route.ts",
+   "line": 50,
+   "evidence": "READ: the route describes itself as 'GDPR data export \u2026 the full account snapshot' (29-34). Its Promise.all queries user, settings, conversation, message, memoryEntry, memorySummary, project, attachment, spend and projectMemorySummary (50-230), with no artifact or artifactVersion (grep 'artifact|design' finds nothing). The only Artifact create paths are artifacts-store.ts:77 and api/design/route.ts:81, so import cannot restore them either.",
+   "failure_scenario": "A user exports their account before deleting it. Every hand edit, restore, design-editor document and /design-started design (which has no message at all) is missing from the archive."
+  },
+  {
+   "id": "web-artifact-pipeline-15",
+   "title": "Artifact code can forge a 'juno:selected' message and plant a modify-quote in the composer",
+   "severity": "low",
+   "file": "src/components/canvas/sandbox-frame.tsx",
+   "line": 869,
+   "evidence": "READ: the parent handles 'juno:selected' whenever onElementSelected is set, regardless of inspect state (sandbox-frame.tsx:863-876). CanvasPanel always passes handleElementSelected (canvas-panel.tsx:1304, 709-727), which calls onQuote with mode 'modify' and toasts 'Selected <tag>. Describe the change.' The quote text (\u22644000 chars) is copied into the system prompt of the targeted-edit turn as 'Selected preview/source excerpt' (artifact-edit.ts:176-177). Only the origin of the message is checked, which is the artifact itself.",
+   "failure_scenario": "A prompt-injected page leads the model to emit an HTML artifact containing parent.postMessage({type:'juno:selected',selector:'body',snippet:'<attacker instructions>'},'*'). Opening it attaches a quote the user never selected. If they send any message, the attacker text goes into the edit turn's system prompt. Only reachable once web-artifact-pipeline-1 is fixed, or on hosts where scripts run."
+  },
+  {
+   "id": "web-artifact-pipeline-16",
+   "title": "Tag parsing edge cases: '>' in an attribute, a literal closing tag in the body, duplicate identifiers",
+   "severity": "low",
+   "file": "src/lib/message-content.ts",
+   "line": 29,
+   "evidence": "READ: ARTIFACT_RE uses ([^>]*?) for attributes and a non-greedy body (29-30). parseAttrs does not decode entities (49-56), while buildArtifactEditMessage encodes them (artifact-edit.ts:185-187). rewriteArtifactMarkup keys updates by identifier (124-139). PROBES: title=\"Revenue > Costs\" gives title '\"Revenue' and a body starting 'Costs\" language=\"md\">\u2026'. A body containing '</juno:artifact>' is cut there and the rest leaks as chat text. title=\"Q&amp;A\" stays escaped. Two same-identifier artifacts in one reply have both bodies rewritten to the second one.",
+   "failure_scenario": "'Compare Revenue > Costs' produces a stored artifact with a broken title and attribute junk at the top of its body. A Markdown doc explaining Juno's own tag format is cut mid-document."
+  },
+  {
+   "id": "web-artifact-pipeline-17",
+   "title": "Chat share snapshots lose regenerated answers and show artifact titles as they are now",
+   "severity": "low",
+   "file": "src/lib/share.ts",
+   "line": 198,
+   "evidence": "READ: the snapshot filters messages by createdAt <= snapshotAt (share.ts:196-199). Regenerate overwrites the row with createdAt: new Date() (route.ts:2589), and the old answer moves to MessageVersion, which the share never reads. Artifact titles come from the live row (212-215, 230), so a rename after sharing shows up, contradicting 'a link never leaks what the owner writes AFTER sharing' (schema.prisma:1800-1803).",
+   "failure_scenario": "The owner shares a chat, then regenerates the last answer. Viewers now see the user's question with no answer at all."
+  },
+  {
+   "id": "web-artifact-pipeline-18",
+   "title": "Opening the Share dialog publishes a link without an explicit confirmation",
+   "severity": "low",
+   "file": "src/components/share/share-dialog.tsx",
+   "line": 78,
+   "evidence": "READ: a useEffect calls createLink() whenever open becomes true (78-87). createLink POSTs /api/share, which inserts a Share row when none is active (share.ts:97-106).",
+   "failure_scenario": "A user opens Share to read what it does and closes it. A live public link now exists, listed under shared links, until they find it and revoke it."
+  },
+  {
+   "id": "web-artifact-pipeline-19",
+   "title": "Synced artifact versions leave out `origin`, so native offline history loses its edit/restore/generated badges",
+   "severity": "low",
+   "file": "src/lib/sync-entities.ts",
+   "line": 250,
+   "evidence": "READ: the artifact_version loader returns id, artifactId, version, content and createdAt only (sync-entities.ts:244-259). The native store hard-codes origin: nil when decoding synced versions (NativeArtifactStore.swift:160-167). The REST serializer does include origin (serializers.ts:217), and the Mac UI renders it when present (DesktopArtifactsScreen.swift:854,1089).",
+   "failure_scenario": "Artifact history on the Mac from the synced store shows no 'Edited' or 'Restored' badges, unlike the web."
+  },
+  {
+   "id": "web-artifact-pipeline-20",
+   "title": "The SVG 'repair' adds a second </svg> when something follows the real closing tag",
+   "severity": "low",
+   "file": "src/lib/chat-artifact-verification.ts",
+   "line": 78,
+   "evidence": "READ: the check is /<\\/svg>\\s*$/ (78), and the repair appends '</svg>' (110-111). PROBE: '<svg></svg>\\n<!-- end -->' \u2192 status 'repaired', tail '<svg></svg>\\n<!-- end --></svg>'.",
+   "failure_scenario": "The model ends an SVG with a trailing comment. The repaired artifact is saved with a stray closing tag, so 'Download source' produces a .svg that strict XML viewers reject (the HTML preview tolerates it)."
+  },
+  {
+   "id": "web-artifact-pipeline-21",
+   "title": "The research citation audit adds a version after the stream ends, with no base check, no verification and no client notice",
+   "severity": "low",
+   "file": "src/app/api/chat/route.ts",
+   "line": 3592,
+   "evidence": "READ: after the stream, persistArtifacts(conversationId, auditedMessageId, parseArtifacts(audit.report)) runs without verifyAndRepairChatArtifacts and without a base-version check (3564-3597). The stream has already ended, so nothing tells the open canvas.",
+   "failure_scenario": "A user starts editing the delivered report in the Code tab right after it finishes. The audit then lands v2 'generated' on top. Their save is refused as stale (409), or, if they reload first, the audited version supersedes what they were looking at without explanation."
+  }
+ ],
+ "gaps": [
+  {
+   "title": "The model has no list of artifacts and no current-version context",
+   "description": "Nothing tells the model which artifacts exist in the conversation or what their current content is. It knows an artifact only through its own earlier messages within a 24-31 message window (route.ts:1853-1861; context-assembly.ts:18,30). After about 12 exchanges, 'update the landing page' makes a duplicate or a rewrite from scratch. Hand edits are invisible (see defect 2), and a design started at /design lives in an empty conversation the model knows nothing about (api/design/route.ts:69-79).",
+   "why": "Claude-style 'Design inside the conversation' requires the model to read and edit the live document. This is the core blocker for merging Artifacts and Design into one surface."
+  },
+  {
+   "title": "Runtime capabilities for artifacts",
+   "description": "Previews have no model-call API (the equivalent of Claude's AI-powered artifacts), no persistent per-artifact or shared storage (localStorage is an in-memory stand-in, sandbox-frame.tsx:236-262), no access to uploaded files, and no connector or MCP access. Juno offers none of these, and web-artifact-pipeline-1 currently blocks even plain scripts.",
+   "why": "The capabilities that turn artifacts into apps (tools, trackers, dashboards) and that Anthropic's merged interface exposes."
+  },
+  {
+   "title": "The sandbox needs its own origin and response policy",
+   "description": "Because srcdoc inherits the app CSP, a working fix probably needs the preview served from a separate host or a route outside the app CSP, loaded by src into a sandboxed iframe, with its own response policy. This is inferred from the probe; not built.",
+   "why": "It fixes defect 1 and also enables embeddable, shareable preview URLs at one link."
+  },
+  {
+   "title": "Exfiltration policy for previews",
+   "description": "The iframe's own policy allows connect-src, img-src and frame-src for any https (sandbox-frame.tsx:51-70). The parent policy it inherits still allows img-src https: (csp.ts:39). An injected artifact that auto-renders in an inline card can beacon out whatever it contains. The code acknowledges this (sandbox-frame.tsx:36-43); Claude.ai restricts artifact network egress to allow-listed CDNs.",
+   "why": "Artifacts are now generated from turns that may contain untrusted web or connector content (UNTRUSTED_CONTENT_RULE), and they render automatically."
+  },
+  {
+   "title": "Comments, collaboration, remix, publish",
+   "description": "Artifacts have no comment model (schema has only FeatureComment at :1473). Project members cannot see each other's artifacts (ownership is conversation.userId everywhere). There is no remix, duplicate or 'copy to my Juno' from a share, no OG preview image, no embed. Shares are read-only snapshots with no update mode.",
+   "why": "The Anthropic merge being modelled has typed artifacts at one shareable link, with comments and editing on a phone."
+  },
+  {
+   "title": "Typed document kinds beyond Markdown (Docs, Slides, Sheets)",
+   "description": "Decks and spreadsheets are MARKDOWN with conventions (system-prompt.ts:293-297), previewed as a Markdown document and converted to Office only on download (office-export.ts). There is no slide or sheet renderer, no per-slide editing, no PDF.",
+   "why": "Claude's merged surface treats Design, Docs, Slides and Design System as first-class typed artifacts."
+  },
+  {
+   "title": "Stitching truncated artifacts together",
+   "description": "A cut-off artifact has no resume protocol, such as 'continue artifact X from byte N' with the server appending to the same version. Continue is a plain chat message (use-chat.ts:1862-1864).",
+   "why": "Long pages and reports hit output caps, especially on providers with shared thinking and output budgets (answer-completeness.ts header)."
+  },
+  {
+   "title": "Fork, import and export portability",
+   "description": "Forks drop artifacts (fork/route.ts:23-26), and the account export and import skip them (defect 14).",
+   "why": "Artifacts that are the 'made thing' should survive branching and account moves."
+  },
+  {
+   "title": "Version provenance",
+   "description": "The origin enum is generated|edit|restore only. Targeted AI patches, audit rewrites and blank designs created by the user are all 'generated' (artifacts-store.ts:117; route.ts:3592; api/design/route.ts:88). There is no author or run id on a version, unlike WorkArtifactVersion.provenance and runId (schema.prisma:2645-2660).",
+   "why": "A merged surface with human, AI and agent edits needs to say who changed what."
+  },
+  {
+   "title": "Tests for persistence and security behaviour",
+   "description": "No test exercises persistArtifacts, the /api/artifacts routes, share snapshot semantics, regenerate deleting artifacts, the fixed research identifier, DESIGN expansion size, the breadth of the Mermaid allowlist, or the sandbox inside the enforcing CSP. The existing tests check only pure helpers and strings (tests/sandbox-security.test.ts only checks meta-policy substrings).",
+   "why": "The most serious defects above sit in exactly these untested seams."
+  }
+ ],
+ "debt": [
+  {
+   "title": "Every serialisation ships every version's full content",
+   "description": "serializeArtifact maps every version with content (serializers.ts:207-222). getConversationThread loads all versions of all artifacts (queries.ts:117-121) and is polled during stream recovery (use-chat.ts:126,393-406). POST, PATCH and GET all include versions: true (api/artifacts/[id]/route.ts:20-25,74,107), and the SSE done event also carries them (artifacts-store.ts:72,88). A 150 KB artifact at v30 is about 4.5 MB per thread load, save or done event. queries.ts:105-111 already fixed the same problem for attachments.",
+   "where": [
+    "src/lib/serializers.ts:207-222",
+    "src/lib/queries.ts:117-121",
+    "src/app/api/artifacts/[id]/route.ts:20-25",
+    "src/lib/artifacts-store.ts:72,88"
+   ]
+  },
+  {
+   "title": "Versions are not append-only for designs",
+   "description": "The design store rewrites the latest 'edit' row in place within 30s of its creation (design/store.ts:176-200; operations.ts:511,529-539). Docs call ArtifactVersion append-only (docs/JUNO.md:2522), and Share assumes immutable versions (share.ts:257-261). A share taken inside that window can show later edits.",
+   "where": [
+    "src/lib/design/store.ts:176-200",
+    "src/lib/share.ts:257-261",
+    "docs/JUNO.md:2522"
+   ]
+  },
+  {
+   "title": "The DESIGN body shown in the message differs from the stored body",
+   "description": "On the verified (no-repair) path the message keeps the compact form while storage holds the expanded document. The comment at chat-artifact-verification.ts:113-117 claims they are identical, which holds only after a repair. The probe confirmed presentedIsCompact = true.",
+   "where": [
+    "src/lib/chat-artifact-verification.ts:113-118",
+    "src/lib/artifacts-store.ts:16-25"
+   ]
+  },
+  {
+   "title": "No type-aware validation on generic writes, and the type can change on identifier reuse",
+   "description": "POST /api/artifacts/[id] accepts any string for a DESIGN artifact (route.ts:7-16), bypassing the design store's validation. persistArtifacts overwrites `type` when an identifier is reused (artifacts-store.ts:61-67), so HTML and DESIGN versions can mix in one history, and restoring across types breaks the editor.",
+   "where": [
+    "src/app/api/artifacts/[id]/route.ts:7-16",
+    "src/lib/artifacts-store.ts:61-67"
+   ]
+  },
+  {
+   "title": "Identifiers and titles from the model are unbounded and unnormalised",
+   "description": "Nothing validates the identifier or title the model emits (message-content.ts:65-68,98). The edit request caps identifier at 240 (request.ts:59) and rename caps title at 200 (api/artifacts/[id]/route.ts:18), so a longer model identifier cannot be targeted-edited. Case and spaces are accepted, and a missing identifier becomes a content hash that changes while streaming (probe: art-17945dd \u2192 art-1gycwsr).",
+   "where": [
+    "src/lib/message-content.ts:58-68",
+    "src/lib/chat/request.ts:57-66"
+   ]
+  },
+  {
+   "title": "Stale security comments and docs",
+   "description": "middleware.ts:55-57 says the srcdoc iframe is unaffected by CSP, which the probe disproves. docs/JUNO.md:507-509 lists allow-popups in the sandbox, which the code excludes (sandbox-frame.tsx:78-88).",
+   "where": [
+    "src/middleware.ts:55-57",
+    "docs/JUNO.md:507-509",
+    "src/components/canvas/sandbox-frame.tsx:78-88"
+   ]
+  },
+  {
+   "title": "Two parallel 'made thing' systems",
+   "description": "Chat Artifact (text rows, conversation-scoped, Canvas) and WorkArtifact (object-storage files, session-scoped, provenance and validation) have separate version models, sync entities, serializers and download paths (schema.prisma:1125-1160 vs 2600-2665; sync-entities.ts:222-259 vs 547-567).",
+   "where": [
+    "prisma/schema.prisma:1125-1160",
+    "prisma/schema.prisma:2600-2665",
+    "src/lib/sync-entities.ts:547-567"
+   ]
+  },
+  {
+   "title": "Artifact content is plaintext at rest",
+   "description": "Deliberate and documented (it makes Postgres full-text search possible), but the message copy of the same body is encrypted. The body is protected in one table and exposed in the other.",
+   "where": [
+    "docs/JUNO.md:2485-2489",
+    "src/lib/artifacts-store.ts:59,86"
+   ]
+  },
+  {
+   "title": "An artifact must belong to a conversation",
+   "description": "conversationId is required (schema.prisma:1127), so /design creates an empty chat for every blank design (api/design/route.ts:66-79). Standalone artifacts and artifacts in a project are not representable.",
+   "where": [
+    "prisma/schema.prisma:1127",
+    "src/app/api/design/route.ts:66-79"
+   ]
+  }
+ ],
+ "strengths": [
+  "The targeted-edit protocol is well built. Anchors must be exact and unique, overlapping and too-broad patches are refused, the output is capped, a compare-and-swap commits against the base version, and half a patch is never saved after Stop (artifact-edit.ts:96-139; artifacts-store.ts:103-127; terminal-state.ts:98-101).",
+  "Hand edits and restores carry a stale-write guard that returns the latest artifact on 409, and the unique-constraint race is also reported as stale rather than failing (api/artifacts/[id]/route.ts:51-87; canvas-panel.tsx:420-545).",
+  "Check-before-show is treated as a presentation boundary. Refused bodies never render as unsaved cards, and a structured receipt is kept in the activity log (route.ts:425-462).",
+  "Office exports are re-opened by an independent reader before serving, with safe RFC 5987 filenames, a validator header, and separate rate limits for building and detecting (export/route.ts:100-163).",
+  "Ownership is enforced by joining through the conversation on every artifact route, the export and sync. Share tokens are 24 random bytes, revocation is a tombstone, shares are noindex and never cached, and activity is explicitly kept out of public payloads (share.ts:48-51,131-140,202-210).",
+  "The sandbox's opaque origin (no allow-same-origin), the parent re-checking links and trusting only the iframe's own window, and the storage and history stand-ins are sound isolation choices (sandbox-frame.tsx:72-88,849-916).",
+  "The compact DESIGN form is expanded through the same operation layer as the editor, so model-made and hand-made designs are the same kind of object (authoring.ts:1-23,165-213).",
+  "The library preview is truncated in Postgres with an explicit int cast, and the comment records the bug it fixed (api/artifacts/route.ts:42-78).",
+  "The one-table data model (DESIGN as an ArtifactType sharing history, sharing, library and sync, schema.prisma:1344-1356) is already the right basis for a merged typed-artifact surface."
+ ],
+ "merge_relevance": "Enables the merge:\n- DESIGN is already a typed artifact in the same table. It shares versions, the library, share tokens and sync with HTML, React, Markdown and the other types (schema.prisma:1344-1356). \"Design inside the conversation\" plus \"one shareable link per typed artifact\" is a product and UI unification, not a data migration.\n- The targeted-patch protocol (artifact-edit.ts) and the design transaction store (lib/design/store.ts) are two partial answers to \"AI edits a live document without clobbering it\". They should become one protocol: model patches expressed as design operations for DESIGN, source patches for code and documents.\n\nBlocks it, in priority order:\n1. Previews don't run on the web because of CSP inheritance (web-artifact-pipeline-1). A merged surface whose Design, Page and Slides previews are dead is a non-starter. It needs a separate sandbox origin, which also gives the one-link and embed story.\n2. The model can't see what exists (gap 1) and overwrites user edits (web-artifact-pipeline-2). Design inside conversations requires an artifact list plus current-version context in the prompt, and base-version checks on generated writes.\n3. Destructive lifecycle: regenerate deletes artifacts and their shares, forks drop them, and export skips them (defects 3 and 14).\n4. Sharing is read-only, frozen and anonymous. It doesn't render DESIGN and re-shares show stale snapshots (defects 10 and 11). The merge needs live or updatable links, comments (absent), remix, and mobile editing, and none of those have data-model support.\n5. Artifact requires a conversation (api/design/route.ts:66-79 mints empty chats), which conflicts with artifacts as first-class library objects.\n6. WorkArtifact is a second made-thing system with its own versioning. Anthropic's merge implies Work deliverables and chat artifacts share one library and one link model, so a shared head table or a unified list is needed.\n7. Payload design (every version shipped every time) will not scale to multi-document typed artifacts or phone editing.\n\nLiquid Glass branch: `git diff main mac/liquid-glass-chat` over every audited path shows only an unrelated CodeSessionCommand.attempts schema line (the branch is behind main). Nothing in this area differs.",
+ "tests": "Ran `npx tsx --test tests/artifact-edit.test.ts tests/chat-artifact-verification.test.ts tests/artifact-export-verification.test.ts`: 17/17 pass. Ran the nearby files `tests/answer-completeness.test.ts tests/chat-terminal-state.test.ts tests/design-authoring.test.ts tests/system-prompt-sections.test.ts tests/csp.test.ts tests/sandbox-security.test.ts`: 51/51 pass.\n\nCoverage is limited to pure helpers:\n- **Patches:** patch parse and apply.\n- **Checking:** three verify cases (valid SVG, repaired SVG, refused SVG).\n- **Office export:** the files are re-opened and checked.\n- **Policies:** the CSP and sandbox policy strings.\n\nNothing covers persistArtifacts, the /api/artifacts or /api/share routes, share snapshot semantics, regenerate deleting artifacts, the fixed research identifier, DESIGN size after expansion, breadth of the Mermaid allowlist, fenced DESIGN, or the sandbox inside the enforcing parent CSP.\n\n**Scripted probes, run from the scratchpad:**\n- **Artifact parsing and checking** (artifact-parse-probe.ts, artifact-dup-probe.ts, design-size.ts), results as cited in the defects:\n  - '>' in a title breaks the parse.\n  - A truncated HTML artifact is 'verified'.\n  - Nine valid Mermaid forms are refused.\n  - A fenced DESIGN is refused.\n  - A mixed reply refuses a repairable SVG.\n  - A 300-node design grows to 212,946 characters.\n  - The SVG repair adds a second closing tag.\n  - Duplicate identifiers get the same body rewritten into both.\n- **Browser check:** csp-parent.html, served with the exact buildCsp header on 127.0.0.1, embedding real buildSandboxDoc output. With the header, zero frame messages; without it, html loading\u2192done and react loading\u2192running\u2192done.\n- **Housekeeping:** both temporary servers were stopped afterwards.\n- **Repo state:** `git status` was clean at the start; nothing in the repo was modified.",
+ "open_questions": [
+  "Production telemetry was not checked. Do /api/csp-report logs show script-src violations from about:srcdoc since 26 Aug 2026? That would confirm defect 1 across all browsers; only Chromium was tested here.",
+  "Once previews can run (after defect 1 is fixed), what network egress should artifacts have? The iframe's own policy allows any https for connect, img and frame (sandbox-frame.tsx:51-70). Should artifacts from turns that carried untrusted content render without a click?",
+  "Are Mac and iOS artifact previews built from the same sandbox documents, and do their WKWebView hosts apply their own CSP? Out of scope here, but it decides whether native previews differ from web.",
+  "Should regenerate ever delete artifacts, or should it keep the row and add a version (and move shares)? The current comment in the route (2515-2520) only discusses messages.",
+  "Should the server assign identifiers (or add a turn suffix) instead of trusting the model, to prevent collisions like 'research-report' and case or space variants?",
+  "Should CHAT_ARTIFACT_MAX_CHARS count the expanded DESIGN document rather than the compact form, and should the design limit be raised for the merged surface (Postgres TEXT allows far more)?",
+  "Private (incognito) chats have canvas off (route.ts:958,973,990). Is that a deliberate product choice for the merged surface, where Claude's incognito still supports artifacts?",
+  "Does the recovery poll (use-chat.ts:126,393-406), which re-fetches the full thread including every artifact version, cause measurable load for heavy canvas users?"
+ ]
+}

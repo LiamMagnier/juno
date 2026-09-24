@@ -40,9 +40,11 @@ import { Markdown } from "@/components/chat/markdown";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { SandboxFrame, type SandboxElementSelection, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
 import { CodeSurface, type CodeSelection } from "@/components/canvas/code-surface";
+import { useRecordDesignCommit } from "@/components/canvas/use-record-design-commit";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
+import { fileNameFromDisposition } from "@/lib/download-name";
 import { diffLines, unifiedDiff } from "@/lib/line-diff";
 import { clampQuoteText, type ComposerQuote } from "@/lib/quote-context";
 import { extensionForLanguage, runtimeFor } from "@/lib/artifact-runtime";
@@ -86,21 +88,6 @@ const OFFICE_FORMATS: Record<OfficeFormat, { label: string; icon: IconComponent 
 
 function isOfficeFormat(v: unknown): v is OfficeFormat {
   return v === "docx" || v === "xlsx" || v === "pptx";
-}
-
-/** Fetching as a blob drops the server's filename, so read it back off the header. */
-function fileNameFromDisposition(header: string | null): string | null {
-  if (!header) return null;
-  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header);
-  if (utf8) {
-    try {
-      return decodeURIComponent(utf8[1]);
-    } catch {
-      // Malformed encoding — fall back to the ASCII name below.
-    }
-  }
-  const ascii = /filename="([^"]+)"/i.exec(header);
-  return ascii?.[1] ?? null;
 }
 
 /** How long a copy control shows its check before it turns back. */
@@ -240,11 +227,18 @@ export function CanvasPanel({
   // it gets the design surface in place of the preview, and no run controls.
   const isDesign = rt.mode === "design";
   const designRef = React.useRef<DesignEditorHandle | null>(null);
+  const recordDesignCommit = useRecordDesignCommit(artifact, onArtifactUpdated);
   // Incognito artifacts are never persisted, so there is no row for the route to export.
   const canExportOffice = isMarkdown && !!shareable;
 
   const [tab, setTab] = React.useState<"preview" | "console" | "code">("preview");
-  const [selectedVersion, setSelectedVersion] = React.useState(artifact.currentVersion);
+  // The version on screen: a pinned one, or null to follow the latest. Derived
+  // rather than copied into state by an effect, so a new version is on screen
+  // in the same render that brings it. The copy lagged by one render, and on
+  // every checkpoint the embedded design editor made, that render showed it
+  // the previous body, read-only.
+  const [pinnedVersion, setPinnedVersion] = React.useState<number | null>(null);
+  const selectedVersion = pinnedVersion ?? artifact.currentVersion;
   const [copied, flashCopied] = useFlash(COPY_REVERT_MS);
   // Editing is not a mode: the Code tab is always writable on the latest
   // version. `draft` is null while clean; the first keystroke stamps it (and
@@ -310,8 +304,9 @@ export function CanvasPanel({
     lastGoodVersionRef.current = null;
   }, [artifact.id]);
 
+  // A new version, or another artifact, brings the reader back to the latest.
   React.useEffect(() => {
-    setSelectedVersion(artifact.currentVersion);
+    setPinnedVersion(null);
   }, [artifact.id, artifact.currentVersion]);
 
   // A version switch swaps the sandbox — the old version's logs and error
@@ -1139,7 +1134,7 @@ export function CanvasPanel({
                 {!isLatest && (
                   <button
                     type="button"
-                    onClick={() => setSelectedVersion(artifact.currentVersion)}
+                    onClick={() => setPinnedVersion(null)}
                     aria-label={`Viewing v${selectedVersion}. Back to latest`}
                     className="pressable inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 font-mono text-caption text-warning-foreground hover:bg-warning/20"
                   >
@@ -1228,31 +1223,27 @@ export function CanvasPanel({
                         Console
                       </Button>
                     )}
-                    <Button variant="ghost" size="sm" onClick={() => setSelectedVersion(lastGood!)} className="h-6 px-2 text-caption text-destructive hover:text-destructive">
+                    <Button variant="ghost" size="sm" onClick={() => setPinnedVersion(lastGood!)} className="h-6 px-2 text-caption text-destructive hover:text-destructive">
                       View v{lastGood}
                     </Button>
                   </div>
                 )}
                 {isDesign ? (
-                  <div key={selectedVersion} className="h-full motion-safe:animate-fade-in">
+                  /* Keyed by artifact, not version. Every checkpoint the editor
+                     makes is a new version, and a version-keyed mount threw the
+                     editor away on its own first save — with its undo stack —
+                     and remounted it on whatever body the envelope held. The
+                     editor swaps documents in place when a body it did not
+                     write arrives (another version, a restore, a regeneration),
+                     and `version` is how it tells those from its own. */
+                  <div key={artifact.id} className="h-full motion-safe:animate-fade-in">
                     <DesignEditor
                       artifactId={artifact.id}
                       content={versionContent}
+                      version={selectedVersion}
                       readOnly={!isLatest}
                       editorRef={designRef}
-                      onCommitted={(version) => {
-                        // The editor holds the authoritative document; this only
-                        // keeps the artifact envelope (version rail, history) in step.
-                        if (version <= artifact.currentVersion) return;
-                        onArtifactUpdated({
-                          ...artifact,
-                          currentVersion: version,
-                          versions: [
-                            ...artifact.versions,
-                            { version, content: "", origin: "edit", createdAt: new Date().toISOString() },
-                          ],
-                        });
-                      }}
+                      onCommitted={recordDesignCommit}
                     />
                   </div>
                 ) : isMarkdown ? (

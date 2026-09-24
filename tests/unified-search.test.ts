@@ -526,9 +526,12 @@ test("a hit resolves to the exact location, not merely its container", async () 
   const byType = Object.fromEntries(result.groups.map((g) => [g.type, g.hits]));
 
   assert.equal(byType.message[0].href, "/chat/conv-a?m=msg-a", "the message, not just the chat");
+  // The artifact's own address at the version that matched, which need not be
+  // the current one. The chat's `?artifact=` deep link ignored `?v=` and
+  // opened the latest (M28); `/a/{id}?v=` draws the version named.
   assert.equal(
     byType.artifact[0].href,
-    "/chat/conv-a?artifact=guards-a&v=2",
+    "/a/art-a?v=2",
     "the version that matched, which need not be the current one"
   );
   assert.equal(byType.artifact[0].locator, "v2");

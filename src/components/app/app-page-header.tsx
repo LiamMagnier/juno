@@ -151,7 +151,10 @@ export function AppPageHeader({
             <p className="mt-1.5 max-w-prose text-pretty text-body text-muted-foreground">{lede}</p>
           )}
         </div>
-        {actions && <div className="flex shrink-0 items-center gap-2.5">{actions}</div>}
+        {/* max-w-full: on a phone the actions wrap to their own line, and a
+            row wider than that line (Admin's four tabs) used to push the page
+            sideways; clamped, it scrolls inside its own track. */}
+        {actions && <div className="flex max-w-full shrink-0 items-center gap-2.5">{actions}</div>}
       </div>
     </header>
   );

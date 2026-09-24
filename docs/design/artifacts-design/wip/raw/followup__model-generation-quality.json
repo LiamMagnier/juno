@@ -1,0 +1,563 @@
+{
+ "area": "Model-side quality and limits of generated artifacts and designs",
+ "summary": "Juno's artifact generation is a text protocol. The chat model wraps output in `<juno:artifact identifier type title language>` tags. The server parses them (src/lib/message-content.ts), runs a structural check with one repair pass (src/lib/chat-artifact-verification.ts), and appends a version (src/lib/artifacts-store.ts). Designs follow the same path: the model writes a compact JSON grammar (src/lib/design/authoring.ts), which is expanded through the editor's own operation layer. Inside the Design editor, \"Ask Juno\" is a separate, richer pipeline: the model returns validated scene operations in `<juno:design-ops>` (src/lib/design/ai.ts, src/app/api/design/[artifactId]/edit/route.ts). The mechanics are careful: compare-and-swap on versions, validated operations, scope checks, and a byte-exact patch protocol for the Canvas \"Modify\" action. The model-facing side has several structural limits that make generated artifacts fragile, especially on the Free plan and on revisions. No evaluation of real model outputs exists anywhere.\n\n(1) Output caps and truncation. READ: FREE requests 8,192 output tokens (plans.ts:53). Paid plans request 200,000, which clampMaxTokens cuts to each lab's cap and to half the context window (provider-limits.ts:31-78, 107-115). llm.ts:136-159 adds a thinking allowance for non-Anthropic reasoning models. A probe run through the real code gives these caps. FREE: 8,192 visible tokens for every model on Instant (24,576 including thinking for always-on reasoners). PRO: Anthropic 64k (up to 128k with adaptive headroom), OpenAI 128k, Google 65,536 shared with thinking, Zhipu 64k-131k, Moonshot, xAI and most Qwen 65,536, MiniMax and MiMo about 100k-131k, DeepSeek, Mistral and Meta 32,768, qwen-max and qwen-vl-max 16,384. INFERRED at about 3.5 characters per token for HTML: on paid plans every provider except DeepSeek, Mistral, Meta and the two 32k-context Qwen models can emit an artifact near the 200,000-character verifier cap. On FREE the ceiling is about 28-30k characters of HTML/React, or about 24k characters (about 180 nodes) of compact DESIGN. The rule at system-prompt.ts:257 requires a complete re-emit on every revision, so on FREE any artifact over about 30k characters cannot be revised in a normal chat turn. READ and VERIFIED BY PROBE: when the model stops at the cap (or the user presses Stop, or the budget guard halts it), parseArtifacts keeps the unclosed trailing artifact (message-content.ts:104-115). The verifier has no completeness check for HTML, REACT, CODE or MARKDOWN (chat-artifact-verification.ts:60-106). It \"repairs\" a cut SVG by appending `</svg>`. persistArtifacts then appends the cut body as the new current version (artifacts-store.ts:52-75). The activity row reads \"Artifact verified \u2014 1 artifact opened and verified.\" A cut DESIGN fails JSON parsing and is refused, so the previous version stays current, but the message is still used up. The Continue button only sends \"Continue from where you left off.\" (use-chat.ts:1862-1864), and nothing joins a continuation onto an artifact. READ: Auto ignores output size and artifact type. Probe: \"Build me a full SaaS dashboard web app ... in React\", \"Design a sign-in screen\" and \"Make the header blue\" are all classed \"simple\" (intelligence floor 4, no reasoning), and the cheapest-first ranking puts zhipu:glm-4.7-flash first on both FREE and PRO when that provider is configured.\n\n(2) Provider-specific and parser failures. VERIFIED BY PROBE:\n- A DESIGN body inside a ```json fence is refused, because authoring.ts:218 calls JSON.parse directly. The two sibling JSON-in-tag parsers strip fences (artifact-edit.ts:53, design/ai.ts:97); this one does not.\n- A tag wrapped in a code fence is extracted, but stray ``` markers stay in the prose.\n- MIME-style types such as text/html or application/vnd.ant.react silently become CODE (message-content.ts:70-84).\n- A `>` inside a title attribute corrupts the title and injects text into the body.\n- A literal `</juno:artifact>` inside content cuts the artifact short.\nNo provider runs in JSON or structured-output mode (checked the adapters for response_format and json_schema; none). Reasoning models spend the same budget on thinking. Gemini automatically continues only when thinking took at least half the budget (gemini-finish.ts:213-224). Anthropic reports a trailing pause_turn as max_tokens (anthropic.ts:471-472), so a paused server-tool turn also leaves a cut artifact that gets kept.\n\n(3) No golden set exists. eval-juno.ts has 42 deterministic unit-style tasks across CHAT, RESEARCH, FILES, TOOLS, WORK, CODE and MEMORY. None calls a model, and none covers artifacts or designs. tests/fixtures has no model outputs. design-authoring.test.ts uses the prompt's own example. chat-artifact-verification.test.ts uses three hand-written strings and treats a cut SVG repair as correct.\n\n(4) The compact DESIGN form (authoring.ts:46-88) supports 7 node types with solid hex fill and stroke, radius, opacity, rotation, basic text, auto layout, sizing modes and one page. It cannot express gradients, effects (shadow, blur, glass, noise), blend modes, line height or letter spacing, constraints, paths or icons, components or variants, variables or tokens, prototype links, motion, comments, assets or multiple pages. Unknown keys are silently dropped: a text \"color\" key falls back to near-black. The advertised `image` type makes the operation layer refuse the whole design (operations.ts:571-575). Claude Design, per the evidence file, writes real HTML/CSS artboards with components, tweak levers, prototype links, installed design-system tokens, multiple pages and craft rules.\n\nThe largest merge-relevant problem: chat revisions are full re-emits from the model's own earlier message text. READ: no current artifact version is ever put into context (route.ts:1850-1869). As a result:\n- a chat revision silently reverts manual edits;\n- for DESIGN it rebuilds a fresh document, deleting editor-made components, variables, effects, motion, interactions and comments (authoring.ts:161-203);\n- designs made at /design have no message at all, so the conversation that owns them cannot see them (api/design/route.ts:71-90).\nAsk Juno has the rich operation vocabulary but works blind. It never gets a render (edit/route.ts:151-155). It is single-turn. For /design-made designs it runs on qwen3.8-flash. With nothing selected it sees only top-level node ids and no variable or mode ids (probe: 1 of 6 ids visible).",
+ "files_read": [
+  "src/lib/chat/system-prompt.ts",
+  "src/lib/chat/prompt-sections.ts",
+  "src/lib/chat/skills.ts",
+  "src/lib/chat/tool-policy.ts",
+  "src/app/api/chat/route.ts (lines 280-520, 760-845, 1130-1180, 1440-1500, 1800-2150, 2930-3130, 3240-3320, 3570-3600)",
+  "src/lib/plans.ts",
+  "src/lib/chat-artifact-verification.ts",
+  "src/lib/models.ts (1-200, 870-890)",
+  "src/lib/provider-limits.ts",
+  "src/lib/llm.ts (120-200)",
+  "src/lib/anthropic-thinking.ts (100-190)",
+  "src/lib/anthropic.ts (440-480)",
+  "src/lib/openai-compat.ts (410-445)",
+  "src/lib/gemini.ts (140-200, 370-420)",
+  "src/lib/gemini-core.ts (255-320)",
+  "src/lib/gemini-finish.ts (180-240)",
+  "src/lib/auto-model.ts",
+  "src/lib/message-content.ts",
+  "src/lib/artifact-edit.ts",
+  "src/lib/artifacts-store.ts",
+  "src/lib/answer-completeness.ts",
+  "src/lib/finish-reason.ts",
+  "src/lib/chat/terminal-state.ts",
+  "src/lib/chat/context-assembly.ts (1-60)",
+  "src/lib/design/authoring.ts",
+  "src/lib/design/ai.ts",
+  "src/lib/design/selection-context.ts (1-120, 327-361)",
+  "src/lib/design/types.ts (364-380, 436-565, 768-789)",
+  "src/lib/design/operations.ts (560-580)",
+  "src/lib/design/variables.ts (185-196)",
+  "src/lib/design/store.ts (130-180)",
+  "src/app/api/design/[artifactId]/edit/route.ts",
+  "src/app/api/design/route.ts",
+  "src/app/api/artifacts/[id]/route.ts (30-90)",
+  "src/lib/artifact-runtime.ts (1-120)",
+  "src/components/canvas/sandbox-frame.tsx (1-150, 470-540)",
+  "src/components/canvas/canvas-panel.tsx (690-740, 1205-1245, 1395-1425)",
+  "src/components/design/ask-juno-bar.tsx (55-120)",
+  "src/components/chat/composer.tsx (790-815)",
+  "src/lib/quote-context.ts (91-111)",
+  "src/hooks/use-chat.ts (1855-1892)",
+  "prisma/schema.prisma (ArtifactVersion 1146-1160)",
+  "scripts/eval-juno.ts",
+  "scripts/emit-design-fixture.ts (1-60)",
+  "tests/design-fixtures.ts (1-40)",
+  "tests/design-authoring.test.ts",
+  "tests/chat-artifact-verification.test.ts",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeMessageContent.swift (280-340)",
+  "docs/design/artifacts-design/research/claude-primary-evidence.md"
+ ],
+ "inventory": [
+  {
+   "feature": "Canvas artifact contract in the chat system prompt",
+   "description": "READ: the model decides when to write an artifact (system-prompt.ts:241-247). The tag syntax is at 251-253. The rule to re-emit complete content on every revision is at 257. The type list is at 258. Educational-artifact rules are at 262-267. The DESIGN compact contract is at 269-291. Office-style MARKDOWN is at 293-297. The section is about 6.5k characters, 2.2k of them for DESIGN (probe). There are no visual craft rules for HTML or DESIGN, and no list of libraries the React runtime provides.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/chat/system-prompt.ts:238-298"
+   ]
+  },
+  {
+   "feature": "Artifact tag parser (streaming, closed and salvaged unclosed)",
+   "description": "READ: regex parser that keeps an unclosed trailing artifact (message-content.ts:104-115). Also provides splitMessageContent for display and rewriteArtifactMarkup. VERIFIED: fails on `>` in attributes, on a literal close tag inside content, and on fenced tags; MIME-style types become CODE. The Swift parser mirrors it (NativeMessageContent.swift:281-336).",
+   "maturity": "partial",
+   "where": [
+    "src/lib/message-content.ts:29-171",
+    "src/lib/message-content.ts:250-291"
+   ]
+  },
+  {
+   "feature": "Artifact verification with one repair pass",
+   "description": "READ: checks for empty content, over 200,000 characters, SVG root and closing tag, a Mermaid declaration, and DESIGN normalization. Nothing checks HTML, REACT, CODE or MARKDOWN content, and nothing renders. The only repair appends `</svg>`, or expands a DESIGN when another artifact needs a repair. A receipt is persisted in the activity log.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/chat-artifact-verification.ts:60-179",
+    "src/app/api/chat/route.ts:433-462"
+   ]
+  },
+  {
+   "feature": "Versioned persistence of generated artifacts",
+   "description": "READ: reusing an identifier appends a version and bumps currentVersion in one transaction (artifacts-store.ts:52-75). DESIGN bodies are expanded before storage (16-25). The success path and the Stop/network partial path both persist (route.ts:3059-3112, 3264-3290).",
+   "maturity": "solid",
+   "where": [
+    "src/lib/artifacts-store.ts:38-95"
+   ]
+  },
+  {
+   "feature": "Targeted patch edits from the Canvas Modify action",
+   "description": "READ: the prompt carries the whole current source (artifact-edit.ts:147-183). The model returns up to 12 search/replace edits inside `<juno:artifact-patch>`. Each anchor must be unique. Edits are applied from the end of the file, with limits on coverage (60%), growth and total size. Saving compares against the base version. A partial patch is never saved (terminal-state.ts:98-101). Only reachable when the user selects text or an element in the Canvas and presses Modify (canvas-panel.tsx:721, 1414; composer.tsx:803-806).",
+   "maturity": "solid",
+   "where": [
+    "src/lib/artifact-edit.ts",
+    "src/app/api/chat/route.ts:1450-1484",
+    "src/app/api/chat/route.ts:3049-3056"
+   ]
+  },
+  {
+   "feature": "Selection anchor nudge",
+   "description": "READ: when a message quotes an artifact selection, the model is told to change only that region and re-emit the complete artifact. On a Modify turn the patch prompt replaces this nudge (prompt-sections.ts:46-47, 104).",
+   "maturity": "partial",
+   "where": [
+    "src/lib/chat/prompt-sections.ts:46-47"
+   ]
+  },
+  {
+   "feature": "Compact DESIGN authoring grammar",
+   "description": "READ: a zod schema for 7 node types with basic properties (authoring.ts:46-88), expanded through applyTransaction with deterministic ids. VERIFIED: an image node refuses the whole design; unknown keys are silently dropped; a fenced body is refused. Unchanged since 3b9f06b0 (2026-08-05).",
+   "maturity": "broken",
+   "where": [
+    "src/lib/design/authoring.ts"
+   ]
+  },
+  {
+   "feature": "Ask Juno design edits (scene operations)",
+   "description": "READ: about 27 operation types including effects, components, variables, interactions, motion and assets (ai.ts:272-299). Adjustments bind to validated properties. Proposals are previewed on a clone, checked against the revision and the selection scope, then applied by the user and revertible in one step. Limits: 8,000 output tokens and no reasoning effort. The model is the conversation's model, falling back to DEFAULT_MODEL qwen3.8-flash. The request is single-turn. No render is sent (includeImage:false).",
+   "maturity": "partial",
+   "where": [
+    "src/lib/design/ai.ts",
+    "src/app/api/design/[artifactId]/edit/route.ts"
+   ]
+  },
+  {
+   "feature": "DESIGN_TOOLS catalogue (including render_design_preview)",
+   "description": "READ: exported and never referenced anywhere in the codebase. It advertises read and write tools, including a render preview, that no model is ever given.",
+   "maturity": "stub",
+   "where": [
+    "src/lib/design/ai.ts:256-270"
+   ]
+  },
+  {
+   "feature": "Per-plan and per-provider output caps",
+   "description": "READ: FREE 8,192, paid 200,000, clamped to the lab cap and half the context window. Thinking allowance for non-Anthropic reasoners; adaptive thinking headroom for Anthropic. VERIFIED per model by probe.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/plans.ts:53",
+    "src/lib/provider-limits.ts:31-115",
+    "src/lib/llm.ts:136-159",
+    "src/lib/anthropic-thinking.ts:133-185"
+   ]
+  },
+  {
+   "feature": "Auto model router",
+   "description": "READ: keyword and shape heuristics, then the cheapest model above an intelligence floor. It sees no artifact size, artifact type or revision context. VERIFIED: build and design prompts are classed simple.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/auto-model.ts:191-419",
+    "src/app/api/chat/route.ts:763-803"
+   ]
+  },
+  {
+   "feature": "Gemini automatic continuation",
+   "description": "READ: up to 2 extra passes, only when thinking used at least half the budget. The text continues in the same stream, so an artifact body can continue seamlessly.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/gemini.ts:164-417",
+    "src/lib/gemini-finish.ts:200-237"
+   ]
+  },
+  {
+   "feature": "Truncation detector (looksTruncated)",
+   "description": "READ: detects an unclosed `<juno:artifact`, open code fences and similar signs. Only the Gemini finish path uses it; artifact persistence does not.",
+   "maturity": "solid",
+   "where": [
+    "src/lib/answer-completeness.ts:38-52"
+   ]
+  },
+  {
+   "feature": "Continue after a length finish",
+   "description": "READ: sends a plain user message. Nothing joins its output onto a truncated artifact.",
+   "maturity": "broken",
+   "where": [
+    "src/hooks/use-chat.ts:1862-1864",
+    "src/components/chat/message-item.tsx:1193"
+   ]
+  },
+  {
+   "feature": "Canvas grant for skills",
+   "description": "READ: a skill may request 'canvas', which is granted when canvasOn. VERIFIED: a skill whose tools list names only 'canvas' strips every runtime tool from the turn. code_interpreter cannot be requested by any skill.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/chat/skills.ts:58-123",
+    "src/lib/chat/skills.ts:314-325"
+   ]
+  },
+  {
+   "feature": "React sandbox runtime contract",
+   "description": "READ: all imports are stripped. The runtime provides React hooks as globals, Tailwind from a CDN and lucide icons. There is no recharts, shadcn or framer-motion. The prompt says only 'no imports needed beyond react'.",
+   "maturity": "partial",
+   "where": [
+    "src/components/canvas/sandbox-frame.tsx:7-11",
+    "src/components/canvas/sandbox-frame.tsx:124-133",
+    "src/components/canvas/sandbox-frame.tsx:494-497",
+    "src/lib/chat/system-prompt.ts:258"
+   ]
+  },
+  {
+   "feature": "Client fallback to the last version that rendered",
+   "description": "READ: when a newer version fails to render, the Canvas shows a strip offering 'View v{lastGood}'. This is client-only; nothing is persisted and nothing reaches the model.",
+   "maturity": "solid",
+   "where": [
+    "src/components/canvas/canvas-panel.tsx:1222-1233"
+   ]
+  },
+  {
+   "feature": "Eval harness for artifacts and designs",
+   "description": "READ: eval-juno.ts categories are CHAT, RESEARCH, FILES, TOOLS, WORK, CODE and MEMORY (line 26), in 42 deterministic tasks with no model calls. There is no artifact or design eval and no golden outputs (searched scripts/, tests/, tests/fixtures).",
+   "maturity": "absent",
+   "where": [
+    "scripts/eval-juno.ts:24-28"
+   ]
+  }
+ ],
+ "architecture": "Chat turn (src/app/api/chat/route.ts):\n- READ: the model is picked in one of two ways. With Auto, pickAutoModel classifies the latest user message only (route.ts:763-791). Otherwise the chosen model is used.\n- canvasOn = not a voice turn AND (canvasEnabled ?? true) AND the workspace permits canvas. It does not check the model or PLANS[plan].canvas (route.ts:2110-2111).\n- buildSystemPromptSections includes the Canvas contract when canvasOn (system-prompt.ts:238-298).\n- composeSystemPrompt appends either the targeted-edit prompt (a Modify turn) or SELECTION_ANCHOR_NUDGE (prompt-sections.ts:94-108). Any skill block goes last.\n- streamChat is called with maxTokens = PLANS[plan].maxOutputTokens (route.ts:2952; private branch 1156). llm.ts adds a thinking allowance and applies clampMaxTokens (llm.ts:136-159), then dispatches to the provider adapter.\n- History is the raw decrypted Message.content of the last 24-31 messages (route.ts:1850-1869, context-assembly.ts:18-44). No current artifact state is injected. On Modify turns, buildArtifactEditPrompt puts the current source into the system prompt instead.\n\nStreaming and persistence:\n- Text deltas go to the client, except on patch turns. The client renders artifact cards with splitMessageContent.\n- When the provider finishes (stop or length both reach this path), a Modify turn parses and applies its patch: parseArtifactPatch and applyArtifactPatch (route.ts:3049-3056).\n- prepareChatArtifactOutput: parseArtifacts (closed plus salvaged unclosed), then verifyAndRepairChatArtifacts, then rewriteArtifactMarkup (refused artifacts become a sentence), and an 'artifact' activity receipt is emitted (route.ts:433-462).\n- persistAssistantTurn runs, then persistArtifacts: DESIGN bodies are expanded, and a reused identifier gets a new version (artifacts-store.ts:38-95). A Modify turn uses persistTargetedArtifactEdit, which compares against the base version.\n- A user Stop or a budget halt saves the partial through the same path (route.ts:3264-3290).\n\nAsk Juno in the Design editor:\n- ask-juno-bar sends { prompt, pageId, selectedNodeIds (empty when unscoped), baseRevision } to /api/design/[artifactId]/edit.\n- The route loads the stored document and checks the revision. pickEditModel uses the conversation's model, or DEFAULT_MODEL qwen:qwen3.8-flash for Auto or unset.\n- buildDesignEditPrompt is built from the document summary (top-level nodes only) plus the selection context when scoped, with includeImage:false.\n- streamChat runs with 8,000 tokens, one user turn and no reasoning effort. parseDesignProposal reads the `<juno:design-ops>` JSON. previewProposal applies it to a clone after the revision and scope checks. The preview is returned, and the user's Apply commits through the transaction endpoint.\n\nDesigns created at /design (POST /api/design) get an Artifact and an empty Conversation with no Message and no model (api/design/route.ts:50-90).\n\nTypes and storage: Prisma Artifact { identifier, type, currentVersion } and ArtifactVersion { version, content, origin: generated|edit|restore } (schema.prisma:1146-1160). A DESIGN version stores the full DesignDocument JSON (about 5x the compact form: probe 24.8k to 125k characters).",
+ "ux": [
+  {
+   "observation": "When a truncated HTML, REACT or CODE artifact is kept, the activity receipt says 'Artifact verified' / '1 artifact opened and verified.' Nothing was opened or rendered, and the body is incomplete. The copy asserts a check that never happened. READ: chat-artifact-verification.ts:182; route.ts:452-458.",
+   "severity": "major",
+   "where": [
+    "src/lib/chat-artifact-verification.ts:181-187",
+    "src/app/api/chat/route.ts:452-460"
+   ]
+  },
+  {
+   "observation": "A refused artifact becomes the fixed sentence 'Artifact unavailable: verification failed, so it was not saved or presented.' It gives no reason (such as 'image node needs a picture' or 'JSON was fenced') and offers no retry or regenerate on the artifact itself. The detailed reason exists only in the activity receipt. READ: route.ts:441-444.",
+   "severity": "major",
+   "where": [
+    "src/app/api/chat/route.ts:441-444"
+   ]
+  },
+  {
+   "observation": "Under a reply that hit the token limit while rewriting an artifact, the UI suggests 'Use Continue to ask the model to pick up from the partial answer.' For an artifact, Continue cannot rebuild the body (see defects). The suggestion points at a lever that does not work for this case. READ: finish-reason.ts:91-92; message-item.tsx:1193, 1407-1411.",
+   "severity": "major",
+   "where": [
+    "src/lib/finish-reason.ts:89-92",
+    "src/components/chat/message-item.tsx:1193"
+   ]
+  },
+  {
+   "observation": "Ask Juno refusals show raw schema paths to the user, for example 'Juno returned an unusable design operation (operations.0.nodeId: ...)'. READ: ai.ts:106-110; edit/route.ts:273-280.",
+   "severity": "minor",
+   "where": [
+    "src/lib/design/ai.ts:106-110"
+   ]
+  },
+  {
+   "observation": "With nothing selected (or the scope toggle off), Ask Juno usually cannot act below the top level. The model has no ids for deeper nodes, so it returns a note or an id-invention refusal. The user is not told to select a layer first. READ: ask-juno-bar.tsx:68, 86; selection-context.ts:327-361.",
+   "severity": "major",
+   "where": [
+    "src/components/design/ask-juno-bar.tsx:68-86",
+    "src/lib/design/selection-context.ts:327-361"
+   ]
+  },
+  {
+   "observation": "A Free user (15 messages a month) whose DESIGN is refused, or whose artifact revision is truncated, is still charged the message. The success path never refunds (route.ts:3059-3112). Ask Juno does refund on refusal (edit/route.ts:279).",
+   "severity": "minor",
+   "where": [
+    "src/app/api/chat/route.ts:3059-3112",
+    "src/app/api/design/[artifactId]/edit/route.ts:273-280"
+   ]
+  },
+  {
+   "observation": "A model that wraps the artifact tag in a ```html fence leaves empty or dangling code fences around the artifact card, and following prose such as 'Done.' ends up inside a code block. The split parts were VERIFIED; the rendering effect is INFERRED.",
+   "severity": "minor",
+   "where": [
+    "src/lib/message-content.ts:250-291"
+   ]
+  }
+ ],
+ "motion": [
+  {
+   "observation": "The compact DESIGN grammar has not changed since it was introduced (3b9f06b0, 2026-08-05, 'Let Juno actually create a design'). The scene model then grew pictures, pages and one text model (e849ef6a, 2026-08-06) and an effect stack with glass (83231c18, 48841547, 2026-08-06). The gap between what chat can author and what the editor stores has widened. requireAsset (e849ef6a, one day later) turned the compact 'image' type from a grey placeholder into a hard refusal. The prompt line listing 'image' was last touched 2026-09-08 (1eeced52).",
+   "where": [
+    "src/lib/design/authoring.ts",
+    "src/lib/design/operations.ts:571-575",
+    "src/lib/chat/system-prompt.ts:286"
+   ]
+  },
+  {
+   "observation": "Artifact verification arrived in a single commit (e252e4b5, 2026-08-21, 'close final product and release gates') and has not changed since. Targeted patch edits date from 716feabc (2026-07-18). The canvas prompt section is being edited actively (1eeced52 on 09-08, 19941547 on 09-23), but its revision rule is still a full re-emit.",
+   "where": [
+    "src/lib/chat-artifact-verification.ts",
+    "src/lib/artifact-edit.ts",
+    "src/lib/chat/system-prompt.ts"
+   ]
+  },
+  {
+   "observation": "Canvas moved from a user switch to the model's own decision ('no Juno web client sends canvasEnabled any more'). Every chat model therefore receives the artifact contract, including 32k-context and intelligence-4 models.",
+   "where": [
+    "src/app/api/chat/route.ts:2102-2111"
+   ]
+  },
+  {
+   "observation": "Ask Juno's model choice moved to 'the model their chat uses, else DEFAULT_MODEL'. DEFAULT_MODEL is qwen:qwen3.8-flash, described as 'the production-backed default for this deployment'. /design-made designs have no conversation model, so they always use it.",
+   "where": [
+    "src/app/api/design/[artifactId]/edit/route.ts:51-74",
+    "src/lib/models.ts:882-885"
+   ]
+  },
+  {
+   "observation": "The mac/liquid-glass-chat branch does not touch any file in this area. `git diff main mac/liquid-glass-chat` on every audited path is empty, and the merge base equals main HEAD d0997af2. The working tree is clean apart from the untracked docs/design/artifacts-design/.",
+   "where": []
+  }
+ ],
+ "defects": [
+  {
+   "id": "followup-model-generation-quality-1",
+   "title": "A truncated artifact body is kept and saved as the new current version (length finish, user Stop, budget halt)",
+   "severity": "high",
+   "file": "src/lib/message-content.ts",
+   "line": 104,
+   "evidence": "READ: parseArtifacts keeps an unclosed trailing artifact (message-content.ts:104-115). verifyAndRepairChatArtifacts has no completeness check for HTML, REACT, CODE or MARKDOWN (chat-artifact-verification.ts:60-106). prepareChatArtifactOutput and persistArtifacts run on the success path, which a 'length' finish also takes, with no finishReason check (route.ts:3059-3112). They also run on the partial Stop/budget path (route.ts:3264-3290). persistArtifacts bumps currentVersion (artifacts-store.ts:56-73). looksTruncated already detects an unclosed `<juno:artifact` (answer-completeness.ts:48) but is not used here. VERIFIED BY PROBE: a 120-character cut HTML body returned status=verified and was accepted; a cut REACT body was accepted as verified.",
+   "failure_scenario": "A Free user (8,192 output tokens) has a 45,000-character landing page at v3 and asks 'make the header sticky'. Following system-prompt.ts:257, the model re-emits the whole page and stops at about 30,000 characters mid-`<section>`. v4 is saved with the footer and closing tags missing, currentVersion=4, and the receipt says 'Artifact verified'. The same happens on a paid plan when the user presses Stop halfway through a rewrite."
+  },
+  {
+   "id": "followup-model-generation-quality-2",
+   "title": "The compact DESIGN 'image' node type the prompt advertises always makes the whole design fail",
+   "severity": "high",
+   "file": "src/lib/chat/system-prompt.ts",
+   "line": 286,
+   "evidence": "READ: the prompt lists 'Node types: frame, group, rectangle, ellipse, line, text, image' (system-prompt.ts:286), and authoring.ts:47 accepts 'image'. The compact schema has no field for a picture or asset (authoring.ts:46-73), and patchFor never sets assetId (107-151). The operation layer throws 'An image layer needs a picture. Create its asset in the same transaction.' (operations.ts:571-575, added in e849ef6a the day after authoring shipped). VERIFIED BY PROBE: {frame > image} is REFUSED; normalizeDesignArtifact throws, and verification refuses the whole artifact.",
+   "failure_scenario": "A user asks 'design a profile screen with an avatar and a hero photo'. The model follows the contract and emits an 'image' node, and the whole design is refused. The chat shows 'Artifact unavailable: verification failed', and the Free user has lost one of 15 messages."
+  },
+  {
+   "id": "followup-model-generation-quality-3",
+   "title": "Chat revision of a DESIGN rebuilds the document from scratch, deleting editor-made components, variables, effects, motion, interactions, comments and assets",
+   "severity": "high",
+   "file": "src/lib/design/authoring.ts",
+   "line": 161,
+   "evidence": "READ: a revision must be a complete re-emit (system-prompt.ts:257), and the model may not write the full document with schemaVersion (system-prompt.ts:291). expandAuthoredDesign starts from createDesignDocument and adds only the compact nodes (authoring.ts:161-203), and the compact grammar cannot express components, variables, effects, animations, interactions, comments or assets (authoring.ts:46-88; types.ts:768-789). persistArtifacts stores the rebuilt document as the new current version (artifacts-store.ts:46-73). The model never sees the editor's version (see defect 4). VERIFIED BY PROBE: an expanded document has 0 variables, components, animations and interactions.",
+   "failure_scenario": "The model creates 'Sign in' in chat (v1). In the editor the user adds a glass effect, turns the button into a component, binds a colour variable and leaves a comment (v2-v5, origin 'edit'). Back in chat: 'make the title larger'. The model re-emits its v1 compact JSON with a bigger fontSize. v6 has none of the editor work, its node ids are re-minted, and anything Juno Code handoff relied on is gone."
+  },
+  {
+   "id": "followup-model-generation-quality-4",
+   "title": "Chat revisions work from stale message history, never the current artifact version: manual edits and restores are reverted, and artifacts older than the history window are lost",
+   "severity": "high",
+   "file": "src/app/api/chat/route.ts",
+   "line": 1853,
+   "evidence": "READ: history is the raw decrypted Message.content of the last HISTORY_LIMIT=24 messages, trimmed in blocks of 8 (route.ts:1850-1869; context-assembly.ts:18-44). No code puts Artifact.currentVersion content into the context. Search: 'juno:artifact' appears only in message-content, system-prompt, artifact-edit, answer-completeness and office-export, and route.ts contains no artifact-context builder. Manual edits and restores create versions with origin 'edit'/'restore' (api/artifacts/[id]/route.ts:59-75; design/store.ts:157-176). Designs made at /design have no Message at all (api/design/route.ts:71-90).",
+   "failure_scenario": "(a) The user edits the HTML source in the Canvas to fix a typo (v3, origin 'edit'), then asks in chat 'add a pricing table'. The model re-emits from its v2 text, and v4 brings the typo back. (b) Twenty turns after creating a page the user asks 'change the accent to green'. The creating message has left the window, so the model regenerates a different page, possibly under a new identifier. (c) The user makes a design at /design and asks in its conversation 'add a footer'. The model has never seen the design and creates an unrelated DESIGN artifact."
+  },
+  {
+   "id": "followup-model-generation-quality-5",
+   "title": "Continue cannot repair a truncated artifact: nothing joins the continuation onto the body",
+   "severity": "medium",
+   "file": "src/hooks/use-chat.ts",
+   "line": 1862,
+   "evidence": "READ: continueResponse sends the literal user message 'Continue from where you left off.' (use-chat.ts:1862-1864). Continue is offered for 'length' finishes (message-item.tsx:1193). The only continuation that joins text is Gemini's automatic in-stream pass (gemini.ts:386-416). A search for 'stitch' and 'continuation of the artifact' finds nothing. persistArtifacts replaces the whole content for a reused identifier (artifacts-store.ts:56-60). INFERRED model behaviour: under rule 257 the model re-emits the whole artifact, or writes the remainder as loose prose, or opens the same identifier with only the tail.",
+   "failure_scenario": "After defect 1, the Free user presses Continue. One of three things happens. The model re-emits the full page and is cut at the same 8,192 tokens, producing v5, a second truncated copy. Or it writes the missing footer as a code block in chat that never reaches the artifact. Or it writes `<juno:artifact identifier=\"bakery-site\">` holding only the footer, and v5 becomes just the footer. Each attempt uses a message."
+  },
+  {
+   "id": "followup-model-generation-quality-6",
+   "title": "A DESIGN body in a ```json fence is refused, unlike the two sibling JSON-in-tag parsers",
+   "severity": "medium",
+   "file": "src/lib/design/authoring.ts",
+   "line": 218,
+   "evidence": "READ: normalizeDesignArtifact calls JSON.parse(content) directly (authoring.ts:216-221). artifact-edit.ts:53 and design/ai.ts:97 strip ```json fences before parsing. VERIFIED BY PROBE: a fenced compact body returns status=refused with 'A design artifact must contain JSON.'",
+   "failure_scenario": "A model that habitually fences JSON (common for GPT, Gemini, Qwen and GLM families; INFERRED) writes the tag, then ```json, the compact design, then ```. A valid design is refused and replaced by 'Artifact unavailable'."
+  },
+  {
+   "id": "followup-model-generation-quality-7",
+   "title": "Compact DESIGN silently drops unknown keys and malformed colours, including text 'color'",
+   "severity": "medium",
+   "file": "src/lib/design/authoring.ts",
+   "line": 46,
+   "evidence": "READ: a non-strict z.object strips unknown keys (authoring.ts:46-88). hexToRgba returns null for 5-digit hex and the fill is then skipped (authoring.ts:113-116; variables.ts:185-191). Text with no fill gets a near-black default (authoring.ts:148). VERIFIED BY PROBE: on text, color:#ff0000, lineHeight and letterSpacing were ignored and the fill stayed rgb(0.06,0.06,0.08). On a frame, shadow, gradient and effects were dropped (effects:[]). fill:#12345 fell back to the default fill. The design was accepted with no warning.",
+   "failure_scenario": "The model draws a dark #111 button and gives its label \"color\":\"#ffffff\", the natural CSS key, instead of \"fill\". The label renders near-black on near-black and is unreadable. Shadows and gradients the model intended vanish. Nothing tells the model or the user."
+  },
+  {
+   "id": "followup-model-generation-quality-8",
+   "title": "Unscoped Ask Juno gets no ids for nodes below the top level and no variable or mode ids, yet is told to address nodes by id and prefer variables",
+   "severity": "medium",
+   "file": "src/lib/design/selection-context.ts",
+   "line": 327,
+   "evidence": "READ: buildDocumentSummary lists only page.children (top level), collections by name without variable or mode ids, and counts (selection-context.ts:327-361). The prompt says 'Address every node by its stable id from the context below. Never invent an id' and 'Prefer binding an existing variable' (ai.ts:303, 356). When nothing is selected, or the scope toggle is off, selection is null (edit/route.ts:149-155; ask-juno-bar.tsx:68, 86). VERIFIED BY PROBE on the sign-in fixture: 1 of 6 node ids is visible ('screen'), and 0 variable ids and 0 mode ids.",
+   "failure_scenario": "With nothing selected, the user types 'make the sign-in button blue and bind it to the primary token'. The model cannot know the button's id or the variable id. It invents ids (refused with 422) or returns setSelection with a note, the request fails, and the tokens are billed."
+  },
+  {
+   "id": "followup-model-generation-quality-9",
+   "title": "Auto sends build and design requests to the cheapest intelligence-4 model with no reasoning, whatever the artifact size or type",
+   "severity": "medium",
+   "file": "src/lib/auto-model.ts",
+   "line": 289,
+   "evidence": "READ: the complexity score comes from the latest user message only, and short prompts (under 80 characters, score at most 2) are forced to simple (auto-model.ts:191-296, 289). pickAutoModel ranks cheapest first (366-419). The route passes only the message text (route.ts:782-787). VERIFIED BY PROBE: 'Build me a full SaaS dashboard web app with charts, auth screens and settings in React', 'Design a sign-in screen for my app' and 'Make the header blue' are all level=simple, minIntel=4, reasoning=false. The top-ranked eligible model for FREE and PRO at minIntel 4 is zhipu:glm-4.7-flash (intelligence 4). Whether Zhipu is configured in production is unknown (INFERRED).",
+   "failure_scenario": "A PRO user on Auto asks for a full React dashboard, or asks to revise a 60k-character page with 'make the header blue'. The turn goes to an intelligence-4 model with no thinking, which must author, or fully re-emit, a large artifact or a compact DESIGN. Quality and completeness drop, and nothing escalates when the artifact in history is large."
+  },
+  {
+   "id": "followup-model-generation-quality-10",
+   "title": "Ask Juno works blind (no render), single-turn, and on qwen3.8-flash for /design-made designs",
+   "severity": "medium",
+   "file": "src/app/api/design/[artifactId]/edit/route.ts",
+   "line": 155,
+   "evidence": "READ: the selection context is built with includeImage:false, and the comment says 'Juno cannot see it here' (edit/route.ts:151-155). The history is a single user turn (192-198). No reasoningEffort is passed. pickEditModel falls back to DEFAULT_MODEL = 'qwen:qwen3.8-flash' (edit/route.ts:61-74; models.ts:885) whenever the conversation model is Auto or null, and /design conversations are created with no model (api/design/route.ts:71-79). DESIGN_TOOLS advertises render_design_preview but is never used (ai.ts:256-270).",
+   "failure_scenario": "The user selects a card and asks 'make this feel more premium'. A small non-reasoning model that cannot see the result must choose effects, spacing and colours from JSON alone. A follow-up such as 'a bit less' has no memory of the previous proposal. Proposals are frequently off or refused, and the user cannot tell why."
+  },
+  {
+   "id": "followup-model-generation-quality-11",
+   "title": "The React artifact contract does not state what the sandbox provides; imports other than React, lucide and Tailwind fail at runtime",
+   "severity": "medium",
+   "file": "src/components/canvas/sandbox-frame.tsx",
+   "line": 124,
+   "evidence": "READ: the prompt says only 'REACT for a React component (default export, no imports needed beyond react)' (system-prompt.ts:258). stripImports removes every import (sandbox-frame.tsx:124-133). The preamble provides React hooks and lucide bindings (494-497). The CDNs are Tailwind, React, ReactDOM, Babel and Mermaid (7-11). There is no recharts, shadcn/ui, framer-motion or d3. The model never learns of runtime errors: there is no fix loop, and a search for fix-error actions found none.",
+   "failure_scenario": "A user asks for 'a React analytics dashboard with charts'. The model uses `import { LineChart } from 'recharts'` and `import { Card } from '@/components/ui/card'`, conventions from other artifact products. The imports are stripped, and the preview shows a red ReferenceError box. The Canvas offers the previous version, but the model is never told, so the next revision repeats the mistake."
+  },
+  {
+   "id": "followup-model-generation-quality-12",
+   "title": "SVG 'repair' appends </svg> to a body cut mid-element and reports it as repaired and verified",
+   "severity": "medium",
+   "file": "src/lib/chat-artifact-verification.ts",
+   "line": 110,
+   "evidence": "READ: a missing closing tag is marked repairable (chat-artifact-verification.ts:78-80), and the repair appends '</svg>' (110-112). The test enshrines this (tests/chat-artifact-verification.test.ts:19-32). VERIFIED BY PROBE: '<svg viewBox=\"0 0 10 10\"><path d=\"M0 0 L10' became '...<path d=\"M0 0 L10</svg>' with status=repaired, which is malformed XML.",
+   "failure_scenario": "A long illustration SVG hits the output cap inside a path attribute. The saved version is broken markup that renders blank or partially, while the receipt says 'Artifact repaired and verified'."
+  },
+  {
+   "id": "followup-model-generation-quality-13",
+   "title": "A skill that lists only 'canvas' in its tools strips every runtime tool from the turn; code_interpreter cannot be requested at all",
+   "severity": "low",
+   "file": "src/lib/chat/skills.ts",
+   "line": 314,
+   "evidence": "READ: CHAT_SKILL_TOOLS names web_search, browser, documents, images and canvas, but not code_interpreter (skills.ts:58-67). narrowRuntimeToolsForSkill filters the turn's allowlist to the requested names whenever the request is non-empty (314-325), and 'canvas' is not a runtime tool id (tool-policy.ts:78-85). VERIFIED BY PROBE: allowlist [browser_agent, read_document, inspect_image, code_interpreter] narrowed to [] for a skill requesting ['canvas'], and to [read_document] for ['canvas','read_document']. This contradicts the comment 'a skill is not a way to take capabilities away' (skills.ts:307-312).",
+   "failure_scenario": "A user imports a 'landing-page builder' skill whose allowed-tools is [canvas] and attaches a brand PDF. The turn loses read_document, inspect_image and code_interpreter, so the model builds the page without reading the attached brand guide."
+  },
+  {
+   "id": "followup-model-generation-quality-14",
+   "title": "Parser edge cases: '>' in an attribute, a literal close tag in content, and MIME-style types",
+   "severity": "low",
+   "file": "src/lib/message-content.ts",
+   "line": 29,
+   "evidence": "READ: the attributes pattern `[^>]*?` ends at the first '>', and the body regex is non-greedy up to the first '</juno:artifact>' (message-content.ts:29-31). normalizeType maps unknown types to CODE (70-84). VERIFIED BY PROBE: title=\"Plan A > Plan B\" gave title '\"Plan' and a body starting 'Plan B\">'. A MARKDOWN doc mentioning '`</juno:artifact>`' was cut to 5 characters. type=\"text/html\" and type=\"application/vnd.ant.react\" gave CODE. The Swift parser has the same first-'>' rule (NativeMessageContent.swift:288).",
+   "failure_scenario": "A comparison artifact titled 'Plan A > Plan B' previews with stray text 'Plan B\">' at the top, and its title reads '\"Plan'. A model using MIME-style types produces an HTML page that shows as code rather than a preview when no language attribute is given."
+  },
+  {
+   "id": "followup-model-generation-quality-15",
+   "title": "Output caps are not communicated to the model; DESIGN on FREE is limited to about 180 nodes, and refused designs still cost a message",
+   "severity": "low",
+   "file": "src/lib/plans.ts",
+   "line": 53,
+   "evidence": "READ: FREE maxOutputTokens is 8192 (plans.ts:53). The model is told neither this cap nor the 200,000-character artifact cap (system-prompt.ts:238-298; chat-artifact-verification.ts:8). No refund on the success path (route.ts:3059-3112). VERIFIED BY PROBE: a 3-screen flow with 183 nodes is 24,835 characters of compact JSON, about 7.8k tokens (INFERRED at 3.2 characters per token), right at the FREE cap. Its stored expansion is 125,170 characters. A cut DESIGN is refused (probe status=refused).",
+   "failure_scenario": "A Free user asks for 'a 4-screen onboarding flow'. The model starts a 4-screen compact document and is cut after about 3 screens. The whole design is refused, and the message is used up with nothing delivered."
+  }
+ ],
+ "gaps": [
+  {
+   "title": "No golden set or eval of real model outputs for artifacts or designs",
+   "description": "READ and searched: eval-juno.ts has 42 deterministic tasks with no model calls and no artifact or design category (line 26). tests/fixtures holds only memory-recall-record.json, research-store.ts, fake-pm2.mjs and public-ui-state-matrix.ts. The design and artifact tests use hand-written inputs. A minimal eval should have five parts. (a) About 40 prompts covering each type (HTML landing, REACT dashboard, SVG icon, MERMAID flow, MARKDOWN doc/table/deck, DESIGN phone, desktop and multi-screen), revision prompts against 5k, 30k and 80k-character artifacts, Canvas Modify patches, and scoped and unscoped Ask Juno. (b) A model matrix: Auto@FREE, Auto@PRO, DEFAULT_MODEL, and one current model per configured provider. Store raw outputs with finishReason, tokens and cost as a golden corpus. (c) Validity: exactly one artifact, identifier reused on revision, correct type, verification status, looksTruncated false, finishReason stop, DESIGN normalizes with zero dropped keys under a strict zod diff, design-ops parse and preview succeed, patch applies. (d) Render success: headless Chromium over the same reactDoc/HTML documents sandbox-frame builds, watching the juno:status done/error messages and console errors. For DESIGN, renderPageSvg plus layoutPage checks for overflow, overlap and WCAG contrast from fills. (e) Visual quality: screenshots scored by a rubric-based LLM judge plus pairwise comparison against reference outputs (for example Claude Design's craft rules from the evidence file), and a diff ratio outside the requested region for revision fidelity.",
+   "why": "Every defect above surfaced only through synthetic probes. Without real outputs there is no measure of fence, image-node, recharts or truncation rates, or of per-model design quality, and no way to judge a merge."
+  },
+  {
+   "title": "No render or error feedback to the model",
+   "description": "READ: chat verification is structural only. Ask Juno sends no image (edit/route.ts:151-155). The Canvas 'failed to render' strip is client-only (canvas-panel.tsx:1222-1233), and there is no action that feeds console errors back to the model. selection-context.ts can already render an SVG preview (renderSelectionSvg) that is never forwarded.",
+   "why": "Claude Design's model reads view state and can inspect renders on request. Juno models never learn that a REACT artifact crashed or a design looks wrong."
+  },
+  {
+   "title": "Chat revisions carry no current artifact state",
+   "description": "READ: no artifact-context injection exists (route.ts:1850-2083). Revisions depend on raw message text inside a 24-31 message window. The only path that uses current source is the explicit Canvas Modify patch.",
+   "why": "This blocks 'edit in the editor, refine in chat', which is the core of a merged surface."
+  },
+  {
+   "title": "Ordinary follow-up revisions cannot use patches or operations",
+   "description": "READ: the patch protocol (artifact-edit.ts) and design operations (design/ai.ts) run only from a Canvas Modify selection or the editor's Ask bar. A plain 'change X' message is always a full re-emit (system-prompt.ts:257).",
+   "why": "A full re-emit costs a whole artifact of output tokens per revision, truncates on FREE and on 32k-cap models, and loses editor structure for DESIGN."
+  },
+  {
+   "title": "No routing or budget that accounts for artifact size or type",
+   "description": "READ: pickAutoModel sees the message text only. canvasOn is not gated by model (route.ts:2110-2111), so 32k-context models (qwen-max, qwen-vl-max: 16,384 output) and intelligence-4 models get the same contract.",
+   "why": "Large artifacts and design authoring need capable, high-cap models. The router optimises for cost only."
+  },
+  {
+   "title": "No structured output or tool-call schema for DESIGN or design-ops",
+   "description": "READ: every provider path is free text. DESIGN, the artifact patch and design-ops each parse JSON out of tags with regex and strict JSON.parse. No response_format or json_schema is used in any adapter.",
+   "why": "Tool calls with schemas would remove fence and trailing-comma failures and let schema errors go back to the model for a retry."
+  },
+  {
+   "title": "No craft rules or design-system tokens in the DESIGN or HTML contract",
+   "description": "READ: the DESIGN rules cover device size, layout, hex colours, readable text and naming (system-prompt.ts:285-291). The evidence file lists Claude's rules: no lorem or fake stats, 1-3 typefaces, 0-2 accents, 44px touch targets, 4.5:1 contrast, real buttons and labels, an installed design system's tokens. None has a Juno equivalent for chat-authored designs.",
+   "why": "Visual quality depends on prompt guidance and tokens. Juno's chat designs start with no palette or system."
+  },
+  {
+   "title": "Truncated versions carry no marker",
+   "description": "READ: ArtifactVersion has only id, artifactId, version, content, origin and createdAt (schema.prisma:1146-1160). finishReason lives on the message, not the version.",
+   "why": "The UI, the Mac and a later revision cannot tell that a version is incomplete."
+  }
+ ],
+ "debt": [
+  {
+   "title": "DESIGN_TOOLS catalogue is dead code that describes tools the model never gets",
+   "description": "READ: exported at ai.ts:256-270, including render_design_preview and undo_design_transaction. rg finds no reference anywhere except the defining file and two untracked audit JSONs.",
+   "where": [
+    "src/lib/design/ai.ts:256-270"
+   ]
+  },
+  {
+   "title": "Three JSON-in-tag extractors with inconsistent fence handling",
+   "description": "READ: artifact-edit.ts:50-54 and design/ai.ts:95-97 strip ```json fences; authoring.ts:216-221 does not. Each has its own error vocabulary.",
+   "where": [
+    "src/lib/artifact-edit.ts:50-54",
+    "src/lib/design/ai.ts:95-97",
+    "src/lib/design/authoring.ts:216-221"
+   ]
+  },
+  {
+   "title": "Duplicated 200,000-character literal",
+   "description": "READ: CHAT_ARTIFACT_MAX_CHARS (chat-artifact-verification.ts:8) and a separate hard-coded 200_000 in applyArtifactPatch (artifact-edit.ts:137). The DESIGN size check runs on the compact body (about 5x smaller than what is stored), so the two caps mean different things for designs.",
+   "where": [
+    "src/lib/chat-artifact-verification.ts:8",
+    "src/lib/artifact-edit.ts:137"
+   ]
+  },
+  {
+   "title": "Two artifact parsers (TypeScript and Swift) that must stay in sync",
+   "description": "READ: NativeMessageContent.swift:281-336 reimplements the tag scan with the same first-'>' attribute rule and its own streaming logic. Any fix to the attribute or close-tag edge cases must be made twice.",
+   "where": [
+    "src/lib/message-content.ts",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeMessageContent.swift"
+   ]
+  },
+  {
+   "title": "eval-juno.ts overstates what it measures",
+   "description": "READ: the header claims '40+ objective end-to-end task evaluations ... actual verified task completion' (eval-juno.ts:1-11). Every task is a pure-function assertion, for example the cosine similarity of fixed vectors.",
+   "where": [
+    "scripts/eval-juno.ts:1-11"
+   ]
+  },
+  {
+   "title": "A test enshrines the unsafe SVG repair",
+   "description": "READ: tests/chat-artifact-verification.test.ts:19-32 asserts that a truncated SVG is 'repaired'. Fixing defect 12 requires changing this test.",
+   "where": [
+    "tests/chat-artifact-verification.test.ts:19-32"
+   ]
+  },
+  {
+   "title": "The PLANS.canvas flag gates almost nothing",
+   "description": "READ: every plan sets canvas:true (plans.ts:55, 79, 104, 131, 153). Only the design edit route reads it (edit/route.ts:96); the chat route's canvasOn ignores it (route.ts:2110-2111).",
+   "where": [
+    "src/lib/plans.ts",
+    "src/app/api/chat/route.ts:2110-2111"
+   ]
+  }
+ ],
+ "strengths": [
+  "The targeted patch protocol is well engineered: unique byte-exact anchors resolved against one base, applied from the end, with coverage, growth and size limits, a compare-and-swap version bump, and no partial save (artifact-edit.ts:96-139; artifacts-store.ts:103-127; terminal-state.ts:98-101).",
+  "DESIGN normalization reuses the editor's operation layer, so model-authored nodes are exactly as valid as editor-made ones. Ids are deterministic, and unreadable designs are refused rather than stored (authoring.ts:153-235; artifacts-store.ts:16-25).",
+  "Ask Juno's safety model is strong: validated operations, preview on a clone, refusal of stale revisions, enforcement of the selection scope, one-click revert, adjustments bound only to validated properties, and billing with refunds on refusal (design/ai.ts:134-174; edit/route.ts:164-283).",
+  "Verification receipts are persisted in the message activity, so a refusal can be diagnosed after reload (route.ts:433-462).",
+  "Output caps are documented against evidence, with a per-model context clamp, a thinking allowance, and Gemini's narrowly scoped automatic continuation (provider-limits.ts; llm.ts:136-159; gemini-finish.ts:200-237).",
+  "A truncation detector (looksTruncated) that already recognises unclosed artifact tags exists and is tested (answer-completeness.ts:38-52).",
+  "The Canvas never lets a failed newer version hide the last one that rendered (canvas-panel.tsx:1222-1233)."
+ ],
+ "merge_relevance": "To merge Artifacts and Design into one conversational surface ('Claude Design inside conversations', typed artifacts at one link, editable on the phone, with comments), the model side here has five blockers. (1) Chat must revise the current stored version, not its own old message text (defects 3 and 4). A merged surface where people edit in the editor and refine in chat cannot use full re-emit from history: every chat turn would erase editor work, comments and design-system bindings. The fix is to put the current version (or a summary plus ids) into context, and to route natural-language follow-ups through the patch or operation pipelines that already exist (artifact-edit.ts for code types, design/ai.ts operations for DESIGN) instead of the rule at system-prompt.ts:257. (2) One design grammar. Chat creation uses the 7-type compact form (authoring.ts), while the editor and Ask Juno use a rich operation vocabulary (ai.ts:272-299). The merge should create designs by emitting operations against an empty document, or adopt an HTML-artboard format like Claude's .dc.html, so chat-made designs can carry effects, components, tokens, motion, images and pages; the image node is broken today (defect 2). (3) A truncated version must never become current (defects 1, 5, 12), and versions need a completeness marker. Otherwise shareable links and phone views will serve half-written pages. (4) The router needs artifact awareness (defect 9): size- and type-aware model and budget choice, and FREE either gets a larger artifact budget or is limited to patch revisions. (5) The model needs a feedback loop: render and error results, which selection-context.ts:297 can already produce as SVG, plus conversation-aware, multi-turn Ask Juno on a capable vision model (defects 8, 10). Designs made at /design must also get a message or context entry, so the owning conversation can actually 'work inside' them (defect 4c). Enablers already present: the version compare-and-swap and origin fields, the validated operation layer with scope checks, activity receipts, and the patch protocol. The evidence file's features (per-type SKILL.md instructions, view-state context, comments sent to Claude, design-system install) map naturally onto Juno's skills module, selection context and DesignDocument.comments. None is wired into the chat path today. Build the eval in gaps[0] before the merge, so the merged surface can be judged against real outputs.",
+ "tests": "Ran with `npx tsx --test`:\n- tests/design-authoring.test.ts and tests/chat-artifact-verification.test.ts: 15 tests, all pass.\n- tests/design-ai.test.ts, tests/artifact-edit.test.ts, tests/system-prompt-sections.test.ts, tests/answer-completeness.test.ts, tests/provider-limits.test.ts and tests/auto-model.test.ts: 53 tests, all pass.\n\nAll inputs are synthetic:\n- design-authoring uses the prompt's own sign-in example plus bare nodes.\n- chat-artifact-verification uses three hand-written strings and asserts that a truncated SVG counts as 'repaired'.\n- design-ai uses fixtures built through the operation layer.\nNo test feeds a real model output. No test covers the image node, a fenced DESIGN body, unknown-key dropping, a truncated HTML or REACT artifact being kept, a length finish, Continue, or Auto routing of build prompts.\n\nRead-only probes I ran under the scratchpad (scratchpad/audit/*.ts) confirmed each VERIFIED claim above. They covered: per-model caps for FREE and PRO, Auto classification and ranking, truncated HTML/SVG/REACT and fenced DESIGN, the tag inside a fence, MIME types, image and unknown-key designs, a 3-screen size estimate, unscoped Ask Juno id visibility, skill narrowing, and attribute edge cases.\n\nscripts/eval-juno.ts was not run. It makes no model calls and has no artifact or design tasks.",
+ "open_questions": [
+  "Which providers are configured in production? The Auto analysis (glm-4.7-flash first for simple build prompts) assumes Zhipu is configured. The DEFAULT_MODEL comment at models.ts:882-884 suggests only Qwen may be funded, in which case Auto@FREE sends most canvas work to qwen3.8-flash.",
+  "Real frequencies are unknown without a golden set: how often models fence DESIGN JSON, use image nodes, write text 'color' instead of 'fill', import recharts or shadcn in REACT, use MIME-style types, or fail to reuse the identifier on a revision.",
+  "How often does Anthropic's pause_turn (reported as max_tokens at anthropic.ts:471-472) end a turn with a web-search artifact still streaming, which would then be kept truncated?",
+  "Can any compat provider emit inline `<think>` blocks in content rather than in reasoning_content? openai-compat.ts:503-505 reads only the separate fields, so an artifact written inside a think block would be parsed.",
+  "How reliably can small models produce byte-exact, JSON-escaped search anchors for the artifact-patch protocol on quote-heavy HTML? There is no whitespace-tolerant fallback.",
+  "prepareChatArtifactOutput runs whatever canvasOn is (route.ts:3059). In a workspace that disallows canvas, artifact tags imitated from older history would still be persisted. Is that intended?",
+  "Should a truncated or refused artifact turn refund the message on FREE, as Ask Juno refusals do?",
+  "History keeps every full re-emitted version verbatim (for example, ten revisions of a 30k-character page is about 300k characters). How much of the context and prompt-cache cost comes from repeated artifact bodies, and does it push 32k-context models (qwen-max) into context errors?"
+ ]
+}

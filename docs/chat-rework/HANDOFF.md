@@ -1,72 +1,118 @@
-# Chat rework: handoff (live, updated 2026-09-23)
+# Chat rework: handoff (PAUSED 2026-09-23, mid wave 1)
 
-- **Worktree:** `/Users/liammagnier/Developer/project/juno-tools`
-- **Branch:** `web/tools-thinking-research`. It is local and has not been pushed, except the Library
-  commit described below.
-- **node_modules:** each package is symlinked to the main checkout's copy, except
-  `node_modules/@prisma`, `node_modules/.prisma` and `node_modules/.cache`, which are real copies.
-  `prisma generate` is therefore safe to run here. Typecheck needs `runner/agent-core/dist`, which
-  has been built inside this worktree.
+Paused on the owner's request, relayed by the "Artifacts & Design audit" session because of the
+usage limit. Nothing unfinished is on main, and nothing was deployed.
+
+- **Integration worktree:** `/Users/liammagnier/Developer/project/juno-tools`, branch
+  `web/tools-thinking-research`. It is local except for the Library commit.
+- **node_modules:** in every rework worktree, each package is symlinked to the main checkout's copy,
+  except `@prisma`, `.prisma` and `.cache`, which are real copies. `prisma generate` is therefore
+  safe. Set up a new worktree with `bash scripts/rework-worktree-setup.sh <path>`.
 
 ## The owner's asks
 
-1. **Tool calling.** Rework it (it "doesn't work"), add more tools, and audit how Claude, ChatGPT
-   and others implement tool calls.
-2. **Thinking and the right panel.** Rework the thinking animation and the right sidebar.
-3. **Research.** Rework Deep Research completely after auditing ChatGPT and Claude Research. Remove
-   the named levels (Quick, Standard, Deep, Max). Improve the UI/UX and the motion.
-4. **Library bug.** Deleting a file from the Library also deletes it from its chat.
+1. Rework tool calling (it "doesn't work") and add tools, based on an audit of Claude, ChatGPT and
+   others.
+2. Rework the thinking animation and the right sidebar.
+3. Rework Deep Research completely, based on an audit of ChatGPT Deep Research and Claude Research.
+   Remove the named levels (Quick/Standard/Deep/Max). Improve the UI/UX and the motion.
+4. Library bug: a file deleted from the Library also disappeared from its chat.
 
-## Commits on the branch (oldest first)
+## Done
 
 | Commit | What | Where |
 |---|---|---|
-| `7f92324f` | **Library fix**, web, server and iOS. A Library delete keeps the file in its chat or project | **On origin/main** (pushed by the "Stop iOS Library delete" session on the owner's order). Not deployed; the next deploy runs its migration |
-| `4559ae9c` | Audit docs, `DECISIONS.md` and this handoff | Branch only |
-| `c899d6f7` | **Pinned-DNS fix.** On Node ≥ 20 every pinned fetch threw `ERR_INVALID_IP_ADDRESS`, which broke Research page reads, the chat page reader and Work fetches | Branch only. **It can ship on its own**: cherry-pick it onto main |
+| `7f92324f` | **Library fix.** Web, server and iOS | **Live** (deployed with 1633a4b5, 2026-09-24) |
+| `4559ae9c`, `169e6bb1` | Audit (17 reports in `audit/`) and `DECISIONS.md` (§4b resolutions, §4c defaults the owner must confirm) | Branch only |
+| `c899d6f7` | **Pinned-DNS fix.** On Node ≥ 20 every pinned fetch threw `ERR_INVALID_IP_ADDRESS`, breaking Research page reads, the chat page reader and Work fetches | Branch only. **Can ship on its own:** cherry-pick onto main |
+| `f1badf26`, `5f89b888` | `SPEC.md`: 5,600 lines with 3 adversarial reviews applied, plus the bootstrap-advertising addendum agreed with the Mac session | Branch only |
+| `8e226dba` | **WS0 contract scaffold.** All new types, stubs, CSS tokens and `rework-worktree-setup.sh`. Full gate green: 3,803 tests | Branch only |
 
-## Documents
+## Frugal resume, 2026-09-24: `web/tool-call-hotfixes`
 
-- `audit/`: 17 reports. 12 audits plus 5 gap reports on native contract, provider capabilities,
-  entitlements and cost, the web fetch backend, and i18n.
-- `DECISIONS.md`: the decisions (§1 tools, §2 thinking and panel, §3 Research). §4b resolves the
-  audit's contradictions. §4c sets conservative defaults for the owner's open questions, which the
-  owner must confirm.
-- `SPEC.md`: the implementation spec with exact contracts and workstreams. A workflow is writing it
-  now: author, 3 adversarial reviews (`spec-review-*.md`), then a revision.
+The owner resumed with under 10% of the week's usage left and asked for small slices, with no
+multi-agent workflows. So first came a hotfix branch off origin/main (7f92324f), in the worktree
+`/Users/liammagnier/Developer/project/juno-rework/hotfix`:
 
-## Workflow runs (this Claude session, c6dc8e85)
+- `6de5c15d`: the pinned-DNS fix (a cherry-pick of c899d6f7).
+- `00bdd27a`: **Juno's own chat tools stop hanging.**
+  - `read_document` and `inspect_image` get exact `read_only` broker rules.
+  - The runtime forwards `onApprovalRequest`, so `browser_agent` and `code_interpreter` show their
+    approval card instead of waiting unseen for 120 s.
+  - Gemini sends `exec.text`.
+- `ba2b0c4d`: **"Research" with no level words.**
+  - The composer chip, the + menu, the plan gate, the report, the landing page, the project settings
+    and the user-facing messages now say "Research".
+  - The plan gate drops the team and page counts the tier never delivered.
+  - Depth is still derived internally, and the activity titles native reads are unchanged.
+- Gate on this exact tree: typecheck clean, 3,781 tests passing with 0 failures, eslint clean,
+  `check-approval-dispatch` OK. The copy is not visually checked, because the browser pane has no
+  signed-in session.
+- **Merged into origin/main at 1633a4b5**, on 2026-09-24, by the web releaser session "Fix dead
+  script previews under enforcing CSP", together with its artifact fixes. The gate on the combined
+  tree passed 3,822 tests. **Deployed to chat.liams.dev** on 2026-09-24, by the owner, from origin/main
+  1633a4b5. The Library fix and its `libraryRemovedAt` migration went out in the same deploy.
 
-| Run | Purpose | State |
-|---|---|---|
-| `wf_bf8ab8d7-57f` | Audit | Done |
-| `wf_5010c171-35e` | Library fix | Done |
-| `wf_526e95f0-d71` | Spec, `chat-rework-spec` | Running |
+The next small slices, if usage allows:
+- stop sending xAI's retired Live Search, once verified live.
 
-The scripts are under
-`~/.claude/projects/-Users-liammagnier-Developer-project-juno/c6dc8e85-4182-4266-8be9-0fe69658b1ff/workflows/scripts/`.
+## In progress: wave 1 (paused mid-implementation)
 
-## Next steps
+The run was `wf_a8130f4a-430` (`rework-wave1`), stopped during the implement stage. No review, fix
+or merge had started. Each workstream has one **WIP commit** on its own branch, cut from 5f89b888,
+with its worktree under `/Users/liammagnier/Developer/project/juno-rework/<ws>`:
 
-1. Read `SPEC.md` after the revision. Message the Mac session (`juno-glass`) with the final wire
-   field names; it mirrors the activity row and panel.
-2. **Implement in waves**, following the workstreams in SPEC §12:
-   - wave 1 in parallel on disjoint files;
-   - then integration (`route.ts`, `use-chat`, `chat-view`, `message-item`, composer);
-   - then Research UI.
-3. **Review.** An adversarial multi-lens review, then the full tests, typecheck and lint.
-4. **Visual check.** Look at it in `/dev/run` and `/dev/research`. Start a dev server from this
-   worktree on port 3200; it has its own `.next`, so it won't clash with another session's port
-   3100.
-5. **Owner decisions before any merge or deploy:**
-   - the §4c defaults;
+| WS | Branch | WIP commit | Diff vs 5f89b888 | Note |
+|---|---|---|---|---|
+| ws1 tools/broker/MCP/metering | `web/rework-ws1` | `2233c7bb` | 27 files, +2308 | Committed **with `--no-verify`**. `src/lib/tools/specs/shared.ts:26` has a parse error (an unterminated regex, cut mid-write) |
+| ws2 web backend/hardening | `web/rework-ws2` | `9c9980cc` | 3 files, +375 | |
+| ws3a llm, Anthropic, Gemini | `web/rework-ws3a` | `35d597c8` | 15 files, +2166 | |
+| ws3b Responses, xAI, compat, models | `web/rework-ws3b` | `4aca9e14` | 12 files, +1177 | |
+| ws4 turn pipeline/persistence | `web/rework-ws4` | `961be81b` | 6 files, +965 | |
+| ws5 run UI, motion, i18n | `web/rework-ws5` | `eeab9903` | 13 files, +2699 | |
+| ws6 Activity panel and shell | `web/rework-ws6` | `990ffd16` | 5 files, +946 | |
+| ws7 research backend | `web/rework-ws7` | `1f6d2373` | 8 files, +1618 | |
+| ws8 research UI | `web/rework-ws8` | `872be8cd` | 9 files, +1496 | |
+
+None of these has been reviewed or gated. They are partial implementations.
+
+## Resume
+
+1. Heavy commands go through `bash /Users/liammagnier/Developer/project/juno-rework/gate.sh <cmd>`,
+   which allows at most 3 at once, because this Mac has 24 GB of RAM.
+2. **Relaunch wave 1** with the script at
+   `~/.claude/projects/-Users-liammagnier-Developer-project-juno/c6dc8e85-4182-4266-8be9-0fe69658b1ff/workflows/scripts/rework-wave1-wf_a8130f4a-430.js`.
+   Change the implement prompt to say:
+
+   > Your branch already has a WIP commit from a paused run. Read `git show HEAD`, finish the
+   > workstream from there, and squash or reword the WIP commit into proper commits.
+
+   A plain `resumeFromRunId` would re-run the implementers from scratch, because none had finished.
+3. Each implementer is then followed by 2 reviews and a fix. After that, merge into
+   `web/tools-thinking-research` in the order ws2 → ws1 → ws3a → ws3b → ws4 → ws7 → ws5 → ws6 → ws8,
+   rerunning the full gate after every merge. The gate is typecheck, `npm test`, lint,
+   `models:capabilities:audit` and `design:tokens:check`.
+4. **Wave 2:** WS9a (the `route.ts` server integration) and WS9b (the client integration in
+   `use-chat`, `message-item` and `chat-view`), in parallel. **Wave 3:** WS9c (research and
+   composer integration). See SPEC §12.5.
+5. **Final:**
+   - the full gate;
+   - `research-copy-guard` turned on;
+   - a pass through the `/dev/run` and `/dev/research` galleries on a dev server started from this
+     worktree on port 3200 (it has its own `.next`);
+   - a whole-branch multi-lens review.
+6. **Owner decisions before any merge to main or deploy:**
+   - the `DECISIONS.md` §4c defaults and the SPEC §14 open items;
    - backfilling Library deletions made before the fix;
-   - shipping `c899d6f7` early.
+   - shipping `c899d6f7` early;
+   - the design-token digest mask that WS0 added to `design:tokens:check` (SPEC §1.2).
 
 ## Coordination
 
-- **Mac Chat session** (`juno-glass`): it read `DECISIONS.md` into its Phase 2 brief. Ping it when
-  `SPEC.md` is final and whenever a wire name changes. Don't touch `juno-glass*` or `native/`.
-- **Artifacts & Design session** (branch `wip/artifacts-design-audit`): it will rework the canvas.
-  This rework leaves `CanvasPanel` and `DocumentViewer` alone and only builds the shared shell for
-  the Activity and Research panels.
+- **Mac Chat session (`juno-glass`):** it builds its activity row and panel against SPEC @ f1badf26
+  (§2, §2.13, §7, §8). It always sends `clientFeatures`, `timeZone` and `locale`, and reads
+  `chat.clientFeatures` from bootstrap, which WS9a adds. Tell it before any merge or deploy, and
+  whenever a wire name changes. Don't touch `juno-glass*` or `native/`.
+- **Artifacts & Design session** (`wip/artifacts-design-audit`): it reworks the canvas. This rework
+  leaves `CanvasPanel` and `DocumentViewer` alone. `artifact-inline-card.tsx` needs coordinating at
+  merge (SPEC O-20).

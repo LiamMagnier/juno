@@ -93,6 +93,7 @@ import { parseQuotedMessage } from "@/lib/quote-context";
 import { QuotedSelection } from "@/components/chat/quoted-selection";
 import type { ChatMessage, ImageEditInput, RegenerateOptions, SendResult } from "@/hooks/use-chat";
 import type { ClientArtifact, ClientAttachment, ClientMessageVersionDetail, GenerationStatus } from "@/types/chat";
+import { resolveArtifactTag } from "@/lib/chat-client-state";
 
 function formatStreamElapsed(totalSec: number): string {
   if (totalSec < 60) return `${totalSec}s`;
@@ -1361,10 +1362,13 @@ export const MessageItem = React.memo(function MessageItem({
                 <Markdown key={i} content={part.text} streaming={message.streaming} sources={sources} />
               ) : part.type === "artifact" ? (
                 (() => {
-                  const artifact = artifactsByIdentifier.get(part.identifier);
+                  const artifact = resolveArtifactTag(artifactsByIdentifier, part.identifier, message);
                   return (
                     <ArtifactInlineCard
                       key={i}
+                      // The stored row's id: a design's card draws its poster
+                      // from it, and shows its glyph until the row arrives.
+                      artifactId={artifact?.id}
                       streaming={part.streaming && message.streaming}
                       title={artifact?.title ?? part.title ?? "Artifact"}
                       type={artifact?.type ?? part.artifactType ?? "CODE"}
@@ -1372,7 +1376,7 @@ export const MessageItem = React.memo(function MessageItem({
                       content={artifact?.content ?? part.content}
                       version={artifact?.currentVersion}
                       updated={!!artifact && artifact.messageId != null && artifact.messageId !== message.id}
-                      onOpen={part.identifier && artifact ? () => onOpenArtifact(part.identifier, { fullscreen: false }) : undefined}
+                      onOpen={part.identifier && artifact ? () => onOpenArtifact(artifact.identifier, { fullscreen: false }) : undefined}
                     />
                   );
                 })()
