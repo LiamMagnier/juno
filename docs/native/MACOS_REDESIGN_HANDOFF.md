@@ -289,3 +289,29 @@ A small Phase 5 slice. It was done frugally because the owner's weekly usage was
 - The gates hold: tokens, icons, contract, `work:contract:check`, design, glass and targets.
 - The targets gate went down from 303 to 299 because the legacy approval card was removed. It was not re-baselined.
 - Step 4 of the slice brief (the sidebar dot) was skipped to save budget.
+
+## Follow-ups received 2026-09-24, not built yet
+
+- **Web parity: tasks are now started by the model.** The web no longer has a "Do this as a task" toggle; the chat model starts tasks itself (see `.phase5-research/mac-shell.md` §0). The Mac slice added the toggle, which diverges from the web. Next:
+  1. Decode the model-started task frames/fields so tasks begun by the model get the inline card on the Mac.
+  2. Then decide with the owner whether to keep the Mac toggle.
+- **The approval card's verb button draws in system blue** in the snapshots. Apply the Juno accent tint to the card's prominent button, or check that the column tint reaches it.
+- **Artifact type is immutable** (server branch `artifacts/r0-size-and-type` @ `db3766ab`, unmerged).
+  - Re-emitting an identifier with a new type creates a new row, and the old row is retired as `{identifier}~{last 6 of id}`.
+  - `ChatArtifactResolver` must mirror the web's `resolveArtifactTag` (`src/lib/chat-client-state.ts` on that branch):
+    1. The candidates are the exact identifier plus every `{identifier}~*`.
+    2. If there is one candidate, use it.
+    3. Otherwise prefer the candidate whose `messageId` equals the tag's message.
+    4. Otherwise take the newest candidate with `createdAt` ≤ the message's `createdAt`, or the oldest candidate if none qualifies.
+    5. Open the chosen row by its own identifier.
+  - `9161bcbc` also refuses designs whose expanded size is over 200k.
+- **Artifacts and Design merge on the web** (branch `artifacts/merge-first-light`, worktree `../juno-artifacts-r0`, plan `docs/design/artifacts-design/04-MERGE-PLAN.md` "First light", unmerged).
+  - The Design row leaves the sidebar, leaving Library · Projects · Artifacts.
+  - `/design` redirects to `/artifacts?type=DESIGN`, and `/design/{id}` to `/a/{id}`.
+  - Artifacts gets a New menu with design presets.
+  - Designs are shown as server posters: `GET /api/artifacts/{id}/poster?v={n}` (owner) and `/share/{token}/poster`.
+  - On the Mac:
+    1. Keep `.design` decodable but route it to Artifacts filtered to Designs, with New design.
+    2. Drop the Design sidebar row.
+    3. Move `InlineDesignPreview` from the SVG export to `/poster` once the branch is merged.
+- **X-02** changes `design-editor.tsx`. When the Mac's design-editor bundle is next rebuilt, the rails switch at 640 and 896 px of *editor* width. This bears on X-18: the inspector is hidden at the default window width.
