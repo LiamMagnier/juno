@@ -142,6 +142,7 @@ interface RunnerCall {
   nextIsFinal: boolean;
 }
 
+/** Before the final request it appends the final-round note to the last result, as the dispatcher does (SPEC §4.6). */
 function fakeRunner(answerFor: (call: ToolCallInput) => Partial<BatchResult> = () => ({})) {
   const seen: RunnerCall[] = [];
   const runner: ToolRoundRunner = async function* (calls, _signal, nextIsFinal) {
@@ -159,6 +160,8 @@ function fakeRunner(answerFor: (call: ToolCallInput) => Partial<BatchResult> = (
         ...answerFor(call),
       });
     }
+    const lastResult = results.at(-1);
+    if (nextIsFinal && lastResult) lastResult.text = `${lastResult.text}\n\n${FINAL_ROUND_NOTE}`;
     return results;
   };
   return { runner, seen };
@@ -301,14 +304,29 @@ test("the final request keeps its declarations under mode NONE, and the runner i
   const { runner, seen } = fakeRunner();
   const { bodies, events } = await run(
     request({ budget: 2 }),
-    [calling([{ id: "fc-1", name: "github__list_issues", args: {} }]), answer("From what I have.")],
+    [
+      calling([
+        { id: "fc-1", name: "github__list_issues", args: {} },
+        { id: "fc-2", name: "github__list_issues", args: {} },
+      ]),
+      answer("From what I have."),
+    ],
     runner,
   );
-  assert.equal(seen[0].nextIsFinal, true, "the dispatcher appends the final-round note to the last result");
+  assert.equal(seen[0].nextIsFinal, true, "the runner is told the next request is the last");
   assert.deepEqual(bodies[1].tools, bodies[0].tools);
   assert.deepEqual(bodies[1].toolConfig, { functionCallingConfig: { mode: "NONE" } });
   assert.equal(last(ofType(events, "round_end")).final, true);
-  assert.ok(FINAL_ROUND_NOTE);
+  // The note rides INSIDE the last functionResponse, exactly as the runner
+  // wrote it; the follow-up turn holds the responses and nothing else (SPEC §4.6).
+  const body = wrapUntrusted("GitHub", "body of github__list_issues");
+  assert.deepEqual(last(contentsOf(bodies[1])), {
+    role: "user",
+    parts: [
+      { functionResponse: { id: "fc-1", name: "github__list_issues", response: { result: body } } },
+      { functionResponse: { id: "fc-2", name: "github__list_issues", response: { result: `${body}\n\n${FINAL_ROUND_NOTE}` } } },
+    ],
+  });
 });
 
 test("a rejected mode NONE falls back to withholding the declarations, grounding kept (probe P2)", async () => {

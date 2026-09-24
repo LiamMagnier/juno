@@ -105,7 +105,11 @@ interface RunnerCall {
   nextIsFinal: boolean;
 }
 
-/** A runner that answers every call with `answer(call)` and records what it was handed. */
+/**
+ * A runner that answers every call with `answer(call)` and records what it was
+ * handed. Before the final request it appends the final-round note to the last
+ * result, as the dispatcher does (SPEC §4.6), so a test can see where it lands.
+ */
 function fakeRunner(answer: (call: ToolCallInput) => Partial<BatchResult> = () => ({})) {
   const seen: RunnerCall[] = [];
   const runner: ToolRoundRunner = async function* (calls, _signal, nextIsFinal) {
@@ -124,6 +128,8 @@ function fakeRunner(answer: (call: ToolCallInput) => Partial<BatchResult> = () =
         ...answer(call),
       });
     }
+    const lastResult = results.at(-1);
+    if (nextIsFinal && lastResult) lastResult.text = `${lastResult.text}\n\n${FINAL_ROUND_NOTE}`;
     return results;
   };
   return { runner, seen };
@@ -273,14 +279,29 @@ test("the final request keeps its tools and sets tool_choice none; the last resu
   const { runner, seen } = fakeRunner();
   const { bodies, events } = await run(
     request({ budget: 2 }),
-    [toolUseResponse([{ id: "toolu_1", name: "github__list_issues", json: "{}" }]), textResponse("From what I have: two.")],
+    [
+      toolUseResponse([
+        { id: "toolu_1", name: "github__list_issues", json: "{}" },
+        { id: "toolu_2", name: "github__list_issues", json: "{}" },
+      ]),
+      textResponse("From what I have: two."),
+    ],
     runner,
   );
-  assert.equal(seen[0].nextIsFinal, true, "the dispatcher appends FINAL_ROUND_NOTE to the last result");
+  assert.equal(seen[0].nextIsFinal, true, "the runner is told the next request is the last");
   assert.deepEqual(bodies[1].tool_choice, { type: "none" });
   assert.deepEqual(bodies[1].tools, bodies[0].tools, "the tools array never changes within a turn");
   assert.equal(ofType(events, "round_end")[1].final, true);
-  assert.equal(FINAL_ROUND_NOTE.length > 0, true);
+  // The note rides INSIDE the last tool_result, exactly as the runner wrote
+  // it; the follow-up holds the results and nothing else (SPEC §4.6).
+  const body = wrapUntrusted("GitHub", "result of github__list_issues");
+  assert.deepEqual(last(messagesOf(bodies[1])), {
+    role: "user",
+    content: [
+      { type: "tool_result", tool_use_id: "toolu_1", content: body },
+      { type: "tool_result", tool_use_id: "toolu_2", content: `${body}\n\n${FINAL_ROUND_NOTE}` },
+    ],
+  });
 });
 
 test("a final request that still ends in tool_use closes those rows and finishes length", async () => {
