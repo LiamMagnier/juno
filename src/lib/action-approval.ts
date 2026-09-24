@@ -192,6 +192,11 @@ const DESTRUCTIVE_TOKENS = new Set([
 const SECRET_KEY =
   /(?:api.?key|access.?key|authorization|\bauth\b|\bbearer\b|cookie|credential|pass(?:word|phrase)|private.?key|secret|token)/i;
 
+/** Whether an argument key names a credential, whose value is never shown to anyone. */
+export function isSecretArgKey(key: string): boolean {
+  return SECRET_KEY.test(key);
+}
+
 function safeIdentifier(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "unknown";
 }

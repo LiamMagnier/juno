@@ -13,6 +13,15 @@ import { classifyToolAccess, type ToolAccess, type ToolAccessHints } from "@/lib
 import { recordToolInvocation, settleToolInvocation } from "@/lib/tool-audit";
 import { authorizeExternalAction, completeExternalAction } from "@/lib/action-approval-store";
 import type { ClientActionApproval } from "@/lib/action-approval";
+import {
+  connectFailureOf,
+  connectorFailureFor,
+  flattenToolResult,
+  refusalStatusFields,
+  sortConnectorTools,
+  type ConnectorResolution,
+  type ConnectorToolRoute,
+} from "@/lib/tools/connector-tools";
 import type { ClientSource } from "@/types/chat";
 import type { ConnectorFailure, ToolErrorCode, ToolFigure, ToolWebDetail } from "@/types/run";
 import type { Connection } from "@prisma/client";
@@ -83,6 +92,66 @@ async function refreshConnection(def: ConnectorDef, row: Connection): Promise<st
   }
 }
 
+/**
+ * One linked connector resolved to an endpoint, or the reason it cannot be.
+ * Shared by `getActiveConnectors` (Work's array, unchanged) and
+ * `resolveConnectorsWithStatus` (chat's verdicts), so the two can never
+ * disagree about which connectors work.
+ */
+async function resolveConnection(
+  userId: string,
+  row: Connection
+): Promise<{ active: ActiveConnector } | { label: string; resolution: ConnectorResolution }> {
+  if (isComposioAppId(row.provider)) {
+    const slug = composioSlugFromId(row.provider);
+    const label = row.accountLabel ?? slug ?? row.provider;
+    if (!slug || !isComposioConfigured()) {
+      return { label, resolution: { linked: true, configured: false, credential: "usable" } };
+    }
+    // A Composio link that is not active is one the user has not finished (or undid).
+    if (row.scope !== "composio:active") {
+      return { label, resolution: { linked: false, configured: true, credential: "usable" } };
+    }
+    return {
+      active: {
+        id: row.provider,
+        label,
+        mcpUrl: `${env.appUrl.replace(/\/$/, "")}/api/mcp/composio/${encodeURIComponent(slug)}`,
+        headers: { Authorization: `Bearer ${mintConnectorToken(userId, row.provider)}` },
+      },
+    };
+  }
+
+  const def = getConnector(row.provider);
+  if (!def || !isConnectorConfigured(def) || !def.cfg.mcpUrl) {
+    return { label: def?.label ?? row.provider, resolution: { linked: true, configured: false, credential: "usable" } };
+  }
+
+  // Credentials connectors point at our own MCP route: hand out a short-lived
+  // signed token instead of the stored credential (which never leaves the server).
+  if (def.kind === "credentials") {
+    return {
+      active: { id: def.id, label: def.label, mcpUrl: def.cfg.mcpUrl, headers: { Authorization: `Bearer ${mintConnectorToken(userId, def.id)}` } },
+    };
+  }
+
+  const nearExpiry = !!row.expiresAt && row.expiresAt.getTime() < Date.now() + EXPIRY_SKEW_MS;
+  if (nearExpiry) {
+    // Expiring (e.g. Figma) — refresh it so the connector keeps working; skip if we can't.
+    const token = await refreshConnection(def, row);
+    if (!token) return { label: def.label, resolution: { linked: true, configured: true, credential: "refresh_failed" } };
+    return { active: { id: def.id, label: def.label, mcpUrl: def.cfg.mcpUrl, headers: { Authorization: `Bearer ${token}` } } };
+  }
+  let token: string;
+  try {
+    token = decryptSecret(row.accessToken);
+  } catch {
+    // Key rotated / corrupt: nothing the user can fix by reconnecting alone.
+    return { label: def.label, resolution: { linked: true, configured: true, credential: "unreadable" } };
+  }
+  return { active: { id: def.id, label: def.label, mcpUrl: def.cfg.mcpUrl, headers: { Authorization: `Bearer ${token}` } } };
+}
+
 /** Resolve the connectors the user asked for into usable (configured, linked) endpoints. */
 export async function getActiveConnectors(userId: string, requestedIds?: string[]): Promise<ActiveConnector[]> {
   if (!requestedIds || requestedIds.length === 0) return [];
@@ -90,44 +159,8 @@ export async function getActiveConnectors(userId: string, requestedIds?: string[
   const rows = await prisma.connection.findMany({ where: { userId, provider: { in: ids } } });
   const out: ActiveConnector[] = [];
   for (const row of rows) {
-    if (isComposioAppId(row.provider)) {
-      const slug = composioSlugFromId(row.provider);
-      if (!slug || row.scope !== "composio:active" || !isComposioConfigured()) continue;
-      out.push({
-        id: row.provider,
-        label: row.accountLabel ?? slug,
-        mcpUrl: `${env.appUrl.replace(/\/$/, "")}/api/mcp/composio/${encodeURIComponent(slug)}`,
-        headers: { Authorization: `Bearer ${mintConnectorToken(userId, row.provider)}` },
-      });
-      continue;
-    }
-
-    const def = getConnector(row.provider);
-    if (!def || !isConnectorConfigured(def)) continue;
-
-    if (!def.cfg.mcpUrl) continue;
-
-    // Credentials connectors point at our own MCP route: hand out a short-lived
-    // signed token instead of the stored credential (which never leaves the server).
-    if (def.kind === "credentials") {
-      out.push({ id: def.id, label: def.label, mcpUrl: def.cfg.mcpUrl, headers: { Authorization: `Bearer ${mintConnectorToken(userId, def.id)}` } });
-      continue;
-    }
-
-    let token: string | null = null;
-    const nearExpiry = !!row.expiresAt && row.expiresAt.getTime() < Date.now() + EXPIRY_SKEW_MS;
-    if (nearExpiry) {
-      // Expiring (e.g. Figma) — refresh it so the connector keeps working; skip if we can't.
-      token = await refreshConnection(def, row);
-    } else {
-      try {
-        token = decryptSecret(row.accessToken);
-      } catch {
-        token = null; // key rotated / corrupt
-      }
-    }
-    if (!token) continue;
-    out.push({ id: def.id, label: def.label, mcpUrl: def.cfg.mcpUrl, headers: { Authorization: `Bearer ${token}` } });
+    const resolved = await resolveConnection(userId, row);
+    if ("active" in resolved) out.push(resolved.active);
   }
   return out;
 }
@@ -138,13 +171,43 @@ export async function getActiveConnectors(userId: string, requestedIds?: string[
  * Beside it rather than instead of it: Work calls `getActiveConnectors` and
  * keeps its array return. Chat reads `skipped` to say which linked connector is
  * unavailable this turn instead of dropping it silently (SPEC §3.4 item 1).
- * WS0 lands the signature; WS1 implements it.
+ * Both lists follow the request's order. `skipped` covers a connector with no
+ * link (`not_linked`), one this deployment cannot offer or whose credential it
+ * cannot read (`misconfigured`), and one whose refresh failed (`auth_expired`);
+ * a connector that resolves but then fails to connect is reported by
+ * `openMcpToolset`'s `onConnectorStatus` instead.
  */
 export async function resolveConnectorsWithStatus(
-  _userId: string,
-  _ids: string[]
+  userId: string,
+  ids: string[]
 ): Promise<{ active: ActiveConnector[]; skipped: Array<{ id: string; label: string; reason: ConnectorFailure }> }> {
-  throw new Error("not implemented: WS1");
+  const requested = [...new Set(ids ?? [])];
+  if (requested.length === 0) return { active: [], skipped: [] };
+  const rows = await prisma.connection.findMany({ where: { userId, provider: { in: requested } } });
+  const byProvider = new Map(rows.map((row) => [row.provider, row]));
+  const active: ActiveConnector[] = [];
+  const skipped: Array<{ id: string; label: string; reason: ConnectorFailure }> = [];
+  for (const id of requested) {
+    const row = byProvider.get(id);
+    if (!row) {
+      const def = getConnector(id);
+      const reason =
+        connectorFailureFor({
+          linked: false,
+          configured: isComposioAppId(id) ? isComposioConfigured() : !!def && isConnectorConfigured(def) && !!def.cfg.mcpUrl,
+          credential: "usable",
+        }) ?? "not_linked";
+      skipped.push({ id, label: def?.label ?? (isComposioAppId(id) ? composioSlugFromId(id) ?? id : id), reason });
+      continue;
+    }
+    const resolved = await resolveConnection(userId, row);
+    if ("active" in resolved) {
+      active.push(resolved.active);
+      continue;
+    }
+    skipped.push({ id, label: resolved.label, reason: connectorFailureFor(resolved.resolution) ?? "misconfigured" });
+  }
+  return { active, skipped };
 }
 
 /**
@@ -160,6 +223,12 @@ export async function resolveConnectorsWithStatus(
 export interface McpToolAnnotations {
   readOnlyHint?: boolean;
   destructiveHint?: boolean;
+  /**
+   * Set by the chat toolset on Juno's own tools: the canonical id, so an
+   * adapter can recognise one without a lookup (SPEC §3.7). Never on a
+   * connector's tool.
+   */
+  junoCanonical?: string;
 }
 
 export interface McpFunctionTool {
@@ -263,6 +332,20 @@ export interface McpToolset {
     opts?: ToolExecuteOptions
   ): Promise<ToolExecution>;
   close(): Promise<void>;
+  /**
+   * What the toolset knows about a routed connector tool, for the chat
+   * toolset's contract mapping (SPEC §3.4 item 7). Optional: only
+   * `openMcpToolset` has routes, and Work never reads them.
+   */
+  route?(toolName: string): ConnectorToolRoute | undefined;
+}
+
+/** Opt-in behaviour for chat; Work passes none and keeps today's (SPEC §3.4 item 1). */
+export interface OpenMcpToolsetOptions {
+  /** Bound on each connector's connect + `listTools`. Unset (Work): no bound, as before. */
+  connectTimeoutMs?: number;
+  /** Called once per connector with `"ready"` or why it could not be opened. */
+  onConnectorStatus?: (id: string, state: "ready" | ConnectorFailure) => void;
 }
 
 /**
@@ -297,7 +380,8 @@ function uniqueToolName(base: string, taken: (name: string) => boolean): string 
 }
 
 /**
- * Flatten an MCP tool result into the text the model reads, cut to the cap.
+ * Flatten an MCP tool result into the text the model reads, cut to the cap,
+ * plus the pictures it carried and whether the server called it a failure.
  *
  * The cut is `truncateConnectorResult`'s rather than a bare slice, so that a
  * result the model only half-received says so in the result itself. This used to
@@ -306,20 +390,15 @@ function uniqueToolName(base: string, taken: (name: string) => boolean): string 
  *
  * Whole-result length is measured after the parts are joined, not per part: what
  * the model is missing is measured in the text it was actually going to read.
+ * Image parts are pixels, not base64 in the text (`flattenToolResult`, M6).
  */
-function stringifyToolResult(res: unknown): TruncatedForModel {
-  const content = (res as { content?: unknown })?.content;
-  const text = Array.isArray(content)
-    ? content
-        .map((p) => {
-          const part = p as { type?: string; text?: string; resource?: unknown };
-          if (part?.type === "text") return part.text ?? "";
-          if (part?.type === "resource") return JSON.stringify(part.resource);
-          return JSON.stringify(part);
-        })
-        .join("\n")
-    : JSON.stringify(res);
-  return truncateConnectorResult(text);
+function readToolResult(res: unknown): {
+  result: TruncatedForModel;
+  images: readonly ToolResultImage[];
+  isError: boolean;
+} {
+  const flattened = flattenToolResult(res);
+  return { result: truncateConnectorResult(flattened.text), images: flattened.images, isError: flattened.isError };
 }
 
 /**
@@ -370,12 +449,24 @@ export interface McpToolsetContext {
  * OpenAI-style function tools. Tool names are namespaced `<connector>__<tool>`.
  * Always `close()` when the generation ends (best-effort in a finally).
  */
-export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetContext): Promise<McpToolset> {
+export async function openMcpToolset(
+  active: ActiveConnector[],
+  ctx: McpToolsetContext,
+  opts: OpenMcpToolsetOptions = {}
+): Promise<McpToolset> {
   const clients = new Map<string, Client>();
   const tools: McpFunctionTool[] = [];
   const routing = new Map<
     string,
-    { connectorId: string; toolName: string; label: string; access: ToolAccess; annotations?: ToolAccessHints }
+    {
+      connectorId: string;
+      toolName: string;
+      label: string;
+      access: ToolAccess;
+      annotations?: ToolAccessHints;
+      title?: string;
+      inputSchema: Record<string, unknown>;
+    }
   >();
   // Fallback identity for the broker's idempotency key. Per-toolset rather than
   // per-call so that repeated calls within one generation stay distinguishable
@@ -384,54 +475,78 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
   let callOrdinal = 0;
   const nextCallOrdinal = () => ++callOrdinal;
 
+  type ListedTool = Awaited<ReturnType<Client["listTools"]>>["tools"][number];
+  const listed: Array<{ connectorId: string; toolName: string; connector: ActiveConnector; tool: ListedTool }> = [];
+
   await Promise.all(
     active.map(async (c) => {
+      // Chat bounds each connector's connect + listTools (SPEC §3.4 item 1);
+      // Work passes no budget and keeps waiting as long as it always has.
+      const budget = opts.connectTimeoutMs ? AbortSignal.timeout(opts.connectTimeoutMs) : null;
+      const requestOptions = budget ? { signal: budget, timeout: opts.connectTimeoutMs } : undefined;
+      let client: Client | null = null;
       try {
         const transport = new StreamableHTTPClientTransport(new URL(c.mcpUrl), {
           requestInit: { headers: c.headers },
         });
-        const client = new Client({ name: "juno", version: "1.0.0" });
-        await client.connect(transport);
+        client = new Client({ name: "juno", version: "1.0.0" });
+        await client.connect(transport, requestOptions);
+        const result = await client.listTools(undefined, requestOptions);
         clients.set(c.id, client);
-        const listed = await client.listTools();
-        for (const t of listed.tools) {
-          const fnName = uniqueToolName(`${c.id}${SEP}${t.name}`, (n) => routing.has(n));
-          // A server may send annotations, some of them, or none at all. Keep
-          // only the two booleans we act on, and only when they really are
-          // booleans — `readOnlyHint: "false"` must not read as truthy.
-          const raw = t.annotations as ToolAccessHints | undefined;
-          const annotations: McpToolAnnotations = {};
-          if (typeof raw?.readOnlyHint === "boolean") annotations.readOnlyHint = raw.readOnlyHint;
-          if (typeof raw?.destructiveHint === "boolean") annotations.destructiveHint = raw.destructiveHint;
-          const hasAnnotations = Object.keys(annotations).length > 0;
-          // Classify from the BARE tool name: fnName is prefixed with the
-          // connector id, whose first token would otherwise be what the verb
-          // heuristic reads ("github", "notion" — never a verb).
-          routing.set(fnName, {
-            connectorId: c.id,
-            toolName: t.name,
-            label: c.label,
-            access: classifyToolAccess(t.name, hasAnnotations ? annotations : undefined),
-            // Kept alongside the coarse read/write verdict: the broker's risk
-            // classifier reads the raw hints itself, and needs to be able to
-            // tell "server said nothing" from "server said read-only".
-            ...(hasAnnotations ? { annotations } : {}),
-          });
-          tools.push({
-            type: "function",
-            function: {
-              name: fnName,
-              description: (t.description ? `[${c.label}] ${t.description}` : `[${c.label}] ${t.name}`).slice(0, 1024),
-              parameters: (t.inputSchema as Record<string, unknown>) ?? { type: "object", properties: {} },
-            },
-            ...(hasAnnotations ? { annotations } : {}),
-          });
-        }
-      } catch {
-        // Connector unreachable/unauthorized — skip it; the chat proceeds without it.
+        for (const tool of result.tools) listed.push({ connectorId: c.id, toolName: tool.name, connector: c, tool });
+        opts.onConnectorStatus?.(c.id, "ready");
+      } catch (error) {
+        // Connector unreachable/unauthorized — skip it; the chat proceeds
+        // without it, and says so when the caller asked to be told.
+        if (client) await client.close().catch(() => {});
+        opts.onConnectorStatus?.(c.id, connectFailureOf(error, budget));
       }
     })
   );
+
+  // Named after every connection settled, in (connector, tool) order, so a
+  // collision's suffix does not depend on which server answered first (H7).
+  for (const { connector: c, tool: t } of sortConnectorTools(listed)) {
+    const fnName = uniqueToolName(`${c.id}${SEP}${t.name}`, (n) => routing.has(n));
+    // A server may send annotations, some of them, or none at all. Keep
+    // only the two booleans we act on, and only when they really are
+    // booleans — `readOnlyHint: "false"` must not read as truthy.
+    const raw = t.annotations as ToolAccessHints | undefined;
+    const annotations: McpToolAnnotations = {};
+    if (typeof raw?.readOnlyHint === "boolean") annotations.readOnlyHint = raw.readOnlyHint;
+    if (typeof raw?.destructiveHint === "boolean") annotations.destructiveHint = raw.destructiveHint;
+    const hasAnnotations = Object.keys(annotations).length > 0;
+    // The server's own title for the row, verbatim third-party text (SPEC §3.4 item 7).
+    const annotatedTitle = (t.annotations as { title?: unknown } | undefined)?.title;
+    const serverTitle =
+      (typeof t.title === "string" && t.title.trim()) ||
+      (typeof annotatedTitle === "string" && annotatedTitle.trim()) ||
+      undefined;
+    // Classify from the BARE tool name: fnName is prefixed with the
+    // connector id, whose first token would otherwise be what the verb
+    // heuristic reads ("github", "notion" — never a verb).
+    routing.set(fnName, {
+      connectorId: c.id,
+      toolName: t.name,
+      label: c.label,
+      access: classifyToolAccess(t.name, hasAnnotations ? annotations : undefined),
+      // Kept alongside the coarse read/write verdict: the broker's risk
+      // classifier reads the raw hints itself, and needs to be able to
+      // tell "server said nothing" from "server said read-only".
+      ...(hasAnnotations ? { annotations } : {}),
+      ...(serverTitle ? { title: serverTitle } : {}),
+      inputSchema: (t.inputSchema as Record<string, unknown>) ?? { type: "object", properties: {} },
+    });
+    tools.push({
+      type: "function",
+      function: {
+        name: fnName,
+        description: (t.description ? `[${c.label}] ${t.description}` : `[${c.label}] ${t.name}`).slice(0, 1024),
+        parameters: (t.inputSchema as Record<string, unknown>) ?? { type: "object", properties: {} },
+      },
+      ...(hasAnnotations ? { annotations } : {}),
+    });
+  }
 
   return {
     tools,
@@ -448,13 +563,26 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
      * EVERY return path is wrapped, including the error strings: a hostile MCP
      * server controls its own error messages just as much as its successes.
      *
-     * The wrapper is applied AFTER stringifyToolResult's truncation, so content
+     * The wrapper is applied AFTER readToolResult's truncation, so content
      * can never grow large enough to push the closing marker out of the window
      * and leave the envelope unterminated. The truncation notice is paid for out
      * of that same budget, so it cannot reopen the gap it closes — and it lands
      * inside the envelope, describing the block it belongs to.
      */
-    async execute(toolName, args, signal, callId) {
+    route(toolName) {
+      const route = routing.get(toolName);
+      if (!route) return undefined;
+      return {
+        functionName: toolName,
+        connectorId: route.connectorId,
+        connectorLabel: route.label,
+        toolName: route.toolName,
+        ...(route.title ? { title: route.title } : {}),
+        ...(route.annotations ? { annotations: route.annotations } : {}),
+        inputSchema: route.inputSchema,
+      };
+    },
+    async execute(toolName, args, signal, callId, opts) {
       const route = routing.get(toolName);
       // An unroutable name never reached a connector, so there is nothing to
       // audit: this is the model hallucinating a tool, not a call happening.
@@ -516,14 +644,23 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
           // untrusted rather than only the ones we can prove tainted.
           derivedFromUntrusted: true,
         },
+        // The TURN signal: an approval may wait the receipt's full lifetime and
+        // is never cut short by the tool's own timer, which starts below.
         signal,
-        onApprovalRequest: ctx.onApprovalRequest,
+        // The dispatcher's per-call card wins, so the card maps to its call.
+        onApprovalRequest: opts?.onApprovalRequest ?? ctx.onApprovalRequest,
         unattended: ctx.unattended,
       });
 
       if (authorization.kind === "refused") {
-        await settleToolInvocation(auditId, { status: "failed", error: authorization.reason });
-        return toolExecution(label, `Action not permitted: ${authorization.reason}`, false);
+        await settleToolInvocation(auditId, {
+          status: authorization.status === "denied" ? "denied" : "failed",
+          error: authorization.reason,
+        });
+        return {
+          ...toolExecution(label, `Action not permitted: ${authorization.reason}`, false),
+          ...refusalStatusFields(authorization.status),
+        };
       }
       if (authorization.kind === "replay") {
         await settleToolInvocation(auditId, {
@@ -535,14 +672,37 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
         return toolExecution(label, authorization.result, !authorization.failed);
       }
 
+      // Authorised: the chat dispatcher shows the row as running from here, and
+      // the tool's own timer starts now, around the network sink only (SPEC
+      // §3.4 item 8). Without options (Work) the call is bounded by `signal`
+      // alone, as it always was.
+      opts?.onAuthorized?.();
+      const timer = opts?.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : null;
+      const callSignal = timer ? (signal ? AbortSignal.any([signal, timer]) : timer) : signal;
+      const requestOptions = callSignal
+        ? { signal: callSignal, ...(opts?.timeoutMs ? { timeout: opts.timeoutMs } : {}) }
+        : undefined;
       const startedAt = Date.now();
       try {
-        const res = await client.callTool({ name: route.toolName, arguments: args }, undefined, signal ? { signal } : undefined);
-        const result = stringifyToolResult(res);
+        const res = await client.callTool({ name: route.toolName, arguments: args }, undefined, requestOptions);
+        const { result, images: pictures, isError } = readToolResult(res);
         // One reading of the clock, used by the audit row and by the panel, so
         // the trail and the thought process cannot report different numbers for
         // the same call.
         const durationMs = Date.now() - startedAt;
+        const images = pictures.length ? { images: pictures } : {};
+        if (isError) {
+          // The server ran the call and said it failed (`isError`, M6): a failure
+          // whatever its text says, and settled as one.
+          await settleToolInvocation(auditId, { status: "failed", error: result.text.slice(0, 2_000), durationMs });
+          await completeExternalAction({ userId: ctx.userId, receiptId: authorization.receiptId, ok: false, result: result.text });
+          return {
+            ...toolExecution(label, result.text, false, durationMs),
+            ...images,
+            status: "failed",
+            error: { code: "tool_error" },
+          };
+        }
         await settleToolInvocation(auditId, { status: "executed", durationMs });
         // The receipt stores what the model was actually given, notice included:
         // a replay of this call returns the stored string verbatim, so a receipt
@@ -550,16 +710,20 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
         // first attempt got — and one holding the prefix without the notice
         // would hand it the silent version.
         await completeExternalAction({ userId: ctx.userId, receiptId: authorization.receiptId, ok: true, result: result.text });
-        return toolExecution(label, result.text, true, durationMs);
+        return { ...toolExecution(label, result.text, true, durationMs), ...images };
       } catch (err) {
         // An error message is the connector's text too, and nothing bounds it:
         // a server that answers a failed call with a megabyte of prose gets the
         // same cap and the same sentence as one that succeeds with it.
         const detail = truncateConnectorResult(err instanceof Error ? err.message : String(err)).text;
         const durationMs = Date.now() - startedAt;
+        const timedOut = !!timer?.aborted && !signal?.aborted;
         await settleToolInvocation(auditId, { status: "failed", error: detail, durationMs });
         await completeExternalAction({ userId: ctx.userId, receiptId: authorization.receiptId, ok: false, result: detail });
-        return toolExecution(label, `Tool error: ${detail}`, false, durationMs);
+        return {
+          ...toolExecution(label, `Tool error: ${detail}`, false, durationMs),
+          ...(opts ? { status: signal?.aborted ? "cancelled" : "failed", error: { code: timedOut ? "timeout" : signal?.aborted ? "cancelled" : "tool_error" } } : {}),
+        };
       }
     },
     async close() {
