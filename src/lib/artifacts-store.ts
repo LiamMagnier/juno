@@ -93,6 +93,12 @@ export async function persistArtifacts(
   const out: ClientArtifact[] = [];
 
   for (const raw of parsed) {
+    // A block whose closing tag never arrived is never a version (X-07). The
+    // chat path's verifier already refuses one and filters it out before this
+    // call; the check is repeated here so a caller that skips verification —
+    // the research audit hands over `parseArtifacts(report)` directly — cannot
+    // save a half-written body as the artifact's current version.
+    if (raw.incomplete) continue;
     const a = normalizeForStorage(raw);
     if (!a) continue;
     const existing = await prisma.artifact.findUnique({

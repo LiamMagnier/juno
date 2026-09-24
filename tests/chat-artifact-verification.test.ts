@@ -17,7 +17,11 @@ test("valid chat artifacts pass the open/parse/verify boundary", () => {
 });
 
 test("one unambiguous SVG failure gets one bounded repair and the message is rewritten", () => {
-  const message = '<p>Here is the icon.</p><juno:artifact identifier="icon" type="SVG" title="Icon"><svg viewBox="0 0 1 1">';
+  // The artifact block is closed and only the SVG inside it is not. A block
+  // whose own closing tag never arrived is unfinished, and is refused rather
+  // than repaired (X-07, tests/artifact-truncation.test.ts).
+  const message =
+    '<p>Here is the icon.</p><juno:artifact identifier="icon" type="SVG" title="Icon"><svg viewBox="0 0 1 1"></juno:artifact>';
   const parsed = parseArtifacts(message);
   const result = verifyAndRepairChatArtifacts(parsed);
   assert.equal(result.report.status, "repaired");
