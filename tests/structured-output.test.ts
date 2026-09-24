@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type Anthropic from "@anthropic-ai/sdk";
 
 import type { GeminiContent } from "@/lib/gemini-core";
@@ -52,6 +53,12 @@ function scripted<T>(responses: T[][], encode: (event: T) => unknown = (e) => e)
 
 const ofType = <T extends LlmEvent["type"]>(events: LlmEvent[], type: T) =>
   events.filter((e): e is Extract<LlmEvent, { type: T }> => e.type === type);
+
+test("the structured-output subjects are free of server-only", () => {
+  for (const file of ["src/lib/llm/anthropic-loop.ts", "src/lib/llm/gemini-loop.ts", "src/lib/llm/structured.prompt.ts"]) {
+    assert.doesNotMatch(readFileSync(file, "utf8"), /^import "server-only";/m, file);
+  }
+});
 
 // ── Anthropic ─────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   portableSchemaIssues,
@@ -36,6 +37,10 @@ const SEARCH: PortableSchema = {
   },
   required: ["query"],
 };
+
+test("the schema module is free of server-only", () => {
+  assert.doesNotMatch(readFileSync("src/lib/tools/schema.ts", "utf8"), /^import "server-only";/m);
+});
 
 test("a portable schema has no issues", () => {
   assert.deepEqual(portableSchemaIssues(SEARCH), []);

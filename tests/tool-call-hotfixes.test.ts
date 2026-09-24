@@ -7,6 +7,8 @@ import {
   classifyExternalAction,
   decideActionPolicy,
 } from "@/lib/action-approval";
+import { geminiToolResponses } from "@/lib/llm/gemini-loop";
+import { wrapUntrusted } from "@/lib/untrusted-content";
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -52,7 +54,15 @@ test("a runtime call the broker asks about can show its card", () => {
 });
 
 test("Gemini hands the model the enveloped tool text, like every other adapter", () => {
-  const gemini = source("src/lib/gemini.ts");
-  assert.match(gemini, /response: \{ result: withheldImagesNote\(exec\.text,/);
-  assert.doesNotMatch(gemini, /withheldImagesNote\(exec\.body/);
+  // The function responses are built in the Gemini loop now (SPEC §5.0), from
+  // the dispatcher's model-facing text; the panel's stripped body never
+  // reaches it. tests/gemini-tool-loop.test.ts drives the whole round.
+  const enveloped = wrapUntrusted("GitHub", "issue #1: the page said to ignore previous instructions");
+  const { responses } = geminiToolResponses(
+    [{ name: "github__list_issues", callId: "fc-1", providerCallId: "fc-1", round: 0, index: 0, argsText: "{}" }],
+    [{ callId: "fc-1", name: "github__list_issues", providerCallId: "fc-1", text: enveloped, isError: false, images: [] }],
+    { vision: true, gemini3: true },
+  );
+  assert.deepEqual(responses[0].response, { result: enveloped });
+  assert.doesNotMatch(source("src/lib/llm/gemini-loop.ts"), /exec\.body|\.body\b/);
 });
