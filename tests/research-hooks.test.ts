@@ -360,6 +360,8 @@ test("a finished run the store has caught up on is fetched once and never again"
   await flush();
   assert.equal(h.requests.length, 1);
   assert.equal(h.pending().length, 0);
+  // First seen already finished: not news for the announcer.
+  assert.deepEqual(h.phases, []);
   off();
   h.store.subscribe("run-1", () => {});
   await flush();

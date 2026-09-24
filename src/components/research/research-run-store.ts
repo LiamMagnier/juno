@@ -18,7 +18,7 @@
 
 import { RESEARCH_COPY } from "@/components/research/copy";
 import type { ResearchEventDTO } from "@/lib/research/domain";
-import { phaseOfRun } from "@/lib/research/phase";
+import { isTerminalPhase, phaseOfRun } from "@/lib/research/phase";
 import type { ResearchPhase } from "@/types/research";
 import type { RunPayload } from "@/components/research/use-research-run";
 
@@ -110,7 +110,11 @@ interface Entry {
   looping: boolean;
   /** A scheduled poll's request is in flight. */
   loading: boolean;
-  /** Requests are numbered as they start; a response older than the last one applied adds its events only. */
+  /**
+   * Responses are ordered by number: a poll is numbered when it leaves, a
+   * control when its answer lands (it was read after its own write). A
+   * response older than the last one applied adds its events only.
+   */
   requests: number;
   applied: number;
 }
@@ -147,7 +151,10 @@ export function createResearchRunStore(deps: ResearchRunStoreDeps): ResearchRunS
     const previousPhase = entry.snapshot.phase;
     entry.snapshot = { ...entry.snapshot, ...patch };
     const phase = entry.snapshot.phase;
-    if (phase && phase !== previousPhase && deps.onPhase) {
+    // A run first seen already finished (a report card on an old message) is
+    // not news: the announcer hears only runs it can watch change.
+    const news = phase !== null && phase !== previousPhase && !(previousPhase === null && isTerminalPhase(phase));
+    if (news && phase && deps.onPhase) {
       try {
         deps.onPhase(entry.runId, phase);
       } catch {
