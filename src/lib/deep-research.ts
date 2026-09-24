@@ -14,6 +14,8 @@ import { createPrismaResearchStore, gatheringOnlyEngine } from "@/lib/research/r
 import { researchSearchConfigured } from "@/lib/research/tools";
 import { buildResearchCorpus, corpusFindings } from "@/lib/research/corpus";
 import { citableSources } from "@/lib/research/engine";
+import { researchChatOwner } from "@/lib/research/lease-core";
+import { researchGoalContext, type ContextTurn } from "@/lib/research/planner";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 import { prisma } from "@/lib/db";
 
@@ -69,30 +71,27 @@ export interface DeepResearchResult {
   runId: string | null;
   /** The bodies behind `sources`, for the citation audit. Never persisted. */
   corpus: ResearchCorpusPage[];
+  /**
+   * The drive's lease owner (SPEC §9.3 B2). The drive stops at
+   * `synthesizing` still holding the lease under this owner, and the route
+   * renews it with `keepResearchLeaseAlive(runId, driveOwner)` while the chat
+   * model writes and until `finalizeChatResearchRun` returns — so the PM2
+   * worker can never adopt a run a chat is still writing. On Stop, an error
+   * or a disconnect before finalize the route cancels the run instead
+   * (`cancelResearchRun(runId, "chat_stopped")`, B17). Null when no drive ran.
+   */
+  driveOwner: string | null;
 }
 
-const EMPTY: DeepResearchResult = { ok: false, context: "", sources: [], costUsd: 0, runId: null, corpus: [] };
+const EMPTY: DeepResearchResult = { ok: false, context: "", sources: [], costUsd: 0, runId: null, corpus: [], driveOwner: null };
 
-/**
- * The per-run ceiling for research started from chat.
- *
- * A chat turn cannot ask the user what they are willing to spend — they pressed
- * a toggle and sent a message — so it gets a fixed ceiling rather than none. A
- * run that reaches it stops at `partially_completed` with its sources intact,
- * and the turn still answers from what it gathered.
- *
- * This was $0.60, sized for "a plan, five searches and a handful of page
- * fetches". That is a search, not an investigation: with the planner now
- * drafting up to fourteen queries against a merged multi-engine index and four
- * follow-up rounds behind them, $0.60 was itself one of the ceilings a user hit
- * as "it stopped early". The default is the ceiling for a genuinely deep run;
- * deployments that want a tighter or looser one set `RESEARCH_CHAT_BUDGET_USD`.
+/*
+ * The per-run ceiling for research started from chat used to be a fixed
+ * `CHAT_RUN_BUDGET_MICRO_USD` ($8, or `RESEARCH_CHAT_BUDGET_USD`). It is now
+ * the run's envelope (SPEC §9.6.4): the planner's scope sized by
+ * `researchBudgetFor` against the plan's caps and the month, with
+ * `RESEARCH_CHAT_BUDGET_USD` kept only as the owner's clamp (run.ts).
  */
-const CHAT_RUN_BUDGET_MICRO_USD = (() => {
-  const raw = Number(process.env.RESEARCH_CHAT_BUDGET_USD?.trim());
-  const usd = Number.isFinite(raw) && raw > 0 ? Math.min(40, raw) : 8;
-  return BigInt(Math.round(usd * 1_000_000));
-})();
 
 /** How often the live activity feed drains the run's event log while it works. */
 const EVENT_POLL_MS = 700;
@@ -208,9 +207,14 @@ function toActivity(event: ResearchEventDTO): Omit<ClientActivityEvent, "id" | "
         detail: "Answering from the sources gathered so far.",
       };
     case "error":
+      // Narrated by what failed (B25): every error used to read "A source
+      // could not be read", including a worker round that never started and
+      // a citation check that did not run. A page that could not be read
+      // keeps its line — native shows the last warning as the run's
+      // degradation line, and that one is still the common case.
       return {
         kind: "warning",
-        title: "A source could not be read",
+        title: ERROR_TITLE[String(payload.scope ?? payload.stage ?? "")] ?? "A source could not be read",
         detail: truncate(String(payload.message ?? ""), 96),
       };
     default:
@@ -218,19 +222,48 @@ function toActivity(event: ResearchEventDTO): Omit<ClientActivityEvent, "id" | "
   }
 }
 
+/** The warning line for each kind of research error (B25). */
+const ERROR_TITLE: Record<string, string> = {
+  citation_audit: "The citation check could not run",
+  citations: "Some citations did not match a source",
+  investigating: "A research step could not run",
+  writer: "The report is being written again",
+  planner: "The plan could not be revised",
+};
+
 export async function runDeepResearch(opts: {
   userId: string;
   /** The user's message, plaintext (clarification-expanded when applicable). */
   prompt: string;
   conversationId?: string | null;
   client: "web" | "app";
-  /** The depth the composer asked for. Deep when it did not say. */
+  /**
+   * The depth an old client asked for. Recorded for the previous build only:
+   * the run is sized by its envelope (§9.6.4), never by this.
+   */
   effort?: ResearchEffort;
   signal?: AbortSignal;
   /** The chat route's activity emitter — events land in the existing timeline. */
   sendActivity: SendActivity;
+  /*
+   * The goal fix (B20), additive: the person's own words and the turns
+   * before them. `prompt` stays the fallback goal for a caller that passes
+   * neither — but on a turn answered through the clarification wizard,
+   * `prompt` is the wrapper, and the wrapper must never become the goal.
+   */
+  /** The person's own words for this turn (never the clarification wrapper). */
+  goal?: string;
+  /** The conversation before this turn, oldest first; the last six become `plan.context`. */
+  history?: ContextTurn[];
+  /** The requester's zone and locale (§2.1), for the date line and the language fallback. */
+  timeZone?: string | null;
+  locale?: string | null;
+  /** The explicit response language, when the setting is not "auto" (§9.5). */
+  language?: string | null;
+  /** The chat's selected model, the preferred lead (§9.5.1). */
+  preferredModel?: string | null;
 }): Promise<DeepResearchResult> {
-  const prompt = opts.prompt.trim();
+  const prompt = (opts.goal ?? opts.prompt).trim();
   if (!prompt || !researchSearchConfigured()) return EMPTY;
 
   const store = createPrismaResearchStore();
@@ -263,9 +296,16 @@ export async function runDeepResearch(opts: {
         userId: opts.userId,
         goal: prompt,
         conversationId: opts.conversationId ?? null,
-        budgetMicroUsd: CHAT_RUN_BUDGET_MICRO_USD,
+        // No ceiling until the planner's scope is sized; the auto-confirm
+        // freezes the envelope's (§9.6.4).
+        budgetMicroUsd: null,
         effort: opts.effort ?? "deep",
         confirmation: opts.client === "web" ? "required" : "auto",
+        context: opts.history?.length ? researchGoalContext(opts.history) : null,
+        timeZone: opts.timeZone ?? null,
+        locale: opts.locale ?? null,
+        language: opts.language ?? null,
+        preferredModel: opts.preferredModel ?? null,
       });
       return run.id;
     };
@@ -334,6 +374,7 @@ export async function runDeepResearch(opts: {
     }
   })();
 
+  const driveOwner = researchChatOwner(runId, Date.now());
   try {
     // `until: "synthesizing"` is the hand-off. The run stays live and the route
     // writes the report; the panel shows it as still working until the turn
@@ -353,7 +394,9 @@ export async function runDeepResearch(opts: {
       userId: opts.userId,
       signal: opts.signal,
       until: "synthesizing",
-      workerId: `research-chat:${runId}:${Date.now()}`,
+      workerId: driveOwner,
+      // Held at the hand-off (B2): the route renews it from here on.
+      holdLeaseAtUntil: true,
     });
   } catch (e) {
     console.error("[deep-research] drive failed", { runId, error: e });
@@ -363,13 +406,21 @@ export async function runDeepResearch(opts: {
     await drain().catch(() => undefined);
   }
 
+  // Stopped mid-drive (B17): the chat that started the run has gone, so the
+  // run goes with it rather than being adopted by the PM2 worker and written
+  // for nobody on the person's money.
+  if (opts.signal?.aborted) {
+    await engine.cancel({ runId, userId: opts.userId, reason: "chat_stopped" }).catch(() => undefined);
+    return { ...EMPTY, runId, state: "cancelled" };
+  }
+
   const finished = await store.loadRun(runId, opts.userId);
   // The same function that numbers the standalone report's corpus and audit,
   // so `[3]` means one row on every path.
   const sources = citableSources(await store.listSources(runId, opts.userId));
   const costUsd = finished ? Number(finished.costMicroUsd) / 1_000_000 : 0;
 
-  if (sources.length === 0) return { ...EMPTY, runId, costUsd, state: finished?.state };
+  if (sources.length === 0) return { ...EMPTY, runId, costUsd, state: finished?.state, driveOwner };
 
   const plan = parsePlan(finished?.plan);
   const findings = store.listFindings ? await store.listFindings(runId, opts.userId).catch(() => []) : [];
@@ -409,5 +460,6 @@ export async function runDeepResearch(opts: {
       publishedAt: source.publishedAt ?? null,
       truncated: !source.snapshot,
     })),
+    driveOwner,
   };
 }
