@@ -1,3 +1,13 @@
+/* eslint-disable */
+/**
+ * A frozen copy of `src/lib/research/domain.ts` as it stood at `d0997af2`, the
+ * source base of the chat rework: the build that is live before the rework
+ * ships. `tests/research-plan-compat.test.ts` parses a plan written by the
+ * rework with THIS `parsePlan`, which is what the previous build does to a
+ * run it picks up mid-deploy (SPEC INV-22). Never edit it: it is evidence of
+ * what an old reader does, not code anyone runs.
+ */
+
 /**
  * The durable research vocabulary.
  *
@@ -12,8 +22,6 @@
  * table you cannot exercise without a database is a transition table nobody
  * tests, and the whole point of this slice is that the transitions are law.
  */
-
-import type { ResearchEnvelope, ResearchEstimateCaps, ResearchScope } from "@/types/research";
 
 // ---------------------------------------------------------------------------
 // States
@@ -230,9 +238,7 @@ const TRANSITIONS: Record<ResearchState, readonly ResearchState[]> = {
     "partially_completed",
   ],
   awaiting_user_input: [...RESEARCH_WORKING_STATES, "paused", "cancelled", "failed"],
-  // Back to the gate as well: a run paused while its plan waited for a person
-  // resumes at the plan, not into a paid re-plan that overwrites it (B12).
-  paused: [...RESEARCH_WORKING_STATES, "awaiting_plan_confirmation", "cancelled", "failed", "partially_completed"],
+  paused: [...RESEARCH_WORKING_STATES, "cancelled", "failed", "partially_completed"],
   completed: [],
   partially_completed: [],
   failed: [],
@@ -275,19 +281,6 @@ export interface ResearchProgress {
   /** Wall clock spent investigating so far, against the tier's ceiling. */
   elapsedMs?: number;
   wallClockMs?: number | null;
-  /**
-   * The planner has written a plan nobody has confirmed yet. Such a run was
-   * paused at the gate, and resumes there rather than paying to plan again
-   * over the plan a person was reading (B12).
-   */
-  planDrafted?: boolean;
-  /**
-   * Investigation is over: the lead's last review decided to write, "Finish
-   * now" was pressed, or every round the envelope allows has run. A run paused
-   * in `synthesizing` before its report existed resumes at the writer, not in
-   * another round of workers (B12).
-   */
-  readyToWrite?: boolean;
 }
 
 /**
@@ -306,11 +299,10 @@ export interface ResearchProgress {
  * tier wall clock has already run out resumes at the writer, because more
  * investigation is exactly what the clock forbids.
  */
-export function resumeStateFor(progress: ResearchProgress): ResearchWorkingState | "awaiting_plan_confirmation" {
-  if (!progress.planConfirmed) return progress.planDrafted ? "awaiting_plan_confirmation" : "planning";
-  if (progress.queryCount === 0) return "planning";
+export function resumeStateFor(progress: ResearchProgress): ResearchWorkingState {
+  if (!progress.planConfirmed || progress.queryCount === 0) return "planning";
   if (progress.hasReport) return "validating_citations";
-  if ((wallClockExceeded(progress) || progress.readyToWrite) && progress.sourceCount > 0) return "synthesizing";
+  if (wallClockExceeded(progress) && progress.sourceCount > 0) return "synthesizing";
   if ((progress.roundsCompleted ?? 0) > 0 && progress.pendingReview) return "reviewing";
   return "investigating";
 }
@@ -460,15 +452,6 @@ export const RESEARCH_EVENT_KINDS = [
   "error",
   "report_ready",
   "run_finished",
-  /**
-   * The web completion message landed in the conversation. Payload carries
-   * `messageId`, the row `ResearchRun.assistantMessageId` now points at.
-   */
-  "run_completed",
-  /** The reader asked to revise the plan at the gate; the planner is rerunning with the edits. */
-  "plan_revision_requested",
-  /** "Finish now": the engine writes with what it has at the next round boundary. */
-  "finish_requested",
 ] as const;
 
 export type ResearchEventKind = (typeof RESEARCH_EVENT_KINDS)[number];
@@ -976,75 +959,6 @@ export interface ResearchPlan {
    * link again and re-emitting the same error line.
    */
   unreadable?: string[];
-
-  /*
-   * The rework's fields (SPEC §9.2–§9.7). Every one is optional and has a
-   * tolerant reader below, written in the same change as its first writer:
-   * the previous build strips what it does not know on its next state move,
-   * and this build reads a plan without them as a run started before them
-   * (INV-22).
-   */
-
-  /**
-   * The sizing frozen at confirmation. When present the engine reads every
-   * limit from it; `budget` and `effort` beside it exist only so the previous
-   * build can still bound the run.
-   */
-  envelope?: ResearchEnvelope;
-  /** The planner's decomposition that sizes the run. Recomputed from edits at the gate. */
-  scope?: ResearchScope;
-  /** What the scope card recomputes its estimate line from while the plan is edited. */
-  estimateCaps?: ResearchEstimateCaps;
-  /** The planner's short title, until the report has its own. */
-  title?: string;
-  /** Kinds of sources the planner will favour, as short phrases for the card. */
-  sourceKinds?: string[];
-  /** Content language, BCP-47, frozen for the run (§9.5). */
-  language?: string;
-  /** The requester's IANA zone and UI locale, frozen at start (§2.1). */
-  timeZone?: string;
-  locale?: string;
-  /** "Today is {weekday}, {d MMMM yyyy} ({zone})." — the date line every prompt carries. */
-  today?: string;
-  /**
-   * The conversation before the triggering message, wrapped as untrusted
-   * reference (B20). The goal stays the user's own words.
-   */
-  context?: string;
-  /** When the planner's draft reached the gate — where "working time" pauses. */
-  draftedAt?: string;
-  /** The planner is rerunning with the reader's edits; the card stays mounted, busy. */
-  revising?: boolean;
-  /** When `revising` was set, so a revise whose process died does not hold the card forever. */
-  revisingAt?: string;
-  /** Revisions requested so far; five per run (§9.4). */
-  revisions?: number;
-  /** The edits the next revision plans from. Consumed by the revision. */
-  pendingRevision?: ResearchPlanRevision;
-  /** Guidance the reader added while the run worked, applied at the next round boundary. */
-  steering?: ResearchSteering[];
-  /** "Finish now": set once; the engine stops launching rounds at the next boundary. */
-  finishRequestedAt?: string;
-  /** Set while paused; the span is added to `pausedMs` on resume (B13). */
-  pausedAt?: string;
-  /** Paused time so far, which the clocks do not count (B13). */
-  pausedMs?: number;
-}
-
-/** One piece of guidance from the reader, as the plan stores it. */
-export interface ResearchSteering {
-  text: string;
-  /** Null until the round boundary that applies it. */
-  appliedAtRound: number | null;
-  createdAt: string;
-}
-
-/** What a "revise" at the gate carries into the planner. */
-export interface ResearchPlanRevision {
-  /** The questions as the reader left them; a row without an id is new. */
-  questions?: Array<{ id?: string; question: string }>;
-  /** Answers to the planner's optional questions, by id. */
-  answers?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1409,203 +1323,7 @@ export function parsePlan(value: unknown): ResearchPlan {
     ...(Array.isArray(raw.unreadable)
       ? { unreadable: cleanList(raw.unreadable.slice(-MAX_UNREADABLE_SOURCES), MAX_UNREADABLE_SOURCES, MAX_QUERY_CHARS) }
       : {}),
-    ...parseReworkFields(raw),
   };
-}
-
-/** Planner titles are a line of chrome, not a heading to write under. */
-export const MAX_PLAN_TITLE_CHARS = 80;
-export const MAX_SOURCE_KINDS = 6;
-/** B20: the last six turns at 600 characters each, inside a 4,000-character budget, plus the envelope. */
-export const MAX_PLAN_CONTEXT_CHARS = 6_000;
-export const MAX_STEERING_ENTRIES = 24;
-export const MAX_STEERING_CHARS = 1_000;
-/** Revisions one run may ask the planner for at the gate (§9.4). */
-export const MAX_PLAN_REVISIONS = 5;
-/** A revision whose planner has not answered in this long is treated as abandoned. */
-export const REVISION_STALE_MS = 3 * 60_000;
-/** Questions a reader may leave on the card: the planner's 1–8, edited down or up to six. */
-export const MAX_EDITED_QUESTIONS = 8;
-
-const isoOrUndefined = (value: unknown): string | undefined =>
-  typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : undefined;
-
-function oneLine(value: unknown, max: number): string {
-  return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "";
-}
-
-function positiveInt(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
-}
-
-/**
- * The envelope back off the plan, or undefined.
- *
- * All or nothing: an envelope missing a limit is not a smaller envelope, it is
- * one this build cannot trust, and a run without one is read as a run started
- * before envelopes — bounded by its legacy `budget` exactly as before (INV-22).
- */
-export function parseEnvelope(value: unknown): ResearchEnvelope | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const raw = value as Record<string, unknown>;
-  const reserve = raw.reserve && typeof raw.reserve === "object" ? (raw.reserve as Record<string, unknown>) : null;
-  const estimate = raw.estimate && typeof raw.estimate === "object" ? (raw.estimate as Record<string, unknown>) : null;
-  const caps = parseEstimateCaps(raw.caps);
-  const ceiling = positiveInt(raw.ceilingMicroUsd);
-  const numbers = {
-    workers: positiveInt(raw.workers),
-    rounds: positiveInt(raw.rounds),
-    toolCallsPerWorker: positiveInt(raw.toolCallsPerWorker),
-    pages: positiveInt(raw.pages),
-    resultsPerQuery: positiveInt(raw.resultsPerQuery),
-    workerTokens: positiveInt(raw.workerTokens),
-    wallClockMs: positiveInt(raw.wallClockMs),
-    workerWallClockMs: positiveInt(raw.workerWallClockMs),
-    judgeCalls: positiveInt(raw.judgeCalls),
-  };
-  if (ceiling === null || !reserve || !estimate || !caps) return undefined;
-  if (Object.values(numbers).some((n) => n === null)) return undefined;
-  const limitedBy =
-    raw.limitedBy === "plan" || raw.limitedBy === "month" || raw.limitedBy === "window" ? raw.limitedBy : "scope";
-  return {
-    v: 1,
-    ceilingMicroUsd: ceiling,
-    reserve: {
-      writerMicroUsd: count(reserve.writerMicroUsd),
-      auditMicroUsd: count(reserve.auditMicroUsd),
-    },
-    workers: numbers.workers!,
-    rounds: numbers.rounds!,
-    toolCallsPerWorker: numbers.toolCallsPerWorker!,
-    pages: numbers.pages!,
-    resultsPerQuery: numbers.resultsPerQuery!,
-    engines: cleanList(raw.engines, 8, 40),
-    workerTokens: numbers.workerTokens!,
-    wallClockMs: numbers.wallClockMs!,
-    workerWallClockMs: numbers.workerWallClockMs!,
-    judgeCalls: numbers.judgeCalls!,
-    leadModel: typeof raw.leadModel === "string" ? raw.leadModel.slice(0, 120) : "",
-    limitedBy,
-    estimate: { minutesUpTo: count(estimate.minutesUpTo), pagesUpTo: count(estimate.pagesUpTo) },
-    caps,
-  };
-}
-
-export function parseEstimateCaps(value: unknown): ResearchEstimateCaps | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const raw = value as Record<string, unknown>;
-  const caps = {
-    maxWorkers: positiveInt(raw.maxWorkers),
-    maxRounds: positiveInt(raw.maxRounds),
-    maxPages: positiveInt(raw.maxPages),
-    maxMinutes: positiveInt(raw.maxMinutes),
-    secondsPerPage: positiveInt(raw.secondsPerPage),
-  };
-  const fixed = typeof raw.fixedMinutes === "number" && Number.isFinite(raw.fixedMinutes) ? Math.max(0, raw.fixedMinutes) : null;
-  if (fixed === null || Object.values(caps).some((n) => n === null)) return undefined;
-  return {
-    maxWorkers: caps.maxWorkers!,
-    maxRounds: caps.maxRounds!,
-    maxPages: caps.maxPages!,
-    maxMinutes: caps.maxMinutes!,
-    secondsPerPage: caps.secondsPerPage!,
-    fixedMinutes: fixed,
-  };
-}
-
-export function parseScope(value: unknown): ResearchScope | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const raw = value as Record<string, unknown>;
-  const questions = positiveInt(raw.questions);
-  if (questions === null) return undefined;
-  return {
-    questions: Math.min(MAX_RESEARCH_OBJECTIVES, questions),
-    breadth: raw.breadth === "broad" || raw.breadth === "exhaustive" ? raw.breadth : "focused",
-    freshness: raw.freshness === "recent" || raw.freshness === "live" ? raw.freshness : "any",
-    primarySources: raw.primarySources === true,
-    quick: raw.quick === true,
-  };
-}
-
-function parseSteering(value: unknown): ResearchSteering[] {
-  if (!Array.isArray(value)) return [];
-  const out: ResearchSteering[] = [];
-  for (const item of value.slice(-MAX_STEERING_ENTRIES)) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const raw = item as Record<string, unknown>;
-    const text = typeof raw.text === "string" ? raw.text.trim().slice(0, MAX_STEERING_CHARS) : "";
-    const createdAt = isoOrUndefined(raw.createdAt);
-    if (!text || !createdAt) continue;
-    out.push({ text, appliedAtRound: positiveInt(raw.appliedAtRound), createdAt });
-  }
-  return out;
-}
-
-function parseRevision(value: unknown): ResearchPlanRevision | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const raw = value as Record<string, unknown>;
-  const questions = Array.isArray(raw.questions)
-    ? raw.questions
-        .filter((q): q is Record<string, unknown> => !!q && typeof q === "object" && !Array.isArray(q))
-        .map((q) => ({
-          ...(typeof q.id === "string" && q.id.trim() ? { id: q.id.trim().slice(0, 80) } : {}),
-          question: oneLine(q.question, MAX_QUERY_CHARS),
-        }))
-        .filter((q) => q.question.length > 0)
-        .slice(0, MAX_EDITED_QUESTIONS)
-    : undefined;
-  const answers =
-    raw.answers && typeof raw.answers === "object" && !Array.isArray(raw.answers)
-      ? parseClarificationAnswers(raw.answers as Record<string, unknown>)
-      : undefined;
-  if (!questions?.length && !answers) return undefined;
-  return { ...(questions?.length ? { questions } : {}), ...(answers ? { answers } : {}) };
-}
-
-/** The tolerant readers for the rework's plan fields, one per field (INV-22). */
-function parseReworkFields(raw: Record<string, unknown>): Partial<ResearchPlan> {
-  const envelope = parseEnvelope(raw.envelope);
-  const scope = parseScope(raw.scope);
-  const estimateCaps = parseEstimateCaps(raw.estimateCaps);
-  const title = oneLine(raw.title, MAX_PLAN_TITLE_CHARS);
-  const sourceKinds = cleanList(raw.sourceKinds, MAX_SOURCE_KINDS, 80);
-  const language = oneLine(raw.language, 35);
-  const timeZone = oneLine(raw.timeZone, 64);
-  const locale = oneLine(raw.locale, 35);
-  const today = oneLine(raw.today, 160);
-  const context = typeof raw.context === "string" ? raw.context.slice(0, MAX_PLAN_CONTEXT_CHARS) : "";
-  const steering = parseSteering(raw.steering);
-  const pendingRevision = parseRevision(raw.pendingRevision);
-  return {
-    ...(envelope ? { envelope } : {}),
-    ...(scope ? { scope } : {}),
-    ...(estimateCaps ? { estimateCaps } : {}),
-    ...(title ? { title } : {}),
-    ...(sourceKinds.length ? { sourceKinds } : {}),
-    ...(language ? { language } : {}),
-    ...(timeZone ? { timeZone } : {}),
-    ...(locale ? { locale } : {}),
-    ...(today ? { today } : {}),
-    ...(context.trim() ? { context } : {}),
-    ...(isoOrUndefined(raw.draftedAt) ? { draftedAt: isoOrUndefined(raw.draftedAt) } : {}),
-    ...(raw.revising === true ? { revising: true } : {}),
-    ...(isoOrUndefined(raw.revisingAt) ? { revisingAt: isoOrUndefined(raw.revisingAt) } : {}),
-    ...(typeof raw.revisions === "number" ? { revisions: Math.max(0, Math.min(MAX_PLAN_REVISIONS, Math.floor(raw.revisions))) } : {}),
-    ...(pendingRevision ? { pendingRevision } : {}),
-    ...(steering.length ? { steering } : {}),
-    ...(isoOrUndefined(raw.finishRequestedAt) ? { finishRequestedAt: isoOrUndefined(raw.finishRequestedAt) } : {}),
-    ...(isoOrUndefined(raw.pausedAt) ? { pausedAt: isoOrUndefined(raw.pausedAt) } : {}),
-    ...(typeof raw.pausedMs === "number" && Number.isFinite(raw.pausedMs) && raw.pausedMs > 0
-      ? { pausedMs: Math.floor(raw.pausedMs) }
-      : {}),
-  };
-}
-
-/** True while a revision is genuinely in flight — set, and not abandoned by a dead process. */
-export function planIsRevising(plan: ResearchPlan, now: Date): boolean {
-  if (!plan.revising) return false;
-  const since = plan.revisingAt ? Date.parse(plan.revisingAt) : NaN;
-  return !Number.isFinite(since) || now.getTime() - since < REVISION_STALE_MS;
 }
 
 /**
@@ -1615,72 +1333,13 @@ export function planIsRevising(plan: ResearchPlan, now: Date): boolean {
  * gets the default tier so a resumed legacy run is bounded like a new one.
  */
 export function planBudget(plan: ResearchPlan): ResearchBudget {
-  // The envelope, when the run has one, is the only source of limits: the
-  // legacy `budget` beside it is the previous build's copy, and its `effort`
-  // is the nearest tier rather than a size (§9.2, INV-22).
-  if (plan.envelope) {
-    return {
-      ...budgetFromEnvelope(plan.envelope),
-      ...(plan.budget?.startedAt ? { startedAt: plan.budget.startedAt } : {}),
-    };
-  }
   return plan.budget ?? budgetForEffort(plan.effort ?? DEFAULT_RESEARCH_EFFORT);
 }
 
-/**
- * The previous build's `ResearchBudget` for an envelope: every ceiling is the
- * envelope's own, and `effort` is the tier nearest its team size — the one
- * field the old reader refuses a budget without (INV-22).
- */
-export function budgetFromEnvelope(envelope: ResearchEnvelope): ResearchBudget {
-  return {
-    effort: nearestEffort(envelope),
-    workers: envelope.workers,
-    rounds: envelope.rounds,
-    toolCallsPerWorker: envelope.toolCallsPerWorker,
-    pages: envelope.pages,
-    resultsPerQuery: envelope.resultsPerQuery,
-    tokens: envelope.workerTokens,
-    wallClockMs: envelope.wallClockMs,
-    workerWallClockMs: envelope.workerWallClockMs,
-    judgeCalls: envelope.judgeCalls,
-  };
-}
-
-/**
- * The tier whose team (`workers × rounds`) is closest to the envelope's; ties
- * go to the smaller tier. Written only for the previous build, which cannot
- * read a budget without an effort. Never shown: the DTO returns `effort: null`
- * whenever an envelope exists.
- */
-export function nearestEffort(envelope: Pick<ResearchEnvelope, "workers" | "rounds">): ResearchEffort {
-  const size = envelope.workers * envelope.rounds;
-  let best: ResearchEffort = RESEARCH_EFFORTS[0];
-  let bestDistance = Infinity;
-  for (const effort of RESEARCH_EFFORTS) {
-    const tier = RESEARCH_TIERS[effort];
-    const distance = Math.abs(tier.workers * tier.rounds - size);
-    if (distance < bestDistance) {
-      best = effort;
-      bestDistance = distance;
-    }
-  }
-  return best;
-}
-
-/**
- * Wall clock spent since the first round began, or zero before it did.
- *
- * Paused time does not count (B13): a run paused for an hour used to resume
- * with its investigation clock already spent, and went straight to the writer
- * with whatever the first minutes had gathered.
- */
+/** Wall clock spent since the first round began, or zero before it did. */
 export function investigationElapsedMs(plan: ResearchPlan, now: Date): number {
   const started = plan.budget?.startedAt ? Date.parse(plan.budget.startedAt) : NaN;
-  if (!Number.isFinite(started)) return 0;
-  const pausedAt = plan.pausedAt ? Date.parse(plan.pausedAt) : NaN;
-  const pausedNow = Number.isFinite(pausedAt) ? Math.max(0, now.getTime() - pausedAt) : 0;
-  return Math.max(0, now.getTime() - started - (plan.pausedMs ?? 0) - pausedNow);
+  return Number.isFinite(started) ? Math.max(0, now.getTime() - started) : 0;
 }
 
 function parseDelegations(value: unknown): ResearchDelegation[] {
@@ -1764,31 +1423,16 @@ function parseRounds(value: unknown): ResearchRound[] {
 function parseBudget(value: unknown): ResearchBudget | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const raw = value as Record<string, unknown>;
-  const positive = (key: string): number | null => {
-    const stored = raw[key];
-    return typeof stored === "number" && Number.isFinite(stored) && stored > 0 ? Math.floor(stored) : null;
-  };
-  /*
-   * A budget without an effort is accepted (SPEC §9.2, INV-22): the rework's
-   * writers size runs by envelope, and a budget is only ever the envelope's
-   * copy. Its effort is then the tier nearest its team, so a reader that needs
-   * a tier for a fallback still gets one — and a blob with no team either is
-   * not a budget at all.
-   */
-  let effort: ResearchEffort;
-  if (isResearchEffort(raw.effort)) effort = raw.effort;
-  else {
-    const workers = positive("workers");
-    const rounds = positive("rounds");
-    if (workers === null || rounds === null) return undefined;
-    effort = nearestEffort({ workers, rounds });
-  }
+  if (!isResearchEffort(raw.effort)) return undefined;
   // Any ceiling the stored blob lacks falls back to the tier's current value —
   // a budget written by a build with fewer ceilings must still bound the run.
-  const base = budgetForEffort(effort);
-  const pick = (key: keyof Omit<ResearchBudget, "effort" | "startedAt">) => positive(key) ?? base[key];
+  const base = budgetForEffort(raw.effort);
+  const pick = (key: keyof Omit<ResearchBudget, "effort" | "startedAt">) => {
+    const stored = raw[key];
+    return typeof stored === "number" && Number.isFinite(stored) && stored > 0 ? Math.floor(stored) : base[key];
+  };
   return {
-    effort,
+    effort: raw.effort,
     workers: pick("workers"),
     rounds: pick("rounds"),
     toolCallsPerWorker: pick("toolCallsPerWorker"),
@@ -1890,18 +1534,11 @@ export const CLARIFY_OUTPUT_TOKENS = 700;
 /** Goal characters `planResearchQueries` sends the brief expansion. */
 export const BRIEF_PROMPT_CHARS = 4_000;
 export const BRIEF_OUTPUT_TOKENS = 600;
-/**
- * What the planner is shown: the goal, the conversation context (≤ 4,000,
- * B20), the constraints and, on a revision, the reader's edits.
- */
-export const PLANNER_PROMPT_CHARS = 12_000;
-/**
- * The structured plan is JSON — questions with evidence contracts, the
- * optional clarifications, the searches and the scope. 2,048 truncated the
- * deep plans mid-object, and a truncated object is exactly the text the legacy
- * line parser then turned into "queries" (B5).
- */
-export const PLANNER_OUTPUT_TOKENS = 6_144;
+/** Brief-augmented characters it then sends the planner. */
+export const PLANNER_PROMPT_CHARS = 6_000;
+/** The structured plan is JSON — objectives with evidence contracts and their
+ *  searches — and runs about twice the length of the old two-heading text. */
+export const PLANNER_OUTPUT_TOKENS = 2_048;
 /** Gap description characters `expandResearchQueries` sends. */
 export const EXPANSION_PROMPT_CHARS = 6_000;
 export const EXPANSION_OUTPUT_TOKENS = 512;
@@ -2059,41 +1696,6 @@ export const REVIEW_PROMPT_CHARS = 48_000;
 export const REVIEW_OUTPUT_TOKENS = 2_048;
 /** Compressed findings characters the writer is shown, on top of the cited chunks. */
 export const SYNTHESIS_FINDINGS_CHARS = 120_000;
-/**
- * How much of one page is stored as its snapshot, and so the most one source
- * can put in front of the writer. engine.ts re-exports it as SNAPSHOT_CHARS;
- * it lives here so the envelope can price a writer without importing the
- * engine.
- */
-export const RESEARCH_SNAPSHOT_CHARS = 12_000;
-/**
- * The writer's corpus budget in tokens: `packCorpus` never hands the writer
- * more than this, nor more than half the lead's context (B7). 250 sources at
- * 12,000 characters was ~800k tokens — a prompt no provider accepts.
- */
-export const WRITER_CORPUS_MAX_TOKENS = 120_000;
-
-/** The writer's call for a corpus of `sources` pages, packed to the budget above. */
-export function writerEstimateMicroUsd(sources: number, rates: ResearchModelRates = REFERENCE_MODEL_RATES): number {
-  const corpusChars = Math.min(
-    Math.max(0, sources) * (RESEARCH_SNAPSHOT_CHARS + CORPUS_PER_SOURCE_CHARS),
-    WRITER_CORPUS_MAX_TOKENS * CHARS_PER_TOKEN
-  );
-  return modelCallEstimateMicroUsd(CORPUS_PREAMBLE_CHARS + SYSTEM_PROMPT_CHARS + corpusChars, SYNTHESIS_OUTPUT_TOKENS, rates);
-}
-
-/** The citation audit at `judgeCalls` calls, at the judge's rates. */
-export function auditEstimateMicroUsd(judgeCalls: number, rates: ResearchModelRates = REFERENCE_MODEL_RATES): number {
-  return (
-    Math.max(0, judgeCalls) *
-    modelCallEstimateMicroUsd(JUDGE_PASSAGE_CHARS + JUDGE_PROMPT_OVERHEAD_CHARS + SYSTEM_PROMPT_CHARS, JUDGE_OUTPUT_TOKENS, rates)
-  );
-}
-
-/** The merged clarify-and-plan call, twice: it is retried once on invalid output (B5). */
-export function plannerEstimateMicroUsd(rates: ResearchModelRates = REFERENCE_MODEL_RATES): number {
-  return 2 * modelCallEstimateMicroUsd(PLANNER_PROMPT_CHARS + SYSTEM_PROMPT_CHARS, PLANNER_OUTPUT_TOKENS, rates);
-}
 
 /** One worker's worst case: its whole tool loop, priced at the worker model's rates. */
 export function workerEstimateMicroUsd(

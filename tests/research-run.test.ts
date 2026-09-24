@@ -775,12 +775,13 @@ test("the per-run budget stops the run and marks it partially_completed", async 
    * fails at the gate with nothing gathered, which is a different test. It is
    * raised to a number that still cannot buy a report: the writer's reservation
    * is dominated by its 16,384-token reply cap, so it is north of 300,000 for
-   * any corpus at all.
+   * any corpus at all. Raised again (100,000 → 250,000) when the structured
+   * planner's 6,144-token reply cap (B5) put the plan reservation near 150,000.
    */
   const engine = createResearchEngine(
     deps(store, { costs: { plan: 1_000, search: 2_000, fetch: 500, synthesis: 500_000 } })
   );
-  const budget = 100_000;
+  const budget = 250_000;
   assert.ok(
     PLAN_ESTIMATE_MICRO_USD < budget,
     "this test needs a run that gets past planning; the plan reservation now exceeds the budget"
@@ -828,12 +829,12 @@ test("the ceiling stops a query sweep midway, not once the sweep has been paid f
   const searched: string[] = [];
   // The search bills exactly what tools.ts records for one, so the arithmetic
   // below is about the real fee rather than an invented one.
-  // The plan estimate grew with the structured planner (a 2,048-token JSON
-  // reply); the ceiling and the plan's real cost move together so the sweep
-  // arithmetic below is unchanged: 3,800 of headroom past the plan.
-  const PLAN_COST = 96_200;
+  // The plan estimate grew with the structured planner (a 6,144-token JSON
+  // reply, B5); the ceiling and the plan's real cost move together so the
+  // sweep arithmetic below is unchanged: 3,800 of headroom past the plan.
+  const PLAN_COST = 196_200;
   const SEARCH_COST = SEARCH_FEE_MICRO_USD;
-  const CEILING = 100_000;
+  const CEILING = 200_000;
   const base = deps(store, { costs: { plan: PLAN_COST, search: SEARCH_COST } });
   const engine = createResearchEngine({
     ...base,
@@ -862,12 +863,12 @@ test("the ceiling stops a query sweep midway, not once the sweep has been paid f
   /*
    * The arithmetic behind the 2, spelled out so the count above is derivable
    * rather than magic. Before the k-th query the run has really spent
-   * 96,200 (plan) + (k-1) × 1,000 (searches), and the gate is that number plus
-   * the 2,000 reservation, against a 100,000 ceiling:
+   * 196,200 (plan) + (k-1) × 1,000 (searches), and the gate is that number plus
+   * the 2,000 reservation, against a 200,000 ceiling:
    *
-   *   k=1  96,200 + 2,000 = 98,200  ≤ 100,000  → issued
-   *   k=2  97,200 + 2,000 = 99,200  ≤ 100,000  → issued
-   *   k=3  98,200 + 2,000 = 100,200 > 100,000 → refused, run stops
+   *   k=1  196,200 + 2,000 = 198,200  ≤ 200,000  → issued
+   *   k=2  197,200 + 2,000 = 199,200  ≤ 200,000  → issued
+   *   k=3  198,200 + 2,000 = 200,200 > 200,000 → refused, run stops
    *
    * Both directions are asserted, from the constants rather than the literals,
    * so the day a reservation moves this fails loudly instead of quietly
