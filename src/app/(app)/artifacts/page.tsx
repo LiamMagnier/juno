@@ -1,10 +1,31 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Code2, FileCode2, FileText, GitBranch, LayoutGrid, List as ListIcon, Globe, Image as ImageIcon, Loader2, MessagesSquare, PanelRightOpen, Search, WifiOff } from "@/components/ui/icons";
+import {
+  ChevronDown,
+  Code2,
+  FileCode2,
+  FileText,
+  GitBranch,
+  LayoutGrid,
+  List as ListIcon,
+  Globe,
+  Image as ImageIcon,
+  Loader2,
+  Maximize2,
+  MessagesSquare,
+  Monitor,
+  PanelRightOpen,
+  Plus,
+  Search,
+  Smartphone,
+  Square,
+  Tablet,
+  WifiOff,
+} from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +42,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -29,14 +51,26 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ShareDialog } from "@/components/share/share-dialog";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { extensionForLanguage, runtimeFor } from "@/lib/artifact-runtime";
+import {
+  artifactHref,
+  conversationArtifactHref,
+  effectiveHomeFilter,
+  homeHrefForType,
+  homeNewFromParam,
+  homeTypeChips,
+  homeTypeFromParam,
+  type HomeTypeFilter,
+} from "@/lib/artifacts-home";
+import { DESIGN_PRESETS, START_DESIGN_ERROR, startDesign, type DesignPresetKey } from "@/lib/design/presets";
 import type { ArtifactType } from "@/lib/message-content";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { ArtifactPreview } from "@/components/artifacts/artifact-preview";
+import { ArtifactPreview, DesignPoster } from "@/components/artifacts/artifact-preview";
 import { IconSwap } from "@/components/ui/icon-swap";
+import ArtifactsLoading from "./loading";
 
 const ICONS: Record<ArtifactType, typeof Code2> = {
   HTML: Globe,
@@ -57,6 +91,17 @@ const TYPE_LABELS: Record<ArtifactType, string> = {
   SVG: "Graphics",
   MERMAID: "Diagrams",
   DESIGN: "Designs",
+};
+
+/**
+ * Each preset's shape, in the New menu. The device a size is FOR, which is how
+ * the presets are named, so the glyph and the word say one thing.
+ */
+const PRESET_GLYPHS: Record<DesignPresetKey, typeof Code2> = {
+  phone: Smartphone,
+  tablet: Tablet,
+  desktop: Monitor,
+  square: Square,
 };
 
 const DOWNLOAD_EXTENSIONS: Record<string, string> = {
@@ -107,13 +152,37 @@ const VIEW_OPTIONS = [
   { value: "grid" as const, label: "Grid", icon: <LayoutGrid className="size-3.5" /> },
 ];
 
+/**
+ * `/artifacts` — everything made, and where a design starts.
+ *
+ * Design is a type here, not a place (04-MERGE-PLAN §1.1, §4). `/design`
+ * redirects to `?type=DESIGN`; the presets it led with are the first section
+ * of New, and are pinned above the list while the Designs filter is on; a
+ * design opens at `/a/{id}` like everything else.
+ *
+ * `useSearchParams` needs a Suspense boundary above it in a client page, or
+ * Next bails the route out of static rendering. It sits here rather than in a
+ * layout so the page's own skeleton stands in for it, as on /settings.
+ */
 export default function ArtifactsPage() {
+  return (
+    <React.Suspense fallback={<ArtifactsLoading />}>
+      <ArtifactsHome />
+    </React.Suspense>
+  );
+}
+
+function ArtifactsHome() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlType = homeTypeFromParam(searchParams.get("type"));
+  const urlNew = homeNewFromParam(searchParams.get("new"));
+
   const [items, setItems] = React.useState<Item[] | null>(null);
   const [view, setView] = React.useState<ArtifactView>("list");
   const [error, setError] = React.useState<null | "network" | "offline">(null);
   const [query, setQuery] = React.useState("");
-  const [typeFilter, setTypeFilter] = React.useState<ArtifactType | "ALL">("ALL");
+  const [typeFilter, setTypeFilter] = React.useState<HomeTypeFilter>(urlType);
   const [renameTarget, setRenameTarget] = React.useState<Item | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
   const [renaming, setRenaming] = React.useState(false);
@@ -121,6 +190,27 @@ export default function ArtifactsPage() {
   const [deleting, setDeleting] = React.useState(false);
   const [shareTarget, setShareTarget] = React.useState<Item | null>(null);
   const [downloadingId, setDownloadingId] = React.useState<string | null>(null);
+  const [newMenuOpen, setNewMenuOpen] = React.useState(false);
+  /** The preset being created, from the moment it is chosen until the page is left. */
+  const [creating, setCreating] = React.useState<DesignPresetKey | null>(null);
+
+  /*
+   * A filter that ARRIVES while the page is already open.
+   *
+   * The initial state reads `?type=` once. A second arrival — ⌘K's "Design",
+   * or a `/design` bookmark followed from this very page — changes the URL
+   * without remounting the page, so the chip would stay where it was. Adjusted
+   * during render (React's "storing information from previous renders"), not
+   * in an effect, so the list never paints once under the old filter.
+   *
+   * A chip the reader presses writes the URL too (`changeTypeFilter`), which
+   * lands here as the value the state already holds: no loop.
+   */
+  const [adoptedType, setAdoptedType] = React.useState<HomeTypeFilter>(urlType);
+  if (adoptedType !== urlType) {
+    setAdoptedType(urlType);
+    setTypeFilter(urlType);
+  }
 
   // List is the default and the safe one: a browser with storage blocked gets
   // the denser view rather than nothing.
@@ -141,8 +231,8 @@ export default function ArtifactsPage() {
    * one definition of what you can do to an artifact, wherever you are looking
    * at it.
    *
-   * A render function, called as `renderActions(item, href)`, not a component.
-   * It used to be a component created inside `useCallback([downloadingId,
+   * A render function, called as `renderActions(item)`, not a component. It
+   * used to be a component created inside `useCallback([downloadingId,
    * router])`, so every download that started or finished gave it a new
    * identity and React unmounted every actions button on the page and mounted
    * fresh ones. That killed two things: the more → spinner cross-fade, which
@@ -152,8 +242,13 @@ export default function ArtifactsPage() {
    * function, the menu is part of this page's own tree and survives the state
    * change. `download` and `openRename` are declared further down, which is
    * fine: this only runs during render, after both exist.
+   *
+   * Open and Open in conversation are two places now, not two words for one.
+   * Open is the artifact's own page (`/a/{id}`), where the row goes. Open in
+   * conversation is the chat it was made in, with the panel open on it — where
+   * a page still previews live and where Juno changes it.
    */
-  const renderActions = (item: Item, href: string) => (
+  const renderActions = (item: Item) => (
     <DropdownMenu>
       {/* Menu trigger outside the tooltip trigger, as on the canvas header's
           overflow button, so the button's `data-state` stays the menu's (the
@@ -182,11 +277,11 @@ export default function ArtifactsPage() {
         <TooltipContent>More actions</TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="end" className={MENU_W}>
-        <DropdownMenuItem onSelect={() => router.push(href)}>
-          <PanelRightOpen className="size-4" aria-hidden /> Open in canvas
+        <DropdownMenuItem onSelect={() => router.push(artifactHref(item.id))}>
+          <Maximize2 className="size-4" aria-hidden /> Open
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => router.push(`/chat/${item.conversationId}`)}>
-          <MessagesSquare className="size-4" aria-hidden /> Open conversation
+        <DropdownMenuItem onSelect={() => router.push(conversationArtifactHref(item.conversationId, item.identifier))}>
+          <PanelRightOpen className="size-4" aria-hidden /> Open in conversation
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => openRename(item)}>
@@ -218,6 +313,24 @@ export default function ArtifactsPage() {
     }
   }, []);
 
+  /**
+   * Set the filter, and say so in the URL.
+   *
+   * `replaceState`, not a router push: a chip is not a place in history, and a
+   * router navigation would ask the server for a page this client already
+   * has. `null` state on purpose — Next copies its own entry state over and
+   * syncs `useSearchParams`, so the adoption above sees the value it holds.
+   * A reload or a copied link now keeps the reader's filter.
+   */
+  const changeTypeFilter = React.useCallback((next: HomeTypeFilter) => {
+    setTypeFilter(next);
+    try {
+      window.history.replaceState(null, "", homeHrefForType(window.location.search, next));
+    } catch {
+      /* the filter still applies; only the URL did not follow */
+    }
+  }, []);
+
   const load = React.useCallback(async () => {
     setError(null);
     try {
@@ -243,18 +356,46 @@ export default function ArtifactsPage() {
     return () => window.removeEventListener("online", onOnline);
   }, [error, load]);
 
+  /*
+   * `?new=design` — a link that arrives with New open on the presets.
+   *
+   * Only once the list has settled: before that the page does not know whether
+   * New is in the header or in the empty state, and a menu opened against the
+   * first would be left pointing at a button that has gone. The flag then comes
+   * off the URL, so a reload or Back does not open the menu a second time.
+   */
+  React.useEffect(() => {
+    if (urlNew !== "design" || items === null) return;
+    setNewMenuOpen(true);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("new");
+      window.history.replaceState(null, "", url.pathname + url.search);
+    } catch {
+      /* the menu is open; the flag stays in a URL nobody reloads */
+    }
+  }, [urlNew, items]);
+
   const loading = items === null;
-  const presentTypes = React.useMemo(() => {
-    const seen = new Set<ArtifactType>();
-    for (const item of items ?? []) seen.add(item.type);
-    return (Object.keys(TYPE_LABELS) as ArtifactType[]).filter((t) => seen.has(t));
+
+  const counts = React.useMemo(() => {
+    const byType = new Map<ArtifactType, number>();
+    for (const item of items ?? []) byType.set(item.type, (byType.get(item.type) ?? 0) + 1);
+    return byType;
   }, [items]);
+
+  // Designs always has a chip; every other kind only while it has something
+  // under it (see homeTypeChips). The filter applied is the one with a chip on
+  // screen, so a kind that empties never strands the list behind it (L31).
+  const chips = React.useMemo(() => homeTypeChips(counts.keys()), [counts]);
+  const activeFilter = effectiveHomeFilter(typeFilter, chips);
+  const designsView = activeFilter === "DESIGN";
 
   const filtered = React.useMemo(() => {
     if (!items) return [];
     const q = query.trim().toLowerCase();
     return items.filter((item) => {
-      if (typeFilter !== "ALL" && item.type !== typeFilter) return false;
+      if (activeFilter !== "ALL" && item.type !== activeFilter) return false;
       if (!q) return true;
       return (
         item.title.toLowerCase().includes(q) ||
@@ -262,33 +403,41 @@ export default function ArtifactsPage() {
         runtimeFor(item.type, item.language).label.toLowerCase().includes(q)
       );
     });
-  }, [items, query, typeFilter]);
+  }, [items, query, activeFilter]);
 
-  const [startingDesign, setStartingDesign] = React.useState(false);
-
-  /** Start a design from nothing, and open it.
+  /**
+   * Start a design at a preset, and open it where every artifact opens.
    *
-   *  An artifact belongs to a conversation, so the route creates both — which is
-   *  why this is a POST and a redirect rather than client-side state. */
-  const startDesign = React.useCallback(async () => {
-    setStartingDesign(true);
-    try {
-      const res = await fetch("/api/design", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Untitled design", preset: "phone" }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-      if (!res.ok || !data.url) throw new Error(data.error ?? "Couldn’t start a design.");
-      router.push(data.url);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Couldn’t start a design.");
-      setStartingDesign(false);
-    }
-  }, [router]);
+   * `creating` is not cleared on success: the page is on its way out, and a
+   * button that went idle between the POST and the editor's first paint would
+   * invite a second design. On failure it clears and the toast says why, in
+   * the route's words when it gave some ("Your plan does not include the
+   * canvas.").
+   */
+  const createDesign = React.useCallback(
+    async (preset: DesignPresetKey) => {
+      setCreating(preset);
+      try {
+        const id = await startDesign(preset);
+        router.push(artifactHref(id));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : START_DESIGN_ERROR);
+        setCreating(null);
+      }
+    },
+    [router]
+  );
 
   const empty = !loading && !error && items.length === 0;
   const noResults = !loading && !error && items.length > 0 && filtered.length === 0;
+  // The Designs filter with no designs under it: not "no matching artifacts",
+  // which blames a search nobody typed, and not the page's first-run empty
+  // state, which talks about everything else. This is where a `/design`
+  // bookmark lands for someone who has not made one yet.
+  const designsEmpty = !loading && !error && designsView && !counts.get("DESIGN");
+  // The page's own empty state carries New itself; the header's comes back the
+  // moment there is anything else on the page to act on.
+  const firstRunEmpty = empty && !designsView;
 
   const openRename = (item: Item) => {
     setRenameTarget(item);
@@ -357,6 +506,73 @@ export default function ArtifactsPage() {
     }
   };
 
+  /**
+   * New ▾ — the page's one way to make something here.
+   *
+   * Its first section is Design, and choosing a size creates the design at
+   * once and lands on it (04-MERGE-PLAN §4.2, §7.1): no dialog, no name to
+   * think of first. Everything else Juno makes is made in a conversation, so
+   * the header's menu ends on that door; the empty state leaves it off,
+   * because "Start building" sits beside it saying the same.
+   *
+   * One open state for both placements. Only one is ever mounted, and
+   * `?new=design` has to open whichever that is.
+   *
+   * While a design is being made the trigger shows the spinner (Button's own
+   * `loading`: it holds its width and refuses a second press) and every preset
+   * is disabled, in the menu and in the pinned row.
+   */
+  const renderNewMenu = (placement: "header" | "empty") => (
+    <DropdownMenu open={newMenuOpen} onOpenChange={setNewMenuOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="sm"
+          variant={placement === "header" ? "default" : "secondary"}
+          loading={creating !== null}
+          className="gap-1.5"
+        >
+          {placement === "header" ? (
+            <>
+              <Plus className="size-3.5" aria-hidden />
+              New
+            </>
+          ) : (
+            <>
+              <AppIcons.design className="size-3.5" aria-hidden />
+              New design
+            </>
+          )}
+          <ChevronDown className="-mr-0.5 size-3.5 opacity-70" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={placement === "header" ? "end" : "center"} className={MENU_W}>
+        <DropdownMenuLabel>Design</DropdownMenuLabel>
+        {DESIGN_PRESETS.map((preset) => {
+          const Glyph = PRESET_GLYPHS[preset.key];
+          return (
+            <DropdownMenuItem
+              key={preset.key}
+              disabled={creating !== null}
+              onSelect={() => void createDesign(preset.key)}
+            >
+              <Glyph className="size-4" aria-hidden />
+              {preset.label}
+              <span className="ml-auto font-mono text-caption tabular-nums text-muted-foreground">{preset.detail}</span>
+            </DropdownMenuItem>
+          );
+        })}
+        {placement === "header" && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => router.push("/chat")}>
+              <MessagesSquare className="size-4" aria-hidden /> Ask Juno in a new chat
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   return (
     // `wide`, like Library, Projects, Work, Code and Connections. A list of
     // rows with a search field and a sort control has the same anatomy as those
@@ -375,7 +591,15 @@ export default function ArtifactsPage() {
          * title has to say something the title does not.
          */
         heading="Artifacts"
-        lede="Everything Juno built with you, newest first."
+        /*
+         * WHAT IS HERE, NOT "EVERYTHING". It read "Everything Juno built with
+         * you, newest first", and neither half was true: generated images and
+         * a task's files are made with Juno and do not appear here (they join
+         * when the index reads them, 04-MERGE-PLAN §4.2), and the list is in
+         * order of last change, not of making. So it names the kinds it holds,
+         * Designs first, because this page is where designs live now.
+         */
+        lede="Designs, sites, documents, diagrams and code made with Juno."
         actions={
           <>
             {!loading && !empty && !error && (
@@ -383,17 +607,12 @@ export default function ArtifactsPage() {
                 {items.length} {items.length === 1 ? "artifact" : "artifacts"}
               </span>
             )}
-            {/* Not while the page is empty: the empty state below already
-                offers this exact button, 250px away, and a reader looking at
-                two identical controls has to work out which one is the real
-                one. The empty state's copy explains what it does; this one
-                cannot. It comes back the moment there is a list to act on. */}
-            {!empty && (
-              <Button size="sm" variant="secondary" onClick={startDesign} loading={startingDesign} className="gap-1.5">
-                <AppIcons.design className="size-3.5" aria-hidden />
-                New design
-              </Button>
-            )}
+            {/* Not while the first-run empty state shows: it already offers
+                New, 250px away, and a reader looking at two identical controls
+                has to work out which one is the real one. The empty state's
+                copy explains what it does; this one cannot. It comes back the
+                moment there is a list to act on. */}
+            {!firstRunEmpty && renderNewMenu("header")}
           </>
         }
       />
@@ -412,17 +631,20 @@ export default function ArtifactsPage() {
               className="pl-9"
             />
           </div>
-          {presentTypes.length > 1 && (
-            <SegmentedControl<ArtifactType | "ALL">
-              value={typeFilter}
-              onChange={setTypeFilter}
+          {/* Shown while a filter is on even when it is the only chip — an
+              account of nothing but designs, opened at `?type=DESIGN`, should
+              still see which filter it is looking through. */}
+          {(chips.length > 1 || activeFilter !== "ALL") && (
+            <SegmentedControl<HomeTypeFilter>
+              value={activeFilter}
+              onChange={changeTypeFilter}
               ariaLabel="Filter by type"
               className="h-9 w-fit max-w-full shrink-0"
               optionClassName="whitespace-nowrap"
-              options={(["ALL", ...presentTypes] as const).map((t) => ({
+              options={(["ALL", ...chips] as const).map((t) => ({
                 value: t,
                 label: t === "ALL" ? "All" : TYPE_LABELS[t],
-                count: t === "ALL" ? items.length : items.filter((item) => item.type === t).length,
+                count: t === "ALL" ? items.length : (counts.get(t) ?? 0),
               }))}
             />
           )}
@@ -434,6 +656,68 @@ export default function ArtifactsPage() {
             className="ml-auto h-9 shrink-0"
           />
         </div>
+      )}
+
+      {/*
+       * THE PRESETS, PINNED ABOVE THE DESIGNS.
+       *
+       * `/design` led with these four, and it now redirects here with Designs
+       * on (04-MERGE-PLAN §5.3). A person following that bookmark should find
+       * the thing they came for where they left it — the first thing under the
+       * filters — not have to learn that it moved into a menu. New ▾ holds the
+       * same four for every other view. This row is a bridge: the plan keeps it
+       * for sixty days after the redirect ships, then New alone carries it.
+       */}
+      {designsView && !loading && !error && (
+        <section aria-label="Start a design" className={cn(!empty && "mt-5")}>
+          {/* Four across from 40rem of the page, not of the window: inside the
+              shell the page is what the sidebar leaves, and `sm:` put four
+              presets in a column the window's width had said nothing about. */}
+          <div className="grid grid-cols-2 gap-2 @[40rem]/page:grid-cols-4">
+            {DESIGN_PRESETS.map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                disabled={creating !== null}
+                onClick={() => void createDesign(preset.key)}
+                className={cn(
+                  // No `transition-colors`: utilities are emitted after the
+                  // components layer, so it would replace .pressable's own
+                  // transition shorthand and drop `transform` off the list — the
+                  // press would dip to scale(0.97) in a single frame. The house
+                  // tile: cut from the control material (raised at rest, lifted
+                  // on hover, pressed while held) at the card rung.
+                  "control-neu pressable group flex flex-col items-start gap-0.5 rounded-card px-3 py-2.5 text-left",
+                  creating !== null && "opacity-60"
+                )}
+              >
+                <span className="flex items-center gap-1.5 text-ui font-medium">
+                  {/* The plus hands over to the Design mark while the document
+                      is being made, cross-fading in place, and only that mark
+                      breathes — it is live state, the one thing allowed to loop. */}
+                  <IconSwap
+                    curve="spring"
+                    swapped={creating === preset.key}
+                    from={
+                      <Plus
+                        className="size-3.5 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-primary"
+                        aria-hidden
+                      />
+                    }
+                    to={
+                      <AppIcons.design
+                        className={cn("size-3.5 text-primary", creating === preset.key && "motion-safe:animate-icon-breathe")}
+                        aria-hidden
+                      />
+                    }
+                  />
+                  {preset.label}
+                </span>
+                <span className="font-mono text-caption tabular-nums text-muted-foreground">{preset.detail}</span>
+              </button>
+            ))}
+          </div>
+        </section>
       )}
 
       {error ? (
@@ -466,21 +750,26 @@ export default function ArtifactsPage() {
             </li>
           ))}
         </ul>
+      ) : designsEmpty ? (
+        <EmptyState
+          className="mt-6"
+          size="panel"
+          icon={AppIcons.design}
+          title="No designs yet"
+          description="Pick a size above to start one, or ask Juno in any chat to design a screen."
+        />
       ) : empty ? (
         <EmptyState
           className="mt-6 motion-safe:animate-rise-in"
           icon={AppIcons.artifacts}
           title="Nothing here yet"
-          description="Ask Juno to build a page, component, document or diagram, or to design a screen. It opens in the Canvas and collects here."
+          description="Ask Juno to build a page, component, document or diagram, or start a design from a blank frame. Each one collects here."
           action={
             <>
               <Button size="sm" onClick={() => router.push("/chat")}>
                 Start building
               </Button>
-              <Button size="sm" variant="secondary" onClick={startDesign} loading={startingDesign} className="gap-1.5">
-                <AppIcons.design className="size-3.5" aria-hidden />
-                New design
-              </Button>
+              {renderNewMenu("empty")}
             </>
           }
         />
@@ -499,7 +788,7 @@ export default function ArtifactsPage() {
               className="text-muted-foreground"
               onClick={() => {
                 setQuery("");
-                setTypeFilter("ALL");
+                changeTypeFilter("ALL");
               }}
             >
               Clear filters
@@ -526,7 +815,6 @@ export default function ArtifactsPage() {
           {filtered.map((item, i) => {
             const Icon = ICONS[item.type] ?? FileCode2;
             const rt = runtimeFor(item.type, item.language);
-            const href = `/chat/${item.conversationId}?artifact=${encodeURIComponent(item.identifier)}`;
             return (
               <li
                 key={item.id}
@@ -543,6 +831,10 @@ export default function ArtifactsPage() {
                   type={item.type}
                   preview={item.preview}
                   title={item.title}
+                  // A design's poster is fetched by id and pinned to the
+                  // version this list read, so it caches until the next one.
+                  artifactId={item.id}
+                  version={item.version}
                   // `md` (8) overrides the component's standalone default: this
                   // tile is `rounded-card` (16) with `p-2` (8), so 16 − 8 = 8.
                   // The radius belongs at the call site, beside the padding it
@@ -554,7 +846,7 @@ export default function ArtifactsPage() {
                   {/* The stretched link covers the whole tile, preview
                       included; the actions menu sits above it. */}
                   <Link
-                    href={href}
+                    href={artifactHref(item.id)}
                     className="min-w-0 flex-1 outline-none after:absolute after:inset-0 after:rounded-card after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
                   >
                     <span className="block truncate text-ui font-medium">{item.title || "Untitled artifact"}</span>
@@ -581,7 +873,7 @@ export default function ArtifactsPage() {
                     </span>
                   </Link>
                   <div className="relative z-10 -mr-1 flex shrink-0 items-center">
-                    {renderActions(item, href)}
+                    {renderActions(item)}
                   </div>
                 </div>
               </li>
@@ -593,7 +885,6 @@ export default function ArtifactsPage() {
           {filtered.map((item, i) => {
             const Icon = ICONS[item.type] ?? FileCode2;
             const rt = runtimeFor(item.type, item.language);
-            const href = `/chat/${item.conversationId}?artifact=${encodeURIComponent(item.identifier)}`;
             return (
               <li
                 key={item.id}
@@ -603,16 +894,30 @@ export default function ArtifactsPage() {
               >
                 {/* The kind glyph on an inset tile — the row's one piece of depth
                     at rest, and the one thing that moves under the pointer: its
-                    ink steps up to the row's foreground and the glyph lifts. */}
-                <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
-                  <Icon className="size-4" motion="lift" aria-hidden />
+                    ink steps up to the row's foreground and the glyph lifts.
+                    A design shows its poster in the same tile instead: the
+                    picture says which design far faster than its name does,
+                    and every design's glyph is the same glyph. `alt=""`
+                    because the title beside it already names it. */}
+                <span className="surface-inset flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
+                  {item.type === "DESIGN" ? (
+                    <DesignPoster
+                      artifactId={item.id}
+                      version={item.version}
+                      alt=""
+                      className="p-1"
+                      glyphClassName="size-4"
+                    />
+                  ) : (
+                    <Icon className="size-4" motion="lift" aria-hidden />
+                  )}
                 </span>
 
                 {/* The stretched link: the whole row opens the artifact; the
                     actions menu sits above it (relative z-10) so it stays
                     clickable. */}
                 <Link
-                  href={href}
+                  href={artifactHref(item.id)}
                   className="min-w-0 flex-1 outline-none after:absolute after:inset-0 after:rounded-control after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
                 >
                   <span className="block truncate text-ui font-medium">{item.title || "Untitled artifact"}</span>
@@ -634,7 +939,7 @@ export default function ArtifactsPage() {
                 </span>
 
                 <div className="relative z-10 flex shrink-0 items-center">
-                  {renderActions(item, href)}
+                  {renderActions(item)}
                 </div>
               </li>
             );
