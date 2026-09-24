@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/session";
 import { resolveModel } from "@/lib/models";
 import { recomputeCostMicroUsd } from "@/lib/pricing";
 import { eurPerUsd } from "@/lib/spend";
-import { REPLY_ROWS_WHERE, countsAsReply, usageModelLabel } from "@/lib/tools/metering";
+import { JUNO_TOOL_MODEL_PREFIX, isJunoToolSpendModel, usageModelLabel } from "@/lib/tools/metering";
 
 export const runtime = "nodejs";
 
@@ -46,7 +46,12 @@ export async function GET() {
        * times is one reply — and carry no tokens, so they leave this window
        * too. Their cost stays in the lifetime card.
        */
-      where: { userId: user.id, createdAt: { gte: since }, ...REPLY_ROWS_WHERE },
+      where: {
+        userId: user.id,
+        createdAt: { gte: since },
+        kind: { not: "utility" },
+        model: { not: { startsWith: JUNO_TOOL_MODEL_PREFIX } },
+      },
       select: {
         model: true,
         promptTokens: true,
@@ -158,7 +163,9 @@ export async function GET() {
   // the year window excludes them: this number is rendered under the word
   // "Replies". Their cost, their tokens and their lines in the by-kind and
   // by-model breakdowns all stay.
-  const lifetimeMessages = lifetimeSpends.filter((s) => countsAsReply(s)).length;
+  const lifetimeMessages =
+    lifetimeSpends.filter((s) => (s.kind || "chat") !== "utility").length -
+    lifetimeSpends.filter((s) => (s.kind || "chat") !== "utility" && isJunoToolSpendModel(s.model)).length;
 
   // Persist repairs so plan budget (which sums costMicroUsd) matches the
   // honest recompute — fire-and-forget, capped so a huge ledger can't stall.

@@ -115,12 +115,6 @@ export function countsAsReply(row: { kind?: string | null; model?: string | null
   return (row.kind || "chat") !== "utility" && !isJunoToolSpendModel(row.model);
 }
 
-/** The Prisma `where` fragment for the same rule, for the queries that count replies. */
-export const REPLY_ROWS_WHERE = {
-  kind: { not: "utility" },
-  model: { not: { startsWith: JUNO_TOOL_MODEL_PREFIX } },
-} as const;
-
 /** How the usage views name the one group every `juno-tool:*` row folds into. */
 export const TOOL_USAGE_COPY = {
   group: "Tools",

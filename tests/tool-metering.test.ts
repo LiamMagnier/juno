@@ -7,7 +7,6 @@ import { toolFeesUsd } from "@/lib/pricing";
 import {
   GEMINI_FREE_GROUNDING_QUERIES_PER_MONTH,
   JUNO_TOOL_MODEL_PREFIX,
-  REPLY_ROWS_WHERE,
   RUN_CODE_MICRO_USD_PER_SECOND,
   TOOL_USAGE_COPY,
   ToolFeeAccumulator,
@@ -175,15 +174,14 @@ test("juno-tool rows are not replies, and the usage views group them as Tools", 
   assert.equal(countsAsReply({ kind: "chat", model: "juno-tool:web_search" }), false);
   assert.equal(isJunoToolSpendModel("juno-tool:run_code"), true);
   assert.equal(isJunoToolSpendModel("juno-toolkit"), false);
-  assert.deepEqual(REPLY_ROWS_WHERE, { kind: { not: "utility" }, model: { not: { startsWith: "juno-tool:" } } });
   assert.equal(usageModelLabel("juno-tool:web_search"), TOOL_USAGE_COPY.group);
   assert.equal(usageModelLabel(" anthropic:claude-sonnet-5 "), "anthropic:claude-sonnet-5");
   assert.equal(usageModelLabel(null), "unknown");
 
   // The two usage views read the rule rather than re-spelling it.
   const stats = read("src/app/api/profile/stats/route.ts");
-  assert.match(stats, /\.\.\.REPLY_ROWS_WHERE/);
-  assert.match(stats, /countsAsReply\(s\)/);
+  assert.match(stats, /kind: \{ not: "utility" \},\s*model: \{ not: \{ startsWith: JUNO_TOOL_MODEL_PREFIX \} \},/);
+  assert.match(stats, /\(s\.kind \|\| "chat"\) !== "utility" && isJunoToolSpendModel\(s\.model\)/);
   assert.match(stats, /usageModelLabel\(spend\.model\)/);
   const breakdown = read("src/lib/usage-breakdown.ts");
   assert.match(breakdown, /foldModelTotals\(modelRows\.map\(\(row\) => \(\{ model: usageModelLabel\(row\.model\)/);
