@@ -1,8 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { toast } from "sonner";
+import { RESEARCH_COPY } from "@/components/research/copy";
 import { useResearchRun, type ResearchRunView } from "@/components/research/use-research-run";
 import { currentRunId, watchConversationRuns, type ConversationRunsWatcher } from "@/components/research/research-discovery";
+import { formatPhrase } from "@/lib/i18n-phrase";
 import { isWorkingResearchState } from "@/lib/research/domain";
 import type { ResearchRunSummary } from "@/types/research";
 
@@ -21,8 +24,8 @@ import type { ResearchRunSummary } from "@/types/research";
  * page learns something first: the chat stream's hand-off frame.
  *
  * The return keeps its old shape (`runId`, `history`, `steering`, `run` and the
- * run hook's fields) until integration switches chat-view over; `runs` and
- * `refresh` are the additions.
+ * run hook's fields) until integration switches chat-view over; `runs`,
+ * `refresh` and `guide` are the additions.
  */
 
 export interface ResearchSteering {
@@ -62,7 +65,7 @@ export function useConversationResearch(conversationId: string | null, selectedR
   const history = React.useMemo(() => runs.map((run) => ({ id: run.id, createdAt: run.createdAt })), [runs]);
 
   const research = useResearchRun(runId);
-  const { run, post } = research;
+  const { run, post, steer } = research;
   const accepting = !!run && run.live && isWorkingResearchState(run.state);
 
   const steering = React.useMemo<ResearchSteering | null>(() => {
@@ -78,5 +81,21 @@ export function useConversationResearch(conversationId: string | null, selectedR
     };
   }, [run, accepting, post]);
 
-  return { ...research, runId, history, runs, refresh, steering, run: run as ResearchRunView | null };
+  /**
+   * "Guide the research" (§9.7): the composer's text as guidance for the run,
+   * applied at its next round boundary, and the toast that says so — with the
+   * server's own words, read from the response, when it refuses (bug 26).
+   * Never the chat.
+   */
+  const guide = React.useCallback(
+    async (text: string) => {
+      const result = await steer(text);
+      if (result.ok) toast.success(formatPhrase(RESEARCH_COPY.steer.added));
+      else toast.error(result.notice ?? formatPhrase(RESEARCH_COPY.steer.notAdded));
+      return result.ok;
+    },
+    [steer],
+  );
+
+  return { ...research, runId, history, runs, refresh, steering, guide, run: run as ResearchRunView | null };
 }

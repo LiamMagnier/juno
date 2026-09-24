@@ -117,6 +117,9 @@ export function ScopeCard({ runId, atTail, onStarted }: ScopeCardProps) {
   const atGate = phase === "awaiting_start";
 
   const [expanded, setExpanded] = React.useState(false);
+  // Held while Start is out: its answer moves the run past the gate before the
+  // collapse begins, and the card must not blink out in between.
+  const [holding, setHolding] = React.useState(false);
   const [collapsing, setCollapsing] = React.useState(false);
   const [gone, setGone] = React.useState(false);
 
@@ -127,11 +130,23 @@ export function ScopeCard({ runId, atTail, onStarted }: ScopeCardProps) {
     return () => window.clearTimeout(timer);
   }, [collapsing]);
 
+  // A typed "yes" confirms from the chat (§9.6.1): the run leaves the gate
+  // without this card's Start, and focus moves to the row all the same.
+  const wasAtGate = React.useRef(false);
+  React.useEffect(() => {
+    if (!phase) return;
+    const left = wasAtGate.current && !atGate && phase !== "stopped" && phase !== "failed";
+    wasAtGate.current = atGate;
+    if (!left || holding || collapsing) return;
+    onStarted?.(runId);
+    focusResearchRow(runId);
+  }, [phase, atGate, holding, collapsing, onStarted, runId]);
+
   if (!run || gone) return null;
   if (phase === "planning") return <PlanningSkeleton runId={runId} />;
-  if (!atGate && !collapsing) return null;
+  if (!atGate && !collapsing && !holding) return null;
 
-  if (!atTail && !expanded && !collapsing) {
+  if (!atTail && !expanded && !collapsing && !holding) {
     return (
       <Pressable
         kind="row"
@@ -157,10 +172,14 @@ export function ScopeCard({ runId, atTail, onStarted }: ScopeCardProps) {
           events={events}
           busy={research.busy}
           act={research.act}
-          onStart={() => {
-            setCollapsing(true);
-            onStarted?.(runId);
-            window.setTimeout(() => focusResearchRow(runId), COLLAPSE_MS);
+          onStartSent={() => setHolding(true)}
+          onStartAnswered={(ok) => {
+            if (ok) {
+              setCollapsing(true);
+              onStarted?.(runId);
+              window.setTimeout(() => focusResearchRow(runId), COLLAPSE_MS);
+            }
+            setHolding(false);
           }}
         />
       </div>
@@ -173,13 +192,15 @@ function ScopeCardBody({
   events,
   busy,
   act,
-  onStart,
+  onStartSent,
+  onStartAnswered,
 }: {
   run: ResearchRunView;
   events: ReturnType<typeof useResearchRun>["events"];
   busy: boolean;
   act: ReturnType<typeof useResearchRun>["act"];
-  onStart(): void;
+  onStartSent(): void;
+  onStartAnswered(ok: boolean): void;
 }) {
   const locale = useUiLocale();
   const revision = planRevisionOf(events);
@@ -243,7 +264,12 @@ function ScopeCardBody({
 
   const start = async () => {
     const request = startRequest(run.state, draft);
-    if (await send(request.path, request.body)) onStart();
+    // The clarify gate answers and comes back to this card for Start; only a
+    // confirmed plan leaves it.
+    const leaves = request.path === "/plan";
+    if (leaves) onStartSent();
+    const ok = await send(request.path, request.body);
+    if (leaves) onStartAnswered(ok);
   };
 
   const submitSource = () => {
