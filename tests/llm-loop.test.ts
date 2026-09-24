@@ -18,6 +18,7 @@ import {
   legacyToolRound,
   stampCallId,
   toolRoundRunner,
+  undispatchedToolsetReason,
 } from "@/lib/llm/tool-round";
 import type { McpToolset, ToolExecution } from "@/lib/mcp";
 import type { BatchContext, ToolCallInput } from "@/lib/tools/dispatch";
@@ -175,6 +176,40 @@ test("no toolset, or an empty one, means no runner", () => {
   assert.equal(toolRoundRunner({}), null);
   const empty = legacyChatToolset({ ...fakeToolset(async () => ({ text: "", body: "", ok: true })), tools: [] });
   assert.equal(toolRoundRunner({ toolset: empty }), null);
+});
+
+test("an opened toolset without its batch context is refused, never run around the dispatcher", () => {
+  const executed: string[] = [];
+  const legacy = legacyChatToolset(
+    fakeToolset(async (name) => {
+      executed.push(name);
+      return { text: "", body: "", ok: true };
+    }),
+  );
+  // A toolset the route opened: the same shape, but not the self-authorising wrapper.
+  const opened: ChatToolset = { ...legacy };
+  assert.throws(() => toolRoundRunner({ toolset: opened }), /without its batch context/);
+  assert.equal(executed.length, 0);
+  assert.match(undispatchedToolsetReason({ toolset: opened, dispatches: true }) ?? "", /batch context/);
+
+  // With its batch, only an adapter that dispatches may take it.
+  const batch = { seenCallIds: new Set<string>() } as unknown as NonNullable<Parameters<typeof toolRoundRunner>[0]["batch"]>;
+  assert.equal(undispatchedToolsetReason({ toolset: opened, batch, dispatches: true }), null);
+  assert.match(undispatchedToolsetReason({ toolset: opened, batch, dispatches: false }) ?? "", /dispatcher/);
+
+  // The pre-rework toolset authorises inside execute, so it still runs without one.
+  assert.ok(toolRoundRunner({ toolset: legacy }));
+  assert.equal(undispatchedToolsetReason({ toolset: legacy, dispatches: false }), null);
+  assert.equal(undispatchedToolsetReason({ dispatches: false }), null);
+});
+
+test("streamChat checks the toolset before anything is opened or sent", () => {
+  // llm.ts is server-only (SPEC §13 harness rule 1), so this reads it as text.
+  const source = readFileSync("src/lib/llm.ts", "utf8");
+  const check = source.indexOf("undispatchedToolsetReason({ toolset: opts.toolset, batch: opts.batch");
+  assert.ok(check > 0, "streamChat asks whether the toolset would skip the dispatcher");
+  assert.ok(check < source.indexOf("openUnifiedAgentToolset(active"), "before the old toolset opens");
+  assert.ok(check < source.indexOf("yield* streamAnthropic(request)"), "and before any adapter runs");
 });
 
 test("the opened toolset with its batch context goes to the dispatcher, with nextIsFinal stamped", async () => {

@@ -12,7 +12,7 @@ import {
   type McpToolsetContext,
 } from "@/lib/mcp";
 import { createLoopController, defaultLoopBudget, type LoopController } from "@/lib/llm/loop";
-import { legacyChatToolset } from "@/lib/llm/tool-round";
+import { legacyChatToolset, undispatchedToolsetReason } from "@/lib/llm/tool-round";
 import type { AdapterRequest } from "@/lib/llm/types";
 import type { ChatToolset, NativeChatTool } from "@/lib/tools/types";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
@@ -135,7 +135,10 @@ export async function* streamChat(opts: {
    * so the caller closes it.
    */
   toolset?: ChatToolset;
-  /** Present iff `toolset` is: the dispatcher's context for this turn. */
+  /**
+   * Present iff `toolset` is: the dispatcher's context for this turn. A
+   * `toolset` without it is refused — its calls would skip the broker.
+   */
   batch?: AdapterRequest["batch"];
   /** The turn's round budget. Defaults to `defaultLoopBudget` (10 with a `toolset`, 1 with nothing). */
   loop?: LoopController;
@@ -144,6 +147,21 @@ export async function* streamChat(opts: {
 }): AsyncGenerator<LlmEvent> {
   const { model, system, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey, fastMode } = opts;
   const proMode = !!opts.proMode && supportsProMode(model);
+  const adapter = providerAdapterFor(model, proMode);
+  // The adapters that take the whole `AdapterRequest`, and so run tools through
+  // the dispatcher and honour `responseSchema`. The Responses and compat
+  // adapters are still called positionally below (WS3b converts them).
+  const takesRequest = adapter === "anthropic-native" || adapter === "gemini-native";
+  // A toolset the route opened authorises nothing itself — its broker, audit
+  // and dedupe are the dispatcher's ports (SPEC §3.3, §4.2) — so a request that
+  // would run it any other way is refused before anything is opened or sent.
+  const refusal = undispatchedToolsetReason({ toolset: opts.toolset, batch: opts.batch, dispatches: takesRequest });
+  if (refusal) throw new Error(`[llm] refusing to run tools: ${refusal} (${model.id}, ${adapter})`);
+  if (opts.responseSchema && !takesRequest) {
+    // Unconstrained, not wrong: the one caller (the research planner) validates
+    // what comes back and retries (SPEC §9.5). Logged so the gap is visible.
+    console.warn("[llm] responseSchema is not applied on this adapter yet", { model: model.id, adapter });
+  }
   // On OpenAI-compatible providers, reasoning/thinking tokens count toward the
   // completion budget — a plan-sized cap can be eaten entirely by thinking,
   // truncating the answer ("length" with little or no visible text). Add an
@@ -234,7 +252,6 @@ export async function* streamChat(opts: {
   // What the adapters not yet on `AdapterRequest` take positionally.
   const positionalToolset: McpToolset | undefined = opts.toolset ?? toolset;
   try {
-    const adapter = providerAdapterFor(model, proMode);
     // Every provider call in the product funnels through the switch below, so
     // this is the one place that learns what a live request discovered. The
     // only verdict taken is `not_found`, and taking it is what stops a retired

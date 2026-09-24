@@ -40,6 +40,10 @@ export type ToolRoundRunner = (
  *
  * `execute` is the dispatcher; a parameter only so a test can observe the
  * context it is handed without standing up the real one.
+ *
+ * Throws for a toolset that would run around the dispatcher (see
+ * `undispatchedToolsetReason`): failing the turn loudly beats a connector write
+ * that nobody approved and nothing audited.
  */
 export function toolRoundRunner(
   req: Pick<AdapterRequest, "toolset" | "batch">,
@@ -48,8 +52,39 @@ export function toolRoundRunner(
   const toolset = req.toolset;
   if (!toolset || toolset.tools.length === 0) return null;
   const batch = req.batch;
-  if (!batch) return legacyToolRound(toolset);
+  if (!batch) {
+    const reason = undispatchedToolsetReason({ toolset, batch, dispatches: true });
+    if (reason) throw new Error(`[llm] refusing to run tools: ${reason}`);
+    return legacyToolRound(toolset);
+  }
   return (calls, signal, nextIsFinal) => execute(calls, signal, { ...batch, toolset, nextIsFinal });
+}
+
+/**
+ * The pre-rework toolsets `legacyChatToolset` wrapped: the only ones that
+ * authorise inside `execute`, and so the only ones that may run without the
+ * dispatcher. Identity, not shape — a copy of one is not one.
+ */
+const SELF_AUTHORISING = new WeakSet<ChatToolset>();
+
+/**
+ * Why this toolset would run its calls around the dispatcher, or null when it
+ * would not. A toolset the route opened (`openChatToolset`) authorises nothing
+ * itself: its broker, audit, dedupe and metering are the dispatcher's ports
+ * (SPEC §3.3, §4.2), so it needs its `batch` context (SPEC §5.0: "present iff
+ * toolset is") and an adapter that runs tools through `executeToolBatch`.
+ * `dispatches` says whether the adapter the request is headed for does.
+ */
+export function undispatchedToolsetReason(opts: {
+  toolset?: ChatToolset;
+  batch?: AdapterRequest["batch"];
+  dispatches: boolean;
+}): string | null {
+  const { toolset } = opts;
+  if (!toolset || toolset.tools.length === 0 || SELF_AUTHORISING.has(toolset)) return null;
+  if (!opts.batch) return "the toolset was passed without its batch context";
+  if (!opts.dispatches) return "this adapter does not run tools through the dispatcher yet";
+  return null;
 }
 
 /**
@@ -154,7 +189,7 @@ export function legacyToolRound(toolset: McpToolset): ToolRoundRunner {
  */
 export function legacyChatToolset(toolset: McpToolset): ChatToolset {
   const names = new Set(toolset.tools.map((tool) => tool.function.name));
-  return {
+  const chat: ChatToolset = {
     tools: toolset.tools,
     labelFor: (name) => toolset.labelFor(name),
     accessFor: (name) => toolset.accessFor(name),
@@ -177,6 +212,8 @@ export function legacyChatToolset(toolset: McpToolset): ChatToolset {
     },
     connectors: [],
   };
+  SELF_AUTHORISING.add(chat);
+  return chat;
 }
 
 /**
