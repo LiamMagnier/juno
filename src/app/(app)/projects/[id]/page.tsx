@@ -54,6 +54,7 @@ import { ProjectChatList } from "@/components/projects/project-chat-list";
 import { ProjectWorkList, type ProjectWorkItem } from "@/components/projects/project-work-list";
 import { ProjectCodeList } from "@/components/projects/project-code-list";
 import { ProjectSourcesList, type ProjectArtifactItem } from "@/components/projects/project-sources-list";
+import { madeInConversations } from "@/lib/artifact-links";
 
 // Soft UI only — no save rejection. Warn when the draft is very large.
 const INSTRUCTIONS_SOFT_WARN = 50_000;
@@ -172,7 +173,10 @@ export default function ProjectDetailPage() {
   const [savedWorkDefaults, setSavedWorkDefaults] = React.useState<WorkProjectDefaults>({});
   const [savingWorkDefaults, setSavingWorkDefaults] = React.useState(false);
   const [workRuns, setWorkRuns] = React.useState<ProjectWorkItem[]>([]);
-  const [projectArtifacts, setProjectArtifacts] = React.useState<ProjectArtifactItem[]>([]);
+  /** The project's artifacts as the route found them, each with the chat it
+   *  was made in. Kept whole and narrowed below, because the project's chats
+   *  arrive from another request and can change while the page is open. */
+  const [accountArtifacts, setAccountArtifacts] = React.useState<(ProjectArtifactItem & { conversationId: string })[]>([]);
 
   // Composer states. `null` model = not chosen yet → fall back to account default
   // without overwriting a pick the user already made (that overwrite was sending
@@ -301,17 +305,28 @@ export default function ProjectDetailPage() {
       })
       .catch(() => {});
 
-    // Fetch artifacts
-    fetch("/api/artifacts")
-      .then((res) => res.json())
+    // This project's artifacts (X-21).
+    //
+    // The route answers `{ items }`, and this read `res.artifacts`, so the
+    // Sources tab and the Overview count said zero for everyone, always. Had
+    // the field matched it would have been worse: the fetch was the whole
+    // account's list, so every other project's artifacts would have been
+    // filed here too. The route scopes by `?projectId=` now, so the 200 it
+    // answers are this project's own rather than the account's latest 200
+    // narrowed after the fact. `projectArtifacts` below still keeps only the
+    // ones from the chats on screen, so a chat moved out while the page is
+    // open takes its artifacts with it without a refetch.
+    fetch(`/api/artifacts?projectId=${encodeURIComponent(id)}`)
+      .then((res) => (res.ok ? res.json() : null))
       .then((res) => {
-        if (res && Array.isArray(res.artifacts)) {
-          setProjectArtifacts(
-            res.artifacts.map((a: Record<string, unknown>) => ({
+        if (res && Array.isArray(res.items)) {
+          setAccountArtifacts(
+            res.items.map((a: Record<string, unknown>) => ({
               id: String(a.id),
               identifier: String(a.identifier || a.id),
-              title: String(a.title || "Untitled Artifact"),
-              type: String(a.type || "document"),
+              title: String(a.title || "Untitled artifact"),
+              type: String(a.type || "CODE"),
+              conversationId: String(a.conversationId ?? ""),
               updatedAt: String(a.updatedAt || ""),
             }))
           );
@@ -325,6 +340,15 @@ export default function ProjectDetailPage() {
     window.addEventListener("juno:sync", refresh);
     return () => window.removeEventListener("juno:sync", refresh);
   }, [load]);
+
+  /** The artifacts made in this project's chats. Derived rather than stored, so
+   *  a chat moved out of the project (or deleted from it) takes its artifacts
+   *  off this page the moment the list of chats changes, with no refetch. */
+  const conversations = data?.conversations;
+  const projectArtifacts = React.useMemo(
+    () => madeInConversations(accountArtifacts, (conversations ?? []).map((c) => c.id)),
+    [accountArtifacts, conversations]
+  );
 
   React.useEffect(() => {
     if (data?.project.id) setIsStarred(data.project.starred);
