@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { providerReceivesDocumentBytes } from "@/lib/attachment-bytes";
 import { openAIResponsesEnabled, providerAdapterFor } from "@/lib/provider-routing";
 
 test("each provider family uses its own intended transport", () => {
@@ -54,4 +55,15 @@ test("Pro mode never changes a non-OpenAI provider transport", () => {
   assert.equal(providerAdapterFor({ provider: "anthropic" }, true), "anthropic-native");
   assert.equal(providerAdapterFor({ provider: "xai", id: "xai:grok-4.7" }, true), "xai-responses");
   assert.equal(providerAdapterFor({ provider: "deepseek" }, true), "openai-compatible");
+});
+
+test("who receives a PDF's bytes follows the transport that serves the model", () => {
+  const vision = { vision: true } as const;
+  // Every vision OpenAI model reads a scan itself now, as `input_file`.
+  assert.equal(providerReceivesDocumentBytes({ provider: "openai", ...vision }), true);
+  assert.equal(providerReceivesDocumentBytes({ provider: "openai", vision: false }), false);
+  // xAI's Responses surface has not been shown to take `input_file`.
+  assert.equal(providerReceivesDocumentBytes({ provider: "xai", id: "xai:grok-4.7", ...vision }), false);
+  assert.equal(providerReceivesDocumentBytes({ provider: "anthropic", vision: false }), true);
+  assert.equal(providerReceivesDocumentBytes({ provider: "deepseek", ...vision }), false);
 });
