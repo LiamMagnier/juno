@@ -71,9 +71,16 @@ export function accumulateToolCallDeltas(
   }
 }
 
-/** Complete calls in wire order. A fragment with no id or name is not a call. */
+/**
+ * Complete calls in wire order. A fragment with no name is not a call.
+ *
+ * A call with a name and NO id is one: some hosts stream calls without ids,
+ * and dropping them (as this did) left the model's request unanswered while
+ * the turn carried on as if it had never been made. Its id stays empty here;
+ * the loop gives it `jc_<round>_<index>` (SPEC §4.3, RC-13).
+ */
 export function finalizeToolCalls(acc: ReadonlyMap<string, CompatToolCall>): CompatToolCall[] {
-  return [...acc.values()].filter((call) => call.id && call.name);
+  return [...acc.values()].filter((call) => call.name);
 }
 
 /**
