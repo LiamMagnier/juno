@@ -144,7 +144,7 @@ function ExternalRow({ url, title }: { url: string; title?: string }) {
 }
 
 /** The web part of a result: search results, or the page a fetch opened. */
-function WebResult({ item }: { item: ToolItem }) {
+function WebResult({ item, pageTitle }: { item: ToolItem; pageTitle?: string }) {
   const { call } = item;
   const web = call.web;
   if (!web) return null;
@@ -175,7 +175,7 @@ function WebResult({ item }: { item: ToolItem }) {
       <div className="flex flex-col gap-1">
         {address ? (
           <div className="-mx-1.5">
-            <ExternalRow url={address} />
+            <ExternalRow url={address} title={pageTitle} />
           </div>
         ) : null}
         {line.length > 0 && <Caption spec={line} />}
@@ -293,10 +293,13 @@ export function ToolCallDetail({
   item,
   presentation,
   seedDraft,
+  pageTitle,
 }: {
   item: ToolItem;
   presentation: ToolPresentation;
   seedDraft?: (text: string) => void;
+  /** A page read's title, once the fetch knew it (the row's `detail`, SPEC §2.4). */
+  pageTitle?: string;
 }) {
   const locale = useUiLocale();
   const { call, detail } = item;
@@ -331,7 +334,7 @@ export function ToolCallDetail({
       {(call.web || figure || detail?.result || (connector && detail?.resultNote) || call.cached) && (
         <section className="flex flex-col gap-1">
           <SectionHeading text={call.tool === "run_code" ? PANEL_COPY.call.output : PANEL_COPY.call.result} />
-          <WebResult item={item} />
+          <WebResult item={item} pageTitle={pageTitle} />
           {figure && <Caption spec={figure} />}
           {detail?.result ? (
             <>

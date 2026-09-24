@@ -479,9 +479,18 @@ test("an opened page read says when it carried instructions aimed at the assista
     tools: [{ kind: "tool", key: "t9", seq: 1, round: 1, call: fetched, live: false }],
   };
   const html = renderToStaticMarkup(
-    withPanelContext({ ...ports, buildRunView: () => fetchView, phaseOf: () => "done" }, [{ ...liveMessage, streaming: false }], React.createElement(ActivityPanel, { renderKey: "tmp-9", focusCallId: "f9", onClose: () => {}, coversChat: () => false }))
+    withPanelContext(
+      { ...ports, buildRunView: () => fetchView, phaseOf: () => "done" },
+      [
+        {
+          ...liveMessage,
+          streaming: false,
+          activity: [{ id: "v", kind: "visit", title: "Visited source", detail: "Tandem cells pass 34 percent", createdAt: iso(2), call: fetched }],
+        },
+      ], React.createElement(ActivityPanel, { renderKey: "tmp-9", focusCallId: "f9", onClose: () => {}, coversChat: () => false }))
   );
   assert.match(html, /Contained instructions aimed at the assistant; they were ignored/);
+  assert.match(html, /translate="no" lang="" dir="auto" data-no-auto-translate="true">Tandem cells pass 34 percent</, "the page's title, verbatim");
   assert.match(html, /href="https:\/\/lab\.example\.org\/a" target="_blank" rel="noopener noreferrer"/);
   assert.match(html, /Shown<\/span> <span data-no-auto-translate="true">5,120<\/span>/);
   assert.match(html, /Full length<\/span> <span data-no-auto-translate="true">9,000<\/span>/);

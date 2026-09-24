@@ -6,6 +6,7 @@ import { RunGlyph } from "@/components/chat/run/run-glyph";
 import { Collapse } from "@/components/ui/collapse";
 import { ChevronRight, Info, Plug, TriangleAlert } from "@/components/ui/icons";
 import { Phrase, PhraseWithArgs } from "@/lib/i18n-phrase";
+import { sourceDomain } from "@/lib/panel/sources-split";
 import type { PhraseSpec, RunItem, RunView } from "@/lib/run/types";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +67,18 @@ function useFollowBottom(listRef: React.RefObject<HTMLElement | null>, size: num
     const scroller = listRef.current?.closest(".right-shell__scroller");
     if (scroller && pinned.current) scroller.scrollTop = scroller.scrollHeight;
   }, [listRef, size]);
+}
+
+/**
+ * A page read's title: its row's `detail` once the fetch knew the title (it is
+ * the host until then, SPEC §2.4). Found by the call id, never by a title.
+ */
+function pageTitleOf(message: PanelMessage, call: ToolItem["call"]): string | undefined {
+  const event = message.activity?.find((entry) => entry.call?.callId === call.callId);
+  const detail = event?.detail?.trim();
+  const address = call.web?.finalUrl ?? call.web?.requestedUrl;
+  const host = address ? sourceDomain(address) : null;
+  return detail && detail.replace(/^www\./, "") !== host && detail !== address ? detail : undefined;
 }
 
 /** Claims the loop for the panel's live item while it is the live item. */
@@ -194,6 +207,7 @@ function ToolRow({
   const pending = pendingApprovalFor(call, message.approvals);
   const detailId = React.useId();
   const Icon = TOOL_KIND_ICONS[presentation.icon] ?? Plug;
+  const pageTitle = React.useMemo(() => (call.tool === "web_fetch" ? pageTitleOf(message, call) : undefined), [message, call]);
 
   const meta: PhraseSpec[] = [];
   if (figure) meta.push(figure);
@@ -254,7 +268,7 @@ function ToolRow({
       ) : null}
       <Collapse open={expanded}>
         <div id={detailId} className="ps-[1.875rem]">
-          <ToolCallDetail item={item} presentation={presentation} seedDraft={seedDraft} />
+          <ToolCallDetail item={item} presentation={presentation} seedDraft={seedDraft} pageTitle={pageTitle} />
         </div>
       </Collapse>
     </li>
@@ -303,12 +317,17 @@ export function ActivityTimelineTab({ view, message, live, loopKey, focusCallId,
 
   // In sheet mode the transcript's approval card is under the panel, so a call
   // that starts waiting is brought into view here, where it can be answered.
+  // Once per call that starts waiting, not on every re-render while it waits.
   const waitingKey = view.tools.find((tool) => tool.call.status === "awaiting_approval")?.call.callId;
+  const coversChatRef = React.useRef(coversChat);
   React.useEffect(() => {
-    if (!waitingKey || !coversChat()) return;
+    coversChatRef.current = coversChat;
+  }, [coversChat]);
+  React.useEffect(() => {
+    if (!waitingKey || !coversChatRef.current()) return;
     const row = listRef.current?.querySelector(`[data-call-id="${CSS.escape(waitingKey)}"]`);
     row?.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion(row) ? "instant" : "smooth" });
-  }, [waitingKey, coversChat]);
+  }, [waitingKey]);
 
   if (view.items.length === 0) {
     return (

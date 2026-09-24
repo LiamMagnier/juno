@@ -45,6 +45,10 @@ import { usePanelMessage } from "./use-panel-message";
  * first starts working, so the first open never shows a blank.
  */
 
+/**
+ * The panel is memoised on its props, so chat-view's per-token re-renders stop
+ * here: pass stable callbacks (`useCallback`, or functions that read refs).
+ */
 export interface ActivityPanelProps {
   /** Identity; never the message id (B1). */
   renderKey: string;
