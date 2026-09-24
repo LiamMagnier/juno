@@ -89,3 +89,34 @@ export function detachArtifactsFromMessages(
   if (!current.some((a) => a.messageId && messageIds.has(a.messageId))) return current;
   return current.map((a) => (a.messageId && messageIds.has(a.messageId) ? { ...a, messageId: null } : a));
 }
+
+/**
+ * The artifact an `<juno:artifact>` tag in `message` refers to.
+ *
+ * Usually the one row with that identifier. When a re-emission changed the
+ * type, the server gave the identifier to a new artifact and moved the old one
+ * to `{identifier}~{id tail}` (see `retiredIdentifier`). A tag written before
+ * that change must still open what it made, so among the rows that have held
+ * the identifier, the one this message created wins; otherwise the newest one
+ * that existed when the message was written.
+ */
+export function resolveArtifactTag(
+  byIdentifier: ReadonlyMap<string, ClientArtifact>,
+  identifier: string,
+  message: Pick<ClientMessage, "id" | "createdAt">
+): ClientArtifact | undefined {
+  const current = byIdentifier.get(identifier);
+  const held: ClientArtifact[] = [];
+  for (const [key, artifact] of byIdentifier) {
+    if (key.startsWith(`${identifier}~`)) held.push(artifact);
+  }
+  if (held.length === 0) return current;
+  if (current) held.push(current);
+  const own = held.find((a) => a.messageId === message.id);
+  if (own) return own;
+  const writtenAt = Date.parse(message.createdAt);
+  const byAge = held.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  let pick = byAge[0];
+  for (const a of byAge) if (Date.parse(a.createdAt) <= writtenAt) pick = a;
+  return pick;
+}

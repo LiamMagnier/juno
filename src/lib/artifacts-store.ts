@@ -61,10 +61,29 @@ export function detachArtifactsFromMessage(messageId: string) {
 }
 
 /**
+ * The handle an artifact keeps when a re-emission of its identifier brings a
+ * different type: `{identifier}~{last six characters of its id}`. The id is
+ * the artifact's identity and never changes; the identifier is only the
+ * conversation's handle for the model, so it passes to the new artifact.
+ */
+export function retiredIdentifier(identifier: string, artifactId: string): string {
+  return `${identifier}~${artifactId.slice(-6)}`;
+}
+
+/**
  * Persist artifacts parsed from an assistant message. Reusing an existing
  * identifier within the conversation appends a new version to the same row,
  * so an artifact keeps its id, history and share links across edits and
  * regenerates.
+ *
+ * The type never changes on an existing row. A design that came back as an
+ * HTML page would otherwise stop opening in the design editor, and every
+ * earlier version would be read as the wrong kind. A re-emission with a new
+ * type makes a new artifact that takes the identifier (so the model's next
+ * tag reaches it), while the old one keeps its id, versions and share links
+ * under a retired handle. Both rows are returned, so the client learns the
+ * old row's new handle. The link between them is recoverable from the handle
+ * and the creation order until it gets its own column.
  */
 export async function persistArtifacts(
   conversationId: string,
@@ -80,7 +99,29 @@ export async function persistArtifacts(
       where: { conversationId_identifier: { conversationId, identifier: a.identifier } },
     });
 
-    if (existing) {
+    if (existing && existing.type !== a.type) {
+      const [retired, created] = await prisma.$transaction([
+        prisma.artifact.update({
+          where: { id: existing.id },
+          data: { identifier: retiredIdentifier(existing.identifier, existing.id) },
+          include: { versions: true },
+        }),
+        prisma.artifact.create({
+          data: {
+            conversationId,
+            messageId,
+            identifier: a.identifier,
+            title: a.title,
+            type: a.type,
+            language: a.language ?? null,
+            currentVersion: 1,
+            versions: { create: { version: 1, content: a.content, origin: "generated" } },
+          },
+          include: { versions: true },
+        }),
+      ]);
+      out.push(serializeArtifact(retired), serializeArtifact(created));
+    } else if (existing) {
       // Transaction: the version insert and the currentVersion bump must land
       // together, or a concurrent writer can leave currentVersion pointing past
       // (or behind) the real newest row.
@@ -93,7 +134,6 @@ export async function persistArtifacts(
           where: { id: existing.id },
           data: {
             title: a.title,
-            type: a.type,
             language: a.language ?? null,
             currentVersion: nextVersion,
             // messageId stays pinned to the message that first created the
