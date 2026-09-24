@@ -31,7 +31,7 @@ const SandboxFrame = nextDynamic(
   () => import("@/components/canvas/sandbox-frame").then((m) => m.SandboxFrame),
   { ssr: false },
 );
-import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { RunGlyph } from "@/components/chat/run/run-glyph";
 import { runtimeFor } from "@/lib/artifact-runtime";
 import { DesignPoster } from "@/components/artifacts/artifact-preview";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -231,6 +231,7 @@ export function ArtifactInlineCard({
   onOpen?: () => void;
 }) {
   const Icon = ICONS[type] ?? FileCode2;
+  const cardLoopId = `artifact-card:${React.useId()}`;
   const rt = runtimeFor(type, language);
   const resolvedContent = content ?? "";
   const hasContent = resolvedContent.trim().length > 0;
@@ -348,7 +349,7 @@ export function ArtifactInlineCard({
                 key={status.label}
                 className={cn("inline-flex shrink-0 items-center gap-1 motion-safe:animate-fade-in", status.tone)}
               >
-                <span aria-hidden className={cn("size-1.5 rounded-full bg-current", status.live && "motion-safe:animate-pulse")} />
+                <span aria-hidden className="size-1.5 rounded-full bg-current" />
                 {status.label}
               </span>
             </>
@@ -523,7 +524,11 @@ export function ArtifactInlineCard({
       ) : streaming ? (
         <div className="grid min-h-[180px] place-items-center p-5">
           <div className="flex flex-col items-center gap-3 text-center">
-            <ThinkingDots className="text-primary" />
+            {/* The run glyph's `tool` pattern in muted ink (SPEC §7.13): one working
+                signature across the product, and no coral decoration. It joins the
+                page's one loop at priority 3, so a live chat line or an open panel
+                row takes the loop and this shows its static signature. */}
+            <RunGlyph phase="tool" size="sm" loopId={cardLoopId} claim={3} className="text-muted-foreground" />
             <div>
               <p className="font-sans text-heading">Writing artifact</p>
               <p className="pt-0.5 text-ui text-muted-foreground">The source will stream in here.</p>

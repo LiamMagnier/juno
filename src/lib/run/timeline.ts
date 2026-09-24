@@ -12,6 +12,8 @@
  * an answer token never rebuilds it (U5).
  */
 
+import * as React from "react";
+
 import { buildLegacyRunView } from "@/lib/run/legacy";
 import type { RunItem, RunView } from "@/lib/run/types";
 import type { ClientActivityEvent, ClientMemoryReceipt, ClientMessage } from "@/types/chat";
@@ -52,6 +54,19 @@ export function buildRunView(message: RunMessage, now?: number): RunView {
   const activity = message.activity ?? [];
   if (!activity.some((event) => typeof event.seq === "number")) return buildLegacyRunView(message, now);
   return buildTypedRunView(message, activity, now);
+}
+
+/**
+ * The view of a message, rebuilt only when its activity, reasoning or sources
+ * change — never for an answer token (U5). `now` feeds the live timing of a
+ * run that has no end row yet.
+ */
+export function useRunView(message: RunMessage, now?: number): RunView {
+  const { activity, reasoning, reasoningParts, sources } = message;
+  return React.useMemo(
+    () => buildRunView({ activity, reasoning, reasoningParts, sources, content: "" }, now),
+    [activity, reasoning, reasoningParts, sources, now],
+  );
 }
 
 /** One reasoning item per `segment` event; the text runs to the next segment's offset. */
@@ -289,6 +304,7 @@ export function finishView(input: {
     },
     hasReasoning: Boolean(message.reasoning?.trim()) || Boolean(message.reasoningParts?.some((part) => part.trim())),
     timing: { startedAt, firstAnswerAt, endedAt, workedMs },
+    sourceUrls: [...urls],
     pendingApprovalIds: tools
       .filter((item) => item.call.status === "awaiting_approval" && item.call.approval?.id)
       .map((item) => item.call.approval!.id),

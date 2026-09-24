@@ -12,8 +12,11 @@
  * back where it was.
  */
 
+import * as React from "react";
+import type { RefObject } from "react";
+
 /** What the transcript marks each message with, so the anchor can find the first visible one. */
-const MESSAGE_SELECTOR = "[data-message-id], [data-render-key]";
+const MESSAGE_SELECTOR = "[data-message-id], [data-render-key], [data-scroll-anchor]";
 
 /** The nearest scrollable ancestor of `element`. */
 export function findScroller(element: Element | null): HTMLElement | null {
@@ -79,4 +82,38 @@ export function anchored(element: Element | null, change: () => void, settleMs =
     if (performance.now() < until) requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
+}
+
+/**
+ * Keeps the reader's place through every automatic size change of the element
+ * in `ref` (the peek opening and folding, an approval card arriving or
+ * folding into its receipt, the whole block collapsing): when the element
+ * sits above the top of the visible transcript and the reader is not pinned
+ * to the bottom, the scroller moves by exactly the change, so what they are
+ * reading stays put. Below the fold, or pinned to the tail, nothing moves,
+ * which is the same as streamed text appending.
+ *
+ * A ResizeObserver reports after layout and before paint, so the correction
+ * lands in the same frame as the change, including every frame of a
+ * `grid-template-rows` transition.
+ */
+export function useScrollAnchoredSize(ref: RefObject<HTMLElement | null>): void {
+  React.useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    let last = element.getBoundingClientRect().height;
+    const observer = new ResizeObserver(() => {
+      const next = element.getBoundingClientRect().height;
+      const delta = next - last;
+      last = next;
+      if (Math.abs(delta) < 0.5) return;
+      const scroller = findScroller(element);
+      if (!scroller) return;
+      // Pinned before the change: the transcript's own follow keeps the tail in view.
+      if (isPinnedToBottom(scroller, 4 + Math.max(0, delta))) return;
+      if (element.getBoundingClientRect().top < scroller.getBoundingClientRect().top) scroller.scrollTop += delta;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
 }

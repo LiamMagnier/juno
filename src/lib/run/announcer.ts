@@ -21,6 +21,8 @@ export interface Announcement {
   /** Identity for `once` and for de-duplication. */
   key: string;
   text: string;
+  /** The line to say instead while the Activity panel covers the transcript (the waiting line names where the approval is). */
+  panelText?: string;
   /** Spoken at once: waiting on the reader, or a run that ended. */
   urgent?: boolean;
   /** Spoken at most once per key for the queue's lifetime. */

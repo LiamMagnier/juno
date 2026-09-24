@@ -5,6 +5,8 @@ import { ChevronRight, Clock } from "@/components/ui/icons";
 import { AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
+import { PhraseWithArgs } from "@/lib/i18n-phrase";
+import type { PhraseLine } from "@/lib/run/types";
 import { cn } from "@/lib/utils";
 import type {
   ActionApprovalDecision,
@@ -304,11 +306,20 @@ type Outcome =
 export function ApprovalCard({
   approval,
   onDecided,
+  callLine,
 }: {
   approval: ClientActionApproval;
   onDecided?: (approval: ClientActionApproval) => void;
+  /**
+   * The call this card belongs to, as its running phrase ("GitHub" · "Create
+   * issue"), when the card sits in a run block under that call (SPEC §7.10).
+   * It heads the card and is part of the group's accessible name, so a
+   * screen reader hears which call is asking, not only that one is.
+   */
+  callLine?: PhraseLine;
 }) {
   const labelId = React.useId();
+  const callLineId = React.useId();
   const detailId = React.useId();
   // Presentation only: whether the argument list is unfolded. It used to be a
   // native <details>, whose open state the browser kept and which gives no
@@ -440,7 +451,7 @@ export function ApprovalCard({
       // A group, not a landmark: a transcript can hold several of these, and one
       // named region per approval turns the landmark list into noise.
       role="group"
-      aria-labelledby={labelId}
+      aria-labelledby={callLine?.length ? `${callLineId} ${labelId}` : labelId}
       aria-busy={sending || undefined}
       className={cn(
         // `@container`: the argument rows below lay out by the card's own width —
@@ -464,6 +475,11 @@ export function ApprovalCard({
         "motion-safe:animate-rise-in motion-reduce:animate-fade-in [animation-fill-mode:backwards]"
       )}
     >
+      {callLine?.length ? (
+        <p id={callLineId} className="mb-2 truncate text-caption text-muted-foreground">
+          <PhraseWithArgs spec={callLine} />
+        </p>
+      ) : null}
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
         {task ? (
           <AppIcons.work

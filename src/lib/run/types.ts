@@ -38,6 +38,8 @@ export interface RunView {
             workedMs: number | null };
   pendingApprovalIds: string[];
   latestStepKeys: string[];            // for the peek: newest last
+  /** The run's source URLs in order of first appearance (the favicon stack). */
+  sourceUrls?: readonly string[];
 }
 
 // ── Phases (src/lib/run/phase.ts) ─────────────────────────────────────────────
@@ -69,6 +71,12 @@ export interface PhaseState {
  */
 export interface PacedPhase extends PhaseState {
   reveal: "none" | "glyph" | "label";
+  /**
+   * The line's clock as the run block keeps it: worked time so far, and the
+   * epoch ms it is counting from (null = held: the answer began, or the run
+   * ended). The summary freezes on this, so "12s" never becomes "11.6s".
+   */
+  clock?: { elapsedMs: number; since: number | null };
 }
 
 /** What `derivePhase` reads besides the view: the live state of the stream. */

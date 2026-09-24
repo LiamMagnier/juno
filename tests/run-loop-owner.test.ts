@@ -187,3 +187,47 @@ test("Research phases announce the plan once, start, pause, writing and the end"
   assert.equal(researchAnnouncementKey("r", "writing", "failed")?.urgent, true);
   assert.equal(researchAnnouncementKey("r", "writing", "writing"), null);
 });
+
+// ── The glyph and the shimmer on the server: the static signature first ──────
+
+test("the glyph renders its 3 × 3 grid, and without the loop until it owns it", async () => {
+  const React = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { RunGlyph, glyphPeriodMs } = await import("@/components/chat/run/run-glyph");
+  const { RunLabel } = await import("@/components/chat/run/run-label");
+  resetRunStoreForTests();
+  const html = renderToStaticMarkup(React.createElement(RunGlyph, { phase: "thinking", loopId: "line:x" }));
+  assert.equal((html.match(/<i /g) ?? []).length, 9);
+  assert.match(html, /data-phase="thinking"/);
+  assert.match(html, /data-loop="off"/, "the server's first frame is the static signature");
+  assert.doesNotMatch(html, /data-run-loop-owner/);
+  assert.match(html, /data-r="1" data-c="1" data-centre=""/);
+  assert.match(html, /--s:8/, "the centre is last in the thinking sequence");
+  assert.match(html, /aria-hidden="true"/);
+  assert.deepEqual([glyphPeriodMs("thinking", false), glyphPeriodMs("tool", false), glyphPeriodMs("tool", true)], [2_400, 1_200, 4_800]);
+
+  const label = renderToStaticMarkup(
+    React.createElement(RunLabel, { line: [{ parts: [{ phrase: "Thinking" }] }], motionKey: "thinking|", live: true, loopId: "line:x" }),
+  );
+  assert.match(label, /class="run-label__item text-reading text-muted-foreground leading-6"/, "leading pinned in both states");
+  assert.match(label, /class="run-sweep" data-loop="off"/);
+  assert.match(label, /class="run-sweep__window" aria-hidden="true"/);
+  const settled = renderToStaticMarkup(
+    React.createElement(RunLabel, { line: [{ parts: [{ phrase: "Thought for" }] }], motionKey: "summary:done", live: false, loopId: "line:x" }),
+  );
+  assert.doesNotMatch(settled, /run-sweep/, "no shimmer at rest");
+  assert.match(settled, /text-ui font-medium text-foreground\/80 leading-6/);
+});
+
+test("the favicon stack: one icon per site, first three by appearance, then a count", async () => {
+  const { faviconSites } = await import("@/components/chat/run/favicon-stack");
+  const sites = faviconSites([
+    { url: "https://a.example/1" },
+    { url: "https://www.b.example/2" },
+    { url: "https://a.example/3" },
+    { url: "javascript:alert(1)" },
+    { url: "not a url" },
+    { url: "https://c.example" },
+  ]);
+  assert.deepEqual(sites.map((site) => site.host), ["a.example", "b.example", "c.example"]);
+});

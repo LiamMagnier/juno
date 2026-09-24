@@ -3622,14 +3622,19 @@
   .stream-progress {
     overflow: hidden;
   }
+  /* One muted ink and one loop family (SPEC §7.13): the sweep is foreground at 0.4 on --loop,
+     not a coral decoration on its own 1.4 s clock. It is mounted only while a reply streams, and
+     it pauses while the page is hidden (`data-paused`, set by StreamProgress). */
   .stream-progress::before {
     content: "";
     position: absolute;
     inset: 0;
     width: 40%;
-    background: linear-gradient(90deg, transparent, hsl(var(--primary) / .9), transparent);
-    animation: stream-progress 1.4s var(--ease-in-out) infinite;
+    background: linear-gradient(90deg, transparent, hsl(var(--foreground) / .4), transparent);
+    animation: stream-progress var(--loop) var(--ease-in-out) infinite;
   }
+  .stream-progress[data-paused]::before { animation-play-state: paused; }
+  @starting-style { .stream-progress { opacity: 0; } }
   @keyframes stream-progress {
     from { transform: translateX(-100%); }
     to { transform: translateX(350%); }
@@ -3638,7 +3643,7 @@
     .stream-progress::before {
       width: 100%;
       animation: none;
-      background: hsl(var(--primary) / .5);
+      background: hsl(var(--foreground) / .25);
     }
   }
   .app-page-scroll {
@@ -3956,7 +3961,9 @@
   /* JS toggles `inert` on .run-collapse__inner together with data-open (§7.8). */
 
   /* ── The 2-slot peek (rem: follows the reader text size) ─────────────── */
-  .run-peek { block-size: 4rem; padding-block-start: 0.5rem; overflow: clip; }
+  /* The 0.5rem above the slots is a margin, not padding: the clip edge is then the list's own top,
+     so the step sliding out above the two slots is hidden whole rather than leaving a sliver. */
+  .run-peek { block-size: 3.5rem; margin-block-start: 0.5rem; overflow: clip; }
   .run-peek__list { display: flex; flex-direction: column; justify-content: flex-end; block-size: 3.5rem;
     transition: translate var(--dur-base) var(--ease-out-soft); }
   .run-peek__slot { block-size: 1.75rem; flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem; }

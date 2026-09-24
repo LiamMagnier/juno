@@ -70,15 +70,24 @@ function clampWidth(w: number) {
  * a generation is running. While Stop is visible it is the signal, and this
  * stays dark: one "working" indicator per surface. chat-view decides and
  * dispatches `juno:streaming`; `.stream-progress` (globals.css) owns the sweep.
+ *
+ * Mounted only while streaming (SPEC §7.11): an always-mounted sweep at
+ * opacity 0 still ran its infinite animation on every page. It fades in with
+ * `@starting-style`, and pauses while the page is hidden.
  */
-function StreamProgress({ active }: { active: boolean }) {
+function StreamProgress() {
+  const [hidden, setHidden] = React.useState(false);
+  React.useEffect(() => {
+    const sync = () => setHidden(document.visibilityState === "hidden");
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => document.removeEventListener("visibilitychange", sync);
+  }, []);
   return (
     <div
       aria-hidden
-      className={cn(
-        "stream-progress pointer-events-none absolute inset-x-0 top-0 z-30 h-0.5 transition-opacity duration-base ease-out-soft",
-        active ? "opacity-100" : "opacity-0"
-      )}
+      data-paused={hidden ? "" : undefined}
+      className="stream-progress pointer-events-none absolute inset-x-0 top-0 z-30 h-0.5 transition-opacity duration-base ease-out-soft"
     />
   );
 }
@@ -622,7 +631,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           className="app-main-canvas relative flex min-w-0 flex-1 flex-col"
           style={{ "--juno-sidebar-width": !shown || floating ? `${RAIL_WIDTH}px` : `${sidebarWidth}px` } as React.CSSProperties}
         >
-          <StreamProgress active={streaming} />
+          {streaming ? <StreamProgress /> : null}
 
           {/* THE VOICE LIGHT, and it lives HERE rather than on <body>.
               `<main>` is `relative` and starts where the sidebar ends, so the

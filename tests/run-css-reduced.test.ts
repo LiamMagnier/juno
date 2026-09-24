@@ -79,3 +79,63 @@ test("no reduced-motion loop runs offscreen", () => {
   }
   assert.ok(loops >= 2, "the glyph breath and the marker breath");
 });
+
+// ── WS5: every loop has a reduced rule and an offscreen pause ─────────────────
+
+/** The run UI's component rules: from the glyph's heading to the end of that layer block. */
+function runComponents(): string {
+  const start = css.indexOf("/* ── Run glyph (Concept A)");
+  assert.notEqual(start, -1, "the run components block is missing");
+  return css.slice(start, css.indexOf("\n}\n", start));
+}
+
+/**
+ * For each infinite loop the run UI declares: the rule that stops it under
+ * reduced motion (in the unlayered block, which beats the layer) and the rule
+ * that pauses it offscreen, or while it does not own the loop.
+ */
+const LOOPS: Record<string, { reduced: string; offscreen: string }> = {
+  "run-lit": { reduced: ".run-glyph > i::after { animation: none; }", offscreen: ".run-glyph[data-offscreen] > i::after" },
+  "run-lit-bar": { reduced: ".run-glyph > i::after { animation: none; }", offscreen: ".run-glyph[data-offscreen] > i::after" },
+  "run-lit-type": { reduced: ".run-glyph > i::after { animation: none; }", offscreen: ".run-glyph[data-offscreen] > i::after" },
+  "run-sweep-window": {
+    reduced: ".run-sweep__window { display: none; }",
+    offscreen: ".run-sweep[data-offscreen] :is(.run-sweep__window, .run-sweep__text--hi) { animation-play-state: paused; }",
+  },
+  "run-sweep-counter": {
+    // The full-ink copy lives inside the window, which is hidden.
+    reduced: ".run-sweep__window { display: none; }",
+    offscreen: ".run-sweep[data-offscreen] :is(.run-sweep__window, .run-sweep__text--hi) { animation-play-state: paused; }",
+  },
+  "run-breathe": {
+    reduced: ".run-marker[data-state=\"running\"]:not([data-loop=\"off\"]):not([data-offscreen])::before {\n  animation-name: run-breathe-opacity;",
+    offscreen: ".run-marker[data-state=\"running\"]:is([data-loop=\"off\"], [data-offscreen])::before { animation: none;",
+  },
+};
+
+test("every loop in the run components has a reduced rule and an offscreen pause", () => {
+  const block = withoutComments(runComponents());
+  const used = new Set<string>();
+  for (const [, value] of block.matchAll(/animation\s*:\s*([^;]+);/g)) {
+    const name = value.trim().split(/\s+/)[0];
+    if (name.startsWith("run-")) used.add(name);
+  }
+  for (const [, name] of block.matchAll(/--lit-name:\s*(run-[\w-]+)/g)) used.add(name);
+  assert.ok(used.size >= 5, `found ${[...used].join(", ")}`);
+  const reduced = reducedBlock();
+  for (const name of used) {
+    const rule = LOOPS[name];
+    assert.ok(rule, `the loop ${name} has no reduced or offscreen rule recorded here`);
+    assert.ok(reduced.includes(rule.reduced), `${name}: no reduced-motion rule`);
+    assert.ok(block.includes(rule.offscreen), `${name}: no offscreen pause`);
+  }
+  // Every loop reads its own phase lock and runs on the loop family.
+  assert.doesNotMatch(block, /animation:[^;]*\b\d+(?:\.\d+)?m?s\b[^;]*infinite/, "a loop off the --loop family");
+});
+
+test("the peek clips at its list, and the page's progress line joined the loop family", () => {
+  assert.match(css, /\.run-peek \{ block-size: 3\.5rem; margin-block-start: 0\.5rem; overflow: clip; \}/);
+  assert.match(css, /animation: stream-progress var\(--loop\) var\(--ease-in-out\) infinite;/);
+  assert.match(css, /\.stream-progress\[data-paused\]::before \{ animation-play-state: paused; \}/);
+  assert.doesNotMatch(css, /hsl\(var\(--primary\) \/ \.9\), transparent\);\s*animation: stream-progress 1\.4s/, "no coral sweep");
+});
