@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   HISTORY_NOTE_MAX_CHARS_PER_TURN,
   historyNoteFor,
+  historyNoteSignals,
   withHistoryNotes,
   type HistoryRow,
 } from "@/lib/chat/history-notes";
@@ -192,4 +193,16 @@ test("model-facing words live in a *.prompt.ts file, and the module stays free o
   const source = readFileSync(path.join(process.cwd(), "src/lib/chat/history-notes.ts"), "utf8");
   assert.doesNotMatch(source, /^import "server-only";/m);
   assert.match(source, /from "@\/lib\/chat\/history-notes\.prompt"/);
+});
+
+test("the signals a window's notes send to the prompt and the taint (SPEC §4.9, §6.5)", () => {
+  const plain = [assistant("a0", "No tools.", undefined)];
+  assert.deepEqual(historyNoteSignals(plain), { notes: false, webContent: false });
+  const clock = [assistant("a1", "It is noon.", [row({ tool: "current_time", status: "succeeded", figure: { kind: "value", value: "12:00" } })])];
+  assert.deepEqual(historyNoteSignals(clock), { notes: true, webContent: false });
+  const web = [
+    ...clock,
+    assistant("a2", "Found it.", [row({ tool: "web_fetch", status: "succeeded", web: { requestedUrl: "https://example.com/" } })]),
+  ];
+  assert.deepEqual(historyNoteSignals(web), { notes: true, webContent: true });
 });

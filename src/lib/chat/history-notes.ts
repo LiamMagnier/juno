@@ -224,6 +224,26 @@ export function historyNoteFor(activity: readonly ClientActivityEvent[] | undefi
   return kept.join("\n");
 }
 
+/**
+ * What the notes in a history window mean for the turn (SPEC §4.9, §6.5):
+ * any note puts the untrusted-content rule in the system prompt, and a note
+ * that carries web titles or URLs starts the dynamic taint as observed
+ * (owner item O-24). Read off the same notes `withHistoryNotes` writes.
+ */
+export function historyNoteSignals(rows: readonly HistoryRow[]): { notes: boolean; webContent: boolean } {
+  let notes = false;
+  let webContent = false;
+  for (const row of rows) {
+    if (row.role !== "ASSISTANT") continue;
+    const note = historyNoteFor(row.activity);
+    if (!note) continue;
+    notes = true;
+    // Result titles only ever appear beside their URL ("Title — URL").
+    if (/https?:\/\//i.test(note)) webContent = true;
+  }
+  return { notes, webContent };
+}
+
 /** Returns the assistant content to send to the model for each row (same order, same length). */
 export function withHistoryNotes(rows: readonly HistoryRow[]): string[] {
   return rows.map((row) => {
