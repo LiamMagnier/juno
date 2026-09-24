@@ -4,7 +4,8 @@ import * as React from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Markdown } from "@/components/chat/markdown";
 import { CodeSurface } from "@/components/canvas/code-surface";
-import { SandboxFrame } from "@/components/canvas/sandbox-frame";
+import { SandboxFrame, rendersStatically } from "@/components/canvas/sandbox-frame";
+import { useSandboxProfile } from "@/components/canvas/sandbox-document-frame";
 import { runtimeFor } from "@/lib/artifact-runtime";
 import type { ArtifactType } from "@/lib/message-content";
 
@@ -28,8 +29,13 @@ export function SharedArtifactViewer({
 }) {
   const rt = React.useMemo(() => runtimeFor(type, language), [type, language]);
   const isMarkdown = type === "MARKDOWN";
+  // While scripted public previews are off (the `static` profile, the default —
+  // see publicShareProfile), only what renders without a script gets a Preview:
+  // HTML, SVG and CSS as markup. React and Mermaid are shown as their source.
+  const isStatic = useSandboxProfile() === "static";
+  const previewOff = isStatic && rt.mode === "web" && !rendersStatically(type, language);
   // Console runtimes (JS/Python) aren't executed on public pages — code only.
-  const hasPreview = isMarkdown || rt.mode === "web";
+  const hasPreview = isMarkdown || (rt.mode === "web" && !previewOff);
   const [tab, setTab] = React.useState<"preview" | "code">(hasPreview ? "preview" : "code");
 
   // The framing card: the same `surface-raised-lg` panel every centred card in
@@ -50,6 +56,11 @@ export function SharedArtifactViewer({
           {hasPreview && <TabsTrigger value="preview">Preview</TabsTrigger>}
           <TabsTrigger value="code">Code</TabsTrigger>
         </TabsList>
+        {previewOff && (
+          <span className="min-w-0 truncate text-caption text-muted-foreground">
+            Live previews are off on shared links for now.
+          </span>
+        )}
         <span className="ml-auto shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
           {rt.label}
           {version > 1 ? ` · v${version}` : ""}
