@@ -22,7 +22,7 @@ import type { ActionApprovalDecision, ClientActionApproval } from "@/lib/action-
 import { formatClock, useUiLocale } from "@/lib/i18n-format";
 import { Phrase, PhraseWithArgs, phraseText } from "@/lib/i18n-phrase";
 import { sourceDomain } from "@/lib/panel/sources-split";
-import { TOOL_ARGS_NOTE, TOOL_RESULT_NOTE } from "@/lib/run-receipt";
+import { TOOL_ARGS_MISSING_NOTE, TOOL_ARGS_NOTE, TOOL_RESULT_NOTE } from "@/lib/run-receipt";
 import type { PhraseSpec, ToolPresentation } from "@/lib/run/types";
 import type { ToolIconKind } from "@/lib/tools/types";
 import { cn } from "@/lib/utils";
@@ -310,19 +310,23 @@ export function ToolCallDetail({
 
   return (
     <div className="flex flex-col gap-3 pb-1 pt-2">
-      <section className="flex flex-col gap-1">
-        <SectionHeading text={PANEL_COPY.call.arguments} />
-        {args.text ? (
-          <>
-            <ClampedBlock text={args.text} maxLines={ARGS_LINES} />
-            {args.truncated && <Caption spec={{ parts: [{ phrase: PANEL_COPY.call.shortened }] }} />}
-          </>
-        ) : args.noteKey ? (
-          <p className="text-caption text-muted-foreground">
-            <Phrase text={TOOL_ARGS_NOTE[args.noteKey]} />
-          </p>
-        ) : null}
-      </section>
+      {/* Never an empty box: a connector call with nothing recorded says so;
+          a Juno tool called with no parameters has no section at all. */}
+      {(args.text || args.noteKey || connector) && (
+        <section className="flex flex-col gap-1">
+          <SectionHeading text={PANEL_COPY.call.arguments} />
+          {args.text ? (
+            <>
+              <ClampedBlock text={args.text} maxLines={ARGS_LINES} />
+              {args.truncated && <Caption spec={{ parts: [{ phrase: PANEL_COPY.call.shortened }] }} />}
+            </>
+          ) : (
+            <p className="text-caption text-muted-foreground">
+              <Phrase text={args.noteKey ? TOOL_ARGS_NOTE[args.noteKey] : TOOL_ARGS_MISSING_NOTE} />
+            </p>
+          )}
+        </section>
+      )}
 
       {(call.web || figure || detail?.result || (connector && detail?.resultNote) || call.cached) && (
         <section className="flex flex-col gap-1">
