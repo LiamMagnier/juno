@@ -185,3 +185,54 @@ test("an unrecognised event is ignored rather than throwing", () => {
   const effect = acc.apply({ type: "something-new" } as unknown as LlmEvent);
   assert.equal(effect.kind, "none");
 });
+
+// ── The chat rework (SPEC §2.8, §2.11) ──────────────────────────────────────
+
+test("text is kept as segments per round and phase; a round that ends in client tools is marked", () => {
+  const acc = new GenerationAccumulator();
+  acc.apply({ type: "text", text: "Let me ", round: 0 });
+  acc.apply({ type: "text", text: "check.", round: 0 });
+  acc.apply({ type: "round_end", round: 0, tools: 1, serverTools: 0, final: false, stop: "tool_use" });
+  acc.apply({ type: "text", text: "Checking.", round: 1, phase: "commentary" });
+  acc.apply({ type: "text", text: "It is 42.", round: 1, phase: "answer" });
+  acc.apply({ type: "round_end", round: 1, tools: 0, serverTools: 1, final: false, stop: null });
+  assert.deepEqual(acc.textSegments, [
+    { round: 0, phase: null, text: "Let me check.", endedInTools: true },
+    { round: 1, phase: "commentary", text: "Checking.", endedInTools: false },
+    { round: 1, phase: "answer", text: "It is 42.", endedInTools: false },
+  ]);
+  assert.equal(acc.text, "Let me check.Checking.It is 42.", "the glued stream stays for billing and the budget guard");
+});
+
+test("an event without a round belongs to the current one: the last stamped, or one past the last round_end", () => {
+  const acc = new GenerationAccumulator();
+  acc.apply({ type: "text", text: "a" });
+  acc.apply({ type: "round_end", round: 0, tools: 1, serverTools: 0, final: false, stop: "tool_use" });
+  acc.apply({ type: "text", text: "b" });
+  assert.deepEqual(acc.textSegments.map((segment) => segment.round), [0, 1]);
+  assert.equal(acc.currentRound, 1);
+});
+
+test("reasoning of a later round is set off by a blank line, as the client folds it (SPEC §2.11)", () => {
+  const acc = new GenerationAccumulator();
+  const first = acc.apply({ type: "reasoning", text: "Before the tool.", round: 0 });
+  const second = acc.apply({ type: "reasoning", text: "After it.", round: 1 });
+  assert.equal(acc.reasoning, "Before the tool.\n\nAfter it.");
+  assert.equal(first.kind === "reasoning" && first.round, 0);
+  assert.equal(second.kind === "reasoning" && second.round, 1);
+});
+
+test("sources are normalised on the way in and carry the event's origin (INV-3)", () => {
+  const acc = new GenerationAccumulator();
+  acc.apply({
+    type: "sources",
+    origin: "provider_search",
+    sources: [
+      { title: "", url: "https://www.example.org/x", snippet: "" },
+      { title: "Relative", url: "/nope", snippet: "" },
+    ],
+  });
+  assert.deepEqual(acc.sources, [{ title: "example.org", url: "https://www.example.org/x", snippet: "", origin: "provider_search" }]);
+  acc.seedSources([{ title: "Seeded", url: "https://seed.example/", snippet: "", cited: true }]);
+  assert.equal(acc.sources[1].cited, true, "a numbered corpus keeps its cited flag");
+});

@@ -127,3 +127,66 @@ test("encodeChunk stays the single frame format", () => {
   assert.ok(raw.startsWith("data: "));
   assert.ok(raw.endsWith("\n\n"));
 });
+
+// ── The chat rework (SPEC §2.3, §2.10) ──────────────────────────────────────
+
+test("sendActivity stamps a 1-based seq next to id and createdAt; a re-send keeps all three", () => {
+  const { controller, frames } = fakeController();
+  const sse = createSseSender(controller, { now: () => Date.parse("2026-09-24T10:00:00.000Z") });
+  const first = sse.sendActivity({ kind: "context", title: "Reading context" });
+  const second = sse.sendActivity({ kind: "tool", title: "Using GitHub" });
+  assert.deepEqual([first.seq, second.seq], [1, 2]);
+  assert.equal(first.createdAt, "2026-09-24T10:00:00.000Z", "the clock is injectable");
+  second.detail = "github__create_issue";
+  sse.send({ type: "activity", event: second });
+  const streamed = decode(frames).map((chunk) => (chunk as { event: { id: string; seq: number } }).event);
+  assert.deepEqual(streamed.map((event) => event.seq), [1, 2, 2]);
+  assert.equal(streamed[2].id, second.id);
+});
+
+test("a row recorded with stream:false is logged, stamped, and never sent", () => {
+  const { controller, frames } = fakeController();
+  const sse = createSseSender(controller);
+  const recorded = sse.sendActivity({ kind: "reasoning", title: "Thinking", segment: { round: 0, offset: 0 } }, { stream: false });
+  sse.sendActivity({ kind: "write", title: "Writing the answer" });
+  assert.equal(frames.length, 1);
+  assert.deepEqual(sse.activityLog.map((event) => event.seq), [1, 2]);
+  assert.equal(sse.activityLog[0], recorded);
+});
+
+test("frames are bounded: long text is split, an error message is one line (INV-4)", () => {
+  const { controller, frames } = fakeController();
+  const sse = createSseSender(controller);
+  const text = "a".repeat(64 * 1024 + 5);
+  sse.send({ type: "reasoning", text, part: 2 } as StreamChunk);
+  const reasoning = decode(frames) as Array<{ type: string; text: string; part?: number }>;
+  assert.equal(reasoning.length, 2);
+  assert.equal(reasoning.map((chunk) => chunk.text).join(""), text);
+  assert.ok(reasoning.every((chunk) => chunk.part === 2));
+
+  const errors = fakeController();
+  createSseSender(errors.controller).send({ type: "error", message: "first\nsecond\u0000third" } as StreamChunk);
+  assert.deepEqual(decode(errors.frames), [{ type: "error", message: "first second third" }]);
+});
+
+test("readChatStream stops at a handoff frame: nothing after it is read (SPEC §2.3 rule 6)", async () => {
+  const { controller, frames } = fakeController();
+  const sse = createSseSender(controller);
+  sse.send({ type: "delta", text: "before" } as StreamChunk);
+  sse.send({ type: "handoff", to: "research", runId: "run_1", userMessageId: "msg_1" });
+  sse.send({ type: "delta", text: "after" } as StreamChunk);
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      for (const f of frames) c.enqueue(f);
+      // Left open: a reader that waited for the end would hang here.
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const seen: StreamChunk[] = [];
+  await readChatStream(body, (chunk) => seen.push(chunk));
+  assert.deepEqual(seen.map((chunk) => chunk.type), ["delta", "handoff"]);
+  assert.equal(cancelled, true, "the reader lets the stream go");
+});

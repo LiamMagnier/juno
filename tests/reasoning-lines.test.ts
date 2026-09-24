@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { toReasoningLines } from "@/lib/reasoning-lines";
+import { appendReasoningDelta, emptyReasoning, type ReasoningState } from "@/lib/reasoning-parts";
 
 /*
  * The rule this file exists to defend: `toReasoningLines` may WRAP a trace, and
@@ -85,4 +86,39 @@ test("parts win over the flat text, so the two can never disagree", () => {
   // reading it when parts exist would double every line.
   const lines = toReasoningLines("**A**\nbody\n\n**B**\nbody", ["**A**\nbody", "**B**\nbody"]);
   assert.deepEqual(lines, ["A", "B"]);
+});
+
+// ── Rounds (SPEC §2.11) ──────────────────────────────────────────────────────
+
+const fold = (deltas: Array<[string, number | undefined, number | undefined]>): ReasoningState =>
+  deltas.reduce((state, [text, part, round]) => appendReasoningDelta(state, text, part, round), emptyReasoning());
+
+test("thinking before and after a tool call is two passages, never glued", () => {
+  const state = fold([
+    ["I need the page.", undefined, 0],
+    [" Fetching it.", undefined, 0],
+    ["Now that I have it, summarise.", undefined, 1],
+  ]);
+  assert.equal(state.text, "I need the page. Fetching it.\n\nNow that I have it, summarise.");
+  assert.deepEqual(state.parts, [], "a round boundary is not a declared part");
+  assert.deepEqual(toReasoningLines(state.text), ["I need the page. Fetching it.", "Now that I have it, summarise."]);
+});
+
+test("a round boundary and a part boundary at once give one blank line, not two", () => {
+  const state = fold([
+    ["**One**", 0, 0],
+    ["**Two**", 1, 1],
+  ]);
+  assert.equal(state.text, "**One**\n\n**Two**");
+  assert.deepEqual(state.parts, ["**One**", "**Two**"]);
+});
+
+test("deltas with no round fold exactly as before the rework", () => {
+  const state = fold([
+    ["a", undefined, undefined],
+    ["b", undefined, undefined],
+  ]);
+  assert.equal(state.text, "ab");
+  const legacy: ReasoningState = { text: "x", parts: [], lastPart: null };
+  assert.equal(appendReasoningDelta(legacy, "y", undefined, 3).text, "xy", "a state from before rounds has no round to differ from");
 });
