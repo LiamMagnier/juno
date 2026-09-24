@@ -476,8 +476,19 @@ test("[n] resolves in the audit's citation order, each carrying its best passage
   const sources = citationSources([{ url: "https://z.example", title: "Z" }], AUDIT as never);
   assert.deepEqual(sources.map((s) => [s.url, s.cited]), [["https://a.example/1", true], ["https://b.example/2", true]]);
   assert.equal(sources[0].snippet, "Seasonal COP was 2.7.");
-  // No audit: the run's own order is the numbering.
+  // No audit: the writer's cited order when the run carries it, else the run's own order.
   assert.deepEqual(citationSources([{ url: "https://z.example", title: "Z" }], null).map((s) => s.url), ["https://z.example"]);
+  assert.deepEqual(
+    citationSources(
+      [
+        { url: "https://read.example", title: "R", citedIndex: null },
+        { url: "https://two.example", title: "2", citedIndex: 2 },
+        { url: "https://one.example", title: "1", citedIndex: 1 },
+      ],
+      null,
+    ).map((s) => s.url),
+    ["https://one.example", "https://two.example"],
+  );
 });
 
 test("Open at passage: a text fragment of the quote's first eight words, CJK included", () => {

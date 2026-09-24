@@ -70,6 +70,12 @@ export interface ResearchSourceView {
    * it. A graph that merges them turns "we did not look" into a verdict.
    */
   sourceType: string | null;
+  /**
+   * The source's number in the report's citations (`[n]`), when the run
+   * carries the writer's ordered cited list (§9.6.3); absent or null for a
+   * source the report does not cite, and on runs from before the rework.
+   */
+  citedIndex?: number | null;
 }
 
 export interface ResearchRunView extends ResearchRunViewAdditions {

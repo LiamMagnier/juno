@@ -39,20 +39,23 @@ export function reportBodyOf(report: string): string {
 }
 
 /**
- * The list a report's `[n]` resolve into, in citation order. The audit
- * numbers its sources as the writer was given them; without an audit, the
- * run's own source order is the numbering (the order the writer was handed
- * them, which is how reports before the rework were cited). Each carries the
- * strongest supporting passage as its snippet, so even a plain source chip
- * shows the quote rather than an empty line (bug 36).
+ * The list a report's `[n]` resolve into, in citation order: the audit's
+ * numbering when there is an audit; else each source's `citedIndex` when the
+ * run carries one (the writer's ordered cited list, §9.6.3); else the run's
+ * own source order, which is how reports before the rework were numbered.
+ * Each carries the strongest supporting passage as its snippet, so even a
+ * plain source chip shows the quote rather than an empty line (bug 36).
  */
 export function citationSources(
-  sources: ReadonlyArray<{ url: string; title: string }>,
+  sources: ReadonlyArray<{ url: string; title: string; citedIndex?: number | null }>,
   audit: Pick<CitationAudit, "claims" | "sources"> | null,
 ): ClientSource[] {
+  const indexed = sources.filter((s) => typeof s.citedIndex === "number" && s.citedIndex > 0);
   const ordered = audit?.sources.length
     ? [...audit.sources].sort((a, b) => a.index - b.index).map((s) => ({ url: s.url, title: s.title }))
-    : sources.map((s) => ({ url: s.url, title: s.title }));
+    : indexed.length
+      ? [...indexed].sort((a, b) => (a.citedIndex as number) - (b.citedIndex as number)).map((s) => ({ url: s.url, title: s.title }))
+      : sources.map((s) => ({ url: s.url, title: s.title }));
   return ordered.map((source, i) => ({
     title: source.title,
     url: source.url,
