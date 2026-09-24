@@ -23,7 +23,7 @@ export const PRESENT_MAX_CHARS = 200;
 export function oneLine(value: unknown, max = PRESENT_MAX_CHARS): string {
   const text = typeof value === "string" ? value : value === undefined || value === null ? "" : String(value);
   // eslint-disable-next-line no-control-regex
-  const flat = text.replace(/[\u0000-\u001f\u007f  \s]+/g, " ").trim();
+  const flat = text.replace(/[\u0000-\u001f\u007f\u2028\u2029\s]+/g, " ").trim();
   return flat.length <= max ? flat : `${flat.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
 }
 

@@ -11,6 +11,7 @@
 import { convertedLine, invalidZoneText, nowLine, UNKNOWN_ZONE_LINE } from "@/lib/tools/specs/current-time.prompt";
 import { failed, oneLine, stringArg, succeeded } from "@/lib/tools/specs/shared";
 import { defineTool, type ToolSpec } from "@/lib/tools/types";
+import type { ToolPresentArgs } from "@/types/run";
 
 export interface CurrentTimeArgs extends Record<string, unknown> {
   time_zone?: unknown;
@@ -87,8 +88,10 @@ export function createCurrentTimeSpec(deps: { now?: () => Date } = {}): ToolSpec
     broker: "none",
     dedupe: false,
     present(args) {
+      const out: ToolPresentArgs = {};
       const zone = stringArg(args.time_zone);
-      return zone ? { time_zone: oneLine(zone) } : {};
+      if (zone) out.time_zone = oneLine(zone);
+      return out;
     },
     async execute(args, ctx) {
       const other = stringArg(args.time_zone);

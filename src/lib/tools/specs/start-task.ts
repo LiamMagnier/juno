@@ -15,6 +15,7 @@
 import { START_TASK_DESCRIPTION, START_TASK_NOT_ATTACHED_TEXT } from "@/lib/tools/specs/start-task.prompt";
 import { failed, oneLine } from "@/lib/tools/specs/shared";
 import { defineTool } from "@/lib/tools/types";
+import type { ToolPresentArgs } from "@/types/run";
 
 export interface StartTaskArgs extends Record<string, unknown> {
   title?: unknown;
@@ -54,8 +55,10 @@ export const startTaskSpec = defineTool<StartTaskArgs>({
   broker: "self",
   dedupe: true,
   present(args) {
+    const out: ToolPresentArgs = {};
     const title = oneLine(args.title, 80);
-    return title ? { title } : {};
+    if (title) out.title = title;
+    return out;
   },
   async execute() {
     return failed("unavailable", START_TASK_NOT_ATTACHED_TEXT);
