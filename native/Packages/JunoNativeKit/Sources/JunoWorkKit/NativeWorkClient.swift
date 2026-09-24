@@ -162,6 +162,14 @@ public struct NativeWorkClient: Sendable {
     /// ``sendInstruction(sessionID:text:idempotencyKey:for:)``.
     public static let controlKinds: Set<JunoWorkCommandKind> = [.pause, .resume, .stop]
 
+    /// The word the control route takes for a kind. The route accepts
+    /// `pause | resume | cancel` (`src/app/api/work/protocol.ts`
+    /// `runControlSchema`), so the command vocabulary's `stop` travels as
+    /// `cancel`; sending `stop` was refused with a 400 and Stop did nothing.
+    static func controlAction(_ kind: JunoWorkCommandKind) -> String {
+        kind == .stop ? "cancel" : kind.rawValue
+    }
+
     /// The decisions a person can actually make.
     ///
     /// `pending` is the absence of a decision, and `expired` and `superseded`
@@ -343,8 +351,31 @@ public struct NativeWorkClient: Sendable {
         limit: Int = 50,
         for accountID: AccountID
     ) async throws -> [WorkSessionSummary] {
+        try await sessions(
+            conversationID: nil, includingArchived: includingArchived, limit: limit,
+            for: accountID
+        )
+    }
+
+    /// The tasks started from one chat, newest activity first.
+    ///
+    /// With `conversationID` the server ignores pinned-first ordering, so the
+    /// first row is the one the chat's run card follows.
+    public func sessions(
+        conversationID: String?,
+        projectID: String? = nil,
+        includingArchived: Bool = false,
+        limit: Int = 50,
+        for accountID: AccountID
+    ) async throws -> [WorkSessionSummary] {
+        if let conversationID { try validate(conversationID) }
+        if let projectID { try validate(projectID) }
         var query = [URLQueryItem(name: "limit", value: String(max(1, min(limit, 200))))]
         if includingArchived { query.append(URLQueryItem(name: "archived", value: "true")) }
+        if let conversationID {
+            query.append(URLQueryItem(name: "conversationId", value: conversationID))
+        }
+        if let projectID { query.append(URLQueryItem(name: "projectId", value: projectID)) }
         let response = try await get("/api/work/sessions", query: query, for: accountID)
         guard let root = try decodeObject(response), case .array(let items)? = root["sessions"]
         else { throw WorkRemoteError.malformedResponse }
@@ -368,10 +399,14 @@ public struct NativeWorkClient: Sendable {
         attachmentIDs: [String]? = nil,
         connectorIDs: [String]? = nil,
         permissionPolicy: JunoWorkPermissionPolicy? = nil,
+        conversationID: String? = nil,
+        projectID: String? = nil,
         idempotencyKey: String,
         for accountID: AccountID
     ) async throws -> WorkSessionSummary {
         if let preferredHostID { try validate(preferredHostID) }
+        if let conversationID { try validate(conversationID) }
+        if let projectID { try validate(projectID) }
         if let model { try validate(model) }
         if let reasoningEffort { try validate(reasoningEffort) }
         if let attachmentIDs {
@@ -398,6 +433,10 @@ public struct NativeWorkClient: Sendable {
         if let permissionPolicy {
             body["permissionPolicy"] = .string(permissionPolicy.rawValue)
         }
+        // The server 404s a conversation it has no row for, so only a stored
+        // (non-pending) chat id may be sent here.
+        if let conversationID { body["conversationId"] = .string(conversationID) }
+        if let projectID { body["projectId"] = .string(projectID) }
         let response = try await send(
             .post, "/api/work/sessions", body: .object(body), for: accountID
         )
@@ -630,7 +669,7 @@ public struct NativeWorkClient: Sendable {
             throw WorkRemoteError.unsupportedCommand(kind.rawValue)
         }
         var body: [String: JunoJSONValue] = [
-            "action": .string(kind.rawValue),
+            "action": .string(Self.controlAction(kind)),
             "idempotencyKey": .string(idempotencyKey),
         ]
         if let reason { body["reason"] = .string(reason) }
@@ -1078,7 +1117,10 @@ public struct NativeWorkClient: Sendable {
             archived: object["archived"]?.boolValue ?? false,
             lastActivityAt: lastActivityAt,
             currentRunID: object["currentRunId"]?.stringValue,
-            lastSeq: integer(object["lastSeq"])
+            lastSeq: integer(object["lastSeq"]),
+            conversationID: object["conversationId"]?.stringValue,
+            projectID: object["projectId"]?.stringValue,
+            createdAt: object["createdAt"]?.date
         )
     }
 

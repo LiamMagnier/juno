@@ -193,6 +193,13 @@ public struct WorkSessionSummary: Equatable, Sendable, Identifiable {
     public let lastActivityAt: Date
     public let currentRunID: String?
     public let lastSeq: Int
+    /// The chat this task belongs to, when it was started from one. Chat
+    /// follows the newest session per conversation, so this is the join.
+    public let conversationID: String?
+    public let projectID: String?
+    /// When the session was composed. The chat places a task's card by it,
+    /// as the web does (`chat-view.tsx`), so it must not move with activity.
+    public let createdAt: Date?
 
     public var id: String { sessionID }
 
@@ -202,7 +209,8 @@ public struct WorkSessionSummary: Equatable, Sendable, Identifiable {
         hostID: String?, hostDisplayName: String?, requestedModel: String? = nil,
         reasoningEffort: String? = nil, permissionPolicy: JunoWorkPermissionPolicy? = nil,
         pinned: Bool, archived: Bool,
-        lastActivityAt: Date, currentRunID: String?, lastSeq: Int
+        lastActivityAt: Date, currentRunID: String?, lastSeq: Int,
+        conversationID: String? = nil, projectID: String? = nil, createdAt: Date? = nil
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -221,6 +229,9 @@ public struct WorkSessionSummary: Equatable, Sendable, Identifiable {
         self.lastActivityAt = lastActivityAt
         self.currentRunID = currentRunID
         self.lastSeq = lastSeq
+        self.conversationID = conversationID
+        self.projectID = projectID
+        self.createdAt = createdAt
     }
 }
 

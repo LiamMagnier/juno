@@ -781,6 +781,14 @@ paths:
           name: archived
           description: Include archived tasks. Absent means live tasks only.
           schema: { type: string, enum: ['true'] }
+        - in: query
+          name: projectId
+          description: Only tasks filed under this project.
+          schema: { type: string, minLength: 1, maxLength: 200 }
+        - in: query
+          name: conversationId
+          description: Only tasks started from this chat. Pinned-first ordering is dropped, so the first row is the chat's newest task.
+          schema: { type: string, minLength: 1, maxLength: 200 }
       responses:
         '200':
           description: Task summaries without join-table context — see /work/sessions/{sessionId}/context.
@@ -2609,6 +2617,11 @@ components:
           items: { type: string }
           description: Sending this key at all records that the user was asked. An empty array means "asked, chose none" — omitting the key means "never asked".
         permissionPolicy: { type: string, x-juno-work-vocabulary: permissionPolicies }
+        projectId: { type: string, minLength: 1 }
+        conversationId:
+          type: string
+          minLength: 1
+          description: The chat this task is started from. It must be a stored conversation the caller owns; an unknown id is a 404.
         idempotencyKey: { type: string, minLength: 8, maxLength: 200 }
     WorkSessionEditRequest:
       type: object

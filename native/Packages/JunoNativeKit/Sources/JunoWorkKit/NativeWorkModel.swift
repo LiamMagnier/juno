@@ -128,6 +128,8 @@ public final class NativeWorkModel {
         let attachmentIDs: [String]?
         let connectorIDs: [String]?
         let permissionPolicy: JunoWorkPermissionPolicy?
+        let conversationID: String?
+        let projectID: String?
         let key: String
 
         func matches(
@@ -139,9 +141,13 @@ public final class NativeWorkModel {
             reasoningEffort: String?,
             attachmentIDs: [String]?,
             connectorIDs: [String]?,
-            permissionPolicy: JunoWorkPermissionPolicy?
+            permissionPolicy: JunoWorkPermissionPolicy?,
+            conversationID: String?,
+            projectID: String?
         ) -> Bool {
             self.goal == goal
+                && self.conversationID == conversationID
+                && self.projectID == projectID
                 && self.title == title
                 && self.target == target
                 && self.preferredHostID == preferredHostID
@@ -489,7 +495,9 @@ public final class NativeWorkModel {
         reasoningEffort: String? = nil,
         attachmentIDs: [String]? = nil,
         connectorIDs: [String]? = nil,
-        permissionPolicy: JunoWorkPermissionPolicy? = nil
+        permissionPolicy: JunoWorkPermissionPolicy? = nil,
+        conversationID: String? = nil,
+        projectID: String? = nil
     ) async -> WorkSessionSummary? {
         guard let accountID else { return nil }
         let trimmed = goal.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -516,7 +524,9 @@ public final class NativeWorkModel {
                 reasoningEffort: reasoningEffort,
                 attachmentIDs: normalizedAttachmentIDs,
                 connectorIDs: normalizedConnectorIDs,
-                permissionPolicy: permissionPolicy
+                permissionPolicy: permissionPolicy,
+                conversationID: conversationID,
+                projectID: projectID
             )
         {
             key = retriableTaskStart.key
@@ -533,6 +543,8 @@ public final class NativeWorkModel {
             attachmentIDs: normalizedAttachmentIDs,
             connectorIDs: normalizedConnectorIDs,
             permissionPolicy: permissionPolicy,
+            conversationID: conversationID,
+            projectID: projectID,
             key: key
         )
         isMutating = true
@@ -546,6 +558,8 @@ public final class NativeWorkModel {
                 attachmentIDs: normalizedAttachmentIDs,
                 connectorIDs: normalizedConnectorIDs,
                 permissionPolicy: permissionPolicy,
+                conversationID: conversationID,
+                projectID: projectID,
                 idempotencyKey: key,
                 for: accountID
             )
@@ -637,6 +651,50 @@ public final class NativeWorkModel {
         retriableInstruction = nil
         retriableStart = nil
         follow(sessionID: session.sessionID)
+    }
+
+    /// Follows the newest task started from a chat, or lets go of the open
+    /// task when the chat has none. Chat shows only that one run
+    /// (`use-conversation-work.ts`), and the model follows one session at a
+    /// time, so this is the whole of the chat's discovery.
+    ///
+    /// Returns the session it now follows.
+    @discardableResult
+    public func followConversation(_ conversationID: String?) async -> WorkSessionSummary? {
+        guard let conversationID, let accountID else {
+            if openSession?.conversationID != nil { closeOpenSession() }
+            return nil
+        }
+        if let open = openSession, open.conversationID == conversationID { return open }
+        let listed: [WorkSessionSummary]
+        do {
+            listed = try await client.sessions(
+                conversationID: conversationID, limit: 10, for: accountID
+            )
+        } catch {
+            guard self.accountID == accountID else { return nil }
+            record(error)
+            return nil
+        }
+        guard self.accountID == accountID else { return nil }
+        guard let newest = Self.newestSession(in: listed, conversationID: conversationID) else {
+            if openSession?.conversationID != nil { closeOpenSession() }
+            return nil
+        }
+        apply(newest)
+        open(newest)
+        return newest
+    }
+
+    /// The session a chat's run card follows: the newest composed, not the
+    /// most recently active, so an older task that wakes up does not take the
+    /// card from the one the person just started.
+    public nonisolated static func newestSession(
+        in sessions: [WorkSessionSummary], conversationID: String
+    ) -> WorkSessionSummary? {
+        sessions
+            .filter { $0.conversationID == conversationID }
+            .max { ($0.createdAt ?? $0.lastActivityAt) < ($1.createdAt ?? $1.lastActivityAt) }
     }
 
     public func closeOpenSession() {
