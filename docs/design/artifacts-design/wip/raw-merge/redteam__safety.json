@@ -1,0 +1,179 @@
+{
+ "verdict": "The plan is sound in shape, but Phase 0 cannot ship as written. I checked it against 00/01/02, the code at 7f92324f, the 7243613f fix branch, the glass plan (juno-glass at ff906c12) and backlog.clean.json.\n\n**Coverage is complete.**\n- All 33 X-defects are placed in Appendix B.\n- All 101 cited R-ids exist, and every backlog id is cited.\n- No P0 item is silently dropped. The places where the plan departs from a P0 are stated openly: the R-011/R-012 split (X-01a before governance), picture-in-picture from R-016 deferred, and 307 instead of 308 plus a longer Design pointer row for R-018.\n- The \"(checked)\" code facts I re-read are accurate: 33 conversation read sites, persistArtifacts still writing the type on 7243613f, the trigger resolvers, the native entity allowlist, featureFlags returning {}, and the kind filter at NativeConversationStore:268.\n\n**What does not hold up:**\n1. **Versions that are not current break saving.** The R1 re-emit guard and R2's X-07 fix store versions that do not advance currentVersion. Every write path numbers the next version as currentVersion+1, so the next save collides, and the artifact or design locks for every client, including Mac 1.6.0. Public share snapshots would also show these unaccepted versions.\n2. **The X-01 preview work lacks a response-level sandbox.** With only the iframe's sandbox attribute, a same-origin stopgap (which the other session may be building) is stored XSS. Putting the share token in the preview hostname leaks it through DNS. Existing shares would start running scripts unscreened. Inline Mermaid, Work site previews and the console have no artifact id, so they fall outside the design.\n3. **Installed Macs and iPhones are exposed in places the four protections miss:**\n   - the new edit syntax the model writes into saved messages, which old builds render as the artifact itself;\n   - the REST artifact routes, whose responses old builds reject whole;\n   - the anchor conversation appearing in native search;\n   - the kinds gate, which cannot see old devices because they send no header.\n4. **The anchor period (R1\u2013R8) has holes:**\n   - Detached artifacts have no web page that opens them until R9.\n   - They lose their project, because the project column only arrives in R5.\n   - A type change collides with the unique (conversation, identifier) index.\n5. **The Mac schedule overstates what users get:**\n   - X-11 and X-12 are \"closed\" only on the unreleased glass branch.\n   - The iPhone inline viewer's X-11 has no fix scheduled.\n   - N2's dock work duplicates what the glass branch already rewrote.\n   - Merging N1 back into glass will conflict and break its code. N1's planned `.unsupported(kind)` case changes how the artifact type is declared, and glass's existing type switches stop compiling.\n6. **Some Mac details conflict with the glass plan:**\n   - \u2318\u232b to delete, and \u2325[ \u2325] to step versions (on a US keyboard \u2325[ types \u201c).\n   - An incomplete list of requests to the glass session.\n   - Glass still adds \"Do This as a Task\", which the web removed and which the plan's case for the Make choice relies on.\n7. **Smaller gaps:**\n   - The field-preserving save's allowlist, once regenerated, stops protecting Mac 1.6.0.\n   - Motion model v2 (R-049) is placed in a track that \"gates nothing\", though it changes the design format.\n   - The X-33 lever stays half open through `author: \"juno\"`.\n\nAll of these can be fixed without changing the plan's structure. Most need a few columns moved into M0, a version-number allocator based on the highest version, a response-level CSP sandbox, and the old-client projection extended to message content and REST.",
+ "issues": [
+  {
+   "severity": "blocker",
+   "section": "\u00a78.10 (R1 re-emit guard), \u00a713.3 R2 (X-07 core), \u00a72.7, \u00a73.2 M0",
+   "issue": "R1 stores Juno's 'waiting suggestion', and R2 stores stopped or cut-off drafts, as ArtifactVersion rows that do not advance currentVersion. Every write path numbers the next version as currentVersion+1: artifacts-store.ts:56, design/store.ts:157 (appendVersion), and api/artifacts/[id]/route.ts:58, which Mac 1.6.0 and the iPhone use. The next save therefore hits the unique (artifactId, version) key. The generic POST answers 409 'stale' forever, design transactions return 'conflict' on every non-folding edit, and persistArtifacts throws after the message is saved. The guard fires exactly when a person has just been editing, so it locks the design they are working on. getSharedArtifactSnapshot (share.ts:257-261) picks the highest version with createdAt <= snapshotAt, so a public link can show an unaccepted Juno revision or a truncated draft. B4 would pin those too. In R1/R2 no column (complete, status, messageId) exists to tell a suggestion from a draft, because they arrive in M2 at R5.",
+   "fix": "Choose one approach. (a) Add ArtifactVersion.state (sealed|pending|draft), messageId and taint to M0. Number new versions from max(version)+1, or from a new Artifact.lastVersion counter, in all five write paths including the generic POST. Restrict share snapshots and B4 to state='sealed' AND version <= currentVersion. Tombstone pending and draft versions for old clients in the R4 projection. (b) Or keep suggestions and drafts out of ArtifactVersion entirely: bring a minimal ArtifactProposal/pending table (never synced) forward into M0, and append a version only on 'Use it' or 'Keep'. Either way, add R1 exit tests: with a pending suggestion present, an N0 generic POST with baseVersion=currentVersion succeeds, a design transaction succeeds, and /share shows the current version."
+  },
+  {
+   "severity": "blocker",
+   "section": "\u00a79.5 (X-01a, coordination bullet, preview origin policy)",
+   "issue": "The plan accepts a same-origin stopgap from the other X-01 session ('a src route excluded from the middleware CSP') as X-01a. The sandbox attribute only applies inside the iframe. A direct top-level visit to that src URL runs model- or attacker-authored HTML on the app origin with the session cookie: stored XSS, reachable by any link. On the separate domain the same gap makes every published page at {token}.{preview-domain} a top-level, unsandboxed page, which is the phishing shape \u00a79.5 cites (ClickFix). frame-ancestors does not stop top-level navigation.",
+   "fix": "Make these acceptance conditions for any preview response, whether stopgap or separate domain: the response header `Content-Security-Policy: sandbox allow-scripts allow-popups` (never allow-same-origin, allow-top-navigation or allow-forms) on top of the listed policy; refuse requests whose Sec-Fetch-Dest is not 'iframe' (public pages redirect to /share/{token}); X-Content-Type-Options: nosniff. Put a CI test in R2's exit that navigates top-level to a preview URL and asserts an opaque origin (document.cookie inaccessible) and no script execution. Tell the X-01 session now, since it may be building the stopgap."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a79.5 X-01b (preview origin URL grammar), \u00a75.1",
+   "issue": "Public pages are served from `{token}.{preview-domain}`, which puts the share capability token in the hostname. Hostnames go to every DNS resolver on the path, to passive-DNS datasets and in the TLS SNI, so unlisted published pages become enumerable. Owner previews use `{hash(artifactId, version)}`; if that hash is unkeyed, artifact ids leak the same way.",
+   "fix": "Derive every preview subdomain as HMAC(server secret, shareId|versionId) for public pages and HMAC(secret, artifactId|version) for owner previews. Carry the token only in the path or query over TLS. Consider adding the preview domain to the Public Suffix List so sibling preview subdomains are not same-site."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a79.4 G1 item 4, \u00a79.5 X-01b, \u00a73.3 B0",
+   "issue": "Screening runs only at Publish and Update. When preview.origin.public flips at R4, every existing ARTIFACT share of HTML or React (created before R4 and never screened, X-32) starts running scripts publicly at once. 'No scripted public page exists without screening' is false for legacy links.",
+   "fix": "Add a backfill before the flip: run moderation.ts and the deterministic HTML checks over each existing share's snapshot version. Serve legacy shares as poster plus 'Open source' until they pass or the owner re-publishes. Add a count of HTML/React shares to B0 and 'every scripted public share has a screening verdict' to Phase 0B's exit."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a79.5 X-01a vs \u00a72.8, \u00a73.1 (taint in M2)",
+   "issue": "Scripted owner previews come back in R2, but D6's 'Run page' gate for turns that read web or connector content needs ArtifactVersion.taint and messageId, which only arrive in M2 (R5). So in R2\u2013R5, prompt-injected pages run automatically on the preview origin, where img-src https: lets them beacon out the artifact's own (possibly private) content.",
+   "fix": "Move ArtifactVersion.messageId and taint into M0 and write them from R1. Make click-to-run for tainted versions part of X-01a's exit. Versions written before R1 cannot be classified, so default them to 'Run page' unless their turn had no web or connector tool calls."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a79.5 X-01a scope",
+   "issue": "X-01a is designed per artifact version (subdomain and token keyed by artifactId and version). Some script previews the audit lists as dead have no artifact id: inline Mermaid (learning/mermaid-block.tsx via Markdown), Work site previews (work-site-preview.tsx), the JS/Python console and learning blocks. Public CHAT shares render Markdown, and therefore MermaidBlock through SandboxFrame (shared-chat-transcript.tsx:7). If SandboxFrame is switched globally, public chat shares get scripted content before G1. If it is not, these stay dead after R2.",
+   "fix": "Define a content-addressed preview document for id-less content: subdomain HMAC(content hash), token bound to owner and messageId. Keep CHAT shares static (server-rendered Mermaid SVG, which the poster pipeline needs anyway) until R4. List inline Mermaid, Work site and console in X-01a's Chromium CI exit."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a73.5 (hidden everywhere: Mac and iPhone), \u00a73.7",
+   "issue": "The plan says N0 'drops the anchor from every list'. It does not. NativeSearchStore indexes every conversation except kind 'code' (NativeSearchStore.swift:145-158). The anchor conversation is change-captured ('direct' trigger on Conversation) and synced from R1, before N1, so Mac 1.6.0 and iPhone search show 'Your artifacts' as a conversation. Opening it leads to a conversation NativeConversationStore filtered out. The Mac library's 'Open Conversation' on an anchored artifact hits the same dead end.",
+   "fix": "Never sync kind='anchor' Conversation rows to any client: exclude them in the conversation loader and changes feed, consistently across the three endpoints per \u00a73.7. Accept the 'Conversation' label fallback in NativeArtifactStore, or have N1 label anchored artifacts from a bootstrap anchorId. In N1, filter native search to kind 'chat' and hide 'Open Conversation' when the chat is unknown. Add a search fixture to the old-client test."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a73.5, \u00a713.3 R1 (detach) and R2 (B3), \u00a75.2",
+   "issue": "From R1, detach-on-delete moves artifacts into the hidden anchor, and from R2 B3 moves holder designs there. Every web entry opens an artifact through /chat/{conversationId}?artifact={identifier} (artifacts/page.tsx:529,596; search hits the same way), but the anchor is hidden by visibleConversationWhere() and refused by the chat routes. /a/{id} only arrives in R9, and every door emits it only from R10. So 'N artifacts made here stay in Artifacts' leads to a 404 or a dead chat for 8\u20139 weeks, for every non-design kind.",
+   "fix": "In R1, ship a minimal read-only /a/{id}: CanvasPanel standalone, no composer, version history, export and share. Point /artifacts, search and project Sources at it for anchored rows. Or let /chat/{anchor}?artifact= render panel-only. Add 'every anchored artifact opens on web and Mac' to Phase 0A's exit."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a73.1/\u00a73.2 (projectId in M2), \u00a73.3 B1/B3, \u00a713.3 R1\u2013R2",
+   "issue": "Artifact.projectId and userId arrive in M2 (R5). But detach-on-delete (R1) and B3 (R2, 'the design inherits the project') move artifacts into the anchor, which has no project. B1 then backfills projectId from conversation.projectId, which is the anchor's null. Artifacts detached in R1\u2013R5 lose their project permanently. B3 designs drop off the project page in the very release that fixes X-21.",
+   "fix": "Add nullable Artifact.userId and projectId to M0 and write them on every move into the anchor (from the deleted conversation). Or run B3 after M2 and record the source conversation's projectId in the move. Make B1 skip rows whose projectId is already set."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a72.6 (type immutability, R1)",
+   "issue": "'A new type makes a new, linked artifact' conflicts with @@unique([conversationId, identifier]) (schema.prisma:1152): the second row cannot take the same identifier. ArtifactLink('replaces') only exists from M2 (R5). Nothing says which row the model's identifier then points at. Resolvers keyed by (conversation, identifier), the web's artifactsByIdentifier and glass's ChatArtifactResolver, would bind the new tag to the old row of the old type.",
+   "fix": "Specify it: in one transaction, retire the old row's identifier (`{identifier}~{last6}`), create the new row with the original identifier, and record the link in a column that exists at R1 (M0 derivedFromId) or backfill ArtifactLink at R5. Add a test covering the web resolver and glass ChatArtifactResolver semantics."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a77.5 (the wire), \u00a73.7 (installed clients), \u00a713.3 R11/R12",
+   "issue": "The four protections cover sync decoding but not message content. From R11/R12 the model writes `<juno:artifact op=\"patch|ops|blocks\" id=\u2026 base=\u2026>` with patch or ops bodies, and tool-call artifacts write no tag at all. N0 Mac and iPhone (and glass's fallback while writing) take the tag body as the artifact's content and its `type` as its kind (NativeMessageContent.swift artifactMatches). The Mac dock on main is built from the tag (X-12), so after R11 every Juno edit would show patch text or operation JSON as the artifact on installed builds. Public CHAT share transcripts parse tags too.",
+   "fix": "Until the compatibility window closes (and for CHAT shares always), have the server save assistant messages in the legacy form: identifier/type/title attributes with the resolved full body. Alternatively, save a closed empty-body legacy tag, which N0 drops without a card, plus new ref attributes. Write a legacy tag for tool-call artifacts too. Add N0 tag-parser fixtures to the old-client test and treat the saved tag grammar as a versioned contract."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a73.7 (C: the projection), \u00a712.1 (REST payload diet)",
+   "issue": "The N0 projection covers /api/v1/changes, the entity index and /api/v1/entities, but N0 also decodes REST. NativeArtifactAPIClient.decodeArtifact (NativeArtifactAPIClient.swift:334-361) rejects a whole response if any version exceeds 200k UTF-16 units, the kind is unknown, or currentVersion is missing from versions. The generic GET, POST and 409 responses include every version (api/artifacts/[id]/route.ts:20-25, 70). So after R4 an N0 save of an artifact with an oversized old version succeeds on the server but reports 'malformed': the user retries and duplicate versions pile up, or the draft is lost. The R5 REST diet would break N0 history if applied to requests without the header.",
+   "fix": "Run the same N0 projection on /api/artifacts/* and /api/design responses to header-less bearer requests: omit oversized, draft and pending versions, always include currentVersion, never diet. Tell web (session cookie) and native (bearer) apart explicitly. Add REST responses to the old-client fixture test."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a73.8 (field-preserving save), \u00a713.5 (field additions)",
+   "issue": "The allowlist is 'schema minus the Swift DesignDocument coding keys'. Once N1 adds cornerSmoothing to Swift, a regenerated allowlist (which \u00a713.5 requires on every field addition) no longer includes cornerSmoothing, and Mac 1.6.0 saves strip it again. It also restores only node-level and document-level fields that are absent, not fields nested in animations, tracks, keyframes, fills or effects. Step 1 hard-refuses invalid bodies, so any quirk of the 1.6.0 Swift encoder that fails web validation turns into lost Mac saves (X-16) with no update available. Step 5 writes authorKind, which does not exist until M2.",
+   "fix": "Key the allowlist by client build: header-less requests use a frozen 1.6.0 key set checked into the repo; otherwise use the union over every build still in the window. Merge nested arrays structurally by stable id (animations, tracks, interactions). For header-less clients, accept and flag bodies that fail validation instead of refusing until N1 adoption. Write origin 'edit' until M2."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a713.2 editor-craft track, \u00a710.3 (R-049), \u00a713.5",
+   "issue": "R-049 (motion model v2: relative transforms, anchor points, incoming easing, holds) sits in a track that 'runs from W5 and gates nothing'. The backlog's R-019 resolution says: build the runtime and conformance suite on today's schema first, then move to v2. The plan does the opposite, since R-019 lands in Phase 5b (W21\u201326). It is also a design-format change that alters what existing fields mean. Restoring fields cannot protect N0 or N1 from that, and a schemaVersion bump makes installed builds refuse to open the design.",
+   "fix": "Move R-049 after R-019's conformance suite (Phase 5b or later). Gate it on the generated Swift mirror (N3) plus either the compatibility window or a per-account capability gate (e.g. design.schema.v2, like kinds.v2). Until then, keep the editor track to changes that do not touch the format (R-061, R-062, R-090, R-096)."
+  },
+  {
+   "severity": "major",
+   "section": "Appendix B (X-11, X-12), \u00a71.5 item 10, \u00a73.9 N1, \u00a713.3 N2, \u00a74.7 item 3",
+   "issue": "X-11 and X-12 are 'closed on the Mac through glass stage 3', but glass ships only when all its phases are done (no date). N1 cherry-picks only the store-skip logic. N2, cut from main, adds 'the dock's ArtifactSurface header' to the old tag-built dock, which glass has already replaced (TrailingDock, ChatArtifactResolver, InlineArtifactCard): two implementations and guaranteed merge conflicts. The iPhone inline viewer's X-11 (JunoMobileInlineArtifact.swift:62-65) has no fix in any release. Day one (W17) nevertheless promises a Mac card and dock backed by the stored row.",
+   "fix": "Cherry-pick ChatArtifactResolver and 'designs open only from the stored row' (JunoChatKit, 2b1049c5) into N1, and use the same resolver in the iPhone inline viewer. Keep all dock UI work in the glass branch and drop the dock header from N2. Correct Appendix B and \u00a71.5 to name the build that closes each defect for users."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a73.9 (N1 cherry-pick and merge-back), \u00a74.7 table, \u00a713.6",
+   "issue": "Merging N1 back into glass is left unplanned. (a) `.unsupported(kind)` requires NativeArtifactKind to stop being a raw-value enum, but it is built with NativeArtifactKind(rawValue:) in the store and API client and switched over exhaustively in views on both branches; glass currently skips unknown kinds, so the merge breaks glass's code. (b) N1 edits DesktopWorkWorkspace.swift (X-27, :4956-4977), which glass Phase 5 deletes; DesktopDesignScreen (X-16), which glass Phase 4 moves onto JunoPage; and native.yml's bundle gate, which glass Phase 6 item 5 also adds. (c) Generated JunoArtifactKinds.swift is assigned to both N2 and glass Phase 6. Glass HEAD has also moved past 2b1049c5 (ff906c12, Stage 4).",
+   "fix": "Represent unknown kinds additively, for example `kindRaw: String` plus an optional known kind, so the enum's public API is unchanged. Pin the exact commit to cherry-pick. List the files that will conflict, with one owner each, in the request to the glass session. Assign the bundle gate to N1 and remove it from glass Phase 6. Assign JunoArtifactKinds.swift generation to exactly one vehicle."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a73.7 B (kinds gate), \u00a73.9 step 4 (window measurement), \u00a73.1 SyncClient",
+   "issue": "N0 sends no X-Juno-Client or X-Juno-Caps, and SyncClient is keyed by (userId, deviceId) from those headers. An account whose only native device is N0 therefore has no SyncClient rows. 'Every device seen in 30 days declares kinds.v2' is then true by default: Docs and Decks get created, and the promised 'Update Juno on MacBook Air' line never shows. The 95%/90% window cannot count N0 devices either. The Electron client (header-less) would count as N0 indefinitely.",
+   "fix": "Record every header-less bearer request in SyncClient, using the DeviceID bound to its auth token (JunoAuth), with platform 'n0', and let any N0 device seen in 30 days fail the kinds gate. Compute adoption from auth-token devices. State what Electron users see, and ship Electron headers with N1."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a73.9 steps 4\u20135, D15, \u00a713.3 Phase 8",
+   "issue": "The plan contradicts itself on when N0 support ends. \u00a73.9 and D15 close the window at >=95% of Macs and >=90% of iPhones plus 45 days, then remove the N0 projection and ship M10 (conversationId set to NULL). That blanks the libraries of the remaining 5\u201310% of N0 devices, which by then also receive DOC and DECK rows (Launch W27 comes before Phase 8). Phase 8's exit instead requires '0 N0 devices in 14 days', which may never be met.",
+   "fix": "Keep the N0 projection permanently (it is cheap). After M10 it sends null-conversationId rows and new kinds to N0 as tombstones. After contraction, have bootstrap return 'update required' to header-less clients. Make Phase 8's gate and D15 say the same thing."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a73.7 C (v2 clients: current body only), \u00a73.9 N1 contents",
+   "issue": "For clients declaring v2 caps the server sends only the current body; history comes from GET \u2026/versions/{n}. N1's contents include neither metadata-only versions (decodeVersion requires content), nor on-demand history fetch, nor hiding rows where deletedAt is set. If N1 declares artifacts.v2, the Mac library's history, diff and restore (and offline history, which NativeArtifactStore promises) break, and trashed artifacts appear as live after R6.",
+   "fix": "Define each capability's contract. Have N1 declare only kinds.v2 and the new entity types, and keep full bodies and trash tombstones for it. Or add optional content, on-demand version fetch and deletedAt filtering to N1's scope."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a73.5 (attachments), interaction with main 7f92324f and 7243613f",
+   "issue": "Only conversation delete re-parents referenced files. On HEAD (7f92324f), a Library delete keeps a file only if 'a message or a project still uses it', and a message edit now tombstones later messages' Library-removed files in the same transaction. Artifact bodies that reference /api/files/<key> do not count as uses. With 7243613f keeping artifacts across edits, their images can still be tombstoned, and the R8 asset store comes too late.",
+   "fix": "From R1, count artifact-version references as uses in tombstoneAttachment, Library delete and edit truncation: keep a reference index built when versions are written. Add a lifecycle test: a design with a Library image survives an edit two messages up and a Library delete of that image."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a79.4 item 5 (X-33 lever)",
+   "issue": "Only a client-chosen `origin: \"restore\"` is neutralised. commitTransaction also starts a new version on every call whenever `transaction.author !== \"user\"` (operations.ts:535-536), and author is chosen by the client (`z.enum([\"user\",\"juno\"])`, operations.ts:310). So a script can still force a new version per call with author 'juno'.",
+   "fix": "Have the server set author. Accept 'juno' only when applying a proposal the server issued (a signed or recorded proposal id). Apply the 'sealed versions 60/h per artifact' limit to transactions from R4."
+  },
+  {
+   "severity": "major",
+   "section": "\u00a713.3 Phase 0A (R1/R2 scope), \u00a713.1 capacity, \u00a73.5 (Electron gate)",
+   "issue": "R1 bundles the ready-to-deploy 7243613f (two critical data-loss fixes) with the anchor, a guard test over 33+ read sites plus raw SQL, proof of the ledger under the pooler, the telemetry spine and an Electron fix ('R1 waits for its fix'). Any of these can delay X-03 and X-04. R2 also depends on a domain, wildcard TLS and DNS bought the same week (D10). 'With one lane, Phase 0 dates hold' is not credible for this scope.",
+   "fix": "Ship an R0 (W1 Monday, or now): the 7243613f deploy, X-08, type immutability and X-02, all pure fixes that need no anchor. Let only detach-on-delete wait for the anchor and the Electron fix. Name the fallback if the domain is not live: a same-origin src route with the CSP sandbox header per the blocker above. Re-date R1/R2 with one lane."
+  },
+  {
+   "severity": "minor",
+   "section": "\u00a73.4 (deletion ledger trigger)",
+   "issue": "The ledger reads userId from Conversation after the parent row is already gone in a cascade (the same mechanism 00 \u00a77.2 flags for tombstones). So every 'conversation-cascade' and 'account' ledger row has userId NULL until M2, and these are exactly the losses the ledger exists to attribute. Cascaded ArtifactVersion tombstones stay unresolved outside the purge job. Ledger rows also keep ids of erased accounts indefinitely.",
+   "fix": "Call set_config('juno.delete_user', \u2026, true) next to the reason, or capture userId in a BEFORE DELETE trigger on Conversation. Denormalise userId onto ArtifactVersion. Set a retention period for ledger rows of deleted accounts."
+  },
+  {
+   "severity": "minor",
+   "section": "\u00a73.5, \u00a713.3 R1 (detach-on-delete)",
+   "issue": "Conversations are deleted in three places: `/api/conversations/[id]` DELETE, the bulk `/api/conversations` deleteMany (route.ts:76), and the native sync mutation `conversation.delete` (api/v1/mutations/route.ts:134-136), which every installed Mac and iPhone uses. The plan names only the dialogs.",
+   "fix": "List all three paths, plus account deletion, in the R1 detach work and in a source-reading test that forbids conversation.delete or deleteMany outside the detaching helper."
+  },
+  {
+   "severity": "minor",
+   "section": "\u00a73.2 M4, \u00a72.7 (version-rewrite trigger)",
+   "issue": "M4's trigger, which raises on any UPDATE of ArtifactVersion.content, lands in the same release as the head. If the migration is applied before the new code is live, or a rollback revives folding code, every design fold (store.ts rewriteVersion) raises and hand edits fail.",
+   "fix": "Create the trigger one release after the folding code is deleted (R8), and state that rolling back versions.head never restores folding."
+  },
+  {
+   "severity": "minor",
+   "section": "\u00a713.3 R2 (design posters) vs R-014, \u00a713.5",
+   "issue": "R2 ships server-SVG design posters in cards, tiles and share pages, while X-24 (a container's opacity and rotation not applied to its children) is only fixed in R8. That contradicts R-014 ('Fix X-24 first') and the plan's own rule for posters in the index.",
+   "fix": "Pull the X-24 fix in render.ts into R2, or label R2 renders as approximate and fall back to 'Preview unavailable' for designs with transformed or transparent containers."
+  },
+  {
+   "severity": "minor",
+   "section": "\u00a74.7 (Mac shortcuts) vs glass \u00a77.8",
+   "issue": "\u2318\u232b 'moves to Recently deleted' on the Artifacts page, but glass \u00a77.8 deliberately gives Delete no shortcut: menu key equivalents fire before a focused text field, and \u2318\u232b is delete-to-line-start (the page has a search field). \u2325[ and \u2325] (View \u203a Previous and Next Version) type \u201c and \u2018 on US layouts and would be taken over in the composer. \u2318F is already glass's 'Find in Conversation'.",
+   "fix": "Handle \u2318\u232b, Space and \u2318I on the focused grid (onDeleteCommand, onKeyPress), not as menu key equivalents. Use \u2325\u2318[ and \u2325\u2318], or enable them only when no text view is first responder. Retitle and retarget \u2318F by focus in the generated shortcut registry."
+  },
+  {
+   "severity": "minor",
+   "section": "\u00a713.6 (requests to the glass session), \u00a74.7, \u00a77.1",
+   "issue": "\u00a74.7 changes glass behaviour that the \u00a713.6 request list omits:\n- a type Menu instead of glass \u00a79's JunoSegmented type filter;\n- a Recently deleted toggle and server-poster tiles;\n- Expand opening a document window instead of glass's 'Fullscreen over the chat column';\n- Preview|Source with Console as a disclosure instead of glass's three segments;\n- anchored artifacts must not 'route to their chat';\n- the artifact Share popover must not create a link on open, and its primary action must not be 'Copy Link' (glass \u00a77.3 shows a link field and a .borderedProminent Copy Link).\nGlass \u00a75.4 and Phase 5 add 'Do This as a Task', which TWO_PRODUCTS \u00a72.2 removed on the web and which D11's argument for Make relies on. The Make \u25b8 row and its place in glass \u00a75.5's mark order are unspecified.",
+   "fix": "Add each item to the request list for the glass session, including: drop 'Do This as a Task' in favour of Make \u25b8 (group 3), the mark order (Make \u00b7 Skill \u00b7 Deep research \u2026) and mutual exclusivity with Deep research."
+  },
+  {
+   "severity": "minor",
+   "section": "Appendix B, \u00a72.7, \u00a74.1, \u00a712.3, \u00a73.3 B3, \u00a74.8",
+   "issue": "Smaller inconsistencies:\n- The D18 prune job, which the plan says bounds X-33, has no release.\n- The rest of R-064 and R-074's live presence have no phase.\n- R-079 (Phase 2) depends on R-029 and R-078, which come later.\n- R-061 (editor track) depends on R-060 (N3), and R-063 (Phase 2) depends on R-061.\n- Universal links, which Day one item 9 needs, are unscheduled, and no associated-domains entitlement exists today.\n- \u00a712.3 says the find-rate baseline is captured 'eight weeks' before R13; R1 to R13 is 15 weeks.\n- R13 carries two navigation changes (the Design pointer and Code's Artifacts row, M27), against \u00a74.1's one-per-release rule.\n- B3's predicate should also require no CHAT share or other child rows before deleting a holder chat.",
+   "fix": "Put the prune job in R8 with its version tombstones. Assign the rest of R-064 and R-074 to phases. Reorder or split R-079, R-061 and R-063. Schedule universal links (AASA plus entitlement) in N2. Fix the week count. Move M27 to R14 or R15. Extend B3's predicate."
+  }
+ ]
+}

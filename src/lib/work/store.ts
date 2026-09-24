@@ -80,6 +80,13 @@ export interface CreateWorkSessionInput {
   projectId?: string | null;
   /** The chat this was started from, when it was one. */
   conversationId?: string | null;
+  /**
+   * The agent this task is delegated to (docs/design/AGENTS.md). Written at
+   * creation, with everything else a session starts life with, so no reader
+   * ever sees an agent's routine or idea as an anonymous task. Ownership must
+   * already have been checked by the caller.
+   */
+  agentId?: string | null;
   requestedTarget?: WorkTarget;
   preferredHostId?: string | null;
   requestedModel?: string | null;
@@ -145,6 +152,7 @@ export async function createWorkSession(input: CreateWorkSessionInput): Promise<
         goal: input.goal,
         projectId: input.projectId ?? null,
         conversationId: input.conversationId ?? null,
+        agentId: input.agentId ?? null,
         status: "draft",
         needsAttention: false,
         requestedTarget: input.requestedTarget ?? "automatic",

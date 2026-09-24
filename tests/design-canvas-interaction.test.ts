@@ -28,6 +28,7 @@ import {
   descendSelection,
   doubleClickTarget,
   hitPath,
+  nodeSceneTransform,
   pathHit,
   pressLandsInSelection,
   resizeRotatedBox,
@@ -391,6 +392,46 @@ test("a child of a rotated frame inherits that rotation when hit tested", () => 
   assert.deepEqual(hitPath({ x: 180, y: 20 }, doc, PAGE_ID, boxes), ["frame", "chip"]);
   // Its unrotated position is inside the frame but no longer on the child.
   assert.deepEqual(hitPath({ x: 20, y: 20 }, doc, PAGE_ID, boxes), ["frame"]);
+});
+
+test("selection chrome is turned by the layer's rotation and every rotated frame around it", () => {
+  // The renderer now turns a frame's children with it (X-24), so an outline
+  // drawn with only the child's own angle sat upright inside a tilted frame,
+  // beside the artwork it named.
+  const doc = run(emptyDocument(), [
+    {
+      op: "createNode",
+      parentId: null,
+      pageId: PAGE_ID,
+      node: { type: "frame", id: "frame", name: "Frame", patch: { x: 0, y: 0, width: 200, height: 200, rotation: 90 } },
+    },
+    {
+      op: "createNode",
+      parentId: "frame",
+      pageId: PAGE_ID,
+      node: { type: "rectangle", id: "chip", name: "Chip", patch: { x: 0, y: 0, width: 40, height: 40, rotation: 15 } },
+    },
+    {
+      op: "createNode",
+      parentId: null,
+      pageId: PAGE_ID,
+      node: { type: "rectangle", id: "flat", name: "Flat", patch: { x: 300, y: 0, width: 40, height: 40 } },
+    },
+  ]).document;
+  const boxes = layoutPage(doc, PAGE_ID);
+
+  // Outermost first: SVG applies the list right to left, so the chip turns
+  // about its own centre and then with the frame about the frame's.
+  assert.equal(nodeSceneTransform(doc, boxes, "chip", boxes.get("chip")!), "rotate(90 100 100) rotate(15 20 20)");
+  assert.equal(nodeSceneTransform(doc, boxes, "frame", boxes.get("frame")!), "rotate(90 100 100)");
+  // Nothing turned, no attribute.
+  assert.equal(nodeSceneTransform(doc, boxes, "flat", boxes.get("flat")!), undefined);
+  // The own turn follows the box it is given (a drag's ghost); the frame's
+  // stays on its committed box.
+  assert.equal(
+    nodeSceneTransform(doc, boxes, "chip", { x: 10, y: 0, width: 40, height: 40 }),
+    "rotate(90 100 100) rotate(15 30 20)"
+  );
 });
 
 /**

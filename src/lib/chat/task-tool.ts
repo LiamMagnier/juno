@@ -35,7 +35,11 @@ import type { NativeChatTool } from "@/lib/llm";
 import { ACTION_PREVIEW_STRING_CHARS, type ClientActionApproval } from "@/lib/action-approval";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ReasoningEffort } from "@/types/chat";
-import { DEFAULT_WORK_PERMISSION_POLICY, WORK_LIVE_STATUSES } from "@/lib/work/domain";
+import {
+  DEFAULT_WORK_PERMISSION_POLICY,
+  WORK_LIVE_STATUSES,
+  type WorkPermissionPolicy,
+} from "@/lib/work/domain";
 
 /** The tool's name on the wire, and the name the approval receipt records. */
 export const START_TASK_TOOL_ID = "start_task";
@@ -492,6 +496,13 @@ export interface StartTaskToolContext {
   connectorIds: readonly string[];
   /** Text Juno did not author is in this turn's context. A task then always asks first. */
   untrustedContent: boolean;
+  /**
+   * The agent whose thread this is, when it is one (docs/design/AGENTS.md).
+   * The task is stamped with it, and runs under the autonomy the person gave
+   * that agent instead of the default a model-started task otherwise gets —
+   * a mode somebody chose on the agent's page is a decision, not a default.
+   */
+  agent?: { id: string; approvalMode: WorkPermissionPolicy } | null;
   /** The generation id: with the approval call id, the broker's idempotency key. */
   generationId: string;
   onApprovalRequest?: (approval: ClientActionApproval) => void;
@@ -614,8 +625,9 @@ async function startTask(
     model: ctx.model,
     ...(ctx.reasoningEffort ? { reasoningEffort: ctx.reasoningEffort } : {}),
     // Asks before risky steps. The user never picked a mode for a task the
-    // model started, so it gets the default a person composing one gets.
-    permissionPolicy: DEFAULT_WORK_PERMISSION_POLICY,
+    // model started, so it gets the default a person composing one gets —
+    // unless this is an agent's thread, where they picked one for the agent.
+    permissionPolicy: ctx.agent?.approvalMode ?? DEFAULT_WORK_PERMISSION_POLICY,
     attachmentIds: [...new Set(ctx.attachmentIds)],
     connectorIds: [...new Set(ctx.connectorIds)].slice(0, MAX_TASK_CONNECTORS),
     idempotencyKey: keys.session,
@@ -645,6 +657,15 @@ async function startTask(
   const session = created.session;
   // The same question as `previous` above, for a retry that raced this one.
   if (session.deletedAt) return taskRefusal("already_tried");
+  // Stamped before anything runs, so no reader ever sees an agent's task as an
+  // anonymous one. Conditional on the column still being empty: a replayed
+  // create lands on the session the first call already stamped.
+  if (ctx.agent) {
+    await prisma.workSession.updateMany({
+      where: { id: session.id, userId: user.id, agentId: null },
+      data: { agentId: ctx.agent.id },
+    });
+  }
 
   /*
    * The approval this start consumed, until it is settled. A consumed receipt

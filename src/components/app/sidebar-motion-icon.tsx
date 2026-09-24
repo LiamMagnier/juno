@@ -25,6 +25,8 @@ export type SidebarMotionIconKind =
   | "connections"
   | "projects"
   | "assistants"
+  /** Agents: persistent teammates (docs/design/AGENTS.md). A destination, like Projects. */
+  | "agents"
   | "tasks"
   /** Skills, Automations and Permissions: the three rooms Work's tab row used
    *  to hold. Skills and Automations are rows in More. Permissions has no
@@ -66,6 +68,7 @@ const ICONS: Record<SidebarMotionIconKind, IconComponent> = {
   connections: AppIcons.connections,
   projects: AppIcons.projects,
   assistants: AppIcons.assistants,
+  agents: AppIcons.agents,
   tasks: AppIcons.tasks,
   skills: AppIcons.skills,
   automations: AppIcons.automations,

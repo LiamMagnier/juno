@@ -322,6 +322,21 @@ async function main(): Promise<void> {
     },
     write: (id, value) => prismaUnguarded.scheduledTask.update({ where: { id }, data: { prompt: value } }),
   });
+  // What each agent knows (docs/design/AGENTS.md). Born sealed like the
+  // project summaries — every write in src/lib/agents/ goes through
+  // encryptField — so only a rotation ever has to touch it.
+  await rotateTextColumn("AgentNote.content", tally, {
+    page: async (cursor) => {
+      const rows = await prismaUnguarded.agentNote.findMany({
+        take: BATCH,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        orderBy: { id: "asc" },
+        select: { id: true, content: true },
+      });
+      return rows.map((r) => ({ id: r.id, value: r.content }));
+    },
+    write: (id, value) => prismaUnguarded.agentNote.update({ where: { id }, data: { content: value } }),
+  });
 
   if (tally.failed === 0) clearCursor();
 
