@@ -54,9 +54,107 @@ export interface ExportResult {
   content: string;
 }
 
-function safeFileName(name: string, extension: string): string {
-  const cleaned = name.replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 80) || "design";
-  return `${cleaned}.${extension}`;
+// ---------------------------------------------------------------------------
+// File names and download headers
+// ---------------------------------------------------------------------------
+
+/**
+ * What a file name must not carry: path separators, the Windows reserved set,
+ * and control characters. A CR or LF would also end a header line early, and
+ * `Headers` refuses such a value outright, so it could never reach a client.
+ */
+const UNSAFE_FILE_CHARS = /[\\/:*?"<>|\p{Cc}]+/gu;
+
+/** Direction overrides, which can make "report" + U+202E + "gpj.exe" display as "reportexe.jpg". */
+const BIDI_CONTROLS = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+/** Half of a surrogate pair. It has no UTF-8 form, and `encodeURIComponent` throws on one. */
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+
+/**
+ * A design or layer name, cleaned into a file's base name.
+ *
+ * The name is the person's, in whatever script they wrote it, and it is kept:
+ * "登录" exports as "登录.svg", not as "design.svg". Only what a file system or
+ * a header cannot hold is taken out. The length is clipped by code point rather
+ * than by UTF-16 unit, because a cut through an emoji leaves half a surrogate
+ * pair, which no encoder accepts.
+ */
+function cleanFileBase(name: string): string {
+  const cleaned = name
+    .replace(LONE_SURROGATE, "")
+    .replace(BIDI_CONTROLS, "")
+    .replace(UNSAFE_FILE_CHARS, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s.]+/, "") // a leading dot would make it a hidden file, "../x" included
+    .trim();
+  return Array.from(cleaned).slice(0, 80).join("").trim();
+}
+
+export function safeFileName(name: string, extension: string): string {
+  return `${cleanFileBase(name) || "design"}.${extension}`;
+}
+
+/** attr-char per RFC 5987: `encodeURIComponent` leaves `'()*!` alone, and the grammar forbids them. */
+function encodeRfc5987(value: string): string {
+  return encodeURIComponent(value).replace(/['()*!]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+/**
+ * The `Content-Disposition` a design download is sent with (RFC 6266).
+ *
+ * A header value is bytes, and `Headers` refuses any character above U+00FF.
+ * A design called "登录" or a layer called "Café ☕" used to reach this header
+ * as a TypeError, and the export answered 500 after the file had been built
+ * (X-23). Both forms are sent instead: `filename=` in plain ASCII for clients
+ * that predate RFC 5987, and `filename*=UTF-8''…` with the real name, which
+ * every current browser prefers. The ASCII form keeps what it can ("Café"
+ * becomes "Cafe") and falls back to "design" when nothing Latin is left.
+ *
+ * Mirrors `attachmentDisposition` in the Work deliverables and the helpers in
+ * the artifact export route, which answer the same question for their files.
+ */
+export function downloadDisposition(fileName: string): string {
+  const dot = fileName.lastIndexOf(".");
+  const split = dot > 0 && dot < fileName.length - 1;
+  const base = cleanFileBase(split ? fileName.slice(0, dot) : fileName) || "design";
+  const extensionChars = split ? fileName.slice(dot + 1).replace(/[^A-Za-z0-9]/g, "") : "";
+  const extension = extensionChars ? `.${extensionChars}` : "";
+  const asciiBase =
+    base
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\x20-\x7e]/g, "")
+      .replace(/\s+/g, " ")
+      .replace(/^[\s.]+/, "")
+      .trim() || "design";
+  return `attachment; filename="${asciiBase}${extension}"; filename*=UTF-8''${encodeRfc5987(`${base}${extension}`)}`;
+}
+
+/**
+ * The PDF's `unsupported` list as a header value: a JSON array of strings.
+ *
+ * The notes name layers ("按钮: corner radius is not drawn in PDF"), so they
+ * fail exactly as the file name did. Every character outside printable ASCII
+ * is written as a JSON `\uXXXX` escape, which a JSON parser reads back to the
+ * same string. The list is cut at a whole note rather than at a character
+ * count, so what arrives always parses; a raw slice could stop inside a string
+ * and make the client's `JSON.parse` throw after the download had succeeded.
+ */
+export function exportNotesHeader(notes: string[], maxLength = 2_000): string {
+  const kept: string[] = [];
+  let length = 2; // the brackets
+  for (const note of notes) {
+    const encoded = JSON.stringify(note).replace(
+      /[^\x20-\x7e]/g,
+      (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`
+    );
+    const next = length + encoded.length + (kept.length > 0 ? 1 : 0);
+    if (next > maxLength) break;
+    kept.push(encoded);
+    length = next;
+  }
+  return `[${kept.join(",")}]`;
 }
 
 // ---------------------------------------------------------------------------

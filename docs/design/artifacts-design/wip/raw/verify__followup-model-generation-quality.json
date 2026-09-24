@@ -1,0 +1,169 @@
+{
+ "verdicts": [
+  {
+   "id": "followup-model-generation-quality-1",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "corrected_location": "src/lib/message-content.ts:100-113 (salvage); src/lib/chat-artifact-verification.ts:60-106 (no completeness check); src/app/api/chat/route.ts:3058-3112 and 3271-3292; answer-completeness.ts:50 (not 48)",
+   "reasoning": "READ: parseArtifacts salvages an unclosed trailing artifact (message-content.ts:100-113). validateArtifact checks only empty/size for HTML, REACT, CODE and MARKDOWN (chat-artifact-verification.ts:60-106). The success path (route.ts:3058-3112) does not look at acc.finishReason before prepareChatArtifactOutput/persistArtifacts, and the partial path does the same (route.ts:3271-3292). persistArtifacts appends a version and bumps currentVersion (artifacts-store.ts:52-73). looksTruncated is called only from gemini-finish.ts:159. PROBE (my own run): a cut HTML body and a cut REACT body both returned status=verified, with the detail '1 artifact opened and verified.' Mitigations: the message shows 'The model stopped at its token limit.' (message-item.tsx:1207-1209), and the earlier version is kept and can be restored, so nothing is destroyed. The current version is still broken and is labelled verified. On PRO and above the cap is 200,000 tokens (plans.ts:77), so there the path mostly comes from Stop."
+  },
+  {
+   "id": "followup-model-generation-quality-2",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: the prompt lists image as a node type (system-prompt.ts:286), and authoring.ts:47 accepts it. The compact schema has no asset or url field (authoring.ts:46-73), and patchFor never sets assetId (107-151). createNode on an image calls requireAsset (operations.ts:711), which throws 'An image layer needs a picture...' (operations.ts:571-575). Git confirms the guard landed in e849ef6a (2026-08-06), one day after authoring shipped in 3b9f06b0 (2026-08-05). PROBE: {frame > image} is refused with design_invalid and that exact message. Every design with an image node fails, so the one type the contract advertises is unusable."
+  },
+  {
+   "id": "followup-model-generation-quality-3",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: the revise rule requires a complete re-emit (system-prompt.ts:257), and the prompt forbids the full document form (system-prompt.ts:291). normalizeDesignArtifact passes a body through only when schemaVersion>0 (authoring.ts:223-225), which the model never has in history. Otherwise expandAuthoredDesign starts from createDesignDocument and adds only the compact nodes (authoring.ts:161-203), and the grammar has no components, variables, effects, animations, interactions, comments or assets. persistArtifacts appends the result as a new 'generated' version (artifacts-store.ts:56-73), with no guard for editor-origin versions. PROBE: the expanded document has empty effects, and its keys include empty components, variables, animations and interactions. Correction: ids are not freshly random. They are derived from the identifier plus walk order (authoring.ts:92-98, 179), so an unchanged structure gets the same ids back. Any node inserted earlier in the tree shifts later ids, and nodes created in the editor disappear. Earlier versions can still be restored."
+  },
+  {
+   "id": "followup-model-generation-quality-4",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "corrected_location": "src/app/api/chat/route.ts:1852-1861; src/lib/chat/context-assembly.ts:18-44",
+   "reasoning": "READ: history is the raw decrypted Message.content from a block-anchored window of 24-31 messages (route.ts:1852-1861; context-assembly.ts:18-44). It goes to the provider as modelHistory (route.ts:2083, 2951), and no step swaps in the current artifact version. Edits, restores and /design creation all write versions that no Message carries (api/artifacts/[id]/route.ts:59-75; design/store.ts:157-176; api/design/route.ts:71-90). Correction: the claim that no code puts currentVersion into context is wrong. The Canvas selection 'modify' path loads the current version (route.ts:1450-1482), checks baseVersion, and patches it through search/replace (artifact-edit.ts; route.ts:2266-2269, 3049-3055). The defect therefore applies to free-form composer revisions, which are the common case, and not to selection edits. Scenarios (a), (b) and (c) all follow. The reverted versions stay in history and can be restored, so the loss is recoverable but silent."
+  },
+  {
+   "id": "followup-model-generation-quality-5",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: continueResponse sends the literal message 'Continue from where you left off.' (use-chat.ts:1862-1864), and Continue appears for length and network_error finishes (message-item.tsx:1193). No server code handles that string (grep for 'where you left off' and 'continuation' in src finds only the client). The only text join is Gemini's in-stream pass. A reused identifier replaces the whole content (artifacts-store.ts:56-60). It is worse than claimed: rewriteArtifactMarkup closes the salvaged open block in the stored message (message-content.ts:143-150; PROBE output '...<section>cut</juno:artifact>'). On Continue the model sees a closed artifact that looks complete, so it cannot tell where the body was cut. The three model behaviours listed remain INFERRED."
+  },
+  {
+   "id": "followup-model-generation-quality-6",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: normalizeDesignArtifact calls JSON.parse(content) with no fence stripping (authoring.ts:216-221). Its siblings strip fences: artifact-edit.ts:53 and design/ai.ts:96. PROBE: a fenced compact body is refused with 'A design artifact must contain JSON.' The prompt says the body is JSON 'nothing else' (system-prompt.ts:268), which lowers but does not remove the risk. How often models fence is INFERRED."
+  },
+  {
+   "id": "followup-model-generation-quality-7",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the z.object is non-strict and strips unknown keys (authoring.ts:46-88). colorSchema accepts 3-8 hex digits (authoring.ts:33), but hexToRgba accepts only lengths 3, 4, 6 and 8 (variables.ts:185-191), so a 5- or 7-digit value passes the schema and is dropped (authoring.ts:113-116). Text with no fill gets rgb(0.06,0.06,0.08) (authoring.ts:148). PROBE: on text, color:#ffffff was ignored and the fill stayed near-black. On the frame, shadow and gradient were dropped (effects []). On a rectangle, fill '#12345' fell back to the default fill. There was no warning. Mitigation: the prompt's example uses 'fill' on the text label (system-prompt.ts:277)."
+  },
+  {
+   "id": "followup-model-generation-quality-8",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: buildDocumentSummary lists only page.children as topLevel. Collections carry an id, but modes appear by name only and variables are not listed at all (selection-context.ts:327-361). The prompt requires stable ids and says to prefer binding an existing variable (ai.ts:354, COLOR_NOTE ai.ts:285). The segmented adjustment even asks for <modeId> (ai.ts:367). With no selection, selection is null (edit/route.ts:151-155; ask-juno-bar.tsx:68, 86). Correction: a refused proposal (422) refunds the message (edit/route.ts:282-287), but the tokens stay in the spend ledger (221-237). A setSelection+note reply returns 200 and keeps the message charge."
+  },
+  {
+   "id": "followup-model-generation-quality-9",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: routing sees only the latest message text (route.ts:782-787). MIN_INTEL.simple is 4 (auto-model.ts:61-66), and ranking is cheapest-first (366-419). PROBE: all three prompts classify as simple with minIntel 4 and preferReasoning false. Correction: the 86-character build prompt is simple because it scores 2 (only 'build-from-scratch'), not because of the under-80 clamp. The model actually picked depends on which providers are configured. In my local run PRO picked anthropic:claude-fable-5-1 with reasoning 'low', not zhipu:glm-4.7-flash, so the named model and 'no reasoning' are environment-dependent. The core claim stands: artifact size, type and a large artifact in history never raise the floor."
+  },
+  {
+   "id": "followup-model-generation-quality-10",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the route builds the selection with includeImage:false, and the comment says Juno cannot see it (edit/route.ts:151-155). History is a single USER turn (192-198), and no reasoningEffort is passed. pickEditModel falls back to DEFAULT_MODEL qwen:qwen3.8-flash (edit/route.ts:60-73; models.ts:885) when the conversation model is Auto or null. /design conversations are created with no model (api/design/route.ts:71-79). Qwen3.8 Flash is vision- and reasoning-capable (models.ts:558), but with no effort the adapter sends enable_thinking=false (openai-compat.ts:392-398), so in practice it runs as a non-reasoning model and gets no image. DESIGN_TOOLS (ai.ts:256-270) is referenced nowhere else. It is documentation only, and render_design_preview is never used."
+  },
+  {
+   "id": "followup-model-generation-quality-11",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the prompt says only 'default export, no imports needed beyond react' (system-prompt.ts:258). stripImports removes every import (sandbox-frame.tsx:124-133). The preamble provides React hooks plus the lucide preamble (sandbox-frame.tsx:494-497). The CDNs are Tailwind, React, ReactDOM, Babel and Mermaid only (7-11). The failed-render banner offers only 'Console' and 'View vN' (canvas-panel.tsx:1222-1233). Grep finds no fix-with-Juno action in src/components/canvas. The recharts/shadcn model behaviour is INFERRED."
+  },
+  {
+   "id": "followup-model-generation-quality-12",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: svg_close_missing is marked repairable (chat-artifact-verification.ts:78-80), and the repair appends '</svg>' (110-112). The test covers only a cut at a tag boundary (tests/chat-artifact-verification.test.ts:19-32). PROBE: '<svg viewBox=\"0 0 10 10\"><path d=\"M0 0 L10' became '...<path d=\"M0 0 L10</svg>' with status repaired and the detail 'verified after one bounded repair pass.' The result is malformed markup presented as repaired."
+  },
+  {
+   "id": "followup-model-generation-quality-13",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: narrowRuntimeToolsForSkill filters the allowlist by requested = resolved.tools plus withheld.tools whenever that set is non-empty (skills.ts:314-325). 'canvas' is not a runtime id (tool-policy.ts:78-85). A canvas-only skill therefore narrows to [], which is real. Corrections: (1) Narrowing is intended and tested (tests/chat-skills.test.ts:280-302), and the 'not a way to take capabilities away' comment covers only the empty-request case (tests 304-313), so there is no contradiction. (2) code_interpreter can be requested: a raw 'code_interpreter' becomes withheld because chatSkillGrantLayer never grants it (skills.ts:108-115), but withheld names still count as requested, so the tool survives. The model is then told it does not have it (withheldSentence, skills.ts:222-225). (3) The case is broader than claimed: withheld names count as requested (work/skills.ts:618-633), so a Claude-style skill declaring e.g. [Bash, Read] also strips every runtime tool."
+  },
+  {
+   "id": "followup-model-generation-quality-14",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: ARTIFACT_RE and OPEN_ARTIFACT_RE end the attribute list at the first '>' and match the body non-greedily (message-content.ts:29-30). normalizeType maps unknown types to CODE (70-84). The Swift parser also stops at the first '>' (NativeMessageContent.swift:288). PROBE: title 'Plan A > Plan B' gave title '\"Plan' and a body starting 'Plan B\">'. A Markdown body containing a literal close tag was cut to '# Tags\\nUse `'. The types text/html and application/vnd.ant.react both became CODE. All of these are edge cases, and the prompt specifies the enum spelling (system-prompt.ts:251). The glass branch does not change this parser logic."
+  },
+  {
+   "id": "followup-model-generation-quality-15",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: FREE maxOutputTokens is 8192 (plans.ts:53), and the route passes it as maxTokens (route.ts:2952). Neither this cap nor CHAT_ARTIFACT_MAX_CHARS (chat-artifact-verification.ts:8) appears in the canvas prompt (grep of system-prompt.ts). A 'length' finish takes the success path, which has no refund. Refunds happen only on error and terminal paths (route.ts:3361, 3387, 3480). A cut DESIGN fails JSON.parse and is refused. The '~180 nodes' figure and the character-to-token ratio are INFERRED."
+  },
+  {
+   "id": "ux-0",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: status 'verified' produces the title 'Artifact verified' (route.ts:448-455) and the detail '1 artifact opened and verified.' (chat-artifact-verification.ts:182). For HTML, REACT, CODE and MARKDOWN the only checks are non-empty and at most 200k characters (60-106). Nothing opens or renders the artifact. PROBE: a truncated HTML body produced exactly that copy. The copy lives in the activity receipt, and the inline finish note separately says the model hit its token limit, so the severity is below 'major'."
+  },
+  {
+   "id": "ux-1",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: every refusal becomes the same sentence (route.ts:441-444). It is worse than claimed: the specific reason (report.problems[].detail) is stored only in the activity field artifactVerification (route.ts:457; types/chat.ts:251), and no web or native component reads that field (grep of src and native). The visible receipt detail says only 'N artifact refused after 0 repair attempts.' (chat-artifact-verification.ts:186). The user never sees the reason, and neither does the model on the next turn. Correction: a message-level Regenerate menu exists (message-item.tsx:541-571), but nothing retries on the artifact itself."
+  },
+  {
+   "id": "ux-2",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "corrected_location": "src/components/chat/message-item.tsx:1193, 1207-1209, 1407-1411; src/lib/chat-responses.ts:95; src/lib/finish-reason.ts:89-92",
+   "reasoning": "READ: the inline notice reads 'The model stopped at its token limit.' and shows a Continue button for 'length' finishes (message-item.tsx:1193, 1207-1209, 1407-1411). The sentence 'Use Continue to ask the model to pick up from the partial answer' is the activity warning detail (chat-responses.ts:95 via finish-reason.ts:91). Continue sends a plain user message (use-chat.ts:1862-1864), and the stored message already shows the artifact closed (message-content.ts:143-150). For a cut artifact the suggested action leads to a re-emit or a fragment, not a completed body."
+  },
+  {
+   "id": "ux-3",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "corrected_location": "src/components/design/ask-juno-bar.tsx:68, 86, 199-205; src/lib/design/selection-context.ts:327-361",
+   "reasoning": "READ: with no selection, scoped is false and selectedNodeIds is [] (ask-juno-bar.tsx:68, 86). The placeholder reads 'Ask Juno to change this design\u2026' and gives no hint to select a layer (199-205). The scope chip renders only when something is selected. The unscoped context lists only top-level nodes (selection-context.ts:337-341). The model can still act on top-level frames, so 'usually cannot act below the top level' is accurate but not absolute."
+  }
+ ],
+ "missed": [
+  {
+   "id": "missed-1",
+   "title": "A truncated artifact is saved to message history with a synthetic closing tag, so the cut is invisible to the model on later turns and on Continue",
+   "severity": "medium",
+   "file": "src/lib/message-content.ts",
+   "line": 143,
+   "evidence": "READ: rewriteArtifactMarkup's tail branch replaces an open trailing block with `${opening}${update.content}</juno:artifact>` (message-content.ts:139-150). prepareChatArtifactOutput calls it on both the success and partial paths (route.ts:447, 3058-3059, 3271-3272), and the result is stored as the assistant message. PROBE: 'Here.\\n<juno:artifact identifier=\"site\" type=\"HTML\" title=\"Site\"><html><body><section>cut' was stored as '...<section>cut</juno:artifact>'.",
+   "failure_scenario": "After a length cut, the next turn's history shows a well-formed, closed artifact. On 'Continue' or 'finish the page' the model has no marker of where or whether the body was cut, so it restarts or appends in the wrong place."
+  },
+  {
+   "id": "missed-2",
+   "title": "The artifact refusal reason is never shown to the user or the model",
+   "severity": "medium",
+   "file": "src/lib/chat-artifact-verification.ts",
+   "line": 186,
+   "evidence": "READ: the specific reason ('An image layer needs a picture...', 'must contain JSON', schema issues) exists only in report.problems[].detail. The field is persisted as activity.artifactVerification (route.ts:457; types/chat.ts:251). A grep of src and native finds no reader of artifactVerification. The visible detail is only 'N artifact(s) refused after K repair attempt(s).' (chat-artifact-verification.ts:186), and the message body becomes the fixed sentence (route.ts:443).",
+   "failure_scenario": "Defect 2 or 6 refuses a design. The user sees 'verification failed' with no reason. On retry the model's history holds only the generic sentence, so it repeats the same image node or fence and fails again, each time using a message."
+  },
+  {
+   "id": "missed-3",
+   "title": "One unrepairable artifact prevents the repair of every other artifact in the same message",
+   "severity": "low",
+   "file": "src/lib/chat-artifact-verification.ts",
+   "line": 152,
+   "evidence": "READ: the single repair pass runs only when `repairable.length > 0 && unrepairable.length === 0` (chat-artifact-verification.ts:152). Otherwise finalProblems = initialProblems, and every repairable identifier is also refused (161). PROBE: a message with an invalid DESIGN, a valid HTML and an SVG missing </svg> gave refused ['bad','s2'] with attempts 0. The SVG that is normally repairable was dropped.",
+   "failure_scenario": "A reply carries a diagram SVG that was cut at the end and a DESIGN whose JSON fails. Both are refused, though the SVG would have been accepted on its own."
+  },
+  {
+   "id": "missed-4",
+   "title": "Any non-hex colour in a compact DESIGN (e.g. 'transparent', 'white', 'rgba(...)') refuses the whole design, while a malformed hex is silently dropped",
+   "severity": "low",
+   "file": "src/lib/design/authoring.ts",
+   "line": 33,
+   "evidence": "READ: colorSchema is /^#[0-9a-fA-F]{3,8}$/ (authoring.ts:33) and is used for fill, stroke and background (54-55, 86). A safeParse failure throws for the whole document (227-233). PROBE: fill 'transparent', 'white' and 'rgba(0,0,0,0.5)' each refused the design, while '#12345' was accepted and dropped. The prompt says only 'Colours are hex strings' (system-prompt.ts:290) and never mentions 8-digit hex, the only way to express transparency.",
+   "failure_scenario": "The model writes a ghost button with fill 'transparent' and the entire screen is refused as 'Artifact unavailable'. Combined with missed-2, nobody learns why."
+  },
+  {
+   "id": "missed-5",
+   "title": "The DESIGN normalisation inside repairArtifact never runs, so the comment's 'presented body equals stored body' promise is false",
+   "severity": "low",
+   "file": "src/lib/chat-artifact-verification.ts",
+   "line": 113,
+   "evidence": "READ: repairArtifact is called only for artifacts with their own repairable problems (chat-artifact-verification.ts:154-156), and design_invalid is always repairable:false (99). The DESIGN branch at 113-118 is therefore unreachable. PROBE: a message with a valid DESIGN and a repairable SVG ended with status repaired, and the rewritten message still held compact JSON (no schemaVersion), while persistArtifacts stored the expanded document (artifacts-store.ts:16-25).",
+   "failure_scenario": "No direct user-visible failure was found. Anyone relying on the comment (for example, a merge that renders the Canvas from message bodies) would find that message and stored design bodies differ in form."
+  }
+ ]
+}

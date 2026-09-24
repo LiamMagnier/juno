@@ -4,6 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { buildSandboxDoc } from "@/components/canvas/sandbox-frame";
+import { SandboxDocumentFrame, useSandboxProfile } from "@/components/canvas/sandbox-document-frame";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -27,10 +28,10 @@ function themedSource(code: string, dark: boolean): string {
 /**
  * Inline Mermaid diagram for chat messages, rendered through the exact same
  * sandboxed-iframe mechanism the canvas uses for MERMAID artifacts:
- * buildSandboxDoc wraps the code with the Mermaid 11 CDN and the iframe runs
- * with an opaque origin (allow-scripts only, no allow-same-origin), so diagram
- * code can never touch the app, cookies, or storage. Malformed mermaid fails
- * inside the sandbox — this component only owns the frame and its states.
+ * buildSandboxDoc wraps the code with the Mermaid 11 CDN and the preview shell
+ * runs it with an opaque origin (allow-scripts only, no allow-same-origin), so
+ * diagram code can never touch the app, cookies, or storage. Malformed mermaid
+ * fails inside the sandbox — this component only owns the frame and its states.
  */
 export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: string }) {
   const [copied, setCopied] = React.useState(false);
@@ -59,12 +60,18 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
     return () => observer.disconnect();
   }, []);
 
-  const srcDoc = React.useMemo(() => buildSandboxDoc("MERMAID", themedSource(code, dark)), [code, dark]);
+  // A Mermaid block inside a public share takes the share's profile: `public`
+  // runs the diagram, `static` (the default there) shows its source instead.
+  const profile = useSandboxProfile();
+  const doc = React.useMemo(
+    () => buildSandboxDoc("MERMAID", themedSource(code, dark), undefined, profile),
+    [code, dark, profile]
+  );
 
-  // New source => the iframe reloads; bring the skeleton back until onLoad.
+  // New source => the frame reloads; bring the skeleton back until it has drawn.
   React.useEffect(() => {
     setLoaded(false);
-  }, [srcDoc]);
+  }, [doc]);
 
   const copy = async () => {
     try {
@@ -113,17 +120,25 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
       {/* The diagram now follows the app theme (see themedSource), so the canvas
           can sit on the same near-black rung as the block's own chrome instead
           of punching a white hole in the transcript. */}
-      <div className="relative bg-card">
-        <iframe
-          title="Mermaid diagram"
-          srcDoc={srcDoc}
-          // Opaque origin (no allow-same-origin) so diagram code cannot reach the app.
-          sandbox="allow-scripts"
-          className="h-72 w-full border-0 bg-card"
-          onLoad={() => setLoaded(true)}
-        />
-        {!loaded && <div aria-hidden="true" className="skeleton absolute inset-0" />}
-      </div>
+      {profile === "static" ? (
+        // A public share while scripted previews are off: Mermaid draws with a
+        // script, so the diagram is shown as the source it was written in.
+        <pre className="max-h-72 overflow-auto whitespace-pre-wrap bg-card px-4 py-3 font-mono text-caption text-foreground">
+          {code}
+        </pre>
+      ) : (
+        <div className="relative bg-card">
+          <SandboxDocumentFrame
+            title="Mermaid diagram"
+            html={doc}
+            // Opaque origin (no allow-same-origin) so diagram code cannot reach the app.
+            sandbox="allow-scripts"
+            className="h-72 w-full border-0 bg-card"
+            onDocumentLoad={() => setLoaded(true)}
+          />
+          {!loaded && <div aria-hidden="true" className="skeleton absolute inset-0" />}
+        </div>
+      )}
     </div>
   );
 });

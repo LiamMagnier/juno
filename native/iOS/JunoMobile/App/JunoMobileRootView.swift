@@ -121,6 +121,11 @@ struct JunoMobileRootView: View {
   /// and wipe it. It takes no transport, because nothing indexed here is
   /// uploaded — extraction, chunking and ranking all happen on the device.
   @State private var documentIndex = NativeDocumentIndexModel()
+  /// The account's agents (docs/design/AGENTS.md). Built at sign-in over the
+  /// same bearer transport as everything else here, and held by the shell
+  /// rather than the screen so the roster survives leaving it and the store
+  /// can be stopped — and emptied — at sign-out like every other account model.
+  @State private var agentsModel: NativeAgentsModel?
   #if DEBUG
     /// Set by `JUNO_START_OVERLAY=voice`, and acted on once the account is
     /// signed in — the launch flag fires before `restore()` finishes, and a
@@ -313,6 +318,15 @@ struct JunoMobileRootView: View {
         remoteCodeModel?.start(for: session.profile.id)
         codeNotifications.attach(remoteCodeModel)
         Task { await workModel?.start(for: session.profile.id) }
+        // Held in a local so the model that is started is the one that was
+        // stored, whether it was just made or survived an earlier sign-in.
+        let agents =
+          agentsModel
+          ?? requestSender.map { NativeAgentsModel(client: NativeAgentsClient(sender: $0)) }
+        agentsModel = agents
+        if let agents {
+          Task { await agents.start(for: session.profile.id) }
+        }
         libraryModel?.start(for: session.profile.id)
         documentIndex.start(for: session.profile.id)
         #if DEBUG
@@ -350,6 +364,9 @@ struct JunoMobileRootView: View {
         // poll: it is an authenticated connection following a task on a
         // machine the signed-out reader no longer has an account for.
         workModel?.stop()
+        // An agent's brief, goals and memory belong to the account that
+        // hired it; nothing of them may be on screen for whoever signs in next.
+        agentsModel?.stop()
         libraryModel?.stop()
         // Not merely "forget the list": the plaintext of every indexed
         // document is in that index, so `stop()` wipes the account's
@@ -933,7 +950,7 @@ struct JunoMobileRootView: View {
       showingSettings = true
     case .chat, .code, .work, .search:
       selection = destination
-    case .projects, .library, .artifacts, .tasks, .connections:
+    case .projects, .library, .artifacts, .agents, .tasks, .connections:
       if sizeClass == .compact {
         selection = .chat
         if chatPath.last != destination { chatPath = [destination] }
@@ -1079,6 +1096,45 @@ struct JunoMobileRootView: View {
     (connectorModel?.linked ?? []).filter(\.connected)
   }
 
+  /// Agents, extracted from `destinationRoot` for the reason `chatDestination`
+  /// is: every argument added to that switch is one more thing the type
+  /// checker has to solve in a single expression.
+  @ViewBuilder
+  private var agentsDestination: some View {
+    if let agentsModel {
+      NativeAgentsScreen(
+        model: agentsModel,
+        apps: agentApps,
+        openConversation: openAgentThread
+      )
+    } else {
+      unavailable
+    }
+  }
+
+  /// The apps an agent may be given: only the connected ones, by name.
+  private var agentApps: [NativeAgentAppChoice] {
+    connectedApps.map { NativeAgentAppChoice(id: $0.id, label: $0.label) }
+  }
+
+  /// Opens an agent's thread from its page.
+  ///
+  /// The server creates the thread on first use, so it can be a conversation
+  /// this phone has never synced — and selecting an id the local store does
+  /// not know is undone by the store's next reload. So the store is brought
+  /// up to date first, exactly as a saved voice call is, and only then is the
+  /// conversation opened.
+  private func openAgentThread(_ id: String) {
+    Task {
+      if conversationModel?.conversations.contains(where: { $0.id == id }) != true {
+        await syncModel?.refresh()
+        await conversationModel?.reload()
+      }
+      conversationModel?.isDraftingNewConversation = false
+      openConversation(id)
+    }
+  }
+
   /// Written as typed properties rather than inline `cond ? method : nil`
   /// ternaries. Both of those are a closure-or-nil choice in the middle of a
   /// twenty-argument initializer, and they are what tipped this expression past
@@ -1167,6 +1223,8 @@ struct JunoMobileRootView: View {
       } else {
         unavailable
       }
+    case .agents:
+      agentsDestination
     case .projects:
       if let projectModel {
         JunoMobileProjectsView(

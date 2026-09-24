@@ -115,6 +115,12 @@ const JunoRules: Readonly<Record<string, ActionRiskClass>> = {
   // the class that asks under every policy short of `block` and is never
   // offered as a standing approval.
   "juno_work:start_task": "external_write",
+  // Juno's own readers of files the person attached to this conversation
+  // (src/lib/agent/document.ts, image.ts). They reach nothing outside the
+  // turn, so they never ask. Without an exact rule they classified as
+  // "unknown", which asks under every policy, and the turn hung.
+  "juno_runtime:read_document": "read_only",
+  "juno_runtime:inspect_image": "read_only",
 };
 
 const READ_VERBS = new Set([
