@@ -33,7 +33,7 @@ import {
 import { MoreHorizontal, Pause, Play, X } from "@/components/ui/icons";
 import { Pressable } from "@/components/ui/pressable";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { SplitPane } from "@/hooks/use-split-pane";
 import { Phrase, PhraseWithArgs, formatPhrase, usePhrase } from "@/lib/i18n-phrase";
 import { RESEARCH_PHASE_UI, isTerminalPhase } from "@/lib/research/phase";
@@ -316,8 +316,8 @@ function PanelFrame({ chrome, body, onClose }: { chrome: ResearchPanelChrome; bo
           <X className="size-4" />
         </Pressable>
       </header>
-      <div className="px-4 pt-3">
-        <Tabs value={chrome.activeTab} onValueChange={chrome.onTabChange}>
+      <Tabs value={chrome.activeTab} onValueChange={chrome.onTabChange} className="flex min-h-0 flex-1 flex-col">
+        <div className="px-4 pt-3">
           <TabsList>
             {chrome.tabs.map((tab) => (
               <TabsTrigger key={tab.id} value={tab.id}>
@@ -325,11 +325,13 @@ function PanelFrame({ chrome, body, onClose }: { chrome: ResearchPanelChrome; bo
               </TabsTrigger>
             ))}
           </TabsList>
-        </Tabs>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-gutter:stable]" role="tabpanel" aria-label={chrome.tabs.find((t) => t.id === chrome.activeTab)?.label}>
-        {body}
-      </div>
+        </div>
+        {chrome.tabs.map((tab) => (
+          <TabsContent key={tab.id} value={tab.id} className="min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-gutter:stable]">
+            {tab.id === chrome.activeTab ? body : null}
+          </TabsContent>
+        ))}
+      </Tabs>
     </section>
   );
 }
