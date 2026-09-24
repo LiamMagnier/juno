@@ -21,19 +21,36 @@ import JunoVoiceKit
 /// `budget_exceeded` in its machine `error` slug and the readable sentence in
 /// `message`, and only the latter is worth showing — so `message` wins whenever
 /// the server sends one.
+///
+/// **The open conversation rides along.** When the call is started from a chat,
+/// its id goes with the request, so the server can give the call that thread's
+/// voice — an agent's name and manner in the agent's own thread. The server
+/// decides what, if anything, the id changes; a call from the home screen sends
+/// none and is Juno's.
 struct JunoMobileVoiceAuthorization: JunoVoiceRelayAuthorizing {
     private let sender: any NativeAuthenticatedRequestSending
     private let accountID: AccountID
+    private let conversationID: String?
 
-    init(sender: any NativeAuthenticatedRequestSending, accountID: AccountID) {
+    init(
+        sender: any NativeAuthenticatedRequestSending,
+        accountID: AccountID,
+        conversationID: String? = nil
+    ) {
         self.sender = sender
         self.accountID = accountID
+        self.conversationID = conversationID
     }
 
     func relayToken() async throws -> JunoVoiceRelayToken {
+        var query: [URLQueryItem] = []
+        if let conversationID, !conversationID.isEmpty {
+            query.append(URLQueryItem(name: "conversationId", value: conversationID))
+        }
         let response = try await sender.send(
             try NativeBearerRequest(
                 path: "/api/voice/relay-token",
+                queryItems: query,
                 headers: try HTTPHeaders(["accept": "application/json"])
             ),
             for: accountID

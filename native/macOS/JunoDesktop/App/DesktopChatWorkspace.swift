@@ -40,6 +40,8 @@ enum DesktopChatSelection {
 enum DesktopSidebarItem: Hashable {
     case destination(DesktopDestination)
     case conversation(String)
+    /// One agent's page — a row in the column's Agents fold.
+    case agent(String)
 }
 
 struct DesktopChatWorkspace: View {
@@ -67,8 +69,18 @@ struct DesktopChatWorkspace: View {
     /// menu bar item. Nil for an ordinary New Chat.
     var unscopedChatPrompt: String? = nil
     let consumeUnscopedChatRequest: () -> Void
+    /// Where a tapped notification asked Chat to go — an agent's page or a
+    /// thread. Consumed once, the way the unscoped request above is.
+    var route: DesktopWorkbenchRegistry.RouteRequest? = nil
+    var consumeRoute: (() -> Void)? = nil
     @SceneStorage("juno.desktop.destination") private var storedDestination =
         DesktopDestination.chat.rawValue
+    /// The agent whose page is open on the Agents destination; empty for the
+    /// roster. The window's rather than the screen's, because the column
+    /// selects it — an agent's row, and the notification that names one — and
+    /// highlights the row of whichever is open. Scene storage for the reason
+    /// the destination is: coming back from Code returns to the same page.
+    @SceneStorage("juno.desktop.agent") private var storedAgentID = ""
     /// Holds the launch override until the reader navigates somewhere themselves.
     ///
     /// Writing `storedDestination` from `onAppear` was not enough: scene storage
@@ -139,7 +151,8 @@ struct DesktopChatWorkspace: View {
             get: {
                 DesktopNavigationState.selection(
                     destination: currentDestination,
-                    selectedConversationID: model.selectedConversationID
+                    selectedConversationID: model.selectedConversationID,
+                    selectedAgentID: selectedAgentID
                 )
             },
             set: { item in
@@ -149,13 +162,28 @@ struct DesktopChatWorkspace: View {
                 requestedProjectID = nil
                 let resolved = DesktopNavigationState.resolve(
                     selection: item,
-                    current: (currentDestination, model.selectedConversationID)
+                    current: (currentDestination, model.selectedConversationID, selectedAgentID)
                 )
                 overrideDestination = nil
                 storedDestination = resolved.destination.rawValue
+                storedAgentID = resolved.agentID ?? ""
                 model.selectedConversationID = resolved.conversationID
                 model.isDraftingNewConversation = resolved.isDrafting
             }
+        )
+    }
+
+    private var selectedAgentID: String? {
+        storedAgentID.isEmpty ? nil : storedAgentID
+    }
+
+    /// The open agent, as the Agents screen reads and writes it. The page's
+    /// back control writes nil, which hands the highlight back to the Agents
+    /// row.
+    private var agentSelection: Binding<String?> {
+        Binding(
+            get: { selectedAgentID },
+            set: { storedAgentID = $0 ?? "" }
         )
     }
 
@@ -173,6 +201,8 @@ struct DesktopChatWorkspace: View {
                 destination: destination,
                 selection: selection,
                 requestedProjectID: $requestedProjectID,
+                agentsModel: configuration.agentsModel,
+                messageAgent: messageAgent,
                 openSettingsModal: { showingSettingsModal = true },
                 signOut: { Task { await configuration.authModel.signOut() } }
             )
@@ -185,7 +215,8 @@ struct DesktopChatWorkspace: View {
                 conversationModel: model,
                 draftProjectID: $draftProjectID,
                 draftPrompt: $draftPrompt,
-                requestedProjectID: $requestedProjectID
+                requestedProjectID: $requestedProjectID,
+                selectedAgentID: agentSelection
             )
             // The Tasks page reads its selection from here; the inspector below
             // writes it. One object, injected once, because the page is built by
@@ -243,9 +274,16 @@ struct DesktopChatWorkspace: View {
                 consumeInitialDestination?()
             }
             consumePendingUnscopedChatRequest()
+            // After the launch seed above, which clears the conversation: a
+            // notification that launched the app is followed rather than
+            // overwritten by the launch surface.
+            followPendingRoute()
         }
         .onChange(of: unscopedChatRequestID) { _, _ in
             consumePendingUnscopedChatRequest()
+        }
+        .onChange(of: route) { _, _ in
+            followPendingRoute()
         }
         .onChange(of: columnVisibility) { _, visibility in
             storedColumnVisibility = visibility == .detailOnly ? "detailOnly" : "all"
@@ -314,6 +352,43 @@ struct DesktopChatWorkspace: View {
         model.isDraftingNewConversation = false
         model.selectedConversationID = id
         destination.wrappedValue = .chat
+    }
+
+    /// Opens a thread this Mac may not have synced yet — an agent's, created on
+    /// the server the first time it is asked for, or one a notification names.
+    /// `NativeConversationModel.reload()` drops a selection its store does not
+    /// contain, so the store is brought up to date before the thread is
+    /// selected, as the agent page's Message does.
+    private func openThread(_ id: String) async {
+        if !model.conversations.contains(where: { $0.id == id }) {
+            await configuration.syncModel?.refresh()
+            await model.reload()
+        }
+        openConversation(id)
+    }
+
+    /// The Agents fold's Message: the agent's thread, created if it has none.
+    private func messageAgent(_ agentID: String) {
+        guard let agentsModel = configuration.agentsModel else { return }
+        Task {
+            guard let id = await agentsModel.threadConversationID(for: agentID) else { return }
+            await openThread(id)
+        }
+    }
+
+    /// A notification's destination, once. Work's routes never arrive here:
+    /// the window switches to Work for those instead.
+    private func followPendingRoute() {
+        guard let route else { return }
+        consumeRoute?()
+        switch route.route {
+        case .agent(let id):
+            selection.wrappedValue = .agent(id)
+        case .conversation(let id):
+            Task { await openThread(id) }
+        case .workSession:
+            break
+        }
     }
 
     /// Every item is present in every state and disables rather than vanishing.
@@ -465,6 +540,8 @@ struct DesktopConversationView: View {
     let session: NativeAuthenticatedSession
     @Binding var draftProjectID: String?
     @Binding var draftPrompt: String?
+    /// Opens an agent's page by id, from the header its thread carries.
+    var openAgent: ((String) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var voiceSession: DesktopVoiceSession?
     /// Why a spoken conversation could not be opened. An alert rather than an
@@ -614,22 +691,74 @@ struct DesktopConversationView: View {
     /// The inset spans this column alone, which is why the canvas docks around it
     /// rather than inside it: the composer belongs to the conversation, and a
     /// composer stretched under an artifact would be offering to send into it.
+    ///
+    /// An agent's thread gains one row above it (AGENTS.md §5.3): the agent,
+    /// what it is doing, and its page. Above the transcript rather than an
+    /// inset over it, so the composer's inset stays exactly the transcript's.
     private var transcriptColumn: some View {
-        DesktopTranscript(
-            model: model,
-            voiceMessages: voiceMessages,
-            messageActions: configuration.messageActionsClient,
-            followUpClient: configuration.followUpClient,
-            draftPrompt: $draftPrompt,
-            accountID: session.profile.id,
-            syncModel: configuration.syncModel,
-            openArtifact: open(artifact:),
-            share: configuration.shareClient == nil ? nil : { Task { await shareConversation() } }
-        )
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            composer
+        VStack(spacing: 0) {
+            if let agent = threadAgent {
+                threadHeader(agent)
+            }
+            DesktopTranscript(
+                model: model,
+                voiceMessages: voiceMessages,
+                messageActions: configuration.messageActionsClient,
+                followUpClient: configuration.followUpClient,
+                draftPrompt: $draftPrompt,
+                accountID: session.profile.id,
+                syncModel: configuration.syncModel,
+                openArtifact: open(artifact:),
+                share: configuration.shareClient == nil ? nil : { Task { await shareConversation() } }
+            )
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                composer
+            }
         }
         .junoVoiceField(voiceColumn)
+    }
+
+    /// The agent whose thread is open, if it is one.
+    private var threadAgent: NativeAgent? {
+        guard let conversationID = model.selectedConversationID else { return nil }
+        return configuration.agentsModel?.agents.first { $0.conversationID == conversationID }
+    }
+
+    /// What the face in the header shows when the thread knows better than the
+    /// roster: listening while a call is open in this thread, thinking while a
+    /// reply streams. Nil leaves the roster's state, which is what the agent's
+    /// tasks are doing. The web's `threadAgentState`, in that precedence.
+    private var threadAgentState: JunoAgentState? {
+        if let voiceSession, voiceSession.conversationID == model.selectedConversationID {
+            switch voiceSession.controller.phase {
+            case .connecting, .live, .reconnecting:
+                return .listening
+            case .idle, .ended, .error:
+                break
+            }
+        }
+        let streaming = model.isGenerating
+            && model.activeChatConversationID == model.selectedConversationID
+        return streaming ? .thinking : nil
+    }
+
+    /// Chrome, so it carries the hairline; the transcript under it stays flat.
+    private func threadHeader(_ agent: NativeAgent) -> some View {
+        VStack(spacing: 0) {
+            NativeAgentThreadHeader(
+                agent: agent,
+                state: threadAgentState,
+                openAgent: { openAgent?(agent.id) }
+            )
+            .frame(maxWidth: DesktopChatMeasure.reading)
+            .padding(.horizontal, DesktopChatMeasure.gutter)
+            .padding(.vertical, JunoSpace.hairline)
+            .frame(maxWidth: .infinity)
+            Rectangle()
+                .fill(Color.junoHairline)
+                .frame(height: 1)
+                .accessibilityHidden(true)
+        }
     }
 
     private func open(artifact: NativeMessageContent.ArtifactReference) {
@@ -745,7 +874,8 @@ struct DesktopConversationView: View {
             controller: JunoRealtimeVoiceController(
                 authorization: JunoDesktopVoiceAuthorization(
                     sender: sender,
-                    accountID: session.profile.id
+                    accountID: session.profile.id,
+                    conversationID: model.selectedConversationID
                 ),
                 provider: initialProvider
             ),

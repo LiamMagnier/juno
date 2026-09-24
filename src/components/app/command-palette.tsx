@@ -30,6 +30,7 @@ import {
   type UnifiedSearchResult,
 } from "@/lib/search/types";
 import { cn } from "@/lib/utils";
+import { openNotifications } from "@/components/notifications/notifications-transport";
 import { Pressable } from "@/components/ui/pressable";
 import { Kbd } from "@/components/ui/kbd";
 import { useModifierKeyLabel } from "@/components/ui/platform";
@@ -139,6 +140,7 @@ function PaletteShell({
   notices,
   status,
   resetKey,
+  onCloseAutoFocus,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -161,6 +163,12 @@ function PaletteShell({
    * it are replaced is how Enter opens something nobody chose.
    */
   resetKey?: string;
+  /**
+   * The palette handing focus back as it closes. A command that opens a
+   * surface of its own prevents it: focus returning to wherever it was before
+   * the palette opened would land outside that surface and dismiss it.
+   */
+  onCloseAutoFocus?: (event: Event) => void;
 }) {
   const [active, setActive] = React.useState(0);
   const baseId = React.useId();
@@ -242,6 +250,7 @@ function PaletteShell({
           e.preventDefault();
           (e.currentTarget as HTMLElement).querySelector("input")?.focus();
         }}
+        onCloseAutoFocus={onCloseAutoFocus}
       >
         <DialogTitle className="sr-only">{ariaLabel}</DialogTitle>
 
@@ -1005,6 +1014,20 @@ function CommandMenu() {
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [projects, setProjects] = React.useState<PaletteProject[]>([]);
+  /*
+   * A command that opens a surface of its own (the notifications popover)
+   * runs once the palette has closed, in place of focus going back to where
+   * it was. Run earlier, the popover opens and the returning focus lands
+   * outside it a moment later, which dismisses it.
+   */
+  const afterClose = React.useRef<(() => void) | null>(null);
+  const onCloseAutoFocus = React.useCallback((event: Event) => {
+    const next = afterClose.current;
+    if (!next) return;
+    afterClose.current = null;
+    event.preventDefault();
+    next();
+  }, []);
 
   const go = React.useCallback(
     (href: string) => {
@@ -1163,6 +1186,20 @@ function CommandMenu() {
       /* The sidebar's own toggle mark — the panel glyph its collapse button
          draws — rather than the two columns Compare uses two rows down. */
       { id: "toggle-sidebar", group: "Actions", label: "Toggle sidebar", hint: `${mod}⇧S`, icon: PanelLeft, keywords: "collapse expand rail panel", run: () => { setOpen(false); window.dispatchEvent(new CustomEvent("juno:toggle-sidebar")); } },
+      /* The sidebar's Notifications row, from the keyboard. It opens the same
+         popover, so there is still one inbox; `afterClose` holds it until the
+         palette has gone (see there). */
+      {
+        id: "notifications",
+        group: "Actions",
+        label: "Open notifications",
+        icon: AppIcons.notifications,
+        keywords: "inbox alerts unread activity bell updates",
+        run: () => {
+          afterClose.current = openNotifications;
+          setOpen(false);
+        },
+      },
       { id: "assistants", group: "Actions", label: "Open Assistants", icon: AppIcons.assistants, keywords: "custom assistants bots gpt gems prompts", run: () => go("/assistants") },
       { id: "agents", group: "Actions", label: "Open Agents", icon: AppIcons.agents, keywords: "agents teammates roster delegate goals routines", run: () => go("/agents") },
       { id: "code-runs", group: "Actions", label: "Open Code", icon: AppIcons.code, keywords: "sessions runs agents executions tasks juno code", run: () => go("/code") },
@@ -1302,6 +1339,7 @@ function CommandMenu() {
         onQueryChange={setQuery}
         items={items}
         emptyState={emptyState}
+        onCloseAutoFocus={onCloseAutoFocus}
       />
       <ShortcutsSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </>

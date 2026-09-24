@@ -244,6 +244,14 @@ public final class NativeWorkModel {
     /// nobody was being asked for. The web carried the same bug until
     /// `work-payload.ts` was written, and this is the same lift.
     public var pendingQuestion: WorkQuestionPrompt? {
+        Self.pendingQuestion(in: events)
+    }
+
+    /// The same derivation over any run's log, for a surface that reads a run
+    /// without opening it here — an agent's Now tab answers its tasks' questions
+    /// without taking the Work screen's one open session. One reading, so the
+    /// two cannot disagree about which question is still being asked.
+    nonisolated public static func pendingQuestion(in events: [WorkEvent]) -> WorkQuestionPrompt? {
         var asked: [String: String] = [:]
         var order: [String] = []
         for event in events {

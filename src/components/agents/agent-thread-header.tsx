@@ -4,39 +4,10 @@ import * as React from "react";
 import Link from "next/link";
 import { AgentFace } from "@/components/agents/agent-face";
 import { localStateSentence } from "@/components/agents/agent-bits";
-import { deriveAgentState, type AgentState } from "@/lib/agents/domain";
+import type { AgentState } from "@/lib/agents/domain";
 import type { ClientAgent } from "@/lib/agents/types";
-import type { ClientWorkSession } from "@/lib/work/serializers";
 
-/**
- * What the face in a thread shows, from what the chat view already knows.
- *
- * No poll of its own: the chat view follows this thread's task
- * (`useConversationWork`) and knows when a reply is streaming, which are the
- * two facts the face needs. A streaming reply is `thinking`; otherwise the
- * state is derived from the task exactly as the server derives it for the
- * roster (`deriveAgentState`), so the thread and the roster cannot disagree.
- */
-export function threadAgentState(
-  agent: ClientAgent,
-  busy: boolean,
-  session: ClientWorkSession | null
-): AgentState {
-  if (busy) return "thinking";
-  // Until the thread's task is discovered (a poll away), the server's read stands.
-  if (!session) return agent.state;
-  return deriveAgentState({
-    status: agent.status,
-    task: {
-      sessionId: session.id,
-      title: session.title,
-      status: session.status,
-      needsAttention: session.needsAttention,
-      lastActivityAt: new Date(session.lastActivityAt),
-    },
-    now: new Date(),
-  });
-}
+export { threadAgentState } from "@/components/agents/thread-agent-state";
 
 /**
  * The one row an agent's thread gains (docs/design/AGENTS.md §5.3): the face,
@@ -47,11 +18,38 @@ export function AgentThreadHeader({
   agent,
   state,
   taskTitle,
+  levelRef,
 }: {
   agent: ClientAgent;
   state: AgentState;
   taskTitle: string | null;
+  /** An open call's smoothed 0..1 input level (`useRealtimeVoice().levelRef`). */
+  levelRef?: React.RefObject<number>;
 }) {
+  const faceRef = React.useRef<HTMLAnchorElement | null>(null);
+  const listening = state === "listening" && !!levelRef;
+
+  // The pupils follow the caller's voice (AGENTS.md §4.2): one rAF loop writes
+  // one custom property the eyes' scale reads, as the call bar's meter does,
+  // so the level never enters React state. It runs only while listening and
+  // only where motion is wanted — reduced motion holds the eyes still at the
+  // listening size, so a loop there would be writing a number nothing reads.
+  React.useEffect(() => {
+    const face = faceRef.current;
+    if (!listening || !levelRef || !face) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    let raf = 0;
+    const tick = () => {
+      face.style.setProperty("--level", levelRef.current.toFixed(3));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      face.style.removeProperty("--level");
+    };
+  }, [listening, levelRef]);
+
   const sentence =
     state === "thinking"
       ? "Thinking"
@@ -62,7 +60,13 @@ export function AgentThreadHeader({
   return (
     <div className="flex shrink-0 justify-center border-b border-border/70 px-4 py-2">
       <div className="flex w-full max-w-3xl items-center gap-3">
-        <Link href={`/agents/${agent.id}`} data-face-trigger className="shrink-0 rounded-full" aria-label={`${agent.name}'s page`}>
+        <Link
+          ref={faceRef}
+          href={`/agents/${agent.id}`}
+          data-face-trigger
+          className="shrink-0 rounded-full"
+          aria-label={`${agent.name}'s page`}
+        >
           <AgentFace avatar={agent.avatar} state={state} size="sm" />
         </Link>
         <div className="min-w-0 flex-1">

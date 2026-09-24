@@ -17,7 +17,13 @@ const ROSTER_POLL_MS = 10_000;
 /** The agent's own page is where a person waits for it, so it looks twice as often. */
 const DETAIL_POLL_MS = 5_000;
 
-function useVisiblePoll(run: () => void, everyMs: number) {
+/**
+ * Runs `run` every `everyMs` while the tab is visible, once on the way back
+ * into view, and whenever an agent changes. Nothing runs on a timer in a
+ * hidden tab. Exported for the notifications dot, which an agent's change can
+ * move too.
+ */
+export function useVisiblePoll(run: () => void, everyMs: number) {
   const runRef = React.useRef(run);
   runRef.current = run;
   React.useEffect(() => {

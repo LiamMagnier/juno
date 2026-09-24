@@ -278,6 +278,15 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const memoryRef = React.useRef<{ projectId: string | null } | null>(null);
   /** The relay confirmed the call was given memory (`session.ready.memory`). */
   const [memoryOn, setMemoryOn] = React.useState(false);
+  /**
+   * The conversation this call belongs to, so the app can tell whether it is
+   * an agent's thread and make the call that agent. Only the id travels: the
+   * app resolves it to an agent itself, and the relay fetches the persona
+   * server to server. Kept across reconnects, like memory.
+   */
+  const conversationRef = React.useRef<string | null>(null);
+  /** The relay confirmed the call is the thread's agent (`session.ready.persona`). */
+  const [personaOn, setPersonaOn] = React.useState(false);
   const screenTimerRef = React.useRef<number | null>(null);
   const screenStreamRef = React.useRef<MediaStream | null>(null);
   const screenVideoRef = React.useRef<HTMLVideoElement | null>(null);
@@ -303,7 +312,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     | ((
         initialProvider?: VoiceProviderId,
         history?: VoiceHistoryEntry[],
-        opts?: { memory?: { projectId: string | null } | null }
+        opts?: { memory?: { projectId: string | null } | null; conversationId?: string | null }
       ) => Promise<void>)
     | null
   >(null);
@@ -731,6 +740,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           setNotice(msg.notice ?? null);
           setModel(msg.model ?? null);
           setMemoryOn(msg.memory === true);
+          setPersonaOn(msg.persona === true);
           setCapabilities(msg.capabilities);
           setProvider(msg.provider);
           statusRef.current = "live";
@@ -829,7 +839,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     async (
       initialProvider?: VoiceProviderId,
       history?: VoiceHistoryEntry[],
-      opts?: { memory?: { projectId: string | null } | null }
+      opts?: { memory?: { projectId: string | null } | null; conversationId?: string | null }
     ) => {
       const generation = ++generationRef.current;
       providerEpochRef.current += 1;
@@ -837,10 +847,12 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       // state; a fresh/manual start resets the retry budget.
       const isReconnect = statusRef.current === "reconnecting" && reconnectAttemptsRef.current > 0;
       if (!isReconnect) reconnectAttemptsRef.current = 0;
-      // A fresh call says afresh whether it wants memory; a reconnect keeps
-      // what the call it continues asked for.
+      // A fresh call says afresh whether it wants memory and which thread it
+      // is in; a reconnect keeps what the call it continues asked for.
       if (!isReconnect) memoryRef.current = opts?.memory ?? null;
+      if (!isReconnect) conversationRef.current = opts?.conversationId ?? null;
       setMemoryOn(false);
+      setPersonaOn(false);
       clearReconnectTimer();
       releaseResources();
       if (history) historyRef.current = boundVoiceHistory(history);
@@ -857,14 +869,17 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       setUsage(null);
       try {
         const memory = memoryRef.current;
-        const res = await fetch(
-          memory
-            ? `/api/voice/relay-token?${new URLSearchParams({
+        const conversationId = conversationRef.current;
+        const query = new URLSearchParams({
+          ...(memory
+            ? {
                 memory: "1",
                 ...(memory.projectId ? { projectId: memory.projectId } : {}),
-              })}`
-            : "/api/voice/relay-token"
-        );
+              }
+            : {}),
+          ...(conversationId ? { conversationId } : {}),
+        }).toString();
+        const res = await fetch(query ? `/api/voice/relay-token?${query}` : "/api/voice/relay-token");
         const data = (await res.json().catch(() => ({}))) as {
           token?: string;
           url?: string;
@@ -960,6 +975,17 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     [clearReconnectTimer, handleServerMessage, playPcm, provider, releaseResources, scheduleReconnect, sealTranscript, startMic]
   );
   startRef.current = start;
+
+  /**
+   * The same call again, after it ended or failed. What it asked for — memory,
+   * and the thread it is in — comes with it: a bare `start()` is a fresh call
+   * that asks for neither, which turned a failed call in an agent's thread
+   * into a retried call with Juno.
+   */
+  const retry = React.useCallback(
+    () => start(undefined, undefined, { memory: memoryRef.current, conversationId: conversationRef.current }),
+    [start]
+  );
 
   /**
    * Re-open the call on a different provider, a different reasoning variant,
@@ -1274,10 +1300,13 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     model,
     /** True once the relay confirms this call knows what Juno remembers. */
     memory: memoryOn,
+    /** True once the relay confirms this call is the agent whose thread it is in. */
+    persona: personaOn,
     closedReason,
     levelRef,
     speechInterim: speech.interim,
     start,
+    retry,
     end,
     switchProvider,
     setThinking,

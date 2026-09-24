@@ -138,6 +138,45 @@ const TASK_DECISION_COPY: Record<ActionApprovalDecision, string> = {
   deny: "Not started.",
 };
 
+/*
+ * The task card again, when one agent hands work to another
+ * (src/lib/chat/handoff-tool.ts). The same layout, because what is being
+ * approved is the same thing, a task with a title, an estimate and a brief. What
+ * changes is whose task it is: it runs as the teammate named on the card, in
+ * their thread, so the copy says so and says where the result will appear.
+ * Recognised on the same two literals as a task, for the same reason, and
+ * pinned by tests/chat-handoff-tool.test.ts.
+ */
+function isAgentHandoff(approval: Pick<ClientActionApproval, "connectorId" | "toolName">): boolean {
+  return approval.connectorId === "juno_work" && approval.toolName === "hand_off_to_teammate";
+}
+
+const HANDOFF_CARD_COPY = {
+  description:
+    "It becomes their task, in their own thread, with their apps and autonomy. They report back there, not in this chat, and you can stop it at any time.",
+  untrusted:
+    "This chat includes content Juno read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you hand it off.",
+  footnote: "Unanswered, this expires and nothing is handed off.",
+};
+
+const HANDOFF_STATUS_COPY: Record<ActionReceiptStatus, string> = {
+  pending: "Waiting for your answer.",
+  allowed: "Allowed. Handing it off.",
+  denied: "Not handed off.",
+  executing: "Handing it off.",
+  executed: "Handed off. It reports back in their thread.",
+  failed: "It could not be handed off.",
+  expired: "This expired before it was answered, so nothing was handed off.",
+  superseded: "This was cancelled before it was answered, so nothing was handed off.",
+  blocked: "Your permissions blocked this, so nothing was handed off.",
+};
+
+const HANDOFF_DECISION_COPY: Record<ActionApprovalDecision, string> = {
+  allow_once: "Handing it off.",
+  allow_scope: "Handing it off.",
+  deny: "Not handed off.",
+};
+
 /** A string field of the receipt's redacted detail, or null. */
 function detailText(detail: Record<string, unknown>, key: string): string | null {
   const value = detail[key];
@@ -318,7 +357,10 @@ export function ApprovalCard({
   // the warning asks the reader to check the brief, and the brief is the whole
   // of what they are approving, so it should not take a second press to see.
   const [detailOpen, setDetailOpen] = React.useState(
-    () => isTaskHandoff(approval) && approval.derivedFromUntrusted && approval.status === "pending"
+    () =>
+      (isTaskHandoff(approval) || isAgentHandoff(approval)) &&
+      approval.derivedFromUntrusted &&
+      approval.status === "pending"
   );
   // The server's answer replaces the streamed one once there is one, so the
   // status line and the pills reflect the receipt rather than what the chunk
@@ -341,12 +383,16 @@ export function ApprovalCard({
   const detailRows = Object.entries(current.detail);
   // A task handoff reads its headline, estimate and brief out of the same
   // redacted detail the connector variant lists, so both show what was bound.
-  const task = isTaskHandoff(current);
+  // A handoff to a teammate is a task too, with the teammate added.
+  const handoff = isAgentHandoff(current);
+  const task = handoff || isTaskHandoff(current);
   const taskTitle = task ? detailText(current.detail, "title") : null;
   const taskEstimate = task ? detailText(current.detail, "estimate") : null;
   const taskBrief = task ? detailText(current.detail, "goal") : null;
-  const statusCopy = task ? TASK_STATUS_COPY : STATUS_COPY;
-  const decisionCopy = task ? TASK_DECISION_COPY : DECISION_COPY;
+  const teammate = handoff ? detailText(current.detail, "teammate") : null;
+  const taskCopy = handoff ? HANDOFF_CARD_COPY : TASK_CARD_COPY;
+  const statusCopy = handoff ? HANDOFF_STATUS_COPY : task ? TASK_STATUS_COPY : STATUS_COPY;
+  const decisionCopy = handoff ? HANDOFF_DECISION_COPY : task ? TASK_DECISION_COPY : DECISION_COPY;
 
   const decide = React.useCallback(
     async (decision: ActionApprovalDecision) => {
@@ -465,7 +511,12 @@ export function ApprovalCard({
       )}
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-        {task ? (
+        {handoff ? (
+          <AppIcons.agents
+            className={cn("size-4 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
+            aria-hidden="true"
+          />
+        ) : task ? (
           <AppIcons.work
             className={cn("size-4 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
             aria-hidden="true"
@@ -477,13 +528,17 @@ export function ApprovalCard({
           />
         )}
         <p id={labelId} className={cn("text-caption font-semibold", answerable ? "text-warning-foreground" : "text-muted-foreground")}>
-          {task
+          {handoff
             ? answerable
-              ? "Start a background task?"
-              : "Background task"
-            : answerable
-              ? "Juno needs your approval"
-              : "Approval request"}
+              ? "Hand this to a teammate?"
+              : "Handoff to a teammate"
+            : task
+              ? answerable
+                ? "Start a background task?"
+                : "Background task"
+              : answerable
+                ? "Juno needs your approval"
+                : "Approval request"}
         </p>
         {/* A task has no connector risk to rank: what it may do once running is
             governed by its own approval mode, and the estimate below is what
@@ -525,11 +580,20 @@ export function ApprovalCard({
         {task && taskTitle ? taskTitle : current.preview}
       </p>
       {task ? (
-        taskEstimate && (
-          <p className="mt-1 text-label tabular-nums text-muted-foreground">
-            Estimated cost <span className="text-foreground">{taskEstimate}</span>
-          </p>
-        )
+        <>
+          {/* Who takes it leads the facts: on a handoff it is the one thing
+              that differs from the task this card would otherwise be. */}
+          {teammate && (
+            <p className="mt-1 text-label text-muted-foreground">
+              To <span className="text-foreground">{teammate}</span>
+            </p>
+          )}
+          {taskEstimate && (
+            <p className="mt-1 text-label tabular-nums text-muted-foreground">
+              Estimated cost <span className="text-foreground">{taskEstimate}</span>
+            </p>
+          )}
+        </>
       ) : (
         <p className="mt-1 font-mono text-micro text-muted-foreground">
           {current.connectorLabel} · {current.toolName}
@@ -544,7 +608,7 @@ export function ApprovalCard({
           the status line below says what became of it. */}
       {(!task || answerable) && (
         <p className="mt-2 text-ui leading-relaxed text-muted-foreground">
-          {task ? TASK_CARD_COPY.description : risk.detail}
+          {task ? taskCopy.description : risk.detail}
         </p>
       )}
 
@@ -552,7 +616,7 @@ export function ApprovalCard({
         <div className="mt-2.5 flex gap-2 rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5">
           <StatusIcons.security className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
           {task ? (
-            <p className="text-label leading-relaxed text-warning-foreground">{TASK_CARD_COPY.untrusted}</p>
+            <p className="text-label leading-relaxed text-warning-foreground">{taskCopy.untrusted}</p>
           ) : (
             <p className="text-label leading-relaxed text-warning-foreground">
               The model wrote these arguments from content it read: a web page, a file, or output from
@@ -601,7 +665,7 @@ export function ApprovalCard({
             )}
             aria-hidden="true"
           />
-          {task ? "What the task will be told" : "Exactly what will be sent"}
+          {handoff ? "What they will be told" : task ? "What the task will be told" : "Exactly what will be sent"}
         </button>
         {/* Folds on the grid rows with the caret instead of cutting in under
             it. The hairline and padding are inside the clip, so they fold too;
@@ -646,10 +710,10 @@ export function ApprovalCard({
             onClick={() => decide("deny")}
             className="h-11 px-4"
           >
-            {task ? "Don’t start" : "Don’t allow"}
+            {handoff ? "Don’t hand off" : task ? "Don’t start" : "Don’t allow"}
           </Button>
           <Button disabled={sending} onClick={() => decide("allow_once")} className="h-11 px-4">
-            {task ? "Start task" : "Allow once"}
+            {handoff ? "Hand off" : task ? "Start task" : "Allow once"}
           </Button>
           {/* Offered only where the store will honour it. `canAllowScope` is
               true for reversible writes alone, so a standing permission is never
@@ -684,7 +748,7 @@ export function ApprovalCard({
       {answerable && !sending && untouched && (
         <p className="mt-2 flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
           <Clock className="size-3" aria-hidden="true" />
-          {task ? TASK_CARD_COPY.footnote : "Unanswered, this expires and Juno stops rather than acting on it."}
+          {task ? taskCopy.footnote : "Unanswered, this expires and Juno stops rather than acting on it."}
         </p>
       )}
     </section>

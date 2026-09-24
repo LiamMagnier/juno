@@ -101,10 +101,19 @@ export const PHASE_ANNOUNCEMENT: Record<VoicePhase, string> = {
   listening: "Connected. Listening.",
   "user-speaking": "Listening.",
   thinking: "Thinking about your answer.",
-  speaking: "Juno is speaking. Talk any time to interrupt.",
+  speaking: speakingAnnouncement("Juno"),
   muted: "Your microphone is muted.",
   error: "There is a problem with the call.",
 };
+
+/**
+ * Who is speaking, by name. A call in an agent's thread is that agent once the
+ * relay confirms it, and a caller who cannot see the screen is told so rather
+ * than told Juno is talking in a voice that is not Juno's.
+ */
+export function speakingAnnouncement(speaker: string): string {
+  return `${speaker} is speaking. Talk any time to interrupt.`;
+}
 
 /**
  * Whether the phase should be announced at all.
@@ -113,11 +122,11 @@ export const PHASE_ANNOUNCEMENT: Record<VoicePhase, string> = {
  * is mid-sentence does not want their own speech narrated back at them, so
  * the two collapse and only the first is spoken.
  */
-export function announcementFor(phase: VoicePhase, previous: VoicePhase | null): string | null {
+export function announcementFor(phase: VoicePhase, previous: VoicePhase | null, speaker = "Juno"): string | null {
   if (phase === previous) return null;
   if (phase === "user-speaking" && previous === "listening") return null;
   if (phase === "listening" && previous === "user-speaking") return null;
-  return PHASE_ANNOUNCEMENT[phase];
+  return phase === "speaking" ? speakingAnnouncement(speaker) : PHASE_ANNOUNCEMENT[phase];
 }
 
 /** The microphone level above which a caller counts as speaking, 0..1. */

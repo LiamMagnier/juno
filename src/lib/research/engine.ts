@@ -1435,17 +1435,44 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
       },
     ]);
 
-    void import("@/lib/apns")
-      .then(({ sendTaskCompletionPushNotification }) =>
-        sendTaskCompletionPushNotification({
-          userId: run.userId,
-          taskId: run.id,
-          title: run.goal || "Deep Research",
-          status: to === "failed" ? "failed" : "completed",
-          summary: detail.error || (to === "failed" ? "Research task failed" : "Research report complete"),
-        })
-      )
-      .catch(() => {});
+    // The inbox row and the push, through the one fan-out. Not for a cancel:
+    // the person who stopped it knows. Imported lazily because this module is
+    // deliberately free of `server-only` (see the header) and notifications.ts
+    // is not; under the tests the import fails and the catch is the no-op.
+    if (to !== "cancelled") {
+      const title =
+        to === "completed"
+          ? "Your research is ready"
+          : to === "partially_completed"
+            ? "Your research stopped early"
+            : "Your research did not finish";
+      const goal = run.goal.trim() || "Deep research";
+      void import("@/lib/notifications")
+        .then(({ notifyUser }) =>
+          notifyUser({
+            userId: run.userId,
+            type: "research_completed",
+            title,
+            body: goal,
+            priority: "normal",
+            sourceType: "research_run",
+            sourceId: run.id,
+            actionData: { researchRunId: run.id, conversationId: run.conversationId },
+            // `/research/<id>` opens the run in its conversation, or on its own.
+            path: `/research/${encodeURIComponent(run.id)}`,
+            channel: "updates",
+            push: {
+              title,
+              body: goal,
+              threadId: run.conversationId ? `research-${run.conversationId}` : `research-${run.id}`,
+              collapseId: `research-${run.id}`,
+              interruption: "active",
+              data: run.conversationId ? { conversationId: run.conversationId } : {},
+            },
+          })
+        )
+        .catch(() => {});
+    }
 
     return moved;
   };

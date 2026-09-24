@@ -365,8 +365,13 @@ struct JunoDesktopConfiguration {
                 // sentences with two different fixes.
                 workHostModel: workHostModel,
                 workGrantStore: workGrantStore,
+                // With a Work client, so an agent's page can answer what its
+                // tasks are stopped at in place. A client and not the Work
+                // model: the page reads the runs it needs without taking the
+                // Work window's one open task.
                 agentsModel: NativeAgentsModel(
-                    client: NativeAgentsClient(sender: runtime)
+                    client: NativeAgentsClient(sender: runtime),
+                    workClient: NativeWorkClient(sender: runtime, streamer: runtime)
                 ),
                 libraryModel: NativeLibraryModel(
                     client: NativeLibraryClient(sender: runtime),

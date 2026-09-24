@@ -9,6 +9,7 @@ import JunoStorage
 import JunoSync
 import SwiftUI
 import UniformTypeIdentifiers
+import UserNotifications
 
 /// **Settings** — one section at a time, as a native grouped form.
 ///
@@ -1432,6 +1433,8 @@ private struct DesktopSettingsAccountSections: View {
             Text("Sign-in")
         }
 
+        DesktopSettingsNotificationSection()
+
         Section {
             Toggle(
                 isOn: junoSettingsBinding(settings, \.emailBudgetAlerts, update: update) {
@@ -1561,6 +1564,142 @@ private struct DesktopSettingsAccountSections: View {
                 deleteError = error.localizedDescription
             }
         }
+    }
+}
+
+// MARK: - Notifications
+
+/// This Mac's notifications: whether macOS lets Juno show any, and the two
+/// switches an agent's or a task's notification follows.
+///
+/// The switches belong to this Mac, not to the account — the phone and the
+/// web keep their own — so they are the push registrar's rather than a
+/// settings patch, and they sit apart from the account's emails. Juno Code's
+/// own notifications are Code's settings, as they always were.
+private struct DesktopSettingsNotificationSection: View {
+    /// The registrar keeps the switches on this Mac and tells the server when
+    /// one changes, so a switch here is the whole story.
+    @State private var pushes = NativePushRegistrar.shared
+    @State private var authorization: UNAuthorizationStatus?
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Section {
+            LabeledContent {
+                permissionControl
+            } label: {
+                DesktopSettingsLabel(
+                    "Notifications on this Mac",
+                    detail: LocalizedStringKey(statusLine)
+                )
+            }
+            // On the row rather than the section, so it runs once however the
+            // form lays the section out.
+            .task { await refreshAuthorization() }
+            // A refusal is undone in System Settings, so coming back is when
+            // the answer may have changed.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await refreshAuthorization() } }
+            }
+
+            Toggle(isOn: $pushes.preferences.needsYou) {
+                DesktopSettingsLabel(
+                    "When something needs you",
+                    detail: "An approval or a question a task is waiting on."
+                )
+            }
+            .toggleStyle(.switch)
+            .tint(Color.junoAccent)
+            .disabled(!isAuthorized)
+            .accessibilityLabel("When something needs you")
+            .accessibilityIdentifier("juno.desktop.settings.notify-needs-you")
+
+            // Off without a token: an update reaches this Mac only as a push,
+            // and a switch for something that cannot arrive controls nothing.
+            Toggle(isOn: $pushes.preferences.updates) {
+                DesktopSettingsLabel(
+                    "Updates",
+                    detail: "A task finished, an agent has ideas, or one agent handed work to another."
+                )
+            }
+            .toggleStyle(.switch)
+            .tint(Color.junoAccent)
+            .disabled(!isAuthorized || pushes.tokenHex == nil)
+            .accessibilityLabel("Updates")
+            .accessibilityIdentifier("juno.desktop.settings.notify-updates")
+        } header: {
+            Text("Notifications")
+        } footer: {
+            Text(footer)
+        }
+    }
+
+    @ViewBuilder
+    private var permissionControl: some View {
+        switch authorization {
+        case .notDetermined?, .provisional?:
+            Button("Allow") { Task { await requestPermission() } }
+                .contentShape(.rect)
+                .accessibilityIdentifier("juno.desktop.settings.notifications-allow")
+        case .denied?:
+            Button("Open System Settings") { openNotificationSettings() }
+                .contentShape(.rect)
+        case .authorized?:
+            // The status line beside it says "Allowed"; the mark is that word
+            // at a glance, not a second announcement.
+            JunoIconView(.check, size: 15)
+                .foregroundStyle(Color.junoSuccess)
+                .accessibilityHidden(true)
+        default:
+            ProgressView()
+                .controlSize(.small)
+        }
+    }
+
+    private var isAuthorized: Bool {
+        switch authorization {
+        case .authorized?, .provisional?: true
+        default: false
+        }
+    }
+
+    private var statusLine: String {
+        switch authorization {
+        case .authorized?: "Allowed"
+        case .provisional?: "Delivered quietly"
+        case .denied?: "Off in System Settings"
+        case .notDetermined?: "Not asked yet"
+        default: "Checking…"
+        }
+    }
+
+    /// Where these switches reach. Without a push token — a Mac signed without
+    /// the push entitlement — the only notification this Mac raises is its own
+    /// for an agent that needs you, and it needs Juno running to raise it.
+    private var footer: String {
+        if pushes.tokenHex != nil {
+            return "Sent to this Mac even when Juno is closed. These switches are for this Mac only."
+        }
+        return "While Juno is open, this Mac tells you when an agent needs you. Updates reach your iPhone and Juno on the web."
+    }
+
+    private func refreshAuthorization() async {
+        authorization = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    }
+
+    private func requestPermission() async {
+        await pushes.requestFullAuthorization()
+        await refreshAuthorization()
+    }
+
+    private func openNotificationSettings() {
+        var address = "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+        if let bundleID = Bundle.main.bundleIdentifier {
+            address += "?id=\(bundleID)"
+        }
+        guard let url = URL(string: address) else { return }
+        openURL(url)
     }
 }
 

@@ -10,7 +10,7 @@ import SwiftUI
 // MARK: - Words
 
 /// How Agents says a time, a task state and a cost.
-enum NativeAgentFormat {
+public enum NativeAgentFormat {
     /// "today at 09:00", "tomorrow at 09:00", "Mon at 09:00", "12 Oct" — in
     /// the reader's own zone. The server says the same sentence in UTC because
     /// it does not know the zone; the device does, so it says it again,
@@ -43,7 +43,9 @@ enum NativeAgentFormat {
 
     /// The sentence beside the face, re-said locally when it names a time.
     /// Every other state's sentence is the server's, which names the task.
-    static func stateSentence(for agent: NativeAgent) -> String {
+    /// Public because every place that shows an agent's face says it: the
+    /// roster, its page, the sidebar row and the header of its thread.
+    public static func stateSentence(for agent: NativeAgent) -> String {
         if agent.state == .idle, let next = agent.nextRoutine, let at = next.nextRunAt {
             return "Next: \(next.name), \(upcoming(at))"
         }
@@ -136,9 +138,12 @@ struct NativeAgentFieldLabel: View {
 }
 
 /// The one trailing signal a row may carry: a toned dot while the agent needs
-/// the person, nothing otherwise. State, not decoration.
-struct NativeAgentNeedsYouDot: View {
-    var body: some View {
+/// the person, nothing otherwise. State, not decoration — and hidden from
+/// assistive technology, because the row it sits in says "Needs you" in words.
+public struct NativeAgentNeedsYouDot: View {
+    public init() {}
+
+    public var body: some View {
         Circle()
             .fill(Color.junoAccent)
             .frame(width: 8, height: 8)

@@ -41,6 +41,8 @@ export type SidebarMotionIconKind =
    *  rather than for the account. */
   | "settings"
   | "search"
+  /** Notifications: an action row like Search, opening a popover rather than a page. */
+  | "notifications"
   | "panel-open"
   | "panel-close"
   | "close"
@@ -76,6 +78,7 @@ const ICONS: Record<SidebarMotionIconKind, IconComponent> = {
   pulls: AppIcons.pulls,
   settings: AppIcons.settings,
   search: AppIcons.search,
+  notifications: AppIcons.notifications,
   "panel-open": PanelLeft,
   "panel-close": PanelLeftClose,
   close: ActionIcons.dismiss,

@@ -3,6 +3,8 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { Prisma, type ActionApprovalReceipt } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { notifyUser } from "@/lib/notifications";
+import { chatPath } from "@/lib/notify/paths";
 import {
   ACTION_APPROVAL_TTL_MS,
   ACTION_PERMISSION_POLICIES,
@@ -340,6 +342,22 @@ async function recoverOrCreateReceipt(input: {
           })
         )
         .catch(() => {});
+      // The inbox row as well, with no push of its own: the push above is
+      // the one the apps already handle, and a second would ring twice.
+      void notifyUser({
+        userId: request.userId,
+        type: "code_approval",
+        title: "Juno needs your approval",
+        body: preview,
+        priority: "urgent",
+        sourceType: "action_approval",
+        sourceId: row.id,
+        actionable: true,
+        actionData: { approvalId: row.id, conversationId: request.conversationId ?? null },
+        path: request.conversationId ? chatPath(request.conversationId) : null,
+        channel: "needs_you",
+        push: null,
+      });
     }
 
     return { row, conflict: false };

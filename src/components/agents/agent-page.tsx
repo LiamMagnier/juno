@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { AppPage } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import { WORK_APPROVAL_MODE_LABEL } from "@/lib/work/domain";
 import { AGENT_STATE_LABEL } from "@/lib/agents/domain";
 import type { ClientAgentDetail } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
+import { duration, spring } from "@/lib/motion";
 import { AgentFace } from "@/components/agents/agent-face";
 import { localStateSentence } from "@/components/agents/agent-bits";
 import { useAgentDetail } from "@/components/agents/use-agents";
@@ -33,6 +35,41 @@ import { AgentProfile } from "@/components/agents/agent-profile";
 
 type Tab = "now" | "goals" | "routines" | "activity" | "profile";
 const TABS: readonly Tab[] = ["now", "goals", "routines", "activity", "profile"];
+
+/**
+ * The hire arrival (AGENTS.md §5.1, §4.3): the new face lands at `xl` on the
+ * spring — `done`'s one-shot settle, on the emphasis rung — says hello with its
+ * happy eyes, opens them (`idle`), and settles into the header at `lg`. Each
+ * step holds for what it shows; the last is the layout spring's own length, so
+ * the page stops measuring itself the moment the face is home.
+ */
+type Arrival = "landing" | "greeting" | "settling";
+const ARRIVAL_NEXT: Record<Arrival, Arrival | null> = { landing: "greeting", greeting: "settling", settling: null };
+const ARRIVAL_HOLD_MS: Record<Arrival, number> = {
+  landing: duration.emphasis * 1000 + 640,
+  greeting: 600,
+  settling: duration.slow * 1000 + 120,
+};
+
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
+function subscribeReducedMotion(onChange: () => void): () => void {
+  const query = window.matchMedia?.(REDUCED_MOTION);
+  query?.addEventListener("change", onChange);
+  return () => query?.removeEventListener("change", onChange);
+}
+
+/**
+ * Whether the reader asked for less motion. False while the server renders and
+ * hydrates (it cannot know), and correct from the first frame of a page opened
+ * in the client — which the page after Hire always is.
+ */
+function useReducedMotionPreference(): boolean {
+  return React.useSyncExternalStore(
+    subscribeReducedMotion,
+    () => window.matchMedia?.(REDUCED_MOTION).matches ?? false,
+    () => false
+  );
+}
 
 /**
  * An agent's page (docs/design/AGENTS.md §5.2): the one place that answers
@@ -60,6 +97,16 @@ export function AgentPage({ initial }: { initial: ClientAgentDetail }) {
   const [activityKey, setActivityKey] = React.useState(0);
   const [opening, setOpening] = React.useState(false);
   const [welcome, setWelcome] = React.useState(hired);
+  // Reduced motion has no arrival at all: no spring to land on, and a face
+  // that later jumped from 160 to 96 would move the whole page for nothing.
+  const reduceMotion = useReducedMotionPreference();
+  const [arrivalStep, setArrivalStep] = React.useState<Arrival | null>(hired ? "landing" : null);
+  const arrival = reduceMotion ? null : arrivalStep;
+  React.useEffect(() => {
+    if (!arrival) return;
+    const timer = window.setTimeout(() => setArrivalStep(ARRIVAL_NEXT[arrival]), ARRIVAL_HOLD_MS[arrival]);
+    return () => window.clearTimeout(timer);
+  }, [arrival]);
 
   const agentId = initial.agent.id;
   React.useEffect(() => {
@@ -140,20 +187,33 @@ export function AgentPage({ initial }: { initial: ClientAgentDetail }) {
   };
 
   const sentence = localStateSentence(agent);
+  // While the face settles, what sits beside and below it moves with it on the
+  // same spring — transforms only (framer's layout projection) — rather than
+  // jumping 64px when the face shrinks.
+  const settles = arrival !== null;
+  const follows = settles ? ("position" as const) : false;
 
   return (
     <AppPage measure="wide">
-      <header className="mb-6 border-b border-border pb-5">
+      {/* The hairline under the header is the top of what follows, so it moves
+          with the content when the arriving face settles. */}
+      <header className="pb-5">
         <div className="mb-3">
           <Link href="/agents" className="text-ui text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
             Agents
           </Link>
         </div>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-4">
-          <div data-face-trigger className="shrink-0">
-            <AgentFace avatar={agent.avatar} state={agent.state} size="lg" name={agent.name} />
-          </div>
-          <div className="min-w-0 flex-1">
+          <motion.div layout={settles} transition={spring.layout} data-face-trigger className="shrink-0">
+            <AgentFace
+              avatar={agent.avatar}
+              state={arrival === "landing" ? "done" : arrival ? "idle" : agent.state}
+              labelState={agent.state}
+              size={arrival === "landing" || arrival === "greeting" ? "xl" : "lg"}
+              name={agent.name}
+            />
+          </motion.div>
+          <motion.div layout={follows} transition={spring.layout} className="min-w-0 flex-1">
             <h1 className="truncate text-page-title">{agent.name}</h1>
             {agent.role ? <p className="text-body text-muted-foreground">{agent.role}</p> : null}
             <p className={cn("mt-2 flex items-center gap-2 text-ui", agent.state === "waiting" ? "text-foreground" : "text-muted-foreground")}>
@@ -163,8 +223,8 @@ export function AgentPage({ initial }: { initial: ClientAgentDetail }) {
                 {sentence}
               </span>
             </p>
-          </div>
-          <div className="flex items-center gap-2">
+          </motion.div>
+          <motion.div layout={follows} transition={spring.layout} className="flex items-center gap-2">
             <Button onClick={() => void message()} loading={opening}>
               Message
             </Button>
@@ -188,55 +248,57 @@ export function AgentPage({ initial }: { initial: ClientAgentDetail }) {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
+          </motion.div>
         </div>
       </header>
 
-      {welcome ? (
-        <div className="mb-6 flex flex-wrap items-center gap-4 rounded-card border border-border bg-card p-4 motion-safe:animate-rise-in">
-          <p className="min-w-0 flex-1 text-body">
-            <span className="font-medium text-foreground">{agent.name} is here.</span>{" "}
-            <span className="text-muted-foreground">
-              Tell it what to take on first. It works under “{WORK_APPROVAL_MODE_LABEL[agent.approvalMode]}”, and always
-              asks before anything it cannot take back.
-            </span>
-          </p>
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => void message()}>
-              Message {agent.name}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setWelcome(false)}>
-              Later
-            </Button>
+      <motion.div layout={follows} transition={spring.layout} className="border-t border-border pt-6">
+        {welcome ? (
+          <div className="mb-6 flex flex-wrap items-center gap-4 rounded-card border border-border bg-card p-4 motion-safe:animate-rise-in">
+            <p className="min-w-0 flex-1 text-body">
+              <span className="font-medium text-foreground">{agent.name} is here.</span>{" "}
+              <span className="text-muted-foreground">
+                Tell it what to take on first. It works under “{WORK_APPROVAL_MODE_LABEL[agent.approvalMode]}”, and always
+                asks before anything it cannot take back.
+              </span>
+            </p>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => void message()}>
+                Message {agent.name}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setWelcome(false)}>
+                Later
+              </Button>
+            </div>
           </div>
-        </div>
-      ) : null}
-
-      <SegmentedControl
-        ariaLabel={`${agent.name}'s page`}
-        value={tab}
-        onChange={setTab}
-        className="mb-6"
-        options={[
-          { value: "now", label: "Now", badge: agent.needsYou > 0 ? agent.needsYou : undefined },
-          { value: "goals", label: "Goals", count: detail.goals.filter((goal) => goal.status === "active").length || undefined },
-          { value: "routines", label: "Routines", count: detail.routines.length || undefined },
-          { value: "activity", label: "Activity" },
-          { value: "profile", label: "Profile" },
-        ]}
-      />
-
-      <div key={tab} className="motion-safe:animate-fade-in">
-        {tab === "now" ? <AgentNow detail={detail} onChanged={changed} /> : null}
-        {tab === "goals" ? (
-          <AgentGoals detail={detail} onChanged={changed} onStarted={() => { changed(); setTab("now"); }} />
         ) : null}
-        {tab === "routines" ? <AgentRoutines detail={detail} onChanged={changed} /> : null}
-        {tab === "activity" ? <AgentActivity agentId={agent.id} refreshKey={activityKey} /> : null}
-        {/* Not keyed on `updatedAt`: a reflection claiming its slot bumps it too,
-            and a key would throw away an edit the person is half way through. */}
-        {tab === "profile" ? <AgentProfile detail={detail} onChanged={changed} /> : null}
-      </div>
+
+        <SegmentedControl
+          ariaLabel={`${agent.name}'s page`}
+          value={tab}
+          onChange={setTab}
+          className="mb-6"
+          options={[
+            { value: "now", label: "Now", badge: agent.needsYou > 0 ? agent.needsYou : undefined },
+            { value: "goals", label: "Goals", count: detail.goals.filter((goal) => goal.status === "active").length || undefined },
+            { value: "routines", label: "Routines", count: detail.routines.length || undefined },
+            { value: "activity", label: "Activity" },
+            { value: "profile", label: "Profile" },
+          ]}
+        />
+
+        <div key={tab} className="motion-safe:animate-fade-in">
+          {tab === "now" ? <AgentNow detail={detail} onChanged={changed} /> : null}
+          {tab === "goals" ? (
+            <AgentGoals detail={detail} onChanged={changed} onStarted={() => { changed(); setTab("now"); }} />
+          ) : null}
+          {tab === "routines" ? <AgentRoutines detail={detail} onChanged={changed} /> : null}
+          {tab === "activity" ? <AgentActivity agentId={agent.id} refreshKey={activityKey} /> : null}
+          {/* Not keyed on `updatedAt`: a reflection claiming its slot bumps it too,
+              and a key would throw away an edit the person is half way through. */}
+          {tab === "profile" ? <AgentProfile detail={detail} onChanged={changed} /> : null}
+        </div>
+      </motion.div>
     </AppPage>
   );
 }

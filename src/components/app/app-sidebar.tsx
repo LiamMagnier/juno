@@ -47,6 +47,7 @@ import { MENU_W } from "@/components/ui/menu-recipe";
 import { Label } from "@/components/ui/label";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { PopoverTrigger } from "@/components/ui/popover";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { useApp } from "@/components/app/app-provider";
 import { ProductSwitch, type ProductSurface } from "@/components/app/product-switch";
@@ -65,6 +66,10 @@ import type { ClientAgent } from "@/lib/agents/types";
 import { AgentFace } from "@/components/agents/agent-face";
 import { NeedsYouDot, localStateSentence } from "@/components/agents/agent-bits";
 import { useAgents } from "@/components/agents/use-agents";
+import { NotificationsPopover } from "@/components/notifications/notifications-popover";
+import { useNotifications } from "@/components/notifications/use-notifications";
+import { OPEN_NOTIFICATIONS_EVENT } from "@/components/notifications/notifications-transport";
+import { dotTone, unreadDetail } from "@/components/notifications/inbox-model";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * The sidebar (docs/design/FLAT_UI.md §3).
@@ -187,6 +192,18 @@ const SECTION_KEYS = {
 
 type SectionKey = keyof typeof SECTION_KEYS;
 
+/*
+ * "Open notifications" asked for while the column is not on screen. Below md
+ * the column is `display: none` and the sidebar is the phone drawer, which is
+ * not mounted until it opens, so the mount that hears the request cannot open
+ * the popover itself: it opens the drawer and leaves word here, and the
+ * drawer's own mount opens the popover when it arrives. Stamped rather than a
+ * flag, so a request the drawer never picked up cannot open the popover the
+ * next time somebody opens the drawer for something else.
+ */
+let inboxRequestedAt = 0;
+const INBOX_REQUEST_TTL_MS = 2_000;
+
 /**
  * What one row is allowed to say about the run behind it: a tone for its mark,
  * a label for a screen reader, and the sentence that explains the state.
@@ -288,6 +305,7 @@ export function AppSidebar({
     removeConversation,
     upsertConversation,
     activeConversationId,
+    sidebarOpen,
     setSidebarOpen,
     user,
     quota,
@@ -688,6 +706,63 @@ export function AppSidebar({
     setSidebarOpen(false);
   };
 
+  /* ── Notifications ───────────────────────────────────────────────────── */
+
+  /*
+   * The inbox, in both products: a task, an agent and Juno itself can all
+   * have something to say whichever column is showing. Its dot is one small
+   * count polled per mount (see use-notifications.ts); the list is read only
+   * when the popover opens.
+   */
+  const inbox = useNotifications();
+  const [inboxOpen, setInboxOpen] = React.useState(false);
+  const inboxTone = dotTone(inbox.count);
+  const inboxDetail = unreadDetail(inbox.count);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+
+  /*
+   * "Open notifications" from the command palette. Every mount hears it, and
+   * the one on screen answers: the column at any width (the rail's row opens
+   * the same popover), or the drawer while it is open. The column below md is
+   * `display: none`, so it has no box; it opens the drawer instead and leaves
+   * word for the drawer's mount (see `inboxRequestedAt`).
+   */
+  React.useEffect(() => {
+    const onOpenInbox = () => {
+      if ((rootRef.current?.getClientRects().length ?? 0) > 0) {
+        setInboxOpen(true);
+        return;
+      }
+      if (sidebarOpen) return;
+      inboxRequestedAt = Date.now();
+      setSidebarOpen(true);
+    };
+    window.addEventListener(OPEN_NOTIFICATIONS_EVENT, onOpenInbox);
+    return () => window.removeEventListener(OPEN_NOTIFICATIONS_EVENT, onOpenInbox);
+  }, [setSidebarOpen, sidebarOpen]);
+
+  /*
+   * The drawer's mount picks the request up, once the drawer has finished
+   * sliding in. The popover measures its trigger when it opens and does not
+   * follow a transform, so opened mid-slide it would hang where the row was
+   * a frame into the animation. The word is cleared only when the popover
+   * opens, so an effect that runs twice still opens it once.
+   */
+  React.useEffect(() => {
+    if (Date.now() - inboxRequestedAt > INBOX_REQUEST_TTL_MS) return;
+    const drawer = rootRef.current?.closest<HTMLElement>('[role="dialog"]');
+    const sliding = drawer?.getAnimations?.() ?? [];
+    let cancelled = false;
+    void Promise.all(sliding.map((animation) => animation.finished.catch(() => undefined))).then(() => {
+      if (cancelled) return;
+      inboxRequestedAt = 0;
+      setInboxOpen(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const rowProps = {
     renamingId,
     setRenaming: setRenamingId,
@@ -778,6 +853,7 @@ export function AppSidebar({
     <LayoutGroup id={`juno-sidebar-${layoutScope}`}>
       <div
         key="sidebar"
+        ref={rootRef}
         data-collapsed={collapsed ? "" : undefined}
         className={cn(
           "flex h-full flex-col text-sidebar-foreground",
@@ -1033,6 +1109,38 @@ export function AppSidebar({
             transition={layoutTransition}
             reveal={revealOnMount}
           />
+          {/* NOTIFICATIONS IS A ROW TOO, and for Search's reason: it opens
+              something over the page rather than going somewhere, so it sits
+              with the actions, outside the <nav>, and never takes the
+              travelling fill. Not a bell in the header, which is budgeted to
+              collapse, the wordmark and the switch, and not a destination
+              among Library and Projects: there is no notifications page
+              (docs/design/TWO_PRODUCTS.md).
+
+              Its one signal is a dot at rest, never a count: the accent while
+              something unread is asking for a decision, muted while it is only
+              news. The number rides the accessible name and the rail's
+              tooltip, where a dot cannot say it. */}
+          <NotificationsPopover
+            inbox={inbox}
+            open={inboxOpen}
+            onOpenChange={setInboxOpen}
+            onNavigate={() => setSidebarOpen(false)}
+          >
+            <NavRow
+              collapsed={collapsed}
+              trigger={PopoverTrigger}
+              icon={<SidebarMotionIcon kind="notifications" />}
+              label="Notifications"
+              detail={inboxDetail ?? undefined}
+              signal={
+                inboxTone ? <NeedsYouDot className={inboxTone === "muted" ? "bg-muted-foreground" : undefined} /> : undefined
+              }
+              layoutId="nav-notifications"
+              transition={layoutTransition}
+              reveal={revealOnMount}
+            />
+          </NotificationsPopover>
         </div>
 
         {/* ── Destinations ─────────────────────────────────────────────── */}
@@ -1646,6 +1754,9 @@ function NavRow({
   icon,
   label,
   trailing,
+  signal,
+  detail,
+  trigger: Trigger,
   active,
   collapsed,
   layoutId,
@@ -1656,7 +1767,27 @@ function NavRow({
   onClick?: () => void;
   icon: React.ReactNode;
   label: string;
+  /** A hint that shows under the pointer only (a shortcut's keycap). */
   trailing?: React.ReactNode;
+  /**
+   * A state that shows AT REST, which `trailing` cannot carry: an unread dot.
+   * In the rail it sits on the glyph's corner, since there is no row end. A
+   * row takes one or the other, never both (PREMIUM_AUDIT.md rule 6).
+   */
+  signal?: React.ReactNode;
+  /**
+   * The words for what `signal` shows ("3 unread"). A dot has none of its
+   * own, so they join the accessible name ("Notifications, 3 unread") and
+   * the rail's tooltip ("Notifications · 3 unread").
+   */
+  detail?: string;
+  /**
+   * Makes the row the trigger of a popover around it (`PopoverTrigger`). It
+   * wraps the control itself, inside the rail's tooltip, so the popover's
+   * `data-state` and ARIA land on the button and the tooltip's on its wrapper,
+   * the order MoreFlyout keeps for its menu.
+   */
+  trigger?: React.ComponentType<{ asChild?: boolean; children?: React.ReactNode }>;
   active?: boolean;
   collapsed: boolean;
   layoutId: string;
@@ -1665,7 +1796,13 @@ function NavRow({
   reveal?: { opacity: number } | false;
 }) {
   const router = useRouter();
-  const cls = navRowClass(collapsed, !!active);
+  const cls = cn(
+    navRowClass(collapsed, !!active),
+    // While its popover is open the row wears the selected fill, as the More
+    // trigger and the account row do for theirs.
+    Trigger && "sidebar-row-selected-on-open data-[state=open]:text-foreground"
+  );
+  const name = detail ? `${label}, ${detail}` : label;
   const inner = (
     <>
       {/*
@@ -1737,8 +1874,12 @@ function NavRow({
           on, cross-faded on the `fast` rung. The ink change and the glyph's
           one gesture (sidebar-motion-icon.tsx) are the whole of the row's
           hover, with the fill behind them. */}
-      <span className="flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-focus-visible:text-foreground group-data-[active]:text-foreground [&_svg]:size-4.5">
+      <span className="relative flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-focus-visible:text-foreground group-data-[active]:text-foreground group-data-[state=open]:text-foreground [&_svg]:size-4.5">
         {icon}
+        {/* The rail's signal, on the glyph's top-right corner, where the bell
+            and the other marks leave the box empty. Later in the tree than
+            the glyph, so it paints over it without a z-index. */}
+        {collapsed && signal ? <span className="absolute -right-0.5 -top-0.5 flex">{signal}</span> : null}
       </span>
       {!collapsed && (
         <>
@@ -1759,6 +1900,7 @@ function NavRow({
               {trailing}
             </span>
           )}
+          {signal && <span className="ml-auto flex shrink-0 items-center">{signal}</span>}
         </>
       )}
     </>
@@ -1779,7 +1921,7 @@ function NavRow({
       {...intentPrefetch(router, href)}
       data-active={activeAttr}
       aria-current={active ? "page" : undefined}
-      aria-label={collapsed ? label : undefined}
+      aria-label={collapsed || detail ? name : undefined}
       className={cls}
     >
       {inner}
@@ -1789,7 +1931,7 @@ function NavRow({
       type="button"
       onClick={onClick}
       data-active={activeAttr}
-      aria-label={collapsed ? label : undefined}
+      aria-label={collapsed || detail ? name : undefined}
       className={cn(cls, "text-left")}
     >
       {inner}
@@ -1797,7 +1939,7 @@ function NavRow({
   );
   const row = (
     <motion.div layout="position" layoutId={layoutId} transition={t} className={cn(collapsed && "flex justify-center")}>
-      {el}
+      {Trigger ? <Trigger asChild>{el}</Trigger> : el}
     </motion.div>
   );
   if (!collapsed) return row;
@@ -1805,7 +1947,7 @@ function NavRow({
     <Tooltip>
       <TooltipTrigger asChild>{row}</TooltipTrigger>
       <TooltipContent side="right" className="flex items-center gap-1.5">
-        {label}
+        {detail ? `${label} · ${detail}` : label}
         {trailing && <span className="inline-flex">{trailing}</span>}
       </TooltipContent>
     </Tooltip>

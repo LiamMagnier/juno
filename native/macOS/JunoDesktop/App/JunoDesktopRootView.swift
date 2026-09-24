@@ -1,3 +1,4 @@
+import AppKit
 import JunoAuth
 import JunoChatKit
 import JunoCodeBridge
@@ -8,6 +9,7 @@ import JunoStorage
 import JunoSync
 import JunoWorkKit
 import SwiftUI
+import UserNotifications
 
 struct JunoDesktopRootView: View {
     let configuration: JunoDesktopConfiguration
@@ -87,6 +89,14 @@ struct JunoDesktopRootView: View {
             .onChange(of: configuration.memorySettingsModel?.settings?.accent) {
                 _, accent in
                 JunoAccentSelection.shared.apply(setting: accent)
+            }
+            // The first agent is the moment the question has an obvious answer:
+            // something now works while the reader is elsewhere and will need
+            // them. Code asks the same question before its first notification,
+            // and the system shows it once, whichever asks first.
+            .onChange(of: configuration.agentsModel?.agents.isEmpty == false) { _, hasAgents in
+                guard hasAgents else { return }
+                Task { await NativePushRegistrar.shared.requestFullAuthorization() }
             }
             .onChange(of: workbenchModel?.workspaces) { _, workspaces in
                 // The workbench is built at the end of `updateLifecycle` and
@@ -191,6 +201,11 @@ struct JunoDesktopRootView: View {
         // the task below — a whitelist that attaches a moment after the composer
         // is usable is a whitelist with a window in it.
         configuration.connectAssistantHooks()
+        // Before the roster's first read, like the hooks above. That read is
+        // never a rise, so nothing is announced for agents already waiting.
+        configuration.agentsModel?.onNeedsYouRise = { agent in
+            DesktopAgentAlerts.announceNeedsYou(agent)
+        }
         Task {
             await configuration.conversationModel?.start(for: accountID)
             await configuration.projectModel?.start(for: accountID)
@@ -222,6 +237,12 @@ struct JunoDesktopRootView: View {
             await configuration.agentsModel?.start(for: accountID)
         }
         configuration.remoteCodeModel?.start(for: accountID)
+        // The APNs token and the account meet here. A Mac signed with no push
+        // entitlement never receives a token, so this sends nothing there —
+        // `DesktopAgentAlerts` is that Mac's notification.
+        if let sender = configuration.requestSender {
+            NativePushRegistrar.shared.start(for: accountID, sender: sender)
+        }
         // Registration is presence, not capability — a signed-in Mac saying it
         // exists — so it starts with everything else rather than behind a
         // switch. What it does *not* do is accept work; see DesktopCodeHost.swift.
@@ -341,6 +362,11 @@ struct JunoDesktopRootView: View {
         configuration.workModel?.stop()
         configuration.workAutomationModel?.stop()
         configuration.agentsModel?.stop()
+        configuration.agentsModel?.onNeedsYouRise = nil
+        // Forgets the account only: the server retires this device's token
+        // with the device session it was registered under, the one moment the
+        // bearer a DELETE would need is already gone.
+        NativePushRegistrar.shared.stop()
         // Not `stopServingWork()`, which only writes the preference off.
         // Sign-out has to take the claim loop down *without* rewriting the
         // reader's standing decision about this machine, so that signing back
@@ -352,6 +378,49 @@ struct JunoDesktopRootView: View {
         // is in that index, so `stop()` wipes the account's partition. Signing
         // out has to leave nothing behind for the next person at this Mac.
         configuration.documentIndexModel?.stop()
+    }
+}
+
+/// The Mac's stand-in for an agent's push, until a Developer ID build can
+/// carry the push entitlement: an agent that starts needing the person between
+/// two polls of the roster raises a local notification that opens its page.
+///
+/// Only while Juno is not the app in front — in front, the sidebar's dot is
+/// already saying it — and only with the person's own "When something needs
+/// you" switch on, the one that governs a push. Whether a banner may appear at
+/// all is the system's permission, asked when the first agent arrives.
+@MainActor
+private enum DesktopAgentAlerts {
+    static func announceNeedsYou(_ agent: NativeAgent) {
+        guard NSApp?.isActive != true,
+            NativePushRegistrar.shared.preferences.needsYou
+        else { return }
+        let title = "\(agent.name) needs you"
+        let body = NativeAgentFormat.stateSentence(for: agent)
+        let agentID = agent.id
+        Task {
+            let center = UNUserNotificationCenter.current()
+            let status = await center.notificationSettings().authorizationStatus
+            guard status == .authorized || status == .provisional else { return }
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+            content.threadIdentifier = "agent-\(agentID)"
+            // The keys a push carries, so a click takes the same road.
+            content.userInfo = [
+                "path": JunoNotificationRoute.agent(id: agentID).path,
+                "agentId": agentID,
+            ]
+            // One per agent: a second rise replaces the first rather than
+            // stacking a list of the same sentence.
+            let request = UNNotificationRequest(
+                identifier: "juno.agent.\(agentID).needs-you",
+                content: content,
+                trigger: nil
+            )
+            center.add(request, withCompletionHandler: nil)
+        }
     }
 }
 

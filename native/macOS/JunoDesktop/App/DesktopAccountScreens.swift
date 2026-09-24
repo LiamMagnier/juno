@@ -17,6 +17,9 @@ struct DesktopDestinationView: View {
     @Binding var draftProjectID: String?
     @Binding var draftPrompt: String?
     @Binding var requestedProjectID: String?
+    /// The agent open on the Agents destination, owned by the window so its
+    /// sidebar row can open it and show it open. Nil is the roster.
+    @Binding var selectedAgentID: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// A sheet needs a false → true presentation transition. This is separate
     /// from `destination` so `--juno-preview-tab settings` works when Settings
@@ -44,7 +47,8 @@ struct DesktopDestinationView: View {
                 configuration: configuration,
                 session: session,
                 draftProjectID: $draftProjectID,
-                draftPrompt: $draftPrompt
+                draftPrompt: $draftPrompt,
+                openAgent: openAgent
             )
         case .search:
             if let model = configuration.searchModel {
@@ -107,6 +111,9 @@ struct DesktopDestinationView: View {
                 NativeAgentsScreen(
                     model: model,
                     apps: agentApps,
+                    selectedAgentID: $selectedAgentID,
+                    localApprovals: localApprovals,
+                    decideLocally: decideLocally,
                     openConversation: openAgentThread
                 )
             } else {
@@ -214,6 +221,31 @@ struct DesktopDestinationView: View {
                 await conversationModel.reload()
             }
             openConversation(id)
+        }
+    }
+
+    /// Opens an agent's page, from the header of its thread.
+    private func openAgent(_ id: String) {
+        selectedAgentID = id
+        destination = .agents
+    }
+
+    /// What a run executing on this Mac has stopped to ask, for an agent's
+    /// page. Those approvals have no server row — the run is suspended in this
+    /// process — so the page cannot read them from its task's run the way it
+    /// reads a cloud run's. Nil where this Mac hosts no Work.
+    private var localApprovals: (@MainActor (String) -> [WorkApprovalRequest])? {
+        guard let hostModel = configuration.workHostModel else { return nil }
+        return { runID in hostModel.localApprovals(forRun: runID) }
+    }
+
+    /// Answers one of those through the runtime holding the run, with the
+    /// digest of the action the card showed — the same call the Work thread's
+    /// card makes.
+    private var decideLocally: (@MainActor (WorkApprovalRequest, JunoWorkApprovalDecision) -> Void)? {
+        guard let hostModel = configuration.workHostModel else { return nil }
+        return { approval, decision in
+            hostModel.localApprovalDecider?(approval.id, decision, approval.actionDigest)
         }
     }
 

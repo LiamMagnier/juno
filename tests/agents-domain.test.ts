@@ -10,8 +10,12 @@ import {
 } from "@/lib/agents/avatar";
 import {
   AGENT_DONE_WINDOW_MS,
+  AGENT_EVENT_KINDS,
   AGENT_REFLECT_INTERVAL_MS,
+  agentModelChoice,
   agentStateSentence,
+  agentTaskKeys,
+  agentTurnModel,
   createAgentSchema,
   createRoutineSchema,
   deriveAgentState,
@@ -175,6 +179,52 @@ test("hiring input is bounded and defaulted, and an unknown autonomy is refused"
   assert.equal(patchAgentSchema.safeParse({}).success, false);
 });
 
+test("an agent's model is a chat model stored by its canonical id, and its effort is a real tier", () => {
+  assert.equal(patchAgentSchema.parse({ model: "claude-haiku-4-5" }).model, "anthropic:claude-haiku-4-5");
+  assert.equal(patchAgentSchema.parse({ model: "juno:auto" }).model, "juno:auto");
+  assert.equal(patchAgentSchema.parse({ model: null, reasoningEffort: null }).model, null);
+  assert.equal(patchAgentSchema.parse({ reasoningEffort: "low" }).reasoningEffort, "low");
+  // Not a model at all, a model announced but not out, and an effort no model has.
+  assert.equal(patchAgentSchema.safeParse({ model: "nonsense" }).success, false);
+  assert.equal(patchAgentSchema.safeParse({ model: "longcat:LongCat-2.0" }).success, false);
+  assert.equal(patchAgentSchema.safeParse({ reasoningEffort: "turbo" }).success, false);
+  assert.equal(createAgentSchema.safeParse({ name: "x", model: "nonsense" }).success, false);
+  assert.equal(agentModelChoice("  anthropic:claude-haiku-4-5  "), "anthropic:claude-haiku-4-5");
+});
+
+test("a thread answers on its agent's model unless the message names another", () => {
+  const agent = { model: "anthropic:claude-haiku-4-5", reasoningEffort: "low" };
+  const usable = () => true;
+  const own = { kind: "agent", model: "anthropic:claude-haiku-4-5", reasoningEffort: "low" };
+  // No model named, or the agent's own in any spelling: the agent's, at its effort.
+  assert.deepEqual(agentTurnModel({ agent, requestedModel: undefined, usable }), own);
+  assert.deepEqual(agentTurnModel({ agent, requestedModel: "claude-haiku-4-5", usable }), own);
+  // Another model is the person's choice for this message.
+  assert.deepEqual(agentTurnModel({ agent, requestedModel: "juno:auto", usable }), { kind: "request" });
+  assert.deepEqual(agentTurnModel({ agent, requestedModel: "openai:gpt-6-luna", usable }), { kind: "request" });
+  // An agent with no model, or none at all, leaves the request alone.
+  assert.deepEqual(agentTurnModel({ agent: { model: null, reasoningEffort: "low" }, requestedModel: undefined, usable }), {
+    kind: "request",
+  });
+  assert.deepEqual(agentTurnModel({ agent: null, requestedModel: "juno:auto", usable }), { kind: "request" });
+  // A model the account cannot use falls back quietly instead of refusing to answer.
+  assert.deepEqual(agentTurnModel({ agent, requestedModel: undefined, usable: () => false }), { kind: "fallback" });
+  assert.deepEqual(agentTurnModel({ agent, requestedModel: agent.model, usable: () => false }), { kind: "fallback" });
+  // An effort nobody could have stored reads as none.
+  assert.deepEqual(agentTurnModel({ agent: { ...agent, reasoningEffort: "turbo" }, requestedModel: undefined, usable }), {
+    ...own,
+    reasoningEffort: null,
+  });
+});
+
+test("an agent's task keys are namespaced by the agent", () => {
+  assert.deepEqual(agentTaskKeys("a1", "handoff:m1"), { session: "agent-task:a1:handoff:m1", run: "agent-run:a1:handoff:m1" });
+  assert.notEqual(agentTaskKeys("a1", "k").session, agentTaskKeys("a2", "k").session);
+  // Both sides of a handoff are written to the log under kinds it knows.
+  assert.ok(AGENT_EVENT_KINDS.includes("handed_off"));
+  assert.ok(AGENT_EVENT_KINDS.includes("handoff_received"));
+});
+
 test("every routine cadence becomes a trigger the scheduler's own parser accepts", () => {
   for (const cadence of ["hourly", "daily", "weekdays", "weekly", "monthly"] as const) {
     const input = createRoutineSchema.parse({
@@ -259,8 +309,37 @@ test("the block never describes a tool the turn does not carry", () => {
     taskHandoff: false,
   });
   assert.doesNotMatch(block, /start_task/);
+  assert.doesNotMatch(block, /hand_off_to_teammate/);
   assert.equal(appendAgentBlock("base", null), "base");
   assert.equal(appendAgentBlock("base", block), `base\n\n${block}`);
+});
+
+test("teammates are named either way, and the handoff is described only on a turn that carries it", () => {
+  const context = {
+    name: "Scout",
+    role: "Research",
+    style: "warm",
+    instructions: "",
+    approvalMode: "balanced",
+    goals: [],
+    notes: [],
+    teammates: [{ name: "Atlas", role: "Inbox" }],
+    taskHandoff: true,
+  };
+  const without = buildAgentPromptBlock(context, "Liam");
+  assert.match(without, /Atlas: Inbox/);
+  assert.match(without, /you cannot message them yourself/);
+  assert.doesNotMatch(without, /hand_off_to_teammate/);
+  assert.equal(buildAgentPromptBlock({ ...context, handoff: false }, "Liam"), without);
+
+  const withHandoff = buildAgentPromptBlock({ ...context, handoff: true }, "Liam");
+  assert.match(withHandoff, /Atlas: Inbox/);
+  assert.match(withHandoff, /When Liam asks you to pass work to one of them, or agrees when you suggest it, hand it over with hand_off_to_teammate/);
+  assert.match(withHandoff, /they report back there, not here/);
+  assert.doesNotMatch(withHandoff, /you cannot message them yourself/);
+
+  // With nobody to hand to there is no section at all, so nothing to describe.
+  assert.doesNotMatch(buildAgentPromptBlock({ ...context, teammates: [], handoff: true }), /hand_off_to_teammate|teammates/i);
 });
 
 // ---------------------------------------------------------------------------

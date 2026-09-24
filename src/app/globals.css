@@ -3786,6 +3786,11 @@
     :is(a, button, [role="link"], [role="button"], [data-face-trigger]):hover .agent-face[data-state="idle"] .agent-face__eyes {
       animation: agent-face-blink 180ms var(--ease-in-out) 1;
     }
+    /* `listening` is driven by audio, not a timer: the pupils widen with the
+       caller's level, which an open call writes as `--level` (0..1) on an
+       ancestor (agent-thread-header.tsx). No level, and it rests at the
+       static listening size above. */
+    .agent-face[data-state="listening"] .agent-face__eye { transform: scale(calc(1.15 + var(--level, 0) * 0.3)); }
   }
 }
 

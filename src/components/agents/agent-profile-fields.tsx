@@ -2,6 +2,15 @@
 
 import * as React from "react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import { ChevronDown } from "@/components/ui/icons";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useApp } from "@/components/app/app-provider";
+import { JunoMark } from "@/components/brand/logo";
+import { ProviderLogo } from "@/components/brand/provider-logo";
+import { choiceTriggerClass } from "@/components/settings/choice-menu";
+import { ModelCombobox } from "@/components/settings/model-picker";
+import { AUTO_MODEL_ID_SETTING, chatModels } from "@/components/settings/model-list";
 import { AgentFace } from "@/components/agents/agent-face";
 import {
   AGENT_EYES,
@@ -21,6 +30,8 @@ import {
   WORK_PERMISSION_POLICIES,
   type WorkPermissionPolicy,
 } from "@/lib/work/domain";
+import { resolveModel, type ModelInfo } from "@/lib/models";
+import { reasoningOptions } from "@/lib/model-metrics";
 import { cn } from "@/lib/utils";
 
 /**
@@ -227,6 +238,114 @@ export function AutonomyPicker({
         Whatever you choose, it always asks before it sends a message, publishes, pays or buys anything, deletes
         something for good, or changes an account or security setting.
       </p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// What it thinks with
+// ---------------------------------------------------------------------------
+
+const DEFAULT_EFFORT = "default";
+
+/** The efforts a person can set for this model. Empty for Auto and for a model with nothing to choose. */
+function agentEfforts(model: ModelInfo | null): { value: string; label: string }[] {
+  if (!model) return [];
+  return reasoningOptions(model).flatMap((option) => (option.value ? [{ value: option.value, label: option.label }] : []));
+}
+
+/**
+ * The model its thread and its tasks use, and how hard it thinks.
+ *
+ * Unset is the account's default, the model a new chat starts on, and the
+ * control says so rather than naming a model the agent was never set to. The
+ * list is the one Settings uses (grouped by lab, searchable, locked past the
+ * plan), so an agent is never offered a model the account could not pick for
+ * itself. Effort is offered only when there is one to choose: Auto picks its
+ * own, and some models think at one depth only. Its Default is the effort the
+ * chat composer sends.
+ */
+export function ModelPicker({
+  model,
+  reasoningEffort,
+  onChange,
+}: {
+  model: string | null;
+  reasoningEffort: string | null;
+  onChange: (next: { model: string | null; reasoningEffort: string | null }) => void;
+}) {
+  const { models, quota } = useApp();
+  const chat = React.useMemo(() => chatModels(models), [models]);
+  const find = React.useCallback(
+    (id: string | null) =>
+      id && id !== AUTO_MODEL_ID_SETTING ? (chat.find((option) => option.id === id) ?? resolveModel(id)) : null,
+    [chat]
+  );
+  const chosen = find(model);
+  const selected = React.useMemo(() => new Set(model ? [model] : []), [model]);
+  const efforts = agentEfforts(chosen);
+
+  // A new model keeps the effort only when it offers the same one.
+  const choose = (next: string) => {
+    const keeps = agentEfforts(find(next)).some((option) => option.value === reasoningEffort);
+    onChange({ model: next, reasoningEffort: keeps ? reasoningEffort : null });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <ModelCombobox
+          models={chat}
+          plan={quota.plan}
+          mode="single"
+          includeAuto
+          selected={selected}
+          label="Model"
+          onSelect={choose}
+        >
+          <button type="button" className={cn(choiceTriggerClass, "justify-start @[28rem]:w-72")}>
+            <span className="sr-only">Model </span>
+            {chosen ? (
+              <ProviderLogo provider={chosen.provider} className="size-4 text-foreground" />
+            ) : (
+              <JunoMark className="size-4 shrink-0" />
+            )}
+            <span className="min-w-0 flex-1 truncate">
+              {chosen ? <span translate="no">{chosen.name}</span> : model ? "Auto" : "Your default"}
+            </span>
+            <ChevronDown
+              className="size-4 shrink-0 opacity-60 transition-transform duration-base ease-in-out motion-reduce:transition-none group-data-[state=open]:rotate-180"
+              aria-hidden="true"
+            />
+          </button>
+        </ModelCombobox>
+        {model ? (
+          <Button type="button" size="sm" variant="ghost" onClick={() => onChange({ model: null, reasoningEffort: null })}>
+            Use your default
+          </Button>
+        ) : null}
+      </div>
+      {efforts.length > 0 ? (
+        <div>
+          <p className="mb-2 font-mono text-label text-muted-foreground">Thinking effort</p>
+          <Select
+            value={reasoningEffort ?? DEFAULT_EFFORT}
+            onValueChange={(value) => onChange({ model, reasoningEffort: value === DEFAULT_EFFORT ? null : value })}
+          >
+            <SelectTrigger aria-label="Thinking effort" className="w-full @[28rem]:w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={DEFAULT_EFFORT}>Default</SelectItem>
+              {efforts.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
     </div>
   );
 }

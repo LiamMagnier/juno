@@ -1,8 +1,12 @@
 import "server-only";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import type { NotifyChannel } from "@/lib/notify/types";
+import { buildNotifyApnsPayload, notifyApnsOptions, sendPushToUser } from "@/lib/apns";
+import { encodeNotificationCursor, toClientNotification, type InboxQuery } from "@/lib/notify/inbox";
 import { safeAppPath } from "@/lib/notify/paths";
+import { pushIsLive, webPushText, type NotifyPush } from "@/lib/notify/push";
+import type { NotificationsCount, NotificationsPage, NotifyChannel } from "@/lib/notify/types";
+import { sendWebPushToUser } from "@/lib/notify/web-push";
 
 export type NotificationType =
   | "work_completed"
@@ -32,12 +36,6 @@ export interface CreateNotificationInput {
   sourceId?: string;
   actionable?: boolean;
   actionData?: Record<string, unknown>;
-}
-
-export interface ListNotificationsOptions {
-  limit?: number;
-  unreadOnly?: boolean;
-  before?: Date;
 }
 
 export interface NotificationItem {
@@ -90,61 +88,59 @@ export async function createNotification(input: CreateNotificationInput): Promis
 }
 
 /**
- * Lists notifications for a user, ordered by creation date descending.
+ * One page of the inbox, newest first.
+ *
+ * Ordered by (createdAt, id) and paged strictly below the cursor on that pair,
+ * so rows sharing a millisecond are neither skipped nor repeated across a page
+ * boundary. One extra row is read to know whether there is an earlier page.
  */
-export async function listNotifications(
-  userId: string,
-  options: ListNotificationsOptions = {}
-): Promise<{ notifications: NotificationItem[]; unreadCount: number }> {
-  const limit = Math.min(Math.max(options.limit ?? 30, 1), 100);
-
+export async function listNotifications(userId: string, query: InboxQuery): Promise<NotificationsPage> {
   const where: Prisma.NotificationWhereInput = { userId };
-  if (options.unreadOnly) {
-    where.readAt = null;
-  }
-  if (options.before) {
-    where.createdAt = { lt: options.before };
+  if (query.unreadOnly) where.readAt = null;
+  if (query.before) {
+    where.OR = [
+      { createdAt: { lt: query.before.createdAt } },
+      { createdAt: query.before.createdAt, id: { lt: query.before.id } },
+    ];
   }
 
   const [rows, unreadCount] = await Promise.all([
     prisma.notification.findMany({
       where,
-      orderBy: { createdAt: "desc" },
-      take: limit,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: query.limit + 1,
     }),
-    prisma.notification.count({
-      where: { userId, readAt: null },
-    }),
+    prisma.notification.count({ where: { userId, readAt: null } }),
   ]);
 
+  const page = rows.slice(0, query.limit);
+  const last = page[page.length - 1];
   return {
-    notifications: rows.map((r) => ({
-      id: r.id,
-      userId: r.userId,
-      type: r.type,
-      title: r.title,
-      body: r.body,
-      priority: r.priority,
-      sourceType: r.sourceType,
-      sourceId: r.sourceId,
-      actionable: r.actionable,
-      actionData: (r.actionData as Record<string, unknown>) ?? {},
-      readAt: r.readAt ? r.readAt.toISOString() : null,
-      createdAt: r.createdAt.toISOString(),
-    })),
+    notifications: page.map(toClientNotification),
     unreadCount,
+    nextBefore: rows.length > query.limit && last ? encodeNotificationCursor(last) : null,
   };
 }
 
 /**
- * Marks a specific notification as read.
+ * Marks one notification read. `found` is false only when the id is not this
+ * account's; reading a row that is already read is a success that changed
+ * nothing, so a client racing its own second tap never sees an error.
  */
-export async function markNotificationRead(userId: string, notificationId: string): Promise<boolean> {
+export async function markNotificationRead(
+  userId: string,
+  notificationId: string
+): Promise<{ found: boolean; changed: boolean }> {
   const updated = await prisma.notification.updateMany({
     where: { id: notificationId, userId, readAt: null },
     data: { readAt: new Date() },
   });
-  return updated.count > 0;
+  if (updated.count > 0) return { found: true, changed: true };
+  const existing = await prisma.notification.findFirst({
+    where: { id: notificationId, userId },
+    select: { id: true },
+  });
+  return { found: existing !== null, changed: false };
 }
 
 /**
@@ -159,12 +155,37 @@ export async function markAllNotificationsRead(userId: string): Promise<number> 
 }
 
 /**
+ * Marks a Work run's unread "needs you" rows read: the approval was decided,
+ * or the run moved on to its next ask or its ending, so what they ask for is
+ * answered or moot. Keyed on `actionData.runId`, which every Work row carries.
+ */
+export async function markRunNotificationsRead(userId: string, runId: string, now = new Date()): Promise<number> {
+  const updated = await prisma.notification.updateMany({
+    where: { userId, readAt: null, actionable: true, actionData: { path: ["runId"], equals: runId } },
+    data: { readAt: now },
+  });
+  return updated.count;
+}
+
+/**
  * Gets the number of unread notifications for a user.
  */
 export async function getUnreadNotificationCount(userId: string): Promise<number> {
   return prisma.notification.count({
     where: { userId, readAt: null },
   });
+}
+
+/** The inbox dot: how many are unread, and whether any of them is pressing. */
+export async function countNotifications(userId: string): Promise<NotificationsCount> {
+  const [unreadCount, pressing] = await Promise.all([
+    getUnreadNotificationCount(userId),
+    prisma.notification.findFirst({
+      where: { userId, readAt: null, priority: { in: ["urgent", "high"] } },
+      select: { id: true },
+    }),
+  ]);
+  return { unreadCount, urgent: pressing !== null };
 }
 
 // ---------------------------------------------------------------------------
@@ -202,20 +223,7 @@ export interface NotifyUserInput {
    */
   collapseKey?: string | null;
   /** The push, or null for in-app only. Text here is what a lock screen shows. */
-  push: null | {
-    title: string;
-    subtitle?: string | null;
-    body: string;
-    /** Groups a conversation's notifications on the device ("agent-<id>", "work-<sessionId>"). */
-    threadId: string;
-    /** ≤64 bytes. A later push with the same id replaces this one on the device. */
-    collapseId?: string | null;
-    interruption: "passive" | "active" | "time-sensitive";
-    /** After this the push services stop trying (an approval that has expired). */
-    expiresAt?: Date | null;
-    /** String ids the apps route on: agentId, conversationId, sessionId, runId. */
-    data?: Record<string, string>;
-  };
+  push: NotifyPush | null;
 }
 
 export interface NotifyUserResult {
@@ -235,8 +243,67 @@ export async function notifyUser(input: NotifyUserInput): Promise<NotifyUserResu
   } catch (error) {
     console.error("[notify] in-app row failed", { type: input.type, error: error instanceof Error ? error.message : String(error) });
   }
-  // Push fan-out (APNs + Web Push) is added by the delivery layer below.
-  return { notificationId, pushed: 0 };
+  let pushed = 0;
+  if (input.push) {
+    try {
+      pushed = await pushEverywhere(input, input.push, notificationId);
+    } catch (error) {
+      console.error("[notify] push failed", { type: input.type, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { notificationId, pushed };
+}
+
+/**
+ * Hands the push to every phone, Mac and browser whose switch for the channel
+ * is on, and counts the ones a push service accepted. Apple and the browsers'
+ * push services are independent, so neither waits for the other and neither's
+ * failure costs the other its delivery.
+ */
+async function pushEverywhere(input: NotifyUserInput, push: NotifyPush, notificationId: string | null): Promise<number> {
+  if (!pushIsLive(push, new Date())) return 0;
+  const path = safeAppPath(input.path);
+
+  const apple = sendPushToUser(
+    input.userId,
+    buildNotifyApnsPayload({ notificationId, path, channel: input.channel, agentId: input.agent?.id ?? null, push }),
+    notifyApnsOptions(push),
+    { channel: input.channel }
+  ).then((results) => results.filter((result) => result.success && !result.simulated).length);
+
+  const text = webPushText(push);
+  // Through a `then` so a sender that throws before its first await still
+  // lands in `allSettled` rather than in the caller.
+  const browsers = Promise.resolve().then(() =>
+    sendWebPushToUser(
+      input.userId,
+      {
+        title: text.title,
+        body: text.body,
+        path,
+        tag: push.collapseId ?? notificationId ?? `${input.sourceType}:${input.sourceId}`,
+        notificationId,
+        // The push services stop holding it when the approval can no longer
+        // be given, the way APNs does with `apns-expiration`.
+        expiresAt: push.expiresAt ?? null,
+      },
+      input.channel
+    )
+  );
+
+  const settled = await Promise.allSettled([apple, browsers]);
+  let pushed = 0;
+  for (const outcome of settled) {
+    if (outcome.status === "fulfilled") {
+      pushed += outcome.value;
+    } else {
+      console.error("[notify] push failed", {
+        type: input.type,
+        error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+      });
+    }
+  }
+  return pushed;
 }
 
 async function writeInAppRow(input: NotifyUserInput): Promise<string> {

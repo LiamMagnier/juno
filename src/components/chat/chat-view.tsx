@@ -71,6 +71,7 @@ import { PLANS } from "@/lib/plans";
 import { cleanForSpeech, stripMemoryTags } from "@/lib/message-content";
 import { MAX_CHAT_CONNECTORS } from "@/lib/connector-intent";
 import { VOICE_ATTACHMENT_LIMIT } from "@/lib/voice-attachment-context";
+import { voicePhaseOf } from "@/lib/voice-phase";
 import { cn } from "@/lib/utils";
 import { serializeQuote, type ComposerQuote, type DocumentQuote } from "@/lib/quote-context";
 import { fileExtension } from "@/lib/documents/viewer-kind";
@@ -1433,8 +1434,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // the "working" signal for when the Stop button is NOT in view; while it is,
   // the button is the signal, and a coral sweep above it was one more.
   const showStreamSweep = chat.isBusy && !composerOnScreen;
-  // The face in an agent's thread: thinking while a reply streams, else what its task says.
-  const agentState = agent ? threadAgentState(agent, chat.isBusy, work.session) : null;
+  // The face in an agent's thread: listening while a call is open, thinking
+  // while a reply streams or the call composes one, else what its task says.
+  const agentState = agent
+    ? threadAgentState(agent, chat.isBusy, work.session, voiceOpen ? voicePhaseOf(realtimeVoice) : null)
+    : null;
   React.useEffect(() => {
     window.dispatchEvent(new CustomEvent("juno:streaming", { detail: showStreamSweep }));
     return () => {
@@ -1594,8 +1598,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       }));
     // What Juno remembers comes along — the same memory a typed turn in this
     // chat reads (this project's alone, in a project), and none in incognito.
-    void realtimeVoice.start(undefined, history, privateMode ? undefined : { memory: { projectId: activeProjectId } });
-  }, [activeProjectId, chat.isBusy, chat.messages, chat.pendingClarification, closeArtifact, privateMode, realtimeVoice, voiceSaveError]);
+    // So does the thread: in an agent's, the server makes the call that agent.
+    void realtimeVoice.start(
+      undefined,
+      history,
+      privateMode ? undefined : { memory: { projectId: activeProjectId }, conversationId: currentConversationId ?? null }
+    );
+  }, [activeProjectId, chat.isBusy, chat.messages, chat.pendingClarification, closeArtifact, currentConversationId, privateMode, realtimeVoice, voiceSaveError]);
 
   const closeVoice = React.useCallback(() => {
     if (voiceSavingRef.current) return;
@@ -2233,7 +2242,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           )}
         >
           {agent && !privateMode ? (
-            <AgentThreadHeader agent={agent} state={agentState ?? "idle"} taskTitle={work.session?.title ?? null} />
+            <AgentThreadHeader
+              agent={agent}
+              state={agentState ?? "idle"}
+              taskTitle={work.session?.title ?? null}
+              levelRef={voiceOpen ? realtimeVoice.levelRef : undefined}
+            />
           ) : null}
           {/* `handoff === "leaving"` holds the empty branch through its one exit
               beat after the first message lands — see the handoff block above. */}
@@ -2329,7 +2343,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   privateMode && "px-2 sm:px-4"
                 )}
               >
-                {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
+                {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} speakerName={agent?.name} />}
                 {voiceSaveNotice}
                 {composer}
               </div>
@@ -2390,7 +2404,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     ref={emptyComposerRef}
                     className="relative isolate w-full max-w-3xl"
                   >
-                    {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
+                    {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} speakerName={agent?.name} />}
                     {voiceSaveNotice}
                     {composer}
                     {/* Inside THIS wrapper, below the composer, on purpose. The

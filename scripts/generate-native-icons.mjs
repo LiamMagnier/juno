@@ -16,6 +16,14 @@
  * file exists to prevent. Lucide is ISC-licensed, which permits redistribution
  * inside the app bundle.
  *
+ * A mark Lucide has no honest stand-in for is drawn instead (`DRAWN`), from
+ * the numbers `juno-glyphs.tsx` draws the web's mark with. Agents is the first:
+ * `app-icons.ts` gives the destination the face every agent is drawn with, so
+ * it wears the same mark as the teammates it holds, and Lucide's `users` — two
+ * silhouettes — named a group of people rather than that face. The numbers are
+ * read out of the web file, not copied, so the two marks cannot drift apart
+ * without this script failing.
+ *
  * Output: one `.imageset` per destination containing a 24x24 SVG, registered
  * with `preserves-vector-representation` (so it stays crisp at any Dynamic Type
  * size) and `template-rendering-intent` (so SwiftUI tints it with the current
@@ -44,9 +52,9 @@ const lucideDir = join(root, "node_modules/lucide-react/dist/esm/icons");
  * still names its web source below rather than being chosen here: a glyph
  * invented for native is the drift this file exists to prevent.
  *
- * Every key must match a `JunoIcon` case in JunoBrand.swift, whose `assetName`
- * is `nav-<rawValue>` — a key with no case is a dead asset, and a case with no
- * key renders as empty space with no error.
+ * Every key, here and in `DRAWN`, must match a `JunoIcon` case in
+ * JunoBrand.swift, whose `assetName` is `nav-<rawValue>` — a key with no case
+ * is a dead asset, and a case with no key renders as empty space with no error.
  */
 const ICONS = {
   // These two had NOT mirrored app-icons.ts, and they were the two marks it
@@ -149,7 +157,7 @@ const ICONS = {
   image: "image",
   circleDot: "circle-dot",
   loader: "loader-circle",
-  agents: "users",
+  // `agents` is not here: it is drawn from the web's own geometry — see DRAWN.
   archive: "archive",
   download: "download",
   filter: "list-filter",
@@ -293,6 +301,67 @@ function toSVG(node) {
   return `${SVG_OPEN}\n${els}\n</svg>\n`;
 }
 
+/**
+ * Marks drawn here rather than read from Lucide: key -> a function returning
+ * the SVG. A key in both tables is a mistake, and the loop below refuses it.
+ */
+const DRAWN = { agents: agentsSVG };
+
+const glyphsFile = join(root, "src/components/ui/juno-glyphs.tsx");
+
+/**
+ * One `const NAME = { … };` object literal out of `juno-glyphs.tsx`, evaluated
+ * the way `readIconNode` evaluates Lucide's. Throws when it is missing or a
+ * field is not a number, so a rename on the web fails this script loudly
+ * instead of shipping a native mark drawn from nothing.
+ */
+function readGlyphConstant(name, fields) {
+  const src = readFileSync(glyphsFile, "utf8");
+  const match = src.match(new RegExp(`const ${name} = (\\{[^}]*\\});`));
+  if (!match) throw new Error(`no \`const ${name} = { … };\` in ${glyphsFile}`);
+  const value = new Function(`return ${match[1]}`)();
+  for (const field of fields) {
+    if (!Number.isFinite(value[field])) {
+      throw new Error(`${name}.${field} in ${glyphsFile} is not a number`);
+    }
+  }
+  return value;
+}
+
+/** A rounded rectangle as one closed path — `<rect rx>` spelled out. */
+function roundedRectPath(x, y, w, h, r) {
+  return (
+    `M${x + r},${y} H${x + w - r} A${r},${r} 0 0 1 ${x + w},${y + r} V${y + h - r} ` +
+    `A${r},${r} 0 0 1 ${x + w - r},${y + h} H${x + r} A${r},${r} 0 0 1 ${x},${y + h - r} ` +
+    `V${y + r} A${r},${r} 0 0 1 ${x + r},${y} Z`
+  );
+}
+
+/**
+ * The Agents face (`JunoAgentsGlyph`): the pebble outline, and the two eyes
+ * filled. On the web's 256 grid, so the numbers are the web's own; the stroke
+ * is Lucide's 2-on-24 scaled to that grid, which puts the mark at the same
+ * weight as every Lucide mark beside it in a native rail. Paths rather than
+ * `<rect rx>` and a literal black rather than `currentColor`, because the
+ * catalog renders these as template images and colours them itself.
+ */
+function agentsSVG() {
+  const face = readGlyphConstant("FACE", ["x", "y", "w", "h", "rx"]);
+  const eye = readGlyphConstant("EYE", ["w", "h", "rx", "y", "left", "right"]);
+  const stroke = ((2 * 256) / 24).toFixed(2);
+  const outline = roundedRectPath(face.x, face.y, face.w, face.h, face.rx);
+  const eyes = [eye.left, eye.right]
+    .map((x) => roundedRectPath(x, eye.y, eye.w, eye.h, eye.rx))
+    .join(" ");
+  return (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 256 256"' +
+    ` fill="none" stroke="#000000" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round">\n` +
+    `  <path d="${outline}"/>\n` +
+    `  <path fill="#000000" stroke="none" d="${eyes}"/>\n` +
+    "</svg>\n"
+  );
+}
+
 const contents = (svgName) =>
   JSON.stringify(
     {
@@ -306,6 +375,14 @@ const contents = (svgName) =>
     null,
     2,
   ) + "\n";
+
+for (const key of Object.keys(DRAWN)) {
+  if (key in ICONS) throw new Error(`'${key}' is both drawn and read from Lucide; keep one`);
+}
+const marks = [
+  ...Object.entries(ICONS).map(([key, lucideName]) => [key, () => toSVG(readIconNode(lucideName))]),
+  ...Object.entries(DRAWN),
+];
 
 let count = 0;
 for (const target of TARGETS) {
@@ -321,15 +398,16 @@ for (const target of TARGETS) {
     JSON.stringify({ info: { author: "xcode", version: 1 } }, null, 2) + "\n",
   );
 
-  for (const [destination, lucideName] of Object.entries(ICONS)) {
+  for (const [destination, draw] of marks) {
     const set = join(target, `nav-${destination}.imageset`);
     mkdirSync(set, { recursive: true });
     const svg = `nav-${destination}.svg`;
-    writeFileSync(join(set, svg), toSVG(readIconNode(lucideName)));
+    writeFileSync(join(set, svg), draw());
     writeFileSync(join(set, "Contents.json"), contents(svg));
     count += 1;
   }
 }
 
 console.log(`Generated ${count} navigation icons across ${TARGETS.length} asset catalogs.`);
-console.log(`Source: lucide-react (ISC), matched by meaning to the marks the web draws.`);
+console.log(`Source: lucide-react (ISC), matched by meaning to the marks the web draws;`);
+console.log(`drawn from juno-glyphs.tsx: ${Object.keys(DRAWN).join(", ")}.`);

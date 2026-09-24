@@ -19,6 +19,8 @@ import type { Agent } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { decryptField, encryptField } from "@/lib/field-crypto";
 import { DEFAULT_MODEL } from "@/lib/models";
+import { canUseModel } from "@/lib/plans";
+import { getUserPlan } from "@/lib/usage";
 import { normalizeAgentAvatar } from "@/lib/agents/avatar";
 import {
   AGENT_ROUTINE_CADENCE_LABEL,
@@ -27,6 +29,7 @@ import {
   MAX_AGENT_NOTES,
   agentApprovalMode,
   agentStateSentence,
+  agentTaskKeys,
   deriveAgentState,
   routineTrigger,
   type AgentEventKind,
@@ -48,7 +51,7 @@ import {
   type ClientAgentRoutine,
   type ClientAgentTask,
 } from "@/lib/agents/types";
-import { buildAgentPromptBlock } from "@/lib/agents/prompt";
+import { AGENT_PROMPT_TEAMMATES, buildAgentPromptBlock } from "@/lib/agents/prompt";
 
 export interface AgentActor {
   id: string;
@@ -340,6 +343,15 @@ export async function recordAgentEvent(input: {
     });
 }
 
+/** One line of a longer text, cut at a word where one is close. */
+function clipLine(value: string, max: number): string {
+  const text = value.replace(/\s+/g, " ").trim();
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,.;:]+$/, "")}…`;
+}
+
 const TASK_TONE: Record<string, ClientAgentActivity["tone"]> = {
   completed: "success",
   waiting_input: "attention",
@@ -368,16 +380,29 @@ const TASK_VERB: Record<string, string> = {
   timed_out: "Timed out on",
 };
 
+/** Answered, by a person: the decisions an approval line reports. */
+const DECIDED_APPROVALS = ["allowed", "allowed_always", "denied"];
+
+/** Longest approval summary a log line keeps. The run's own log has it whole. */
+const MAX_APPROVAL_LINE_CHARS = 160;
+
 /**
- * The log: the agent's own events and its tasks, merged, newest first.
+ * The log: the agent's own events, its tasks and the approvals its tasks were
+ * given, merged, newest first.
  *
  * A task contributes its CURRENT state at its last activity, not every
  * transition — the transitions are the run's own log, one press away in the
  * thread. What the agent's log answers is "what has it been doing", and one
  * line per task says that without drowning the goals and ideas between them.
+ *
+ * Approvals are the exception, one line per answer, because each is a
+ * decision the person made rather than a step the agent took, and "what did I
+ * let it do" is the question an agent's log exists to answer. Read from
+ * Work's own rows at the moment of reading, never copied into the agent's
+ * events, so the log cannot disagree with the run about what was allowed.
  */
 export async function listAgentActivity(userId: string, agentId: string, limit = 60): Promise<ClientAgentActivity[]> {
-  const [events, sessions] = await Promise.all([
+  const [events, sessions, approvals] = await Promise.all([
     prisma.agentEvent.findMany({
       where: { userId, agentId },
       orderBy: { createdAt: "desc" },
@@ -387,6 +412,17 @@ export async function listAgentActivity(userId: string, agentId: string, limit =
       where: { userId, agentId, deletedAt: null, status: { not: "draft" } },
       orderBy: { lastActivityAt: "desc" },
       select: TASK_SELECT,
+      take: limit,
+    }),
+    prisma.workApproval.findMany({
+      where: {
+        userId,
+        decision: { in: DECIDED_APPROVALS },
+        decidedAt: { not: null },
+        run: { userId, session: { userId, agentId, deletedAt: null } },
+      },
+      orderBy: { decidedAt: "desc" },
+      select: { id: true, summary: true, decision: true, decidedAt: true, run: { select: { sessionId: true } } },
       take: limit,
     }),
   ]);
@@ -400,6 +436,15 @@ export async function listAgentActivity(userId: string, agentId: string, limit =
       at: session.lastActivityAt.toISOString(),
       sessionId: session.id,
       tone: TASK_TONE[session.status] ?? "neutral",
+    })),
+    ...approvals.map((approval) => ({
+      id: `approval:${approval.id}`,
+      kind: "approval",
+      title: `${approval.decision === "denied" ? "Refused" : "Approved"}: ${clipLine(approval.summary, MAX_APPROVAL_LINE_CHARS)}`,
+      detail: null,
+      at: (approval.decidedAt ?? new Date(0)).toISOString(),
+      sessionId: approval.run.sessionId,
+      tone: "neutral" as const,
     })),
   ];
   items.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
@@ -477,6 +522,22 @@ async function linkedConnectorIds(userId: string, wanted: readonly string[]): Pr
   return wanted.filter((id) => have.has(id));
 }
 
+/**
+ * Whether the account's plan includes the model an agent is being set to.
+ *
+ * Asked when the agent is saved rather than discovered at its first task,
+ * where Work's plan gate would refuse it in a thread nobody is watching. The
+ * chat route still falls back quietly if a plan changes later
+ * (`agentTurnModel`); this is only about not accepting a choice that could
+ * never have worked.
+ */
+async function modelInPlan(userId: string, model: string | null | undefined): Promise<boolean> {
+  if (!model) return true;
+  return canUseModel(await getUserPlan(userId), model);
+}
+
+const MODEL_NOT_IN_PLAN = "Your plan does not include that model. Pick another one, or keep your default.";
+
 async function ownedProjectId(userId: string, projectId: string | null | undefined): Promise<string | null | undefined> {
   if (projectId === undefined) return undefined;
   if (projectId === null) return null;
@@ -495,6 +556,7 @@ export async function createAgentForUser(user: AgentActor, input: CreateAgentInp
   }
   const projectId = await ownedProjectId(user.id, input.projectId);
   if (input.projectId && projectId === undefined) return refusal(404, "project_not_found", "That project no longer exists.");
+  if (!(await modelInPlan(user.id, input.model))) return refusal(403, "plan_locked", MODEL_NOT_IN_PLAN);
   const connectorIds = await linkedConnectorIds(user.id, input.connectorIds);
 
   const agent = await prisma.agent.create({
@@ -586,6 +648,10 @@ export async function updateAgentForUser(
 
   const projectId = await ownedProjectId(user.id, patch.projectId);
   if (patch.projectId && projectId === undefined) return refusal(404, "project_not_found", "That project no longer exists.");
+  // Only a new choice is checked: a plan that changed since the model was set
+  // is the chat route's to absorb, and must not stop an unrelated edit.
+  const modelChanged = patch.model !== undefined && patch.model !== agent.model;
+  if (modelChanged && !(await modelInPlan(user.id, patch.model))) return refusal(403, "plan_locked", MODEL_NOT_IN_PLAN);
   const connectorIds = patch.connectorIds ? await linkedConnectorIds(user.id, patch.connectorIds) : undefined;
 
   const updated = await prisma.agent.update({
@@ -608,13 +674,23 @@ export async function updateAgentForUser(
   });
 
   // The thread follows the agent it belongs to: its title is the agent's name,
-  // and the apps switched on in it are the apps the agent may use.
-  if (agent.conversationId && (patch.name !== undefined || connectorIds !== undefined)) {
+  // the apps switched on in it are the apps the agent may use, and its picker
+  // starts on the agent's model, so the next message is answered by the model
+  // the person just chose here unless they pick another in the thread. Back to
+  // the default, it starts where a new chat would, as when the thread was made
+  // (`ensureAgentThread`).
+  if (agent.conversationId && (patch.name !== undefined || connectorIds !== undefined || modelChanged)) {
+    const threadModel = modelChanged
+      ? (patch.model ??
+        (await prisma.settings.findFirst({ where: { userId: user.id }, select: { defaultModel: true } }))?.defaultModel ??
+        DEFAULT_MODEL)
+      : undefined;
     await prisma.conversation.updateMany({
       where: { id: agent.conversationId, userId: user.id },
       data: {
         ...(patch.name !== undefined ? { title: patch.name, titleSource: "manual" } : {}),
         ...(connectorIds !== undefined ? { activeConnectors: connectorIds } : {}),
+        ...(threadModel !== undefined ? { model: threadModel } : {}),
       },
     });
   }
@@ -672,7 +748,8 @@ export async function retireAgentForUser(user: AgentActor, agentId: string): Pro
 
 export type StartAgentTaskOutcome =
   | { kind: "started"; sessionId: string; conversationId: string; replay: boolean }
-  | { kind: "confirm"; estimatedCostMicroUsd: number }
+  /** Nothing ran yet. `sessionId` is the draft that waits for the answer, for a caller who has to put it away. */
+  | { kind: "confirm"; sessionId: string; estimatedCostMicroUsd: number }
   | { kind: "refused"; status: number; body: Record<string, unknown> };
 
 /**
@@ -685,11 +762,16 @@ export type StartAgentTaskOutcome =
  * returns `confirm` with the estimate, for the page to ask the person who is
  * standing right there. `confirmExpensive` is only ever sent after they said
  * yes.
+ *
+ * `askFirst` returns `confirm` whatever the estimate, for a caller that must
+ * put every start in front of a person (a handoff from another agent's thread,
+ * src/lib/chat/handoff-tool.ts). The confirmation lands on the same key, so
+ * answering it starts the draft that was asked about rather than a second one.
  */
 export async function startAgentTask(
   user: AgentActor,
   agent: Agent,
-  input: { title: string; goal: string; idempotencyKey: string; confirmExpensive?: boolean }
+  input: { title: string; goal: string; idempotencyKey: string; confirmExpensive?: boolean; askFirst?: boolean }
 ): Promise<StartAgentTaskOutcome> {
   if (agent.status !== "active") {
     return {
@@ -701,6 +783,7 @@ export async function startAgentTask(
   const [dispatch, protocol] = await Promise.all([import("@/lib/work/dispatch"), import("@/app/api/work/protocol")]);
   const conversationId = await ensureAgentThread(user.id, agent);
   const connectorIds = await linkedConnectorIds(user.id, agent.connectorIds);
+  const keys = agentTaskKeys(agent.id, input.idempotencyKey);
 
   const body = protocol.createSessionSchema.safeParse({
     goal: input.goal,
@@ -712,7 +795,7 @@ export async function startAgentTask(
     ...(agent.reasoningEffort ? { reasoningEffort: agent.reasoningEffort } : {}),
     permissionPolicy: agentApprovalMode(agent.approvalMode),
     connectorIds,
-    idempotencyKey: `agent-task:${agent.id}:${input.idempotencyKey}`,
+    idempotencyKey: keys.session,
   });
   if (!body.success) {
     return { kind: "refused", status: 400, body: { error: "invalid_input", message: "That task could not be described." } };
@@ -728,7 +811,7 @@ export async function startAgentTask(
   const runBody = protocol.startRunSchema.parse({
     origin: "manual",
     requestedTarget: "automatic",
-    idempotencyKey: `agent-run:${agent.id}:${input.idempotencyKey}`,
+    idempotencyKey: keys.run,
     ...(input.confirmExpensive ? { confirmExpensive: true } : {}),
   });
   const preflight = await dispatch.startWorkRunForUser(user, session, runBody, { preflightOnly: true });
@@ -739,10 +822,10 @@ export async function startAgentTask(
     await discardDraft(user.id, session.id);
     return { kind: "refused", status: preflight.status, body: preflight.body };
   }
-  if (preflight.preflight.requiresConfirmation && !input.confirmExpensive) {
+  if ((preflight.preflight.requiresConfirmation || input.askFirst) && !input.confirmExpensive) {
     // The draft is kept: the confirmation lands on the same idempotency key
     // and so on this session, rather than making a second one.
-    return { kind: "confirm", estimatedCostMicroUsd: preflight.preflight.estimatedCostMicroUsd };
+    return { kind: "confirm", sessionId: session.id, estimatedCostMicroUsd: preflight.preflight.estimatedCostMicroUsd };
   }
   const dispatched = await dispatch.startWorkRunForUser(user, session, runBody);
   if (!dispatched.run) {
@@ -763,6 +846,14 @@ async function discardDraft(userId: string, sessionId: string): Promise<void> {
   await prisma.workSession
     .updateMany({ where: { id: sessionId, userId, status: "draft", deletedAt: null }, data: { deletedAt: new Date() } })
     .catch(() => undefined);
+}
+
+/**
+ * Puts away the draft a `confirm` left waiting, when the answer was no. Only
+ * ever a draft: a session that has a run is never touched.
+ */
+export async function discardAgentTaskDraft(userId: string, sessionId: string): Promise<void> {
+  await discardDraft(userId, sessionId);
 }
 
 // ---------------------------------------------------------------------------
@@ -903,12 +994,17 @@ export async function createAgentRoutine(
  *
  * Null for a retired agent: its thread is kept and reads as an ordinary chat,
  * so it answers as Juno rather than as someone who no longer works here.
+ *
+ * `handoff` says the turn may carry `hand_off_to_teammate`; the answer's
+ * `handoff` says whether it does, which also needs a teammate to hand to. The
+ * route builds the tool from the answer, so the prompt and the tool can never
+ * disagree about whether it exists.
  */
 export async function agentChatContext(
   user: AgentActor,
   agentId: string,
-  options: { taskHandoff: boolean }
-): Promise<{ agent: Agent; block: string } | null> {
+  options: { taskHandoff: boolean; handoff?: boolean }
+): Promise<{ agent: Agent; block: string; handoff: boolean } | null> {
   const agent = await findAgent(user.id, agentId);
   if (!agent) return null;
   const [goals, notes, teammates] = await Promise.all([
@@ -926,15 +1022,19 @@ export async function agentChatContext(
         select: { content: true, source: true },
       })
       .then((rows) => rows.map((row) => ({ ...row, content: decryptField(row.content) }))),
+    // Paused teammates are left out: nothing can be handed to them, and a
+    // suggestion to ask one is a suggestion to ask somebody who is asleep.
     prisma.agent.findMany({
-      where: { userId: user.id, deletedAt: null, id: { not: agentId } },
-      orderBy: { sortOrder: "asc" },
-      take: 8,
+      where: { userId: user.id, deletedAt: null, status: "active", id: { not: agentId } },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      take: AGENT_PROMPT_TEAMMATES,
       select: { name: true, role: true },
     }),
   ]);
+  const handoff = options.handoff === true && teammates.length > 0;
   return {
     agent,
+    handoff,
     block: buildAgentPromptBlock(
       {
         name: agent.name,
@@ -946,6 +1046,7 @@ export async function agentChatContext(
         notes,
         teammates,
         taskHandoff: options.taskHandoff,
+        handoff,
       },
       user.name
     ),

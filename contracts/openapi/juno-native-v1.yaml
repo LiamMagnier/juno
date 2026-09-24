@@ -1026,6 +1026,125 @@ paths:
         '409': { $ref: '#/components/responses/GeneralRouteError' }
         '429': { $ref: '#/components/responses/GeneralRouteError' }
   # ---------------------------------------------------------------------------
+  # Push and the notifications inbox. /devices/apns is versioned; the inbox
+  # lives under /api like Agents and Work and takes the same bearer. A push
+  # names where it opens with a relative `path` (src/lib/notify/paths.ts) and
+  # carries no decision: a notification only ever navigates.
+  # ---------------------------------------------------------------------------
+  /devices/apns:
+    post:
+      operationId: registerNativeApnsDevice
+      summary: Register this device's APNs token, or change its two switches
+      description: >-
+        Upserts on the token, so re-POSTing is both how a launch refreshes the
+        token and how a switch changes; a switch left out keeps the device's
+        current choice. The token is tied to the calling device session and
+        stops receiving pushes when that session signs out or is revoked, so a
+        client does not need to DELETE on sign-out. `bundleId` is the APNs
+        topic the server signs for and must be one of Juno's own apps.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ApnsDeviceRegistrationRequest' } } }
+      responses:
+        '200':
+          description: The token as the server now holds it.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ApnsDeviceRegistrationResponse' } } }
+        '400':
+          description: Not an APNs token, not a Juno app, or a malformed body.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429':
+          description: Too many registrations for this account this hour.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    delete:
+      operationId: unregisterNativeApnsDevice
+      summary: Stop pushes to a token for this account
+      parameters:
+        - { in: query, name: token, required: true, schema: { type: string, minLength: 10, maxLength: 512 } }
+      responses:
+        '200':
+          description: Deactivated, or already inactive.
+          content:
+            application/json:
+              schema: { type: object, required: [unregistered], properties: { unregistered: { const: true } } }
+        '400':
+          description: No token given.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /notifications:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeNotifications
+      summary: The inbox, newest first, a page at a time
+      description: >-
+        `before` is the opaque `nextBefore` of the previous page; clients pass
+        it back and never build one. A bad `limit` or cursor answers 400.
+      parameters:
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { in: query, name: before, schema: { type: string, maxLength: 160 } }
+        - { in: query, name: unread, schema: { type: string, enum: ['true'] } }
+      responses:
+        '200':
+          description: One page of notifications, and how many are unread in all.
+          content: { application/json: { schema: { $ref: '#/components/schemas/NotificationsPage' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: markAllNativeNotificationsRead
+      summary: Mark every notification read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [action], properties: { action: { const: mark_all_read } } }
+      responses:
+        '200':
+          description: How many were unread.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, markedCount]
+                properties:
+                  ok: { const: true }
+                  markedCount: { type: integer, minimum: 0 }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /notifications/count:
+    get:
+      servers: [{ url: /api }]
+      operationId: countNativeNotifications
+      summary: The unread count, and whether any unread one is pressing
+      responses:
+        '200':
+          description: Cheap enough to poll.
+          content: { application/json: { schema: { $ref: '#/components/schemas/NotificationsCount' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /notifications/{notificationId}:
+    parameters:
+      - { in: path, name: notificationId, required: true, schema: { type: string } }
+    patch:
+      servers: [{ url: /api }]
+      operationId: markNativeNotificationRead
+      summary: Mark one notification read
+      description: >-
+        Idempotent: a row already read answers `changed: false`. A client marks
+        a notification read when its push is opened.
+      responses:
+        '200':
+          description: Read.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, changed]
+                properties:
+                  ok: { const: true }
+                  changed: { type: boolean }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  # ---------------------------------------------------------------------------
   # Juno Work
   #
   # These are the routes the shipped Swift clients already call, and only those.
@@ -3368,3 +3487,74 @@ components:
         sessionId: { type: string }
         conversationId: { type: string }
         replay: { type: boolean }
+    # -------------------------------------------------------------------------
+    # Push and the inbox (src/lib/notify/types.ts). A push's own payload is not
+    # an HTTP body and is not described here: beside `aps` it carries flat
+    # string keys — `notificationId`, `path`, `kind` (work | agent) and, when
+    # known, `agentId`, `conversationId`, `sessionId`, `runId` — under the
+    # category JUNO_NEEDS_YOU or JUNO_UPDATE.
+    # -------------------------------------------------------------------------
+    ApnsDeviceRegistrationRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token: { type: string, minLength: 10, maxLength: 512, description: 'The APNs device token as hex; spaces and angle brackets are stripped.' }
+        platform: { type: string, enum: [ios, macos], default: ios }
+        bundleId: { type: string, pattern: '^com\.liammagnier\.[A-Za-z0-9][A-Za-z0-9.-]{0,120}$', description: "The app's own bundle id, which is the APNs topic." }
+        environment: { type: string, enum: [production, sandbox], default: production }
+        notifyNeedsYou: { type: boolean, description: 'Approvals and questions a task is waiting on. Omitted keeps the current choice.' }
+        notifyUpdates: { type: boolean, description: 'Everything else. Omitted keeps the current choice.' }
+    ApnsDeviceRegistrationResponse:
+      type: object
+      required: [registered, devicePushToken]
+      properties:
+        registered: { const: true }
+        devicePushToken:
+          type: object
+          required: [id, platform, environment, active, notifyNeedsYou, notifyUpdates, updatedAt]
+          properties:
+            id: { type: string }
+            platform: { type: string, enum: [ios, macos] }
+            environment: { type: string, enum: [production, sandbox] }
+            active: { type: boolean }
+            notifyNeedsYou: { type: boolean }
+            notifyUpdates: { type: boolean }
+            updatedAt: { type: string, format: date-time }
+    ClientNotification:
+      type: object
+      required: [id, type, title, body, priority, sourceType, sourceId, actionable, href, agent, readAt, createdAt]
+      properties:
+        id: { type: string }
+        type: { type: string }
+        title: { type: string }
+        body: { type: string }
+        priority: { type: string, enum: [urgent, high, normal, low] }
+        sourceType: { type: [string, 'null'] }
+        sourceId: { type: [string, 'null'] }
+        actionable: { type: boolean }
+        href: { type: [string, 'null'], description: 'The relative in-app path it opens, e.g. /agents/{id}, /chat/{id} or /work/{id}.' }
+        agent:
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [id, name, avatar]
+              properties:
+                id: { type: string }
+                name: { type: string }
+                avatar: { $ref: '#/components/schemas/AgentFace' }
+        readAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+    NotificationsPage:
+      type: object
+      required: [notifications, unreadCount, nextBefore]
+      properties:
+        notifications: { type: array, items: { $ref: '#/components/schemas/ClientNotification' } }
+        unreadCount: { type: integer, minimum: 0 }
+        nextBefore: { type: [string, 'null'], description: Pass back as `before` for the page before; null at the end. }
+    NotificationsCount:
+      type: object
+      required: [unreadCount, urgent]
+      properties:
+        unreadCount: { type: integer, minimum: 0 }
+        urgent: { type: boolean, description: Any unread notification is urgent or high. }

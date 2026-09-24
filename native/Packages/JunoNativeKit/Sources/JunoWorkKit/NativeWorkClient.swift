@@ -812,6 +812,31 @@ public struct NativeWorkClient: Sendable {
         }
     }
 
+    /// Where a session stands right now — its run, its log and its pending
+    /// approvals — in one read, and then the stream is let go.
+    ///
+    /// For a surface that shows a run without following it, such as an
+    /// agent's Now tab. ``session(id:for:)`` cannot serve that: its route sends
+    /// no log, so a question a run stopped to ask is invisible to it. The
+    /// stream's first frame is the snapshot every follower starts from, so a
+    /// question or an approval read here is the one the task's thread shows.
+    ///
+    /// The snapshot carries the run's first page of events; a run longer than
+    /// that is read to its end by following it, which this does not do. Nil
+    /// when the stream closed before saying anything.
+    public func snapshot(sessionID: String, for accountID: AccountID) async throws -> WorkStreamUpdate? {
+        let frames = try await streamEvents(sessionID: sessionID, afterSeq: 0, for: accountID)
+        // Returning from inside the loop drops the iterator, which cancels the
+        // relay task and closes the connection.
+        for try await frame in frames {
+            switch frame {
+            case .snapshot(let update), .events(let update), .done(let update):
+                return update
+            }
+        }
+        return nil
+    }
+
     // MARK: - Transport
 
 

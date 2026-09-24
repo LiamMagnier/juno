@@ -19,6 +19,7 @@ import {
   type BackgroundProviderMode,
 } from "@/lib/background-provider-policy";
 import { normalizeSensitiveTopics } from "@/lib/memory-sensitive";
+import { webPushPublicKey } from "@/lib/notify/web-push";
 import type { AppBootstrap, ClientSettings } from "@/types/app";
 import type { SessionUser } from "@/lib/session";
 
@@ -100,13 +101,16 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     capDisabled: settings?.spendCapDisabled ?? false,
     eurPerUsd: eurPerUsd(),
   });
-  const [budget, windows] = await Promise.all([
+  const [budget, windows, pushPublicKey] = await Promise.all([
     // `reap: false` — the bootstrap is a READ that paints two meters, and the
     // reservation sweep it used to trigger is a findMany plus a serial loop of
     // write transactions on every single page render. The sweep stays on the
     // paths that are about to spend; the argument is on the option itself.
     checkBudget(user.id, quota.plan, period, effective, { reap: false }),
     getUsageWindows(user.id, effective.budgetMicroUsd, period),
+    // Cached per process after the first call and never throws: a VAPID key
+    // that cannot be had turns browser push off, not the page.
+    webPushPublicKey(),
   ]);
 
   const clientSettings: ClientSettings = {
@@ -191,6 +195,8 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
       webSearch: configuredProviders().some(providerSupportsWebSearch),
       deepResearch: isWebSearchConfigured(),
       email: isEmailEnabled(),
+      webPush: Boolean(pushPublicKey),
+      webPushPublicKey: pushPublicKey,
       providers: configuredProviders(),
       isOwner: isOwnerEmail(user.email),
     },

@@ -1,5 +1,7 @@
 import AppIntents
 import Foundation
+import JunoCore
+import JunoSync
 import Observation
 
 /// What the system can ask the app to do: from Siri, Shortcuts, Spotlight,
@@ -22,6 +24,10 @@ final class JunoMobileLaunchRequests {
     case code
     case ask(String)
     case openConversation(String)
+    /// An agent's page, from a push or a link.
+    case openAgent(String)
+    /// A Work task's thread, from a push or a link.
+    case openWorkSession(String)
     case openRemoteSession(deviceID: String, sessionID: String)
     case respondToRemoteApproval(deviceID: String, sessionID: String, requestID: String, approved: Bool)
   }
@@ -46,18 +52,54 @@ final class JunoMobileLaunchRequests {
     }
   }
 
-  /// A tapped Code notification.
-  func handle(remoteDeviceID deviceID: String?, sessionID: String?) {
-    guard let deviceID, let sessionID else { return }
-    pending = .openRemoteSession(deviceID: deviceID, sessionID: sessionID)
+  /// A tapped notification, its payload already narrowed to strings.
+  ///
+  /// Code's local notifications keep their own keys and are checked first. A
+  /// server push names its destination with a path or ids
+  /// (``JunoNotificationRoute``). Opening one only ever navigates — no payload
+  /// can answer an approval — and the notification is marked read so the web
+  /// inbox stops offering it.
+  func handle(notification info: [String: String]) {
+    if let deviceID = info["deviceID"], let sessionID = info["sessionID"] {
+      pending = .openRemoteSession(deviceID: deviceID, sessionID: sessionID)
+      return
+    }
+    if let notificationID = info["notificationId"] {
+      NativePushRegistrar.shared.markOpened(notificationID: notificationID)
+    }
+    guard let route = JunoNotificationRoute(userInfo: info) else { return }
+    pending = Self.request(for: route)
+  }
+
+  /// Keeps the string values of a notification's `userInfo` and drops the
+  /// rest (`aps` is a dictionary). Nonisolated because it runs in the
+  /// notification center's callback, before the hop to the main actor that
+  /// `[AnyHashable: Any]` could not make.
+  nonisolated static func stringValues(of userInfo: [AnyHashable: Any]) -> [String: String] {
+    var values: [String: String] = [:]
+    for (key, value) in userInfo {
+      guard let key = key as? String, let value = value as? String else { continue }
+      values[key] = value
+    }
+    return values
+  }
+
+  static func request(for route: JunoNotificationRoute) -> Request {
+    switch route {
+    case .agent(let id): .openAgent(id)
+    case .conversation(let id): .openConversation(id)
+    case .workSession(let id): .openWorkSession(id)
+    }
   }
 
   /// Parses a widget or Live Activity deep link back into a launch request.
   ///
-  /// The routes are the exact, explicit set ``JunoMobileWidgetRoute`` builds.
-  /// Parsing nothing else — including the OAuth callback that shares the
-  /// scheme — keeps a malicious link from creating a Code command or deciding
-  /// an approval that was never shown.
+  /// The routes are the exact, explicit set ``JunoMobileWidgetRoute`` builds,
+  /// plus the three pages a notification opens — an agent, a chat, a Work
+  /// task — which only navigate. Parsing nothing else — including the OAuth
+  /// callback that shares the scheme — keeps a malicious link from creating a
+  /// Code command or deciding an approval that was never shown. No link ever
+  /// decides a Work approval: that is a card the person reads first.
   static func request(for url: URL) -> Request? {
     guard url.scheme == JunoMobileWidgetRoute.scheme, url.host == JunoMobileWidgetRoute.host
     else { return nil }
@@ -80,8 +122,14 @@ final class JunoMobileLaunchRequests {
       // The session route cannot be a case: an array literal in pattern
       // position is an expression pattern, and `let` bindings cannot ride
       // inside one.
-      guard path.count == 4, path[0] == "code", path[1] == "session" else { return nil }
-      return .openRemoteSession(deviceID: path[2], sessionID: path[3])
+      if path.count == 4, path[0] == "code", path[1] == "session" {
+        return .openRemoteSession(deviceID: path[2], sessionID: path[3])
+      }
+      // `agents/<id>`, `chat/<id>` and `work/<id>`: the notification paths,
+      // through the same parser a push's path goes through.
+      guard path.count == 2, let route = JunoNotificationRoute(path: "/" + path.joined(separator: "/"))
+      else { return nil }
+      return request(for: route)
     }
   }
 }

@@ -79,7 +79,8 @@ test("memory is asked for explicitly, and a malformed project asks for none", ()
 
 test("the token carries a memory grant only after the project is shown to be usable", () => {
   const route = src("src/app/api/voice/relay-token/route.ts");
-  assert.match(route, /parseVoiceMemoryRequest\(new URL\(req\.url\)\.searchParams\)/);
+  assert.match(route, /const params = new URL\(req\.url\)\.searchParams;/);
+  assert.match(route, /parseVoiceMemoryRequest\(params\)/);
   assert.match(route, /checkProjectAccess\(user\.id, memory\.projectId, "VIEWER"\)\)\.allowed\) \{[\s\S]{0,300}memory = null;/);
   assert.match(route, /\.\.\.\(memory \? \{ mem: 1, \.\.\.\(memory\.projectId \? \{ pid: memory\.projectId \} : \{\}\) \} : \{\}\)/);
 });
@@ -97,9 +98,11 @@ test("the memory route answers only the relay, only for memory, under every chat
 
 test("a chat asks for memory for its calls — its project's — and never in incognito", () => {
   const chat = src("src/components/chat/chat-view.tsx");
+  // The thread rides beside memory (tests/voice-persona.test.ts), under the
+  // same incognito rule: a private chat asks for neither.
   assert.match(
     chat,
-    /realtimeVoice\.start\(undefined, history, privateMode \? undefined : \{ memory: \{ projectId: activeProjectId \} \}\)/
+    /realtimeVoice\.start\(\s*undefined,\s*history,\s*privateMode \? undefined : \{ memory: \{ projectId: activeProjectId \}, conversationId: currentConversationId \?\? null \}\s*\)/
   );
   const hook = src("src/hooks/use-realtime-voice.ts");
   assert.match(hook, /if \(!isReconnect\) memoryRef\.current = opts\?\.memory \?\? null;/);
@@ -134,9 +137,11 @@ test("the relay fetches memory server to server, under a memory-scoped token, on
   const session = src("relay/src/session.ts");
   assert.match(session, /\/api\/voice\/memory`/);
   assert.match(session, /mintRelayCallbackToken\(userId, 60, "juno\.voice\.memory"/);
-  assert.match(session, /\{ instructions: voiceInstructions\(this\.memory \?\? null\), transcript: this\.transcript\.slice\(-30\) \}/);
+  // Memory is folded into every connect's instructions, beside the persona
+  // when the call is an agent's (tests/voice-persona.test.ts).
+  assert.match(session, /instructions: voiceInstructions\(this\.memory \?\? null, this\.persona\?\.instructions \?\? null\),\s+transcript: this\.transcript\.slice\(-30\),/);
   assert.match(session, /if \(this\.memory !== undefined\) return;/);
   // A memory fetch that fails is a call without memory, never a failed call.
   assert.match(session, /this\.memory = await fetchMemory\(this\.userId, grant\)\.catch\(\(\) => null\);/);
-  assert.match(src("relay/src/server.ts"), /new RelaySession\(ws, userId, \{ memory: grant\.memory \}\)/);
+  assert.match(src("relay/src/server.ts"), /new RelaySession\(ws, userId, \{ memory: grant\.memory, agentId: grant\.agentId \?\? null \}\)/);
 });

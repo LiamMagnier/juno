@@ -154,7 +154,12 @@ export class GptLiveSession implements VoiceProviderSession {
         instructions: seed.instructions,
         audio: {
           format: { type: "audio/pcm", rate: 24000 },
-          output: { voice: seed.voice || "marin" },
+          // Always its own default. The only voice a seed carries is an
+          // agent's (AGENT_VOICES in registry.ts), and those are Realtime and
+          // Gemini names this protocol is not vetted against: a refusal here
+          // would drop the call onto the Realtime fallback (openai-voice.ts)
+          // under a notice that is not true.
+          output: { voice: "marin" },
         },
         delegation: {
           type: "responses",

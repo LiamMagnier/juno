@@ -1,39 +1,62 @@
 import { z } from "zod";
 import { apiV1Error, apiV1Json, ApiV1Error } from "@/lib/api-v1";
 import { authenticateNativeBearer } from "@/lib/native-auth";
+import { rateLimit } from "@/lib/rate-limit";
 import { getCurrentUser } from "@/lib/session";
 import {
+  cleanDeviceToken,
   registerDevicePushToken,
   deactivateDevicePushToken,
 } from "@/lib/apns";
 
 export const runtime = "nodejs";
 
+/**
+ * Only Juno's own apps. The bundle id is the APNs topic the server signs
+ * pushes for, so a registration naming any other app is either a mistake or
+ * an attempt to borrow this deployment's push key for it.
+ */
+const BUNDLE_ID = /^com\.liammagnier\.[A-Za-z0-9][A-Za-z0-9.-]{0,120}$/;
+
+/** An APNs device token: hex, 32 bytes today, and Apple says not to rely on the length. */
+const DEVICE_TOKEN = /^[0-9a-f]{32,400}$/;
+
+/** Registrations per account per hour: a launch, a sign-in and a few switch changes, with room. */
+const REGISTRATIONS_PER_HOUR = 30;
+
 const registerTokenSchema = z.object({
-  token: z.string().min(10, "A valid device push token is required"),
+  token: z.string().min(10, "A valid device push token is required").max(512),
   platform: z.enum(["ios", "macos"]).default("ios"),
-  bundleId: z.string().optional(),
+  bundleId: z.string().trim().regex(BUNDLE_ID, "This is not a Juno app.").optional(),
   environment: z.enum(["production", "sandbox"]).default("production"),
+  // Omitted keeps the device's current choice, so re-registering on launch
+  // never turns a switch back on.
+  notifyNeedsYou: z.boolean().optional(),
+  notifyUpdates: z.boolean().optional(),
 });
 
 const unregisterTokenSchema = z.object({
   token: z.string().min(10, "A valid device push token is required"),
 });
 
-async function resolveAuthUser(request: Request): Promise<{ id: string }> {
+/**
+ * Who is asking, and from which native sign-in.
+ *
+ * A presented bearer is authoritative, the same rule `getCurrentUser` keeps:
+ * an invalid one fails rather than falling back to a browser cookie that
+ * happens to ride on the same request. The device session is what lets a sign
+ * out or a revocation stop this token's pushes later (src/lib/native-auth.ts).
+ */
+async function resolveAuthUser(request: Request): Promise<{ id: string; deviceSessionId: string | null }> {
   const authHeader = request.headers.get("authorization");
   if (authHeader) {
-    try {
-      const native = await authenticateNativeBearer(authHeader);
-      return { id: native.user.id };
-    } catch {
-      // Fall through to session check
-    }
+    const native = await authenticateNativeBearer(authHeader);
+    return { id: native.user.id, deviceSessionId: native.deviceSession.id };
   }
 
   const sessionUser = await getCurrentUser();
   if (sessionUser?.id) {
-    return { id: sessionUser.id };
+    return { id: sessionUser.id, deviceSessionId: null };
   }
 
   throw new ApiV1Error("unauthenticated", 401, "Sign in to register APNs push tokens.");
@@ -41,20 +64,33 @@ async function resolveAuthUser(request: Request): Promise<{ id: string }> {
 
 /**
  * POST /api/v1/devices/apns
- * Registers an Apple Push Notification service (APNs) device token for the user.
+ * Registers an Apple Push Notification service (APNs) device token for the
+ * user, or updates its switches: re-POST with `notifyNeedsYou` / `notifyUpdates`.
  */
 export async function POST(request: Request) {
   try {
     const user = await resolveAuthUser(request);
-    const body = await request.json();
+    const limit = await rateLimit({ key: `apns-register:${user.id}`, limit: REGISTRATIONS_PER_HOUR, windowSec: 3600 });
+    if (!limit.success) {
+      throw new ApiV1Error("rate_limited", 429, "Too many device registrations. Try again later.", true);
+    }
+
+    const body = await request.json().catch(() => null);
     const data = registerTokenSchema.parse(body);
+    const token = cleanDeviceToken(data.token);
+    if (!DEVICE_TOKEN.test(token)) {
+      throw new ApiV1Error("invalid_request", 400, "That is not an APNs device token.");
+    }
 
     const record = await registerDevicePushToken({
       userId: user.id,
-      token: data.token,
+      token,
       platform: data.platform,
-      bundleId: data.bundleId,
+      bundleId: data.bundleId ?? null,
       environment: data.environment,
+      deviceSessionId: user.deviceSessionId,
+      notifyNeedsYou: data.notifyNeedsYou,
+      notifyUpdates: data.notifyUpdates,
     });
 
     return apiV1Json({
@@ -64,6 +100,8 @@ export async function POST(request: Request) {
         platform: record.platform,
         environment: record.environment,
         active: record.active,
+        notifyNeedsYou: record.notifyNeedsYou,
+        notifyUpdates: record.notifyUpdates,
         updatedAt: record.updatedAt.toISOString(),
       },
     });
