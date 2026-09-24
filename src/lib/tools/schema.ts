@@ -207,22 +207,34 @@ const GEMINI_FORMATS = new Set(["date-time", "date", "time", "int32", "int64", "
 const MAX_REF_DEPTH = 8;
 /** Nesting bound for the walk itself, so a hostile schema cannot exhaust the stack. */
 const MAX_NESTING = 32;
+/**
+ * How many nodes `$ref` expansion may emit across the WHOLE schema. The depth
+ * bound alone does not bound a DAG of shared definitions, which grows as
+ * fan-out^depth: eight levels of eight properties each, all pointing at the
+ * next level, turn 2 KB of schema into ~480 MB and seconds of synchronous CPU
+ * on every Gemini request that carries the connector. Past this budget a
+ * `$ref` is no longer followed, so the output stays linear in the input.
+ */
+const MAX_EXPANDED_NODES = 2_000;
 
 interface SanitizeScope {
   root: Record<string, unknown>;
   /** `$ref` targets being expanded on the current path: a repeat is a cycle. */
   expanding: readonly string[];
   depth: number;
+  /** Shared by the whole walk: nodes emitted inside `$ref` expansions so far. */
+  budget: { expanded: number };
 }
 
 /**
  * A connector's input schema, reduced to what Gemini's `parametersJsonSchema`
  * documents (SPEC §5.3 item 2): `$schema`, `$id` and `$comment` stripped;
  * `const` → a one-value `enum`; `oneOf` → `anyOf`; local `$ref`s into `$defs` or
- * `definitions` inlined (a chain deeper than 8, or a cycle, becomes `{}`);
- * `allOf` merged into its parent; every other keyword outside the subset
- * dropped. `required` keeps only names that are properties. The root is always
- * an object schema.
+ * `definitions` inlined (a chain deeper than 8, or a cycle, becomes `{}`; once
+ * expansion has emitted 2,000 nodes, a further `$ref` keeps only its siblings,
+ * such as its description); `allOf` merged into its parent; every other keyword
+ * outside the subset dropped. `required` keeps only names that are properties.
+ * The root is always an object schema.
  *
  * Never throws and never mutates its input: a schema is third-party data, and a
  * tool that cannot be described precisely is still better offered loosely than
@@ -230,7 +242,7 @@ interface SanitizeScope {
  */
 export function sanitizeForGeminiJsonSchema(schema: unknown): Record<string, unknown> {
   const root = isRecord(schema) ? schema : {};
-  const out = sanitizeNode(root, { root, expanding: [], depth: 0 });
+  const out = sanitizeNode(root, { root, expanding: [], depth: 0, budget: { expanded: 0 } });
   if (out.type !== "object") {
     // A function's parameters are an object on every provider. A root that is
     // anything else (or nothing) cannot be called with arguments at all.
@@ -242,6 +254,7 @@ export function sanitizeForGeminiJsonSchema(schema: unknown): Record<string, unk
 
 function sanitizeNode(node: unknown, scope: SanitizeScope): Record<string, unknown> {
   if (!isRecord(node) || scope.depth > MAX_NESTING) return {};
+  if (scope.expanding.length > 0) scope.budget.expanded += 1;
 
   const ref = typeof node.$ref === "string" ? node.$ref : null;
   if (ref !== null) {
@@ -250,6 +263,9 @@ function sanitizeNode(node: unknown, scope: SanitizeScope): Record<string, unkno
     // Siblings of a `$ref` (a description, say) refine the target; they are
     // merged over it, which is how drafts 2019+ read them.
     const { $ref: _ref, ...siblings } = node;
+    // Past the walk's budget the reference is offered loosely: what the
+    // schema said about it in place survives, the shared definition does not.
+    if (scope.budget.expanded >= MAX_EXPANDED_NODES) return sanitizeNode(siblings, { ...scope, depth: scope.depth + 1 });
     const expanded = sanitizeNode(target, { ...scope, expanding: [...scope.expanding, ref], depth: scope.depth + 1 });
     const extra = sanitizeNode(siblings, { ...scope, depth: scope.depth + 1 });
     return { ...expanded, ...extra };

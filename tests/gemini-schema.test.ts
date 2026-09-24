@@ -245,6 +245,51 @@ test("a hostile nesting depth cannot exhaust the stack", () => {
   assert.equal(out.type, "object");
 });
 
+/** Eight levels of `$defs`, each with `fanOut` properties pointing at the next level. */
+function sharedDefs(fanOut: number, depth = 8): Record<string, unknown> {
+  const $defs: Record<string, unknown> = {};
+  for (let level = 0; level < depth; level++) {
+    const properties: Record<string, unknown> = {};
+    for (let i = 0; i < fanOut; i++) {
+      properties[`p${i}`] = level === depth - 1 ? { type: "string" } : { $ref: `#/$defs/L${level + 1}`, description: `Child ${i}.` };
+    }
+    $defs[`L${level}`] = { type: "object", properties };
+  }
+  return { type: "object", $defs, properties: { root: { $ref: "#/$defs/L0" } } };
+}
+
+test("shared $defs cannot blow up: expansion is bounded across the whole schema, not only by depth", () => {
+  const input = sharedDefs(8);
+  assert.ok(JSON.stringify(input).length < 4_000, "the input is a couple of kilobytes");
+  const started = performance.now();
+  const out = sanitizeForGeminiJsonSchema(input);
+  const elapsed = performance.now() - started;
+  const size = JSON.stringify(out).length;
+  // Unbounded, this is ~480 MB and seconds of synchronous CPU.
+  assert.ok(size < 256 * 1024, `output stayed small (${size} bytes)`);
+  assert.ok(elapsed < 1_000, `and returned quickly (${Math.round(elapsed)} ms)`);
+  assert.deepEqual(strayKeywords(out), []);
+  // The first path is followed all the way down before the budget runs out…
+  let node = (out.properties as Record<string, Record<string, unknown>>).root;
+  for (let level = 0; level < 7; level++) node = (node.properties as Record<string, Record<string, unknown>>).p0;
+  assert.deepEqual(node.properties, Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`p${i}`, { type: "string" }])));
+  // …and a reference past it keeps what was said in place.
+  const lastChild = ((out.properties as Record<string, Record<string, unknown>>).root.properties as Record<string, unknown>).p7;
+  assert.deepEqual(lastChild, { description: "Child 7." });
+});
+
+test("moderate reuse of a definition still expands in full", () => {
+  const out = sanitizeForGeminiJsonSchema(sharedDefs(3, 4));
+  // Four levels of three: 3^4 string leaves, every reference resolved.
+  let leaves = 0;
+  const walk = (node: Record<string, unknown>) => {
+    if (node.type === "string") leaves += 1;
+    if (node.properties) for (const child of Object.values(node.properties as Record<string, Record<string, unknown>>)) walk(child);
+  };
+  walk(out);
+  assert.equal(leaves, 81);
+});
+
 test("connector declarations carry parametersJsonSchema; a Juno spec out of the subset takes the same path", () => {
   const declarations = geminiFunctionDeclarations({
     tools: [
