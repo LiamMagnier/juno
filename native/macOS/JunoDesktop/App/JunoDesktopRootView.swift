@@ -229,6 +229,9 @@ struct JunoDesktopRootView: View {
             // looking.
             await configuration.workModel?.start(for: accountID)
             await configuration.workAutomationModel?.start(for: accountID)
+            // Started at sign-in for the reason Work is: its poll is what
+            // notices an agent that has stopped to ask for something.
+            await configuration.agentsModel?.start(for: accountID)
         }
         configuration.remoteCodeModel?.start(for: accountID)
         // Registration is presence, not capability — a signed-in Mac saying it
@@ -355,6 +358,7 @@ struct JunoDesktopRootView: View {
         configuration.codeHostModel?.stop()
         configuration.workModel?.stop()
         configuration.workAutomationModel?.stop()
+        configuration.agentsModel?.stop()
         // Not `stopServingWork()`, which only writes the preference off.
         // Sign-out has to take the claim loop down *without* rewriting the
         // reader's standing decision about this machine, so that signing back

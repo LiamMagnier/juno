@@ -42,6 +42,8 @@ function item(id: string, patch: Partial<LibraryItem> = {}): LibraryItem {
     parserState: "ready",
     parserVersion: null,
     deletedAt: null,
+    inUse: null,
+    keptIn: null,
     knowledge: null,
     ...patch,
   };

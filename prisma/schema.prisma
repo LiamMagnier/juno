@@ -145,6 +145,11 @@ model User {
   projectMemberships          ProjectMember[]
   devicePushTokens            DevicePushToken[]
   mfaRecoveryCodes            MfaRecoveryCode[]
+  agents                      Agent[]
+  agentGoals                  AgentGoal[]
+  agentIdeas                  AgentIdea[]
+  agentNotes                  AgentNote[]
+  agentEvents                 AgentEvent[]
 
   @@index([image])
 }
@@ -525,6 +530,12 @@ model Conversation {
   // Tool connectors (github/figma/notion…) the user turned on for this chat.
   // Persisted so they stay active for every later prompt without re-toggling.
   activeConnectors  String[]  @default([])
+  // The agent this is the thread of (docs/design/AGENTS.md §3). A plain
+  // pointer, not a relation, for the reason WorkSession.conversationId gives:
+  // either side can go first, and an agent retired while its thread is kept
+  // leaves a chat, not a dangling foreign key. `kind` stays "chat" — an agent's
+  // thread is a conversation with someone in it, not a new kind of one.
+  agentId           String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   lastMessageAt     DateTime  @default(now())
@@ -543,6 +554,7 @@ model Conversation {
   @@index([userId, lastMessageAt])
   @@index([userId, pinned])
   @@index([projectId])
+  @@index([agentId])
 }
 
 model Project {
@@ -846,6 +858,16 @@ model Attachment {
   parserVersion   String?
   deletedAt       DateTime?
   createdAt       DateTime       @default(now())
+
+  /**
+   * Set when the person removed the file from their Library while a chat
+   * message or a project still uses it. Only the Library lets go: the row, its
+   * bytes and its knowledge index stay live for that chat or project, and the
+   * Library (and the composer's library picker) no longer lists it. A file
+   * nothing else uses is deleted instead (`deletedAt`). Both land in Recently
+   * deleted. See src/lib/library-removal-policy.ts.
+   */
+  libraryRemovedAt DateTime?
 
   projectId String?
 
@@ -1402,6 +1424,10 @@ model ModerationFlag {
   category       String    @default("other")
   detail         String    @db.Text
   messagePreview String?   @db.Text // redacted/truncated snippet that triggered it
+  /// What the flag was about, when it was a public link rather than a message.
+  /// Plain ids, not relations, so removing the link does not remove the flag.
+  shareId        String?
+  artifactId     String?
   action         String    @default("flagged") // flagged | strike | banned
   reviewedAt     DateTime?
   reviewedBy     String?
@@ -1816,15 +1842,53 @@ model Share {
   snapshotAt     DateTime  @default(now())
   views          Int       @default(0)
   revokedAt      DateTime?
+  /// Removed by Juno (admin takedown), as distinct from revoked by its owner.
+  /// A taken-down link 404s, drops out of the owner's list, and its target
+  /// cannot be shared again until an admin restores it. See
+  /// src/lib/share-moderation.ts.
+  takenDownAt    DateTime?
+  takenDownBy    String?
+  takedownReason String?   @db.Text
   createdAt      DateTime  @default(now())
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   artifact     Artifact?     @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  reports      ShareReport[]
 
   @@index([userId, createdAt])
   @@index([conversationId])
   @@index([artifactId])
+}
+
+/// A visitor's report of a public share link (the Report link on /share/[token]).
+///
+/// Not owned by anyone who can read it: the reporter is anonymous and the
+/// share's owner never sees it. Admin-only, always read through
+/// prismaUnguarded. The share's token, title and owner are copied in so a
+/// report outlives the link it was about — deleting the account or the chat
+/// cascades the share away, and the report is the record of why it mattered.
+model ShareReport {
+  id           String    @id @default(cuid())
+  shareId      String?
+  shareToken   String
+  shareTitle   String    @default("")
+  shareOwnerId String
+  /// phishing | malware | illegal | harassment | sexual | other
+  reason       String
+  detail       String    @default("") @db.Text
+  /// Optional address the reporter left for a reply.
+  contact      String?
+  /// open | actioned | dismissed
+  status       String    @default("open")
+  resolvedAt   DateTime?
+  resolvedBy   String?
+  createdAt    DateTime  @default(now())
+
+  share Share? @relation(fields: [shareId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([shareId])
 }
 
 // ----------------------------------------------------------------------------
@@ -2287,6 +2351,10 @@ model WorkSession {
   /// Work itself. A plain pointer rather than a relation: the conversation may
   /// be private-mode and never mirrored server-side.
   conversationId String?
+  /// The agent this task was delegated to, when it was (docs/design/AGENTS.md).
+  /// A plain pointer like `conversationId`: retiring an agent must not take its
+  /// tasks' history with it, and the task is still the account's either way.
+  agentId        String?
 
   title       String
   titleSource String @default("default")
@@ -2353,6 +2421,7 @@ model WorkSession {
   @@index([userId, needsAttention, lastActivityAt])
   @@index([projectId, lastActivityAt])
   @@index([conversationId])
+  @@index([userId, agentId, lastActivityAt])
 }
 
 /// One connected app a single task is allowed to reach.
@@ -3630,4 +3699,158 @@ model ResearchReportRevision {
   @@unique([runId, revision])
   @@index([userId, createdAt])
   @@index([assistantMessageId])
+}
+
+/// A named, persistent agent: a teammate the account delegates to
+/// (docs/design/AGENTS.md). It is an identity layer over what Work already
+/// runs — its thread is an ordinary chat (`Conversation.agentId`), its jobs are
+/// ordinary Work sessions (`WorkSession.agentId`), its routines are ordinary
+/// `WorkSchedule`s on those sessions — so it adds a name, a face, a standing
+/// brief, goals, a memory and a log, and no second runtime.
+model Agent {
+  id     String @id @default(cuid())
+  userId String
+
+  name         String
+  /// One line: what it is for ("Inbox and calendar", "Research analyst").
+  role         String @default("")
+  /// `{shape, tone, eyes, mark}`, every part a member of the vocabulary in
+  /// src/lib/agents/avatar.ts. Stored whole rather than as four columns because
+  /// it is one decision a person makes, read and written together.
+  avatar       Json   @default("{}")
+  /// warm | direct | playful | formal. How it talks, not what it may do.
+  style        String @default("warm")
+  /// The standing brief: who it is, what it looks after, how it works.
+  instructions String @default("") @db.Text
+
+  /// The model its thread and its tasks use when set. Null follows the account.
+  model           String?
+  reasoningEffort String?
+  /// A WorkPermissionPolicy. Every task the agent starts runs under it,
+  /// narrowed further by project and host exactly as any task is: it can only
+  /// narrow, never widen past what those layers allow.
+  approvalMode    String   @default("balanced")
+  /// Provider ids of the connected apps its tasks may reach. Intersected with
+  /// what the account has actually linked, at dispatch.
+  connectorIds    String[] @default([])
+  projectId       String?
+
+  /// Its thread, created on first use. Unique: one agent, one thread.
+  conversationId String? @unique
+
+  /// active | paused. A paused agent keeps everything and starts nothing: its
+  /// routines are switched off with it and back on when it resumes.
+  status    String  @default("active")
+  /// Whether it reflects on its own (ideas and goal check-ins).
+  proactive Boolean @default(true)
+  /// The starting point it was hired from. Copy and defaults only.
+  template  String?
+
+  lastReflectedAt DateTime?
+  sortOrder       Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goals  AgentGoal[]
+  ideas  AgentIdea[]
+  notes  AgentNote[]
+  events AgentEvent[]
+
+  @@index([userId, deletedAt, sortOrder])
+}
+
+/// Something an agent works towards over time, not one job.
+model AgentGoal {
+  id      String @id @default(cuid())
+  userId  String
+  agentId String
+
+  title   String
+  detail  String @default("") @db.Text
+  /// active | paused | achieved | dropped
+  status  String @default("active")
+  /// none | daily | weekly: how often reflection checks in on it.
+  cadence String @default("weekly")
+
+  lastCheckInAt   DateTime?
+  lastCheckInNote String?   @db.Text
+  dueAt           DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, status, createdAt])
+  @@index([userId, createdAt])
+}
+
+/// A suggestion an agent raised on its own. Never work by itself: it becomes a
+/// task only when a person presses Start.
+model AgentIdea {
+  id      String @id @default(cuid())
+  userId  String
+  agentId String
+
+  title  String
+  detail String  @default("") @db.Text
+  /// What the agent is asked when the idea is started.
+  prompt String  @db.Text
+  /// new | started | dismissed
+  status String  @default("new")
+  goalId String?
+
+  createdAt DateTime  @default(now())
+  decidedAt DateTime?
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, status, createdAt])
+  @@index([userId, createdAt])
+}
+
+/// What an agent knows: its own memory, beside the account's. Every note is
+/// readable, editable and deletable by the person it is about.
+model AgentNote {
+  id      String @id @default(cuid())
+  userId  String
+  agentId String
+
+  content String @db.Text
+  /// user | agent | reflection
+  source  String @default("user")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, deletedAt, createdAt])
+  @@index([userId, createdAt])
+}
+
+/// The agent's own log. Task progress is read from Work's events; this holds
+/// what happened to the agent itself: hired, paused, a goal set or checked in,
+/// an idea raised or taken, a routine made, a note learned.
+model AgentEvent {
+  id      String @id @default(cuid())
+  userId  String
+  agentId String
+
+  kind      String
+  title     String
+  detail    Json     @default("{}")
+  sessionId String?
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, createdAt])
+  @@index([userId, createdAt])
 }

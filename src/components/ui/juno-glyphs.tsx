@@ -129,5 +129,11 @@ export const JunoDesignGlyph = defineGlyph("JunoDesignGlyph", "design");
  *  one head band each. Its `fill` is both volumes solid, each band a slot. */
 export const JunoLibraryGlyph = defineGlyph("JunoLibraryGlyph", "library");
 
+/** Agents — a face: the pebble body the agent roster draws, with the two
+ *  rounded-square eyes that carry an agent's state (docs/design/AGENTS.md §4).
+ *  The eyes glance up and over on hover. Its `fill` is the face gone solid with
+ *  the eyes cut out of it. */
+export const JunoAgentsGlyph = defineGlyph("JunoAgentsGlyph", "agents");
+
 /** Send — an up arrow whose head has the spark's concave flanks. */
 export const JunoSendGlyph = defineGlyph("JunoSendGlyph", "send");

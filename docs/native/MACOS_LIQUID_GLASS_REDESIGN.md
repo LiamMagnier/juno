@@ -1956,3 +1956,6 @@ The Phase 2 brief re-read the live web (`juno/src` on main) against §6. Where t
 40. The run line's facts, the research row's count and the Activity panel's counts are SF with tabular numerals; the SPEC sets them in the mono caption. The Mac keeps mono for code, ids, the clock and durations (§10.2 rule 6).
 41. The research plan card starts or cancels the plan as it stands; editing questions and "Update plan" are the web's alone for now.
 42. Research answered inside the chat by a profile-1 server (today's production) shows the research row and panel on the Mac, read from its activity rows; the web shows its run line.
+43. (Merge of main, 2026-09-24.) Agents is a sidebar navigation row after Design, as on the web, and wears `juno.agents`, the web's face mark. The web also folds the roster into the sidebar as its own section; the Mac does not yet (track B).
+44. Main's Agents views draw their primary buttons as opaque `.borderedProminent` in `junoAccent`, not in `.glassProminent`: glass is chrome only (§0.1), and two of the three are inside sheets. The web's buttons are opaque too.
+45. The Mac keeps the Design row and `/design` routing although the web dropped them in `e5501f65` (Design is now a type in Artifacts). This is the open follow-up "Artifacts and Design merge on the web" in `MACOS_REDESIGN_HANDOFF.md`.

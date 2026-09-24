@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { serializeAttachment } from "@/lib/serializers";
+import { libraryViewWhere } from "@/lib/library-removal-policy";
 
 export const runtime = "nodejs";
 
@@ -22,10 +23,12 @@ export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
 
-  // Only the user's own attachments, de-duplicated, order preserved.
+  // Only the user's own attachments still in their Library, de-duplicated,
+  // order preserved. A file taken out of the Library is live in the chat that
+  // kept it, but the picker no longer offers it, so neither does this.
   const uniqueIds = [...new Set(parsed.data.attachmentIds)];
   const sources = await prisma.attachment.findMany({
-    where: { id: { in: uniqueIds }, userId: user.id, deletedAt: null },
+    where: { id: { in: uniqueIds }, userId: user.id, ...libraryViewWhere("library") },
   });
   if (sources.length === 0) return NextResponse.json({ error: "No matching files." }, { status: 404 });
   const byId = new Map(sources.map((a) => [a.id, a]));

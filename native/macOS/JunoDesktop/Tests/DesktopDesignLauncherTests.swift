@@ -77,14 +77,15 @@ struct DesktopDesignLauncherTests {
     /// A navigation row, not a footer row (§2.1 of the Liquid Glass redesign).
     ///
     /// `sidebarCases` is the headerless block at the top of Chat's column:
-    /// Library, Projects, Artifacts, Design. Design used to sit in the footer
+    /// Library, Projects, Artifacts, Design, Agents (the web's order since
+    /// main's Agents landed). Design used to sit in the footer
     /// beside the account; the footer is about the account now, and a door to
     /// a destination belongs with the other doors. Settings and Usage left the
     /// column altogether — Settings is its own window — so they are not cases
     /// at all any more, and More holds only the pages that exist.
     @Test
     func designIsOneOfTheNavigationRows() {
-        #expect(DesktopDestination.sidebarCases == [.library, .projects, .artifacts, .design])
+        #expect(DesktopDestination.sidebarCases == [.library, .projects, .artifacts, .design, .agents])
         #expect(DesktopDestination.moreCases == [.connections, .memory])
         #expect(DesktopDestination(rawValue: "settings") == nil)
         #expect(DesktopDestination(rawValue: "usage") == nil)

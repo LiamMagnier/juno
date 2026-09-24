@@ -60,9 +60,11 @@ struct JunoMobileLibraryView: View {
         GridItem(.flexible(), spacing: JunoSpace.regular),
     ]
 
+    /// `libraryFiles`, not `files`: a file taken out of the Library is still
+    /// synced, because the chat or project that uses it still shows it.
     private var files: [NativeProjectFile] {
         JunoLibraryFilter.apply(
-            model.files, filter: filter, search: searchText, sort: sort
+            model.libraryFiles, filter: filter, search: searchText, sort: sort
         )
     }
 
@@ -198,7 +200,10 @@ struct JunoMobileLibraryView: View {
                             renameValue = file.fileName
                             renameFileID = file.id
                         },
-                        delete: { Task { await model.deleteFile(id: file.id) } },
+                        // The Library's own route. `deleteFile` is the project
+                        // screen's delete: it would take the file out of the
+                        // chat it was sent in too.
+                        remove: { Task { await model.removeFromLibrary(id: file.id) } },
                         edit: canEdit(file) ? { editing = file } : nil,
                         load: { await model.accessFile(id: file.id) }
                     )
@@ -500,7 +505,7 @@ struct JunoMobileLibraryView: View {
 
     @ViewBuilder
     private var empty: some View {
-        if model.files.isEmpty {
+        if model.libraryFiles.isEmpty {
             JunoLibraryMessage(
                 icon: .files,
                 title: "library.empty.title",
@@ -571,7 +576,7 @@ private struct JunoLibraryCard: View {
     let previews: NativeFilePreviewLoader
     let open: () -> Void
     let rename: () -> Void
-    let delete: () -> Void
+    let remove: () -> Void
     /// Present only for an image, and only when a model on this account can edit
     /// one. Absent rather than disabled — see `JunoMobileLibraryView`.
     let edit: (() -> Void)?
@@ -599,7 +604,13 @@ private struct JunoLibraryCard: View {
             if let edit { Button("Edit Image…", action: edit) }
             Button("Rename", action: rename)
             Divider()
-            Button("Delete", role: .destructive, action: delete)
+            let removal = JunoLibraryRemovalLabel(file.libraryUse)
+            Button(role: .destructive, action: remove) {
+                Text(removal.title)
+                // A menu item's second text is its subtitle: where the file
+                // stays is said before the tap, not after it.
+                if let detail = removal.detail { Text(detail) }
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
@@ -614,6 +625,32 @@ private struct JunoLibraryCard: View {
 
     private var accessibilityLabel: String {
         "\(file.fileName), \(sizeLabel)"
+    }
+}
+
+// MARK: - Removal
+
+/// The words on a card's destructive action.
+///
+/// The server keeps a file that a chat or project uses, and deletes a file
+/// nothing uses. So what the action does depends on the file, and the menu
+/// says which before the tap.
+struct JunoLibraryRemovalLabel: Equatable {
+    let title: String
+    let detail: String?
+
+    init(_ use: NativeLibraryUse?) {
+        switch use {
+        case .chat:
+            title = String(localized: "library.remove")
+            detail = String(localized: "library.remove.kept-in-chat")
+        case .project:
+            title = String(localized: "library.remove")
+            detail = String(localized: "library.remove.kept-in-project")
+        case nil:
+            title = String(localized: "Delete")
+            detail = nil
+        }
     }
 }
 

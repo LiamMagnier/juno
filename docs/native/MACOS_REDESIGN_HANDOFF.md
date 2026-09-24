@@ -315,3 +315,17 @@ A small Phase 5 slice. It was done frugally because the owner's weekly usage was
     2. Drop the Design sidebar row.
     3. Move `InlineDesignPreview` from the SVG export to `/poster` once the branch is merged.
 - **X-02** changes `design-editor.tsx`. When the Mac's design-editor bundle is next rebuilt, the rails switch at 640 and 896 px of *editor* width. This bears on X-18: the inspector is hidden at the default window width.
+
+## Merge of `origin/main`, 2026-09-24 (Agents, X-01..X-08, Research, tool-call hotfixes)
+
+Two merge commits on `mac/liquid-glass-chat`: `origin/main` at `f905db81` (Agents on web, macOS and iOS; X-01..X-08; Research without levels; tool-call hotfixes), then `e5501f65` (Artifacts/Design "first light": Design becomes a type in Artifacts, `/a/{id}`, posters; web only, no native files). The second landed while the first was being resolved.
+
+How the conflicts were settled:
+- **Generated files were regenerated**, not hand-merged: `tokens.generated.ts` and `JunoGeneratedTokens.swift` (`npm run design:tokens`, now with main's eight `--agent-*` colours), `JunoNativeContract.swift` (`generate-native-swift-contract.mjs`), both icon catalogs (`npm run native:icons`). The pbxproj files needed nothing (`generate-projects.sh` left them unchanged).
+- **`juno-glyphs.tsx`** keeps this branch's data-driven form. Main's new Agents face (`JunoAgentsGlyph`) moved into `juno-glyph-paths.ts` as the sixth drawing (`agents`, with an `eyes` part), so the web draws the same mark as before and the generator ships it as **`juno.agents`** (regular, bold, fill; outlined with `--outline-juno`).
+- **`JunoIcon.agents` now wears `juno.agents`**, which is what the web's registry assigns (`app-icons.ts`: `agents: JunoAgents`). `ph.users` was worn by nothing after that, so it left the Phosphor set. Juno Code's Studio settings also use `.agents` for its Agent section, so that row now shows the face too.
+- **Sidebar:** `.agents` is a navigation row after Design, in the web's order (Library · Projects · Artifacts · Design · Agents). The web's Agents fold (the roster as a sidebar section) is not built.
+- **Main's Agents Swift**, which did not compile here: `NativeAgentHire.swift` and `NativeAgentProfile.swift` gained `import JunoCore` (for `JunoWorkPermissionPolicy`). Its three `.junoProminentAction()` buttons (glass, two of them inside sheets) are now `.borderedProminent` tinted `junoAccent`, which is what holds the glass gate at 37.
+- The Agents roster renders inside the redesigned shell (fixture `window-agents`). Its visual redesign is track B.
+
+Now actionable because of `e5501f65`: the "Artifacts and Design merge on the web" follow-up above. The branch is on main, so the Mac's Design row, `/design` routing and poster previews can follow it. Nothing was changed for it in this merge: the Mac still has its Design row.

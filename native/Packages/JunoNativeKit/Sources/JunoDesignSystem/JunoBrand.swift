@@ -214,6 +214,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .code: "juno.code"
         case .design: "juno.design"
         case .library: "juno.library"
+        case .agents: "juno.agents"
         case .send: "juno.send"
         case .privateChat: "juno.ghost"
 
@@ -335,7 +336,6 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .grid: "ph.squaresfour"
         case .columns: "ph.columns"
         case .loader: "ph.circlenotch"
-        case .agents: "ph.users"
         case .message: "ph.chattext"
         case .minus: "ph.minus"
         case .box: "ph.package"
@@ -418,7 +418,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// Everything else has no solid drawing, and asking for one draws the
     /// outline rather than an empty frame.
     static let filledSymbols: Set<String> = [
-        "juno.chat", "juno.code", "juno.design", "juno.library", "juno.ghost",
+        "juno.chat", "juno.code", "juno.design", "juno.library", "juno.agents", "juno.ghost",
         "ph.pushpin", "ph.square", "ph.thumbsup", "ph.thumbsdown",
     ]
 

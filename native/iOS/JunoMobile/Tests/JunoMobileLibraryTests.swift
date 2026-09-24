@@ -9,13 +9,15 @@ final class JunoMobileLibraryTests: XCTestCase {
     private func file(
         _ name: String,
         kind: String = "IMAGE",
-        secondsAgo: TimeInterval = 0
+        secondsAgo: TimeInterval = 0,
+        messageID: String? = nil,
+        projectID: String? = nil
     ) -> NativeProjectFile {
         NativeProjectFile(
             id: name,
-            projectID: nil,
-            conversationID: nil,
-            messageID: nil,
+            projectID: projectID,
+            conversationID: messageID == nil ? nil : "conversation",
+            messageID: messageID,
             fileName: name,
             kind: kind,
             mimeType: kind == "IMAGE" ? "image/png" : "application/pdf",
@@ -87,5 +89,34 @@ final class JunoMobileLibraryTests: XCTestCase {
         let sorted = JunoLibraryFilter.apply(same, filter: .all, search: "", sort: .newest)
 
         XCTAssertEqual(sorted.map(\.fileName), ["a.png", "b.png"])
+    }
+
+    // MARK: - Removal
+
+    /// The Library's delete keeps a file that a chat or project uses, so the
+    /// card says so before the tap, in the words the web's toast uses after.
+    func testRemovingAFileInUseSaysWhereItStays() {
+        let chat = JunoLibraryRemovalLabel(file("sent.png", messageID: "m1").libraryUse)
+        XCTAssertEqual(chat.title, "Remove from Library")
+        XCTAssertEqual(chat.detail, "It stays in the chat that uses it.")
+
+        let project = JunoLibraryRemovalLabel(file("brief.pdf", projectID: "p1").libraryUse)
+        XCTAssertEqual(project.title, "Remove from Library")
+        XCTAssertEqual(project.detail, "It stays in the project that uses it.")
+    }
+
+    /// Sent in a project's chat: the chat is where it is seen.
+    func testAFileSentInAProjectsChatStaysInTheChat() {
+        let label = JunoLibraryRemovalLabel(
+            file("chart.png", messageID: "m1", projectID: "p1").libraryUse
+        )
+        XCTAssertEqual(label.detail, "It stays in the chat that uses it.")
+    }
+
+    /// Nothing else holds the file, so the action is what it always was.
+    func testAFileNothingUsesIsDeleted() {
+        let label = JunoLibraryRemovalLabel(file("loose.png").libraryUse)
+        XCTAssertEqual(label.title, "Delete")
+        XCTAssertNil(label.detail)
     }
 }

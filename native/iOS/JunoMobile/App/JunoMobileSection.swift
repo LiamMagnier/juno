@@ -8,6 +8,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     case search
     case code
     case work
+    case agents
     case tasks
     case projects
     case library
@@ -28,6 +29,9 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         // "navigation.work" in the drawer. The literal is its own English
         // default and becomes a key the moment the catalog gains one.
         case .work: "Work"
+        // A literal for the reason Work's is: the catalog has no
+        // `navigation.agents` key, and a missing dotted key renders as itself.
+        case .agents: "Agents"
         case .tasks: "navigation.tasks"
         case .projects: "navigation.projects"
         case .library: "navigation.library"
@@ -57,6 +61,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         case .search: .search
         case .code: .code
         case .work: .work
+        case .agents: .agents
         case .tasks: .tasks
         case .projects: .projects
         case .library: .library
@@ -75,6 +80,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         case .search: "magnifyingglass"
         case .code: "chevron.left.forwardslash.chevron.right"
         case .work: "macbook.and.iphone"
+        case .agents: "person.2"
         case .tasks: "clock.badge.checkmark"
         case .projects: "folder"
         case .library: "books.vertical"
@@ -94,17 +100,22 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     ///
     /// Work leads that second group because it is the one that goes and does
     /// something on your behalf while you are elsewhere — Code and Tasks are
-    /// both things you sit with.
+    /// both things you sit with. Agents sits beside it for the same reason:
+    /// an agent is who that work is delegated to (docs/design/AGENTS.md §3.1).
     static let drawerDestinations: [JunoMobileSection] = [
-        .projects, .library, .artifacts, .work, .code, .tasks, .connections,
+        .projects, .library, .artifacts, .work, .agents, .code, .tasks, .connections,
     ]
 
     /// The surfaces that are not products. On iPhone they push on the Chat
     /// stack from the history sheet; on iPad they are the hidden sidebar
     /// group under the three product tabs. Work and Code are products and so
     /// are tabs on both, which is why they are absent here.
+    ///
+    /// Agents is here rather than a tab: it is not a product of its own. An
+    /// agent lives in Chat — its thread is an ordinary conversation — and its
+    /// tasks are Work's, so it is reached the way the other surfaces are.
     static let workspaceDestinations: [JunoMobileSection] = [
-        .projects, .library, .artifacts, .tasks, .connections,
+        .projects, .library, .artifacts, .agents, .tasks, .connections,
     ]
 
     /// Sidebar-adaptable grouping used on regular width (iPad). On iPhone the
@@ -126,7 +137,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
 
         var sections: [JunoMobileSection] {
             switch self {
-            case .workspace: [.chat, .search, .work, .code, .tasks]
+            case .workspace: [.chat, .search, .work, .agents, .code, .tasks]
             case .content: [.projects, .library, .artifacts, .connections]
             case .account: [.settings]
             }

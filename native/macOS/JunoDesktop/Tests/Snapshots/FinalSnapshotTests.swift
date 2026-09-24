@@ -1,9 +1,13 @@
 import AppKit
 import Foundation
+import JunoAPI
 import JunoAuth
 import JunoChatKit
+import JunoCore
 import JunoDesignSystem
 import JunoPreviewSupport
+import JunoSync
+import JunoWorkKit
 import SwiftUI
 import Testing
 
@@ -137,7 +141,7 @@ struct FinalFixture {
     var prepare: (@MainActor () async throws -> Void)? = nil
 }
 
-/// The eight pictures of the sign-off set.
+/// The pictures of the sign-off set.
 enum FinalSnapshotFixtures {
     static let names = [
         "window-transcript",
@@ -148,6 +152,10 @@ enum FinalSnapshotFixtures {
         "notes-error-and-finish",
         "window-empty-chat",
         "sidebar",
+        // main's Agents (docs/design/AGENTS.md), as merged: the roster inside
+        // the redesigned shell. Its visual pass is track B; this is the
+        // record of how it lands before that.
+        "window-agents",
     ]
 
     /// A window's size: the spec's 1240-point acceptance window (§10.1), its
@@ -263,6 +271,22 @@ enum FinalSnapshotFixtures {
                     .frame(height: windowHeight - toolbarHeight)
                 })
             })
+        case "window-agents":
+            let agents = NativeAgentsModel(client: NativeAgentsClient(sender: SnapshotAgentsSender()))
+            return FinalFixture(
+                name: name,
+                width: windowWidth,
+                view: {
+                    AnyView(window(world: world, fixedHeight: windowHeight, selection: .destination(.agents)) {
+                        NativeAgentsScreen(model: agents, openConversation: { _ in })
+                            .frame(height: windowHeight - toolbarHeight)
+                    })
+                },
+                prepare: {
+                    world.showDraft()
+                    await agents.start(for: world.world.accountID)
+                }
+            )
         case "sidebar":
             return FinalFixture(name: name, width: sidebarWidth, view: {
                 world.showConversation()
@@ -284,6 +308,7 @@ enum FinalSnapshotFixtures {
     static func window<Detail: View>(
         world: SnapshotPreviewWorld,
         fixedHeight: CGFloat?,
+        selection: DesktopSidebarItem? = nil,
         @ViewBuilder detail: () -> Detail
     ) -> some View {
         detail()
@@ -296,7 +321,7 @@ enum FinalSnapshotFixtures {
             // Behind the detail column, so it is exactly as tall as the
             // window's content — a list has no height of its own to offer.
             .background(alignment: .topLeading) {
-                sidebar(world: world, selection: nil)
+                sidebar(world: world, selection: selection)
                     .frame(width: sidebarWidth)
             }
             .environment(\.junoSnapshotOpaqueGlass, true)
@@ -435,4 +460,34 @@ enum FinalSnapshotFixtures {
     ).with {
         $0.attachments = T.workbookReply.attachments + T.deckReply.attachments
     }
+}
+
+/// `/api/agents` for the Agents picture: three agents in the three states a
+/// roster is scanned for — one waiting on the reader, one at work, one idle.
+/// Everything else answers 404, which the model reads as "not there".
+private struct SnapshotAgentsSender: NativeAuthenticatedRequestSending {
+    func send(_ request: NativeBearerRequest, for accountID: AccountID) async throws -> HTTPResponse {
+        let headers = try HTTPHeaders(["content-type": "application/json"])
+        guard request.path == "/api/agents" else {
+            return HTTPResponse(statusCode: 404, headers: headers, body: Data("{}".utf8))
+        }
+        return HTTPResponse(statusCode: 200, headers: headers, body: Data(Self.roster.utf8))
+    }
+
+    private static let roster = """
+    {"agents": [
+      {"id": "agent-iris", "name": "Iris", "role": "Research lead",
+       "avatar": {"shape": "orb", "tone": "violet", "eyes": "soft", "mark": "spark"},
+       "style": "warm", "createdAt": "2026-09-20T09:00:00Z", "updatedAt": "2026-09-24T08:00:00Z",
+       "state": "waiting", "stateSentence": "Needs your call on the vendor shortlist", "needsYou": 1, "sortOrder": 0},
+      {"id": "agent-otto", "name": "Otto", "role": "Inbox triage",
+       "avatar": {"shape": "pebble", "tone": "juniper", "eyes": "round", "mark": "none"},
+       "style": "warm", "createdAt": "2026-09-19T09:00:00Z", "updatedAt": "2026-09-24T08:30:00Z",
+       "state": "working", "stateSentence": "Sorting this morning’s mail", "sortOrder": 1},
+      {"id": "agent-wren", "name": "Wren", "role": "Weekly digest",
+       "avatar": {"shape": "capsule", "tone": "amber", "eyes": "tall", "mark": "leaf"},
+       "style": "warm", "createdAt": "2026-09-18T09:00:00Z", "updatedAt": "2026-09-23T18:00:00Z",
+       "state": "idle", "stateSentence": "Next digest on Friday", "sortOrder": 2}
+    ]}
+    """
 }

@@ -51,7 +51,7 @@ const FEATURES: Feature[] = [
     body: "Group related work, attach files, and let Juno carry context across conversations — when you want it to.",
   },
   {
-    title: "Deep Research",
+    title: "Research",
     icon: AppIcons.research,
     body: "Approve the search plan, follow source coverage live, steer the run, and receive a citation-checked report.",
   },

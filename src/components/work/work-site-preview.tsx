@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Markdown } from "@/components/chat/markdown";
+import { SandboxDocumentFrame } from "@/components/canvas/sandbox-document-frame";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { workArtifactDownloadUrl } from "@/components/work/work-transport";
 import {
@@ -184,10 +185,10 @@ function scriptJson(value: unknown): string {
 /**
  * The navigation bridge.
  *
- * Relative hrefs are the problem this exists to solve: a `srcdoc` document
- * resolves them against the CONTAINING page's URL, so the site's own nav —
- * `<a href="about.html">` — would try to fetch `/work/<id>/about.html` from
- * Juno. No `<base>` fixes it, because the pages are entries in a zip and are not
+ * Relative hrefs are the problem this exists to solve: a page written into the
+ * preview shell resolves them against the SHELL's URL, so the site's own nav —
+ * `<a href="about.html">` — would try to load `/sandbox/v1/about.html` into the
+ * frame. No `<base>` fixes it, because the pages are entries in a zip and are not
  * at any URL at all. So the resolution happens here against the bundle's own
  * entry list, and the answer is handed to the parent, which swaps the document.
  *
@@ -587,10 +588,13 @@ function SitePreviewBody({
   }
   if (site.html === null) return <PreviewWait label={`Opening ${site.path}…`} />;
   return (
-    <iframe
+    <SandboxDocumentFrame
       ref={site.frameRef}
       title={`${title} — ${site.path}`}
-      srcDoc={site.html}
+      html={site.html}
+      // Your own run's output, so your own previews' egress profile; the page's
+      // meta policy (previewDoc) is stricter still and both apply.
+      profile="private"
       // No `allow-same-origin`: the opaque origin is what stops anything in
       // here reaching Juno's cookies or storage. The two popup flags are what
       // let an external link open as a real tab, and they are only defensible

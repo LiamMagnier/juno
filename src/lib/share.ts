@@ -6,6 +6,7 @@ import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import type { ArtifactType } from "@/lib/message-content";
+import { shareIsServable } from "@/lib/share-policy";
 
 /*
  * Public share links for chats and artifacts. A Share is a snapshot pointer:
@@ -14,6 +15,11 @@ import type { ArtifactType } from "@/lib/message-content";
  * Revocation is a tombstone (`revokedAt`) rather than a delete, so links die
  * instantly while the owner keeps the view count. The token is the only
  * capability: 24 random bytes, base64url, never derived from the target id.
+ *
+ * Juno can pull a link too, two ways (src/lib/share-policy.ts): an admin
+ * takedown of one link (`takenDownAt`, src/lib/share-moderation.ts), and a ban
+ * of its owner, which the lookup below reads on every request — so a banned
+ * account's pages stop serving at once and come back if the ban is lifted.
  */
 
 export interface ClientShare {
@@ -51,10 +57,31 @@ function generateToken(): string {
 }
 
 /**
+ * Thrown by createShare when Juno took a link to this target down: sharing it
+ * again would put the same content back up under a fresh token.
+ */
+export class ShareTakenDownError extends Error {
+  constructor() {
+    super("This was removed from public sharing for breaking Juno’s rules, so it can’t be shared again.");
+    this.name = "ShareTakenDownError";
+  }
+}
+
+/** Refuses a target that has a link Juno took down and has not restored. */
+async function assertNotTakenDown(where: { userId: string; conversationId?: string; artifactId?: string }) {
+  const removed = await prisma.share.findFirst({
+    where: { ...where, takenDownAt: { not: null } },
+    select: { id: true },
+  });
+  if (removed) throw new ShareTakenDownError();
+}
+
+/**
  * Create a share link for a conversation or artifact the user owns, or reuse
  * the newest active one for that target (repeat shares shouldn't mint a new
  * URL and orphan the old snapshot). Returns null when the target doesn't
- * exist or belongs to someone else — callers map that to 404.
+ * exist or belongs to someone else — callers map that to 404. Throws
+ * ShareTakenDownError when a link to the target was taken down.
  */
 export async function createShare(userId: string, kind: ShareKind, targetId: string): Promise<Share | null> {
   if (kind === "CHAT") {
@@ -63,6 +90,7 @@ export async function createShare(userId: string, kind: ShareKind, targetId: str
       select: { id: true, title: true },
     });
     if (!conversation) return null;
+    await assertNotTakenDown({ userId, conversationId: targetId });
 
     const existing = await prisma.share.findFirst({
       where: { userId, kind, conversationId: targetId, revokedAt: null },
@@ -87,6 +115,7 @@ export async function createShare(userId: string, kind: ShareKind, targetId: str
     select: { id: true, title: true },
   });
   if (!artifact) return null;
+  await assertNotTakenDown({ userId, artifactId: targetId });
 
   const existing = await prisma.share.findFirst({
     where: { userId, kind, artifactId: targetId, revokedAt: null },
@@ -120,10 +149,14 @@ export async function revokeShare(userId: string, shareId: string): Promise<bool
   return !!owned;
 }
 
-/** The user's active (non-revoked) shares, newest first. */
+/**
+ * The user's active shares, newest first. A link Juno took down is not active
+ * — it no longer opens — and the owner was told why in a notification
+ * (src/lib/share-moderation.ts).
+ */
 export async function listShares(userId: string): Promise<Share[]> {
   return prisma.share.findMany({
-    where: { userId, revokedAt: null },
+    where: { userId, revokedAt: null, takenDownAt: null },
     orderBy: { createdAt: "desc" },
   });
 }
@@ -134,8 +167,17 @@ const findActiveShare = cache(async (token: string): Promise<Share | null> => {
   if (token.length < 16 || token.length > 128) return null;
   // Unguarded by design: the token IS the capability, and the public page has
   // no signed-in user to scope to.
-  const share = await prismaUnguarded.share.findUnique({ where: { token } });
-  if (!share || share.revokedAt) return null;
+  const row = await prismaUnguarded.share.findUnique({
+    where: { token },
+    include: { user: { select: { bannedAt: true } } },
+  });
+  if (!row) return null;
+  const { user, ...share } = row;
+  // Revoked, taken down, or its owner banned: gone, and a 404 says no more
+  // than that — the reason is between Juno and the owner.
+  if (!shareIsServable({ revokedAt: share.revokedAt, takenDownAt: share.takenDownAt, ownerBannedAt: user.bannedAt })) {
+    return null;
+  }
   return share;
 });
 

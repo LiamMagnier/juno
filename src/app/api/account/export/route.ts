@@ -189,6 +189,7 @@ export async function GET(req: Request) {
           parserState: true,
           parserVersion: true,
           deletedAt: true,
+          libraryRemovedAt: true,
           createdAt: true,
           versions: {
             orderBy: { version: "asc" },
@@ -388,6 +389,7 @@ export async function GET(req: Request) {
       parserState: attachment.parserState,
       parserVersion: attachment.parserVersion,
       deletedAt: attachment.deletedAt,
+      libraryRemovedAt: attachment.libraryRemovedAt,
       createdAt: attachment.createdAt,
       archivePath: currentArchivePath,
       archiveSha256: currentArchivePath ? archiveSha256ByStorageKey.get(attachment.storageKey) ?? null : null,

@@ -214,6 +214,11 @@ const loaders: Record<string, EntityLoader> = {
           height: row.height,
           url: await getViewUrl(row.storageKey),
           createdAt: row.createdAt.toISOString(),
+          // Carried, never filtered on: a file taken out of the Library is
+          // still in its chat and its project, and those read this entity.
+          // Only a client's Library leaves it out
+          // (src/lib/library-removal-policy.ts).
+          libraryRemovedAt: row.libraryRemovedAt?.toISOString() ?? null,
         },
       ]),
     );

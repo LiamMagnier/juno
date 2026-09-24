@@ -33,6 +33,8 @@ export const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
   ["/artifacts", "Artifacts"],
   ["/projects", "Projects"],
   ["/assistants", "Assistants"],
+  ["/agents/new", "New agent"],
+  ["/agents", "Agents"],
   ["/memory", "Memory"],
   ["/connections", "Connections"],
   ["/knowledge/documents", "Document"],

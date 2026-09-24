@@ -893,6 +893,11 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     case projects
     case library
     case artifacts
+    /// Named, persistent teammates (docs/design/AGENTS.md): a roster, each
+    /// agent's page, and hiring. A destination in Chat's column rather than a
+    /// fourth product, because an agent lives in Chat — its thread is an
+    /// ordinary conversation — and its tasks are Work's.
+    case agents
     case connections
     /// Juno Design — the canvas, and the list of what has been drawn on it.
     ///
@@ -908,8 +913,9 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
 
     var id: Self { self }
 
-    /// The navigation rows under New chat, in the web's order.
-    static let sidebarCases: [Self] = [.library, .projects, .artifacts, .design]
+    /// The navigation rows under New chat, in the web's order
+    /// (`app-sidebar.tsx`): Library, Projects, Artifacts, Design, Agents.
+    static let sidebarCases: [Self] = [.library, .projects, .artifacts, .design, .agents]
 
     /// The More menu's items, as their pages exist (§2.3).
     static let moreCases: [Self] = [.connections, .memory]
@@ -921,6 +927,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .projects: "Projects"
         case .library: "Library"
         case .artifacts: "Artifacts"
+        case .agents: "Agents"
         case .connections: "Connections"
         case .design: "Design"
         case .memory: "Memory"
@@ -936,6 +943,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .projects: .projects
         case .library: .library
         case .artifacts: .artifacts
+        case .agents: .agents
         case .connections: .connections
         case .design: .design
         case .memory: .memory

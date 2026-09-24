@@ -22,8 +22,8 @@
  * - `ph.<name>` — lowercase, hyphen-free Phosphor names — with a `.bold` twin
  *   for every glyph (the cut `JunoIconView` draws at 13pt and under, as the web
  *   does at 13px) and a `.fill` twin where an "on" state needs one.
- * - `juno.chat`, `juno.code`, `juno.design`, `juno.library`, `juno.send`,
- *   `juno.ghost` (the private-chat ghost), with the same twins.
+ * - `juno.chat`, `juno.code`, `juno.design`, `juno.library`, `juno.agents`,
+ *   `juno.send`, `juno.ghost` (the private-chat ghost), with the same twins.
  *
  * THE BOX. The 256 grid is set at 16/14 of the symbol's point size: the web's
  * house pairing is a 16px glyph beside 14px text (`size-4` in `text-sm`), so a
@@ -191,7 +191,6 @@ const PHOSPHOR = {
   SquaresFour: "LayoutGrid",
   Columns: "Columns2",
   CircleNotch: "Loader2",
-  Users: "Users",
   ChatText: "MessageSquareText",
   Minus: "Minus",
   Package: "Boxes",
@@ -288,6 +287,7 @@ const JUNO = {
   "juno.code": { drawing: (w) => junoGlyphDrawing("code", w), cuts: ["regular", "bold", "fill"] },
   "juno.design": { drawing: (w) => junoGlyphDrawing("design", w), cuts: ["regular", "bold", "fill"] },
   "juno.library": { drawing: (w) => junoGlyphDrawing("library", w), cuts: ["regular", "bold", "fill"] },
+  "juno.agents": { drawing: (w) => junoGlyphDrawing("agents", w), cuts: ["regular", "bold", "fill"] },
   // The web's Send `fill` is the bold drawing again, so there is nothing to add.
   "juno.send": { drawing: (w) => junoGlyphDrawing("send", w), cuts: ["regular", "bold"] },
   "juno.ghost": { drawing: (w) => junoGhostDrawing(w), cuts: ["regular", "bold", "fill"] },
@@ -564,6 +564,7 @@ const JUNO_EXPORTS = {
   JunoCodeGlyph: "juno.code",
   JunoDesignGlyph: "juno.design",
   JunoLibraryGlyph: "juno.library",
+  JunoAgentsGlyph: "juno.agents",
   JunoSendGlyph: "juno.send",
 };
 

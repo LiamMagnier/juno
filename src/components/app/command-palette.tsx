@@ -1148,6 +1148,7 @@ function CommandMenu() {
          find something. */
       { id: "new-automation", group: "Actions", label: "New automation", icon: AppIcons.automations, keywords: "schedule scheduled task recurring automation cron reminder trigger", run: () => go("/automations/new") },
       { id: "new-assistant", group: "Actions", label: "New assistant", icon: AppIcons.assistants, keywords: "create custom assistant bot gem gpt instructions", run: () => go("/assistants") },
+      { id: "new-agent", group: "Actions", label: "New agent", icon: AppIcons.agents, keywords: "hire agent teammate bot muse grok delegate", run: () => go("/agents/new") },
       {
         id: "search-everything",
         group: "Actions",
@@ -1163,6 +1164,7 @@ function CommandMenu() {
          draws — rather than the two columns Compare uses two rows down. */
       { id: "toggle-sidebar", group: "Actions", label: "Toggle sidebar", hint: `${mod}⇧S`, icon: PanelLeft, keywords: "collapse expand rail panel", run: () => { setOpen(false); window.dispatchEvent(new CustomEvent("juno:toggle-sidebar")); } },
       { id: "assistants", group: "Actions", label: "Open Assistants", icon: AppIcons.assistants, keywords: "custom assistants bots gpt gems prompts", run: () => go("/assistants") },
+      { id: "agents", group: "Actions", label: "Open Agents", icon: AppIcons.agents, keywords: "agents teammates roster delegate goals routines", run: () => go("/agents") },
       { id: "code-runs", group: "Actions", label: "Open Code", icon: AppIcons.code, keywords: "sessions runs agents executions tasks juno code", run: () => go("/code") },
       { id: "code-pulls", group: "Actions", label: "Open pull requests", icon: AppIcons.pulls, keywords: "pr github review merge code", run: () => go("/code/pulls") },
       { id: "design", group: "Actions", label: "Open Design", icon: AppIcons.design, keywords: "canvas frames mockup screen figma juno design", run: () => go("/design") },

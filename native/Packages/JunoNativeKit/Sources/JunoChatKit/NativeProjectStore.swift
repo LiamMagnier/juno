@@ -36,6 +36,14 @@ public struct NativeProject: Identifiable, Equatable, Sendable {
     }
 }
 
+/// Where a file is still used outside the Library.
+public enum NativeLibraryUse: String, Equatable, Sendable {
+    /// Sent with a message: its chat shows it and the model reads it there.
+    case chat
+    /// One of a project's files.
+    case project
+}
+
 public struct NativeProjectFile: Identifiable, Equatable, Sendable {
     public let id: String
     public let projectID: String?
@@ -49,6 +57,15 @@ public struct NativeProjectFile: Identifiable, Equatable, Sendable {
     public let height: Int?
     public let createdAt: Date
     public let revision: UInt64
+    /// When the file was taken out of the Library while a chat or project kept
+    /// it (`DELETE /api/library/{id}`, from any client). Nil for every file
+    /// still in the Library, and for a record synced before the server sent
+    /// the field.
+    ///
+    /// Only the Library reads this. The chat the file was sent in and the
+    /// project it belongs to go on showing it, which is the point: a Library
+    /// delete used to delete the row, and the file vanished from its chat.
+    public let libraryRemovedAt: Date?
 
     public init(
         id: String,
@@ -62,7 +79,8 @@ public struct NativeProjectFile: Identifiable, Equatable, Sendable {
         width: Int?,
         height: Int?,
         createdAt: Date,
-        revision: UInt64
+        revision: UInt64,
+        libraryRemovedAt: Date? = nil
     ) {
         self.id = id
         self.projectID = projectID
@@ -76,6 +94,24 @@ public struct NativeProjectFile: Identifiable, Equatable, Sendable {
         self.height = height
         self.createdAt = createdAt
         self.revision = revision
+        self.libraryRemovedAt = libraryRemovedAt
+    }
+
+    public var isInLibrary: Bool { libraryRemovedAt == nil }
+
+    /// Where the file stays if the Library lets go of it. This is the server's
+    /// own rule (`libraryUse` in src/lib/library-removal-policy.ts): a file
+    /// sent with a message stays in that chat, a project's file stays in the
+    /// project, and a file nothing uses is deleted. A file sent in a project's
+    /// chat counts as the chat, because that is where it is seen.
+    ///
+    /// This is a prediction from the synced record, used for the words on the
+    /// button. The server decides again, under a row lock, when the removal
+    /// lands.
+    public var libraryUse: NativeLibraryUse? {
+        if messageID != nil { return .chat }
+        if projectID != nil { return .project }
+        return nil
     }
 }
 
@@ -269,7 +305,12 @@ public actor NativeProjectStore<Repository: AccountScopedRepository> {
             width: wire.width,
             height: wire.height,
             createdAt: createdAt,
-            revision: record.revision
+            revision: record.revision,
+            // Absent (a record synced before the server sent the field) and
+            // null both mean "in the Library". Present means removed, even as
+            // a date this parser cannot read. One odd field must not fail the
+            // whole load and take the projects down with it.
+            libraryRemovedAt: wire.libraryRemovedAt.map { parseDate($0) ?? .distantPast }
         )
     }
 
@@ -384,6 +425,17 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
         selectedProjectID.flatMap { conversationsByProject[$0] } ?? []
     }
 
+    /// What the Library shows: every synced file, less the ones taken out of
+    /// it. `files` keeps those, because the chats and projects that use them
+    /// still do.
+    public var libraryFiles: [NativeProjectFile] {
+        files.filter { file in
+            guard file.isInLibrary else { return false }
+            guard let removedAt = pendingLibraryRemovals[file.id] else { return true }
+            return file.revision > removedAt
+        }
+    }
+
     private let store: NativeProjectStore<Repository>
     private let outbox: any MutationOutboxRepository
     private let drainer: NativeMutationDrainer<Repository>
@@ -392,6 +444,15 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
     private var accountID: AccountID?
     private var lastSynchronizationGeneration = -1
     private var isReconciling = false
+    /// Files this device took out of the Library, each keyed to the revision
+    /// the cache held when it did.
+    ///
+    /// The server has already let go of them, but the cache only learns that
+    /// when sync brings the next revision. Until then the Library would still
+    /// show the file, and a second tap would get a 404. Any newer revision
+    /// retires the entry, whatever it says: removed (the synced field hides the
+    /// file) or restored on the web (the file comes back).
+    private var pendingLibraryRemovals: [String: UInt64] = [:]
 
     public init(
         repository: Repository,
@@ -432,6 +493,7 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
         isPerformingFileAction = false
         selectedProjectID = nil
         lastSynchronizationGeneration = -1
+        pendingLibraryRemovals = [:]
         phase = .idle
     }
 
@@ -450,6 +512,11 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
             guard self.accountID == accountID else { return }
             projects = snapshot.projects
             files = snapshot.files
+            // An entry lasts only while the cache still holds the revision it
+            // was taken against.
+            pendingLibraryRemovals = pendingLibraryRemovals.filter { id, revision in
+                snapshot.files.contains { $0.id == id && $0.revision <= revision }
+            }
             filesByProject = snapshot.filesByProject
             conversationsByProject = snapshot.conversationsByProject
             pendingMutationCount = snapshot.pendingMutationCount
@@ -565,6 +632,9 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
         }
     }
 
+    /// Deletes the file wherever it is, including every chat that shows it.
+    /// This is what a project's own Delete means. The Library uses
+    /// ``removeFromLibrary(id:)``.
     public func deleteFile(id: String) async {
         guard let accountID else { return }
         isPerformingFileAction = true
@@ -575,6 +645,37 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
             await reload()
         } catch {
             recordFileError(error, accountID: accountID)
+        }
+    }
+
+    /// Takes a file out of the Library. A chat or project that uses the file
+    /// keeps it. A file nothing uses is deleted, as a Library delete always
+    /// was. Either way it goes to the web Library's Recently deleted, where
+    /// Restore brings it back.
+    ///
+    /// Returns what the server did. Nil when the request failed (then
+    /// ``lastErrorDescription`` says why) or when the server did not say; the
+    /// file is out of the Library in that second case too.
+    @discardableResult
+    public func removeFromLibrary(id: String) async -> NativeLibraryRemoval? {
+        guard let accountID else { return nil }
+        isPerformingFileAction = true
+        defer { isPerformingFileAction = false }
+        do {
+            let removal = try await apiClient.removeFromLibrary(id: id, for: accountID)
+            guard self.accountID == accountID else { return nil }
+            // The revision the cache holds now, not before the request: a sync
+            // that landed meanwhile (a rename, say) must not retire the entry
+            // before the removal itself arrives.
+            if let revision = files.first(where: { $0.id == id })?.revision {
+                pendingLibraryRemovals[id] = revision
+            }
+            await syncModel.refresh()
+            await reload()
+            return removal
+        } catch {
+            recordFileError(error, accountID: accountID)
+            return nil
         }
     }
 
@@ -753,6 +854,7 @@ private struct AttachmentWire: Decodable {
     let width: Int?
     let height: Int?
     let createdAt: String
+    let libraryRemovedAt: String?
 }
 
 private struct ProjectConversationWire: Decodable {

@@ -24,7 +24,7 @@
 export type JunoGlyphWeight = "thin" | "light" | "regular" | "bold" | "fill" | "duotone";
 
 /** The part of a drawing that articulates on hover (`globals.css`). */
-export type JunoGlyphPart = "ball" | "spark" | "disc" | "volume";
+export type JunoGlyphPart = "ball" | "spark" | "disc" | "volume" | "eyes";
 
 /**
  * One SVG element of a drawing. `attrs` carries React's camelCase attribute
@@ -218,13 +218,42 @@ export function shelf(line: number) {
 }
 
 // ---------------------------------------------------------------------------
+// Agents — a face: the pebble body the agent roster draws, with the two
+// rounded-square eyes that carry an agent's state everywhere else
+// (docs/design/AGENTS.md §4). The eyes are the moving part: on hover they
+// glance up and over, the way an agent looks up when you walk over. Filled,
+// the face goes solid and the eyes are cut out of it.
+// ---------------------------------------------------------------------------
+
+export const FACE = { x: 36, y: 44, w: 184, h: 168, rx: 64 };
+export const EYE = { w: 28, h: 40, rx: 13, y: 104, left: 90, right: 138 };
+
+export function eyeRects(): string {
+  const rect = (x: number) =>
+    `M${x + EYE.rx},${EYE.y} H${x + EYE.w - EYE.rx} A${EYE.rx},${EYE.rx} 0 0 1 ${x + EYE.w},${EYE.y + EYE.rx} ` +
+    `V${EYE.y + EYE.h - EYE.rx} A${EYE.rx},${EYE.rx} 0 0 1 ${x + EYE.w - EYE.rx},${EYE.y + EYE.h} ` +
+    `H${x + EYE.rx} A${EYE.rx},${EYE.rx} 0 0 1 ${x},${EYE.y + EYE.h - EYE.rx} ` +
+    `V${EYE.y + EYE.rx} A${EYE.rx},${EYE.rx} 0 0 1 ${x + EYE.rx},${EYE.y} Z`;
+  return `${rect(EYE.left)} ${rect(EYE.right)}`;
+}
+
+export function faceOutline(): string {
+  const { x, y, w, h, rx } = FACE;
+  return (
+    `M${x + rx},${y} H${x + w - rx} A${rx},${rx} 0 0 1 ${x + w},${y + rx} V${y + h - rx} ` +
+    `A${rx},${rx} 0 0 1 ${x + w - rx},${y + h} H${x + rx} A${rx},${rx} 0 0 1 ${x},${y + h - rx} ` +
+    `V${y + rx} A${rx},${rx} 0 0 1 ${x + rx},${y} Z`
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Send — an up arrow whose head has the spark's concave flanks.
 // ---------------------------------------------------------------------------
 
 export const SEND = "M128,212 V52 M60,116 Q108,92 128,52 Q148,92 196,116";
 
 // ---------------------------------------------------------------------------
-// The five drawings, per weight. `draw` takes the line the weight sets; `drawFill`
+// The six drawings, per weight. `draw` takes the line the weight sets; `drawFill`
 // is the solid drawing for the selected state.
 // ---------------------------------------------------------------------------
 
@@ -235,7 +264,7 @@ type GlyphDefinition = {
 
 const SQUARE_RECT = { x: SQUARE.x, y: SQUARE.y, width: SQUARE.size, height: SQUARE.size, rx: SQUARE.rx };
 
-export type JunoGlyphName = "chat" | "code" | "design" | "library" | "send";
+export type JunoGlyphName = "chat" | "code" | "design" | "library" | "agents" | "send";
 
 export const JUNO_GLYPHS: Record<JunoGlyphName, GlyphDefinition> = {
   chat: {
@@ -333,6 +362,16 @@ export const JUNO_GLYPHS: Record<JunoGlyphName, GlyphDefinition> = {
         },
       ];
     },
+  },
+  agents: {
+    draw: (): JunoGlyphElement[] => [
+      { tag: "rect", attrs: { x: FACE.x, y: FACE.y, width: FACE.w, height: FACE.h, rx: FACE.rx } },
+      { tag: "path", part: "eyes", attrs: { d: eyeRects(), fill: "currentColor", stroke: "none" } },
+    ],
+    // Selected: the face goes solid and the eyes are cut out of it.
+    drawFill: (): JunoGlyphElement[] => [
+      { tag: "path", attrs: { d: `${faceOutline()} ${eyeRects()}`, fill: "currentColor", fillRule: "evenodd", stroke: "none" } },
+    ],
   },
   send: {
     draw: (): JunoGlyphElement[] => [{ tag: "path", attrs: { d: SEND } }],

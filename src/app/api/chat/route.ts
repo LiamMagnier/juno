@@ -34,7 +34,12 @@ import {
   maybeConsolidateProject,
 } from "@/lib/memory";
 import { memoryReceiptDetail } from "@/lib/memory-lifecycle";
-import { ArtifactVersionConflictError, persistArtifacts, persistTargetedArtifactEdit } from "@/lib/artifacts-store";
+import {
+  ArtifactVersionConflictError,
+  detachArtifactsFromMessage,
+  persistArtifacts,
+  persistTargetedArtifactEdit,
+} from "@/lib/artifacts-store";
 import {
   applyArtifactPatch,
   ArtifactPatchError,
@@ -182,6 +187,9 @@ import {
   taskTitleFromArgs,
 } from "@/lib/chat/task-tool";
 import { cheapestWorkModel } from "@/lib/work/models";
+import { agentChatContext } from "@/lib/agents/store";
+import { agentApprovalMode } from "@/lib/agents/domain";
+import { appendAgentBlock } from "@/lib/agents/prompt";
 import { providerAdapterFor } from "@/lib/provider-routing";
 import { isGemini3OrLater } from "@/lib/gemini-core";
 import type { ClientActionApproval } from "@/lib/action-approval";
@@ -2245,6 +2253,24 @@ async function handleChat(req: Request) {
     lockdown: !!settings?.lockdownMode,
     planHasWorkModel: cheapestWorkModel(MODEL_LIST, plan) !== null,
   });
+  /*
+   * An agent's thread (docs/design/AGENTS.md): the reply is the agent's, with
+   * its brief, goals and notes appended after everything else in the prompt,
+   * and a task it starts carries its id and its autonomy. A private turn never
+   * has one (it has no saved conversation to be a thread), and a failure to
+   * read the agent answers as Juno rather than failing the message — the
+   * thread is still a chat.
+   */
+  const agentContext =
+    conversation.agentId && !input.privateMode
+      ? await agentChatContext(user, conversation.agentId, { taskHandoff: taskToolOn }).catch((err) => {
+          console.error("[chat] could not read the thread's agent", {
+            conversationId: conversation.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return null;
+        })
+      : null;
   const baseSystemSections = buildSystemPromptSections({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
@@ -2268,17 +2294,20 @@ async function handleChat(req: Request) {
       ? buildArtifactEditPrompt(artifactEditTarget, input.artifactEdit)
       : null;
   const system = withRegenerateInstruction(
-    appendSkillBlock(
-      composeSystemPrompt({
-        base: baseSystem,
-        webSearch: useWebSearch,
-        documentTool: attachmentToolToggles.documents,
-        imageTool: attachmentToolToggles.images,
-        codeTool: attachmentToolToggles.code,
-        targetedArtifactEditPrompt,
-        canvasOn,
-      }),
-      appliedSkill
+    appendAgentBlock(
+      appendSkillBlock(
+        composeSystemPrompt({
+          base: baseSystem,
+          webSearch: useWebSearch,
+          documentTool: attachmentToolToggles.documents,
+          imageTool: attachmentToolToggles.images,
+          codeTool: attachmentToolToggles.code,
+          targetedArtifactEditPrompt,
+          canvasOn,
+        }),
+        appliedSkill
+      ),
+      agentContext?.block ?? null
     ),
     input
   );
@@ -2514,13 +2543,13 @@ async function handleChat(req: Request) {
        * A regenerate PRESERVES the previous answer instead of destroying it: the
        * old row's content is snapshotted into an immutable MessageVersion
        * (ciphertext copied verbatim — the crypto is row-independent, see
-       * message-crypto.ts), its artifacts are dropped, and the Message row is
-       * then overwritten in place. The Message row is therefore always the
-       * CURRENT version; MessageVersion rows are append-only, read-only history
-       * rendered by the client's "‹ 2/3 ›" pager. Which version the user was
-       * VIEWING never changes the result: the prompt excludes the answer being
-       * regenerated entirely, so regeneration is deterministic in its inputs and
-       * versions simply accumulate oldest-first.
+       * message-crypto.ts), its artifacts are detached but kept, and the
+       * Message row is then overwritten in place. The Message row is therefore
+       * always the CURRENT version; MessageVersion rows are append-only,
+       * read-only history rendered by the client's "‹ 2/3 ›" pager. Which
+       * version the user was VIEWING never changes the result: the prompt
+       * excludes the answer being regenerated entirely, so regeneration is
+       * deterministic in its inputs and versions simply accumulate oldest-first.
        */
       const persistAssistantTurn = async (data: {
         content: string;
@@ -2561,8 +2590,11 @@ async function handleChat(req: Request) {
         };
         if (mode === "supersede" && stale) {
           // Snapshot the answer being replaced BEFORE overwriting it — a
-          // regenerate must never lose what the user already had. Atomic with
-          // the overwrite so a crash can't leave a duplicate version behind.
+          // regenerate must never lose what the user already had. That covers
+          // its artifacts too: they are detached, not deleted, so hand edits
+          // and share links survive and a re-emission appends to the same row.
+          // Atomic with the overwrite so a crash can't leave a duplicate
+          // version behind.
           const [, , updated] = await prisma.$transaction([
             prisma.messageVersion.create({
               data: versionSnapshot({
@@ -2570,7 +2602,7 @@ async function handleChat(req: Request) {
                 sources: stale.sources as unknown as Prisma.InputJsonValue | null,
               }),
             }),
-            prisma.artifact.deleteMany({ where: { messageId: stale.id } }),
+            detachArtifactsFromMessage(stale.id),
             prisma.message.update({
               where: { id: stale.id },
               data: {
@@ -2844,8 +2876,8 @@ async function handleChat(req: Request) {
         }
       } else if (researchRequested) {
         researchNotice = PLANS[plan].webSearch
-          ? "Deep research is not configured on this deployment. A search provider must be available before I can investigate your question."
-          : "Deep research is available on paid Juno plans. Your research has not started.";
+          ? "Research is not configured on this deployment. A search provider must be available before I can investigate your question."
+          : "Research is available on paid Juno plans. Your research has not started.";
         sendActivity({
           kind: "warning",
           title: "Deep research was skipped",
@@ -2925,6 +2957,9 @@ async function handleChat(req: Request) {
               // starting a task is the one tool whose whole effect is to act
               // later with nobody watching, so it asks first.
               untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
+              agent: agentContext
+                ? { id: agentContext.agent.id, approvalMode: agentApprovalMode(agentContext.agent.approvalMode) }
+                : null,
               generationId,
               onApprovalRequest: requestApproval,
               // The panel appears as soon as the run exists rather than on the
