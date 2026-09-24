@@ -560,11 +560,12 @@ public struct NativeAgentDraft: Equatable, Sendable {
     /// checked here so Hire is disabled rather than answered with a 400.
     public var isValid: Bool {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !trimmedName.isEmpty
-            && trimmedName.count <= NativeAgentLimits.name
-            && role.trimmingCharacters(in: .whitespacesAndNewlines).count <= NativeAgentLimits.role
-            && instructions.trimmingCharacters(in: .whitespacesAndNewlines).count <= NativeAgentLimits.instructions
-            && firstGoal.trimmingCharacters(in: .whitespacesAndNewlines).count <= NativeAgentLimits.goalTitle
+        guard !trimmedName.isEmpty, trimmedName.count <= NativeAgentLimits.name else { return false }
+        guard role.trimmingCharacters(in: .whitespacesAndNewlines).count <= NativeAgentLimits.role else { return false }
+        guard instructions.trimmingCharacters(in: .whitespacesAndNewlines).count <= NativeAgentLimits.instructions else {
+            return false
+        }
+        return firstGoal.trimmingCharacters(in: .whitespacesAndNewlines).count <= NativeAgentLimits.goalTitle
     }
 }
 
@@ -661,14 +662,18 @@ public struct NativeAgentRoutineDraft: Equatable, Sendable {
         self.timezone = timezone
     }
 
+    // One guard per rule rather than one `&&` chain: a long chain of integer
+    // and range literals is the shape Swift's type checker gives up on
+    // ("unable to type-check this expression in reasonable time"), and each
+    // guard is also the line that names the bound it enforces.
     public var isValid: Bool {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty, trimmedName.count <= 120 else { return false }
         let trimmedInstructions = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !trimmedName.isEmpty && trimmedName.count <= 120
-            && !trimmedInstructions.isEmpty && trimmedInstructions.count <= 4_000
-            && (0...23).contains(hour) && (0...59).contains(minute)
-            && (0...6).contains(weekday) && (1...31).contains(monthday)
-            && !timezone.isEmpty
+        guard !trimmedInstructions.isEmpty, trimmedInstructions.count <= 4_000 else { return false }
+        guard (0...23).contains(hour), (0...59).contains(minute) else { return false }
+        guard (0...6).contains(weekday), (1...31).contains(monthday) else { return false }
+        return !timezone.isEmpty
     }
 }
 
