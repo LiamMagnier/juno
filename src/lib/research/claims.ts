@@ -872,12 +872,43 @@ export async function loadCitationAuditForMessage(
   userId: string,
   messageId: string
 ): Promise<ClaimAuditView | null> {
-  const event = await prisma.researchEvent.findFirst({
+  let event = await prisma.researchEvent.findFirst({
     where: { userId, kind: "citation_audit", payload: { path: ["messageId"], equals: messageId } },
     orderBy: { createdAt: "desc" },
     select: { runId: true, payload: true },
   });
-  if (!event) return null;
+  /*
+   * THE LOADER FALLBACK (SPEC §9.4). A web run audits its report before the
+   * completion message exists, so no audit event names the message; the run
+   * does, through `assistantMessageId`. Its latest audit is the one the
+   * message's report was checked by, and its `run_completed` event says what
+   * `[n]` means on the message — the completion renumbers citations so `[1]`
+   * is the first source cited — which replaces the audit's corpus order.
+   */
+  let messageOrder: string[] | null = null;
+  if (!event) {
+    const owner = await prisma.researchRun.findFirst({
+      where: { assistantMessageId: messageId, userId },
+      select: { id: true },
+    });
+    if (!owner) return null;
+    const [audit, completed] = await Promise.all([
+      prisma.researchEvent.findFirst({
+        where: { runId: owner.id, userId, kind: "citation_audit" },
+        orderBy: { seq: "desc" },
+        select: { runId: true, payload: true },
+      }),
+      prisma.researchEvent.findFirst({
+        where: { runId: owner.id, userId, kind: "run_completed" },
+        orderBy: { seq: "desc" },
+        select: { payload: true },
+      }),
+    ]);
+    if (!audit) return null;
+    event = audit;
+    const order = (completed?.payload as { sourceOrder?: unknown } | null)?.sourceOrder;
+    if (Array.isArray(order)) messageOrder = order.filter((id): id is string => typeof id === "string");
+  }
 
   const run = await prisma.researchRun.findFirst({
     where: { id: event.runId, userId },
@@ -926,9 +957,11 @@ export async function loadCitationAuditForMessage(
   // property of the corpus the model was shown. Anything the event does not
   // name falls back to the order the rows came out in, which is the order they
   // were written.
-  const order = Array.isArray((event.payload as { sourceOrder?: unknown })?.sourceOrder)
-    ? ((event.payload as { sourceOrder: unknown[] }).sourceOrder.filter((x) => typeof x === "string") as string[])
-    : [];
+  const order =
+    messageOrder ??
+    (Array.isArray((event.payload as { sourceOrder?: unknown })?.sourceOrder)
+      ? ((event.payload as { sourceOrder: unknown[] }).sourceOrder.filter((x) => typeof x === "string") as string[])
+      : []);
   const indexOf = new Map<string, number>();
   order.forEach((id, i) => indexOf.set(id, i + 1));
   for (const s of run.sources) if (!indexOf.has(s.id)) indexOf.set(s.id, indexOf.size + 1);

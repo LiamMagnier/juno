@@ -70,6 +70,7 @@ import {
   type ResearchEnvelope,
 } from "@/lib/research/envelope";
 import { researchRoster } from "@/lib/research/search-metering";
+import { parseWorkspaceConfig, type WorkspaceConfig } from "@/lib/projects/workspace-config";
 import { buildCompletionWrite } from "@/lib/research/completion-core";
 import { finalizeResearchRun } from "@/lib/research/completion";
 import { researchWebOwner } from "@/lib/research/lease-core";
@@ -827,6 +828,33 @@ export async function researchStartCheck(input: {
     };
   }
   return { ok: true };
+}
+
+/**
+ * The facts `researchEntitlement` needs about a person and where they are
+ * asking from (§9.1): lockdown, the explicit content language, and the
+ * workspace of the conversation's project, when it has one.
+ */
+export async function researchAccountFacts(userId: string, conversationId?: string | null): Promise<{
+  lockdown: boolean;
+  responseLanguage: string | null;
+  workspace: WorkspaceConfig | null;
+}> {
+  const [settings, conversation] = await Promise.all([
+    prisma.settings.findUnique({ where: { userId }, select: { lockdownMode: true, responseLanguage: true } }),
+    conversationId
+      ? prisma.conversation.findFirst({ where: { id: conversationId, userId }, select: { projectId: true } })
+      : Promise.resolve(null),
+  ]);
+  const workspaceRow = conversation?.projectId
+    ? await prisma.projectWorkspace.findFirst({ where: { projectId: conversation.projectId, userId }, select: { config: true } })
+    : null;
+  const language = settings?.responseLanguage?.trim();
+  return {
+    lockdown: settings?.lockdownMode ?? false,
+    responseLanguage: language && language !== "auto" ? language : null,
+    workspace: workspaceRow ? parseWorkspaceConfig(workspaceRow.config) : null,
+  };
 }
 
 /**
