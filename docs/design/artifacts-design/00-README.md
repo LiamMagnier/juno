@@ -47,5 +47,5 @@ This folder is the record of all three. It changes no product code.
 | X-03 / X-04 edit and regenerate deletes | origin/main `1633a4b5` (`7243613f`) | **Shipped and deployed** |
 | X-08 design size after expansion | origin/main `1633a4b5` (`9161bcbc`) | **Shipped and deployed** |
 | M11 type immutability | `artifacts/r0-size-and-type` @ `db3766ab` | Held back until the Mac and iPhone resolvers follow the same rule |
-| First light (Design as a type, `/a/{id}`, posters) plus X-07, X-10, X-21, X-23, X-24, X-26 | `artifacts/merge-first-light` (worktree `../juno-artifacts-r0`) | Being built |
+| **First light**: Design becomes a type in Artifacts (no Design row; `/design` redirects), canonical `/a/{id}`, design posters everywhere, plus X-07, X-10 (part), X-20 (static), X-21, X-23, X-24, X-26 | `artifacts/merge-first-light` @ `dce0781c` (10 commits on origin/main `1633a4b5`; worktree `../juno-artifacts-r0`) | **Ready to release.** Tests, lint and type-check pass on the changed files. No migration, env or native change. Needs a signed-in browser check. Waiting for you to name a releaser |
 | X-11 / X-12 Mac dock designs and stale revision | `mac/liquid-glass-chat` (Phase 2 stage 3) | In progress in the juno-glass worktree |
