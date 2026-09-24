@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * /design/[artifactId] when the segment throws.
+ * /a/[id] when the segment throws.
  *
  * Next requires an error boundary to be a client component taking { error,
  * reset }. `error.message` is deliberately NOT rendered: it can carry a query,
@@ -17,8 +17,9 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { ARTIFACTS_HOME } from "@/lib/artifact-links";
 
-export default function DesignArtifactError({
+export default function ArtifactError({
   error,
   reset,
 }: {
@@ -26,20 +27,20 @@ export default function DesignArtifactError({
   reset: () => void;
 }) {
   React.useEffect(() => {
-    console.error("[route] /design/[artifactId] failed to render", error);
+    console.error("[route] /a/[id] failed to render", error);
   }, [error]);
 
   return (
-    // This route owns a full-height shell rather than the scrolling page
+    // This route owns a full-height window rather than the scrolling page
     // column, so the fallback centres in the same box instead of opening with a
-    // page gutter the surface behind it does not have.
+    // page gutter the window behind it does not have.
     <div className="flex h-full min-h-0 flex-col items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
         <EmptyState
           tone="error"
           icon={StatusIcons.error}
-          title="This design couldn’t open"
-          description="The document didn’t come back, or this build can’t read the version it is stored at. The file itself is unchanged."
+          title="This artifact couldn’t open"
+          description="It didn’t come back, or this build can’t read the version it is stored at. The artifact itself is unchanged."
           action={
             <>
               <Button size="sm" onClick={reset} className="gap-1.5">
@@ -47,7 +48,7 @@ export default function DesignArtifactError({
                 Try again
               </Button>
               <Button asChild size="sm" variant="outline">
-                <Link href="/design">All designs</Link>
+                <Link href={ARTIFACTS_HOME}>All artifacts</Link>
               </Button>
             </>
           }

@@ -28,7 +28,13 @@ export const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
   ["/code/pulls", "Pull requests"],
   ["/code/customize", "Customize"],
   ["/code", "Code"],
-  ["/design", "Design"],
+  /* `/design` is absent now: it redirects to Artifacts, and `/design/{id}` to
+     the artifact's own address below, and a redirect draws no window to
+     caption. One artifact is "Artifact" whatever its type — the header inside
+     names the type and the title, and the URL deliberately carries neither.
+     It cannot catch /admin or /artifacts: a prefix matches only itself or
+     itself followed by "/". */
+  ["/a", "Artifact"],
   ["/library", "Library"],
   ["/artifacts", "Artifacts"],
   ["/projects", "Projects"],
