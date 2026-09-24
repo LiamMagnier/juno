@@ -6,6 +6,7 @@ import { AppPage } from "@/components/ui/app-page";
 import { JunoMark } from "@/components/brand/logo";
 import { SharedChatTranscript } from "@/components/share/shared-chat-transcript";
 import { SharedArtifactViewer } from "@/components/share/shared-artifact-viewer";
+import { sharedDesignPosterUrl } from "@/lib/design/poster-url";
 import { getPublicShare, getSharedArtifactSnapshot, getSharedChatSnapshot, peekPublicShare } from "@/lib/share";
 import { cn } from "@/lib/utils";
 
@@ -87,11 +88,17 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
           className="flex min-h-0 flex-1 flex-col"
           contentClassName="flex min-h-0 flex-1 flex-col py-4 sm:py-6"
         >
+          {/* A shared design is its poster, drawn by `/share/{token}/poster`
+              for exactly this version. Its document stays on the server: the
+              viewer never shows it, and sending it anyway would put the whole
+              JSON, inline images and all, in the page data of every anonymous
+              visitor (X-20). */}
           <SharedArtifactViewer
             type={artifact.type}
             language={artifact.language}
-            content={artifact.content}
+            content={artifact.type === "DESIGN" ? "" : artifact.content}
             version={artifact.version}
+            posterUrl={artifact.type === "DESIGN" ? sharedDesignPosterUrl(token) : undefined}
           />
         </AppPage>
       ) : null}
