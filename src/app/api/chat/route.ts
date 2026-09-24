@@ -2852,8 +2852,8 @@ async function handleChat(req: Request) {
         }
       } else if (researchRequested) {
         researchNotice = PLANS[plan].webSearch
-          ? "Deep research is not configured on this deployment. A search provider must be available before I can investigate your question."
-          : "Deep research is available on paid Juno plans. Your research has not started.";
+          ? "Research is not configured on this deployment. A search provider must be available before I can investigate your question."
+          : "Research is available on paid Juno plans. Your research has not started.";
         sendActivity({
           kind: "warning",
           title: "Deep research was skipped",
