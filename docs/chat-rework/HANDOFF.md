@@ -56,7 +56,24 @@ multi-agent workflows. So first came a hotfix branch off origin/main (7f92324f),
 The next small slices, if usage allows:
 - stop sending xAI's retired Live Search, once verified live.
 
-## In progress: wave 1 (paused mid-implementation)
+## Resumed 2026-09-24 (owner, via the Artifacts session)
+
+- origin/main e5501f65 was merged into `web/tools-thinking-research`. The gate passed: typecheck
+  clean and 3,960 tests passing.
+- Each `web/rework-ws*` branch then merged the integration branch.
+  - ws3a had one conflict in `gemini.ts`. It was resolved to ws3a's loop, which already sends
+    `exec.text`.
+- **Wave 1 relaunched:** run `wf_7dc5df4a-b96` (`rework-wave1-resume`). Each workstream is
+  finished from its WIP commit, reviewed once with both lenses, fixed, then merged in order.
+  - Resume with `Workflow({scriptPath: …/rework-wave1-resume-wf_7dc5df4a-b96.js, resumeFromRunId:
+    "wf_7dc5df4a-b96"})`.
+- **Agreed with the Artifacts session (artifacts/r1-lifecycle):**
+  - It owns `src/lib/artifacts-store.ts` and will expose
+    `persistArtifacts(conversationId, messageId, parsed, opts?: { tx })`. WS7 calls it through a
+    typed shim until that lands.
+  - Message it before WS9a touches `route.ts`.
+
+## Earlier: wave 1 (paused mid-implementation)
 
 The run was `wf_a8130f4a-430` (`rework-wave1`), stopped during the implement stage. No review, fix
 or merge had started. Each workstream has one **WIP commit** on its own branch, cut from 5f89b888,
