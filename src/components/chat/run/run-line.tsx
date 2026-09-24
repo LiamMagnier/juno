@@ -110,7 +110,7 @@ export function RunLine({ renderKey, view, streaming, expanded, onToggle, contro
       data-no-auto-translate
       data-run-line=""
       className={cn(
-        "-mx-2 w-[calc(100%+1rem)] min-h-9 gap-2.5 px-2 py-1.5 leading-6 coarse:min-h-11",
+        "-mx-2 w-[calc(100%+1rem)] min-h-9 gap-2.5 px-2 py-1.5 text-start leading-6 coarse:min-h-11",
         // Warning is the one failure ink in the run UI (design system §2.2).
         failed && "text-warning-foreground",
       )}
@@ -126,7 +126,8 @@ export function RunLine({ renderKey, view, streaming, expanded, onToggle, contro
         {caption ? (
           <span
             className={cn(
-              "hidden min-w-0 shrink truncate text-caption @[28rem]/run:inline",
+              // At every width: a stall or a long wait is news, unlike the facts beside it.
+              "min-w-0 shrink truncate text-caption",
               caption === "stalledFor" ? "text-warning-foreground" : "text-muted-foreground",
             )}
           >

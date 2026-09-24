@@ -138,7 +138,7 @@ export function RunTimelineInline({
                 </blockquote>
               ) : item.kind === "tool" ? (
                 <div className="min-w-0">
-                  <Pressable kind="row" size="sm" onClick={() => onOpenPanel({ callId: item.call.callId })} className="-mx-2 w-[calc(100%+1rem)]">
+                  <Pressable kind="row" size="sm" onClick={() => onOpenPanel({ callId: item.call.callId })} className="-mx-2 w-[calc(100%+1rem)] text-start">
                     <ToolStepRow item={item} variant="timeline" className="min-w-0 flex-1" />
                   </Pressable>
                   {item.call.approval ? <ReceiptLine approval={item.call.approval} className="block ps-5" /> : null}
