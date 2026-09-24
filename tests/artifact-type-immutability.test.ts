@@ -56,10 +56,16 @@ const prisma = {
   $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
 };
 
-mock.module("@/lib/prisma", { namedExports: { prisma } });
+// `mock.module` needs --experimental-test-module-mocks. `npm test` runs this
+// directory without it, so the suite skips there rather than failing: every
+// test loads the store, and the store reaches Prisma.
+const canMockModules = typeof (mock as { module?: unknown }).module === "function";
+const storeTest = canMockModules ? test : test.skip;
+
+if (canMockModules) mock.module("@/lib/prisma", { namedExports: { prisma } });
 const load = () => import("@/lib/artifacts-store");
 
-test("a same-type re-emission appends a version and never writes the type", async () => {
+storeTest("a same-type re-emission appends a version and never writes the type", async () => {
   const { persistArtifacts } = await load();
   calls.length = 0;
   existing = { id: "ck-old-artifact-abc123", identifier: "screen", type: "HTML", currentVersion: 3, messageId: "m1", title: "Screen" };
@@ -71,7 +77,7 @@ test("a same-type re-emission appends a version and never writes the type", asyn
   assert.equal((calls.find((c) => c.op === "version.create")?.args.data as { version: number }).version, 4);
 });
 
-test("a re-emission with a new type makes a new artifact and retires the old handle", async () => {
+storeTest("a re-emission with a new type makes a new artifact and retires the old handle", async () => {
   const { persistArtifacts } = await load();
   calls.length = 0;
   existing = { id: "ck-old-artifact-abc123", identifier: "screen", type: "DESIGN", currentVersion: 3, messageId: "m1", title: "Screen" };
@@ -88,7 +94,20 @@ test("a re-emission with a new type makes a new artifact and retires the old han
   assert.equal(calls.some((c) => c.op === "version.create"), false, "the old row gains no version of the new type");
 });
 
-test("the retired handle is the identifier plus the last six characters of the id", async () => {
+storeTest("the retired handle is the identifier plus the last six characters of the id", async () => {
   const { retiredIdentifier } = await load();
   assert.equal(retiredIdentifier("sign-in", "clx0000000000000000zz9k2q"), "sign-in~zz9k2q");
+});
+
+storeTest("an unfinished block is never stored, even by a caller that skipped verification (X-07)", async () => {
+  const { persistArtifacts } = await load();
+  calls.length = 0;
+  existing = { id: "ck-old-artifact-abc123", identifier: "screen", type: "HTML", currentVersion: 3, messageId: "m1", title: "Screen" };
+  // What `parseArtifacts` hands back for a reply that stopped inside the block:
+  // the research audit passes this straight through, with no verifier between.
+  const out = await persistArtifacts("c1", "m2", [
+    { identifier: "screen", type: "HTML", title: "Screen", content: "<p>half a pa", incomplete: true },
+  ]);
+  assert.deepEqual(out, []);
+  assert.deepEqual(calls, [], "no update, no create, no version: v3 stays current");
 });
