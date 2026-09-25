@@ -95,6 +95,10 @@ struct JunoDesktopConfiguration {
     /// transport to read agents over and should not have to name one.
     var agentsModel: NativeAgentsModel? = nil
     let libraryModel: NativeLibraryModel?
+    /// The Library page's own model (Phase 4 A4): paged, filtered on the
+    /// server, with delete and Undo. The composer's picker keeps
+    /// ``libraryModel``.
+    var libraryPageModel: NativeLibraryPageModel? = nil
     /// This Mac's local document index: files read into chunks by
     /// ``DocumentIngestionPipeline`` and ranked by `JunoSearch`.
     ///
@@ -378,6 +382,10 @@ struct JunoDesktopConfiguration {
                     // The picker draws the file, which means resolving its
                     // bytes — the same route the Library screen already takes.
                     previewSource: NativeProjectAPIClient(sender: runtime)
+                ),
+                libraryPageModel: NativeLibraryPageModel(
+                    client: NativeLibraryClient(sender: runtime),
+                    uploader: NativeAttachmentAPIClient(sender: runtime)
                 ),
                 // No transport at all: extraction, chunking and ranking are
                 // entirely local, and nothing a person indexes here is uploaded.

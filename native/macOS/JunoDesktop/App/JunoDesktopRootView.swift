@@ -206,6 +206,7 @@ struct JunoDesktopRootView: View {
         configuration.searchModel?.start(for: accountID)
         configuration.privateChatModel?.start(for: accountID)
         configuration.libraryModel?.start(for: accountID)
+        configuration.libraryPageModel?.start(for: accountID)
         configuration.documentIndexModel?.start(for: accountID)
         // Before the first turn can be sent, and last so it runs after every
         // model it reads is started. Both hooks are pure composition and neither
@@ -392,6 +393,7 @@ struct JunoDesktopRootView: View {
         // silently switched off.
         configuration.workHostModel?.detach()
         configuration.libraryModel?.stop()
+        configuration.libraryPageModel?.stop()
         // Not merely "forget the list": the plaintext of every indexed document
         // is in that index, so `stop()` wipes the account's partition. Signing
         // out has to leave nothing behind for the next person at this Mac.

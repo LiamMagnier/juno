@@ -158,6 +158,9 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     case folderOpen, folderPlus, clock, history, shield, compass, blocks
     case play, pause, gitCommit, fork, fileDiff, list, grid, image
     case circleDot, loader, agents, archive, download, filter, eye, message
+    /// The design presets' devices (the web's `Smartphone` and `Tablet`,
+    /// Phosphor's `DeviceMobile` and `DeviceTablet`).
+    case smartphone, tablet
     case bell, arrowUp, arrowLeft, arrowRight, minus, box, key, link
     case sun, moon, monitor, home2
 
@@ -343,6 +346,8 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .sun: "ph.sun"
         case .moon: "ph.moon"
         case .monitor: "ph.monitor"
+        case .smartphone: "ph.devicemobile"
+        case .tablet: "ph.devicetablet"
         case .knowledge: "ph.bookopen"
         case .tools: "ph.wrench"
         case .circleCheck: "ph.checkcircle"

@@ -401,6 +401,17 @@ the server-validated `conversation.update` mutation with a `projectId` patch
 (ownership-checked; `null` clears the association), surfaced through the new
 `NativeConversation.projectId` projection and `NativeConversationModel.setProject`.
 
+### Phase 4 Stage A (macOS pages) — routes the Mac now calls
+
+Status: documented in `contracts/openapi/juno-native-v1.yaml` (additive; `info.version` unchanged).
+
+- `GET /api/library` with `limit`, `sort`, `q`, `kind`, `includeDeleted` and `cursor`, and the first page's `counts`, `total` and `storage`; rows' `inUse`, `keptIn`, `knowledge`, `versionCount`, `deletedAt`.
+- `PATCH /api/attachments/{id}`, `POST /api/attachments/{id}/restore`, `GET /api/attachments/{id}/versions`, `POST /api/attachments/{id}/versions/{v}/restore` (the Library page).
+- `GET /api/artifacts/{id}/poster?v=&r=` (design posters), with `/api/design/{id}/export?format=svg` as the fallback.
+- `POST /api/projects` with an empty body, for a project left unnamed; the `project.create` sync mutation still requires a name.
+
+Open: `/api/library` items carry `knowledge` but no document id, so the document inspector (`/knowledge/documents/{id}`) has no way in on either client (Phase 4 brief §8.4).
+
 ## Contract exit criteria
 
 The API gap phase is complete only when:

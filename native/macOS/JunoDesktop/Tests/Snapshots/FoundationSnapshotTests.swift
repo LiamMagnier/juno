@@ -120,13 +120,11 @@ enum FoundationFixtures {
                 width: F.windowWidth,
                 view: {
                     AnyView(page(world: world, selection: .destination(.library)) {
-                        DesktopLibraryScreen(model: world.world.libraryModel)
+                        DesktopLibraryScreen(model: PageFixtures.libraryModel())
                     })
                 },
                 prepare: {
                     world.showDraft()
-                    world.world.libraryModel.start(for: world.world.accountID)
-                    await world.world.libraryModel.refresh()
                 }
             )
         case "window-connections":

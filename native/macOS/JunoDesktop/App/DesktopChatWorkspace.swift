@@ -240,6 +240,8 @@ struct DesktopChatWorkspace: View {
                 // other selection opens its destination's root.
                 if case .project(let id) = item {
                     requestedProjectID = id
+                    // Pushed on the Projects stack (Phase 4 A5), not swapped in.
+                    pageRouter.open(.projects, route: .project(id))
                 } else {
                     requestedProjectID = nil
                 }
@@ -738,7 +740,7 @@ struct DesktopChatWorkspace: View {
 
     private func openProject(_ projectID: String) {
         requestedProjectID = projectID
-        destination.wrappedValue = .projects
+        pageRouter.open(.projects, route: .project(projectID))
     }
 
     private func openSearch() {

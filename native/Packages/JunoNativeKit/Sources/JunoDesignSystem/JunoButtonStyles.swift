@@ -48,3 +48,17 @@ public extension PrimitiveButtonStyle where Self == JunoProminentButtonStyle {
     /// the Juno accent wherever it is drawn.
     static var junoProminent: JunoProminentButtonStyle { JunoProminentButtonStyle() }
 }
+
+// MARK: - The one prominent menu
+
+public extension View {
+    /// A `Menu` drawn as the page's one prominent button, in the Juno accent
+    /// (the Artifacts page's New ▾). A menu takes no `PrimitiveButtonStyle`
+    /// of ours — its label is not a `Button` — so the system's prominent
+    /// style is applied here, where the accent is fixed with it, rather than
+    /// at call sites that would inherit the system blue.
+    func junoProminentMenu() -> some View {
+        buttonStyle(.borderedProminent)
+            .tint(Color.junoAccent)
+    }
+}

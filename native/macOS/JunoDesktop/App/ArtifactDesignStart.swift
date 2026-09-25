@@ -208,6 +208,7 @@ struct DesktopSidebarDesignRow: View {
                 JunoIconView(.design, size: 16)
                     .foregroundStyle(ink)
                     .frame(width: 26, height: 26)
+                    .frame(minWidth: 28, minHeight: 28)
                     .accessibilityHidden(true)
 
                 Text("Design")

@@ -1,10 +1,10 @@
 {
   "glass": {
-    "total": 28,
+    "total": 27,
     "modules": {
       "JunoNativeKit (shared)": 1,
       "JunoCode (shared)": 2,
-      "JunoDesktop (macOS)": 9,
+      "JunoDesktop (macOS)": 8,
       "JunoMobile (iOS)": 16
     },
     "files": {
@@ -19,7 +19,6 @@
       "native/iOS/JunoMobile/App/JunoMobileTasksView.swift": 1,
       "native/iOS/JunoMobile/App/JunoMobileWorkView.swift": 4,
       "native/iOS/JunoMobile/App/JunoMobileWorkspaceViews.swift": 2,
-      "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift": 1,
       "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift": 2,
       "native/macOS/JunoDesktop/App/DesktopDictation.swift": 2,
       "native/macOS/JunoDesktop/App/DesktopVoice.swift": 1,
@@ -48,11 +47,11 @@
     }
   },
   "targets": {
-    "total": 291,
+    "total": 267,
     "modules": {
       "JunoNativeKit (shared)": 35,
       "JunoCode (shared)": 89,
-      "JunoDesktop (macOS)": 138,
+      "JunoDesktop (macOS)": 114,
       "JunoMobile (iOS)": 29
     },
     "files": {
@@ -99,15 +98,12 @@
       "native/iOS/JunoMobile/App/JunoMobileWorkspaceViews.swift": 7,
       "native/macOS/JunoDesktop/App/DesktopAccountScreens.swift": 13,
       "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift": 1,
-      "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift": 13,
       "native/macOS/JunoDesktop/App/DesktopChatSidebar.swift": 7,
       "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift": 1,
       "native/macOS/JunoDesktop/App/DesktopCodeAccountFooter.swift": 5,
       "native/macOS/JunoDesktop/App/DesktopCodeStudio.swift": 10,
       "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift": 6,
       "native/macOS/JunoDesktop/App/DesktopConnectionsScreen.swift": 9,
-      "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift": 5,
-      "native/macOS/JunoDesktop/App/DesktopLibraryScreen.swift": 6,
       "native/macOS/JunoDesktop/App/DesktopSearchScreen.swift": 1,
       "native/macOS/JunoDesktop/App/DesktopTasksScreen.swift": 9,
       "native/macOS/JunoDesktop/App/DesktopUsageScreen.swift": 1,

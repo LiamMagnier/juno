@@ -50,6 +50,11 @@ public struct JunoEmptyState: View {
     private let perform: (() -> Void)?
     private let size: Size
     private let tone: Tone
+    /// The web's two-action states (Library: Upload files and Go to chat;
+    /// Artifacts: Start building and New design ▾), and a page-size state
+    /// that carries the page's one prominent button while the header's copy
+    /// of it is withheld (Phase 4 brief §2.1).
+    private let actions: AnyView?
 
     @State private var hasArrived = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -73,6 +78,26 @@ public struct JunoEmptyState: View {
         self.perform = action
         self.size = size
         self.tone = tone ?? Self.tone(for: icon)
+        actions = nil
+    }
+
+    /// A state whose actions are the page's own buttons, laid out in a row.
+    public init<Actions: View>(
+        title: String,
+        message: String? = nil,
+        icon: JunoIcon,
+        size: Size = .page,
+        tone: Tone? = nil,
+        @ViewBuilder actions: () -> Actions
+    ) {
+        self.title = title
+        self.message = message
+        self.icon = icon
+        actionLabel = nil
+        perform = nil
+        self.size = size
+        self.tone = tone ?? Self.tone(for: icon)
+        self.actions = AnyView(actions())
     }
 
     /// The marks that mean something went wrong.
@@ -138,6 +163,13 @@ public struct JunoEmptyState: View {
                     .controlSize(.regular)
                     .contentShape(.rect)
                     .padding(.top, isPage ? JunoSpace.section : JunoSpace.regular)
+            }
+            if let actions {
+                HStack(spacing: JunoSpace.snug) {
+                    actions
+                }
+                .controlSize(.regular)
+                .padding(.top, isPage ? JunoSpace.section : JunoSpace.regular)
             }
         }
     }

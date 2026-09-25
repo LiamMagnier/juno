@@ -368,3 +368,20 @@ Runtime checks not done (screen control is off): a toast over a live composer (a
 - the dead "Use in chats" on Connections
 - editing only in the canvas
 - the document inspector's entry point
+
+## Phase 4 Stage A, 2026-09-25 (track B: Library, Projects, Artifacts, Design)
+
+Commits on `mac/liquid-glass-pages` (not pushed): the `origin/main` merge (`ec4348dd`), A1–A3 (`1876f3ac`), then A4–A6 with the docs. The spec's "Phase 4 errata, Stage A" has the detail and register #69–#87 (Track A holds #53–#68).
+
+**Built:** the resolver on the web's rule with the dock following the row id; the Design row gone and `.design` → Artifacts › Designs; `DesktopPageRoute` / `DesktopPageRouter` / `DesktopPageStack`; server posters with the export fallback; Library, Projects (list, pushed project page, New project sheet) and Artifacts (list, grid, New ▾, presets, the artifact page, the design editor page) on the template; the design editor bundle rebuilt. A7 (the document inspector) is not built: no route names a library item's document.
+
+**What Track A has to wire** (brief §0.4):
+- `DesktopPageRouter.shared` (`App/DesktopPageRoute.swift`): `open(_:route:artifactsType:opensNewMenu:)` and `openArtifactInConversation(_:)`, for ⌘K rows (Design → `open(.design)`, which lands on Artifacts › Designs), Settings links, and notifications.
+- `DesktopArtifactsScreen(shareArtifact:)`: pass the share popover from `DesktopDestinationView.artifactsPage` (`App/DesktopAccountScreens.swift`); Share… appears once it is set.
+- The Archived Chats and More-menu hooks are Stage C's.
+
+**Snapshots:** `Tests/Snapshots/PageSnapshotTests.swift` (`JUNO_SNAPSHOT_DIR` → `<dir>/pages/`), 26 fixtures in both appearances, rendered to `/tmp/juno-glass-snapshots/p4-A/pages/`; the Phase 2 final set re-rendered to `/tmp/juno-glass-snapshots/p4-A/final/`.
+
+**Not checked at the screen** (screen control is off): pushes and pops with the system back button; a popover open during a push; ⌘R and ⇧⌘I from the Library; dropping files on the Library or a project's Sources; Quick Look; Undo after a delete; a design made from New ▾ opening in the editor; Open in Conversation sliding in the dock; posters revalidating against the live server; the unnamed-project route.
+
+**Follow-ups:** the iPhone should adopt `ChatArtifactResolver` (it matches artifacts by identifier across every conversation); a project's Code tab; the document inspector once the server sends `knowledge.documentId`; new copy into `Localizable.xcstrings`.
