@@ -541,3 +541,14 @@ Merged in order, each merge built and committed: `mac/lg-p5c`, `mac/liquid-glass
 - **Lane worktrees removed** (`juno-glass-pages`, `-p5c`, `-p4b`, `-p4c`, `-p3`, `-p3b`, `-p3c`; each was clean at its branch tip). The branches are kept: `mac/lg-p5c`, `mac/liquid-glass-pages`, `mac/lg-p4b`, `mac/lg-p4c`, `mac/lg-p3`, `mac/lg-p3b`, `mac/lg-p3c`, `fix/download-feed-cancel`. `origin/main` was re-fetched and is still `fe0a501d`, already merged.
 - **Runtime checks left for a person at the screen** (screen control is off): each lane's list, plus ⌘K's page rows and Open notifications, Settings' links from Settings and from a window on Code, the View menu's pages, Share… on an artifact, Use a Skill and `/slug` reaching the server, Archived Chats from More.
 - **Then ship**, per the owner's standing instruction (the release steps in the paused update above): merge into `main`, gate, push, deploy, 1.7.0 / 88, `release-macos.sh 1.7.0 --publish-dev`.
+
+## Phase 6 Stage C, 2026-09-25 (`mac/lg-p6c`: the chat wire, the parity ledger, the register)
+
+Tooling and documents only; no Swift, app or web source changed. The spec's "Phase 6 errata, Stage C" has the detail.
+
+- **Chat wire:** `contracts/chat/juno-chat-wire-v1.schema.json` (generated: `npm run native:wire`) from `chatBodySchema` and the `StreamChunk` type, every field `native`, `planned` or `web-only` from `contracts/chat/juno-chat-wire-v1.status.json`. `npm run native:wire:check` fails on an unclassified field and on a native claim the Swift wire structs contradict; keys the Mac is ahead on (the rework's `clientFeatures`, `handoff`, the typed timeline) are `nativeOnly`.
+- **Parity ledger:** `contracts/parity/features.json` classifies all 255 API routes and 44 app pages; `npm run native:parity` writes `docs/native/PARITY_MATRIX.md`; `npm run native:parity:check` fails on anything unclassified, gone, or contradicted by the Swift's own calls. The hand-written matrix is `docs/native/archive/PARITY_MATRIX_2026-09-08.md`.
+- **Register:** `docs/native/WEB_TO_NATIVE_DESIGN.md` › "Register of deliberate differences", #1–#167 in final numbers (5 retired), checked by `npm run native:register:check`. When a lane adds a difference, it adds the next number there.
+- **CI:** a `parity` job in `native.yml` runs the three checks on every push; a diff that touches only `contracts/parity/` or `contracts/chat/` (with web files) does not wake the macOS jobs.
+- **When a web change fails these:** classify the new field or route (native, planned or web-only, with a note) in the status file or the ledger, regenerate (`npm run native:wire`, `npm run native:parity`) and commit both.
+- **Deferred:** generated Swift request/response types from the wire schema; reconciling the OpenAPI chat schemas; per-app route statuses; the iOS and Code page statuses are a first pass.

@@ -1,0 +1,473 @@
+{
+  "$comment": "The native status of every field on the chat wire (POST /api/chat and its SSE frames). Read by scripts/generate-chat-wire-contract.ts, which stamps each status into contracts/chat/juno-chat-wire-v1.schema.json as `x-native` and fails `npm run native:wire:check` on a field nobody has classified. native: the Swift apps send or read it today (checked against the Swift sources under `swift`). planned: native means to; the gap is known. web-only: only the web sends or reads it, by decision; the note says why. A field under a native parent must be listed; a field under a planned or web-only parent inherits it. `nativeOnly` lists keys the Swift sends or reads that today's web does not define; each fails the check once the web defines it, so it moves into `fields`.",
+  "fields": {
+    "request.conversationId": "native",
+    "request.projectId": {
+      "status": "web-only",
+      "note": "The Swift apps create a conversation (with its project) through sync before the first turn; only the web's first submission creates one here."
+    },
+    "request.message": {
+      "status": "web-only",
+      "note": "The Swift apps append the user turn through POST /api/conversations/{id}/messages, then send `regenerate: true`, so every native turn regenerates from the stored message."
+    },
+    "request.clarification": {
+      "status": "planned",
+      "note": "Answering a clarification wizard in chat. The Mac strips the wizard fence from the transcript today."
+    },
+    "request.preflightClarification": {
+      "status": "planned",
+      "note": "Answers to the pre-flight questions before a turn runs; no native composer for them yet."
+    },
+    "request.artifactEdit": {
+      "status": "planned",
+      "note": "Canvas Ask / Modify on a selection (the quote card), deferred from Phase 3 (brief §7.1)."
+    },
+    "request.attachmentIds": {
+      "status": "web-only",
+      "note": "Native attachments ride the appended user turn (POST /api/conversations/{id}/messages `attachmentIds`), not this body."
+    },
+    "request.model": "native",
+    "request.regenerate": "native",
+    "request.regenerateInstruction": "native",
+    "request.voiceMode": {
+      "status": "planned",
+      "note": "The web sets it for a turn spoken in voice mode; the Mac's voice path does not send it yet."
+    },
+    "request.canvasEnabled": {
+      "status": "native",
+      "note": "Legacy and native-only by origin: only an explicit false from an older build does anything (request.ts keeps it so shipped binaries never 400)."
+    },
+    "request.webSearch": "native",
+    "request.fastMode": "native",
+    "request.proMode": "native",
+    "request.origin": {
+      "status": "web-only",
+      "note": "Durable creation metadata for a conversation created by this request. The Swift apps create conversations through sync; the Electron client (native/desktop-electron) sends main_macos here."
+    },
+    "request.clientRequestId": {
+      "status": "web-only",
+      "note": "The durable first-submission pair (with clientMessageId). Native turns are appended first and deduplicated by the append route's clientId."
+    },
+    "request.clientMessageId": {
+      "status": "web-only",
+      "note": "See clientRequestId."
+    },
+    "request.deepResearch": "native",
+    "request.researchEffort": {
+      "status": "web-only",
+      "note": "The Mac has no research levels (Phase 2 errata, Research): the server's default effort applies."
+    },
+    "request.reasoningEffort": "native",
+    "request.connectors": "native",
+    "request.skillSlug": "native",
+    "request.generationId": "native",
+    "request.workHandoff": "native",
+    "request.privateMode": "native",
+    "request.client": "native",
+    "request.privateHistory": "native",
+    "request.privateHistory[].role": "native",
+    "request.privateHistory[].content": "native",
+
+    "stream.meta": "native",
+    "stream.meta.conversationId": "native",
+    "stream.meta.userMessageId": "native",
+    "stream.meta.title": "native",
+    "stream.meta.titleSource": {
+      "status": "planned",
+      "note": "Not decoded from the frame; the stored conversation carries it."
+    },
+    "stream.meta.generationId": "native",
+    "stream.meta.receiptState": {
+      "status": "web-only",
+      "note": "Durable first-submission receipt; native never makes a first submission on this route."
+    },
+    "stream.meta.resumable": {
+      "status": "planned",
+      "note": "Not decoded: the Mac tries GET /api/chat/stream/{generationId} and treats a 404 as not resumable."
+    },
+    "stream.resume": "native",
+    "stream.resume.available": "native",
+    "stream.resume.refetch": "native",
+    "stream.title": "native",
+    "stream.title.conversationId": "native",
+    "stream.title.title": "native",
+    "stream.title.titleSource": {
+      "status": "planned",
+      "note": "As on meta."
+    },
+    "stream.activity": "native",
+    "stream.activity.event": "native",
+    "stream.approval": "native",
+    "stream.approval.approval": "native",
+    "stream.work": "native",
+    "stream.work.session": "native",
+    "stream.sources": "native",
+    "stream.sources.sources": "native",
+    "stream.reasoning": "native",
+    "stream.reasoning.text": "native",
+    "stream.reasoning.part": "native",
+    "stream.delta": "native",
+    "stream.delta.text": "native",
+    "stream.progress": "native",
+    "stream.progress.stage": "native",
+    "stream.progress.pct": "native",
+    "stream.progress.note": {
+      "status": "planned",
+      "note": "The media progress row shows the stage and percentage only."
+    },
+    "stream.done": "native",
+    "stream.done.message": "native",
+    "stream.done.artifacts": "native",
+    "stream.done.memoryUpdated": {
+      "status": "planned",
+      "note": "The web's \"Memory updated\" note under a reply; the Mac learns of memory changes through sync."
+    },
+    "stream.done.quota": {
+      "status": "planned",
+      "note": "The Mac reads usage from /api/profile/usage (the account popover and the composer's quota line), not from the frame."
+    },
+    "stream.done.finishReason": "native",
+    "stream.done.title": {
+      "status": "planned",
+      "note": "Titles arrive on meta and title frames and through sync."
+    },
+    "stream.done.projectId": {
+      "status": "planned",
+      "note": "A chat filed into a project by the turn; the Mac picks the move up through sync."
+    },
+    "stream.done.projectName": {
+      "status": "planned",
+      "note": "As projectId."
+    },
+    "stream.error": "native",
+    "stream.error.message": "native",
+    "stream.error.quota": {
+      "status": "planned",
+      "note": "As done.quota."
+    },
+    "stream.error.finishReason": "native",
+    "stream.error.preservePartial": {
+      "status": "planned",
+      "note": "The Mac keeps whatever text it streamed whatever the flag says."
+    },
+    "stream.error.conversationId": {
+      "status": "web-only",
+      "note": "Durable first-submission terminal metadata, as meta.receiptState."
+    },
+    "stream.error.userMessageId": "native",
+    "stream.error.generationId": "native",
+    "stream.error.receiptState": {
+      "status": "web-only",
+      "note": "As meta.receiptState."
+    },
+    "stream.error.failureCode": {
+      "status": "web-only",
+      "note": "Durable first-submission failure code, as meta.receiptState."
+    },
+    "stream.ping": "native",
+
+    "ClientMessage.id": "native",
+    "ClientMessage.role": "native",
+    "ClientMessage.content": "native",
+    "ClientMessage.reasoning": "native",
+    "ClientMessage.reasoningParts": "native",
+    "ClientMessage.model": "native",
+    "ClientMessage.feedback": {
+      "status": "web-only",
+      "note": "A reply is unrated when it finishes; ratings travel through sync and /api/messages/{id}/feedback."
+    },
+    "ClientMessage.createdAt": "native",
+    "ClientMessage.conversationId": {
+      "status": "web-only",
+      "note": "The stream already belongs to one conversation."
+    },
+    "ClientMessage.versions": {
+      "status": "web-only",
+      "note": "The Mac's version pager reads /api/messages/{id}/versions."
+    },
+    "ClientMessage.attachments": "native",
+    "ClientMessage.sources": "native",
+    "ClientMessage.activity": "native",
+    "ClientMessage.approvals": {
+      "status": "web-only",
+      "note": "The Mac holds approvals from the approval frame and /api/approvals, not from the finished message."
+    },
+    "ClientMessage.finishReason": "native",
+    "ClientMessage.errorMessage": {
+      "status": "planned",
+      "note": "Failures arrive as error frames; the stored message's error line is not read from done."
+    },
+    "ClientMessage.progress": {
+      "status": "web-only",
+      "note": "Client-transient on the web (use-chat sets it); the server never sends it."
+    },
+    "ClientMessage.promptTokens": "native",
+    "ClientMessage.completionTokens": "native",
+    "ClientMessage.costUsd": "native",
+    "ClientMessage.cacheReadTokens": "native",
+    "ClientMessage.cacheWriteTokens": "native",
+
+    "ClientAttachment.id": "native",
+    "ClientAttachment.kind": "native",
+    "ClientAttachment.fileName": "native",
+    "ClientAttachment.mimeType": "native",
+    "ClientAttachment.size": "native",
+    "ClientAttachment.url": "native",
+    "ClientAttachment.width": "native",
+    "ClientAttachment.height": "native",
+    "ClientAttachment.parserState": "native",
+
+    "ClientSource.title": "native",
+    "ClientSource.url": "native",
+    "ClientSource.snippet": "native",
+    "ClientSource.cited": "native",
+
+    "ClientArtifact.id": "native",
+    "ClientArtifact.identifier": "native",
+    "ClientArtifact.type": "native",
+    "ClientArtifact.title": "native",
+    "ClientArtifact.language": "native",
+    "ClientArtifact.currentVersion": "native",
+    "ClientArtifact.content": "native",
+    "ClientArtifact.versions": "native",
+    "ClientArtifact.messageId": "native",
+    "ClientArtifact.createdAt": "native",
+    "ClientArtifact.updatedAt": "native",
+
+    "ClientArtifactVersion.version": "native",
+    "ClientArtifactVersion.content": "native",
+    "ClientArtifactVersion.origin": "native",
+    "ClientArtifactVersion.createdAt": "native",
+
+    "ClientActivityEvent.id": "native",
+    "ClientActivityEvent.kind": "native",
+    "ClientActivityEvent.title": "native",
+    "ClientActivityEvent.detail": "native",
+    "ClientActivityEvent.url": "native",
+    "ClientActivityEvent.createdAt": "native",
+    "ClientActivityEvent.tool": "native",
+    "ClientActivityEvent.memoryReceipt": "native",
+    "ClientActivityEvent.artifactVerification": {
+      "status": "planned",
+      "note": "The artifact check's receipt (verified, repaired, refused) is not drawn on the Mac yet."
+    },
+
+    "ClientToolDetail.server": "native",
+    "ClientToolDetail.name": "native",
+    "ClientToolDetail.args": "native",
+    "ClientToolDetail.argsNote": "native",
+    "ClientToolDetail.argsTruncated": "native",
+    "ClientToolDetail.result": "native",
+    "ClientToolDetail.resultNote": "native",
+    "ClientToolDetail.resultTruncated": "native",
+    "ClientToolDetail.resultChars": "native",
+    "ClientToolDetail.status": "native",
+    "ClientToolDetail.durationMs": "native",
+
+    "ClientMemoryReceipt.id": "native",
+    "ClientMemoryReceipt.content": "native",
+    "ClientMemoryReceipt.category": "native",
+    "ClientMemoryReceipt.sourceRef": {
+      "status": "planned",
+      "note": "The receipt's source link in the Activity panel."
+    },
+    "ClientMemoryReceipt.sourceMessageId": {
+      "status": "planned",
+      "note": "As sourceRef."
+    },
+
+    "ClientActionApproval.id": "native",
+    "ClientActionApproval.surface": "native",
+    "ClientActionApproval.sessionId": "native",
+    "ClientActionApproval.conversationId": "native",
+    "ClientActionApproval.connectorId": "native",
+    "ClientActionApproval.connectorLabel": "native",
+    "ClientActionApproval.toolName": "native",
+    "ClientActionApproval.action": "native",
+    "ClientActionApproval.riskClass": "native",
+    "ClientActionApproval.preview": "native",
+    "ClientActionApproval.detail": "native",
+    "ClientActionApproval.receiptDigest": "native",
+    "ClientActionApproval.status": "native",
+    "ClientActionApproval.decision": "native",
+    "ClientActionApproval.canAllowScope": "native",
+    "ClientActionApproval.derivedFromUntrusted": "native",
+    "ClientActionApproval.expiresAt": "native",
+    "ClientActionApproval.decidedAt": "native",
+    "ClientActionApproval.completedAt": "native",
+    "ClientActionApproval.createdAt": "native",
+
+    "ClientWorkSession.id": "native",
+    "ClientWorkSession.projectId": "native",
+    "ClientWorkSession.conversationId": "native",
+    "ClientWorkSession.title": "native",
+    "ClientWorkSession.titleSource": {
+      "status": "planned",
+      "note": "Not read yet; a task's title is shown as sent."
+    },
+    "ClientWorkSession.goal": "native",
+    "ClientWorkSession.status": "native",
+    "ClientWorkSession.needsAttention": "native",
+    "ClientWorkSession.requestedTarget": "native",
+    "ClientWorkSession.preferredHostId": "native",
+    "ClientWorkSession.requestedModel": "native",
+    "ClientWorkSession.reasoningEffort": "native",
+    "ClientWorkSession.permissionPolicy": "native",
+    "ClientWorkSession.pinned": "native",
+    "ClientWorkSession.archived": "native",
+    "ClientWorkSession.lastActivityAt": "native",
+    "ClientWorkSession.createdAt": "native",
+    "ClientWorkSession.updatedAt": {
+      "status": "planned",
+      "note": "Not read yet; the Mac orders tasks by lastActivityAt, as the web does."
+    }
+  },
+  "nativeOnly": {
+    "request.clientFeatures": {
+      "note": "The grammar the client renders (Tool calls & research rework, SPEC §2.2; web/tools-thinking-research, not on main). Today's server strips it: chatBodySchema is not strict."
+    },
+    "request.timeZone": {
+      "note": "The reader's IANA zone for current_time and research (the same rework); stripped by today's server."
+    },
+    "request.locale": {
+      "note": "The reader's BCP-47 locale (the same rework); stripped by today's server."
+    },
+    "stream.handoff": {
+      "note": "Background research's hand-off frame (the rework's research_background); today's server never sends it."
+    },
+    "stream.handoff.to": {
+      "note": "Always \"research\" on the rework's hand-off."
+    },
+    "stream.handoff.runId": {
+      "note": "The research run the turn handed off to."
+    },
+    "stream.delta.round": {
+      "note": "The rework's timeline grammar: which model round a delta belongs to."
+    },
+    "stream.delta.phase": {
+      "note": "The rework's timeline grammar: the phase a delta is written in."
+    },
+    "stream.reasoning.round": {
+      "note": "The rework's timeline grammar, as delta.round."
+    },
+    "stream.error.error": {
+      "note": "An older server's error frame carried `error` rather than `message`; the Mac still reads it as a fallback."
+    },
+    "ClientSource.origin": {
+      "note": "Where a source came from (the rework's citations); read when present."
+    },
+    "ClientActivityEvent.seq": {
+      "note": "The rework's typed timeline: the row's order in the run."
+    },
+    "ClientActivityEvent.round": {
+      "note": "The rework's typed timeline: the model round."
+    },
+    "ClientActivityEvent.call": {
+      "note": "The rework's typed timeline: one tool call's record."
+    },
+    "ClientActivityEvent.segment": {
+      "note": "The rework's typed timeline: a reasoning segment's position."
+    },
+    "ClientActivityEvent.commentary": {
+      "note": "The rework's typed timeline: the model's commentary between calls."
+    },
+    "ClientActivityEvent.notice": {
+      "note": "The rework's typed timeline: a coded notice with parameters."
+    },
+    "ClientActivityEvent.fact": {
+      "note": "The rework's typed timeline: a fact the run established."
+    }
+  },
+  "swift": {
+    "request": [
+      {
+        "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatAPIClient.swift",
+        "struct": "GenerationRequestWire"
+      },
+      {
+        "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatAPIClient.swift",
+        "struct": "PrivateGenerationRequestWire"
+      }
+    ],
+    "frames": [
+      {
+        "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatAPIClient.swift",
+        "set": "decodedFrameTypes"
+      }
+    ],
+    "frameFields": [
+      {
+        "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatAPIClient.swift",
+        "struct": "EventEnvelopeWire"
+      },
+      {
+        "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatAPIClient.swift",
+        "function": "decodeWorkFrame",
+        "ignoreExtraKeys": "It also reads the session's own keys, which ClientWorkSession covers."
+      }
+    ],
+    "defs": {
+      "ClientMessage": [
+        {
+          "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatAPIClient.swift",
+          "struct": "EventEnvelopeWire.Message"
+        }
+      ],
+      "ClientAttachment": [
+        {
+          "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatAPIClient.swift",
+          "struct": "AttachmentWire"
+        }
+      ],
+      "ClientSource": [
+        {
+          "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatAPIClient.swift",
+          "struct": "ChatSourceWire"
+        }
+      ],
+      "ClientArtifact": [
+        {
+          "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatAPIClient.swift",
+          "struct": "ChatArtifactWire"
+        }
+      ],
+      "ClientArtifactVersion": [
+        {
+          "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatAPIClient.swift",
+          "struct": "ChatArtifactWire.VersionWire"
+        }
+      ],
+      "ClientActivityEvent": [
+        {
+          "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeActivityWire.swift",
+          "struct": "NativeActivityWire"
+        }
+      ],
+      "ClientToolDetail": [
+        {
+          "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeActivityWire.swift",
+          "struct": "NativeActivityWire.ToolDetailWire"
+        }
+      ],
+      "ClientMemoryReceipt": [
+        {
+          "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeActivityWire.swift",
+          "struct": "NativeActivityWire.MemoryReceiptWire"
+        }
+      ],
+      "ClientActionApproval": [
+        {
+          "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeChatAPIClient.swift",
+          "struct": "ApprovalWire"
+        }
+      ],
+      "ClientWorkSession": [
+        {
+          "file": "native/Packages/JunoNativeKit/Sources/JunoWorkKit/NativeWorkClient.swift",
+          "function": "decodeSessionValue",
+          "ignoreExtraKeys": "One reader for the task list, the task detail and this frame; the detail shape carries keys the frame's session does not (hostId, currentRunId, lastSeq, …)."
+        }
+      ]
+    }
+  }
+}

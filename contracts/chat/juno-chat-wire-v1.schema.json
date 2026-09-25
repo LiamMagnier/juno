@@ -1,0 +1,1974 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://juno.app/contracts/chat/juno-chat-wire-v1.schema.json",
+  "title": "Juno chat wire",
+  "description": "POST /api/chat: the request body (ChatRequest) and the SSE frames the response streams (StreamEvent, one JSON object per `data:` line; GET /api/chat/stream/{generationId} replays the same frames). Generated from src/lib/chat/request.ts (chatBodySchema) and src/types/chat.ts (StreamChunk), with each field's `x-native` status from contracts/chat/juno-chat-wire-v1.status.json. Do not edit by hand; run `npm run native:wire`.",
+  "x-native-legend": {
+    "native": "The Swift apps send or read it today.",
+    "planned": "Native means to; the gap is known.",
+    "web-only": "Only the web sends or reads it, by decision; the note says why.",
+    "unclassified": "Nobody has decided yet. `npm run native:wire:check` fails."
+  },
+  "x-native-summary": {
+    "native": 158,
+    "planned": 65,
+    "web-only": 22,
+    "unclassified": 0
+  },
+  "x-native-only": {
+    "request.clientFeatures": {
+      "note": "The grammar the client renders (Tool calls & research rework, SPEC §2.2; web/tools-thinking-research, not on main). Today's server strips it: chatBodySchema is not strict."
+    },
+    "request.timeZone": {
+      "note": "The reader's IANA zone for current_time and research (the same rework); stripped by today's server."
+    },
+    "request.locale": {
+      "note": "The reader's BCP-47 locale (the same rework); stripped by today's server."
+    },
+    "stream.handoff": {
+      "note": "Background research's hand-off frame (the rework's research_background); today's server never sends it."
+    },
+    "stream.handoff.to": {
+      "note": "Always \"research\" on the rework's hand-off."
+    },
+    "stream.handoff.runId": {
+      "note": "The research run the turn handed off to."
+    },
+    "stream.delta.round": {
+      "note": "The rework's timeline grammar: which model round a delta belongs to."
+    },
+    "stream.delta.phase": {
+      "note": "The rework's timeline grammar: the phase a delta is written in."
+    },
+    "stream.reasoning.round": {
+      "note": "The rework's timeline grammar, as delta.round."
+    },
+    "stream.error.error": {
+      "note": "An older server's error frame carried `error` rather than `message`; the Mac still reads it as a fallback."
+    },
+    "ClientSource.origin": {
+      "note": "Where a source came from (the rework's citations); read when present."
+    },
+    "ClientActivityEvent.seq": {
+      "note": "The rework's typed timeline: the row's order in the run."
+    },
+    "ClientActivityEvent.round": {
+      "note": "The rework's typed timeline: the model round."
+    },
+    "ClientActivityEvent.call": {
+      "note": "The rework's typed timeline: one tool call's record."
+    },
+    "ClientActivityEvent.segment": {
+      "note": "The rework's typed timeline: a reasoning segment's position."
+    },
+    "ClientActivityEvent.commentary": {
+      "note": "The rework's typed timeline: the model's commentary between calls."
+    },
+    "ClientActivityEvent.notice": {
+      "note": "The rework's typed timeline: a coded notice with parameters."
+    },
+    "ClientActivityEvent.fact": {
+      "note": "The rework's typed timeline: a fact the run established."
+    }
+  },
+  "$defs": {
+    "ChatRequest": {
+      "type": "object",
+      "properties": {
+        "conversationId": {
+          "type": "string",
+          "format": "cuid",
+          "pattern": "^[cC][0-9a-z]{6,}$",
+          "x-native": "native"
+        },
+        "projectId": {
+          "type": "string",
+          "format": "cuid",
+          "pattern": "^[cC][0-9a-z]{6,}$",
+          "x-native": "web-only",
+          "x-native-note": "The Swift apps create a conversation (with its project) through sync before the first turn; only the web's first submission creates one here."
+        },
+        "message": {
+          "type": "string",
+          "x-native": "web-only",
+          "x-native-note": "The Swift apps append the user turn through POST /api/conversations/{id}/messages, then send `regenerate: true`, so every native turn regenerates from the stored message."
+        },
+        "clarification": {
+          "type": "object",
+          "properties": {
+            "messageId": {
+              "type": "string",
+              "format": "cuid",
+              "pattern": "^[cC][0-9a-z]{6,}$",
+              "x-native": "planned"
+            },
+            "blockId": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 120,
+              "x-native": "planned"
+            },
+            "originalUserMessage": {
+              "type": "string",
+              "x-native": "planned"
+            },
+            "answers": {
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "x-native": "planned"
+                  },
+                  "question": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "x-native": "planned"
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      {
+                        "maxItems": 12,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ],
+                    "x-native": "planned"
+                  },
+                  "skipped": {
+                    "type": "boolean",
+                    "x-native": "planned"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              },
+              "x-native": "planned"
+            },
+            "skippedQuestions": {
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "messageId",
+            "blockId",
+            "originalUserMessage",
+            "answers",
+            "skippedQuestions"
+          ],
+          "x-native": "planned",
+          "x-native-note": "Answering a clarification wizard in chat. The Mac strips the wizard fence from the transcript today."
+        },
+        "preflightClarification": {
+          "type": "object",
+          "properties": {
+            "originalUserMessage": {
+              "type": "string",
+              "x-native": "planned"
+            },
+            "answers": {
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "questionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "x-native": "planned"
+                  },
+                  "question": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "x-native": "planned"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "option",
+                      "else",
+                      "skip"
+                    ],
+                    "x-native": "planned"
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      {
+                        "maxItems": 12,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ],
+                    "x-native": "planned"
+                  }
+                },
+                "required": [
+                  "questionId",
+                  "source"
+                ]
+              },
+              "x-native": "planned"
+            },
+            "skipped": {
+              "type": "boolean",
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "originalUserMessage",
+            "answers"
+          ],
+          "x-native": "planned",
+          "x-native-note": "Answers to the pre-flight questions before a turn runs; no native composer for them yet."
+        },
+        "artifactEdit": {
+          "type": "object",
+          "properties": {
+            "artifactId": {
+              "type": "string",
+              "format": "cuid",
+              "pattern": "^[cC][0-9a-z]{6,}$",
+              "x-native": "planned"
+            },
+            "identifier": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240,
+              "x-native": "planned"
+            },
+            "baseVersion": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "x-native": "planned"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "text",
+                "element"
+              ],
+              "x-native": "planned"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000,
+              "x-native": "planned"
+            },
+            "lineStart": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "x-native": "planned"
+            },
+            "lineEnd": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "x-native": "planned"
+            },
+            "selector": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000,
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "artifactId",
+            "identifier",
+            "baseVersion",
+            "kind",
+            "text"
+          ],
+          "x-native": "planned",
+          "x-native-note": "Canvas Ask / Modify on a selection (the quote card), deferred from Phase 3 (brief §7.1)."
+        },
+        "attachmentIds": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "cuid",
+            "pattern": "^[cC][0-9a-z]{6,}$"
+          },
+          "x-native": "web-only",
+          "x-native-note": "Native attachments ride the appended user turn (POST /api/conversations/{id}/messages `attachmentIds`), not this body."
+        },
+        "model": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "regenerate": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "regenerateInstruction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400,
+          "x-native": "native"
+        },
+        "voiceMode": {
+          "type": "boolean",
+          "x-native": "planned",
+          "x-native-note": "The web sets it for a turn spoken in voice mode; the Mac's voice path does not send it yet."
+        },
+        "canvasEnabled": {
+          "type": "boolean",
+          "x-native": "native",
+          "x-native-note": "Legacy and native-only by origin: only an explicit false from an older build does anything (request.ts keeps it so shipped binaries never 400)."
+        },
+        "webSearch": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "fastMode": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "proMode": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "web",
+            "main_macos",
+            "main_ios",
+            "main_windows",
+            "quick_macos",
+            "quick_windows"
+          ],
+          "x-native": "web-only",
+          "x-native-note": "Durable creation metadata for a conversation created by this request. The Swift apps create conversations through sync; the Electron client (native/desktop-electron) sends main_macos here."
+        },
+        "clientRequestId": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 120,
+          "pattern": "^[A-Za-z0-9._:-]+$",
+          "x-native": "web-only",
+          "x-native-note": "The durable first-submission pair (with clientMessageId). Native turns are appended first and deduplicated by the append route's clientId."
+        },
+        "clientMessageId": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 120,
+          "pattern": "^[A-Za-z0-9._:-]+$",
+          "x-native": "web-only",
+          "x-native-note": "See clientRequestId."
+        },
+        "deepResearch": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "researchEffort": {
+          "type": "string",
+          "enum": [
+            "quick",
+            "standard",
+            "deep",
+            "max"
+          ],
+          "x-native": "web-only",
+          "x-native-note": "The Mac has no research levels (Phase 2 errata, Research): the server's default effort applies."
+        },
+        "reasoningEffort": {
+          "type": "string",
+          "enum": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "x-native": "native"
+        },
+        "connectors": {
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-native": "native"
+        },
+        "skillSlug": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "x-native": "native"
+        },
+        "generationId": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 120,
+          "x-native": "native"
+        },
+        "workHandoff": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "privateMode": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "client": {
+          "type": "string",
+          "enum": [
+            "web",
+            "app"
+          ],
+          "x-native": "native"
+        },
+        "privateHistory": {
+          "maxItems": 24,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": [
+                  "USER",
+                  "ASSISTANT"
+                ],
+                "x-native": "native"
+              },
+              "content": {
+                "type": "string",
+                "x-native": "native"
+              }
+            },
+            "required": [
+              "role",
+              "content"
+            ]
+          },
+          "x-native": "native"
+        }
+      },
+      "x-native": "native"
+    },
+    "StreamEvent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "meta"
+            },
+            "conversationId": {
+              "type": "string",
+              "x-native": "native"
+            },
+            "userMessageId": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "x-native": "native"
+            },
+            "title": {
+              "type": "string",
+              "x-native": "native"
+            },
+            "titleSource": {
+              "type": "string",
+              "enum": [
+                "ai",
+                "default",
+                "manual"
+              ],
+              "x-native": "planned",
+              "x-native-note": "Not decoded from the frame; the stored conversation carries it."
+            },
+            "generationId": {
+              "type": "string",
+              "x-native": "native"
+            },
+            "receiptState": {
+              "type": "string",
+              "const": "running",
+              "x-native": "web-only",
+              "x-native-note": "Durable first-submission receipt; native never makes a first submission on this route."
+            },
+            "resumable": {
+              "type": "boolean",
+              "x-native": "planned",
+              "x-native-note": "Not decoded: the Mac tries GET /api/chat/stream/{generationId} and treats a 404 as not resumable."
+            }
+          },
+          "required": [
+            "type",
+            "conversationId",
+            "userMessageId",
+            "title"
+          ],
+          "x-native": "native"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "resume"
+            },
+            "available": {
+              "type": "boolean",
+              "const": false,
+              "x-native": "native"
+            }
+          },
+          "required": [
+            "type",
+            "available"
+          ],
+          "x-native": "native"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "resume"
+            },
+            "refetch": {
+              "type": "boolean",
+              "const": true,
+              "x-native": "native"
+            }
+          },
+          "required": [
+            "type",
+            "refetch"
+          ],
+          "x-native": "native"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "title"
+            },
+            "conversationId": {
+              "type": "string",
+              "x-native": "native"
+            },
+            "title": {
+              "type": "string",
+              "x-native": "native"
+            },
+            "titleSource": {
+              "type": "string",
+              "enum": [
+                "ai",
+                "default",
+                "manual"
+              ],
+              "x-native": "planned",
+              "x-native-note": "As on meta."
+            }
+          },
+          "required": [
+            "type",
+            "conversationId",
+            "title"
+          ],
+          "x-native": "native"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "activity"
+            },
+            "event": {
+              "$ref": "#/$defs/ClientActivityEvent",
+              "x-native": "native"
+            }
+          },
+          "required": [
+            "type",
+            "event"
+          ],
+          "x-native": "native"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "approval"
+            },
+            "approval": {
+              "$ref": "#/$defs/ClientActionApproval",
+              "x-native": "native"
+            }
+          },
+          "required": [
+            "type",
+            "approval"
+          ],
+          "x-native": "native"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "work"
+            },
+            "session": {
+              "$ref": "#/$defs/ClientWorkSession",
+              "x-native": "native"
+            }
+          },
+          "required": [
+            "type",
+            "session"
+          ],
+          "x-native": "native"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "sources"
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ClientSource"
+              },
+              "x-native": "native"
+            }
+          },
+          "required": [
+            "type",
+            "sources"
+          ],
+          "x-native": "native"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "reasoning"
+            },
+            "text": {
+              "type": "string",
+              "x-native": "native"
+            },
+            "part": {
+              "type": "number",
+              "x-native": "native"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ],
+          "x-native": "native"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "delta"
+            },
+            "text": {
+              "type": "string",
+              "x-native": "native"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ],
+          "x-native": "native"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "progress"
+            },
+            "stage": {
+              "$ref": "#/$defs/GenerationProgressStage",
+              "x-native": "native"
+            },
+            "pct": {
+              "type": "number",
+              "x-native": "native"
+            },
+            "note": {
+              "type": "string",
+              "x-native": "planned",
+              "x-native-note": "The media progress row shows the stage and percentage only."
+            }
+          },
+          "required": [
+            "type",
+            "stage"
+          ],
+          "x-native": "native"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "done"
+            },
+            "message": {
+              "$ref": "#/$defs/ClientMessage",
+              "x-native": "native"
+            },
+            "artifacts": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ClientArtifact"
+              },
+              "x-native": "native"
+            },
+            "memoryUpdated": {
+              "type": "boolean",
+              "x-native": "planned",
+              "x-native-note": "The web's \"Memory updated\" note under a reply; the Mac learns of memory changes through sync."
+            },
+            "quota": {
+              "$ref": "#/$defs/ClientQuota",
+              "x-native": "planned",
+              "x-native-note": "The Mac reads usage from /api/profile/usage (the account popover and the composer's quota line), not from the frame."
+            },
+            "finishReason": {
+              "type": "string",
+              "enum": [
+                "error",
+                "length",
+                "model_context_window_exceeded",
+                "network_error",
+                "sensitive",
+                "stop",
+                "tool_calls",
+                "unknown",
+                "user_stopped"
+              ],
+              "x-native": "native"
+            },
+            "title": {
+              "type": "string",
+              "x-native": "planned",
+              "x-native-note": "Titles arrive on meta and title frames and through sync."
+            },
+            "projectId": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "x-native": "planned",
+              "x-native-note": "A chat filed into a project by the turn; the Mac picks the move up through sync."
+            },
+            "projectName": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "x-native": "planned",
+              "x-native-note": "As projectId."
+            }
+          },
+          "required": [
+            "type",
+            "message",
+            "artifacts",
+            "memoryUpdated",
+            "quota"
+          ],
+          "x-native": "native"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "error"
+            },
+            "message": {
+              "type": "string",
+              "x-native": "native"
+            },
+            "quota": {
+              "$ref": "#/$defs/ClientQuota",
+              "x-native": "planned",
+              "x-native-note": "As done.quota."
+            },
+            "finishReason": {
+              "type": "string",
+              "enum": [
+                "error",
+                "length",
+                "model_context_window_exceeded",
+                "network_error",
+                "sensitive",
+                "stop",
+                "tool_calls",
+                "unknown",
+                "user_stopped"
+              ],
+              "x-native": "native"
+            },
+            "preservePartial": {
+              "type": "boolean",
+              "x-native": "planned",
+              "x-native-note": "The Mac keeps whatever text it streamed whatever the flag says."
+            },
+            "conversationId": {
+              "type": "string",
+              "x-native": "web-only",
+              "x-native-note": "Durable first-submission terminal metadata, as meta.receiptState."
+            },
+            "userMessageId": {
+              "type": "string",
+              "x-native": "native"
+            },
+            "generationId": {
+              "type": "string",
+              "x-native": "native"
+            },
+            "receiptState": {
+              "type": "string",
+              "const": "failed",
+              "x-native": "web-only",
+              "x-native-note": "As meta.receiptState."
+            },
+            "failureCode": {
+              "type": "string",
+              "x-native": "web-only",
+              "x-native-note": "Durable first-submission failure code, as meta.receiptState."
+            }
+          },
+          "required": [
+            "type",
+            "message"
+          ],
+          "x-native": "native"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "ping"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "x-native": "native"
+        }
+      ]
+    },
+    "ActivityKind": {
+      "type": "string",
+      "enum": [
+        "artifact",
+        "context",
+        "done",
+        "model",
+        "reasoning",
+        "search",
+        "tool",
+        "usage",
+        "visit",
+        "warning",
+        "write"
+      ]
+    },
+    "ArtifactType": {
+      "type": "string",
+      "enum": [
+        "CODE",
+        "DESIGN",
+        "HTML",
+        "MARKDOWN",
+        "MERMAID",
+        "REACT",
+        "SVG"
+      ]
+    },
+    "AttachmentKind": {
+      "type": "string",
+      "enum": [
+        "FILE",
+        "IMAGE"
+      ]
+    },
+    "ClientActionApproval": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "surface": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "sessionId": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "conversationId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "connectorId": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "connectorLabel": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "toolName": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "action": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "riskClass": {
+          "type": "string",
+          "enum": [
+            "destructive_or_sensitive",
+            "external_write",
+            "read_only",
+            "reversible_write",
+            "unknown"
+          ],
+          "x-native": "native"
+        },
+        "preview": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "detail": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": {},
+          "x-native": "native"
+        },
+        "receiptDigest": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "allowed",
+            "blocked",
+            "denied",
+            "executed",
+            "executing",
+            "expired",
+            "failed",
+            "pending",
+            "superseded"
+          ],
+          "x-native": "native"
+        },
+        "decision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "canAllowScope": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "derivedFromUntrusted": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "expiresAt": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "decidedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "completedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "createdAt": {
+          "type": "string",
+          "x-native": "native"
+        }
+      },
+      "required": [
+        "id",
+        "surface",
+        "sessionId",
+        "conversationId",
+        "connectorId",
+        "connectorLabel",
+        "toolName",
+        "action",
+        "riskClass",
+        "preview",
+        "detail",
+        "receiptDigest",
+        "status",
+        "decision",
+        "canAllowScope",
+        "derivedFromUntrusted",
+        "expiresAt",
+        "decidedAt",
+        "completedAt",
+        "createdAt"
+      ]
+    },
+    "ClientActivityEvent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "kind": {
+          "$ref": "#/$defs/ActivityKind",
+          "x-native": "native"
+        },
+        "title": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "detail": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "url": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "createdAt": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "tool": {
+          "$ref": "#/$defs/ClientToolDetail",
+          "x-native": "native"
+        },
+        "memoryReceipt": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientMemoryReceipt"
+          },
+          "x-native": "native"
+        },
+        "artifactVerification": {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "number",
+              "const": 1,
+              "x-native": "planned"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "refused",
+                "repaired",
+                "verified"
+              ],
+              "x-native": "planned"
+            },
+            "attempts": {
+              "type": "number",
+              "x-native": "planned"
+            },
+            "checked": {
+              "type": "number",
+              "x-native": "planned"
+            },
+            "accepted": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "x-native": "planned"
+            },
+            "refused": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "x-native": "planned"
+            },
+            "problems": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "identifier": {
+                    "type": "string",
+                    "x-native": "planned"
+                  },
+                  "code": {
+                    "type": "string",
+                    "x-native": "planned"
+                  },
+                  "detail": {
+                    "type": "string",
+                    "x-native": "planned"
+                  },
+                  "repairable": {
+                    "type": "boolean",
+                    "x-native": "planned"
+                  }
+                },
+                "required": [
+                  "identifier",
+                  "code",
+                  "detail",
+                  "repairable"
+                ]
+              },
+              "x-native": "planned"
+            },
+            "repairs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "identifier": {
+                    "type": "string",
+                    "x-native": "planned"
+                  },
+                  "code": {
+                    "type": "string",
+                    "x-native": "planned"
+                  },
+                  "detail": {
+                    "type": "string",
+                    "x-native": "planned"
+                  },
+                  "repairable": {
+                    "type": "boolean",
+                    "x-native": "planned"
+                  }
+                },
+                "required": [
+                  "identifier",
+                  "code",
+                  "detail",
+                  "repairable"
+                ]
+              },
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "version",
+            "status",
+            "attempts",
+            "checked",
+            "accepted",
+            "refused",
+            "problems",
+            "repairs"
+          ],
+          "x-native": "planned",
+          "x-native-note": "The artifact check's receipt (verified, repaired, refused) is not drawn on the Mac yet."
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "createdAt"
+      ]
+    },
+    "ClientArtifact": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "identifier": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "type": {
+          "$ref": "#/$defs/ArtifactType",
+          "x-native": "native"
+        },
+        "title": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "language": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "currentVersion": {
+          "type": "number",
+          "x-native": "native"
+        },
+        "content": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientArtifactVersion"
+          },
+          "x-native": "native"
+        },
+        "messageId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "createdAt": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "updatedAt": {
+          "type": "string",
+          "x-native": "native"
+        }
+      },
+      "required": [
+        "id",
+        "identifier",
+        "type",
+        "title",
+        "currentVersion",
+        "content",
+        "versions",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ClientArtifactVersion": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number",
+          "x-native": "native"
+        },
+        "content": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "origin": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "edit",
+            "generated",
+            "restore",
+            null
+          ],
+          "x-native": "native"
+        },
+        "createdAt": {
+          "type": "string",
+          "x-native": "native"
+        }
+      },
+      "required": [
+        "version",
+        "content",
+        "createdAt"
+      ]
+    },
+    "ClientAttachment": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "kind": {
+          "$ref": "#/$defs/AttachmentKind",
+          "x-native": "native"
+        },
+        "fileName": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "mimeType": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "size": {
+          "type": "number",
+          "x-native": "native"
+        },
+        "url": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "width": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "height": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "parserState": {
+          "type": "string",
+          "x-native": "native"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "fileName",
+        "mimeType",
+        "size",
+        "url"
+      ]
+    },
+    "ClientMemoryReceipt": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "content": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "category": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "sourceRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "planned",
+          "x-native-note": "The receipt's source link in the Activity panel."
+        },
+        "sourceMessageId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "planned",
+          "x-native-note": "As sourceRef."
+        }
+      },
+      "required": [
+        "id",
+        "content"
+      ]
+    },
+    "ClientMessage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "role": {
+          "$ref": "#/$defs/MessageRole",
+          "x-native": "native"
+        },
+        "content": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "reasoning": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "reasoningParts": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-native": "native"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "feedback": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "DOWN",
+            "UP",
+            null
+          ],
+          "x-native": "web-only",
+          "x-native-note": "A reply is unrated when it finishes; ratings travel through sync and /api/messages/{id}/feedback."
+        },
+        "createdAt": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "conversationId": {
+          "type": "string",
+          "x-native": "web-only",
+          "x-native-note": "The stream already belongs to one conversation."
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientMessageVersion"
+          },
+          "x-native": "web-only",
+          "x-native-note": "The Mac's version pager reads /api/messages/{id}/versions."
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientAttachment"
+          },
+          "x-native": "native"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientSource"
+          },
+          "x-native": "native"
+        },
+        "activity": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientActivityEvent"
+          },
+          "x-native": "native"
+        },
+        "approvals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientActionApproval"
+          },
+          "x-native": "web-only",
+          "x-native-note": "The Mac holds approvals from the approval frame and /api/approvals, not from the finished message."
+        },
+        "finishReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "error",
+            "length",
+            "model_context_window_exceeded",
+            "network_error",
+            "sensitive",
+            "stop",
+            "tool_calls",
+            "unknown",
+            "user_stopped",
+            null
+          ],
+          "x-native": "native"
+        },
+        "errorMessage": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "planned",
+          "x-native-note": "Failures arrive as error frames; the stored message's error line is not read from done."
+        },
+        "progress": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "modality": {
+                  "type": "string",
+                  "enum": [
+                    "image",
+                    "video"
+                  ],
+                  "x-native": "web-only"
+                },
+                "stage": {
+                  "type": "string",
+                  "x-native": "web-only"
+                },
+                "pct": {
+                  "type": "number",
+                  "x-native": "web-only"
+                }
+              },
+              "required": [
+                "modality",
+                "stage"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-native": "web-only",
+          "x-native-note": "Client-transient on the web (use-chat sets it); the server never sends it."
+        },
+        "promptTokens": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "completionTokens": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "costUsd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "cacheReadTokens": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "cacheWriteTokens": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "x-native": "native"
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "content",
+        "createdAt",
+        "attachments"
+      ]
+    },
+    "ClientMessageVersion": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "web-only"
+        },
+        "createdAt": {
+          "type": "string",
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "id",
+        "createdAt"
+      ]
+    },
+    "ClientQuota": {
+      "type": "object",
+      "properties": {
+        "plan": {
+          "type": "string",
+          "enum": [
+            "FREE",
+            "MAX",
+            "MAX20",
+            "OWNER",
+            "PRO"
+          ],
+          "x-native": "planned"
+        },
+        "used": {
+          "type": "number",
+          "x-native": "planned"
+        },
+        "limit": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "x-native": "planned"
+        },
+        "remaining": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "x-native": "planned"
+        }
+      },
+      "required": [
+        "plan",
+        "used",
+        "limit",
+        "remaining"
+      ]
+    },
+    "ClientSource": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "url": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "snippet": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "cited": {
+          "type": "boolean",
+          "x-native": "native"
+        }
+      },
+      "required": [
+        "title",
+        "url",
+        "snippet"
+      ]
+    },
+    "ClientToolDetail": {
+      "type": "object",
+      "properties": {
+        "server": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "name": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "args": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "argsNote": {
+          "type": "string",
+          "enum": [
+            "empty",
+            "over_budget",
+            "unavailable",
+            "unparsable"
+          ],
+          "x-native": "native"
+        },
+        "argsTruncated": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "result": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "resultNote": {
+          "type": "string",
+          "enum": [
+            "empty",
+            "over_budget",
+            "pending",
+            "unfinished"
+          ],
+          "x-native": "native"
+        },
+        "resultTruncated": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "resultChars": {
+          "type": "number",
+          "x-native": "native"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "failed",
+            "ok"
+          ],
+          "x-native": "native"
+        },
+        "durationMs": {
+          "type": "number",
+          "x-native": "native"
+        }
+      },
+      "required": [
+        "server",
+        "name"
+      ]
+    },
+    "ClientWorkSession": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "projectId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "conversationId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "title": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "titleSource": {
+          "type": "string",
+          "x-native": "planned",
+          "x-native-note": "Not read yet; a task's title is shown as sent."
+        },
+        "goal": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "budget_exceeded",
+            "cancelled",
+            "completed",
+            "draft",
+            "failed",
+            "host_offline",
+            "interrupted",
+            "paused",
+            "preparing",
+            "queued",
+            "running",
+            "timed_out",
+            "waiting_approval",
+            "waiting_input"
+          ],
+          "x-native": "native"
+        },
+        "needsAttention": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "requestedTarget": {
+          "type": "string",
+          "enum": [
+            "automatic",
+            "cloud",
+            "local"
+          ],
+          "x-native": "native"
+        },
+        "preferredHostId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "requestedModel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "reasoningEffort": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "native"
+        },
+        "permissionPolicy": {
+          "type": "string",
+          "enum": [
+            "balanced",
+            "conservative",
+            "permissive"
+          ],
+          "x-native": "native"
+        },
+        "pinned": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "archived": {
+          "type": "boolean",
+          "x-native": "native"
+        },
+        "lastActivityAt": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "createdAt": {
+          "type": "string",
+          "x-native": "native"
+        },
+        "updatedAt": {
+          "type": "string",
+          "x-native": "planned",
+          "x-native-note": "Not read yet; the Mac orders tasks by lastActivityAt, as the web does."
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "conversationId",
+        "title",
+        "titleSource",
+        "goal",
+        "status",
+        "needsAttention",
+        "requestedTarget",
+        "preferredHostId",
+        "requestedModel",
+        "reasoningEffort",
+        "permissionPolicy",
+        "pinned",
+        "archived",
+        "lastActivityAt",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "GenerationProgressStage": {
+      "type": "string",
+      "enum": [
+        "downloading",
+        "generating",
+        "polling",
+        "queued",
+        "uploading"
+      ]
+    },
+    "MessageRole": {
+      "type": "string",
+      "enum": [
+        "ASSISTANT",
+        "SYSTEM",
+        "USER"
+      ]
+    }
+  }
+}

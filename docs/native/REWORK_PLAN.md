@@ -283,8 +283,8 @@ The website Code & Work is feature-complete, but the apps cannot be linked to it
 
 ## Status — 2026-09-08
 
-What has landed from the phases above (see `PARITY_MATRIX.md` re-audit of the
-same date for the file-level list):
+What has landed from the phases above (see the `PARITY_MATRIX.md` re-audit of the
+same date, now `archive/PARITY_MATRIX_2026-09-08.md`, for the file-level list):
 
 | Phase | State |
 |---|---|
