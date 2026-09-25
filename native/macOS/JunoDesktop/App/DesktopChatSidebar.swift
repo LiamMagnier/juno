@@ -51,6 +51,14 @@ struct DesktopChatSidebar: View {
     var agentsModel: NativeAgentsModel? = nil
     /// Opens an agent's thread by the agent's id, creating it if it has none.
     var messageAgent: ((String) -> Void)? = nil
+    /// Opens the hiring sheet: the Agents fold's "New agent" (the web's
+    /// `/agents/new`). Nil hides the button.
+    var hireAgent: (() -> Void)? = nil
+    /// Each chat's newest task, joined from the account's list (Phase 5 C1):
+    /// the rows' status dots and the Needs-you fold.
+    var runs: WorkRunsByConversation = .empty
+    /// The inbox behind the Notifications row. Nil draws no row.
+    var notificationsModel: NativeNotificationsModel? = nil
     /// The fold's state is the reader's, and it survives a relaunch: a column
     /// that reopened every agent after it had been folded away would be a
     /// column arguing with the person who arranged it.
@@ -63,8 +71,12 @@ struct DesktopChatSidebar: View {
     /// scrolls into view (§2.1), so a four-year history is not four thousand
     /// rows laid out on launch.
     @State private var recentLimit = DesktopChatSidebarContent.recentPage
-    /// While on, every section but Needs you hides (§2.5).
+    /// While on, every section but Needs you hides (§2.5). Not persisted: a
+    /// column that relaunched filtered would hide the reader's chats behind a
+    /// control they no longer remember pressing.
     @State private var filterToNeedsYou = false
+    /// Snapshots draw the fold pressed; the app never sets it.
+    var startsFilteringNeedsYou = false
     @State private var projectPendingDeletion: NativeProject?
     @State private var renamingProjectID: String?
     @State private var hoveringProjectsHeader = false
@@ -83,9 +95,11 @@ struct DesktopChatSidebar: View {
     }
 
     /// Conversations that need the reader: an approval waiting, a question
-    /// asked. Phase 5 fills this from each chat's newest run; until then the
-    /// slot exists and nothing is in it, so the fold never draws.
-    private var needsYou: [NativeConversation] { [] }
+    /// asked — each chat whose newest run has stopped for a person (the web's
+    /// `workRunNeedsYou`), newest first. The fold draws only while it has one.
+    private var needsYou: [NativeConversation] {
+        DesktopChatSidebarContent.needsYou(from: chats, runs: runs)
+    }
 
     private var pinnedProjects: [NativeProject] {
         DesktopChatSidebarContent.pinnedProjects(from: projectModel?.projects ?? [])
@@ -146,7 +160,7 @@ struct DesktopChatSidebar: View {
                             agentRow(agent)
                         }
                     } header: {
-                        Text("Agents").textCase(nil)
+                        agentsHeader
                     }
                 }
 
@@ -207,12 +221,11 @@ struct DesktopChatSidebar: View {
             // The filter lets go when the last question is answered, or the
             // column would be empty with the control that emptied it gone.
             if count == 0 { filterToNeedsYou = false }
-            if count > previous {
-                AccessibilityNotification.Announcement(
-                    count == 1 ? "1 chat needs you" : "\(count) chats need you"
-                ).post()
+            if let sentence = DesktopChatSidebarContent.needsYouAnnouncement(from: previous, to: count) {
+                AccessibilityNotification.Announcement(sentence).post()
             }
         }
+        .onAppear { if startsFilteringNeedsYou { filterToNeedsYou = true } }
         // Opener and actions on one line: the targets gate reads a dialog's
         // buttons as system-drawn only when its brace opens on that line.
         .confirmationDialog("Delete this project?", isPresented: isConfirmingProjectDeletion, titleVisibility: .visible) {
@@ -248,6 +261,11 @@ struct DesktopChatSidebar: View {
         .buttonStyle(.plain)
         .help("New chat  ⌘N")
         .accessibilityIdentifier("juno.desktop.sidebar.new-chat")
+
+        // The inbox, right after New chat (Phase 5 C1, register #62).
+        if let notificationsModel {
+            DesktopNotificationsRow(model: notificationsModel)
+        }
 
         ForEach(DesktopDestination.sidebarCases) { item in
             destinationRow(item)
@@ -319,18 +337,34 @@ struct DesktopChatSidebar: View {
     // MARK: Sections
 
     /// "Needs you · n" — a filter, not a destination. Pressing it hides every
-    /// other section until it is pressed again or the count reaches zero.
+    /// other section until it is pressed again or the count reaches zero, and
+    /// while it is on it draws as the column's one selected row: the column
+    /// shows these chats and nothing else, which is the fact a selection
+    /// states. The column's signature detail.
     private var needsYouHeader: some View {
-        Button {
+        DesktopNeedsYouHeader(count: needsYou.count, isFiltering: filterToNeedsYou) {
             filterToNeedsYou.toggle()
-        } label: {
-            Text("Needs you · \(needsYou.count)")
-                .textCase(nil)
-                .contentShape(.rect)
         }
-        .buttonStyle(.plain)
-        .help(filterToNeedsYou ? "Show everything" : "Show only these")
-        .accessibilityAddTraits(filterToNeedsYou ? .isSelected : [])
+    }
+
+    /// "Agents", with "New agent" beside it. Shown at rest, as the web's
+    /// `SectionAction always`: the fold's one standing affordance.
+    private var agentsHeader: some View {
+        HStack(spacing: JunoSpace.tight) {
+            Text("Agents").textCase(nil)
+            Spacer(minLength: 0)
+            if let hireAgent {
+                Button(action: hireAgent) {
+                    JunoIconView(.plus, size: 12)
+                        .foregroundStyle(Color.junoSidebarInk)
+                        .frame(width: 28, height: 28)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.borderless)
+                .help("New agent")
+                .accessibilityLabel("New agent")
+            }
+        }
     }
 
     private var agentsExpanded: Binding<Bool> {
@@ -459,6 +493,7 @@ struct DesktopChatSidebar: View {
         let row = DesktopConversationRow(
             conversation: conversation,
             isSelected: selected,
+            signal: runs.openSignal(for: conversation.id),
             renamingConversationID: $renamingConversationID,
             hostsRename: isCanonical,
             justRenamed: model.recentlyRenamedConversationID == conversation.id,
@@ -550,6 +585,27 @@ enum DesktopChatSidebarContent {
             .sorted { $0.lastMessageAt > $1.lastMessageAt }
     }
 
+    /// The chats in Needs you: every chat whose newest run has stopped for
+    /// the reader, in the column's own order (newest first). A chat can only
+    /// be in one place, and of Needs you, Pinned and Recent this is the one
+    /// with a person waiting on it, so it wins over both.
+    static func needsYou(
+        from chats: [NativeConversation],
+        runs: WorkRunsByConversation
+    ) -> [NativeConversation] {
+        let waiting = runs.needsYou
+        guard !waiting.isEmpty else { return [] }
+        return chats.filter { waiting.contains($0.id) }
+    }
+
+    /// The fold's live-region sentences (`app-sidebar.tsx`), said when the
+    /// count rises and when it reaches zero; nil otherwise.
+    static func needsYouAnnouncement(from previous: Int, to count: Int) -> String? {
+        if count == 0, previous > 0 { return "Nothing is waiting on you." }
+        guard count > previous else { return nil }
+        return count == 1 ? "1 run is waiting on you." : "\(count) runs are waiting on you."
+    }
+
     static func pinned(
         from chats: [NativeConversation],
         excluding needsYou: Set<String> = []
@@ -582,6 +638,21 @@ enum DesktopChatSidebarContent {
     static func recentLimit(revealing index: Int, current: Int) -> Int {
         guard index >= current else { return current }
         return (index / recentPage + 1) * recentPage
+    }
+
+    /// A row's help: the title, and while its task is open, the task's
+    /// sentence after a colon ("Draft the memo: Juno is working on this now.").
+    static func rowHelp(title: String, signal: WorkRunsByConversation.Signal?) -> String {
+        guard let signal else { return title }
+        return "\(title): \(ChatWorkVocabulary.sentence(signal.status))"
+    }
+
+    /// What VoiceOver hears after the title: the task's status while it is
+    /// open, and the pin.
+    static func rowValue(pinned: Bool, signal: WorkRunsByConversation.Signal?) -> String {
+        [signal.map { ChatWorkVocabulary.label($0.status) }, pinned ? "Pinned" : nil]
+            .compactMap { $0 }
+            .joined(separator: ", ")
     }
 
     /// The scroll identity of a chat's own row. Namespaced, because a pinned
@@ -637,11 +708,15 @@ struct DesktopSidebarSearchButton: View {
 ///
 /// No leading glyph and no bullet — the column is a list of titles. The mark
 /// is chosen in the web's priority order: a send still pending, then the
-/// overflow menu while the row is hovered or selected, then (Phase 5) the
-/// newest run's status dot, then the pin.
+/// overflow menu while the row is hovered or selected, then the newest run's
+/// status dot while that run is open, then the pin — a run that needs you
+/// outranks the fact that the row is pinned, because the pin is something you
+/// set and the dot is something that happened.
 private struct DesktopConversationRow: View {
     let conversation: NativeConversation
     let isSelected: Bool
+    /// The chat's newest task while it is still the reader's business.
+    var signal: WorkRunsByConversation.Signal? = nil
     @Binding var renamingConversationID: String?
     /// Whether this row opens the rename field for its chat. False for the
     /// copy a pinned project lists under itself; see
@@ -680,11 +755,13 @@ private struct DesktopConversationRow: View {
         .onChange(of: conversation.title) { _, _ in
             if justRenamed { acknowledgeRename() }
         }
-        .help(conversation.title)
+        // The run's sentence joins the title rather than replacing it: the
+        // help is also how a truncated title gets read (the web's colon).
+        .help(DesktopChatSidebarContent.rowHelp(title: conversation.title, signal: signal))
         .contextMenu {
             DesktopConversationMenu(conversation: conversation, projects: projects, actions: actions)
         }
-        .accessibilityValue(conversation.pinned ? "Pinned" : "")
+        .accessibilityValue(DesktopChatSidebarContent.rowValue(pinned: conversation.pinned, signal: signal))
     }
 
     @ViewBuilder
@@ -707,6 +784,12 @@ private struct DesktopConversationRow: View {
             .fixedSize()
             .help("More")
             .accessibilityLabel("Chat options")
+        } else if let signal {
+            // The row says the state in words (its value and help), so the
+            // dot itself is silent.
+            JunoStatusDot(signal.tone)
+                .frame(width: 16, height: 16)
+                .accessibilityHidden(true)
         } else if conversation.pinned {
             // Secondary rather than tertiary: a pin mark has to clear 3:1.
             JunoIconView(.pin, size: 10, isOn: true)

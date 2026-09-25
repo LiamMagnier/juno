@@ -3,8 +3,10 @@ import JunoCodeUI
 import JunoDesignSystem
 import SwiftUI
 
-/// The menu bar item (§7.10): New Chat, the Code sessions that are live, and
-/// the way back to the window.
+/// The menu bar item (§7.10): New Chat, the chats that need you, the Code
+/// sessions that are live, and the way back to the window. Chat first: the
+/// chats waiting on the reader lead, because they are the reason to glance up
+/// here at all.
 ///
 /// Codex and Claude Code both keep a presence in the menu bar so a run left
 /// working in another Space still has a status a glance away. This is that. It
@@ -18,13 +20,17 @@ import SwiftUI
 /// ``JunoDesktopWindow/showMainWindow(using:)`` fronts it, opening one only
 /// when there is none.
 ///
-/// **What is not here.** New task and Ask Juno: a task starts from Code's own
-/// window, and ⌥Space is its own shortcut, listed in Keyboard Shortcuts. The
-/// chats that need you slot in above the sessions when that list exists
-/// (Phase 5, §2.5).
+/// **Needs You** (Phase 5 C2) is one item per chat whose task has stopped for
+/// the reader, newest first: its title, and the run's status as the item's
+/// second line. Choosing one takes the notification's road to the chat
+/// (``JunoDesktopWindow/follow(_:)``) rather than opening a window.
+///
+/// **What is not here.** New task and Ask Juno: a task starts in a chat, and
+/// ⌥Space is its own shortcut, listed in Keyboard Shortcuts.
 struct DesktopMenuBarExtraContent: View {
     @Environment(\.openWindow) private var openWindow
     @State private var registry = DesktopWorkbenchRegistry.shared
+    @State private var signals = DesktopNeedsYouSignals.shared
 
     // Each group sits in a `Section`, which a menu draws as a separator and
     // nothing else — and which tells the targets gate these are system-drawn
@@ -38,6 +44,22 @@ struct DesktopMenuBarExtraContent: View {
                 JunoIconLabel("New Chat", icon: .new)
             }
             .keyboardShortcut("n")
+        }
+
+        if !signals.menuItems.isEmpty {
+            Section("Needs You") {
+                ForEach(signals.menuItems) { item in
+                    Button {
+                        JunoDesktopWindow.follow(.conversation(id: item.conversationID))
+                    } label: {
+                        // Two texts: the menu draws the second as the item's
+                        // subtitle.
+                        Text(verbatim: item.title)
+                        Text(verbatim: item.status)
+                    }
+                    .help("\(item.title): \(item.status)")
+                }
+            }
         }
 
         let sessions = registry.activeSessions
@@ -92,6 +114,7 @@ struct DesktopMenuBarExtraContent: View {
 /// sets the 256 grid at 16pt, the menu bar's glyph box.
 struct DesktopMenuBarExtraLabel: View {
     @State private var registry = DesktopWorkbenchRegistry.shared
+    @State private var signals = DesktopNeedsYouSignals.shared
 
     private static let mark: NSImage = {
         let symbol = NSImage(named: JunoIcon.home.assetName)
@@ -103,8 +126,17 @@ struct DesktopMenuBarExtraLabel: View {
     var body: some View {
         let waiting = registry.activeSessions.filter(\.status.needsApproval).count
         Image(nsImage: Self.mark)
-        if waiting > 0 {
-            Text("\(waiting)")
+            .accessibilityLabel("Juno")
+        if let count = Self.count(chats: signals.count, codeSessions: waiting) {
+            Text(count)
         }
+    }
+
+    /// The number beside the mark: everything the menu lists as waiting on
+    /// the reader — the chats in Needs You and the Code sessions that need an
+    /// approval — and nothing at all while nothing does.
+    static func count(chats: Int, codeSessions: Int) -> String? {
+        let total = max(0, chats) + max(0, codeSessions)
+        return total > 0 ? String(total) : nil
     }
 }

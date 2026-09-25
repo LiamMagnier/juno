@@ -2060,3 +2060,18 @@ The brief re-read the live web at `origin/main` `fe0a501d` (2026-09-24). Where t
 - **A `/work/{id}` notification** is resolved in the Chat window now: the model's list, then one refresh, then `GET /api/work/sessions/{id}` (an archived task is never in the list); its chat if it has one, otherwise the sheet, by id if it could not be read.
 - New Mac-only copy, for the audit (with Appendix A's): "Task" (the sheet's title when the task could not be read), "Couldn’t load tasks", "No task matches “{query}”.", "Reading your tasks…", "Tasks unavailable", "{n} tasks", "Tasks on your account", "Updated {ago}", "Archived", "Open Task" (a row's menu), help and hints "Opens the task" / "Opens its chat", the accessibility label "Your answer" and "Reading your tasks". The reply field's placeholder is the web's "Answer Juno’s question…".
 
+
+**Stage C notes (2026-09-25), where today's web was followed over the brief's text.**
+
+- **Status dot tones** are `STATUS_META`'s (`work-vocabulary.tsx`): running and preparing live; waiting, interrupted, Mac unreachable, out of budget and timed out attention; done good; failed bad; the rest neutral. The brief pointed at `DesktopWorkBucket.of`, which sorts tasks into buckets and has no tones. The tone lives beside the dot (`JunoStatusTone(_:)`).
+- **"New agent"** on the Agents fold's heading is shown at rest, as the web's `SectionAction always` is, not only on hover.
+- **The agent thread's header** is the web's `AgentThreadHeader`: the face (a link to the page), the name at 13pt medium, the sentence at 11pt (the thread's own state wins: "Thinking" while a reply streams, "Listening" in a call; otherwise the roster's sentence), and "Agent page" as the web's quiet text button in the secondary ink with a hover fill, not an accent link. It carries no needs-you dot (the web's has none; the sidebar and the card say it).
+- **An agent's empty thread** is laid out as a draft: the web's `hasMessages` is false there (no message, call, research run or task), so the composer is centred under the agent's greeting ("Hi, I’m *{name}*." in the greeting's serif, then "{role}. What should I take on?" or the paused line) with the starter chips below, rather than an empty transcript under the header.
+- **Hiring from the fold** opens the hire sheet on the first job, as `/agents/new` with no template starts from `AGENT_TEMPLATES[0]`; a new hire's page opens.
+- **The fold's live region** speaks the web's sentences when the count rises and when it reaches zero; a fall that leaves chats waiting is the reader answering and says nothing.
+
+**§0.8 register, Stage C additions.** (Numbered after Stage A's; Stage B's lane may also add entries, so integration renumbers if two collide.)
+
+69. The Dock badge, the menu-bar extra's count and the rise sentence count the chats the column can show: every chat whose newest task needs the reader, less those the store knows are archived or Code's (a chat not yet synced still counts). The web's toast counts every conversation id its list returns.
+70. The menu-bar extra's number adds the Code sessions waiting on an approval to the chats in Needs You, since the menu lists both; the Dock badge is the fold's count alone.
+71. An empty or failed Notifications popover closes up to 272pt under its header; the list and its loading rows take 480pt. The web sizes the popover to its content under a 36rem ceiling.

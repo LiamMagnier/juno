@@ -13,7 +13,10 @@ import SwiftUI
 /// Hire. Picking a starting point fills the rest with that job's defaults, and
 /// only the fields the person has not touched yet — changing your mind about
 /// the job must not throw away a name you already typed.
-struct NativeAgentHireView: View {
+///
+/// Public so the Mac's sidebar can open it from the Agents fold's "New agent"
+/// (the web's `/agents/new`) without going through the roster.
+public struct NativeAgentHireView: View {
     let model: NativeAgentsModel
     let apps: [NativeAgentAppChoice]
     let onCancel: () -> Void
@@ -27,7 +30,7 @@ struct NativeAgentHireView: View {
     @State private var saving = false
     @State private var failure: String?
 
-    init(
+    public init(
         model: NativeAgentsModel,
         apps: [NativeAgentAppChoice],
         template: NativeAgentTemplate,
@@ -65,7 +68,7 @@ struct NativeAgentHireView: View {
         NativeAgentTemplate.named(templateID) ?? NativeAgentTemplate.all[0]
     }
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: JunoSpace.region) {

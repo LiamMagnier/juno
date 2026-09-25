@@ -73,6 +73,11 @@ public final class NativeWorkModel {
     /// off instead of replaying an hour of tool calls.
     public private(set) var resumeCursor = 0
 
+    /// How many tasks the list read asks for. The Mac's sidebar joins every
+    /// chat's newest run from this list, so it asks for the web sidebar's
+    /// hundred (`GET /api/work/sessions?limit=100`); the phone keeps fifty.
+    public var sessionListLimit = 50
+
     /// How often the task and Mac lists are re-read.
     ///
     /// Thirty seconds because host reachability is a *heartbeat* fact and not a
@@ -491,7 +496,8 @@ public final class NativeWorkModel {
         // The two reads are independent: a host list that fails must not take
         // the task list — the part that works without any Mac at all — down
         // with it.
-        async let sessionList = try? client.sessions(for: accountID)
+        let limit = sessionListLimit
+        async let sessionList = try? client.sessions(limit: limit, for: accountID)
         async let hostList = try? client.hosts(for: accountID)
         let (loadedSessions, loadedHosts) = await (sessionList, hostList)
         guard self.accountID == accountID else { return }

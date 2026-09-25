@@ -60,6 +60,20 @@ enum JunoDesktopWindow {
         return true
     }
 
+    /// Hands a route to the main window and brings it forward — the road a
+    /// notification's click and the menu-bar extra's Needs You items share.
+    /// With no window open, one is opened the way File › New Window opens it
+    /// (``JunoDesktopAppDelegate``), never by `openWindow`, and it follows the
+    /// route when it appears.
+    @MainActor
+    static func follow(_ route: JunoNotificationRoute) {
+        NSApp.activate()
+        DesktopWorkbenchRegistry.shared.requestRoute(route)
+        if !bringMainWindowForward() {
+            JunoDesktopAppDelegate.presentMainWindowIfWithheld()
+        }
+    }
+
     /// Brings the main window forward, or opens one if there is none — the
     /// path every surface outside the window takes after it has made its
     /// request through ``DesktopWorkbenchRegistry``: Quick Entry's send and the
@@ -197,16 +211,7 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
         if let notificationID {
             NativePushRegistrar.shared.markOpened(notificationID: notificationID)
         }
-        NSApp.activate()
-        DesktopWorkbenchRegistry.shared.requestRoute(route)
-        let window = NSApp.windows.first {
-            $0.identifier?.rawValue.hasPrefix(JunoDesktopWindow.mainID) == true
-        }
-        if let window {
-            window.makeKeyAndOrderFront(nil)
-        } else {
-            presentMainWindowIfWithheld()
-        }
+        JunoDesktopWindow.follow(route)
     }
 
     /// Opens the main window when SwiftUI declined to.
@@ -224,7 +229,7 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
     /// is focused. Invoked once, a turn after launch, and only when no main
     /// window exists, so an ordinary launch is untouched.
     @MainActor
-    private static func presentMainWindowIfWithheld() {
+    fileprivate static func presentMainWindowIfWithheld() {
         let hasMainWindow = NSApp.windows.contains {
             $0.identifier?.rawValue.hasPrefix(JunoDesktopWindow.mainID) == true
         }

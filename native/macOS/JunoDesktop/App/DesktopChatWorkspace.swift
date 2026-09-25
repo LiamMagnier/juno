@@ -162,6 +162,13 @@ struct DesktopChatWorkspace: View {
     /// ``ChatDetail``, posted to from the sidebar, the transcript and every
     /// page through `@Environment(\.junoToast)`.
     @State private var toasts = JunoToastCenter()
+    /// The Agents fold's "New agent": the hiring sheet, over the window.
+    @State private var isHiringAgent = false
+    /// Whether this window is the key one, so a rise in tasks needing the
+    /// reader is toasted here and not in a window behind it.
+    @Environment(\.appearsActive) private var appearsActive
+    /// The account's task signals (Phase 5 C1–C2), read by the column.
+    @State private var needsYouSignals = DesktopNeedsYouSignals.shared
 
     /// The destination in force: the launch override while it stands, otherwise
     /// whatever scene storage restored.
@@ -261,7 +268,10 @@ struct DesktopChatWorkspace: View {
                 newChatInProject: startConversation(in:),
                 openSearch: openSearch,
                 agentsModel: configuration.agentsModel,
-                messageAgent: messageAgent
+                messageAgent: messageAgent,
+                hireAgent: configuration.agentsModel == nil ? nil : { isHiringAgent = true },
+                runs: needsYouSignals.runs,
+                notificationsModel: configuration.notificationsModel
             )
             .junoSidebarColumn()
         } detail: {
@@ -285,6 +295,27 @@ struct DesktopChatWorkspace: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("It won't be saved.")
+        }
+        // The hiring flow from the column's "New agent" — the web's
+        // `/agents/new`, starting from the first job as the roster's own
+        // button does. Hired, the new agent's page opens.
+        .sheet(isPresented: $isHiringAgent) {
+            if let agentsModel = configuration.agentsModel {
+                NativeAgentHireView(
+                    model: agentsModel,
+                    apps: agentApps,
+                    template: NativeAgentTemplate.all[0],
+                    onCancel: { isHiringAgent = false },
+                    onHired: { agent in
+                        isHiringAgent = false
+                        selection.wrappedValue = .agent(agent.id)
+                    }
+                )
+            }
+        }
+        // The key window hosts the toast a rise in waiting tasks posts.
+        .onChange(of: appearsActive, initial: true) { _, active in
+            if active { needsYouSignals.adoptToastHost(toasts) }
         }
         .sheet(item: $newProjectRequest) { request in
             if let projectModel = configuration.projectModel {
@@ -744,6 +775,13 @@ struct DesktopChatWorkspace: View {
             await model.reload()
         }
         openConversation(id)
+    }
+
+    /// The apps an agent may be given: only the connected ones, by name.
+    private var agentApps: [NativeAgentAppChoice] {
+        (configuration.connectorModel?.linked ?? [])
+            .filter(\.connected)
+            .map { NativeAgentAppChoice(id: $0.id, label: $0.label) }
     }
 
     /// The Agents fold's Message: the agent's thread, created if it has none.
@@ -1612,6 +1650,24 @@ struct DesktopConversationView: View {
         return model.selectedConversation == nil && handoffTurn == nil
     }
 
+    /// An agent's thread with nothing in it yet: laid out as a draft is, with
+    /// the agent's own greeting in Juno's place (Phase 5 C2). The web's
+    /// `hasMessages` is false there too — no message, no call, no research
+    /// run and no task — so the landing composer greets rather than an empty
+    /// transcript sitting under a header.
+    private var isAgentLanding: Bool {
+        guard privateChat == nil, voiceSession == nil, handoffTurn == nil, threadAgent != nil,
+            let conversation = model.selectedConversation, !conversation.isPending
+        else { return false }
+        return model.selectedMessages.isEmpty
+            && model.researchRuns(for: conversation.id).isEmpty
+            && conversationWork?.current == nil
+    }
+
+    /// The column greets and centres its composer: a draft, or an agent's
+    /// empty thread.
+    private var isLanding: Bool { isDraft || isAgentLanding }
+
     /// The turns this column shows that have no row in the store: a private
     /// chat's, or the stand-in for a first turn the store has not created yet.
     ///
@@ -1727,7 +1783,8 @@ struct DesktopConversationView: View {
                     profileName: profileName,
                     isPrivate: privateChat != nil,
                     columnWidth: columnWidth,
-                    isShown: isDraft
+                    isShown: isLanding,
+                    agent: isAgentLanding ? threadAgent : nil
                 )
                 .padding(.bottom, JunoSpace.region)
             } composer: {
@@ -1740,7 +1797,7 @@ struct DesktopConversationView: View {
                 // header, and a row of suggestions under it would be asking
                 // for the one thing private mode does not keep.
                 if privateChat == nil {
-                    ChatStarterChips(isShown: isDraft) { opening in
+                    ChatStarterChips(isShown: isLanding) { opening in
                         composerRequest = ChatComposerRequest(kind: .seed(opening))
                     }
                     .padding(.top, JunoSpace.regular)
@@ -1749,7 +1806,7 @@ struct DesktopConversationView: View {
             // The toast host sits 12pt above a docked composer (§7.7). A
             // draft's composer is lifted to the middle of the column, so a
             // toast there sits at the foot like any page's.
-            .junoToastAnchor(!isDraft)
+            .junoToastAnchor(!isLanding)
         }
         // The whole column takes a drop (§5.8), and the composer draws the
         // target: a file dragged over the transcript is headed for the draft.
@@ -1791,7 +1848,7 @@ struct DesktopConversationView: View {
     /// Chrome, so it carries the hairline; the transcript under it stays flat.
     private func threadHeader(_ agent: NativeAgent) -> some View {
         VStack(spacing: 0) {
-            NativeAgentThreadHeader(
+            DesktopAgentThreadHeader(
                 agent: agent,
                 state: threadAgentState,
                 openAgent: { openAgent?(agent.id) }
@@ -1809,7 +1866,7 @@ struct DesktopConversationView: View {
 
     private var transcriptGroup: some View {
         Group {
-            if isDraft {
+            if isLanding {
                 Color.clear
             } else {
                 DesktopTranscript(
@@ -1857,7 +1914,7 @@ struct DesktopConversationView: View {
     /// The composer group's bottom padding: centred on the optical middle in a
     /// draft, at rest in a conversation. The empty state animates the change.
     private var composerLift: CGFloat {
-        isDraft
+        isLanding
             ? ChatComposerLift.draft(
                 columnHeight: columnHeight,
                 groupHeight: dockGroupHeight,
@@ -2163,7 +2220,12 @@ struct DesktopConversationView: View {
             let start = model.workStarts[work.conversationID],
             let session = try? NativeWorkClient.decodeSessionSummary(start.sessionJSON)
         else { return }
-        work.adopt(session)
+        // The first task started in this Mac's chat is the moment to ask
+        // whether Juno may notify (spec §7.11); the account's list hears of
+        // it at once, as the web's `juno:work-sync` does.
+        if work.adopt(session) {
+            DesktopNeedsYouSignals.shared.noteTaskStarted()
+        }
     }
 
     /// The agent working in this thread, whose name re-voices the card.
