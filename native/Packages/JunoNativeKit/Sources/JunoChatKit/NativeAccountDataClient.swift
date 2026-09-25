@@ -29,6 +29,9 @@ public struct NativeAccountDataClient: Sendable {
     public enum ExportFormat: String, Sendable {
         case json
         case csv
+        /// Everything, plus the Library's files where they fit: a `.zip` —
+        /// or plain JSON when the server has no file storage (Phase 3).
+        case juno
 
         /// What the exported file should be called. The server sets no
         /// `Content-Disposition`, so the name is the client's to choose — and a
@@ -40,7 +43,26 @@ public struct NativeAccountDataClient: Sendable {
             // concurrency error under Swift 6 — and this runs once per export.
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withFullDate, .withDashSeparatorInDate]
-            return "juno-export-\(formatter.string(from: date)).\(rawValue)"
+            return "juno-export-\(formatter.string(from: date)).\(defaultExtension)"
+        }
+
+        /// The extension a file of this format carries. A Juno package is a
+        /// zip; ``export(format:for:)`` corrects it to `json` when the server
+        /// answered with JSON instead.
+        public var defaultExtension: String {
+            switch self {
+            case .json: "json"
+            case .csv: "csv"
+            case .juno: "zip"
+            }
+        }
+
+        var queryItems: [URLQueryItem] {
+            switch self {
+            case .json: []
+            case .csv: [URLQueryItem(name: "format", value: "csv")]
+            case .juno: [URLQueryItem(name: "format", value: "juno")]
+            }
         }
     }
 
@@ -59,7 +81,7 @@ public struct NativeAccountDataClient: Sendable {
         let response = try await sender.send(
             try NativeBearerRequest(
                 path: "/api/account/export",
-                queryItems: format == .csv ? [URLQueryItem(name: "format", value: "csv")] : [],
+                queryItems: format.queryItems,
                 headers: try HTTPHeaders(["accept": "*/*"])
             ),
             for: accountID
@@ -67,10 +89,31 @@ public struct NativeAccountDataClient: Sendable {
         guard (200...299).contains(response.statusCode) else {
             throw failure(response, fallback: "Juno could not export your data")
         }
-        let url = FileManager.default.temporaryDirectory
+        var url = FileManager.default.temporaryDirectory
             .appendingPathComponent(format.fileName(on: Date()))
+        if format == .juno,
+            response.headers["content-type"]?.lowercased().contains("application/zip") != true
+        {
+            url = url.deletingPathExtension().appendingPathExtension("json")
+        }
         try response.body.write(to: url, options: .atomic)
         return url
+    }
+
+    /// Deletes every conversation on the account and its messages. Memories
+    /// and projects stay (`DELETE /api/conversations`, Phase 3).
+    public func deleteAllConversations(for accountID: AccountID) async throws {
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/conversations",
+                method: .delete,
+                headers: try HTTPHeaders(["accept": "application/json"])
+            ),
+            for: accountID
+        )
+        guard (200...299).contains(response.statusCode) else {
+            throw failure(response, fallback: "Juno could not delete your conversations")
+        }
     }
 
     /// Permanently deletes the account.

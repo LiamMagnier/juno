@@ -225,6 +225,10 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// (the web's `Map`).
     case mapTrifold
 
+    /// Settings (Phase 3 Stage C): the profile photo's camera badge and a
+    /// pinned model's star.
+    case camera, star
+
     /// The generated symbol this case wears, without a cut suffix: `ph.<name>`
     /// for Phosphor's drawings, `juno.<name>` for Juno's own.
     ///
@@ -452,6 +456,8 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .github: "ph.githublogo"
         case .command: "ph.command"
         case .mapTrifold: "ph.maptrifold"
+        case .camera: "ph.camera"
+        case .star: "ph.star"
         }
     }
 
@@ -461,7 +467,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// outline rather than an empty frame.
     static let filledSymbols: Set<String> = [
         "juno.chat", "juno.code", "juno.design", "juno.library", "juno.agents", "juno.ghost",
-        "ph.pushpin", "ph.square", "ph.thumbsup", "ph.thumbsdown",
+        "ph.pushpin", "ph.square", "ph.thumbsup", "ph.thumbsdown", "ph.star",
     ]
 
     /// Which of a glyph's drawings to use — the web's `weight`, and the only

@@ -86,6 +86,26 @@ public struct NativeAccountSettings: Equatable, Sendable {
     public var backgroundProviderMode: BackgroundProviderMode
     /// The provider chosen under `.selectedProvider`; ignored by other modes.
     public var backgroundProviderSelected: String?
+    // Phase 3 (Settings to web parity): the fields the v1 sync record does not
+    // carry. Each is nil until something has said it — the sync record if a
+    // later server adds it, or `GET /api/settings`, which the model overlays —
+    // and a reader must treat nil as "not known yet", never as a default.
+    /// What Juno calls you (`User.name`, written through `PATCH /api/settings`).
+    public var name: String?
+    /// Whether memory may read older chats on its own between sessions.
+    public var memoryBackgroundLearning: Bool?
+    /// The sensitive topics this account opts *into* remembering.
+    public var memorySensitiveTopics: [String]?
+    /// How much Juno asks before acting in a connected app.
+    public var actionApprovalPolicy: String?
+    /// Refuse every connector action, whatever the policy.
+    public var lockdownMode: Bool?
+    /// Connected apps turned off in Settings › Connectors.
+    public var blockedConnectors: [String]?
+    /// The account's own monthly ceiling in whole euros; nil is "the default".
+    public var monthlySpendCapEur: Int?
+    /// The one bypass of the ceiling. Read-only: no client can write it.
+    public var spendCapDisabled: Bool?
     public var updatedAt: Date
     public let revision: UInt64
     public var isPending: Bool
@@ -106,6 +126,14 @@ public struct NativeAccountSettings: Equatable, Sendable {
         emailWeeklyDigest: Bool,
         backgroundProviderMode: BackgroundProviderMode = .default,
         backgroundProviderSelected: String? = nil,
+        name: String? = nil,
+        memoryBackgroundLearning: Bool? = nil,
+        memorySensitiveTopics: [String]? = nil,
+        actionApprovalPolicy: String? = nil,
+        lockdownMode: Bool? = nil,
+        blockedConnectors: [String]? = nil,
+        monthlySpendCapEur: Int? = nil,
+        spendCapDisabled: Bool? = nil,
         updatedAt: Date,
         revision: UInt64,
         isPending: Bool = false
@@ -125,6 +153,14 @@ public struct NativeAccountSettings: Equatable, Sendable {
         self.emailWeeklyDigest = emailWeeklyDigest
         self.backgroundProviderMode = backgroundProviderMode
         self.backgroundProviderSelected = backgroundProviderSelected
+        self.name = name
+        self.memoryBackgroundLearning = memoryBackgroundLearning
+        self.memorySensitiveTopics = memorySensitiveTopics
+        self.actionApprovalPolicy = actionApprovalPolicy
+        self.lockdownMode = lockdownMode
+        self.blockedConnectors = blockedConnectors
+        self.monthlySpendCapEur = monthlySpendCapEur
+        self.spendCapDisabled = spendCapDisabled
         self.updatedAt = updatedAt
         self.revision = revision
         self.isPending = isPending
@@ -148,6 +184,17 @@ public struct NativeSettingsPatch: Equatable, Sendable {
     /// The read-aloud and voice-mode voice. `.some(nil)` clears it back to
     /// the server default; `.none` leaves it alone.
     public var voiceID: String??
+    // Phase 3: written through `PATCH /api/settings`, not the sync outbox,
+    // whose `settings.update` schema is strict and does not accept them.
+    public var name: String?
+    public var memoryBackgroundLearning: Bool?
+    public var memorySensitiveTopics: [String]?
+    public var actionApprovalPolicy: String?
+    public var lockdownMode: Bool?
+    public var blockedConnectors: [String]?
+    /// The monthly ceiling. `.some(nil)` sends `null`, "back to the default";
+    /// `.none` leaves it alone.
+    public var monthlySpendCapEur: Int??
 
     public init(
         theme: NativeThemePreference? = nil,
@@ -162,7 +209,14 @@ public struct NativeSettingsPatch: Equatable, Sendable {
         emailBudgetAlerts: Bool? = nil,
         emailWeeklyDigest: Bool? = nil,
         backgroundProviderMode: BackgroundProviderMode? = nil,
-        voiceID: String?? = nil
+        voiceID: String?? = nil,
+        name: String? = nil,
+        memoryBackgroundLearning: Bool? = nil,
+        memorySensitiveTopics: [String]? = nil,
+        actionApprovalPolicy: String? = nil,
+        lockdownMode: Bool? = nil,
+        blockedConnectors: [String]? = nil,
+        monthlySpendCapEur: Int?? = nil
     ) {
         self.theme = theme
         self.accent = accent
@@ -177,7 +231,34 @@ public struct NativeSettingsPatch: Equatable, Sendable {
         self.emailWeeklyDigest = emailWeeklyDigest
         self.backgroundProviderMode = backgroundProviderMode
         self.voiceID = voiceID
+        self.name = name
+        self.memoryBackgroundLearning = memoryBackgroundLearning
+        self.memorySensitiveTopics = memorySensitiveTopics
+        self.actionApprovalPolicy = actionApprovalPolicy
+        self.lockdownMode = lockdownMode
+        self.blockedConnectors = blockedConnectors
+        self.monthlySpendCapEur = monthlySpendCapEur
     }
+
+    /// `ACTION_PERMISSION_POLICIES` in `src/lib/action-approval.ts`, in order.
+    public static let actionApprovalPolicies = [
+        "always_ask", "ask_for_any_change", "ask_for_important_actions",
+        "allow_selected_low_risk", "block",
+    ]
+
+    /// The fields the v1 sync mutation (`settings.update` in
+    /// `src/lib/sync-mutations.ts`) accepts. Its schema is `.strict()`, so a
+    /// patch carrying anything else is refused whole; the rest go through
+    /// `PATCH /api/settings`, which accepts every field.
+    public static let syncedFields: Set<String> = [
+        "theme", "accent", "defaultModel", "customInstructions", "responseLanguage",
+        "uiLocale", "personality", "memoryEnabled", "voiceId", "favoriteModels",
+        "emailBudgetAlerts", "emailWeeklyDigest",
+    ]
+
+    /// The patch's fields by wire name, split by the route each must take.
+    public var syncedFieldNames: Set<String> { Set(object.keys).intersection(Self.syncedFields) }
+    public var directFieldNames: Set<String> { Set(object.keys).subtracting(Self.syncedFields) }
 
     fileprivate var object: [String: Any] {
         var result: [String: Any] = [:]
@@ -196,7 +277,22 @@ public struct NativeSettingsPatch: Equatable, Sendable {
         if let emailBudgetAlerts { result["emailBudgetAlerts"] = emailBudgetAlerts }
         if let emailWeeklyDigest { result["emailWeeklyDigest"] = emailWeeklyDigest }
         if let voiceID { result["voiceId"] = voiceID ?? NSNull() }
+        if let name { result["name"] = name }
+        if let memoryBackgroundLearning { result["memoryBackgroundLearning"] = memoryBackgroundLearning }
+        if let memorySensitiveTopics { result["memorySensitiveTopics"] = memorySensitiveTopics }
+        if let actionApprovalPolicy { result["actionApprovalPolicy"] = actionApprovalPolicy }
+        if let lockdownMode { result["lockdownMode"] = lockdownMode }
+        if let blockedConnectors { result["blockedConnectors"] = blockedConnectors }
+        if let monthlySpendCapEur { result["monthlySpendCapEur"] = monthlySpendCapEur ?? NSNull() }
         return result
+    }
+
+    /// The JSON body `PATCH /api/settings` takes for this patch's direct
+    /// fields, or nil when it has none.
+    public func directBody() throws -> Data? {
+        let direct = object.filter { !Self.syncedFields.contains($0.key) }
+        guard !direct.isEmpty else { return nil }
+        return try JSONSerialization.data(withJSONObject: direct, options: [.sortedKeys])
     }
 }
 
@@ -428,6 +524,14 @@ public actor NativeMemorySettingsStore<Repository: AccountScopedRepository> {
                 storedValue: wire.backgroundProviderMode
             ),
             backgroundProviderSelected: wire.backgroundProviderSelected,
+            name: wire.name,
+            memoryBackgroundLearning: wire.memoryBackgroundLearning,
+            memorySensitiveTopics: wire.memorySensitiveTopics,
+            actionApprovalPolicy: wire.actionApprovalPolicy,
+            lockdownMode: wire.lockdownMode,
+            blockedConnectors: wire.blockedConnectors,
+            monthlySpendCapEur: wire.monthlySpendCapEur,
+            spendCapDisabled: wire.spendCapDisabled,
             updatedAt: updatedAt,
             revision: record.revision
         )
@@ -590,6 +694,66 @@ public actor NativeMemorySettingsStore<Repository: AccountScopedRepository> {
                 settings.voiceID = value.isEmpty ? nil : value
             }
         }
+        try applyDirectFields(patch, to: &settings)
+    }
+
+    /// The Phase 3 fields, which only `PATCH /api/settings` writes and only
+    /// `GET /api/settings` reads. Shared by the outbox overlay (a sync record
+    /// that one day carries them) and the model's server overlay.
+    nonisolated static func applyDirectFields(
+        _ patch: [String: Any],
+        to settings: inout NativeAccountSettings
+    ) throws {
+        if let raw = patch["backgroundProviderMode"] {
+            guard let value = raw as? String else { throw NativeMemorySettingsError.invalidMutation }
+            settings.backgroundProviderMode = BackgroundProviderMode(storedValue: value)
+        }
+        if let raw = patch["name"] {
+            guard let value = raw as? String, value.count <= 80 else {
+                throw NativeMemorySettingsError.invalidMutation
+            }
+            settings.name = value
+        }
+        if let raw = patch["memoryBackgroundLearning"] {
+            guard let value = raw as? Bool else { throw NativeMemorySettingsError.invalidMutation }
+            settings.memoryBackgroundLearning = value
+        }
+        if let raw = patch["memorySensitiveTopics"] {
+            guard let value = raw as? [String], value.count <= 20 else {
+                throw NativeMemorySettingsError.invalidMutation
+            }
+            settings.memorySensitiveTopics = value
+        }
+        if let raw = patch["actionApprovalPolicy"] {
+            guard let value = raw as? String, !value.isEmpty, value.count <= 60 else {
+                throw NativeMemorySettingsError.invalidMutation
+            }
+            settings.actionApprovalPolicy = value
+        }
+        if let raw = patch["lockdownMode"] {
+            guard let value = raw as? Bool else { throw NativeMemorySettingsError.invalidMutation }
+            settings.lockdownMode = value
+        }
+        if let raw = patch["blockedConnectors"] {
+            guard let value = raw as? [String], value.count <= 200 else {
+                throw NativeMemorySettingsError.invalidMutation
+            }
+            settings.blockedConnectors = value
+        }
+        if let raw = patch["monthlySpendCapEur"] {
+            if raw is NSNull {
+                settings.monthlySpendCapEur = nil
+            } else {
+                guard let value = raw as? Int, (0...100_000).contains(value) else {
+                    throw NativeMemorySettingsError.invalidMutation
+                }
+                settings.monthlySpendCapEur = value
+            }
+        }
+        if let raw = patch["spendCapDisabled"] {
+            guard let value = raw as? Bool else { throw NativeMemorySettingsError.invalidMutation }
+            settings.spendCapDisabled = value
+        }
     }
 
     private func validMemory(_ value: String) -> String? {
@@ -745,8 +909,22 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
     public private(set) var isMutating = false
     public private(set) var isRefreshingSummary = false
     public private(set) var isErasing = false
+    /// Where `GET /api/settings` stands — the read that supplies the fields the
+    /// sync record does not carry (Phase 3).
+    public private(set) var serverSettingsPhase: ServerSettingsPhase = .idle
+
+    public enum ServerSettingsPhase: Equatable, Sendable {
+        case idle
+        case loading
+        case ready
+        case failed
+    }
 
     private let store: NativeMemorySettingsStore<Repository>
+    private let serverClient: NativeServerSettingsClient
+    /// The last `GET /api/settings` answer and every direct write since, as a
+    /// raw patch laid over the sync record on each reload.
+    private var serverOverlay: [String: Any] = [:]
     private let outbox: any MutationOutboxRepository
     private let drainer: NativeMutationDrainer<Repository>
     private let syncModel: NativeSyncModel<Repository>
@@ -767,6 +945,7 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
         self.drainer = drainer
         self.syncModel = syncModel
         apiClient = NativeMemoryAPIClient(sender: sender)
+        serverClient = NativeServerSettingsClient(sender: sender)
     }
 
     public func start(for accountID: AccountID) async {
@@ -790,6 +969,8 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
         pendingMutationCount = 0
         conflictedMutationCount = 0
         acceptedSettings = [:]
+        serverOverlay = [:]
+        serverSettingsPhase = .idle
         lastErrorDescription = nil
         isMutating = false
         isRefreshingSummary = false
@@ -822,7 +1003,7 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
             memories = snapshot.memories
             summary = snapshot.summary
             settings = applyingAcceptedSettings(
-                to: snapshot.settings,
+                to: applyingServerOverlay(to: snapshot.settings),
                 pendingMutations: snapshot.pendingMutationCount
             )
             pendingMutationCount = snapshot.pendingMutationCount
@@ -953,27 +1134,105 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
     }
 
     public func updateSettings(_ patch: NativeSettingsPatch) async {
+        _ = await saveSettings(patch)
+    }
+
+    /// Writes a settings change and says how it went, for a row's save status.
+    ///
+    /// Optimistic both ways: the value shows at once, and a refusal puts the
+    /// previous one back. The fields the sync outbox accepts go through it —
+    /// durable offline, conflict-checked — and the rest through
+    /// `PATCH /api/settings` (see ``NativeSettingsPatch/syncedFields``).
+    @discardableResult
+    public func saveSettings(_ patch: NativeSettingsPatch) async -> NativeSettingsSaveResult {
         guard let accountID, let settings else {
-            lastErrorDescription = NativeMemorySettingsError.settingsUnavailable
-                .localizedDescription
-            return
+            let message = NativeMemorySettingsError.settingsUnavailable.localizedDescription
+            lastErrorDescription = message
+            return .failed(message)
         }
         let patchObject = patch.object
         guard validate(patchObject), !patchObject.isEmpty else {
-            lastErrorDescription = NativeMemorySettingsError.invalidSettings
-                .localizedDescription
-            return
+            let message = NativeMemorySettingsError.invalidSettings.localizedDescription
+            lastErrorDescription = message
+            return .failed(message)
         }
+        let direct = patchObject.filter { !NativeSettingsPatch.syncedFields.contains($0.key) }
+        let synced = patchObject.filter { NativeSettingsPatch.syncedFields.contains($0.key) }
+
+        if !direct.isEmpty {
+            let previous = serverOverlay
+            for (field, value) in direct { serverOverlay[field] = value }
+            overlayCurrentSettings(direct)
+            do {
+                guard let body = try patch.directBody() else { return .saved }
+                try await serverClient.patch(body: body, for: accountID)
+            } catch {
+                guard self.accountID == accountID else { return .failed("") }
+                serverOverlay = previous
+                await reload()
+                let message = NativeFailureMessage.presentable(error)
+                return .failed(message)
+            }
+            guard self.accountID == accountID else { return .saved }
+        }
+
+        guard !synced.isEmpty else { return .saved }
         // Held from here, not from acknowledgement: the drain inside
         // `enqueueAndDrain` can acknowledge and reload before this function
         // resumes, and the overlay has to already be in place by then.
-        for (field, value) in patchObject { acceptedSettings[field] = value }
-        await enqueueAndDrain(
+        for (field, value) in synced { acceptedSettings[field] = value }
+        let drained = await enqueueAndDrain(
             operation: "settings.update",
             entity: RecordKey(namespace: "settings", id: settings.id),
-            object: ["type": "settings.update", "patch": patchObject],
+            object: ["type": "settings.update", "patch": synced],
             accountID: accountID
         )
+        switch drained {
+        case .failed(let message):
+            for field in synced.keys { acceptedSettings.removeValue(forKey: field) }
+            await reload()
+            return .failed(message)
+        case .conflicted:
+            return .failed("Memory or settings changed on another device.")
+        case .queued:
+            return .queued
+        case .acknowledged:
+            return .saved
+        }
+    }
+
+    /// Reads `GET /api/settings` for the fields the sync record does not
+    /// carry, and lays them over the record.
+    public func refreshServerSettings() async {
+        guard let accountID else { return }
+        serverSettingsPhase = .loading
+        do {
+            let fetched = try await serverClient.fetch(for: accountID)
+            guard self.accountID == accountID else { return }
+            // The server's answer is the truth for every field it sent; a field
+            // it did not send keeps what this Mac last wrote.
+            var overlay = fetched.overlay
+            for (field, value) in serverOverlay where overlay[field] == nil { overlay[field] = value }
+            serverOverlay = overlay
+            serverSettingsPhase = .ready
+            await reload()
+        } catch {
+            guard self.accountID == accountID else { return }
+            serverSettingsPhase = .failed
+        }
+    }
+
+    /// The server's own answer for the direct fields, laid over a record.
+    private func applyingServerOverlay(to incoming: NativeAccountSettings?) -> NativeAccountSettings? {
+        guard var result = incoming, !serverOverlay.isEmpty else { return incoming }
+        try? NativeMemorySettingsStore<Repository>.applyDirectFields(serverOverlay, to: &result)
+        return result
+    }
+
+    private func overlayCurrentSettings(_ patch: [String: Any]) {
+        guard var current = settings else { return }
+        try? NativeMemorySettingsStore<Repository>.applyDirectFields(patch, to: &current)
+        settings = current
     }
 
     public func eraseAllMemory() async {
@@ -1055,21 +1314,30 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
         }
     }
 
+    /// How one enqueue-and-drain ended, for a caller that reports a save.
+    private enum DrainOutcome {
+        case acknowledged
+        case queued
+        case conflicted
+        case failed(String)
+    }
+
+    @discardableResult
     private func enqueueAndDrain(
         operation: String,
         entity: RecordKey,
         object: [String: Any],
         accountID: AccountID
-    ) async {
+    ) async -> DrainOutcome {
         guard JSONSerialization.isValidJSONObject(object),
             let payload = try? JSONSerialization.data(
                 withJSONObject: object,
                 options: [.sortedKeys]
             )
         else {
-            lastErrorDescription = NativeMemorySettingsError.invalidMutation
-                .localizedDescription
-            return
+            let message = NativeMemorySettingsError.invalidMutation.localizedDescription
+            lastErrorDescription = message
+            return .failed(message)
         }
         let draft = MutationDraft(
             id: OutboxMutationID(UUID().uuidString.lowercased()),
@@ -1085,15 +1353,20 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
         do {
             _ = try await outbox.enqueue(draft)
             await reload()
-            await reconcilePendingMutations()
+            guard let result = await reconcilePendingMutations() else { return .queued }
+            if result.conflicted > 0 { return .conflicted }
+            if result.retryScheduled > 0 { return .queued }
+            return .acknowledged
         } catch {
-            guard self.accountID == accountID else { return }
+            guard self.accountID == accountID else { return .failed("") }
             record(error)
+            return .failed(NativeFailureMessage.presentable(error))
         }
     }
 
-    private func reconcilePendingMutations() async {
-        guard !isReconciling, let accountID else { return }
+    @discardableResult
+    private func reconcilePendingMutations() async -> NativeMutationDrainResult? {
+        guard !isReconciling, let accountID else { return nil }
         isReconciling = true
         defer { isReconciling = false }
         do {
@@ -1110,9 +1383,11 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
                 lastErrorDescription = "Memory or settings changed on another device."
                 phase = .failed
             }
+            return result
         } catch {
-            guard self.accountID == accountID else { return }
+            guard self.accountID == accountID else { return nil }
             record(error)
+            return nil
         }
     }
 
@@ -1139,6 +1414,13 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
             favorites.count > 100 || Set(favorites).count != favorites.count
                 || favorites.contains(where: { $0.isEmpty || $0.count > 200 })
         { return false }
+        if let name = patch["name"] as? String, name.count > 80 { return false }
+        if let policy = patch["actionApprovalPolicy"] as? String,
+            !NativeSettingsPatch.actionApprovalPolicies.contains(policy) { return false }
+        if let blocked = patch["blockedConnectors"] as? [String],
+            blocked.count > 200 || blocked.contains(where: { $0.isEmpty || $0.count > 120 })
+        { return false }
+        if let cap = patch["monthlySpendCapEur"] as? Int, !(0...100_000).contains(cap) { return false }
         return true
     }
 
@@ -1179,6 +1461,16 @@ private struct SettingsWire: Decodable {
     // the whole settings decode.
     let backgroundProviderMode: String?
     let backgroundProviderSelected: String?
+    // Phase 3: decoded when a record carries them; every older payload still
+    // decodes, because each is optional.
+    let name: String?
+    let memoryBackgroundLearning: Bool?
+    let memorySensitiveTopics: [String]?
+    let actionApprovalPolicy: String?
+    let lockdownMode: Bool?
+    let blockedConnectors: [String]?
+    let monthlySpendCapEur: Int?
+    let spendCapDisabled: Bool?
     let updatedAt: String
 }
 
@@ -1196,4 +1488,150 @@ private struct MemoryResponseWire: Decodable {
     }
 
     let summary: Summary?
+}
+
+// MARK: - Direct settings (Phase 3)
+
+/// How one settings write ended, for the row that made it.
+public enum NativeSettingsSaveResult: Equatable, Sendable {
+    /// The server has it.
+    case saved
+    /// Durably queued on this device, to be sent when Juno reconnects.
+    case queued
+    /// Refused or lost; the previous value is back. The sentence says why.
+    case failed(String)
+
+    public var succeeded: Bool {
+        if case .failed = self { return false }
+        return true
+    }
+}
+
+/// `GET /api/settings`: the fields the sync record does not carry.
+public struct NativeServerSettings: Equatable, Sendable {
+    public var memorySensitiveTopics: [String]?
+    public var memoryBackgroundLearning: Bool?
+    public var backgroundProviderMode: String?
+    public var actionApprovalPolicy: String?
+    public var lockdownMode: Bool?
+    public var blockedConnectors: [String]?
+    public var monthlySpendCapEur: Int?
+    public var spendCapDisabled: Bool?
+
+    public init(
+        memorySensitiveTopics: [String]? = nil,
+        memoryBackgroundLearning: Bool? = nil,
+        backgroundProviderMode: String? = nil,
+        actionApprovalPolicy: String? = nil,
+        lockdownMode: Bool? = nil,
+        blockedConnectors: [String]? = nil,
+        monthlySpendCapEur: Int? = nil,
+        spendCapDisabled: Bool? = nil
+    ) {
+        self.memorySensitiveTopics = memorySensitiveTopics
+        self.memoryBackgroundLearning = memoryBackgroundLearning
+        self.backgroundProviderMode = backgroundProviderMode
+        self.actionApprovalPolicy = actionApprovalPolicy
+        self.lockdownMode = lockdownMode
+        self.blockedConnectors = blockedConnectors
+        self.monthlySpendCapEur = monthlySpendCapEur
+        self.spendCapDisabled = spendCapDisabled
+    }
+
+    /// As the raw patch the model lays over the sync record. A ceiling of
+    /// `null` is a real answer ("the default") and is kept as one.
+    var overlay: [String: Any] {
+        var result: [String: Any] = [:]
+        if let memorySensitiveTopics { result["memorySensitiveTopics"] = memorySensitiveTopics }
+        if let memoryBackgroundLearning { result["memoryBackgroundLearning"] = memoryBackgroundLearning }
+        if let backgroundProviderMode { result["backgroundProviderMode"] = backgroundProviderMode }
+        if let actionApprovalPolicy { result["actionApprovalPolicy"] = actionApprovalPolicy }
+        if let lockdownMode { result["lockdownMode"] = lockdownMode }
+        if let blockedConnectors { result["blockedConnectors"] = blockedConnectors }
+        result["monthlySpendCapEur"] = monthlySpendCapEur.map { $0 as Any } ?? NSNull()
+        if let spendCapDisabled { result["spendCapDisabled"] = spendCapDisabled }
+        return result
+    }
+}
+
+/// `GET` and `PATCH /api/settings`, for the settings the sync protocol does
+/// not carry. Both accept the native bearer (`getCurrentUser` reads it).
+public struct NativeServerSettingsClient: Sendable {
+    private let sender: any NativeAuthenticatedRequestSending
+
+    public init(sender: any NativeAuthenticatedRequestSending) {
+        self.sender = sender
+    }
+
+    public func fetch(for accountID: AccountID) async throws -> NativeServerSettings {
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/settings",
+                headers: try HTTPHeaders(["accept": "application/json"])
+            ),
+            for: accountID
+        )
+        try Self.requireSuccess(response, fallback: "Juno could not load your settings")
+        do {
+            let wire = try JSONDecoder().decode(ServerSettingsResponseWire.self, from: response.body)
+            let s = wire.settings
+            return NativeServerSettings(
+                memorySensitiveTopics: s.memorySensitiveTopics,
+                memoryBackgroundLearning: s.memoryBackgroundLearning,
+                backgroundProviderMode: s.backgroundProviderMode,
+                actionApprovalPolicy: s.actionApprovalPolicy,
+                lockdownMode: s.lockdownMode,
+                blockedConnectors: s.blockedConnectors,
+                monthlySpendCapEur: s.monthlySpendCapEur,
+                spendCapDisabled: s.spendCapDisabled
+            )
+        } catch {
+            throw NativeMemoryAPIError.malformedResponse
+        }
+    }
+
+    /// Sends a JSON body of settings fields, as ``NativeSettingsPatch/directBody()``
+    /// builds it.
+    public func patch(body: Data, for accountID: AccountID) async throws {
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/settings",
+                method: .patch,
+                headers: try HTTPHeaders([
+                    "accept": "application/json",
+                    "content-type": "application/json",
+                ]),
+                body: body
+            ),
+            for: accountID
+        )
+        try Self.requireSuccess(response, fallback: "Juno could not save this setting")
+    }
+
+    private static func requireSuccess(_ response: HTTPResponse, fallback: String) throws {
+        guard !(200...299).contains(response.statusCode) else { return }
+        let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any]
+        let message = (object?["error"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        throw NativeMemoryAPIError.server(
+            statusCode: response.statusCode,
+            message: message ?? "\(fallback) (\(response.statusCode)).",
+            retryable: response.statusCode == 408 || response.statusCode == 429
+                || response.statusCode >= 500
+        )
+    }
+}
+
+private struct ServerSettingsResponseWire: Decodable {
+    struct Settings: Decodable {
+        let memorySensitiveTopics: [String]?
+        let memoryBackgroundLearning: Bool?
+        let backgroundProviderMode: String?
+        let actionApprovalPolicy: String?
+        let lockdownMode: Bool?
+        let blockedConnectors: [String]?
+        let monthlySpendCapEur: Int?
+        let spendCapDisabled: Bool?
+    }
+
+    let settings: Settings
 }

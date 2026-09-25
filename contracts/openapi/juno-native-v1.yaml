@@ -850,6 +850,362 @@ paths:
         '404': { $ref: '#/components/responses/GeneralRouteError' }
 
   # ---------------------------------------------------------------------------
+  # Settings, Plan & usage, onboarding and announcements (Phase 3 Stage C).
+  # The web's own routes under /api, which read the native bearer through
+  # getCurrentUser; failures are `{ error, field? }` (GeneralRouteError).
+  # ---------------------------------------------------------------------------
+  /account/mfa:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeAccountSecurity
+      description: Two-step verification status and whether the account has a password.
+      responses:
+        '200':
+          description: The account's sign-in security.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, pending, recoveryCodesRemaining, hasPassword]
+                properties:
+                  enabled: { type: boolean }
+                  pending: { type: boolean }
+                  enabledAt: { type: [string, 'null'], format: date-time }
+                  recoveryCodesRemaining: { type: integer, minimum: 0 }
+                  hasPassword: { type: boolean }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /account/mfa/start:
+    post:
+      servers: [{ url: /api }]
+      operationId: startNativeTwoStepEnrolment
+      description: Begins enrolment; the QR code is a server-drawn data URL.
+      responses:
+        '200':
+          description: The secret, its otpauth URL and the QR code.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [secret, otpauthUrl, qrDataUrl]
+                properties:
+                  secret: { type: string }
+                  otpauthUrl: { type: string }
+                  qrDataUrl: { type: string }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /account/mfa/confirm:
+    post:
+      servers: [{ url: /api }]
+      operationId: confirmNativeTwoStepEnrolment
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } } }
+      responses:
+        '200':
+          description: Two-step verification is on; the recovery codes are shown once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, recoveryCodes]
+                properties:
+                  ok: { const: true }
+                  recoveryCodes: { type: array, items: { type: string } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /account/mfa/disable:
+    post:
+      servers: [{ url: /api }]
+      operationId: disableNativeTwoStep
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } } }
+      responses:
+        '200':
+          description: Two-step verification is off.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+                  ownerAdminLocked: { type: boolean }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /account/password:
+    post:
+      servers: [{ url: /api }]
+      operationId: changeNativeAccountPassword
+      description: Changes the password and signs out every session, the caller's included.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        '200': { description: Changed; every session is signed out. }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /account/email:
+    post:
+      servers: [{ url: /api }]
+      operationId: startNativeAccountEmailChange
+      description: Mails a confirmation link to the new address; nothing changes until it is opened.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                currentPassword: { type: string }
+      responses:
+        '200': { description: The link is on its way. }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /account/sessions/revoke:
+    post:
+      servers: [{ url: /api }]
+      operationId: revokeNativeAccountSessions
+      description: Ends every session on every device, the caller's included.
+      responses:
+        '200': { description: Every session is revoked. }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /account/export:
+    get:
+      servers: [{ url: /api }]
+      operationId: exportNativeAccount
+      parameters:
+        - in: query
+          name: format
+          schema: { type: string, enum: [json, csv, juno] }
+          description: Absent is JSON; `juno` is a .zip with Library files (or JSON when the server has no storage).
+      responses:
+        '200': { description: The export file. }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /announcements:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeAnnouncement
+      description: The newest published announcement this account has not dismissed, or null.
+      responses:
+        '200':
+          description: One announcement or null.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [announcement]
+                properties:
+                  announcement:
+                    type: [object, 'null']
+                    required: [id, title, description]
+                    properties:
+                      id: { type: string }
+                      title: { type: string }
+                      description: { type: string }
+                      imageUrl: { type: [string, 'null'] }
+                      videoUrl: { type: [string, 'null'] }
+                      provider: { type: [string, 'null'] }
+                      modelName: { type: [string, 'null'] }
+                      newsLabel: { type: [string, 'null'] }
+                      newsHref: { type: [string, 'null'] }
+                      ctaLabel: { type: [string, 'null'] }
+                      ctaHref: { type: [string, 'null'] }
+  /announcements/{id}/dismiss:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    post:
+      servers: [{ url: /api }]
+      operationId: dismissNativeAnnouncement
+      responses:
+        '200': { description: Dismissed for this account. }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /conversations:
+    delete:
+      servers: [{ url: /api }]
+      operationId: deleteAllNativeConversations
+      description: Deletes every conversation and its messages. Memories and projects stay.
+      responses:
+        '200':
+          description: Every conversation is deleted.
+          content: { application/json: { schema: { type: object, required: [ok], properties: { ok: { const: true } } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /import:
+    post:
+      servers: [{ url: /api }]
+      operationId: importNativeChatHistory
+      description: A ChatGPT, Claude, Gemini or Juno export (.zip or .json, 100 MB), multipart field `file`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } }
+      responses:
+        '200':
+          description: What was restored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [imported]
+                properties:
+                  imported: { type: integer }
+                  skipped: { type: integer }
+                  projectsImported: { type: integer }
+                  memoriesImported: { type: integer }
+                  attachmentsImported: { type: integer }
+                  attachmentsSkipped: { type: integer }
+                  format: { type: string }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+  /profile/avatar:
+    post:
+      servers: [{ url: /api }]
+      operationId: uploadNativeProfileAvatar
+      description: A JPEG, PNG, WebP or GIF under 5 MB, multipart field `file`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } }
+      responses:
+        '200':
+          description: The new picture's address.
+          content: { application/json: { schema: { type: object, required: [url], properties: { url: { type: string } } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+  /profile/usage:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeProfileUsage
+      description: The plan's quota and the month's spend, windows and billing — the meters Plan & usage draws.
+      responses:
+        '200':
+          description: Quota and spend.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [quota, spend]
+                properties:
+                  quota:
+                    type: object
+                    required: [plan]
+                    properties:
+                      plan: { type: string }
+                      used: { type: integer }
+                      limit: { type: [integer, 'null'] }
+                      remaining: { type: [integer, 'null'] }
+                  spend:
+                    type: object
+                    required: [spentMicroUsd, windows, billing]
+                    properties:
+                      spentMicroUsd: { type: number }
+                      budgetMicroUsd: { type: [number, 'null'] }
+                      remainingMicroUsd: { type: [number, 'null'] }
+                      reservedMicroUsd: { type: number }
+                      eurPerUsd: { type: number }
+                      capSource: { type: string, enum: [plan, user, personal-default, disabled] }
+                      capDisabled: { type: boolean }
+                      windows: { type: object }
+                      billing: { type: object }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /settings:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeServerSettings
+      description: The settings row, including the fields the v1 sync record does not carry.
+      responses:
+        '200':
+          description: The account's settings.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [settings]
+                properties:
+                  settings:
+                    type: object
+                    properties:
+                      memorySensitiveTopics: { type: array, items: { type: string } }
+                      memoryBackgroundLearning: { type: boolean }
+                      backgroundProviderMode: { type: string }
+                      actionApprovalPolicy: { type: string }
+                      lockdownMode: { type: boolean }
+                      blockedConnectors: { type: array, items: { type: string } }
+                      monthlySpendCapEur: { type: [integer, 'null'] }
+                      spendCapDisabled: { type: boolean }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+    patch:
+      servers: [{ url: /api }]
+      operationId: patchNativeServerSettings
+      description: >-
+        Writes any settings field, including those the strict sync mutation
+        refuses: name, memoryBackgroundLearning, memorySensitiveTopics,
+        backgroundProviderMode, actionApprovalPolicy, lockdownMode,
+        blockedConnectors and monthlySpendCapEur (null restores the default).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 80 }
+                memoryBackgroundLearning: { type: boolean }
+                memorySensitiveTopics: { type: array, items: { type: string } }
+                backgroundProviderMode: { type: string }
+                actionApprovalPolicy: { type: string, enum: [always_ask, ask_for_any_change, ask_for_important_actions, allow_selected_low_risk, block] }
+                lockdownMode: { type: boolean }
+                blockedConnectors: { type: array, maxItems: 200, items: { type: string, maxLength: 120 } }
+                monthlySpendCapEur: { type: [integer, 'null'], minimum: 0, maximum: 100000 }
+      responses:
+        '200': { description: Saved. }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /stripe/checkout:
+    post:
+      servers: [{ url: /api }]
+      operationId: startNativeCheckout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan]
+              properties:
+                plan: { type: string, enum: [PRO, MAX, MAX20] }
+                interval: { type: string, enum: [month, year] }
+      responses:
+        '200':
+          description: The Stripe Checkout page to open in the browser.
+          content: { application/json: { schema: { type: object, required: [url], properties: { url: { type: string } } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '503': { $ref: '#/components/responses/GeneralRouteError' }
+  /stripe/portal:
+    post:
+      servers: [{ url: /api }]
+      operationId: openNativeBillingPortal
+      responses:
+        '200':
+          description: The Stripe billing portal to open in the browser.
+          content: { application/json: { schema: { type: object, required: [url], properties: { url: { type: string } } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '503': { $ref: '#/components/responses/GeneralRouteError' }
+
+  # ---------------------------------------------------------------------------
   # Agents (docs/design/AGENTS.md): named, persistent teammates over Work. Like
   # the Work paths below, these live under /api, not /api/v1, and take the same
   # bearer. An agent's thread is an ordinary conversation and its tasks are
