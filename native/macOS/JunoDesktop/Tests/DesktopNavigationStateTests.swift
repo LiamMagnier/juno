@@ -229,12 +229,58 @@ struct DesktopNavigationStateTests {
 
     @Test
     func everyDestinationRoundTripsThroughSceneStorage() {
-        for destination in DesktopDestination.allCases {
+        for destination in DesktopDestination.allCases where destination != .design {
             #expect(
                 DesktopNavigationState.destination(fromStored: destination.rawValue)
                     == destination
             )
         }
+    }
+
+    // MARK: - Design is a type in Artifacts (Phase 4 A2)
+
+    /// A window stored on the retired Design page reopens on Artifacts, with
+    /// the Designs filter — the web's `/design` → `/artifacts?type=DESIGN`.
+    @Test
+    func aStoredDesignOpensArtifactsFilteredToDesigns() {
+        #expect(DesktopNavigationState.destination(fromStored: "design") == .artifacts)
+        let normalized = DesktopNavigationState.normalized(.design)
+        #expect(normalized.destination == .artifacts)
+        #expect(normalized.artifactsType == "DESIGN")
+        #expect(DesktopNavigationState.normalized(.library).destination == .library)
+        #expect(DesktopNavigationState.normalized(.library).artifactsType == nil)
+    }
+
+    /// Library, Projects, Artifacts, Agents — the web's rows, with no Design.
+    @Test
+    func theSidebarHasNoDesignRow() {
+        #expect(DesktopDestination.sidebarCases == [.library, .projects, .artifacts, .agents])
+        #expect(!DesktopDestination.sidebarCases.contains(.design))
+    }
+
+    /// The case stays decodable for stored state and old callers.
+    @Test
+    func theDesignRawValueStillRoundTrips() {
+        #expect(DesktopDestination(rawValue: "design") == .design)
+        #expect(DesktopDestination.design.rawValue == "design")
+    }
+
+    /// A router request for Design lands on Artifacts carrying the filter,
+    /// which the Artifacts page takes once.
+    @Test
+    @MainActor
+    func aDesignRequestCarriesTheDesignsFilter() {
+        let router = DesktopPageRouter()
+        router.open(.design, opensNewMenu: true)
+        let request = try? #require(router.pending)
+        #expect(request?.destination == .artifacts)
+        #expect(request?.artifactsType == "DESIGN")
+        if let request { router.consume(request) }
+        #expect(router.pending == nil)
+        let filter = router.takeArtifactsFilter()
+        #expect(filter?.type == "DESIGN")
+        #expect(filter?.opensNewMenu == true)
+        #expect(router.takeArtifactsFilter() == nil)
     }
 
     /// The Projects index survives a relaunch like any other destination.
@@ -307,7 +353,8 @@ struct DesktopNavigationStateTests {
             #expect(DesktopNavigationState.destination(fromStored: retired) == .chat)
         }
 
-        for destination in DesktopDestination.allCases {
+        // Every destination but Design, which reads back as Artifacts (A2).
+        for destination in DesktopDestination.allCases where destination != .design {
             #expect(DesktopNavigationState.destination(fromStored: destination.rawValue) == destination)
         }
     }

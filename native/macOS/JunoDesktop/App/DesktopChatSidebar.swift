@@ -1016,12 +1016,12 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     /// ordinary conversation — and its tasks are Work's.
     case agents
     case connections
-    /// Juno Design — the canvas, and the list of what has been drawn on it.
-    ///
-    /// A destination and deliberately **not** a ``DesktopProductMode``. A
-    /// product owns the whole window: its own source list, its own toolbar, its
-    /// own `NavigationSplitView`. Design has none of those. It is a navigation
-    /// row (§2.1), no longer a footer row: the footer is about the account.
+    /// Design, as a stored value only. The web made a design an artifact of
+    /// type `DESIGN` (`app-sidebar.tsx`: `/design` redirects to
+    /// `/artifacts?type=DESIGN`), so there is no Design row and no Design page:
+    /// ``DesktopNavigationState/normalized(_:)`` turns this into Artifacts with
+    /// the Designs filter. The case stays so stored window state and the
+    /// legacy tasks window's footer (`leaveForChat(.design)`) keep decoding.
     case design
     /// What Juno remembers about the reader, as a page of its own. A temporary
     /// More item until ⌘K reaches it (Phase 3), after which Settings › Memory
@@ -1031,8 +1031,9 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     var id: Self { self }
 
     /// The navigation rows under New chat, in the web's order
-    /// (`app-sidebar.tsx`): Library, Projects, Artifacts, Design, Agents.
-    static let sidebarCases: [Self] = [.library, .projects, .artifacts, .design, .agents]
+    /// (`app-sidebar.tsx`): Library, Projects, Artifacts, Agents. No Design
+    /// row: a design is an artifact (Phase 4 A2).
+    static let sidebarCases: [Self] = [.library, .projects, .artifacts, .agents]
 
     /// The More menu's items, as their pages exist (§2.3).
     static let moreCases: [Self] = [.connections, .memory]

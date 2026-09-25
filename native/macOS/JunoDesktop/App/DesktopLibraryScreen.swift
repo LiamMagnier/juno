@@ -7,397 +7,966 @@ import JunoStorage
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Library: every file this account has already shared with Juno.
+/// The Library: every file this account has shared with Juno, as the web's
+/// `/library` shows it (Phase 4 A4; `src/app/(app)/library/page.tsx`,
+/// `components/library/*`).
 ///
-/// **Shaped after the web's `src/app/(app)/library/page.tsx`.** That page opens
-/// with its header — "Library", the one-line explanation, and the library's
-/// own totals — then a controls row carrying the search field, the type filter
-/// with real per-tab counts, the sort and the list/grid switch, and finally the
-/// files themselves. This screen is the same page on the `JunoPage` template
-/// (spec §9): every control is in content and nothing is in the toolbar (§3).
+/// **The web's shape.** The header carries the storage caption, Recently
+/// deleted and Upload; the controls row the search, All / Images / Files with
+/// their counts, the sort and List / Grid — **List** by default. Recently
+/// deleted is a view of its own with its own title and a way back. A delete is
+/// optimistic with Undo in the window's toast host, as the web's is; nothing
+/// asks "are you sure?" about something that can be undone.
 ///
-/// **Why both a grid and a table, rather than only the table this screen used to
-/// be.** The old build was a bare `Table`, and a short `Table` with
-/// `alternatesRowBackgrounds` paints the rest of the pane with empty grey
-/// stripes — two real files under a dozen phantom ones. Grid is now the default
-/// because it is what the website shows and what makes a library of pictures
-/// legible; the table survives as the second view because sorting by size or by
-/// date is genuinely useful and impossible in a grid. Both are built only when
-/// there are rows, so neither can draw a placeholder.
+/// **Mac extras** (register #61): Add Document… (the local index), Copy
+/// Names, Quick Look on Space, Edit Image…, and the files dragging out.
 ///
-/// **Raised, not flat.** The web puts white `--card` surfaces over the warm
-/// `--background`; painting file rows straight onto the canvas is what made the
-/// window read as one cream field. Every card and the table itself go through
-/// `junoCard()`, and the canvas shows around and between them. The screen paints
-/// no canvas of its own — the detail column already did that, once.
-///
-/// **What is deliberately absent.** No open, no Quick Look, no download, no
-/// rename and no delete, and image cards show a typed glyph rather than a
-/// thumbnail. `NativeLibraryModel` and `NativeLibraryClient` expose the file's
-/// name, type, size and date and nothing else: no bytes, no signed URL, no
-/// mutation. Every one of those controls would be a control that does nothing,
-/// so they are reported as gaps instead of drawn.
-///
-/// **The second half of the page is local.** Everything above describes files the
-/// *account* holds, which is a list this Mac can only read. `Add Document…` is the
-/// other direction: a file on this disk read through
-/// ``DocumentIngestionPipeline`` into chunks and put in the account's retrieval
-/// index, so the search field at the top of this window finds passages inside a
-/// PDF and not only file names. The two live on one page because both answer
-/// "what has Juno got of mine", and splitting them would make the reader learn
-/// which of two screens holds a given document.
+/// **The second half of the page is local.** `Add Document…` reads a file on
+/// this disk into chunks in this Mac's retrieval index, so search finds
+/// passages inside a PDF and not only file names. It stays below the header,
+/// restyled to the page's rhythm (register #51).
 struct DesktopLibraryScreen: View {
-    @Bindable var model: NativeLibraryModel
-    /// This Mac's local document index, or nil where the shell could not build
-    /// one. See ``JunoDesktopConfiguration/documentIndexModel``.
+    @Bindable var model: NativeLibraryPageModel
+    /// This Mac's local document index, or nil where the shell built none.
     var documentIndex: NativeDocumentIndexModel?
-    /// Everything the image editor needs. All optional, and the Edit action is
-    /// absent rather than disabled when any of it is missing — a menu item that
-    /// cannot work is worse than one that is not there.
+    /// Everything the image editor needs. Edit Image… is absent, not
+    /// disabled, when any of it is missing.
     var accountID: AccountID?
     var attachmentClient: NativeAttachmentAPIClient?
     var generateClient: NativeChatAPIClient?
     var modelCatalog: [NativeChatModelOption] = []
+    /// A file's bytes, for thumbnails, Quick Look and Download. Nil draws
+    /// typed tiles and leaves those actions out.
+    var fileAccess: ((String) async -> NativeProjectFileAccess?)?
     var openConversation: ((String) -> Void)?
+    /// Files picked out when the page opens (the snapshot harness's
+    /// selection state).
+    var initialSelection: Set<String> = []
 
-    @State private var editing: NativeLibraryItem?
-    @State private var previews = NativeFilePreviewLoader()
-    /// Whether the system open panel for `Add Document…` is up.
-    @State private var choosingDocument = false
-    /// A failure of the *panel*, not of the pipeline. Kept apart from
-    /// `documentIndex.lastErrorDescription` because "you cancelled out of an open
-    /// panel that errored" and "this PDF has no text in it" want different
-    /// sentences, and folding them together would make one of the two wrong.
-    @State private var documentPanelFailure: String?
+    @Environment(\.junoToast) private var toast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// How the files are drawn. Mirrors the web's `LibraryView`, including the
-    /// fact that the choice is remembered — the website persists it under
-    /// `juno-library-view` in local storage, and a Mac window that forgot which
-    /// view you left it in would be worse behaved than the browser tab.
-    private enum Presentation: String, CaseIterable, Identifiable {
-        case grid
-        case list
-
-        var id: String { rawValue }
+    enum Presentation: String, CaseIterable {
+        case list, grid
     }
 
-    /// Row selection is local, not `model.selection`. That property is the
-    /// composer's library-picker state: whatever is left in it becomes
-    /// pre-selected the next time someone attaches from the Library, so merely
-    /// browsing this page must not write to it.
-    @State private var selection: Set<NativeLibraryItem.ID> = []
-    @State private var searchText = ""
-    @State private var sortOrder = [
-        KeyPathComparator(\NativeLibraryItem.createdAt, order: .reverse)
-    ]
-    /// The last card clicked without a modifier — the anchor a ⇧-click extends
-    /// from, exactly as a Finder icon view behaves.
-    @State private var selectionAnchor: NativeLibraryItem.ID?
-    @State private var hoveredID: NativeLibraryItem.ID?
-    @AppStorage("juno.desktop.library-view") private var storedPresentation = Presentation.grid.rawValue
-
-    /// A grid tile's range. The floor keeps a long name legible on two lines'
-    /// worth of width; the ceiling stops four columns from becoming two slabs on
-    /// a wide display.
-    private static let tileWidth: ClosedRange<CGFloat> = 168...248
+    /// Remembered, List by default as on the web (`juno-library-view`).
+    @AppStorage("juno.desktop.library.view") private var storedPresentation = Presentation.list.rawValue
+    @State private var selection: Set<String> = []
+    @State private var selectionAnchor: String?
+    @State private var hoveredID: String?
+    @State private var previews = NativeFilePreviewLoader()
+    @State private var editing: NativeLibraryItem?
+    @State private var renaming: JunoRenameRequest?
+    @State private var versionsTarget: NativeLibraryItem?
+    @State private var choosingUpload = false
+    @State private var choosingDocument = false
+    @State private var documentPanelFailure: String?
+    @State private var dropTargeted = false
+    @State private var quickLookURL: URL?
+    @State private var download: DesktopLibraryDownload?
+    @State private var dealt = false
 
     private var presentation: Presentation {
-        Presentation(rawValue: storedPresentation) ?? .grid
+        Presentation(rawValue: storedPresentation) ?? .list
     }
 
     private var presentationBinding: Binding<Presentation> {
-        Binding(
-            get: { presentation },
-            set: { storedPresentation = $0.rawValue }
-        )
+        Binding(get: { presentation }, set: { storedPresentation = $0.rawValue })
     }
 
-    private var query: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var rows: [NativeLibraryItem] { model.items ?? [] }
+    private var isDeletedView: Bool { model.query.deleted }
+    private var isLoading: Bool { model.items == nil && !model.failed }
+    private var isFiltered: Bool {
+        !model.query.q.trimmingCharacters(in: .whitespaces).isEmpty || model.query.kind != .all
     }
 
-    /// The visible files. Search covers the file name *and* the MIME type, as
-    /// the web's does — "png" is how people look for images they cannot name.
-    private var rows: [NativeLibraryItem] {
-        model.visibleItems
-            .filter { item in
-                query.isEmpty
-                    || item.fileName.localizedCaseInsensitiveContains(query)
-                    || item.mimeType.localizedCaseInsensitiveContains(query)
-            }
-            .sorted(using: sortOrder)
-    }
-
-    private var selectedFileNames: [String] {
-        rows.filter { selection.contains($0.id) }.map(\.fileName)
+    private var isEmptyLibrary: Bool {
+        !isFiltered && rows.isEmpty && model.uploads.isEmpty && model.items != nil
     }
 
     var body: some View {
-        // The page template (§9): the header and the controls row in content,
-        // nothing in the toolbar. The search field, the filter and the view
-        // switch used to be `ToolbarItem`s and a `.searchable` that came and
-        // went with the destination — crash rule 3 — and now sit where the
-        // reader can see what they act on, as on the web's `/library`.
-        // `JunoPage` draws `Color.clear.overlay { … }`, so a library of two
-        // hundred files scrolls instead of resizing the window.
-        JunoPage(measure: .wide, scrolling: .content) {
-            JunoPageHeader("Library", lede: "Everything you upload or share in chats.") {
-                summary
-                Button(action: refresh) {
-                    Label("Refresh", icon: .refresh)
-                }
-                .buttonStyle(.bordered)
-                .tint(nil)
-                .keyboardShortcut("r", modifiers: .command)
-                .disabled(model.isLoading)
-                .contentShape(.rect)
-                .help("Reload your library (⌘R)")
-                .accessibilityLabel("Refresh library")
-                .accessibilityIdentifier("juno.desktop.library-refresh")
-                addDocumentButton
-            }
+        JunoPage(measure: .wide, scrolling: .page) {
+            header
         } controls: {
-            // Only once there is something to filter (the web's rule): a
-            // search that matched nothing keeps its row, because the reader
-            // needs the field to clear it.
-            if !model.items.isEmpty {
+            // Only once there is something to filter; a no-results state keeps
+            // the row, because the reader needs the field to clear the search.
+            if !isLoading, !model.failed, !isEmptyLibrary {
                 controls
             }
         } content: {
-            VStack(spacing: 0) {
-                documentIndexPanel
+            VStack(alignment: .leading, spacing: 0) {
+                if !isDeletedView {
+                    documentIndexPanel
+                }
                 content
             }
         }
-        // A failed reload while files are still on screen, in the window's
-        // toast host (§7.7), with its Retry.
-        .junoToastStatus(id: "library.refresh", refreshFailure) { error in
+        .overlay { dropVeil }
+        .onDrop(of: [.fileURL], isTargeted: $dropTargeted, perform: acceptDrop)
+        .junoToastStatus(id: "library.refresh", refreshFailure) { _ in
             JunoToast(
                 tone: .error,
                 title: "Couldn’t load your files",
-                detail: error,
-                action: JunoToast.Action("Retry") { refresh() }
+                detail: "Check your connection and try again.",
+                action: JunoToast.Action("Try again") { reload() }
             )
         }
-        // Multi-select raises the host's selection bar (§7.7, §9).
         .junoToastSelection(selectionBar, id: selection)
+        .junoRenameSheet($renaming)
+        .sheet(item: $versionsTarget) { item in
+            DesktopLibraryVersionsSheet(item: item, model: model) { versionsTarget = nil }
+        }
         .sheet(item: $editing) { editSheet($0) }
+        .fileImporter(
+            isPresented: $choosingUpload,
+            allowedContentTypes: DesktopLibraryUploads.acceptedTypes,
+            allowsMultipleSelection: true
+        ) { result in
+            if case .success(let urls) = result { upload(urls) }
+        }
         .fileImporter(
             isPresented: $choosingDocument,
             allowedContentTypes: NativeDocumentIndexModel.readableContentTypes,
-            // Several at once, because "index my contracts" is the request
-            // this exists for and one-at-a-time would be six open panels.
-            // They are read in sequence below, not concurrently: the pipeline
-            // reports one file at a time and a parallel import would make the
-            // progress line name whichever finished last.
             allowsMultipleSelection: true
         ) { result in
             switch result {
-            case let .success(urls):
+            case .success(let urls):
                 documentPanelFailure = nil
                 Task { await ingest(urls) }
-            case let .failure(error):
+            case .failure(let error):
                 documentPanelFailure = error.localizedDescription
             }
         }
-        .task { await model.refresh() }
-        // A file that scrolls out of the filter, or a reload that removes it,
-        // must not leave a selection nobody can see or act on.
-        .onChange(of: model.filter) { _, _ in pruneSelection() }
-        .onChange(of: searchText) { _, _ in
-            pruneSelection()
-            // One search field, two corpora. The field already narrowed the
-            // account's files by name; this is what makes the same keystrokes
-            // look *inside* the documents indexed on this Mac.
-            documentIndex?.setQuery(searchText)
+        .fileExporter(
+            isPresented: Binding(get: { download != nil }, set: { if !$0 { download = nil } }),
+            document: download?.document,
+            contentType: .data,
+            defaultFilename: download?.name
+        ) { _ in download = nil }
+        .quickLookPreview($quickLookURL)
+        .task {
+            if model.items == nil { await model.reload() }
         }
+        .onAppear {
+            if selection.isEmpty, !initialSelection.isEmpty { selection = initialSelection }
+        }
+        .onChange(of: model.event) { _, event in
+            guard let event else { return }
+            post(event)
+            model.clearEvent()
+        }
+        .onChange(of: model.query) { _, _ in pruneSelection() }
         .onChange(of: model.items) { _, _ in pruneSelection() }
+        .onChange(of: model.searchText) { _, text in documentIndex?.setQuery(text) }
+        .onChange(of: model.items == nil) { _, loading in if !loading { dealt = true } }
     }
 
     // MARK: - Header
 
-    /// "12 items · 30.4 KB": the library's size, counted from `model.items`,
-    /// never from a filtered view — the header reports the library, not the
-    /// tab (the web's storage caption sits in the same place).
     @ViewBuilder
-    private var summary: some View {
-        if !model.items.isEmpty {
-            HStack(spacing: JunoSpace.snug) {
-                Text(itemCountLabel)
-                separatorDot
-                Text(totalSizeLabel)
+    private var header: some View {
+        if isDeletedView {
+            JunoPageHeader(
+                "Recently deleted",
+                lede: "Files you remove land here and can be restored. Chats and projects keep the ones they use."
+            ) {
+                Button {
+                    clearSelection()
+                    model.setDeleted(false)
+                } label: {
+                    Label("Back to files", icon: .arrowLeft)
+                }
+                .buttonStyle(.bordered)
+                .tint(nil)
+                .contentShape(.rect)
             }
-            .junoCaption()
-            .monospacedDigit()
-            .fixedSize()
+        } else {
+            JunoPageHeader("Library", lede: "Everything you upload or share in chats.") {
+                if let storage = model.storage, !isEmptyLibrary {
+                    DesktopPageLayoutReader { layout in
+                        if layout.pageWidth >= 640 {
+                            Text("\(Self.sizeLabel(storage.usedBytes)) of \(Self.sizeLabel(storage.quotaBytes)) used")
+                                .junoType(.ui)
+                                .monospacedDigit()
+                                .foregroundStyle(Color.junoSecondaryInk)
+                                .fixedSize()
+                        }
+                    }
+                }
+                Button {
+                    clearSelection()
+                    model.setDeleted(true)
+                } label: {
+                    Label("Recently deleted", icon: .trash)
+                }
+                .buttonStyle(.bordered)
+                .tint(nil)
+                .contentShape(.rect)
+                // Withheld while the empty state carries "Upload files": one
+                // prominent button per surface (the web shows both).
+                if !isEmptyLibrary {
+                    Button {
+                        choosingUpload = true
+                    } label: {
+                        Label("Upload", icon: .upload)
+                    }
+                        .contentShape(.rect)
+                    .buttonStyle(.junoProminent)
+                    .help("Upload files to your library")
+                }
+                moreMenu
+            }
         }
     }
 
-    /// Reads a file on this Mac into its search index. Disabled rather than
-    /// absent where the shell built no index, or while a read is in flight —
-    /// both real states, and the help text says which.
-    private var addDocumentButton: some View {
-        Button {
-            documentPanelFailure = nil
-            choosingDocument = true
+    /// The Mac's extras, behind one 28pt More.
+    private var moreMenu: some View {
+        Menu {
+            Button {
+                documentPanelFailure = nil
+                choosingDocument = true
+            } label: {
+                Label("Add Document…", icon: .filePlus)
+            }
+            .keyboardShortcut("i", modifiers: [.command, .shift])
+            .disabled(documentIndex?.isReady != true || documentIndex?.isIngesting == true)
+            Button {
+                reload()
+            } label: {
+                Label("Refresh", icon: .refresh)
+            }
+            .keyboardShortcut("r", modifiers: .command)
+            .disabled(model.pending)
         } label: {
-            Label("Add Document…", icon: .filePlus)
+            JunoIconView(.ellipsis, size: 16)
+                .foregroundStyle(Color.junoForeground)
+                .frame(width: 28, height: 28)
+                .contentShape(.rect)
         }
-        .buttonStyle(.bordered)
-        .tint(nil)
-        .keyboardShortcut("i", modifiers: [.command, .shift])
-        .disabled(documentIndex?.isReady != true || documentIndex?.isIngesting == true)
-        .contentShape(.rect)
-        .help(
-            documentIndex?.isReady == true
-                ? "Read a PDF, Word file, spreadsheet or text file into this Mac's search index (⇧⌘I)"
-                : "Sign in to index a document on this Mac"
-        )
-        .accessibilityLabel("Add document to search index")
-        .accessibilityIdentifier("juno.desktop.library-add-document")
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(width: 28, height: 28)
+        .help("More library actions")
+        .accessibilityLabel("More library actions")
     }
 
     // MARK: - Controls
 
-    /// The web's `LibraryToolbar`: search, the type filter with its counts, the
-    /// sort, and the view switch at the far edge.
     private var controls: some View {
         JunoPageControls {
             JunoPageSearchField(
-                text: $searchText,
-                prompt: "Search files and documents",
-                isSearching: documentIndex?.isSearching == true,
+                text: $model.searchText,
+                prompt: "Search files",
+                isSearching: model.pending && !model.searchText.isEmpty,
                 accessibilityIdentifier: "juno.desktop.library-search"
             )
-            // The numbers come from `model.items` — the whole library — so
-            // "Images 5" means five images exist, not five survived the search.
             JunoSegmented(
-                options: NativeLibraryModel.Filter.allCases.map {
-                    JunoSegmented<NativeLibraryModel.Filter>.Option($0, $0.title, count: count(for: $0))
-                },
-                selection: $model.filter,
-                accessibilityLabel: "Filter by type",
-                optionAccessibilityIdentifier: { "juno.desktop.library-filter.\($0.rawValue)" }
+                options: [
+                    .init(NativeLibraryQuery.Kind.all, "All", count: model.counts?.all),
+                    .init(NativeLibraryQuery.Kind.image, "Images", count: model.counts?.images),
+                    .init(NativeLibraryQuery.Kind.file, "Files", count: model.counts?.files),
+                ],
+                selection: Binding(get: { model.query.kind }, set: { model.setKind($0) }),
+                accessibilityLabel: "Filter by type"
             )
             JunoPageMenu(
-                options: LibrarySort.allCases.map { JunoPageMenuOption($0, $0.label, menuTitle: $0.menuTitle) },
-                selection: sortBinding,
+                options: [
+                    JunoPageMenuOption(NativeLibraryQuery.Sort.newest, "Newest first", menuTitle: "Newest First"),
+                    JunoPageMenuOption(NativeLibraryQuery.Sort.oldest, "Oldest first", menuTitle: "Oldest First"),
+                    JunoPageMenuOption(NativeLibraryQuery.Sort.name, "Name"),
+                    JunoPageMenuOption(NativeLibraryQuery.Sort.size, "Largest first", menuTitle: "Largest First"),
+                ],
+                selection: Binding(get: { model.query.sort }, set: { model.setSort($0) }),
                 accessibilityLabel: "Sort files"
             )
         } trailing: {
+            if presentation == .grid, !rows.isEmpty {
+                Button(selection.isEmpty ? "Select all" : "Clear selection") {
+                    if selection.isEmpty {
+                        selection = Set(rows.map(\.id))
+                    } else {
+                        clearSelection()
+                    }
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .contentShape(.rect)
+            }
             JunoSegmented(
                 options: [
-                    JunoSegmented<Presentation>.Option(.list, "List", icon: .list),
-                    JunoSegmented<Presentation>.Option(.grid, "Grid", icon: .grid),
+                    .init(Presentation.list, "List", icon: .list),
+                    .init(Presentation.grid, "Grid", icon: .grid),
                 ],
                 selection: presentationBinding,
-                accessibilityLabel: "View",
-                optionAccessibilityIdentifier: { "juno.desktop.library-view.\($0.rawValue)" }
+                accessibilityLabel: "View"
             )
         }
     }
 
-    /// The web's four sorts (`library-toolbar.tsx`), which the list view's
-    /// column headers can also set.
-    enum LibrarySort: CaseIterable, Hashable {
-        case newest, oldest, name, largest
+    // MARK: - Content
 
-        var label: String {
-            switch self {
-            case .newest: "Newest first"
-            case .oldest: "Oldest first"
-            case .name: "Name"
-            case .largest: "Largest first"
-            }
-        }
-
-        /// Title Case in the native menu (§0.7); the words are the web's.
-        var menuTitle: String {
-            switch self {
-            case .newest: "Newest First"
-            case .oldest: "Oldest First"
-            case .name: "Name"
-            case .largest: "Largest First"
-            }
-        }
-
-        var comparator: KeyPathComparator<NativeLibraryItem> {
-            switch self {
-            case .newest: KeyPathComparator(\NativeLibraryItem.createdAt, order: .reverse)
-            case .oldest: KeyPathComparator(\NativeLibraryItem.createdAt, order: .forward)
-            case .name: KeyPathComparator(\NativeLibraryItem.fileName, comparator: .localizedStandard)
-            case .largest: KeyPathComparator(\NativeLibraryItem.size, order: .reverse)
-            }
-        }
-
-        /// The sort a table's header click left behind, if it is one of the
-        /// four; a column the menu has no word for reads as the default.
-        init(sortOrder: [KeyPathComparator<NativeLibraryItem>]) {
-            guard let first = sortOrder.first else { self = .newest; return }
-            let path = first.keyPath
-            if path == \NativeLibraryItem.createdAt as PartialKeyPath<NativeLibraryItem> {
-                self = first.order == .forward ? .oldest : .newest
-            } else if path == \NativeLibraryItem.fileName as PartialKeyPath<NativeLibraryItem> {
-                self = .name
-            } else if path == \NativeLibraryItem.size as PartialKeyPath<NativeLibraryItem> {
-                self = .largest
-            } else {
-                self = .newest
+    @ViewBuilder
+    private var content: some View {
+        if model.failed, model.items == nil {
+            JunoEmptyState(
+                title: "Couldn’t load your files",
+                message: "Check your connection and try again.",
+                icon: .triangleAlert,
+                actionLabel: "Try again",
+                action: reload,
+                tone: .error
+            )
+        } else if isLoading {
+            DesktopLibrarySkeleton(presentation: presentation)
+        } else if rows.isEmpty, model.uploads.isEmpty {
+            emptyState
+        } else {
+            VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                if !model.uploads.isEmpty {
+                    uploadRows
+                }
+                if !rows.isEmpty {
+                    if presentation == .grid { grid } else { list }
+                }
+                if model.hasMore {
+                    loadMore
+                }
             }
         }
     }
 
-    private var sortBinding: Binding<LibrarySort> {
-        Binding(
-            get: { LibrarySort(sortOrder: sortOrder) },
-            set: { sortOrder = [$0.comparator] }
+    @ViewBuilder
+    private var emptyState: some View {
+        if isDeletedView, !isFiltered {
+            JunoEmptyState(
+                title: "Nothing in Recently deleted",
+                icon: .trash,
+                actionLabel: "Back to files",
+                action: { model.setDeleted(false) }
+            )
+        } else if isFiltered {
+            JunoEmptyState(
+                title: "No matching files",
+                message: "Try another name, or clear the filter.",
+                icon: .search,
+                size: .panel
+            ) {
+                Button("Clear filters") { model.clearFilters() }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .contentShape(.rect)
+            }
+        } else {
+            JunoEmptyState(
+                title: "No files yet",
+                message: "Upload files here, or drop them anywhere on this page. Files you share in chats are kept here too.",
+                icon: .library
+            ) {
+                Button("Upload files") { choosingUpload = true }
+                    .contentShape(.rect)
+                    .buttonStyle(.junoProminent)
+                if openConversation != nil {
+                    Button("Go to chat") { openConversation?("") }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .contentShape(.rect)
+                }
+            }
+        }
+    }
+
+    // MARK: List
+
+    /// Rows in one card, divided at 70% — the web's list with columns Name ·
+    /// Type · Size · Added.
+    private var list: some View {
+        DesktopPageLayoutReader { layout in
+            listBody(width: layout.pageWidth)
+        }
+    }
+
+    private func listBody(width: CGFloat) -> some View {
+        let columns = DesktopLibraryColumns(width: width)
+        return VStack(spacing: 0) {
+            if columns.showsSize {
+                DesktopLibraryListHeader(columns: columns)
+            }
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
+                if index > 0 {
+                    Rectangle()
+                        .fill(Color.junoBorder.opacity(0.7))
+                        .frame(height: 1)
+                        .padding(.horizontal, JunoSpace.regular)
+                        .accessibilityHidden(true)
+                }
+                listRow(item, columns: columns)
+                    .junoDealt(index: index, active: !dealt, reduceMotion: reduceMotion)
+            }
+        }
+        .padding(.vertical, JunoSpace.tight)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                .fill(Color.junoCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                .strokeBorder(Color.junoBorder, lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(rows.count) \(rows.count == 1 ? "file" : "files")")
+        .copyable(selectedNames)
+    }
+
+    private func listRow(_ item: NativeLibraryItem, columns: DesktopLibraryColumns) -> some View {
+        let selected = selection.contains(item.id)
+        let hovered = hoveredID == item.id
+        return HStack(spacing: JunoSpace.cozy) {
+            DesktopLibraryInset(item: item, state: previewState(item), onSelection: selected)
+                .task(id: item.id) { await loadPreview(item) }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.fileName)
+                    .junoType(.ui)
+                    .fontWeight(.medium)
+                    .foregroundStyle(Color.junoForeground)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if !columns.showsSize {
+                    // Below 640 the numbers fold into one meta line (the web's
+                    // `MetaLine`).
+                    Text("\(Self.typeLabel(item)) · \(Self.sizeLabel(item.size)) · \(Self.ageLabel(item.createdAt))")
+                        .junoType(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .lineLimit(1)
+                }
+                rowNote(item, wide: columns.showsSize)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if columns.showsType {
+                Text(Self.kindLabel(item))
+                    .junoType(.caption)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .frame(width: DesktopLibraryListHeader.typeWidth, alignment: .leading)
+            }
+            if columns.showsSize {
+                Text(Self.sizeLabel(item.size))
+                    .junoType(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .frame(width: DesktopLibraryListHeader.sizeWidth, alignment: .trailing)
+                Text(Self.ageLabel(item.createdAt))
+                    .junoType(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .frame(width: DesktopLibraryListHeader.addedWidth, alignment: .leading)
+                    .help(item.createdAt.formatted(date: .long, time: .shortened))
+            }
+            rowMore(item, visible: hovered || selected)
+        }
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.snug)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                .fill(selected ? Color.junoSecondary : (hovered ? Color.junoHover : Color.clear))
+                .padding(.horizontal, JunoSpace.tight)
+        )
+        .contentShape(.rect)
+        .onTapGesture(count: 2) { quickLook(item) }
+        .onTapGesture { click(item) }
+        .onHover { inside in hover(item, inside) }
+        .contextMenu { actions(for: item) }
+        .draggable(DesktopLibraryDragItem(name: item.fileName)) {
+            Text(item.fileName)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Self.accessibilityLabel(for: item))
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { toggle(item) }
+    }
+
+    /// The row's one caption line, in the web's words: where a kept file
+    /// stays, else what indexing made of it, else a way to its chat.
+    @ViewBuilder
+    private func rowNote(_ item: NativeLibraryItem, wide: Bool) -> some View {
+        if let kept = item.keptIn {
+            Text(kept == .chat ? "Still in chat" : "Still in project")
+                .junoType(.caption)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .lineLimit(1)
+        } else if let note = Self.indexNote(item.knowledge) {
+            Text(note)
+                .junoType(.caption)
+                .foregroundStyle(item.knowledge?.state == "failed" ? Color.junoDestructiveInk : Color.junoSecondaryInk)
+                .lineLimit(1)
+        } else if wide, !isDeletedView, let conversationID = item.conversationID, let openConversation {
+            Button {
+                openConversation(conversationID)
+            } label: {
+                Label("Open source chat", icon: .message)
+                    .labelStyle(.titleAndIcon)
+            }
+            .buttonStyle(.plain)
+            .junoType(.caption)
+            .foregroundStyle(Color.junoSecondaryInk)
+            .contentShape(.rect)
+            .help("Open the chat this file was shared in")
+        }
+    }
+
+    /// What indexing made of a file, when it is worth a line.
+    static func indexNote(_ knowledge: NativeLibraryKnowledge?) -> String? {
+        switch knowledge?.state {
+        case "queued", "processing", "pending": "Indexing for search…"
+        case "failed": "This file could not be indexed."
+        case "partial": "Only part of this file could be indexed."
+        default: nil
+        }
+    }
+
+    // MARK: Grid
+
+    /// Square tiles, 2 / 3 / 4 columns at 640 / 1024 of the page.
+    private var grid: some View {
+        DesktopPageLayoutReader { layout in
+            gridBody(width: layout.pageWidth)
+        }
+    }
+
+    private func gridBody(width: CGFloat) -> some View {
+        let columns = width >= 1_024 ? 4 : (width >= 640 ? 3 : 2)
+        return LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: JunoSpace.regular, alignment: .top), count: columns),
+            alignment: .leading,
+            spacing: JunoSpace.regular
+        ) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
+                tile(item)
+                    .junoDealt(index: index, active: !dealt, reduceMotion: reduceMotion)
+            }
+        }
+        .copyable(selectedNames)
+    }
+
+    private func tile(_ item: NativeLibraryItem) -> some View {
+        let selected = selection.contains(item.id)
+        let hovered = hoveredID == item.id
+        return VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            NativeFilePreviewTile(
+                file: NativeFilePreviewRequest(item),
+                state: previewState(item),
+                cornerRadius: JunoRadius.card - JunoSpace.snug,
+                // The name and size are printed under the picture already.
+                fallback: .glyph
+            )
+            .aspectRatio(1, contentMode: .fit)
+            .task(id: item.id) { await loadPreview(item) }
+            .overlay(alignment: .topLeading) {
+                Button {
+                    toggle(item)
+                } label: {
+                    JunoIconView(selected ? .circleCheck : .circle, size: 18)
+                        .foregroundStyle(selected ? Color.junoForeground : Color.junoSecondaryInk)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color.junoCard.opacity(0.9)))
+                }
+                    .contentShape(.rect)
+                .buttonStyle(.plain)
+                .padding(JunoSpace.tight)
+                .opacity(selected || hovered ? 1 : 0)
+                .help(selected ? "Deselect" : "Select")
+                .accessibilityLabel(selected ? "Deselect \(item.fileName)" : "Select \(item.fileName)")
+            }
+            HStack(alignment: .top, spacing: JunoSpace.tight) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.fileName)
+                        .junoType(.ui)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.junoForeground)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text("\(Self.kindLabel(item)) · \(Self.sizeLabel(item.size))")
+                        .junoType(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                rowMore(item, visible: hovered || selected)
+            }
+            .padding(.horizontal, JunoSpace.tight)
+        }
+        .padding(JunoSpace.snug)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                .fill(hovered ? Color.junoHover : Color.junoCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                .strokeBorder(selected ? Color.junoForeground.opacity(0.4) : Color.junoBorder, lineWidth: selected ? 2 : 1)
+        )
+        .contentShape(.rect)
+        .onTapGesture(count: 2) { quickLook(item) }
+        .onTapGesture { click(item) }
+        .onHover { inside in hover(item, inside) }
+        .contextMenu { actions(for: item) }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Self.accessibilityLabel(for: item))
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { toggle(item) }
+    }
+
+    private func rowMore(_ item: NativeLibraryItem, visible: Bool) -> some View {
+        Menu {
+            actions(for: item)
+        } label: {
+            JunoIconView(.ellipsis, size: 16)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .frame(width: 28, height: 28)
+                .contentShape(.rect)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(width: 28, height: 28)
+        .opacity(visible ? 1 : 0)
+        .help("More actions for \(item.fileName)")
+        .accessibilityLabel("More actions for \(item.fileName)")
+    }
+
+    // MARK: Row actions
+
+    /// One definition for the More button and the context menu (the web's
+    /// `renderActions`). A right-click on a selected row acts on the whole
+    /// selection, as every Mac list does.
+    @ViewBuilder
+    private func actions(for item: NativeLibraryItem) -> some View {
+        let targets = targets(for: item)
+        if isDeletedView {
+            Button("Restore") { restore(targets) }
+                .contentShape(.rect)
+        } else {
+            if targets.count == 1 {
+                Button("Rename…") { rename(item) }
+                    .contentShape(.rect)
+                if item.versionCount > 1 {
+                    Button("Versions…") { versionsTarget = item }
+                        .contentShape(.rect)
+                }
+            }
+            if targets.count == 1, fileAccess != nil {
+                Button("Download…") { downloadFile(item) }
+                    .contentShape(.rect)
+                Button("Quick Look") { quickLook(item) }
+                    .contentShape(.rect)
+                    .keyboardShortcut(.space, modifiers: [])
+            }
+            if targets.count == 1, let conversationID = item.conversationID, let openConversation {
+                Button("Open Source Chat") { openConversation(conversationID) }
+                    .contentShape(.rect)
+            }
+            if targets.count == 1, item.isImage, canEdit {
+                Button("Edit Image…") { editing = item }
+                    .contentShape(.rect)
+            }
+            Button(Self.copyTitle(count: targets.count)) { copyNames(targets) }
+                .contentShape(.rect)
+            Divider()
+            Button("Delete", role: .destructive) { delete(targets) }
+                .contentShape(.rect)
+        }
+    }
+
+    private func targets(for item: NativeLibraryItem) -> [NativeLibraryItem] {
+        guard selection.contains(item.id) else { return [item] }
+        return rows.filter { selection.contains($0.id) }
+    }
+
+    // MARK: Uploads and paging
+
+    private var uploadRows: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(model.uploads.enumerated()), id: \.element.id) { index, upload in
+                if index > 0 {
+                    Rectangle()
+                        .fill(Color.junoBorder.opacity(0.7))
+                        .frame(height: 1)
+                        .padding(.horizontal, JunoSpace.regular)
+                        .accessibilityHidden(true)
+                }
+                DesktopLibraryUploadRow(
+                    upload: upload,
+                    retry: { model.retryUpload(upload.id) },
+                    dismiss: { model.dismissUpload(upload.id) }
+                )
+            }
+        }
+        .padding(.vertical, JunoSpace.tight)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                .fill(Color.junoCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                .strokeBorder(Color.junoBorder, lineWidth: 1)
         )
     }
 
-    /// The host's selection bar while files are picked out (§7.7): the count,
-    /// Copy Names, and the clear.
+    private var loadMore: some View {
+        HStack {
+            Spacer()
+            Button(model.loadingMore ? "Loading…" : "Load more") {
+                Task { await model.loadMore() }
+            }
+                .contentShape(.rect)
+            .buttonStyle(.bordered)
+            .tint(nil)
+            .disabled(model.loadingMore)
+            Spacer()
+        }
+        .padding(.top, JunoSpace.snug)
+        // Near the end of the list, the next page asks for itself.
+        .onAppear { Task { await model.loadMore() } }
+    }
+
+    // MARK: - The drop veil (the page's signature)
+
+    /// Dragging files anywhere over the page shows an opaque veil — "Drop to
+    /// upload" — and a dropped file appears as an uploading row that settles
+    /// into the list when it lands. Not in Recently deleted.
+    @ViewBuilder
+    private var dropVeil: some View {
+        if dropTargeted, !isDeletedView {
+            DesktopLibraryDropVeil()
+                .transition(.opacity)
+                .allowsHitTesting(false)
+        }
+    }
+
+    private func acceptDrop(_ providers: [NSItemProvider]) -> Bool {
+        guard !isDeletedView else { return false }
+        let fileProviders = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
+        guard !fileProviders.isEmpty else { return false }
+        let model = model
+        for provider in fileProviders {
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                guard let url else { return }
+                Task { @MainActor in
+                    let files = DesktopLibraryUploads.read([url])
+                    if !files.isEmpty { model.upload(files) }
+                }
+            }
+        }
+        return true
+    }
+
+    private func upload(_ urls: [URL]) {
+        let files = DesktopLibraryUploads.read(urls)
+        guard !files.isEmpty else { return }
+        model.upload(files)
+    }
+
+    // MARK: - Selection bar
+
     private var selectionBar: JunoToastSelection? {
         guard !selection.isEmpty else { return nil }
-        let ids = selection
-        return JunoToastSelection(
-            count: ids.count,
-            actions: [
-                JunoToast.Action(Self.copyTitle(count: ids.count), icon: .copy) { copyNames(for: ids) },
-            ],
-            clear: { clearSelection() }
-        )
+        let targets = rows.filter { selection.contains($0.id) }
+        var actions: [JunoToast.Action] = []
+        if isDeletedView {
+            actions.append(JunoToast.Action("Restore", icon: .restore) { restore(targets) })
+        } else {
+            if targets.count == 1, let only = targets.first {
+                actions.append(JunoToast.Action("Rename", icon: .edit) { rename(only) })
+            }
+            actions.append(JunoToast.Action(Self.copyTitle(count: targets.count), icon: .copy) { copyNames(targets) })
+            actions.append(JunoToast.Action("Delete", icon: .trash, role: .destructive) { delete(targets) })
+        }
+        return JunoToastSelection(count: targets.count, actions: actions, clear: { clearSelection() })
     }
 
-    /// A failed reload while files are still on screen.
     private var refreshFailure: String? {
-        model.items.isEmpty ? nil : model.lastErrorDescription
+        model.failed && model.items != nil ? "failed" : nil
     }
 
-    private var separatorDot: some View {
-        Circle()
-            .fill(Color.junoBorder)
-            .frame(width: JunoSpace.hairline, height: JunoSpace.hairline)
-            .accessibilityHidden(true)
+    // MARK: - Actions
+
+    private func delete(_ targets: [NativeLibraryItem]) {
+        guard !targets.isEmpty else { return }
+        clearSelection()
+        let deletion = model.delete(targets)
+        toast(JunoToast(
+            title: deletion.notice.title,
+            detail: deletion.notice.detail,
+            action: JunoToast.Action("Undo") {
+                Task { await model.undo(deletion) }
+            },
+            duration: .seconds(6)
+        ))
     }
 
-    private var itemCountLabel: String {
-        "\(model.items.count) \(model.items.count == 1 ? "item" : "items")"
+    private func restore(_ targets: [NativeLibraryItem]) {
+        clearSelection()
+        Task { await model.restore(targets) }
     }
 
-    private var totalSizeLabel: String {
-        Self.sizeLabel(model.items.reduce(0) { $0 + $1.size })
+    private func rename(_ item: NativeLibraryItem) {
+        renaming = JunoRenameRequest(
+            title: "Rename file",
+            message: "The new name shows everywhere this file appears.",
+            fieldLabel: "File name",
+            confirmTitle: "Rename",
+            current: item.fileName
+        ) { name in
+            await model.rename(item, to: name)
+        }
+    }
+
+    private func post(_ event: NativeLibraryEvent) {
+        switch event {
+        case .deleteFailed(let count):
+            toast(.error(count == 1 ? "Couldn’t delete that file." : "Couldn’t delete some of those files."))
+        case .undoFailed:
+            toast(.error("Couldn’t undo. The files are in Recently deleted."))
+        case .restored:
+            toast(.success("Restored to your library"))
+        case .restoreFailed(let count):
+            toast(.error(count == 1 ? "Couldn’t restore that file." : "Couldn’t restore some of those files."))
+        case .renameFailed(let message):
+            toast(.error(message))
+        case .loadMoreFailed:
+            toast(.error("Couldn’t load more files."))
+        case .uploaded(let hidden):
+            if hidden {
+                toast(.info("Uploaded. Your filters are hiding it.", action: JunoToast.Action("Show") { model.clearFilters() }))
+            }
+        case .uploadFailed(let name):
+            toast(.error("Couldn’t upload \(name)."))
+        case .versionRestored:
+            toast(.success("Version restored"))
+        case .versionRestoreFailed:
+            toast(.error("Couldn’t restore that version."))
+        }
+    }
+
+    private var canEdit: Bool {
+        accountID != nil && attachmentClient != nil && generateClient != nil
+            && modelCatalog.contains { $0.modality == "image" && $0.imageEditSupport != .none }
+    }
+
+    @ViewBuilder
+    private func editSheet(_ item: NativeLibraryItem) -> some View {
+        if let accountID, let attachmentClient, let generateClient {
+            NativeImageEditSheet(
+                attachmentID: item.id,
+                fileName: item.fileName,
+                accountID: accountID,
+                attachments: attachmentClient,
+                client: generateClient,
+                models: modelCatalog,
+                openConversation: openConversation,
+                close: { editing = nil }
+            )
+            .frame(minWidth: 560, minHeight: 640)
+        }
+    }
+
+    /// With no way to the bytes, the typed tile, never a blank one.
+    private func previewState(_ item: NativeLibraryItem) -> NativeFilePreviewLoader.State {
+        fileAccess == nil ? .unavailable : previews.state(for: item.id)
+    }
+
+    private func loadPreview(_ item: NativeLibraryItem) async {
+        guard let fileAccess else { return }
+        await previews.load(NativeFilePreviewRequest(item)) {
+            await fileAccess(item.id)
+        }
+    }
+
+    private func quickLook(_ item: NativeLibraryItem) {
+        guard let fileAccess else { return }
+        Task {
+            guard let data = await DesktopLibraryUploads.bytes(await fileAccess(item.id)) else {
+                toast(.error("Couldn’t open that file."))
+                return
+            }
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("juno-quicklook", isDirectory: true)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent(item.fileName)
+            do {
+                try data.write(to: url, options: .atomic)
+                quickLookURL = url
+            } catch {
+                toast(.error("Couldn’t open that file."))
+            }
+        }
+    }
+
+    private func downloadFile(_ item: NativeLibraryItem) {
+        guard let fileAccess else { return }
+        Task {
+            guard let data = await DesktopLibraryUploads.bytes(await fileAccess(item.id)) else {
+                toast(.error("Couldn’t download that file."))
+                return
+            }
+            download = DesktopLibraryDownload(document: DesktopLibraryFileDocument(data: data), name: item.fileName)
+        }
+    }
+
+    private func click(_ item: NativeLibraryItem) {
+        let flags = NSEvent.modifierFlags
+        if flags.contains(.command) {
+            toggle(item)
+        } else if flags.contains(.shift), let anchor = selectionAnchor,
+            let start = rows.firstIndex(where: { $0.id == anchor }),
+            let end = rows.firstIndex(where: { $0.id == item.id })
+        {
+            selection.formUnion(rows[min(start, end)...max(start, end)].map(\.id))
+        } else {
+            selection = [item.id]
+            selectionAnchor = item.id
+        }
+    }
+
+    private func toggle(_ item: NativeLibraryItem) {
+        if selection.contains(item.id) { selection.remove(item.id) } else { selection.insert(item.id) }
+        selectionAnchor = item.id
+    }
+
+    private func hover(_ item: NativeLibraryItem, _ inside: Bool) {
+        if inside { hoveredID = item.id } else if hoveredID == item.id { hoveredID = nil }
+    }
+
+    private func clearSelection() {
+        selection = []
+        selectionAnchor = nil
+    }
+
+    private func pruneSelection() {
+        guard !selection.isEmpty else { return }
+        selection.formIntersection(Set(rows.map(\.id)))
+    }
+
+    private var selectedNames: [String] {
+        rows.filter { selection.contains($0.id) }.map(\.fileName)
+    }
+
+    private func copyNames(_ targets: [NativeLibraryItem]) {
+        let names = targets.map(\.fileName)
+        guard !names.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(names.joined(separator: "\n"), forType: .string)
+    }
+
+    private func reload() {
+        Task { await model.reload() }
     }
 
     // MARK: - Local document index
 
-    /// Everything the local index has to say, or nothing at all.
-    ///
-    /// Drawn between the header and the files rather than under them, because
-    /// while a search is running these passages are the *answer* and the file grid
-    /// is context. It collapses to nothing when the index is empty and idle, so a
-    /// reader who never indexes a document never sees a strip of chrome for a
-    /// feature they are not using.
     @ViewBuilder
     private var documentIndexPanel: some View {
         if let index = documentIndex, index.isReady, indexPanelHasContent(index) {
@@ -410,20 +979,21 @@ struct DesktopLibraryScreen: View {
             }
             .padding(JunoSpace.regular)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .junoCard()
-            // The page's own measure and gutters, as the header above applies
-            // them, so this card lines up with the file tiles under it.
-            .padding(.bottom, JunoSpace.regular)
-            .junoPageColumn()
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .fill(Color.junoCard)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .strokeBorder(Color.junoBorder, lineWidth: 1)
+            )
+            .padding(.bottom, JunoSpace.section)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Documents indexed on this Mac")
             .accessibilityIdentifier("juno.desktop.library-document-index")
         }
     }
 
-    /// A panel with nothing in it is a panel that should not be drawn. Note that
-    /// "a query is running" counts: the reader typed, and silence is a worse
-    /// answer than "searching".
     private func indexPanelHasContent(_ index: NativeDocumentIndexModel) -> Bool {
         !index.documents.isEmpty
             || index.isIngesting
@@ -486,6 +1056,7 @@ struct DesktopLibraryScreen: View {
                 .help(indexDocumentDetail(document))
             }
         }
+            .contentShape(.rect)
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help("Remove a document from this Mac's search index")
@@ -519,6 +1090,7 @@ struct DesktopLibraryScreen: View {
                 documentPanelFailure = nil
                 index.clearError()
             }
+                .contentShape(.rect)
             .buttonStyle(.borderless)
         }
         .accessibilityIdentifier("juno.desktop.library-document-index-error")
@@ -533,14 +1105,14 @@ struct DesktopLibraryScreen: View {
     /// corpus, not about a search that has not finished.
     @ViewBuilder
     private func indexResults(_ index: NativeDocumentIndexModel) -> some View {
-        if !query.isEmpty, !index.documents.isEmpty {
+        if !searchQuery.isEmpty, !index.documents.isEmpty {
             Divider()
             if index.isSearching, index.passages.isEmpty {
                 Text("Searching your documents…")
                     .junoCaption()
                     .junoSecondaryInk()
             } else if index.passages.isEmpty {
-                Text("No indexed document mentions “\(query)”.")
+                Text("No indexed document mentions “\(searchQuery)”.")
                     .junoCaption()
                     .junoSecondaryInk()
             } else {
@@ -586,12 +1158,10 @@ struct DesktopLibraryScreen: View {
         .accessibilityLabel("\(passage.locator). \(passage.text)")
     }
 
-    /// Reads the chosen files one after another, so the progress line always
-    /// names the file actually being read.
-    ///
-    /// No re-running of the query afterwards: the model re-ranks whatever query it
-    /// is holding as part of storing a document, so a file indexed while a search
-    /// was already typed answers that search immediately.
+    private var searchQuery: String {
+        model.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func ingest(_ urls: [URL]) async {
         guard let documentIndex else { return }
         for url in urls {
@@ -599,467 +1169,520 @@ struct DesktopLibraryScreen: View {
         }
     }
 
-    // MARK: - Content
-
-    @ViewBuilder
-    private var content: some View {
-        if rows.isEmpty {
-            // Exactly one honest state, and never over placeholder rows: the
-            // grid and the table are both swapped *out* here rather than
-            // overlaid, because a short `Table` fills the rest of the pane with
-            // empty alternating rows of its own accord.
-            status
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if presentation == .grid {
-            grid
-        } else {
-            table
-        }
-    }
-
-    private var grid: some View {
-        ScrollView {
-            LazyVGrid(
-                columns: [
-                    GridItem(
-                        .adaptive(
-                            minimum: Self.tileWidth.lowerBound,
-                            maximum: Self.tileWidth.upperBound
-                        ),
-                        spacing: JunoSpace.regular,
-                        alignment: .topLeading
-                    )
-                ],
-                alignment: .leading,
-                spacing: JunoSpace.section
-            ) {
-                ForEach(rows) { item in
-                    card(item)
-                }
-            }
-            .padding(.bottom, JunoSpace.section)
-            .junoPageColumn()
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        // Edit ▸ Copy and ⌘C act on the selection through the platform's own
-        // command rather than a private shortcut nobody would guess.
-        .copyable(selectedFileNames)
-        .accessibilityIdentifier("juno.desktop.library-grid")
-    }
-
-    private func card(_ item: NativeLibraryItem) -> some View {
-        let isSelected = selection.contains(item.id)
-        return VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            preview(item, isSelected: isSelected)
-
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                Text(item.fileName)
-                    .junoRowLabel()
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text("\(Self.sizeLabel(item.size)) · \(Self.ageLabel(item.createdAt))")
-                    .junoCaption()
-                    .monospacedDigit()
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { click(item) }
-        .onHover { inside in
-            if inside {
-                hoveredID = item.id
-            } else if hoveredID == item.id {
-                hoveredID = nil
-            }
-        }
-        .contextMenu { fileMenu(for: item) }
-        .help(item.fileName)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Self.accessibilityLabel(for: item))
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        // A tap gesture is not activatable by VoiceOver on its own; this is what
-        // makes the card respond to VO-space as a button would.
-        .accessibilityAction { toggle(item) }
-    }
-
-    /// The tile, filled with the file.
-    ///
-    /// This carried a typed glyph and the word "PNG", and the reason given was
-    /// that "the desktop library client returns no bytes and no signed URL for an
-    /// item, so there is nothing to draw". That was true of the *library* client
-    /// and never true of the account: the sync `attachment` entity rehydrates a
-    /// signed URL, which is how the phone has been drawing these all along. The
-    /// Mac now takes the same route, through the shared
-    /// ``NativeFilePreviewLoader``.
-    ///
-    /// The typed glyph survives as the fallback, for the file whose bytes really
-    /// cannot be fetched or rendered — a card that says "PNG" truthfully still
-    /// beats a picture-shaped placeholder.
-    private func preview(_ item: NativeLibraryItem, isSelected: Bool) -> some View {
-        NativeFilePreviewTile(
-            file: NativeFilePreviewRequest(item),
-            state: previews.state(for: item.id),
-            cornerRadius: JunoRadius.well
-        )
-            .task(id: item.id) {
-                await previews.load(NativeFilePreviewRequest(item)) {
-                    await model.accessFile(id: item.id)
-                }
-            }
-            // Hover is a fill, not a lift. The web rises this tile two points
-            // (`group-hover/card:-translate-y-0.5`), but hover motion is web
-            // idiom — a Mac hover state is a fill, the same quiet wash a list
-            // row gets, and a Things or Craft row never moves under the
-            // pointer. The wash says "this is the thing you can act on"
-            // without the tile ever leaving its slot, and because it is
-            // colour rather than travel it reads the same under Reduce
-            // Motion. Under the stroke and the badge, so both stay crisp
-            // over it; hit-testing off, so it can never sit between the
-            // pointer and the card's own click handling.
-            .overlay {
-                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                    .fill(Color.junoRowHover)
-                    .opacity(hoveredID == item.id ? 1 : 0)
-                    .allowsHitTesting(false)
-            }
-            .overlay {
-                // A stroke, never a filled tile — a saturated fill behind a file
-                // name would be unreadable — and a *greyscale* stroke, because
-                // that is what the page it is modelled on draws: the web's
-                // selected library card is `border-foreground/40 ring-1
-                // ring-foreground/35` (`library/page.tsx:318`), with no
-                // `--primary` anywhere on the page. Coral was a native
-                // invention, and one that put the accent on a selection state —
-                // the exact thing the shell spent this pass removing.
-                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.4), lineWidth: 2)
-                    .opacity(isSelected ? 1 : 0)
-            }
-            .overlay(alignment: .topLeading) {
-                selectionBadge(item, isSelected: isSelected)
-                    .padding(JunoSpace.snug)
-                    .opacity(isSelected || hoveredID == item.id ? 1 : 0)
-            }
-            // `fast` is the rung for a property changing on the element
-            // already under the pointer, and `.tint` because the hover is now
-            // colour only — Reduce Motion asks for less movement, not less
-            // feedback, so the wash keeps its fade.
-            .animation(
-                JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
-                value: hoveredID == item.id
-            )
-    }
-
-    /// The web's `SelectCheck`: a way to build a selection without knowing that
-    /// ⌘-click exists. It appears on hover and stays while the file is selected.
-    ///
-    /// Checked inverts to `bg-foreground text-background`, which is the web's own
-    /// treatment (`library/page.tsx:141-144`) and the same rule the connections
-    /// filter chip already follows: a selection state is stated by inverting the
-    /// ink, not by spending the accent on it.
-    private func selectionBadge(_ item: NativeLibraryItem, isSelected: Bool) -> some View {
-        Button {
-            toggle(item)
-        } label: {
-            Group {
-                if isSelected {
-                    JunoIconView(.circleCheck)
-                        .foregroundStyle(Color.junoForeground)
-                } else {
-                    JunoIconView(.circle)
-                        .junoSecondaryInk()
-                }
-            }
-            .font(.title2)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(isSelected ? "Deselect \(item.fileName)" : "Select \(item.fileName)")
-    }
-
-    /// The table view. Sortable, resizable, arrow-key navigable and
-    /// multi-selectable — the things a Mac window can do with a file list that a
-    /// grid cannot — and raised onto a card so it reads as content over the warm
-    /// canvas rather than as part of it.
-    private var table: some View {
-        Table(rows, selection: $selection, sortOrder: $sortOrder) {
-            TableColumn("Name", value: \.fileName) { item in
-                Label {
-                    Text(item.fileName)
-                        .junoRowLabel()
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                } icon: {
-                    // Neutral, as the web draws every file glyph on this page
-                    // (`text-muted-foreground`, `library/page.tsx:359`). A coral
-                    // icon in *every* row is the accent describing nothing: it
-                    // marked no state and distinguished no file from any other.
-                    JunoIconView(item.isImage ? .image : .file, size: 18)
-                        .foregroundStyle(Color.junoMutedForeground)
-                }
-                .help(item.fileName)
-            }
-            .width(min: 180, ideal: 340)
-
-            // Shows the extension the web shows ("PNG"), sorts on the MIME type
-            // behind it. Sorting on the displayed string would scatter
-            // `image/jpeg` across JPG and JPEG; sorting on the type groups every
-            // image together, which is what someone clicking this header wants.
-            TableColumn("Type", value: \.mimeType) { item in
-                Text(Self.typeLabel(item))
-                    .junoCaption()
-                    .lineLimit(1)
-                    .help(item.mimeType)
-            }
-            .width(min: 76, ideal: 96)
-
-            TableColumn("Size", value: \.size) { item in
-                Text(Self.sizeLabel(item.size))
-                    .junoCaption()
-                    .monospacedDigit()
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            .width(min: 76, ideal: 100)
-
-            TableColumn("Added", value: \.createdAt) { item in
-                Text(Self.ageLabel(item.createdAt))
-                    .junoCaption()
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .help(item.createdAt.formatted(date: .long, time: .shortened))
-            }
-            .width(min: 110, ideal: 140)
-        }
-        // Rows carry three columns of numbers and identifiers; alternating
-        // backgrounds are what keeps the eye on one file across them.
-        .tableStyle(.inset(alternatesRowBackgrounds: true))
-        // Selection in the web's warm grey rather than the app accent macOS
-        // reaches for. A `Table` publishes no per-row background, so unlike the
-        // search list this is the only lever the platform offers here — and it
-        // is the right one: the table keeps drawing its own selection, including
-        // the range a ⇧-click builds and the inactive-window state.
-        .junoSidebarSelectionTint()
-        // The table supplies its own row fills, so the card underneath only has
-        // to provide the white ground, the hairline and the throw. Without
-        // hiding the scroll background the table would paint the window's own
-        // fill over the card and the border would float around nothing.
-        .scrollContentBackground(.hidden)
-        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
-        .junoCard()
-        .padding(.bottom, JunoSpace.section)
-        .junoPageColumn()
-        .accessibilityIdentifier("juno.desktop.library-table")
-        .contextMenu(forSelectionType: NativeLibraryItem.ID.self) { ids in
-            if ids.isEmpty {
-                Button("Refresh", action: refresh)
-                    .disabled(model.isLoading)
-            } else {
-                Button(Self.copyTitle(count: ids.count)) { copyNames(for: ids) }
-            }
-        }
-        .copyable(selectedFileNames)
-    }
-
-    /// A card's own menu. It acts on the whole selection when the clicked file is
-    /// part of it and on that one file otherwise — the behaviour every Mac list
-    /// has, and the reason a right-click never silently loses a selection.
-    @ViewBuilder
-    private func fileMenu(for item: NativeLibraryItem) -> some View {
-        let targets = selection.contains(item.id) ? selection : [item.id]
-        // Only an image, and only when there is a model that can edit one. The
-        // manifest says which — see `NativeImageEditSupport`.
-        if item.isImage, canEdit {
-            Button("Edit Image…") { editing = item }
-            Divider()
-        }
-        Button(Self.copyTitle(count: targets.count)) { copyNames(for: targets) }
-        Divider()
-        Button("Refresh", action: refresh)
-            .disabled(model.isLoading)
-    }
-
-    private var canEdit: Bool {
-        accountID != nil && attachmentClient != nil && generateClient != nil
-            && modelCatalog.contains { $0.modality == "image" && $0.imageEditSupport != .none }
-    }
-
-    @ViewBuilder
-    private func editSheet(_ item: NativeLibraryItem) -> some View {
-        if let accountID, let attachmentClient, let generateClient {
-            NativeImageEditSheet(
-                attachmentID: item.id,
-                fileName: item.fileName,
-                accountID: accountID,
-                attachments: attachmentClient,
-                client: generateClient,
-                models: modelCatalog,
-                openConversation: openConversation,
-                close: { editing = nil }
-            )
-            .frame(minWidth: 560, minHeight: 640)
-            // Sheet contract, applied at the presentation site because the sheet's
-            // root lives in the shared package. Without it this editor stood on
-            // the system's neutral window grey while the Library page behind it
-            // was warm. The platter stays the system's.
-            .junoSheetSurface(.fitted)
-        }
-    }
-
-    // MARK: - States
-
-    /// The four states this page can honestly be in. Exactly one is drawn, and
-    /// the header stays above all of them so the page keeps its identity while
-    /// it is loading or empty — as the website's does.
-    @ViewBuilder
-    private var status: some View {
-        if model.isLoading, model.items.isEmpty {
-            ProgressView()
-                .controlSize(.small)
-                .accessibilityLabel("Loading your library")
-        } else if model.items.isEmpty, let error = model.lastErrorDescription {
-            JunoEmptyState(
-                title: "Library unavailable",
-                message: error,
-                icon: .triangleAlert,
-                actionLabel: "Try Again",
-                action: refresh
-            )
-        } else if model.items.isEmpty {
-            // The website's own empty library draws `AppIcons.library`
-            // (`library/page.tsx:726`); a stack of books is a mark from another
-            // product. Same for the no-match state below and its search glyph.
-            // No action: the header's Refresh is already on the page, and a
-            // refresh does not fill an empty library.
-            JunoEmptyState(
-                title: "Your library is empty",
-                message: "Files and images you share with Juno appear here automatically.",
-                icon: .library
-            )
-        } else {
-            JunoEmptyState(
-                title: "No matching files",
-                message: noMatchMessage,
-                icon: .search,
-                actionLabel: clearLabel,
-                action: clearNarrowing
-            )
-        }
-    }
-
-    private var noMatchMessage: String {
-        if query.isEmpty {
-            return "Nothing in your library matches the \(model.filter.title) filter."
-        }
-        return "No file name or type contains “\(query)”."
-    }
-
-    private var clearLabel: String {
-        query.isEmpty ? "Show All Files" : "Clear Search"
-    }
-
-    // MARK: - Actions
-
-    private func count(for filter: NativeLibraryModel.Filter) -> Int {
-        switch filter {
-        case .all: model.items.count
-        case .images: model.items.filter(\.isImage).count
-        case .files: model.items.filter { !$0.isImage }.count
-        }
-    }
-
-    /// A click in the grid, with the modifiers a Finder icon view honours:
-    /// plain replaces the selection, ⌘ toggles one file, ⇧ extends from the
-    /// anchor. `NSEvent.modifierFlags` is the live keyboard state and is read
-    /// while the click is still being handled, so it is the same answer AppKit
-    /// would give the gesture itself.
-    private func click(_ item: NativeLibraryItem) {
-        let flags = NSEvent.modifierFlags
-        if flags.contains(.command) {
-            toggle(item)
-        } else if flags.contains(.shift), let anchor = selectionAnchor,
-            let start = rows.firstIndex(where: { $0.id == anchor }),
-            let end = rows.firstIndex(where: { $0.id == item.id })
-        {
-            let span = start <= end ? start...end : end...start
-            selection.formUnion(rows[span].map(\.id))
-        } else {
-            selection = [item.id]
-            selectionAnchor = item.id
-        }
-    }
-
-    private func toggle(_ item: NativeLibraryItem) {
-        if selection.contains(item.id) {
-            selection.remove(item.id)
-        } else {
-            selection.insert(item.id)
-        }
-        selectionAnchor = item.id
-    }
-
-    private func clearSelection() {
-        selection = []
-        selectionAnchor = nil
-    }
-
-    /// Drops anything no longer on screen. A selection the reader cannot see is
-    /// a selection ⌘C would copy behind their back.
-    private func pruneSelection() {
-        guard !selection.isEmpty else { return }
-        let visible = Set(rows.map(\.id))
-        selection.formIntersection(visible)
-        if let anchor = selectionAnchor, !visible.contains(anchor) {
-            selectionAnchor = nil
-        }
-    }
-
-    private func clearNarrowing() {
-        searchText = ""
-        model.filter = .all
-    }
-
-    private func refresh() {
-        Task { await model.refresh() }
-    }
-
-    private func copyNames(for ids: Set<NativeLibraryItem.ID>) {
-        let names = rows.filter { ids.contains($0.id) }.map(\.fileName)
-        guard !names.isEmpty else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(names.joined(separator: "\n"), forType: .string)
-    }
-
     // MARK: - Formatting
 
-    private static func copyTitle(count: Int) -> String {
+    static func copyTitle(count: Int) -> String {
         count == 1 ? "Copy Name" : "Copy \(count) Names"
     }
 
-    private static func sizeLabel(_ bytes: Int) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    /// The web's `formatBytes` (`src/lib/utils.ts`): 1024-based, one
+    /// decimal at most, "0 B" for nothing.
+    static func sizeLabel(_ bytes: Int) -> String {
+        guard bytes > 0 else { return "0 B" }
+        let units = ["B", "KB", "MB", "GB"]
+        let exponent = min(Int(log(Double(bytes)) / log(1_024)), units.count - 1)
+        let value = Double(bytes) / pow(1_024, Double(exponent))
+        let rounded = (value * 10).rounded() / 10
+        let text = rounded == rounded.rounded() ? String(Int(rounded)) : String(format: "%.1f", rounded)
+        return "\(text) \(units[exponent])"
     }
 
-    /// The relative age the web shows under each card. `.distantPast` is the
-    /// sentinel `NativeLibraryClient` stores when the server's timestamp will not
-    /// parse, and rendering it as "2025 years ago" would present a parse failure
-    /// as a fact about the file.
-    private static func ageLabel(_ date: Date) -> String {
+    static func ageLabel(_ date: Date) -> String {
         guard date > .distantPast else { return "Date unknown" }
         return date.formatted(.relative(presentation: .named))
     }
 
-    /// The web's `typeLabel`: the extension when there is a plausible one, and
-    /// the kind otherwise.
-    private static func typeLabel(_ item: NativeLibraryItem) -> String {
-        let ext = (item.fileName as NSString).pathExtension
-            .trimmingCharacters(in: .whitespaces)
+    /// The web's `typeLabel`: the extension, or the kind.
+    static func typeLabel(_ item: NativeLibraryItem) -> String {
+        let ext = (item.fileName as NSString).pathExtension.trimmingCharacters(in: .whitespaces)
         if !ext.isEmpty, ext.count <= 8 { return ext.uppercased() }
         return item.isImage ? "Image" : "File"
     }
 
-    private static func accessibilityLabel(for item: NativeLibraryItem) -> String {
-        "\(item.fileName), \(typeLabel(item)), \(sizeLabel(item.size)), added \(ageLabel(item.createdAt))"
+    /// The web's `kindLabel`: what KIND of file, in a word.
+    static func kindLabel(_ item: NativeLibraryItem) -> String {
+        if item.isImage { return "Image" }
+        let ext = (item.fileName as NSString).pathExtension.lowercased()
+        let code: Set<String> = [
+            "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rb", "go", "rs", "java", "kt", "swift", "c", "h", "cc",
+            "cpp", "hpp", "cs", "php", "sh", "sql", "html", "css", "scss", "vue", "svelte", "lua", "r", "scala",
+        ]
+        if code.contains(ext) { return "Code" }
+        let kinds: [String: String] = [
+            "pdf": "PDF", "doc": "Document", "docx": "Document", "rtf": "Document", "odt": "Document",
+            "pages": "Document", "txt": "Text", "md": "Text", "markdown": "Text", "xls": "Spreadsheet",
+            "xlsx": "Spreadsheet", "csv": "Spreadsheet", "tsv": "Spreadsheet", "numbers": "Spreadsheet",
+            "ppt": "Presentation", "pptx": "Presentation", "key": "Presentation", "json": "Data", "xml": "Data",
+            "yaml": "Data", "yml": "Data", "mov": "Video", "mp4": "Video", "webm": "Video", "mp3": "Audio",
+            "wav": "Audio", "m4a": "Audio", "zip": "Archive",
+        ]
+        return kinds[ext] ?? "File"
+    }
+
+    static func accessibilityLabel(for item: NativeLibraryItem) -> String {
+        "\(item.fileName), \(kindLabel(item)), \(sizeLabel(item.size)), added \(ageLabel(item.createdAt))"
+    }
+}
+
+// MARK: - Pieces
+
+/// The list's column heads: Name · Type · Size · Added, in the caption ink.
+/// Which of the list's columns the page's width holds: Type from 768,
+/// Size and Added from 640 (the web's `@[48rem]` and `@[40rem]`).
+struct DesktopLibraryColumns {
+    let showsType: Bool
+    let showsSize: Bool
+
+    init(width: CGFloat) {
+        showsType = width >= 768
+        showsSize = width >= 640
+    }
+}
+
+/// Reads the enclosing page's column, for a layout that follows the page's
+/// width rather than the window's.
+struct DesktopPageLayoutReader<Content: View>: View {
+    @Environment(\.junoPageLayout) private var layout
+    @ViewBuilder let content: (JunoPageLayout?) -> Content
+
+    var body: some View {
+        content(layout)
+    }
+}
+
+extension Optional where Wrapped == JunoPageLayout {
+    /// The page's own width — its column and both gutters — which is what the
+    /// web's `@container/page` breakpoints measure.
+    var pageWidth: CGFloat {
+        guard let layout = self else { return 1_000 }
+        return layout.columnWidth + layout.gutter * 2
+    }
+}
+
+private struct DesktopLibraryListHeader: View {
+    static let typeWidth: CGFloat = 96
+    static let sizeWidth: CGFloat = 72
+    static let addedWidth: CGFloat = 112
+
+    let columns: DesktopLibraryColumns
+    var showsType: Bool { columns.showsType }
+
+    var body: some View {
+        HStack(spacing: JunoSpace.cozy) {
+            Text("Name")
+                .padding(.leading, DesktopLibraryInset.side + JunoSpace.cozy)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if showsType {
+                Text("Type").frame(width: Self.typeWidth, alignment: .leading)
+            }
+            Text("Size").frame(width: Self.sizeWidth, alignment: .trailing)
+            Text("Added").frame(width: Self.addedWidth, alignment: .leading)
+            Color.clear.frame(width: 28, height: 1)
+        }
+        .junoType(.caption)
+        .fontWeight(.medium)
+        .foregroundStyle(Color.junoSecondaryInk)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.snug)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The row's 36pt inset: the picture for an image, the kind glyph otherwise.
+struct DesktopLibraryInset: View {
+    static let side: CGFloat = 36
+
+    let item: NativeLibraryItem
+    let state: NativeFilePreviewLoader.State
+    /// On a selected row the inset steps to the card, so it keeps its edge
+    /// against the row's selection fill.
+    var onSelection = false
+
+    var body: some View {
+        Group {
+            if item.isImage, case .ready(let image) = state {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                JunoIconView(item.isImage ? .image : .file, size: 16)
+                    .foregroundStyle(Color.junoSecondaryInk)
+            }
+        }
+        .frame(width: Self.side, height: Self.side)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                .fill(onSelection ? Color.junoCard : Color.junoSecondary)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous))
+        .accessibilityHidden(true)
+    }
+}
+
+/// An upload on its way: its name, its state, Retry and Dismiss when it
+/// failed. The bar is indeterminate: the transport reports no byte progress.
+private struct DesktopLibraryUploadRow: View {
+    let upload: NativeLibraryUpload
+    let retry: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: JunoSpace.cozy) {
+            JunoIconView(upload.isImage ? .image : .file, size: 16)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .frame(width: DesktopLibraryInset.side, height: DesktopLibraryInset.side)
+                .background(
+                    RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                        .fill(Color.junoSecondary)
+                )
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                Text(upload.fileName)
+                    .junoType(.ui)
+                    .fontWeight(.medium)
+                    .foregroundStyle(Color.junoForeground)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                switch upload.status {
+                case .uploading:
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                        .controlSize(.small)
+                        .tint(Color.junoForeground.opacity(0.6))
+                        .accessibilityLabel("Uploading \(upload.fileName)")
+                case .failed(let message, _):
+                    Text(message)
+                        .junoType(.caption)
+                        .foregroundStyle(Color.junoDestructiveInk)
+                        .lineLimit(2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if case .failed(_, let retryable) = upload.status {
+                if retryable {
+                    Button("Retry", action: retry)
+                        .contentShape(.rect)
+                        .buttonStyle(.bordered)
+                        .tint(nil)
+                }
+                Button(action: dismiss) {
+                    JunoIconView(.dismiss, size: 14)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .frame(width: 28, height: 28)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.borderless)
+                .help("Dismiss")
+                .accessibilityLabel("Dismiss \(upload.fileName)")
+            }
+        }
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.snug)
+    }
+}
+
+/// "Drop to upload": opaque, over the whole page, in the canvas's own ink.
+private struct DesktopLibraryDropVeil: View {
+    var body: some View {
+        ZStack {
+            Color.junoCanvas.opacity(0.94)
+            VStack(spacing: JunoSpace.cozy) {
+                JunoIconView(.upload, size: 24)
+                    .foregroundStyle(Color.junoForeground)
+                    .frame(width: 48, height: 48)
+                    .background(
+                        RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                            .fill(Color.junoSecondary)
+                    )
+                Text("Drop to upload")
+                    .junoType(.heading)
+                    .foregroundStyle(Color.junoForeground)
+            }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                .strokeBorder(Color.junoForeground.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                .padding(JunoSpace.regular)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Drop to upload")
+    }
+}
+
+/// Loading, shaped like the list, breathing on the motion tokens.
+private struct DesktopLibrarySkeleton: View {
+    let presentation: DesktopLibraryScreen.Presentation
+
+    @State private var dimmed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<6, id: \.self) { index in
+                HStack(spacing: JunoSpace.cozy) {
+                    RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                        .fill(Color.junoSecondary)
+                        .frame(width: DesktopLibraryInset.side, height: DesktopLibraryInset.side)
+                    VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                        Capsule().fill(Color.junoSecondary).frame(width: 180, height: 10)
+                        Capsule().fill(Color.junoSecondary).frame(width: 96, height: 8)
+                    }
+                    Spacer()
+                    Capsule().fill(Color.junoSecondary).frame(width: 64, height: 8)
+                }
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.vertical, JunoSpace.snug)
+                .opacity(index == 0 ? 1 : 1 - Double(index) * 0.1)
+            }
+        }
+        .opacity(dimmed ? 0.55 : 1)
+        .animation(
+            JunoMotion.ambient(JunoMotion.breathe(period: JunoMotion.Loop.skeletonBreathe), when: reduceMotion),
+            value: dimmed
+        )
+        .onAppear { if !reduceMotion { dimmed = true } }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading your files")
+    }
+}
+
+/// Versions: the current one marked, Restore on the others.
+private struct DesktopLibraryVersionsSheet: View {
+    let item: NativeLibraryItem
+    let model: NativeLibraryPageModel
+    let dismiss: () -> Void
+
+    @State private var versions: [NativeLibraryVersion]?
+    @State private var failed = false
+    @State private var restoring: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                Text("Versions")
+                    .junoType(.heading)
+                    .foregroundStyle(Color.junoForeground)
+                    .accessibilityAddTraits(.isHeader)
+                Text(item.fileName)
+                    .junoType(.ui)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            DesktopLibraryVersionsList(
+                versions: versions,
+                failed: failed,
+                restoring: restoring,
+                restore: restore
+            )
+            Text("Restoring an earlier version keeps the current one.")
+                .junoType(.caption)
+                .foregroundStyle(Color.junoSecondaryInk)
+            HStack {
+                Spacer()
+                Button("Done", action: dismiss)
+                    .contentShape(.rect)
+                    .tint(nil)
+                    .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(JunoSpace.section)
+        .frame(width: 440)
+        .task {
+            do {
+                versions = try await model.versions(of: item)
+            } catch {
+                failed = true
+            }
+        }
+    }
+
+    private func restore(_ version: Int) {
+        restoring = version
+        Task {
+            _ = await model.restoreVersion(version, of: item)
+            restoring = nil
+            dismiss()
+        }
+    }
+}
+
+/// The versions sheet's body, apart so the snapshot harness can draw it.
+struct DesktopLibraryVersionsList: View {
+    let versions: [NativeLibraryVersion]?
+    let failed: Bool
+    let restoring: Int?
+    let restore: (Int) -> Void
+
+    var body: some View {
+        Group {
+            if failed {
+                JunoEmptyState(
+                    title: "Couldn’t load versions",
+                    message: "Check your connection and try again.",
+                    icon: .triangleAlert,
+                    size: .panel,
+                    tone: .error
+                )
+            } else if let versions {
+                if versions.filter({ !$0.current }).isEmpty {
+                    JunoEmptyState(
+                        title: "No earlier versions",
+                        message: "When this file is replaced, the earlier version is kept here.",
+                        icon: .history,
+                        size: .panel
+                    )
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(versions.enumerated()), id: \.element.id) { index, version in
+                            if index > 0 {
+                                Rectangle().fill(Color.junoBorder.opacity(0.7)).frame(height: 1)
+                            }
+                            row(version)
+                        }
+                    }
+                    .padding(.vertical, JunoSpace.tight)
+                    .background(
+                        RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous).fill(Color.junoCard)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                            .strokeBorder(Color.junoBorder, lineWidth: 1)
+                    )
+                }
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, minHeight: 80)
+                    .accessibilityLabel("Loading versions")
+            }
+        }
+    }
+
+    private func row(_ version: NativeLibraryVersion) -> some View {
+        HStack(spacing: JunoSpace.cozy) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Version \(version.version)")
+                    .junoType(.ui)
+                    .fontWeight(.medium)
+                    .foregroundStyle(Color.junoForeground)
+                Text("\(DesktopLibraryScreen.sizeLabel(version.size)) · \(DesktopLibraryScreen.ageLabel(version.createdAt))")
+                    .junoType(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.junoSecondaryInk)
+            }
+            Spacer()
+            if version.current {
+                Text("Current")
+                    .junoType(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(Color.junoSecondaryInk)
+            } else {
+                Button(restoring == version.version ? "Restoring…" : "Restore") { restore(version.version) }
+                    .contentShape(.rect)
+                    .buttonStyle(.bordered)
+                    .tint(nil)
+                    .disabled(restoring != nil)
+            }
+        }
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.snug)
+    }
+}
+
+// MARK: - Files in and out
+
+/// A file's name as it leaves by drag, as text a Finder or a note can take.
+struct DesktopLibraryDragItem: Transferable {
+    let name: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        ProxyRepresentation(exporting: \.name)
+    }
+}
+
+private struct DesktopLibraryDownload {
+    let document: DesktopLibraryFileDocument
+    let name: String
+}
+
+struct DesktopLibraryFileDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.data] }
+
+    let data: Data
+
+    init(data: Data) { self.data = data }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration _: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
+/// Reading files for upload, and fetching a stored file's bytes.
+enum DesktopLibraryUploads {
+    /// The web's `ACCEPT_ATTRIBUTE` (`src/lib/uploads.ts`): images, PDFs,
+    /// office documents, text and data.
+    static let acceptedTypes: [UTType] = [
+        .image, .pdf, .plainText, .commaSeparatedText, .json, .xml, .rtf, .html,
+        UTType(filenameExtension: "md") ?? .plainText,
+        UTType(filenameExtension: "docx") ?? .data,
+        UTType(filenameExtension: "xlsx") ?? .data,
+        UTType(filenameExtension: "pptx") ?? .data,
+        .sourceCode, .data,
+    ]
+
+    static func read(_ urls: [URL]) -> [(data: Data, fileName: String, mimeType: String)] {
+        urls.compactMap { url in
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            let type = UTType(filenameExtension: url.pathExtension)
+            return (data, url.lastPathComponent, type?.preferredMIMEType ?? "application/octet-stream")
+        }
+    }
+
+    /// The bytes behind a file access: downloaded already, or a signed URL.
+    static func bytes(_ access: NativeProjectFileAccess?) async -> Data? {
+        switch access {
+        case .downloaded(let data): return data
+        case .remote(let url):
+            return try? await URLSession.shared.data(from: url).0
+        case nil: return nil
+        }
+    }
+}
+
+// MARK: - The deal
+
+extension View {
+    /// Rows and tiles are dealt once on first load: the rise-in on
+    /// `JunoMotion`, 45ms apart, capped at ten. Switching views does not
+    /// replay it; under Reduce Motion everything appears in place.
+    func junoDealt(index: Int, active: Bool, reduceMotion: Bool) -> some View {
+        modifier(DesktopDealtModifier(index: index, active: active, reduceMotion: reduceMotion))
+    }
+}
+
+private struct DesktopDealtModifier: ViewModifier {
+    let index: Int
+    let active: Bool
+    let reduceMotion: Bool
+
+    @State private var arrived = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(!active || arrived || reduceMotion ? 1 : 0)
+            .offset(y: !active || arrived || reduceMotion ? 0 : JunoMotion.riseDistance)
+            .onAppear {
+                guard active, !reduceMotion else { return }
+                withAnimation(JunoMotion.riseIn.delay(Double(min(index, 10)) * 0.045)) {
+                    arrived = true
+                }
+            }
     }
 }

@@ -431,3 +431,42 @@ One commit on `mac/lg-p5c` (lane p5c of the paused 8-lane run), after Stage A (`
 - **Tests.** `WorkRunsByConversationTests`, `NativeNotificationsClientTests` (packages); `DesktopNeedsYouSignalsTests` (rise, sentence, agents-only skip, count, badge, menu content, fold rules, row words, agent lines) and `SignalsSnapshotTests` / `SignalsWindowSnapshotTests` (app).
 - **Needs a person at the screen (deferred):** a banner and its click, the Dock badge, the menu-bar extra (and whether its second `Text` draws as the subtitle), the popover's focus and arrow, hiring from the fold, the live dot's breathe, VoiceOver on the fold's sentences.
 - **Not here:** ⌘K "Open notifications" (Phase 3); APNs on the Mac (Developer ID push profile); the Notifications popover is not wired on iOS.
+
+## Phase 4 brief, 2026-09-25 (track B)
+
+`docs/native/MACOS_PHASE4_PAGES_BRIEF.md` is the plan for the pages track, written against the live web on `origin/main` at `fe0a501d`. Its §0 overrides spec §9 where they disagree.
+
+**Stages:**
+- **A:**
+  - merge `origin/main` (push notifications, the Agents sidebar fold)
+  - `ChatArtifactResolver` on the web's `resolveArtifactTag` rule
+  - the Design row gone, with `.design` routed to Artifacts › Designs
+  - server posters with an SVG-export fallback
+  - Library, Projects, Artifacts and the design editor page
+- **B:** Memory, Connections parity, Skills and Assistants.
+- **C:** Automations (then `DesktopWorkAutomations.swift` is deleted), Permissions and host pages, Agents on the template, and the More menu in the web's order.
+
+**What Track A has to wire** is in the brief's §0.4: the page router, the Skills model for the composer, the Devices rows, the share hook and the Archived Chats hook.
+
+**Four questions for the owner** are in the brief's §8:
+- the dead "Start chat" on Assistants
+- the dead "Use in chats" on Connections
+- editing only in the canvas
+- the document inspector's entry point
+
+## Phase 4 Stage A, 2026-09-25 (track B: Library, Projects, Artifacts, Design)
+
+Commits on `mac/liquid-glass-pages` (not pushed): the `origin/main` merge (`ec4348dd`), A1–A3 (`1876f3ac`), then A4–A6 with the docs. The spec's "Phase 4 errata, Stage A" has the detail and register #69–#87 (Track A holds #53–#68).
+
+**Built:** the resolver on the web's rule with the dock following the row id; the Design row gone and `.design` → Artifacts › Designs; `DesktopPageRoute` / `DesktopPageRouter` / `DesktopPageStack`; server posters with the export fallback; Library, Projects (list, pushed project page, New project sheet) and Artifacts (list, grid, New ▾, presets, the artifact page, the design editor page) on the template; the design editor bundle rebuilt. A7 (the document inspector) is not built: no route names a library item's document.
+
+**What Track A has to wire** (brief §0.4):
+- `DesktopPageRouter.shared` (`App/DesktopPageRoute.swift`): `open(_:route:artifactsType:opensNewMenu:)` and `openArtifactInConversation(_:)`, for ⌘K rows (Design → `open(.design)`, which lands on Artifacts › Designs), Settings links, and notifications.
+- `DesktopArtifactsScreen(shareArtifact:)`: pass the share popover from `DesktopDestinationView.artifactsPage` (`App/DesktopAccountScreens.swift`); Share… appears once it is set.
+- The Archived Chats and More-menu hooks are Stage C's.
+
+**Snapshots:** `Tests/Snapshots/PageSnapshotTests.swift` (`JUNO_SNAPSHOT_DIR` → `<dir>/pages/`), 26 fixtures in both appearances, rendered to `/tmp/juno-glass-snapshots/phase4-a/pages/` (the foundations beside them in `phase4-a/foundations/`); the Phase 2 final set re-rendered to `/tmp/juno-glass-snapshots/phase4-a/final/`. Menus, popovers and the glass toast host cannot be drawn offscreen: the New ▾ and More menus are drawn closed, and the selection bar uses its Reduce Transparency recipe. `PreviewWorld` gained a `projectWorkspaceModel` so a project's Settings tab draws all three cards in the harness.
+
+**Not checked at the screen** (screen control is off): pushes and pops with the system back button; a popover open during a push; ⌘R and ⇧⌘I from the Library; dropping files on the Library or a project's Sources; Quick Look; Undo after a delete; a design made from New ▾ opening in the editor; Open in Conversation sliding in the dock; posters revalidating against the live server; the unnamed-project route.
+
+**Follow-ups:** the iPhone should adopt `ChatArtifactResolver` (it matches artifacts by identifier across every conversation); a project's Code tab; the document inspector once the server sends `knowledge.documentId`; new copy into `Localizable.xcstrings`.

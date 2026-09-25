@@ -197,18 +197,30 @@ public struct NativeFilePreviewRequest: Equatable, Sendable, Identifiable {
 /// whose preview cannot be drawn is still a file, and the grid should not develop
 /// holes in it.
 public struct NativeFilePreviewTile: View {
+    /// What a tile with no picture shows.
+    public enum Fallback: Sendable {
+        /// The file's type, name and size: a tile that stands alone.
+        case card
+        /// Only the type's glyph, centred: for a tile whose name and size are
+        /// already printed under it (the Mac Library's grid).
+        case glyph
+    }
+
     private let file: NativeFilePreviewRequest
     private let state: NativeFilePreviewLoader.State
     private let cornerRadius: CGFloat
+    private let fallbackStyle: Fallback
 
     public init(
         file: NativeFilePreviewRequest,
         state: NativeFilePreviewLoader.State,
-        cornerRadius: CGFloat
+        cornerRadius: CGFloat,
+        fallback: Fallback = .card
     ) {
         self.file = file
         self.state = state
         self.cornerRadius = cornerRadius
+        fallbackStyle = fallback
     }
 
     public var body: some View {
@@ -244,8 +256,19 @@ public struct NativeFilePreviewTile: View {
             // grid of spinners reads as the screen being broken.
             Color.junoSurface
         case .unavailable:
-            fallback
+            switch fallbackStyle {
+            case .card: fallback
+            case .glyph: glyph
+            }
         }
+    }
+
+    private var glyph: some View {
+        JunoIconView(file.isImage ? .image : .file)
+            .junoFont(size: 28, relativeTo: .body)
+            .foregroundStyle(Color.junoSecondaryInk)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.junoSecondary)
     }
 
     private var fallback: some View {

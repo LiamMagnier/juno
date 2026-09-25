@@ -69,7 +69,7 @@ struct MessageRowActions {
     /// Re-asks this question with new wording, as a new branch. Nil on answers
     /// and on turns with no row on the server.
     var editMessage: ((String) -> Void)? = nil
-    var openArtifact: (NativeMessageContent.ArtifactReference) -> Void = { _ in }
+    var openArtifact: (NativeMessageContent.ArtifactReference, NativeChatMessage) -> Void = { _, _ in }
 }
 
 // MARK: - The menu model

@@ -184,9 +184,40 @@ struct DesktopChatWorkspace: View {
                 // Any deliberate navigation retires the override — from here on
                 // the window behaves exactly as it did before it existed.
                 overrideDestination = nil
-                storedDestination = value.rawValue
+                store(value)
             }
         )
+    }
+
+    /// Writes a destination to scene storage as the destination it really
+    /// means (``DesktopNavigationState/normalized(_:)``): `.design` is stored
+    /// as Artifacts and asks the Artifacts page for its Designs filter.
+    private func store(_ value: DesktopDestination) {
+        let normalized = DesktopNavigationState.normalized(value)
+        storedDestination = normalized.destination.rawValue
+        if normalized.artifactsType != nil {
+            pageRouter.open(value)
+        }
+    }
+
+    private var pageRouter: DesktopPageRouter { .shared }
+
+    /// A request from outside the window (``DesktopPageRouter``): switch to
+    /// its destination and leave the push to that destination's stack. Chat
+    /// has no stack, so a request for it is done once the switch is.
+    private func followPageRequest() {
+        guard let request = pageRouter.pending else { return }
+        overrideDestination = nil
+        storedDestination = request.destination.rawValue
+        if request.destination == .chat {
+            pageRouter.consume(request)
+        }
+    }
+
+    /// Open in Conversation: the chat, then the canvas on that row by id.
+    private func followCanvasRequest() {
+        guard let request = pageRouter.pendingCanvas else { return }
+        openConversation(request.conversationID)
     }
 
     /// The pinned project whose row should read as selected: only while its
@@ -218,6 +249,8 @@ struct DesktopChatWorkspace: View {
                 // other selection opens its destination's root.
                 if case .project(let id) = item {
                     requestedProjectID = id
+                    // Pushed on the Projects stack (Phase 4 A5), not swapped in.
+                    pageRouter.open(.projects, route: .project(id))
                 } else {
                     requestedProjectID = nil
                 }
@@ -226,7 +259,7 @@ struct DesktopChatWorkspace: View {
                     current: (currentDestination, model.selectedConversationID, selectedAgentID)
                 )
                 overrideDestination = nil
-                storedDestination = resolved.destination.rawValue
+                store(resolved.destination)
                 storedAgentID = resolved.agentID ?? ""
                 model.selectedConversationID = resolved.conversationID
                 model.isDraftingNewConversation = resolved.isDrafting
@@ -361,7 +394,16 @@ struct DesktopChatWorkspace: View {
             // notification that launched the app is followed rather than
             // overwritten by the launch surface.
             followPendingRoute()
+            // A window restored on the retired Design page, or one the legacy
+            // tasks window sent to Design: Artifacts with the Designs filter.
+            if storedDestination == DesktopDestination.design.rawValue {
+                store(.design)
+            }
+            followPageRequest()
+            followCanvasRequest()
         }
+        .onChange(of: pageRouter.pending) { _, _ in followPageRequest() }
+        .onChange(of: pageRouter.pendingCanvas) { _, _ in followCanvasRequest() }
         .onChange(of: unscopedChatRequestID) { _, _ in
             consumePendingUnscopedChatRequest()
         }
@@ -740,7 +782,7 @@ struct DesktopChatWorkspace: View {
 
     private func openProject(_ projectID: String) {
         requestedProjectID = projectID
-        destination.wrappedValue = .projects
+        pageRouter.open(.projects, route: .project(projectID))
     }
 
     private func openSearch() {
@@ -1203,6 +1245,7 @@ struct DesktopConversationView: View {
                 openResearch = nil
                 openTask = nil
                 find.close()
+                followCanvasRequest()
             }
             // The chat's tasks, followed while it is open (Phase 5 A2). A
             // draft or a private chat follows none; switching drops the
@@ -1230,6 +1273,11 @@ struct DesktopConversationView: View {
             }
             .onChange(of: windowVisible) { _, visible in conversationWork?.isVisible = visible }
             .background(DesktopWindowVisibilityReader { windowVisible = $0 })
+            // Open in Conversation from the Artifacts page: once this chat is
+            // the one on screen, the canvas opens on that row by id.
+            .onAppear(perform: followCanvasRequest)
+            .onChange(of: DesktopPageRouter.shared.pendingCanvas) { _, _ in followCanvasRequest() }
+            .onChange(of: configuration.artifactModel?.artifacts.count) { _, _ in followCanvasRequest() }
             // The conversation's research runs, followed while it is open —
             // and again whenever a hand-off adds one.
             .task(id: session.profile.id.rawValue) {
@@ -1542,10 +1590,7 @@ struct DesktopConversationView: View {
     /// wrote, a sync, or the canvas's own Save is what the canvas shows.
     private var dockPanel: DesktopDockPanel? {
         if let open = openArtifact {
-            return .canvas(DesktopChatArtifact(
-                reference: open.reference,
-                stored: artifactResolver.artifact(for: open.reference) ?? open.stored
-            ))
+            return .canvas(open.current(in: artifactResolver))
         }
         if let openActivity {
             return .activity(messageID: openActivity.messageID, focusCallID: openActivity.focusCallID)
@@ -1882,7 +1927,7 @@ struct DesktopConversationView: View {
                     messageActions: configuration.messageActionsClient,
                     accountID: session.profile.id,
                     syncModel: configuration.syncModel,
-                    openArtifact: open(artifact:),
+                    openArtifact: open(artifact:message:),
                     share: shareConversation,
                     // Not from inside a private chat: its turns are already
                     // private, and the web offers no fork there either.
@@ -1923,15 +1968,45 @@ struct DesktopConversationView: View {
             : ChatComposerLift.resting
     }
 
-    private func open(artifact: NativeMessageContent.ArtifactReference) {
+    private func open(artifact: NativeMessageContent.ArtifactReference, message: NativeChatMessage) {
         withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
             openActivity = nil
             openResearch = nil
             openTask = nil
             openArtifact = DesktopChatArtifact(
                 reference: artifact,
-                stored: artifactResolver.artifact(for: artifact)
+                stored: artifactResolver.artifact(
+                    for: artifact,
+                    messageID: message.id,
+                    messageCreatedAt: message.createdAt
+                ),
+                messageID: message.id,
+                messageCreatedAt: message.createdAt
             )
+        }
+    }
+
+    /// Takes the router's Open in Conversation request once its chat is on
+    /// screen and its row is in the store.
+    private func followCanvasRequest() {
+        let router = DesktopPageRouter.shared
+        guard let request = router.pendingCanvas,
+              privateChat == nil,
+              request.conversationID == model.selectedConversationID,
+              let row = artifactResolver.artifact(id: request.artifactID)
+        else { return }
+        router.consumeCanvas(request)
+        open(row: row)
+    }
+
+    /// Opens the canvas on one stored row by id — the Artifacts page's Open in
+    /// Conversation (`DesktopPageRouter.openArtifactInConversation`).
+    private func open(row: NativeArtifact) {
+        withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
+            openActivity = nil
+            openResearch = nil
+            openTask = nil
+            openArtifact = DesktopChatArtifact(row: row)
         }
     }
 

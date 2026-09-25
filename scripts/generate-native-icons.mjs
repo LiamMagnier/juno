@@ -204,6 +204,9 @@ const PHOSPHOR = {
   Sun: "Sun",
   Moon: "Moon",
   Monitor: "Monitor",
+  // The Artifacts page's design presets (PRESET_GLYPHS).
+  DeviceMobile: "Smartphone",
+  DeviceTablet: "Tablet",
   BookOpen: "BookOpen",
   Wrench: "Wrench",
   CheckCircle: "CheckCircle2",
@@ -229,6 +232,9 @@ const PHOSPHOR = {
   ChartBar: null,
   Palette: null,
   TextAlignLeft: null,
+  Bell: null,
+  // The web's `AppIcons.notifications` (the sidebar inbox) is `Bell`, drawn with
+  // Phosphor's BellSimple in icons.tsx.
   BellSimple: "Bell",
   FolderPlus: null,
   Shield: null,

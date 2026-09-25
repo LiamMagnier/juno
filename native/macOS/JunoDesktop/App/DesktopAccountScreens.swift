@@ -1,10 +1,12 @@
 import AppKit
 import Foundation
+import JunoAPI
 import JunoAuth
 import JunoChatKit
 import JunoCore
 import JunoDesignSystem
 import JunoStorage
+import JunoSync
 import JunoWorkKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -67,10 +69,26 @@ struct DesktopDestinationView: View {
         if destination == .chat {
             page
         } else {
-            NavigationStack {
+            DesktopPageStack(destination: destination, router: .shared) {
                 page
-                    .navigationTitle(destination.label)
+            } page: { route in
+                routePage(route)
             }
+        }
+    }
+
+    /// The page a route pushes. One `navigationDestination` for all of them,
+    /// at the stack root (Phase 4 brief §2.5).
+    @ViewBuilder
+    private func routePage(_ route: DesktopPageRoute) -> some View {
+        switch route {
+        case .project(let id):
+            projectPage(id)
+        case .artifact(let id, let version):
+            artifactPage(id, version: version)
+        case .document, .skill, .newSkill, .automation, .newAutomation, .host, .agent, .newAgent:
+            // Built by later stages (B and C); nothing pushes these yet.
+            unavailable("Not available", "This page is not on the Mac yet.")
         }
     }
 
@@ -125,18 +143,14 @@ struct DesktopDestinationView: View {
             if let model = configuration.projectModel {
                 DesktopProjectsScreen(
                     model: model,
-                    conversationModel: conversationModel,
-                    configuration: configuration,
-                    session: session,
-                    openConversation: openConversation,
-                    startConversation: startConversation,
-                    requestedProjectID: $requestedProjectID
+                    fileAccess: fileAccess,
+                    createUnnamed: createUnnamedProject
                 )
             } else {
                 unavailable("Projects", "The synchronized project store is unavailable.")
             }
         case .library:
-            if let model = configuration.libraryModel {
+            if let model = configuration.libraryPageModel {
                 DesktopLibraryScreen(
                     model: model,
                     documentIndex: configuration.documentIndexModel,
@@ -146,17 +160,14 @@ struct DesktopDestinationView: View {
                     },
                     generateClient: configuration.generateClient,
                     modelCatalog: conversationModel.modelCatalog,
-                    openConversation: openConversation
+                    fileAccess: fileAccess,
+                    openConversation: openLibraryConversation
                 )
             } else {
                 unavailable("Library", "The authenticated file library is unavailable.")
             }
         case .artifacts:
-            if let model = configuration.artifactModel {
-                DesktopArtifactsScreen(model: model)
-            } else {
-                unavailable("Artifacts", "The synchronized artifact store is unavailable.")
-            }
+            artifactsPage
         case .agents:
             if let model = configuration.agentsModel {
                 NativeAgentsScreen(
@@ -177,21 +188,10 @@ struct DesktopDestinationView: View {
                 unavailable("Connections", "The connector service is unavailable.")
             }
         case .design:
-            // The artifact store is the hard dependency, not the transport: the
-            // page lists the designs this account already has, and those are
-            // projected from the encrypted database. A request sender is what
-            // *starting* one needs, and its absence disables the presets with a
-            // reason rather than emptying the page.
-            if let model = configuration.artifactModel {
-                DesktopDesignScreen(
-                    model: model,
-                    accountID: session.profile.id,
-                    requestSender: configuration.requestSender,
-                    syncModel: configuration.syncModel
-                )
-            } else {
-                unavailable("Design", "The synchronized artifact store is unavailable.")
-            }
+            // Never reached: `.design` is normalized to Artifacts with the
+            // Designs filter before it is stored (Phase 4 A2). Drawn as
+            // Artifacts all the same, should an old caller get here.
+            artifactsPage
         case .memory:
             if let model = configuration.memorySettingsModel {
                 // No back control: the column's More menu opened this page and
@@ -202,6 +202,112 @@ struct DesktopDestinationView: View {
             } else {
                 unavailable("Memory", "The synchronized settings store is unavailable.")
             }
+        }
+    }
+
+    /// A stored file's bytes, through the sync `attachment` entity's fresh
+    /// signed URL (``NativeProjectAPIClient/accessFile(id:for:)``).
+    private var fileAccess: ((String) async -> NativeProjectFileAccess?)? {
+        guard let sender = configuration.requestSender else { return nil }
+        let client = NativeProjectAPIClient(sender: sender)
+        let accountID = session.profile.id
+        return { id in try? await client.accessFile(id: id, for: accountID) }
+    }
+
+    /// The Library's "Open source chat", and its empty state's "Go to chat"
+    /// (an empty id), which starts a new chat.
+    private func openLibraryConversation(_ id: String) {
+        guard !id.isEmpty else {
+            conversationModel.selectedConversationID = nil
+            conversationModel.isDraftingNewConversation = true
+            destination = .chat
+            return
+        }
+        openConversation(id)
+    }
+
+    @ViewBuilder
+    private var artifactsPage: some View {
+        if let model = configuration.artifactModel {
+            DesktopArtifactsScreen(
+                model: model,
+                accountID: session.profile.id,
+                requestSender: configuration.requestSender,
+                syncModel: configuration.syncModel,
+                newChat: { startNewChat() }
+            )
+        } else {
+            unavailable("Artifacts", "The synchronized artifact store is unavailable.")
+        }
+    }
+
+    @ViewBuilder
+    private func projectPage(_ id: String) -> some View {
+        if let model = configuration.projectModel {
+            DesktopProjectPage(
+                projectID: id,
+                model: model,
+                conversationModel: conversationModel,
+                workspaceModel: configuration.projectWorkspaceModel,
+                workModel: configuration.workModel,
+                artifactModel: configuration.artifactModel,
+                modelCatalog: conversationModel.modelCatalog,
+                fileAccess: fileAccess,
+                openConversation: openConversation,
+                startConversation: { prompt in startConversation(in: id, prompt: prompt) },
+                openMemory: configuration.memorySettingsModel == nil ? nil : { destination = .memory }
+            )
+            // A pinned project's sidebar row reads as selected while its page
+            // is up, and hands the highlight back when it is left.
+            .onDisappear {
+                if requestedProjectID == id { requestedProjectID = nil }
+            }
+        } else {
+            unavailable("Project", "The synchronized project store is unavailable.")
+        }
+    }
+
+    @ViewBuilder
+    private func artifactPage(_ id: String, version: Int?) -> some View {
+        if let model = configuration.artifactModel {
+            ArtifactPage(artifactID: id, model: model, requestedVersion: version)
+        } else {
+            unavailable("Artifact", "The synchronized artifact store is unavailable.")
+        }
+    }
+
+    /// A new, empty chat.
+    private func startNewChat() {
+        draftProjectID = nil
+        draftPrompt = nil
+        conversationModel.selectedConversationID = nil
+        conversationModel.isDraftingNewConversation = true
+        destination = .chat
+    }
+
+    /// New project with no name: `POST /api/projects`, which names it
+    /// "Untitled project" until its first chat names it (the sync mutation
+    /// needs a name, so the blank case takes the web's route). Nil without a
+    /// transport, which keeps the name required.
+    private var createUnnamedProject: (() async -> String?)? {
+        guard let sender = configuration.requestSender, let projectModel = configuration.projectModel else { return nil }
+        let accountID = session.profile.id
+        let syncModel = configuration.syncModel
+        return {
+            guard let request = try? NativeBearerRequest(
+                path: "/api/projects",
+                method: .post,
+                headers: try HTTPHeaders(["accept": "application/json", "content-type": "application/json"]),
+                body: Data("{}".utf8)
+            ),
+                let response = try? await sender.send(request, for: accountID),
+                (200...299).contains(response.statusCode),
+                let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any],
+                let id = object["id"] as? String
+            else { return nil }
+            await syncModel?.refresh()
+            await projectModel.reload()
+            return id
         }
     }
 

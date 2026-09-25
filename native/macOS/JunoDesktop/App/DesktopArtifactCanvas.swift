@@ -47,13 +47,65 @@ struct DesktopChatArtifact: Identifiable, Equatable {
     /// The stored row, resolved when the canvas opened and kept current by the
     /// conversation column as sync and saves move it on.
     var stored: NativeArtifact?
+    /// The id of the row the canvas opened on. The dock reads the row back by
+    /// this id, never by re-resolving the tag's identifier: after a type
+    /// change the identifier belongs to a new row (M11), and following it
+    /// would swap what is open. Nil when no row existed at open time.
+    let storedID: String?
+    /// The message the tag came from, for resolving it the web's way
+    /// (`resolveArtifactTag`) when no row existed at open time.
+    let messageID: String?
+    let messageCreatedAt: Date?
 
-    init(reference: NativeMessageContent.ArtifactReference, stored: NativeArtifact? = nil) {
+    init(
+        reference: NativeMessageContent.ArtifactReference,
+        stored: NativeArtifact? = nil,
+        messageID: String? = nil,
+        messageCreatedAt: Date? = nil
+    ) {
         self.reference = reference
         self.stored = stored
+        storedID = stored?.id
+        self.messageID = messageID
+        self.messageCreatedAt = messageCreatedAt
     }
 
-    var id: String { reference.id }
+    /// A row opened directly — the Artifacts page's Open in Conversation —
+    /// with a reference made from the row itself.
+    init(row: NativeArtifact) {
+        self.init(
+            reference: NativeMessageContent.ArtifactReference(
+                identifier: row.identifier,
+                title: row.title,
+                kind: row.kind.rawValue,
+                language: row.language,
+                streaming: false,
+                content: row.currentContent ?? ""
+            ),
+            stored: row,
+            messageID: row.messageID,
+            messageCreatedAt: row.createdAt
+        )
+    }
+
+    /// The same row keeps the same canvas, whichever tag opened it.
+    var id: String { storedID ?? reference.id }
+
+    /// The open artifact as the store has it now: the row it opened on, read
+    /// back **by id**; the tag resolved with its message (the web's
+    /// `resolveArtifactTag`) only when no row existed at open time; and what
+    /// it opened with when the store has neither.
+    func current(in resolver: ChatArtifactResolver) -> DesktopChatArtifact {
+        let row: NativeArtifact?
+        if let storedID {
+            row = resolver.artifact(id: storedID)
+        } else {
+            row = resolver.artifact(for: reference, messageID: messageID, messageCreatedAt: messageCreatedAt)
+        }
+        var copy = self
+        copy.stored = row ?? stored
+        return copy
+    }
 
     var kind: NativeArtifactKind {
         stored?.kind ?? NativeArtifactKind(rawValue: reference.kind.uppercased()) ?? .code

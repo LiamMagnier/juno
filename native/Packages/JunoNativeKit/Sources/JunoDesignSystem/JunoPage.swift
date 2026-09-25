@@ -192,13 +192,18 @@ public extension JunoPage where Controls == EmptyView {
 public struct JunoPageHeader<Actions: View>: View {
     private let title: String
     private let lede: String?
+    private let caption: String?
     private let actions: Actions
 
     @Environment(\.junoPageLayout) private var layout
 
-    public init(_ title: String, lede: String? = nil, @ViewBuilder actions: () -> Actions) {
+    /// - Parameter caption: the web's eyebrow ("Project", "Automations"),
+    ///   drawn as an SF 13 medium caption in the secondary ink above the
+    ///   title — never a mono or uppercase label (register #57).
+    public init(_ title: String, lede: String? = nil, caption: String? = nil, @ViewBuilder actions: () -> Actions) {
         self.title = title
         self.lede = lede
+        self.caption = caption
         self.actions = actions()
     }
 
@@ -226,6 +231,13 @@ public struct JunoPageHeader<Actions: View>: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            if let caption {
+                Text(caption)
+                    .junoType(.ui)
+                    .fontWeight(.medium)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .lineLimit(1)
+            }
             Text(title)
                 .junoPageTitle(columnWidth: layout?.columnWidth)
                 .foregroundStyle(Color.junoForeground)
@@ -250,8 +262,8 @@ public struct JunoPageHeader<Actions: View>: View {
 }
 
 public extension JunoPageHeader where Actions == EmptyView {
-    init(_ title: String, lede: String? = nil) {
-        self.init(title, lede: lede) { EmptyView() }
+    init(_ title: String, lede: String? = nil, caption: String? = nil) {
+        self.init(title, lede: lede, caption: caption) { EmptyView() }
     }
 }
 

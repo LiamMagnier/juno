@@ -295,6 +295,7 @@ final class ArtifactRuntimeBridgeTests: XCTestCase {
         XCTAssertEqual(verdict("ftp://example.com/x"), "block")
     }
 
+    @MainActor
     func testTheSchemeServesOnlyWhatWasBundled() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("runtime-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -354,32 +355,162 @@ final class ChatArtifactResolverTests: XCTestCase {
 
     func testTheStoredRowWinsOverTheTag() {
         let resolver = ChatArtifactResolver(artifacts: [row(), row(conversation: "conv-2", version: 5)], conversationID: "conv-1")
-        let card = resolver.card(for: reference(kind: "CODE"), messageID: "a-second", messageIsPending: false)
+        let card = resolver.card(for: reference(kind: "CODE"), messageID: "a-second", messageCreatedAt: nil, messageIsPending: false)
         XCTAssertEqual(card.content, "<p>v2</p>")
         XCTAssertEqual(card.kind, .html)
         XCTAssertEqual(card.version, 2)
         XCTAssertEqual(card.title, "Pricing card")
         XCTAssertTrue(card.isUpdated, "a later message carrying the same identifier revised it")
-        XCTAssertFalse(resolver.card(for: reference(), messageID: "a-first", messageIsPending: false).isUpdated)
+        XCTAssertFalse(resolver.card(for: reference(), messageID: "a-first", messageCreatedAt: nil, messageIsPending: false).isUpdated)
     }
 
     func testWithoutARowTheTagIsTheArtifact() {
-        let card = ChatArtifactResolver.empty.card(for: reference(), messageID: "m", messageIsPending: false)
+        let card = ChatArtifactResolver.empty.card(for: reference(), messageID: "m", messageCreatedAt: nil, messageIsPending: false)
         XCTAssertNil(card.stored)
         XCTAssertEqual(card.content, "<p>tag</p>")
         XCTAssertNil(card.version)
         XCTAssertEqual(card.kind, .html)
-        XCTAssertEqual(ChatArtifactResolver(artifacts: [row()], conversationID: nil).artifact(for: reference()), nil)
+        XCTAssertEqual(ChatArtifactResolver(artifacts: [row()], conversationID: nil).artifact(for: reference(), messageID: "m", messageCreatedAt: nil), nil)
     }
 
     func testWhileWritingTheTagIsWhatIsArriving() {
         let resolver = ChatArtifactResolver(artifacts: [row()], conversationID: "conv-1")
-        let writing = resolver.card(for: reference(streaming: true), messageID: "a-second", messageIsPending: true)
+        let writing = resolver.card(for: reference(streaming: true), messageID: "a-second", messageCreatedAt: nil, messageIsPending: true)
         XCTAssertTrue(writing.isStreaming)
         XCTAssertEqual(writing.content, "<p>tag</p>")
         XCTAssertNil(writing.version)
         // An open tag on a settled message is not streaming.
-        XCTAssertFalse(resolver.card(for: reference(streaming: true), messageID: "a-second", messageIsPending: false).isStreaming)
+        XCTAssertFalse(resolver.card(for: reference(streaming: true), messageID: "a-second", messageCreatedAt: nil, messageIsPending: false).isStreaming)
+    }
+
+    // MARK: M11's retired rows (the web's `resolveArtifactTag`)
+
+    private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func held(
+        _ id: String,
+        identifier: String,
+        at offset: TimeInterval,
+        messageID: String? = nil,
+        conversation: String = "conv-1",
+        kind: NativeArtifactKind = .html
+    ) -> NativeArtifact {
+        NativeArtifact(
+            id: id, conversationID: conversation, conversationTitle: "Chat", messageID: messageID,
+            identifier: identifier, title: id, kind: kind, language: nil, currentVersion: 1,
+            versions: [NativeArtifactVersion(id: "\(id)-v1", version: 1, content: id, origin: nil, createdAt: t0)],
+            createdAt: t0.addingTimeInterval(offset), updatedAt: t0.addingTimeInterval(offset), revision: 1
+        )
+    }
+
+    private func tag(_ identifier: String = "chart") -> NativeMessageContent.ArtifactReference {
+        NativeMessageContent.ArtifactReference(
+            identifier: identifier, title: "Chart", kind: "HTML", language: nil, streaming: false, content: "tag"
+        )
+    }
+
+    /// 1. No retired rows: the exact row, and nil when there is none.
+    func testWithNoRetiredRowsTheExactRowOrNil() {
+        let exact = held("art-1", identifier: "chart", at: 0)
+        let resolver = ChatArtifactResolver(artifacts: [exact], conversationID: "conv-1")
+        XCTAssertEqual(resolver.artifact(for: tag(), messageID: "m", messageCreatedAt: t0)?.id, "art-1")
+        XCTAssertNil(resolver.artifact(for: tag("missing"), messageID: "m", messageCreatedAt: t0))
+    }
+
+    /// 2. One retired candidate and no current row: that candidate.
+    func testALoneRetiredRowIsTheAnswer() {
+        let retired = held("art-old123", identifier: "chart~old123", at: 0)
+        let resolver = ChatArtifactResolver(artifacts: [retired], conversationID: "conv-1")
+        XCTAssertEqual(resolver.artifact(for: tag(), messageID: "m-9", messageCreatedAt: t0.addingTimeInterval(-60))?.id, "art-old123")
+    }
+
+    /// 3. The message's own candidate beats a newer one.
+    func testTheMessagesOwnRowWins() {
+        let old = held("art-aaaaaa", identifier: "chart~aaaaaa", at: 0, messageID: "m-1")
+        let current = held("art-bbbbbb", identifier: "chart", at: 100, messageID: "m-2")
+        let resolver = ChatArtifactResolver(artifacts: [current, old], conversationID: "conv-1")
+        XCTAssertEqual(resolver.artifact(for: tag(), messageID: "m-1", messageCreatedAt: t0.addingTimeInterval(500))?.id, "art-aaaaaa")
+        XCTAssertEqual(resolver.artifact(for: tag(), messageID: "m-2", messageCreatedAt: t0)?.id, "art-bbbbbb")
+    }
+
+    /// 4. No own candidate: the newest that existed when the message was written.
+    func testOtherwiseTheNewestWrittenBeforeTheMessage() {
+        let first = held("art-aaaaaa", identifier: "chart~aaaaaa", at: 0)
+        let second = held("art-bbbbbb", identifier: "chart~bbbbbb", at: 100)
+        let current = held("art-cccccc", identifier: "chart", at: 200)
+        let resolver = ChatArtifactResolver(artifacts: [current, first, second], conversationID: "conv-1")
+        XCTAssertEqual(resolver.artifact(for: tag(), messageID: "x", messageCreatedAt: t0.addingTimeInterval(150))?.id, "art-bbbbbb")
+        XCTAssertEqual(resolver.artifact(for: tag(), messageID: "x", messageCreatedAt: t0.addingTimeInterval(200))?.id, "art-cccccc")
+    }
+
+    /// 5. None existed yet: the oldest.
+    func testNoneQualifyingGivesTheOldest() {
+        let first = held("art-aaaaaa", identifier: "chart~aaaaaa", at: 10)
+        let current = held("art-cccccc", identifier: "chart", at: 200)
+        let resolver = ChatArtifactResolver(artifacts: [current, first], conversationID: "conv-1")
+        XCTAssertEqual(resolver.artifact(for: tag(), messageID: "x", messageCreatedAt: t0)?.id, "art-aaaaaa")
+        XCTAssertEqual(resolver.artifact(for: tag(), messageID: "x", messageCreatedAt: nil)?.id, "art-aaaaaa")
+    }
+
+    /// 6. Rows from another conversation are never candidates.
+    func testOtherConversationsAreIgnored() {
+        let elsewhere = held("art-zzzzzz", identifier: "chart~zzzzzz", at: 0, messageID: "m-1", conversation: "conv-2")
+        let current = held("art-cccccc", identifier: "chart", at: 200)
+        let resolver = ChatArtifactResolver(artifacts: [elsewhere, current], conversationID: "conv-1")
+        XCTAssertEqual(resolver.artifact(for: tag(), messageID: "m-1", messageCreatedAt: t0)?.id, "art-cccccc")
+    }
+
+    /// 7. The retired handle is `{identifier}~…`, never a bare prefix.
+    func testThePrefixIsTheIdentifierAndATilde() {
+        let lookalike = held("art-abc123", identifier: "chart-2~abc123", at: 0, messageID: "m-1")
+        let current = held("art-cccccc", identifier: "chart", at: 200)
+        XCTAssertEqual(
+            ChatArtifactResolver(artifacts: [lookalike, current], conversationID: "conv-1")
+                .artifact(for: tag(), messageID: "m-1", messageCreatedAt: t0)?.id,
+            "art-cccccc"
+        )
+        let retired = held("art-abc123", identifier: "chart~abc123", at: 0, messageID: "m-1")
+        XCTAssertEqual(
+            ChatArtifactResolver(artifacts: [retired, current], conversationID: "conv-1")
+                .artifact(for: tag(), messageID: "m-1", messageCreatedAt: t0)?.id,
+            "art-abc123"
+        )
+    }
+
+    /// 8. When a retired row wins, the card is that row: its identifier is the
+    /// retired handle, which is what opening it passes on.
+    func testTheCardCarriesTheRetiredHandle() {
+        let old = held("art-aaaaaa", identifier: "chart~aaaaaa", at: 0, messageID: "m-1")
+        let current = held("art-bbbbbb", identifier: "chart", at: 100, messageID: "m-2", kind: .code)
+        let resolver = ChatArtifactResolver(artifacts: [old, current], conversationID: "conv-1")
+        let card = resolver.card(for: tag(), messageID: "m-1", messageCreatedAt: t0, messageIsPending: false)
+        XCTAssertEqual(card.stored?.identifier, "chart~aaaaaa")
+        XCTAssertEqual(card.kind, .html)
+        XCTAssertEqual(resolver.artifact(id: "art-aaaaaa")?.identifier, "chart~aaaaaa")
+    }
+
+    /// 9. A row its own message created is not "Updated".
+    func testARowItsMessageCreatedIsNotUpdated() {
+        let old = held("art-aaaaaa", identifier: "chart~aaaaaa", at: 0, messageID: "m-1")
+        let current = held("art-bbbbbb", identifier: "chart", at: 100, messageID: "m-2")
+        let resolver = ChatArtifactResolver(artifacts: [old, current], conversationID: "conv-1")
+        XCTAssertFalse(resolver.card(for: tag(), messageID: "m-1", messageCreatedAt: t0, messageIsPending: false).isUpdated)
+        XCTAssertFalse(resolver.card(for: tag(), messageID: "m-2", messageCreatedAt: t0, messageIsPending: false).isUpdated)
+    }
+
+    /// 10. One message that emitted both types owns two candidates: the oldest
+    /// by `(createdAt, id)` wins, whatever order the rows arrive in.
+    func testTwoOwnCandidatesBreakTheTieByAgeThenID() {
+        let a = held("art-aaaaaa", identifier: "chart~aaaaaa", at: 0, messageID: "m-1")
+        let b = held("art-bbbbbb", identifier: "chart", at: 0, messageID: "m-1")
+        let later = held("art-000000", identifier: "chart~000000", at: 5, messageID: "m-1")
+        for rows in [[a, b, later], [later, b, a], [b, later, a]] {
+            XCTAssertEqual(
+                ChatArtifactResolver(artifacts: rows, conversationID: "conv-1")
+                    .artifact(for: tag(), messageID: "m-1", messageCreatedAt: t0)?.id,
+                "art-aaaaaa"
+            )
+        }
     }
 
     /// X-11: a chat-made design's tag holds the compact authoring form; only
@@ -393,7 +524,7 @@ final class ChatArtifactResolverTests: XCTestCase {
             streaming: false,
             content: #"{"name":"Sign in","nodes":[{"type":"frame","name":"Screen","width":375,"height":812}]}"#
         )
-        let untouched = ChatArtifactResolver.empty.card(for: compact, messageID: "m", messageIsPending: false)
+        let untouched = ChatArtifactResolver.empty.card(for: compact, messageID: "m", messageCreatedAt: nil, messageIsPending: false)
         XCTAssertEqual(untouched.kind, .design)
         XCTAssertFalse(untouched.drawsDesign, "never from the tag body")
 
@@ -404,11 +535,11 @@ final class ChatArtifactResolverTests: XCTestCase {
             createdAt: Date(), updatedAt: Date(), revision: 1
         )
         let resolver = ChatArtifactResolver(artifacts: [stored], conversationID: "conv-1")
-        XCTAssertTrue(resolver.card(for: compact, messageID: "m", messageIsPending: false).drawsDesign)
+        XCTAssertTrue(resolver.card(for: compact, messageID: "m", messageCreatedAt: nil, messageIsPending: false).drawsDesign)
         let writing = NativeMessageContent.ArtifactReference(
             identifier: "signin", title: "Sign in", kind: "DESIGN", language: nil, streaming: true, content: "{"
         )
-        XCTAssertFalse(resolver.card(for: writing, messageID: "m2", messageIsPending: true).drawsDesign)
+        XCTAssertFalse(resolver.card(for: writing, messageID: "m2", messageCreatedAt: nil, messageIsPending: true).drawsDesign)
     }
 
     /// React, TypeScript and Python load their engines from CDNs the closed
@@ -426,7 +557,7 @@ final class ChatArtifactResolverTests: XCTestCase {
 
     func testAVersionOneRowShowsNoVersion() {
         let resolver = ChatArtifactResolver(artifacts: [row(version: 1)], conversationID: "conv-1")
-        XCTAssertNil(resolver.card(for: reference(), messageID: "a-first", messageIsPending: false).version)
+        XCTAssertNil(resolver.card(for: reference(), messageID: "a-first", messageCreatedAt: nil, messageIsPending: false).version)
     }
 }
 
@@ -567,54 +698,165 @@ final class NativeArtifactModelStreamedTests: XCTestCase {
 @MainActor
 final class NativeDesignPreviewLoaderTests: XCTestCase {
     private let svg = #"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>"#
+    private let newer = #"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><circle r="5"/></svg>"#
 
-    @MainActor
-    func testFetchesOncePerVersionAndCachesOnDisk() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("design-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let sender = RuntimeQueueSender(responses: [HTTPResponse(statusCode: 200, headers: HTTPHeaders(), body: Data(svg.utf8))])
-        let loader = NativeDesignPreviewLoader(sender: sender, accountID: try AccountID("account-a"), cacheRoot: root)
-
-        XCTAssertEqual(loader.designPreviewState(artifactID: "art-design", version: 1), .loading)
-        await loader.loadDesignPreview(artifactID: "art-design", version: 1)
-        XCTAssertEqual(loader.designPreviewState(artifactID: "art-design", version: 1), .ready(svg: svg))
-        await loader.loadDesignPreview(artifactID: "art-design", version: 1)
-        let requests = await sender.requests
-        XCTAssertEqual(requests.count, 1)
-        XCTAssertEqual(requests.first?.path, "/api/design/art-design/export")
-        XCTAssertEqual(requests.first?.queryItems, [URLQueryItem(name: "format", value: "svg")])
-        XCTAssertEqual(requests.first?.headers["accept"], "image/svg+xml")
-
-        // A second loader for the same account reads the disk, not the network.
-        let offline = NativeDesignPreviewLoader(sender: nil, accountID: try AccountID("account-a"), cacheRoot: root)
-        await offline.loadDesignPreview(artifactID: "art-design", version: 1)
-        XCTAssertEqual(offline.designPreviewState(artifactID: "art-design", version: 1), .ready(svg: svg))
+    private func ok(_ body: String, etag: String? = nil) throws -> HTTPResponse {
+        var headers = try HTTPHeaders(["content-type": "image/svg+xml"])
+        if let etag { try headers.set(etag, for: "etag") }
+        return HTTPResponse(statusCode: 200, headers: headers, body: Data(body.utf8))
     }
 
-    @MainActor
-    func testAnExportFailureIsRememberedAndANetworkFailureIsNot() async throws {
+    private func status(_ code: Int, json: Bool) throws -> HTTPResponse {
+        json
+            ? HTTPResponse(statusCode: code, headers: try HTTPHeaders(["content-type": "application/json"]), body: Data(#"{"error":"Not found"}"#.utf8))
+            : HTTPResponse(statusCode: code, headers: try HTTPHeaders(["content-type": "text/html"]), body: Data("<html>Not Found</html>".utf8))
+    }
+
+    private func root() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("design-\(UUID().uuidString)")
+    }
+
+    /// The poster comes first: the web's `designPosterUrl(id, v)` with the
+    /// renderer, asking for SVG.
+    func testAsksForThePosterWithTheVersionAndRenderer() async throws {
+        let cache = root()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        let sender = RuntimeQueueSender(responses: [try ok(svg, etag: #"W/"p1""#)])
+        let loader = NativeDesignPreviewLoader(sender: sender, accountID: try AccountID("account-a"), cacheRoot: cache)
+
+        XCTAssertEqual(loader.designPreviewState(artifactID: "art-design", version: 3), .loading)
+        await loader.loadDesignPreview(artifactID: "art-design", version: 3)
+        XCTAssertEqual(loader.designPreviewState(artifactID: "art-design", version: 3), .ready(svg: svg))
+        let requests = await sender.requests
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests.first?.path, "/api/artifacts/art-design/poster")
+        XCTAssertEqual(requests.first?.queryItems, [URLQueryItem(name: "v", value: "3"), URLQueryItem(name: "r", value: "1")])
+        XCTAssertEqual(requests.first?.headers["accept"], "image/svg+xml")
+        XCTAssertNil(requests.first?.headers["if-none-match"])
+        XCTAssertEqual(NativeDesignPreviewLoader.posterRenderer, 1)
+    }
+
+    /// `<id>-v<n>-r1.svg` for a poster and its `.etag`; `<id>-v<n>.svg` for
+    /// an export, the name from before posters.
+    func testCacheFileNames() throws {
+        XCTAssertEqual(NativeDesignPreviewLoader.posterFileName("art-1", 4), "art-1-v4-r1.svg")
+        XCTAssertEqual(NativeDesignPreviewLoader.exportFileName("art-1", 4), "art-1-v4.svg")
+        XCTAssertEqual(NativeDesignPreviewLoader.etagFileName("art-1-v4-r1.svg"), "art-1-v4-r1.etag")
+    }
+
+    /// A version a later one superseded never changes: once cached it is read
+    /// from disk forever, by this loader and the next.
+    func testSealedVersionsAreNeverAskedForAgain() async throws {
+        let cache = root()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        let sender = RuntimeQueueSender(responses: [try ok(svg, etag: #""p1""#)])
+        let loader = NativeDesignPreviewLoader(sender: sender, accountID: try AccountID("account-a"), cacheRoot: cache)
+        await loader.loadDesignPreview(artifactID: "art-1", version: 1)
+        await loader.loadDesignPreview(artifactID: "art-1", version: 1)
+        let first = await sender.requests.count
+        XCTAssertEqual(first, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cache.appendingPathComponent("account-a/art-1-v1-r1.svg").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cache.appendingPathComponent("account-a/art-1-v1-r1.etag").path))
+
+        let next = RuntimeQueueSender(responses: [])
+        let later = NativeDesignPreviewLoader(sender: next, accountID: try AccountID("account-a"), cacheRoot: cache)
+        await later.loadDesignPreview(artifactID: "art-1", version: 1, isCurrent: false)
+        XCTAssertEqual(later.designPreviewState(artifactID: "art-1", version: 1), .ready(svg: svg))
+        let asked = await next.requests.count
+        XCTAssertEqual(asked, 0)
+    }
+
+    /// The current version can change in place, so a new loader asks again
+    /// once with `If-None-Match`; a 304 keeps the cached picture, a 200
+    /// replaces it.
+    func testTheCurrentVersionRevalidatesWithItsETag() async throws {
+        let cache = root()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        let seed = RuntimeQueueSender(responses: [try ok(svg, etag: #""p1""#)])
+        let first = NativeDesignPreviewLoader(sender: seed, accountID: try AccountID("account-a"), cacheRoot: cache)
+        await first.loadDesignPreview(artifactID: "art-1", version: 2, isCurrent: true)
+
+        let unchanged = RuntimeQueueSender(responses: [HTTPResponse(statusCode: 304, headers: HTTPHeaders(), body: Data())])
+        let second = NativeDesignPreviewLoader(sender: unchanged, accountID: try AccountID("account-a"), cacheRoot: cache)
+        await second.loadDesignPreview(artifactID: "art-1", version: 2, isCurrent: true)
+        XCTAssertEqual(second.designPreviewState(artifactID: "art-1", version: 2), .ready(svg: svg))
+        let conditional = await unchanged.requests
+        XCTAssertEqual(conditional.first?.headers["if-none-match"], #""p1""#)
+        // Once per loader: the next appearance does not ask again.
+        await second.loadDesignPreview(artifactID: "art-1", version: 2, isCurrent: true)
+        let asked = await unchanged.requests.count
+        XCTAssertEqual(asked, 1)
+
+        let edited = RuntimeQueueSender(responses: [try ok(newer, etag: #""p2""#)])
+        let third = NativeDesignPreviewLoader(sender: edited, accountID: try AccountID("account-a"), cacheRoot: cache)
+        await third.loadDesignPreview(artifactID: "art-1", version: 2, isCurrent: true)
+        XCTAssertEqual(third.designPreviewState(artifactID: "art-1", version: 2), .ready(svg: newer))
+    }
+
+    /// A JSON 404 is the route saying "no poster for this": the export is
+    /// tried once for that version, and the poster is not asked again.
+    func testAJSONNotFoundFallsBackToTheExport() async throws {
+        let sender = RuntimeQueueSender(responses: [try status(404, json: true), try ok(svg)])
+        let loader = NativeDesignPreviewLoader(sender: sender, accountID: try AccountID("account-a"), cacheRoot: nil)
+        await loader.loadDesignPreview(artifactID: "art-1", version: 1)
+        XCTAssertEqual(loader.designPreviewState(artifactID: "art-1", version: 1), .ready(svg: svg))
+        let paths = await sender.requests.map(\.path)
+        XCTAssertEqual(paths, ["/api/artifacts/art-1/poster", "/api/design/art-1/export"])
+        XCTAssertFalse(loader.posterRouteMissing)
+    }
+
+    /// A 404 that is not JSON is an older server with no poster route: the
+    /// export, and every later design skips the poster.
+    func testAnHTMLNotFoundFallsBackAndRemembersTheRouteIsMissing() async throws {
+        let sender = RuntimeQueueSender(responses: [try status(404, json: false), try ok(svg), try ok(newer)])
+        let loader = NativeDesignPreviewLoader(sender: sender, accountID: try AccountID("account-a"), cacheRoot: nil)
+        await loader.loadDesignPreview(artifactID: "art-1", version: 1)
+        XCTAssertTrue(loader.posterRouteMissing)
+        await loader.loadDesignPreview(artifactID: "art-2", version: 1)
+        XCTAssertEqual(loader.designPreviewState(artifactID: "art-2", version: 1), .ready(svg: newer))
+        let paths = await sender.requests.map(\.path)
+        XCTAssertEqual(paths, ["/api/artifacts/art-1/poster", "/api/design/art-1/export", "/api/design/art-2/export"])
+    }
+
+    /// The export's 422 (`MISSING_ASSET`) is remembered as unavailable.
+    func testTheExportsUnprocessableIsUnavailable() async throws {
         let sender = RuntimeQueueSender(responses: [
+            try status(404, json: true),
             HTTPResponse(statusCode: 422, headers: HTTPHeaders(), body: Data(#"{"error":"MISSING_ASSET"}"#.utf8)),
         ])
         let loader = NativeDesignPreviewLoader(sender: sender, accountID: try AccountID("account-a"), cacheRoot: nil)
         await loader.loadDesignPreview(artifactID: "art-a", version: 2)
         XCTAssertEqual(loader.designPreviewState(artifactID: "art-a", version: 2), .unavailable)
         await loader.loadDesignPreview(artifactID: "art-a", version: 2)
-        let afterUnavailable = await sender.requests.count
-        XCTAssertEqual(afterUnavailable, 1)
-
-        // The queue is empty now, so the next request fails in transport.
-        await loader.loadDesignPreview(artifactID: "art-b", version: 1)
-        XCTAssertEqual(loader.designPreviewState(artifactID: "art-b", version: 1), .failed)
-        await loader.loadDesignPreview(artifactID: "art-b", version: 1)
-        let afterFailure = await sender.requests.count
-        XCTAssertEqual(afterFailure, 3, "a network failure is tried again")
+        let count = await sender.requests.count
+        XCTAssertEqual(count, 2, "unavailable is not asked again")
 
         // Something that is not an SVG is not drawn.
         let html = RuntimeQueueSender(responses: [HTTPResponse(statusCode: 200, headers: HTTPHeaders(), body: Data("<html></html>".utf8))])
         let strict = NativeDesignPreviewLoader(sender: html, accountID: try AccountID("account-a"), cacheRoot: nil)
         await strict.loadDesignPreview(artifactID: "art-c", version: 1)
         XCTAssertEqual(strict.designPreviewState(artifactID: "art-c", version: 1), .unavailable)
+    }
+
+    /// 401 and 429 are not answers about the design: failed, and tried again
+    /// on the next appearance — as is a request that never completed.
+    func testUnauthorizedAndRateLimitedAreRetried() async throws {
+        let sender = RuntimeQueueSender(responses: [
+            HTTPResponse(statusCode: 401, headers: HTTPHeaders(), body: Data()),
+            HTTPResponse(statusCode: 429, headers: HTTPHeaders(), body: Data()),
+            try ok(svg),
+        ])
+        let loader = NativeDesignPreviewLoader(sender: sender, accountID: try AccountID("account-a"), cacheRoot: nil)
+        await loader.loadDesignPreview(artifactID: "art-b", version: 1)
+        XCTAssertEqual(loader.designPreviewState(artifactID: "art-b", version: 1), .failed)
+        await loader.loadDesignPreview(artifactID: "art-b", version: 1)
+        XCTAssertEqual(loader.designPreviewState(artifactID: "art-b", version: 1), .failed)
+        await loader.loadDesignPreview(artifactID: "art-b", version: 1)
+        XCTAssertEqual(loader.designPreviewState(artifactID: "art-b", version: 1), .ready(svg: svg))
+
+        let offline = NativeDesignPreviewLoader(sender: RuntimeQueueSender(responses: []), accountID: try AccountID("account-a"), cacheRoot: nil)
+        await offline.loadDesignPreview(artifactID: "art-d", version: 1)
+        XCTAssertEqual(offline.designPreviewState(artifactID: "art-d", version: 1), .failed)
     }
 }
 

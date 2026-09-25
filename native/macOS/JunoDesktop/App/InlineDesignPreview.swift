@@ -13,8 +13,8 @@ import SwiftUI
 /// through its sandbox, which has no design renderer and prints the
 /// document's JSON in a `<pre>` (`sandbox-frame.tsx`, `buildSandboxDoc`'s
 /// default branch). The Mac draws it (§0.8 register, entry 14): the server
-/// already renders a design to SVG for Export
-/// (`GET /api/design/{id}/export?format=svg`), so the card asks for that
+/// draws a design's poster (`GET /api/artifacts/{id}/poster`, falling back to
+/// the SVG export; ``NativeDesignPreviewLoader``), so the card asks for that
 /// picture — per version, cached — and shows it on the same light sheet a
 /// running page sits on, inert (JavaScript off, network blocked, motion
 /// frozen). Code is a switch away, and Open hands the document to the editor
@@ -27,6 +27,9 @@ import SwiftUI
 struct InlineDesignPreviewBody: View {
     let artifactID: String
     let version: Int
+    /// Whether `version` is the row's newest: the one poster that can still
+    /// change, and is revalidated once per loader (Phase 4 A3).
+    var isCurrent = true
     let open: (() -> Void)?
 
     @Environment(\.junoDesignPreviews) private var previews
@@ -56,7 +59,7 @@ struct InlineDesignPreviewBody: View {
             }
         }
         .task(id: "\(artifactID)#\(version)") {
-            await previews?.loadDesignPreview(artifactID: artifactID, version: version)
+            await previews?.loadDesignPreview(artifactID: artifactID, version: version, isCurrent: isCurrent)
         }
     }
 

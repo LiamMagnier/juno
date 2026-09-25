@@ -90,11 +90,12 @@ public struct NativeAgentsScreen: View {
     @ViewBuilder
     private var content: some View {
         #if os(macOS)
+        // Pushed on the page's own stack (the foundations' `routed`
+        // NavigationStack); the caller's selection drives the push, so the
+        // sidebar's agent rows and a notification open the same page. One page
+        // per agent: opening another starts on its Now tab.
         roster
             .navigationDestination(item: selection) { agentID in
-                // One page per agent: opening another from the sidebar starts
-                // on its Now tab rather than on whichever tab the last one was
-                // left. Pushed, so the system's back button returns.
                 page(agentID, back: nil)
                     .id(agentID)
                     .navigationTitle(model.agents.first { $0.id == agentID }?.name ?? "Agent")
