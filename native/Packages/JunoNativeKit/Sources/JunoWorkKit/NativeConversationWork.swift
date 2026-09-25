@@ -85,6 +85,8 @@ public final class NativeConversationWork {
     public private(set) var artifacts: [WorkArtifactSummary] = []
     /// A send is in flight; the card's buttons dim with it.
     public private(set) var isBusy = false
+    /// A batch of approvals is being answered, one at a time.
+    public private(set) var isBatching = false
     /// Whether discovery has answered at least once, so a chat that has no
     /// task is told apart from one not read yet.
     public private(set) var hasDiscovered = false
@@ -454,9 +456,19 @@ public final class NativeConversationWork {
     /// through the server with the digest that was on screen. A server card is
     /// cleared at once and put back if the answer did not land and it can
     /// still be answered.
-    public func decide(_ approval: Approval, _ decision: JunoWorkApprovalDecision) async -> Outcome {
+    ///
+    /// `reason` rides a refusal: the card's "Change it" refuses the action and
+    /// hands the run the correction (the web's amend). The server puts it in
+    /// front of the model; a run on this Mac, whose coordinator takes no
+    /// reason, is handed it as an instruction instead, so it is still told.
+    public func decide(
+        _ approval: Approval, _ decision: JunoWorkApprovalDecision, reason: String? = nil
+    ) async -> Outcome {
+        let reason = reason?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let correction = decision == .denied && reason?.isEmpty == false ? reason : nil
         if approval.isLocal {
             localApprovalDecider?(approval.request, decision)
+            if let correction { return await steer(correction) }
             return .ok()
         }
         let index = serverApprovals.firstIndex { $0.approvalID == approval.request.approvalID }
@@ -464,7 +476,9 @@ public final class NativeConversationWork {
         isBusy = true
         defer { isBusy = false }
         do {
-            _ = try await client.decide(on: approval.request, decision: decision, for: accountID)
+            _ = try await client.decide(
+                on: approval.request, decision: decision, reason: correction, for: accountID
+            )
             await didAct?()
             return .ok()
         } catch {
@@ -473,6 +487,20 @@ public final class NativeConversationWork {
             }
             return .failed(Self.blockedExplanation(error) ?? Self.decisionFailed)
         }
+    }
+
+    /// Allows several approvals together — the queue's batch button. One at a
+    /// time, in order, because the executor may act on each as it lands; and
+    /// it stops at the first refusal or failure rather than turning one stale
+    /// card into a pile of failed requests (`approval-queue.tsx`).
+    public func decideAll(_ approvals: [Approval]) async -> Outcome {
+        isBatching = true
+        defer { isBatching = false }
+        for approval in approvals {
+            let outcome = await decide(approval, .allowed)
+            if !outcome.succeeded { return outcome }
+        }
+        return .ok()
     }
 
     /// Ends the task (`control cancel`).

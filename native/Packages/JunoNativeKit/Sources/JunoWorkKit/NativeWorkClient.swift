@@ -1322,7 +1322,11 @@ public struct NativeWorkClient: Sendable {
             startedAt: object["startedAt"]?.date,
             finishedAt: object["finishedAt"]?.date,
             inputTokens: integer(usage["inputTokens"]),
-            outputTokens: integer(usage["outputTokens"])
+            outputTokens: integer(usage["outputTokens"]),
+            terminalDetail: object["terminalDetail"]?.stringValue.flatMap {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
+            },
+            approvalMode: object["approvalMode"]?.stringValue.flatMap(JunoWorkPermissionPolicy.init(rawValue:))
         )
     }
 
@@ -1397,7 +1401,9 @@ public struct NativeWorkClient: Sendable {
             actionDigest: actionDigest,
             expiresAt: expiresAt,
             decision: object["decision"]?.stringValue
-                ?? JunoWorkApprovalDecision.pending.rawValue
+                ?? JunoWorkApprovalDecision.pending.rawValue,
+            createdAt: object["createdAt"]?.date,
+            decidedAt: object["decidedAt"]?.date
         )
     }
 

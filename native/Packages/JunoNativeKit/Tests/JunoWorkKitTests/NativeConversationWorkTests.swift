@@ -216,6 +216,49 @@ final class NativeConversationWorkTests: XCTestCase {
         XCTAssertNotNil(body?["idempotencyKey"])
     }
 
+    /// "Change it" refuses the action and hands the run the correction: the
+    /// decision is `denied` and the text rides as the reason (Phase 5 B5).
+    func testTheAmendmentRefusesWithTheReason() async {
+        let pending = approval("ap_9", decision: "pending")
+        let transport = FollowerTransport(routes: [
+            "/api/work/approvals/ap_9/decision": HTTPResponse(
+                statusCode: 200, headers: HTTPHeaders(),
+                body: Data(#"{"approval":{"id":"ap_9","runId":"run_1","action":"send_email","risk":"sensitive","summary":"Send the comparison to Priya","actionDigest":"digest-ap_9","expiresAt":"2099-01-01T00:00:00.000Z","decision":"denied"}}"#.utf8)
+            ),
+        ])
+        let work = NativeConversationWork.preview(
+            conversationID: "conv_1", client: NativeWorkClient(transport: transport),
+            accountID: account, current: summary(id: "a", created: 10), approvals: [pending]
+        )
+        let outcome = await work.decide(
+            .init(request: pending, isLocal: false), .denied, reason: "  Send it to the finance alias instead.  "
+        )
+        XCTAssertTrue(outcome.succeeded)
+        let sent = await transport.requests
+        let body = try? JSONSerialization.jsonObject(with: sent.first?.body ?? Data()) as? [String: Any]
+        XCTAssertEqual(body?["decision"] as? String, "denied")
+        XCTAssertEqual(body?["reason"] as? String, "Send it to the finance alias instead.")
+        XCTAssertTrue(work.approvals.isEmpty)
+    }
+
+    /// The batch stops at the first answer that does not land.
+    func testTheBatchStopsAtTheFirstFailure() async {
+        let first = approval("ap_1", decision: "pending")
+        let second = approval("ap_2", decision: "pending")
+        let transport = FollowerTransport()
+        let work = NativeConversationWork.preview(
+            conversationID: "conv_1", client: NativeWorkClient(transport: transport),
+            accountID: account, current: summary(id: "a", created: 10), approvals: [first, second]
+        )
+        let outcome = await work.decideAll([
+            .init(request: first, isLocal: false), .init(request: second, isLocal: false),
+        ])
+        XCTAssertFalse(outcome.succeeded)
+        let sent = await transport.requests
+        XCTAssertEqual(sent.count, 1)
+        XCTAssertFalse(work.isBatching)
+    }
+
     // MARK: The frame's session
 
     func testTheWorkFramesSessionDecodes() throws {

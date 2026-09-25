@@ -177,7 +177,7 @@ struct DesktopWorkHostTile: View {
 
             if !permissions.accessibility {
                 permissionRow(
-                    "Driving a browser needs macOS Accessibility permission, which Juno does not have.",
+                    Self.accessibilitySentence,
                     pane: Self.accessibilityPane,
                     identifier: "juno.desktop.settings.work-host-accessibility-permission"
                 )
@@ -198,7 +198,7 @@ struct DesktopWorkHostTile: View {
 
             if !permissions.screenRecording {
                 permissionRow(
-                    "Screen control needs macOS Screen Recording permission, which Juno does not have.",
+                    Self.screenRecordingSentence,
                     pane: Self.screenRecordingPane,
                     identifier: "juno.desktop.settings.work-host-screen-permission"
                 )
@@ -404,10 +404,16 @@ struct DesktopWorkHostTile: View {
         switchGeneration &+= 1
     }
 
-    private static let accessibilityPane =
+    static let accessibilityPane =
         "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-    private static let screenRecordingPane =
+    static let screenRecordingPane =
         "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+    /// What a missing permission stops, in the card's words — the chat's task
+    /// card says the same when a run on this Mac is missing one (Phase 5 B4).
+    static let accessibilitySentence =
+        "Driving a browser needs macOS Accessibility permission, which Juno does not have."
+    static let screenRecordingSentence =
+        "Screen control needs macOS Screen Recording permission, which Juno does not have."
 
     // MARK: - Applications
 

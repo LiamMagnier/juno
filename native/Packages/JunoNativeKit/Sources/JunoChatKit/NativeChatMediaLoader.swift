@@ -469,13 +469,13 @@ public final class NativeChatMediaLoader: TranscriptMediaProviding {
         )
     }
 
-    enum LocalThumbnail: Equatable, Sendable {
+    public enum LocalThumbnail: Equatable, Sendable {
         case pdf, image, quickLook
     }
 
     /// Which local renderer can draw this file's first page, if any is worth
     /// reading the whole file for.
-    nonisolated static func localThumbnailKind(for attachment: NativeChatAttachment) -> LocalThumbnail? {
+    public nonisolated static func localThumbnailKind(for attachment: NativeChatAttachment) -> LocalThumbnail? {
         guard attachment.size <= thumbnailByteLimit else { return nil }
         switch attachment.viewerKind {
         case .pdf: return .pdf
@@ -487,7 +487,7 @@ public final class NativeChatMediaLoader: TranscriptMediaProviding {
         }
     }
 
-    nonisolated static func localThumbnail(_ kind: LocalThumbnail, at url: URL) async -> CGImage? {
+    public nonisolated static func localThumbnail(_ kind: LocalThumbnail, at url: URL) async -> CGImage? {
         switch kind {
         case .image:
             return await Task.detached(priority: .utility) {

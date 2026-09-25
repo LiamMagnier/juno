@@ -188,7 +188,7 @@ enum WorkCardFixtures {
         }
     }
 
-    private static var liveTurns: [WorkEvent] {
+    static var liveTurns: [WorkEvent] {
         [
             event(20, .assistantMessage, ["text": .string("Found all three quotes in the Vendors folder.")]),
             event(21, .assistantMessage, ["text": .string("Brightline and Corvid include delivery; Hale does not.")]),
@@ -200,7 +200,7 @@ enum WorkCardFixtures {
         ]
     }
 
-    private static let stepTitles = [
+    static let stepTitles = [
         "Find the three quotes",
         "Read each quote",
         "Normalise prices to a year",
@@ -210,7 +210,7 @@ enum WorkCardFixtures {
         "Write the recommendation",
     ]
 
-    private static func planEvents(done: Int) -> [WorkEvent] {
+    static func planEvents(done: Int) -> [WorkEvent] {
         var events = [
             event(4, .planCreated, [
                 "steps": .array(stepTitles.enumerated().map { index, title in
@@ -240,18 +240,23 @@ enum WorkCardFixtures {
         )
     }
 
-    private static func run(status: String, finished: TimeInterval? = nil) -> WorkRunSummary {
+    static func run(
+        status: String, finished: TimeInterval? = nil, reason: String? = nil, detail: String? = nil,
+        degradation: [WorkDegradation] = [], cost: Int? = nil, hostID: String? = nil, target: String = "cloud"
+    ) -> WorkRunSummary {
         WorkRunSummary(
             runID: "run_1", sessionID: "wsi_current", attempt: 1, status: status,
-            terminalReason: finished == nil ? nil : "completed", requestedTarget: "automatic",
-            effectiveTarget: "cloud", hostID: nil, effectiveModel: nil, degradation: [],
-            costMicroUsd: finished == nil ? 187_400 : 412_900, maxCostMicroUsd: 2_000_000,
+            terminalReason: reason ?? (finished == nil ? nil : "completed"), requestedTarget: "automatic",
+            effectiveTarget: target, hostID: hostID, effectiveModel: "anthropic:claude-sonnet-4-6",
+            degradation: degradation,
+            costMicroUsd: cost ?? (finished == nil ? 187_400 : 412_900), maxCostMicroUsd: 2_000_000,
             lastSeq: 41, startedAt: start, finishedAt: finished.map { start.addingTimeInterval($0) },
-            inputTokens: finished == nil ? 38_912 : 81_406, outputTokens: finished == nil ? 4_207 : 9_388
+            inputTokens: finished == nil ? 38_912 : 81_406, outputTokens: finished == nil ? 4_207 : 9_388,
+            terminalDetail: detail, approvalMode: .balanced
         )
     }
 
-    private static func event(
+    static func event(
         _ seq: Int, _ kind: JunoWorkEventKind, _ payload: [String: JunoJSONValue]
     ) -> WorkEvent {
         WorkEvent(

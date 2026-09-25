@@ -1,20 +1,27 @@
 import AppKit
 import JunoAuth
+import JunoChatKit
 import JunoCore
 import JunoDesignSystem
 import JunoWorkKit
 import SwiftUI
 
-/// The Task panel in the chat's trailing dock (register #59) — first cut.
+/// The Task panel in the chat's trailing dock (register #59): **Activity ·
+/// Files · Details**, the choice remembered (`task.tab`).
 ///
 /// Opened from the card's Show Details and from an earlier task's "Open ›".
 /// On ``DesktopPanelShell``, the Activity and Research panels' shell: the
-/// task's title as the heading, a static status word, close. Stage A draws the
-/// Activity view; Stage B adds Files and Details, and the panel's other states.
+/// task's title as the heading, a static status word and the elapsed time —
+/// never a shimmer — and close.
 ///
 /// The task the chat is following is read from its follower, live. An earlier
 /// task is read once (``NativeWorkClient/snapshot(sessionID:for:)``) and not
 /// followed: it is over, and "As of {time}" says when it was read.
+///
+/// **Signature detail:** Details is the task's receipt in one column —
+/// where it ran, how often it asked, what it cost — with its id selectable at
+/// the foot, so the question "what exactly happened here" has one place to
+/// be answered.
 struct ChatWorkPanel: View {
     enum Source {
         /// The chat's current task, from its follower.
@@ -23,15 +30,22 @@ struct ChatWorkPanel: View {
         case snapshot(ChatWorkPanelSnapshot)
     }
 
+    enum Tab: String, Hashable { case activity, files, details }
+
     let title: String
     let source: Source
     let close: () -> Void
     /// Reads an earlier task again after a failed read.
     var retry: (() -> Void)? = nil
+    /// What Details needs from the rest of the app.
+    var details = ChatWorkPanelDetails()
+    /// The first view drawn, for fixtures; otherwise the remembered one.
+    var initialTab: Tab? = nil
 
+    @AppStorage("task.tab") private var storedTab = Tab.activity.rawValue
     @State private var tab: Tab = .activity
-
-    enum Tab: Hashable { case activity }
+    @Environment(\.junoWorkFileActions) private var fileActions
+    @Environment(\.junoWorkFiles) private var workFiles
 
     private var events: [WorkEvent] {
         switch source {
@@ -40,27 +54,75 @@ struct ChatWorkPanel: View {
         }
     }
 
-    private var statusWord: String? {
+    private var session: WorkSessionSummary? {
         switch source {
-        case .live(let state): ChatWorkVocabulary.label(state.status)
-        case .snapshot(let snapshot):
-            snapshot.status.map(ChatWorkVocabulary.label)
+        case .live(let state): state.session
+        case .snapshot(let snapshot): snapshot.update?.session
         }
+    }
+
+    private var run: WorkRunSummary? {
+        switch source {
+        case .live(let state): state.run
+        case .snapshot(let snapshot): snapshot.update?.run
+        }
+    }
+
+    private var status: JunoWorkStatus? {
+        switch source {
+        case .live(let state): state.status
+        case .snapshot(let snapshot): snapshot.status
+        }
+    }
+
+    private var files: [ChatWorkFile] {
+        switch source {
+        case .live(let state): state.files
+        case .snapshot(let snapshot): snapshot.files
+        }
+    }
+
+    private var now: Date? {
+        if case .live(let state) = source { return state.now }
+        return details.now
+    }
+
+    /// Ticking only while a run is actually going.
+    private var ticks: Bool {
+        guard now == nil, let run, run.startedAt != nil, run.finishedAt == nil else { return false }
+        return !(status?.isTerminal ?? true)
     }
 
     var body: some View {
         DesktopPanelShell(
             label: title,
-            status: { _ in statusWord },
-            tabs: [JunoSegmented<Tab>.Option(.activity, "Activity")],
+            status: { date in statusLine(at: now ?? date) },
+            ticks: ticks,
+            tabs: [
+                JunoSegmented<Tab>.Option(.activity, "Activity"),
+                JunoSegmented<Tab>.Option(.files, "Files"),
+                JunoSegmented<Tab>.Option(.details, "Details"),
+            ],
             tab: $tab,
             close: close,
             actions: { EmptyView() },
             content: { content }
         )
+        .onAppear { tab = initialTab ?? Tab(rawValue: storedTab) ?? .activity }
+        .onChange(of: tab) { _, tab in
+            if initialTab == nil { storedTab = tab.rawValue }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Task")
         .accessibilityIdentifier("juno.chat.task-panel")
+    }
+
+    /// "Running · 4m 12s": the word and, once it has started, how long.
+    private func statusLine(at date: Date) -> String? {
+        guard let status else { return nil }
+        let word = ChatWorkVocabulary.label(status)
+        guard let run, run.startedAt != nil else { return word }
+        return "\(word) \u{00B7} \(ChatWorkFormat.duration(ChatWorkFormat.elapsed(run, now: date)))"
     }
 
     @ViewBuilder
@@ -80,32 +142,280 @@ struct ChatWorkPanel: View {
             )
             .padding(JunoSpace.regular)
         default:
-            ScrollView {
+            switch tab {
+            case .activity: scrolling { activity }
+            case .files: filesView
+            case .details: scrolling { detailsView }
+            }
+        }
+    }
+
+    private func scrolling<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if case .snapshot(let snapshot) = source, let readAt = snapshot.readAt {
+                    Text("As of \(readAt.formatted(date: .omitted, time: .shortened))")
+                        .junoFont(size: 11, relativeTo: .caption)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .padding(.bottom, JunoSpace.snug)
+                }
+                content()
+            }
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.cozy)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollEdgeEffectStyle(.soft, for: .top)
+    }
+
+    // MARK: Activity
+
+    @ViewBuilder
+    private var activity: some View {
+        let entries = DesktopWorkLog.entries(in: events)
+        if entries.isEmpty {
+            Text("Nothing has happened on this task yet.")
+                .junoFont(size: 13, relativeTo: .callout)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .padding(.vertical, JunoSpace.snug)
+        } else {
+            ForEach(entries) { entry in
+                ChatWorkActivityRow(entry: entry)
+            }
+        }
+    }
+
+    // MARK: Files
+
+    @ViewBuilder
+    private var filesView: some View {
+        let written = DesktopWorkLog.references(in: events).filter { $0.direction == .written }
+        if files.isEmpty, written.isEmpty {
+            JunoEmptyState(
+                title: "No files yet",
+                message: "Files the task makes appear here.",
+                icon: .file,
+                size: .panel
+            )
+            .padding(JunoSpace.regular)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            scrolling {
                 VStack(alignment: .leading, spacing: 0) {
-                    if case .snapshot(let snapshot) = source, let readAt = snapshot.readAt {
-                        Text("As of \(readAt.formatted(date: .omitted, time: .shortened))")
-                            .junoFont(size: 11, relativeTo: .caption)
-                            .foregroundStyle(Color.junoSecondaryInk)
-                            .padding(.bottom, JunoSpace.snug)
+                    VStack(alignment: .leading, spacing: JunoSpace.micro) {
+                        ForEach(files) { file in
+                            ChatWorkFileRow(file: file)
+                        }
                     }
-                    let entries = DesktopWorkLog.entries(in: events)
-                    if entries.isEmpty {
-                        Text("Nothing has happened on this task yet.")
-                            .junoFont(size: 13, relativeTo: .callout)
-                            .foregroundStyle(Color.junoSecondaryInk)
-                            .padding(.vertical, JunoSpace.snug)
-                    } else {
-                        ForEach(entries) { entry in
-                            ChatWorkActivityRow(entry: entry)
+                    if !written.isEmpty {
+                        Text("Changed on this Mac")
+                            .junoFont(size: 13, relativeTo: .callout, weight: .medium)
+                            .foregroundStyle(Color.junoForeground)
+                            .accessibilityAddTraits(.isHeader)
+                            .padding(.top, files.isEmpty ? 0 : JunoSpace.regular)
+                            .padding(.bottom, JunoSpace.tight)
+                        ForEach(written) { reference in
+                            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                                JunoIconView(.fileDiff, size: 14)
+                                    .foregroundStyle(Color.junoSecondaryInk)
+                                    .frame(width: 16)
+                                    .accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: JunoSpace.micro) {
+                                    Text(reference.label)
+                                        .junoFont(size: 13, relativeTo: .callout)
+                                        .foregroundStyle(Color.junoForeground)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                    if let detail = reference.detail {
+                                        Text(detail)
+                                            .junoFont(size: 11, relativeTo: .caption)
+                                            .foregroundStyle(Color.junoSecondaryInk)
+                                            .lineLimit(1)
+                                    }
+                                }
+                            }
+                            .frame(minHeight: 36, alignment: .leading)
+                            .accessibilityElement(children: .combine)
                         }
                     }
                 }
-                .padding(.horizontal, JunoSpace.regular)
-                .padding(.vertical, JunoSpace.cozy)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .environment(\.junoTranscriptMedia, workFiles)
+                .environment(\.junoTranscriptMediaActions, fileActions)
             }
-            .scrollEdgeEffectStyle(.soft, for: .top)
         }
+    }
+
+    // MARK: Details
+
+    private var detailsView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let model = run?.effectiveModel ?? session?.requestedModel {
+                ChatWorkDetailRow("Model", value: junoDisplayModelName(model))
+            }
+            if let place = details.whereItRan(run: run, session: session) {
+                ChatWorkDetailRow("Where it ran", value: place)
+            }
+            if let mode = run?.approvalMode ?? session?.permissionPolicy {
+                ChatWorkDetailRow("How often it asks", value: mode.agentAutonomyLabel)
+            }
+            if let apps = details.connectedApps {
+                ChatWorkDetailRow("Connected apps", value: apps)
+            }
+            if let run {
+                ChatWorkDetailRow(
+                    "Elapsed", value: ChatWorkFormat.duration(ChatWorkFormat.elapsed(run, now: now ?? Date())), figure: true
+                )
+                ChatWorkDetailRow("Cost", value: ChatWorkFormat.cost(microUsd: run.costMicroUsd), figure: true)
+                ChatWorkDetailRow("Tokens", value: ChatWorkFormat.tokens(run.totalTokens), figure: true)
+                if let started = run.startedAt {
+                    ChatWorkDetailRow("Started", value: started.formatted(date: .abbreviated, time: .shortened))
+                }
+                if let finished = run.finishedAt {
+                    ChatWorkDetailRow("Finished", value: finished.formatted(date: .abbreviated, time: .shortened))
+                }
+            }
+            if let session {
+                Text(session.sessionID)
+                    .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .textSelection(.enabled)
+                    .padding(.top, JunoSpace.cozy)
+                    .accessibilityLabel("Task id \(session.sessionID)")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.chat.task-panel.details")
+    }
+}
+
+/// What the Task panel's Details reads from outside the task itself.
+struct ChatWorkPanelDetails {
+    /// This Mac's host id, to say "On this Mac" rather than a name.
+    var pairedHostID: String? = nil
+    /// The task's connected apps as words, once its context has been read;
+    /// nil leaves the row out rather than guessing.
+    var connectedApps: String? = nil
+    /// A pinned "now" for fixtures.
+    var now: Date? = nil
+
+    func whereItRan(run: WorkRunSummary?, session: WorkSessionSummary?) -> String? {
+        let target = run?.effectiveTarget ?? session?.effectiveTarget
+        switch target.flatMap(JunoWorkTarget.init(rawValue:)) {
+        case .cloud: return "In the cloud"
+        case .local:
+            let host = run?.hostID ?? session?.hostID
+            if let host, host == pairedHostID { return "On this Mac" }
+            return session?.hostDisplayName ?? "On this Mac"
+        default: return nil
+        }
+    }
+
+    /// "Gmail, Linear" — or "None" for a task allowed no apps at all.
+    static func appsLine(_ ids: [String]?, name: (String) -> String) -> String? {
+        guard let ids else { return nil }
+        return ids.isEmpty ? "None" : ids.map(name).joined(separator: ", ")
+    }
+}
+
+/// A Details row: the name in the secondary ink, the value trailing; a
+/// figure in mono.
+struct ChatWorkDetailRow: View {
+    let label: String
+    let value: String
+    var figure = false
+
+    init(_ label: String, value: String, figure: Bool = false) {
+        self.label = label
+        self.value = value
+        self.figure = figure
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
+            Text(label)
+                .junoFont(size: 13, relativeTo: .callout)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .fixedSize()
+            Spacer(minLength: JunoSpace.cozy)
+            Text(value)
+                .junoFont(size: 13, relativeTo: .callout, design: figure ? .monospaced : .default)
+                .foregroundStyle(Color.junoForeground)
+                .multilineTextAlignment(.trailing)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .padding(.vertical, JunoSpace.snug)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.junoHairline).frame(height: 1)
+        }
+    }
+}
+
+/// One file in the Files view: a 36pt row — the kind's glyph, the name, and
+/// "PDF · 2.4 MB · v2" with the size in mono. A click or Space opens Quick
+/// Look; the context menu has Quick Look · Open With Default App · Save As….
+struct ChatWorkFileRow: View {
+    let file: ChatWorkFile
+    @Environment(\.junoTranscriptMediaActions) private var actions
+    @State private var hovered = false
+
+    var body: some View {
+        let attachment = file.attachment
+        Button {
+            actions.quickLook(attachment)
+        } label: {
+            HStack(spacing: JunoSpace.snug) {
+                JunoIconView(DesktopWorkVocabulary.artifactIcon(file.artifact.kind), size: 16)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .frame(width: 20)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: JunoSpace.micro) {
+                    Text(file.artifact.title)
+                        .junoFont(size: 13, relativeTo: .callout)
+                        .foregroundStyle(Color.junoForeground)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    meta(attachment)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.tight)
+            .frame(minHeight: 36)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                    .fill(hovered ? Color.junoHover : Color.clear)
+            )
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .onKeyPress(.space) {
+            actions.quickLook(attachment)
+            return .handled
+        }
+        .contextMenu { TranscriptFileMenu(attachment: attachment, actions: actions) }
+        .help(attachment.fileName)
+        .accessibilityLabel("Open \(attachment.fileName)")
+        .accessibilityValue(attachment.captionMeta)
+        .accessibilityIdentifier("juno.chat.task-panel.file")
+    }
+
+    private func meta(_ attachment: NativeChatAttachment) -> some View {
+        HStack(spacing: 0) {
+            Text(attachment.formatLabel)
+            if attachment.size > 0 {
+                // The tile's caption says the size the same way.
+                Text(" \u{00B7} \(attachment.byteLabel)")
+            }
+            Text(" \u{00B7} v\(file.artifact.currentVersion)")
+                .monospacedDigit()
+        }
+        .junoFont(size: 11, relativeTo: .caption)
+        .monospacedDigit()
+        .foregroundStyle(Color.junoSecondaryInk)
+        .lineLimit(1)
     }
 }
 
@@ -174,6 +484,8 @@ struct ChatWorkPanelSnapshot {
     var readAt: Date?
     var isLoading = true
     var failed = false
+    /// Its files, read with it.
+    var files: [ChatWorkFile] = []
 
     var status: JunoWorkStatus? {
         (update?.run?.status ?? update?.session?.status).flatMap(JunoWorkStatus.init(rawValue:))
@@ -198,10 +510,26 @@ final class ChatWorkPanelReader {
         snapshots[sessionID] = ChatWorkPanelSnapshot()
         do {
             let update = try await client.snapshot(sessionID: sessionID, for: accountID)
-            snapshots[sessionID] = ChatWorkPanelSnapshot(update: update, readAt: Date(), isLoading: false)
+            // The files are a separate list; a task whose list cannot be read
+            // still shows its log, and Files says it has none.
+            let artifacts = (try? await client.artifacts(for: sessionID, accountID: accountID)) ?? []
+            snapshots[sessionID] = ChatWorkPanelSnapshot(
+                update: update, readAt: Date(), isLoading: false,
+                files: artifacts.map { ChatWorkFile(artifact: $0) }
+            )
         } catch {
             snapshots[sessionID] = ChatWorkPanelSnapshot(isLoading: false, failed: true)
         }
+    }
+
+    /// A task's connected apps, read once when Details first shows them.
+    private(set) var contexts: [String: WorkSessionContext] = [:]
+
+    func readContext(sessionID: String, client: NativeWorkClient?, accountID: AccountID) async {
+        guard contexts[sessionID] == nil, let client,
+            let context = try? await client.context(for: sessionID, accountID: accountID)
+        else { return }
+        contexts[sessionID] = context
     }
 }
 

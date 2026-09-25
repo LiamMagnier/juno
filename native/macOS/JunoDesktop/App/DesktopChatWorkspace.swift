@@ -1059,6 +1059,17 @@ struct DesktopConversationView: View {
     @State private var taskPanelReader = ChatWorkPanelReader()
     /// Whether the window is on screen at all: discovery polls only then.
     @State private var windowVisible = true
+    /// The files this account's tasks made, downloaded once and kept in the
+    /// Caches directory until sign-out (Phase 5 B1).
+    @State private var workFiles: ChatWorkFiles?
+    /// "Save this task as a skill", open on a draft (B3).
+    @State private var skillCapture: ChatSkillCaptureDraft?
+    /// A task file whose bytes the validator never opened, waiting on the
+    /// reader's word before it is saved.
+    @State private var pendingUnvalidatedSave: NativeChatAttachment?
+    /// The macOS permissions a run on this Mac needs, re-read whenever Juno
+    /// comes to the front (B4).
+    @State private var systemPermissions = DesktopWorkSystemPermissions.current
 
     var body: some View {
         // Clamped through `Color.clear.overlay { … }`, for the reason
@@ -1104,6 +1115,9 @@ struct DesktopConversationView: View {
                     return
                 }
                 conversationWork = work
+                if workFiles?.accountID != session.profile.id {
+                    workFiles = ChatWorkFiles(client: configuration.workModel?.transport, accountID: session.profile.id)
+                }
                 adoptWorkStart()
                 await work.run()
                 work.close()
@@ -1200,6 +1214,16 @@ struct DesktopConversationView: View {
                 Text(reason)
             }
             .quickLookPreview($quickLookURL)
+            .modifier(ChatWorkPresentations(
+                skillCapture: $skillCapture,
+                pendingUnvalidatedSave: $pendingUnvalidatedSave,
+                systemPermissions: $systemPermissions,
+                saveSkill: { draft in await saveSkill(draft) },
+                saveUnvalidated: { attachment in
+                    guard let workFiles else { return }
+                    ChatWorkFileSaving.save(attachment, from: workFiles) { mediaFailure = $0 }
+                }
+            ))
             .sheet(item: $imageEditTarget) { target in
                 imageEditSheet(target)
             }
@@ -1392,6 +1416,8 @@ struct DesktopConversationView: View {
             findableMessages.first { $0.id == target.messageID && $0.isPending }?.id
         })
         .environment(\.junoArtifactResolver, artifactResolver)
+        .environment(\.junoWorkFiles, workFiles)
+        .environment(\.junoWorkFileActions, workFileActions)
         .environment(\.junoTranscriptViewportHeight, columnHeight)
         .environment(\.junoFavicons, favicons)
     }
@@ -2056,7 +2082,79 @@ struct DesktopConversationView: View {
     /// The task the card draws, from the follower.
     private var workRunState: ChatWorkRunState? {
         guard let work = conversationWork else { return nil }
-        return ChatWorkRunState.read(work, actor: workActor)
+        return ChatWorkRunState.read(
+            work, actor: workActor, files: workFiles, blockers: localBlockers(for: work.run)
+        )
+    }
+
+    /// The permissions a run on this Mac is missing: only for a run this
+    /// Mac's host is carrying, read from the run (sessions carry no host).
+    private func localBlockers(for run: WorkRunSummary?) -> [ChatWorkLocalBlocker] {
+        guard let run, let hostID = configuration.workHostModel?.pairedHostID else { return [] }
+        let runsHere = run.hostID == hostID && run.effectiveTarget != JunoWorkTarget.cloud.rawValue
+        return ChatWorkLocalBlocker.of(systemPermissions, runsHere: runsHere)
+    }
+
+    /// What a task file's click, menu and drag do: the column's Quick Look,
+    /// Open With and Save As, reading the file through ``ChatWorkFiles``. A
+    /// file the validator never opened asks before it is saved.
+    private var workFileActions: TranscriptMediaActions {
+        var actions = TranscriptMediaActions()
+        guard let workFiles else { return actions }
+        actions.quickLook = { attachment in
+            Task {
+                do { quickLookURL = try await workFiles.fileURL(for: attachment) } catch {
+                    mediaFailure = NativeFailureMessage.presentable(error)
+                }
+            }
+        }
+        actions.openWithDefaultApp = { attachment in
+            Task {
+                do { _ = NSWorkspace.shared.open(try await workFiles.fileURL(for: attachment)) } catch {
+                    mediaFailure = NativeFailureMessage.presentable(error)
+                }
+            }
+        }
+        actions.saveAs = { attachment in
+            Task {
+                do {
+                    _ = try await workFiles.fileURL(for: attachment)
+                } catch {
+                    mediaFailure = NativeFailureMessage.presentable(error)
+                    return
+                }
+                if workFiles.isUnvalidated(attachment) {
+                    pendingUnvalidatedSave = attachment
+                } else {
+                    ChatWorkFileSaving.save(attachment, from: workFiles) { mediaFailure = $0 }
+                }
+            }
+        }
+        return actions
+    }
+
+    /// Opens "Save this task as a skill" on the followed task, drafted from
+    /// the run as it stands at the press.
+    private func captureSkill() {
+        guard let work = conversationWork, let current = work.current else { return }
+        let performed = WorkEventLog.performedActions(
+            in: work.events, toolPresent: DesktopWorkVocabulary.toolPresent, toolPast: DesktopWorkVocabulary.toolPast
+        )
+        skillCapture = .from(session: current, plan: work.plan, performed: performed)
+    }
+
+    /// Saves a captured skill; nil on success, or the sentence to show.
+    private func saveSkill(_ draft: ChatSkillCaptureDraft) async -> String? {
+        guard let sender = configuration.requestSender else { return WorkSkillDraft.unreachable }
+        let outcome = await NativeWorkSkillsClient(sender: sender).createSkill(
+            name: draft.name, description: draft.description, instructions: draft.instructions,
+            projectID: draft.projectID, for: session.profile.id
+        )
+        if case .created(let skill) = outcome {
+            toast(.success("Saved as /\(skill.slug)."))
+            return nil
+        }
+        return outcome.message
     }
 
     /// Every task of this chat, placed by the transcript: the current one and
@@ -2084,7 +2182,11 @@ struct DesktopConversationView: View {
             if !outcome.succeeded, let message = outcome.message { say(.error(message)) }
         }
         return ChatWorkRunActions(
-            decide: { approval, decision in Task { report(await work.decide(approval, decision)) } },
+            decide: { approval, decision, reason in
+                Task { report(await work.decide(approval, decision, reason: reason)) }
+            },
+            decideAll: { approvals in Task { report(await work.decideAll(approvals)) } },
+            saveSkill: { captureSkill() },
             answer: { questionID, text in
                 Task { report(await work.answer(questionID: questionID, text: text)) }
             },
@@ -2105,17 +2207,35 @@ struct DesktopConversationView: View {
     /// once.
     @ViewBuilder
     private func taskPanel(_ sessionID: String) -> some View {
-        if let work = conversationWork, work.current?.sessionID == sessionID,
-            let state = ChatWorkRunState.read(work, actor: workActor)
-        {
-            ChatWorkPanel(title: taskTitle(state.session), source: .live(state), close: closeTask)
-        } else {
-            let earlier = conversationWork?.history.first { $0.sessionID == sessionID }
-            ChatWorkPanel(
-                title: earlier.map(taskTitle) ?? "Task",
-                source: .snapshot(taskPanelReader.snapshot(for: sessionID)),
-                close: closeTask,
-                retry: { readTask(sessionID) }
+        let details = ChatWorkPanelDetails(
+            pairedHostID: configuration.workHostModel?.pairedHostID,
+            connectedApps: ChatWorkPanelDetails.appsLine(
+                taskPanelReader.contexts[sessionID]?.connectorIDs,
+                name: { id in
+                    configuration.connectorModel?.linked.first { $0.id == id }?.label
+                        ?? WorkApprovalWords.humanize(id)
+                }
+            )
+        )
+        Group {
+            if let work = conversationWork, work.current?.sessionID == sessionID,
+                let state = workRunState
+            {
+                ChatWorkPanel(title: taskTitle(state.session), source: .live(state), close: closeTask, details: details)
+            } else {
+                let earlier = conversationWork?.history.first { $0.sessionID == sessionID }
+                ChatWorkPanel(
+                    title: earlier.map(taskTitle) ?? "Task",
+                    source: .snapshot(taskPanelReader.snapshot(for: sessionID)),
+                    close: closeTask,
+                    retry: { readTask(sessionID) },
+                    details: details
+                )
+            }
+        }
+        .task(id: sessionID) {
+            await taskPanelReader.readContext(
+                sessionID: sessionID, client: configuration.workModel?.transport, accountID: session.profile.id
             )
         }
     }

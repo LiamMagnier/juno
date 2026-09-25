@@ -25,12 +25,44 @@ struct DesktopApprovalCard: View {
     let canAllowScope: Bool
     let decide: (NativeChatApprovalDecision) -> Void
 
-    @State private var detailOpen = false
+    @State private var detailOpen: Bool
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var isTask: Bool {
-        approval.connectorID == "juno_work" && approval.toolName == "start_task"
+    init(
+        approval: NativeChatApproval, isBusy: Bool, errorMessage: String?, canAllowScope: Bool,
+        decide: @escaping (NativeChatApprovalDecision) -> Void
+    ) {
+        self.approval = approval
+        self.isBusy = isBusy
+        self.errorMessage = errorMessage
+        self.canAllowScope = canAllowScope
+        self.decide = decide
+        // Open from the start for a task raised by a turn that read outside
+        // content: the warning asks the reader to check the brief, and the
+        // brief is the whole of what they are approving (the web's rule).
+        _detailOpen = State(initialValue: Self.isTaskApproval(approval) && approval.derivedFromUntrusted && approval.isPending)
+    }
+
+    /// A task the model wants to start (`start_task`), or one an agent wants
+    /// to hand a teammate (`hand_off_to_teammate`): the same card, with a
+    /// task's words (`isTaskHandoff`, `isAgentHandoff`).
+    static func isTaskApproval(_ approval: NativeChatApproval) -> Bool {
+        approval.connectorID == "juno_work"
+            && (approval.toolName == "start_task" || approval.toolName == "hand_off_to_teammate")
+    }
+
+    private var isTask: Bool { Self.isTaskApproval(approval) }
+
+    private var isHandoff: Bool {
+        approval.connectorID == "juno_work" && approval.toolName == "hand_off_to_teammate"
+    }
+
+    /// A string of the receipt's redacted detail, or nil.
+    private func detailText(_ key: String) -> String? {
+        guard case .string(let value)? = approval.detail[key] else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private var answerable: Bool { approval.isPending && approval.expiresAt > Date() }
@@ -38,13 +70,15 @@ struct DesktopApprovalCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Text(approval.preview)
+            Text(isTask ? detailText("title") ?? approval.preview : approval.preview)
                 .junoFont(size: 15, relativeTo: .body, weight: answerable ? .semibold : .regular)
                 .foregroundStyle(Color.junoForeground)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, JunoSpace.snug)
-            if !isTask {
+            if isTask {
+                taskFacts
+            } else {
                 // Identifiers, so mono.
                 Text("\(approval.connectorLabel) · \(approval.toolName)")
                     .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
@@ -54,7 +88,7 @@ struct DesktopApprovalCard: View {
                     .padding(.top, JunoSpace.hairline)
             }
             if !isTask || answerable {
-                Text(isTask ? Self.taskDescription : riskDetail)
+                Text(isHandoff ? Self.handoffDescription : isTask ? Self.taskDescription : riskDetail)
                     .junoFont(size: 13, relativeTo: .callout)
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
@@ -87,7 +121,11 @@ struct DesktopApprovalCard: View {
             if answerable, !isBusy {
                 HStack(spacing: JunoSpace.tight) {
                     JunoIconView(.clock, size: 12)
-                    Text(isTask ? "Unanswered, this expires and the task does not start." : "Unanswered, this expires and Juno stops rather than acting on it.")
+                    Text(
+                        isHandoff ? "Unanswered, this expires and nothing is handed off."
+                            : isTask ? "Unanswered, this expires and the task does not start."
+                            : "Unanswered, this expires and Juno stops rather than acting on it."
+                    )
                         .junoFont(size: 11, relativeTo: .caption)
                 }
                 .foregroundStyle(Color.junoSecondaryInk)
@@ -105,7 +143,7 @@ struct DesktopApprovalCard: View {
                 .strokeBorder(edge, lineWidth: 1)
         )
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(isTask ? "Start a background task?" : "Juno needs your approval")
+        .accessibilityLabel(title)
         .accessibilityIdentifier("juno.chat.approval")
     }
 
@@ -113,7 +151,7 @@ struct DesktopApprovalCard: View {
 
     private var header: some View {
         HStack(spacing: JunoSpace.snug) {
-            JunoIconView(isTask ? .work : .security, size: 16)
+            JunoIconView(isHandoff ? .agents : isTask ? .work : .security, size: 16)
                 .foregroundStyle(answerable ? Color.junoWarningInk : Color.junoSecondaryInk)
             Text(title)
                 .junoFont(size: 12, relativeTo: .footnote, weight: .semibold)
@@ -143,7 +181,27 @@ struct DesktopApprovalCard: View {
         }
     }
 
+    /// Who takes it and what it may cost, under the task's title: on a
+    /// handoff the teammate leads, the one thing that differs from a task.
+    @ViewBuilder
+    private var taskFacts: some View {
+        if let teammate = detailText("teammate") {
+            (Text("To ") + Text(teammate).foregroundStyle(Color.junoForeground))
+                .junoFont(size: 12, relativeTo: .footnote)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .padding(.top, JunoSpace.hairline)
+        }
+        if let estimate = detailText("estimate") {
+            (Text("Estimated cost ") + Text(estimate).foregroundStyle(Color.junoForeground))
+                .junoFont(size: 12, relativeTo: .footnote)
+                .monospacedDigit()
+                .foregroundStyle(Color.junoSecondaryInk)
+                .padding(.top, JunoSpace.hairline)
+        }
+    }
+
     private var title: String {
+        if isHandoff { return answerable ? "Hand this to a teammate?" : "Handoff to a teammate" }
         if isTask { return answerable ? "Start a background task?" : "Background task" }
         return answerable ? "Juno needs your approval" : "Approval request"
     }
@@ -161,7 +219,7 @@ struct DesktopApprovalCard: View {
                     JunoIconView(.chevronRight, size: 12, weight: .bold)
                         .foregroundStyle(Color.junoSecondaryInk)
                         .rotationEffect(.degrees(detailOpen ? 90 : 0))
-                    Text(isTask ? "What the task will be told" : "Exactly what will be sent")
+                    Text(isHandoff ? "What they will be told" : isTask ? "What the task will be told" : "Exactly what will be sent")
                         .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
                         .foregroundStyle(Color.junoForeground)
                     Spacer(minLength: 0)
@@ -196,7 +254,16 @@ struct DesktopApprovalCard: View {
     @ViewBuilder
     private var detailRows: some View {
         let rows = approval.detail.sorted { $0.key < $1.key }
-        if rows.isEmpty {
+        if isTask, let brief = detailText("goal") {
+            // The brief is prose the model wrote for the task, so it is read
+            // as prose: the `goal` argument verbatim, which the receipt bound.
+            Text(brief)
+                .junoFont(size: 12, relativeTo: .footnote)
+                .foregroundStyle(Color.junoForeground)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if rows.isEmpty {
             Text("This call sends no arguments.")
                 .junoFont(size: 12, relativeTo: .footnote)
                 .foregroundStyle(Color.junoSecondaryInk)
@@ -224,7 +291,7 @@ struct DesktopApprovalCard: View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
             JunoIconView(.security, size: 14)
                 .foregroundStyle(Color.junoWarningInk)
-            Text(isTask ? Self.taskUntrusted : Self.untrusted)
+            Text(isHandoff ? Self.handoffUntrusted : isTask ? Self.taskUntrusted : Self.untrusted)
                 .junoFont(size: 12, relativeTo: .footnote)
                 .foregroundStyle(Color.junoWarningInk)
                 .fixedSize(horizontal: false, vertical: true)
@@ -257,7 +324,7 @@ struct DesktopApprovalCard: View {
         Button(role: .destructive) {
             decide(.deny)
         } label: {
-            Text(isTask ? "Don’t start" : "Don’t allow").frame(minHeight: 28)
+            Text(isHandoff ? "Don’t hand off" : isTask ? "Don’t start" : "Don’t allow").frame(minHeight: 28)
         }
         .buttonStyle(.bordered)
         // The web's destructive outline: refusing, in the refusal's own ink.
@@ -267,7 +334,7 @@ struct DesktopApprovalCard: View {
         Button {
             decide(.allowOnce)
         } label: {
-            Text(isTask ? "Start task" : "Allow once").frame(minHeight: 28)
+            Text(isHandoff ? "Hand off" : isTask ? "Start task" : "Allow once").frame(minHeight: 28)
         }
         .buttonStyle(.junoProminent)
         .contentShape(.rect)
@@ -331,19 +398,11 @@ struct DesktopApprovalCard: View {
     }
 
     private var statusLine: String? {
+        if isHandoff { return Self.handoffStatus(approval.status, expired: approval.isPending && approval.expiresAt <= Date()) }
+        if isTask { return Self.taskStatus(approval.status, expired: approval.isPending && approval.expiresAt <= Date()) }
         if approval.isPending {
             return approval.expiresAt <= Date()
                 ? "This expired before it was answered. Nothing was sent." : nil
-        }
-        if isTask {
-            switch approval.status {
-            case .allowed, .executing: return "Allowed. Starting the task."
-            case .executed: return "Started. The task reports back in this chat."
-            case .denied: return "Not started."
-            case .failed: return "The task could not be started."
-            case .expired: return "This expired before it was answered, so the task did not start."
-            case .superseded, .blocked, .pending: break
-            }
         }
         switch approval.status {
         case .pending: return nil
@@ -362,6 +421,38 @@ struct DesktopApprovalCard: View {
     static let untrusted = "The model wrote these arguments from content it read: a web page, a file, or output from another connector. That content can contain text written to steer what gets sent. Check the values below are what you meant before you allow it."
     static let taskUntrusted = "This chat includes content Juno read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you start it."
     static let taskDescription = "Juno works on this on its own and reports back in this chat. It asks before risky steps, and you can stop it at any time."
+    static let handoffDescription = "It becomes their task, in their own thread, with their apps and autonomy. They report back there, not in this chat, and you can stop it at any time."
+    static let handoffUntrusted = "This chat includes content Juno read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you hand it off."
+
+    /// `TASK_STATUS_COPY`, verbatim: said once the card is no longer asking.
+    static func taskStatus(_ status: NativeChatApprovalStatus, expired: Bool) -> String? {
+        switch status {
+        case .pending: expired ? "This expired before it was answered, so the task did not start." : nil
+        case .allowed: "Allowed. Starting the task."
+        case .denied: "Not started."
+        case .executing: "Starting the task."
+        case .executed: "Started. The task reports back in this chat."
+        case .failed: "The task could not be started."
+        case .expired: "This expired before it was answered, so the task did not start."
+        case .superseded: "This was cancelled before it was answered, so the task did not start."
+        case .blocked: "Your permissions blocked this, so the task did not start."
+        }
+    }
+
+    /// `HANDOFF_STATUS_COPY`, verbatim.
+    static func handoffStatus(_ status: NativeChatApprovalStatus, expired: Bool) -> String? {
+        switch status {
+        case .pending: expired ? "This expired before it was answered, so nothing was handed off." : nil
+        case .allowed: "Allowed. Handing it off."
+        case .denied: "Not handed off."
+        case .executing: "Handing it off."
+        case .executed: "Handed off. It reports back in their thread."
+        case .failed: "It could not be handed off."
+        case .expired: "This expired before it was answered, so nothing was handed off."
+        case .superseded: "This was cancelled before it was answered, so nothing was handed off."
+        case .blocked: "Your permissions blocked this, so nothing was handed off."
+        }
+    }
 
     static func format(_ value: JunoJSONValue) -> String {
         switch value {

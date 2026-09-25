@@ -29,8 +29,21 @@ struct ChatWorkRunState {
     /// Whether this card's live step may move. One thing on screen owns the
     /// loop: a streaming reply or a working research row outranks it.
     var ownsLoop = true
+    /// Every file the task made, with the sizes this Mac has learned.
+    var files: [ChatWorkFile] = []
+    /// macOS permissions a run on this Mac is missing (B4). Empty for a
+    /// cloud run, and on the phone.
+    var blockers: [ChatWorkLocalBlocker] = []
 
     var isLive: Bool { !status.isTerminal && status != .draft }
+    /// What the run changed outside Juno, in the Mac's tool words.
+    var performed: WorkEventLog.PerformedActions {
+        WorkEventLog.performedActions(
+            in: events, toolPresent: DesktopWorkVocabulary.toolPresent, toolPast: DesktopWorkVocabulary.toolPast
+        )
+    }
+    /// Whether "Save this as a skill" is offered: completed, two steps done.
+    var canSaveSkill: Bool { WorkSkillDraft.canCapture(status: status, plan: plan) }
     var plan: [WorkEventLog.PlanStep] { WorkEventLog.plan(from: events) }
     var currentAction: WorkEventLog.CurrentAction? {
         isLive ? WorkEventLog.currentAction(in: events) : nil
@@ -46,7 +59,8 @@ struct ChatWorkRunState {
     /// The follower's task, as the card draws it.
     @MainActor
     static func read(
-        _ work: NativeConversationWork, actor: String? = nil, ownsLoop: Bool = true
+        _ work: NativeConversationWork, actor: String? = nil, ownsLoop: Bool = true,
+        files: ChatWorkFiles? = nil, blockers: [ChatWorkLocalBlocker] = []
     ) -> ChatWorkRunState? {
         guard let session = work.current, let status = work.status else { return nil }
         return ChatWorkRunState(
@@ -56,16 +70,25 @@ struct ChatWorkRunState {
             events: work.events,
             questions: work.openQuestions,
             approvals: work.approvals,
-            isBusy: work.isBusy,
+            isBusy: work.isBusy || work.isBatching,
             actor: actor,
-            ownsLoop: ownsLoop
+            ownsLoop: ownsLoop,
+            files: files?.files(for: work.artifacts)
+                ?? work.artifacts.map { ChatWorkFile(artifact: $0) },
+            blockers: status.isTerminal ? [] : blockers
         )
     }
 }
 
 /// What the card's controls do. Closures so a fixture can pass nothing.
 struct ChatWorkRunActions {
-    var decide: (ChatWorkApproval, JunoWorkApprovalDecision) -> Void = { _, _ in }
+    /// Answers one approval; the text rides a refusal as the correction
+    /// ("Change it").
+    var decide: (ChatWorkApproval, JunoWorkApprovalDecision, String?) -> Void = { _, _, _ in }
+    /// Allows several together, one at a time — the queue's batch button.
+    var decideAll: ([ChatWorkApproval]) -> Void = { _ in }
+    /// Opens "Save this task as a skill" on this task.
+    var saveSkill: (() -> Void)? = nil
     /// Answers a question with one of its own options: question id, text.
     var answer: (String, String) -> Void = { _, _ in }
     var focusComposer: () -> Void = {}
@@ -390,14 +413,19 @@ struct ChatWorkRunCard: View {
             }
             ChatWorkRunWords(spoken: state.spoken)
                 .padding(.horizontal, JunoSpace.snug)
-            if !state.questions.isEmpty || !state.approvals.isEmpty {
+            if !state.blockers.isEmpty || !state.questions.isEmpty || !state.approvals.isEmpty {
                 needsYou
             }
         }
     }
 
+    /// What the run is waiting on the reader for, nearest the composer: a
+    /// permission this Mac is missing, its questions, its approvals.
     private var needsYou: some View {
         VStack(alignment: .leading, spacing: JunoSpace.close) {
+            ForEach(state.blockers) { blocker in
+                ChatWorkLocalBlockerTile(blocker: blocker)
+            }
             ForEach(Array(state.questions.enumerated()), id: \.element.id) { index, question in
                 ChatWorkQuestionCard(
                     question: question,
@@ -408,47 +436,274 @@ struct ChatWorkRunCard: View {
                     replyBelow: actions.focusComposer
                 )
             }
-            ForEach(state.approvals) { approval in
-                ChatWorkApprovalCard(
-                    approval: approval.request,
+            if !state.approvals.isEmpty {
+                ChatWorkApprovalQueue(
+                    approvals: state.approvals,
                     isBusy: state.isBusy,
-                    decide: { actions.decide(approval, $0) }
+                    now: state.now,
+                    decide: actions.decide,
+                    decideAll: actions.decideAll
                 )
             }
         }
     }
 
-    // MARK: Finished (the slice's, until Stage B)
+    // MARK: Finished
 
-    @ViewBuilder
+    /// The web's `TerminalRun`, 12pt apart: why it ended (unless it simply
+    /// finished), what it ran short of, the digest a reader decides on next,
+    /// its words, what it made, the offer to keep it as a skill, and the
+    /// receipt last.
     private var finished: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            if let reason = JunoWorkVocabulary.terminalReason(state.run?.terminalReason),
-                state.status != .completed
-            {
-                Text(reason)
+            if let run = state.run, state.status != .completed, let detail = run.terminalDetail {
+                Text(detail)
                     .junoFont(size: 13, relativeTo: .callout)
                     .foregroundStyle(Color.junoWarningInk)
                     .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
-            if let run = state.run {
-                ForEach(Array(run.degradation.enumerated()), id: \.offset) { _, note in
-                    HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
-                        JunoIconView(.warning, size: 12)
-                        Text(note.explanation)
-                            .junoFont(size: 13, relativeTo: .callout)
-                            .fixedSize(horizontal: false, vertical: true)
+            if let run = state.run, !run.degradation.isEmpty {
+                VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                    ForEach(Array(run.degradation.enumerated()), id: \.offset) { _, note in
+                        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
+                            JunoIconView(.warning, size: 12)
+                                .accessibilityHidden(true)
+                            Text(note.explanation)
+                                .junoFont(size: 13, relativeTo: .callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .foregroundStyle(Color.junoWarningInk)
                     }
-                    .foregroundStyle(Color.junoWarningInk)
                 }
             }
+            if state.status != .completed, let run = state.run {
+                ChatWorkOutcomeDigest(
+                    lines: ChatWorkOutcome.lines(run: run, plan: state.plan, performed: state.performed)
+                )
+            }
             ChatWorkRunWords(spoken: state.spoken)
+            ChatWorkDeliverables(files: state.files, now: state.now)
+            if state.canSaveSkill, let saveSkill = actions.saveSkill {
+                ChatWorkSaveSkillButton(action: saveSkill)
+            }
             if let run = state.run {
                 ChatWorkMeter(run: run, now: state.now)
             }
         }
         .padding(.horizontal, JunoSpace.snug)
         .padding(.bottom, JunoSpace.hairline)
+    }
+}
+
+// MARK: - Outcome digest
+
+/// What a run that did not simply finish came to (the web's
+/// `WorkOutcomeDigest`): how far it got, whether it left a mark, and what it
+/// cost — the three facts somebody decides what to do next on. The actions
+/// line points to Details, the Task panel's view (register #58); the web's
+/// "Outputs" is not in chat.
+enum ChatWorkOutcome {
+    /// One line: words, with the figures in it set apart so they can be mono.
+    struct Line: Equatable {
+        struct Part: Equatable {
+            let text: String
+            let isFigure: Bool
+        }
+
+        let parts: [Part]
+        var text: String { parts.map(\.text).joined() }
+
+        init(_ text: String) { parts = [Part(text: text, isFigure: false)] }
+        init(parts: [Part]) { self.parts = parts }
+    }
+
+    static func lines(
+        run: WorkRunSummary, plan: [WorkEventLog.PlanStep], performed: WorkEventLog.PerformedActions
+    ) -> [Line] {
+        var lines: [Line] = []
+        if plan.isEmpty {
+            lines.append(Line("No plan was written, so there are no steps to measure it against."))
+        } else {
+            let done = plan.filter { $0.state == .done }.count
+            if let stopped = plan.first(where: { $0.state == .active || $0.state == .failed }) {
+                lines.append(Line("Finished \(done) of \(plan.count) planned steps, and stopped on \u{201C}\(stopped.title)\u{201D}."))
+            } else {
+                lines.append(Line("Finished \(done) of \(plan.count) planned steps."))
+            }
+        }
+        if performed.actions.count == 1 {
+            lines.append(Line("One action changed something outside Juno. It is listed in Details."))
+        } else if performed.actions.count > 1 {
+            lines.append(Line("\(performed.actions.count) actions changed something outside Juno. They are listed in Details."))
+        } else if performed.unclassified > 0 {
+            let noun = performed.unclassified == 1 ? "action" : "actions"
+            lines.append(Line(
+                "\(performed.unclassified) \(noun) ran without saying whether anything was changed, so whether this left a mark is not recorded."
+            ))
+        } else {
+            lines.append(Line("Nothing was recorded as changed, so starting it again is safe."))
+        }
+        let ran: TimeInterval? = {
+            guard let started = run.startedAt, let finished = run.finishedAt else { return nil }
+            let seconds = finished.timeIntervalSince(started)
+            return seconds >= 0 ? seconds : nil
+        }()
+        let cost = run.costMicroUsd
+        typealias P = Line.Part
+        if let ran {
+            let duration = P(text: ChatWorkFormat.duration(ran), isFigure: true)
+            if cost > 0 {
+                lines.append(Line(parts: [
+                    P(text: "Ran for ", isFigure: false), duration, P(text: " and spent ", isFigure: false),
+                    P(text: ChatWorkFormat.cost(microUsd: cost), isFigure: true), P(text: ".", isFigure: false),
+                ]))
+            } else {
+                lines.append(Line(parts: [P(text: "Ran for ", isFigure: false), duration, P(text: ".", isFigure: false)]))
+            }
+        } else if cost > 0 {
+            lines.append(Line(parts: [
+                P(text: "Spent ", isFigure: false), P(text: ChatWorkFormat.cost(microUsd: cost), isFigure: true),
+                P(text: ".", isFigure: false),
+            ]))
+        }
+        return lines
+    }
+}
+
+/// The digest as the web lists it: each line in the reading ink behind a
+/// small muted bullet, the figures in mono.
+struct ChatWorkOutcomeDigest: View {
+    let lines: [ChatWorkOutcome.Line]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                    Circle()
+                        .fill(Color.junoSecondaryInk.opacity(0.7))
+                        .frame(width: 4, height: 4)
+                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] + 4 }
+                        .accessibilityHidden(true)
+                    line.parts.reduce(Text(verbatim: "")) { text, part in
+                        text + Text(part.text)
+                            .font(part.isFigure ? .system(size: 13, design: .monospaced) : nil)
+                    }
+                    .junoFont(size: 13, relativeTo: .callout)
+                    .foregroundStyle(Color.junoForeground)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .accessibilityIdentifier("juno.chat.work-card.digest")
+    }
+}
+
+// MARK: - Save this as a skill
+
+/// The offer to keep a run that worked (the web's `CaptureSkillButton`):
+/// full width, outlined, the skill's own mark — the web's sentence case,
+/// since it is a button, not a menu item.
+struct ChatWorkSaveSkillButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: JunoSpace.tight) {
+                JunoIconView(.skills, size: 14)
+                Text("Save this as a skill")
+            }
+            .frame(maxWidth: .infinity, minHeight: 20)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.bordered)
+        .tint(nil)
+        .controlSize(.small)
+        .frame(minHeight: 28)
+        .accessibilityIdentifier("juno.chat.work-card.save-skill")
+    }
+}
+
+// MARK: - Local blockers
+
+/// A macOS permission a run on this Mac is missing (B4).
+struct ChatWorkLocalBlocker: Identifiable, Equatable {
+    enum Kind: Hashable { case accessibility, screenRecording }
+
+    let kind: Kind
+    var id: Kind { kind }
+
+    /// The host tile's own sentence for it.
+    var sentence: String {
+        switch kind {
+        case .accessibility: DesktopWorkHostTile.accessibilitySentence
+        case .screenRecording: DesktopWorkHostTile.screenRecordingSentence
+        }
+    }
+
+    var pane: URL? {
+        switch kind {
+        case .accessibility: URL(string: DesktopWorkHostTile.accessibilityPane)
+        case .screenRecording: URL(string: DesktopWorkHostTile.screenRecordingPane)
+        }
+    }
+
+    /// The tiles a run shows: one per missing permission, only for a run this
+    /// Mac is carrying.
+    static func of(_ permissions: DesktopWorkSystemPermissions, runsHere: Bool) -> [ChatWorkLocalBlocker] {
+        guard runsHere else { return [] }
+        var blockers: [ChatWorkLocalBlocker] = []
+        if !permissions.accessibility { blockers.append(ChatWorkLocalBlocker(kind: .accessibility)) }
+        if !permissions.screenRecording { blockers.append(ChatWorkLocalBlocker(kind: .screenRecording)) }
+        return blockers
+    }
+}
+
+/// The tile: radius 12 on the card under a warning hairline, the lock, the
+/// host tile's sentence, and the way to fix it. Mac-only (A5).
+struct ChatWorkLocalBlockerTile: View {
+    let blocker: ChatWorkLocalBlocker
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: JunoSpace.cozy) { content }
+            VStack(alignment: .leading, spacing: JunoSpace.snug) { content }
+        }
+        .padding(.horizontal, JunoSpace.comfy)
+        .padding(.vertical, JunoSpace.close)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.junoCard, in: RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                .strokeBorder(Color.junoWarning.opacity(0.6), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.chat.work-card.blocker")
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+            JunoIconView(.lock, size: 14)
+                .foregroundStyle(Color.junoWarningInk)
+                .accessibilityHidden(true)
+            Text(blocker.sentence)
+                .junoFont(size: 13, relativeTo: .callout)
+                .foregroundStyle(Color.junoForeground)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        Button {
+            if let pane = blocker.pane { NSWorkspace.shared.open(pane) }
+        } label: {
+            Text("Open System Settings").frame(minHeight: 20).contentShape(.rect)
+        }
+        .buttonStyle(.bordered)
+        .tint(nil)
+        .controlSize(.small)
+        .frame(minHeight: 28)
+        .fixedSize()
     }
 }
 
@@ -892,12 +1147,10 @@ struct ChatWorkQuestionCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !question.options.isEmpty {
-                JunoChipFlow(spacing: JunoSpace.tight) {
+                JunoChipFlow(spacing: JunoChipMetrics.spacing) {
                     ForEach(question.options, id: \.self) { option in
                         Button(option) { answer(option) }
-                            .buttonStyle(.bordered)
-                            .tint(nil)
-                            .frame(minHeight: 28)
+                            .buttonStyle(JunoChipStyle())
                             .contentShape(.rect)
                             .accessibilityIdentifier("juno.chat.work-card.option")
                     }
@@ -921,103 +1174,20 @@ struct ChatWorkQuestionCard: View {
                 .accessibilityLabel("Reply in the message box below")
             } else {
                 Text("Answer the question above it first; this one is next.")
-                    .junoFont(size: 12, relativeTo: .footnote)
+                    .junoFont(size: 13, relativeTo: .callout)
                     .foregroundStyle(Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, JunoSpace.comfy)
         .padding(.vertical, JunoSpace.cozy)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.junoSecondary, in: RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous))
+        .background(Color.junoCard, in: RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
-                .strokeBorder(Color.junoWarning.opacity(0.45), lineWidth: 1)
+                .strokeBorder(Color.junoWarning.opacity(isCurrent ? 0.6 : 0.35), lineWidth: 1)
         )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("juno.chat.work-card.question")
-    }
-}
-
-// MARK: - Approval (the slice's, until Stage B)
-
-/// A task's approval (§6.9): the risk in its tone, the stored sentence, then
-/// "Don't" first and the action's own verb last. Nothing is bound to
-/// `.defaultAction`, so Return never approves. A run on this Mac is answered
-/// in-process, because only its coordinator can.
-struct ChatWorkApprovalCard: View {
-    let approval: WorkApprovalRequest
-    var isBusy = false
-    let decide: (JunoWorkApprovalDecision) -> Void
-
-    private var tint: Color { DesktopWorkVocabulary.riskTint(approval.risk) }
-    private var verb: String { Self.verb(for: approval.action) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            HStack(spacing: JunoSpace.snug) {
-                Text(DesktopWorkVocabulary.risk(approval.risk))
-                    .junoFont(size: 11, relativeTo: .caption, weight: .medium)
-                    .foregroundStyle(tint)
-                Text(DesktopWorkVocabulary.action(approval.action))
-                    .junoCaption()
-                    .lineLimit(1)
-                Spacer(minLength: JunoSpace.snug)
-                Text(timerInterval: Date()...max(Date(), approval.expiresAt), countsDown: true)
-                    .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
-                    .foregroundStyle(Color.junoMutedForeground)
-                    .monospacedDigit()
-                    .fixedSize()
-            }
-            Text(approval.summary)
-                .junoFont(size: 15, relativeTo: .body, weight: .semibold)
-                .foregroundStyle(Color.junoForeground)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-            HStack(spacing: JunoSpace.snug) {
-                Button("Don\u{2019}t", role: .destructive) { decide(.denied) }
-                    .buttonStyle(.bordered)
-                    .contentShape(.rect)
-                    .accessibilityIdentifier("juno.work.approval.deny")
-                Button(verb) { decide(.allowed) }
-                    .buttonStyle(.junoProminent)
-                    .contentShape(.rect)
-                    .accessibilityIdentifier("juno.work.approval.allow")
-                if approval.allowsStandingGrant {
-                    Menu("More") {
-                        Button("\(verb), and Stop Asking") { decide(.allowedAlways) }
-                    }
-                    .menuStyle(.button)
-                    .buttonStyle(.bordered)
-                    .contentShape(.rect)
-                    .fixedSize()
-                    .accessibilityIdentifier("juno.work.approval.more")
-                }
-                Spacer(minLength: 0)
-            }
-            .controlSize(.regular)
-            .disabled(isBusy)
-        }
-        .padding(JunoSpace.regular)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            Color.junoCard,
-            in: RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
-                .strokeBorder(tint.opacity(0.55), lineWidth: 1)
-        )
-        .accessibilityIdentifier("juno.work.approval")
-    }
-
-    /// The verb on the approving button: what pressing it does.
-    static func verb(for action: String) -> String {
-        let name = action.lowercased()
-        if name.contains("permanently_delete") { return "Delete for Good" }
-        if name.contains("send") { return "Send" }
-        if name.contains("post") || name.contains("publish") { return "Post" }
-        if name.contains("delete") || name.contains("trash") { return "Delete" }
-        if name == "apply_changes" { return "Make the Changes" }
-        return "Go Ahead"
     }
 }

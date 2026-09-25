@@ -340,6 +340,159 @@ public enum WorkEventLog {
         return pending.reversed()
     }
 
+    // MARK: What it changed
+
+    /// One thing the run did that left a mark outside Juno.
+    public struct PerformedAction: Identifiable, Equatable, Sendable {
+        public let id: Int
+        public let summary: String
+        public let at: Date
+        /// True for the ones the reader personally allowed.
+        public let approved: Bool
+
+        public init(id: Int, summary: String, at: Date, approved: Bool) {
+            self.id = id
+            self.summary = summary
+            self.at = at
+            self.approved = approved
+        }
+    }
+
+    /// What the run changed, and how many calls never said either way.
+    public struct PerformedActions: Equatable, Sendable {
+        public let actions: [PerformedAction]
+        /// Tool calls that finished without saying whether they changed
+        /// anything: counted, never assumed either way. A Mac run reports
+        /// neither a risk nor a mutating flag, so on a local run this is every
+        /// call it made.
+        public let unclassified: Int
+
+        public init(actions: [PerformedAction], unclassified: Int) {
+            self.actions = actions
+            self.unclassified = unclassified
+        }
+
+        public static let none = PerformedActions(actions: [], unclassified: 0)
+    }
+
+    /// The subset of the run that changed something outside Juno — the web's
+    /// `derivePerformedActions`, rule for rule.
+    ///
+    /// A tool call counts when it said so: `mutating: true` at face value,
+    /// otherwise the risk the executor gave it on the *start* event (anything
+    /// but `safe`), joined to the finish on the call id. A call that failed
+    /// changed nothing worth undoing. Approvals are joined on their id, since
+    /// a resolution carries only the id and the decision.
+    ///
+    /// - Parameters:
+    ///   - toolPresent: a tool's name as a present-tense phrase, for a call
+    ///     that wrote no summary of its own.
+    ///   - toolPast: the same in the past tense, for a finished call.
+    public static func performedActions(
+        in events: [WorkEvent],
+        toolPresent: (String?) -> String = WorkEventLog.humanizedTool,
+        toolPast: (String?) -> String = WorkEventLog.humanizedTool
+    ) -> PerformedActions {
+        var actionByApproval: [String: String] = [:]
+        var approvedActions: Set<String> = []
+        for event in events {
+            guard let kind = JunoWorkEventKind(rawValue: event.kind) else { continue }
+            let payload = WorkEventPayload.fields(of: event)
+            guard let approvalID = string(payload, "approvalId", "requestId", "id") else { continue }
+            if kind == .approvalRequested {
+                if let action = string(payload, "action") { actionByApproval[approvalID] = action }
+                continue
+            }
+            guard kind == .approvalResolved else { continue }
+            let decision = string(payload, "decision")
+            let action = string(payload, "action") ?? actionByApproval[approvalID]
+            if let action, let decision, decision.hasPrefix("allowed") {
+                approvedActions.insert(action)
+            }
+        }
+
+        struct Started {
+            let title: String
+            let mutating: Bool?
+            let action: String?
+        }
+        var started: [String: Started] = [:]
+        var actions: [PerformedAction] = []
+        var unclassified = 0
+
+        for (event, kind) in visible(events) {
+            let payload = WorkEventPayload.fields(of: event)
+            switch kind {
+            case .toolStarted:
+                guard let callID = string(payload, "callId", "toolCallId") else { continue }
+                let risk = string(payload, "risk")
+                started[callID] = Started(
+                    title: string(payload, "summary") ?? toolPresent(string(payload, "tool", "name")),
+                    mutating: payload["mutating"]?.boolValue ?? risk.map { $0 != "safe" },
+                    action: string(payload, "action")
+                )
+            case .filesChanged, .batchApplied, .batchUndone, .artifactCreated, .artifactUpdated:
+                actions.append(PerformedAction(
+                    id: event.seq, summary: markTitle(kind, payload), at: event.createdAt, approved: false
+                ))
+            case .toolFinished:
+                if payload["isError"]?.boolValue == true { continue }
+                let callID = string(payload, "callId", "toolCallId")
+                let start = callID.flatMap { started[$0] }
+                guard let mutating = payload["mutating"]?.boolValue ?? start?.mutating else {
+                    unclassified += 1
+                    continue
+                }
+                guard mutating else { continue }
+                let action = string(payload, "action") ?? start?.action
+                actions.append(PerformedAction(
+                    id: event.seq,
+                    summary: string(payload, "summary") ?? start?.title
+                        ?? toolPast(string(payload, "tool", "name")),
+                    at: event.createdAt,
+                    approved: action.map { approvedActions.contains($0) } ?? false
+                ))
+            default:
+                continue
+            }
+        }
+        return PerformedActions(actions: actions, unclassified: unclassified)
+    }
+
+    /// A tool's name in words when nothing better is known: `read_file` →
+    /// "Read file".
+    public static func humanizedTool(_ name: String?) -> String {
+        guard let name, !name.isEmpty else { return "Did something" }
+        return WorkApprovalWords.humanize(name)
+    }
+
+    /// The title of an event that left a mark, as the log words it.
+    private static func markTitle(_ kind: JunoWorkEventKind, _ payload: [String: JunoJSONValue]) -> String {
+        func count(_ key: String) -> Int? {
+            if let value = payload[key]?.numberValue { return Int(value) }
+            if case .array(let items)? = payload[key] { return items.count }
+            return nil
+        }
+        func changes(_ n: Int) -> String { n == 1 ? "1 change" : "\(n) changes" }
+        switch kind {
+        case .filesChanged:
+            let changed = count("files") ?? count("count")
+            return changed.map { $0 == 1 ? "1 file changed" : "\($0) files changed" } ?? "Changed files"
+        case .batchApplied:
+            return (count("items") ?? count("count")).map { "Applied \(changes($0))" }
+                ?? "Applied a batch of changes"
+        case .batchUndone:
+            return (count("reversedCount") ?? count("count")).map { "Undid \(changes($0))" }
+                ?? "Undid a batch of changes"
+        case .artifactCreated:
+            return "Created \(string(payload, "title") ?? "a file")"
+        case .artifactUpdated:
+            return "Updated \(string(payload, "title") ?? "a file")"
+        default:
+            return string(payload, "summary", "title") ?? "Changed something"
+        }
+    }
+
     // MARK: Artifacts
 
     /// How many files the run has said it made or changed, for knowing when the

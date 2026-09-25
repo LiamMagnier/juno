@@ -615,7 +615,7 @@ struct GeneratedImageView: View {
 /// The drop's completion handler, carried to the main actor where the file is
 /// fetched. AppKit calls it once from whatever thread it likes, so it is safe
 /// to hand across — the SDK just does not say so.
-private final class DragFileReply: @unchecked Sendable {
+final class DragFileReply: @unchecked Sendable {
     private let completion: (URL?, Bool, (any Error)?) -> Void
 
     init(_ completion: @escaping (URL?, Bool, (any Error)?) -> Void) {
