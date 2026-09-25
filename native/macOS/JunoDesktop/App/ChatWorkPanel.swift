@@ -266,12 +266,14 @@ struct ChatWorkPanel: View {
                 }
             }
             if let session {
-                Text(session.sessionID)
-                    .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .textSelection(.enabled)
-                    .padding(.top, JunoSpace.cozy)
-                    .accessibilityLabel("Task id \(session.sessionID)")
+                // A labelled, selectable detail (Mac-only copy, register #180),
+                // not a bare id that read as leftover debug output.
+                Rectangle()
+                    .fill(Color.junoHairline)
+                    .frame(height: 1)
+                    .padding(.vertical, JunoSpace.snug)
+                    .accessibilityHidden(true)
+                ChatWorkDetailRow("Task ID", value: session.sessionID, figure: true)
             }
         }
         .accessibilityElement(children: .contain)

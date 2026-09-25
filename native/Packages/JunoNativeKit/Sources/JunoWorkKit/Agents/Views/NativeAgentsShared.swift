@@ -2,6 +2,27 @@ import Foundation
 import JunoDesignSystem
 import SwiftUI
 
+/// A control's target in the Agents views, which both apps share: a
+/// pointer's 28pt on the Mac (§0.6, §10.2.10), a finger's 44pt on the phone.
+/// A literal 44 here shipped phone rows to the Mac and put them out of rhythm.
+/// A menu item's words: the web's, in Title Case on the Mac (§0.7, register
+/// #5) and as they are on the phone.
+func nativeAgentMenuTitle(_ words: String) -> String {
+    #if os(macOS)
+    words.split(separator: " ").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+    #else
+    words
+    #endif
+}
+
+public enum NativeAgentMetrics {
+    #if os(macOS)
+    public static let target: CGFloat = 28
+    #else
+    public static let target: CGFloat = 44
+    #endif
+}
+
 // The small vocabulary every Agents screen shares on both platforms: the
 // page container, a section heading, the flat tile, and the words for times
 // and task states. One place, so the roster, the page and the hire flow
@@ -177,7 +198,7 @@ struct NativeAgentsProblem: View {
             Button(action: dismiss) {
                 JunoIconView(.close, size: 12)
                     .junoSecondaryInk()
-                    .frame(minWidth: 44, minHeight: 44)
+                    .frame(minWidth: NativeAgentMetrics.target, minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)

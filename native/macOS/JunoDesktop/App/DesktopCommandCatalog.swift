@@ -115,7 +115,7 @@ struct DesktopPanelCodeSession: Equatable {
 /// Keywords are the web's, verbatim, so the words people type find the same
 /// rows on both. Rows whose page this base does not route are absent while
 /// their hook is nil (decision 10); "Open pull requests" and "Compare models"
-/// are left out on the Mac (P3-13), and "New private chat" is the Mac's own
+/// are left out on the Mac (P3-13), and "New incognito chat" is the Mac's own
 /// (P3-14).
 enum DesktopCommandCatalog {
     /// The seams the integration wires (§2.3, rows 3–6). Each is optional; a
@@ -299,7 +299,7 @@ enum DesktopCommandCatalog {
         ),
         // The Mac's own (P3-14): ⇧⌘N, private mode inline.
         Command(
-            id: "new-private-chat", label: "New private chat", hint: Self.keys(.newPrivateChat), icon: .privateChat,
+            id: "new-private-chat", label: "New incognito chat", hint: Self.keys(.newPrivateChat), icon: .privateChat,
             keywords: "private incognito temporary unsaved", action: .newPrivateChat
         ),
         Command(

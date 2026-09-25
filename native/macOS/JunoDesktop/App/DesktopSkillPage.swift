@@ -772,17 +772,8 @@ private struct DesktopSkillUsageOption: View {
     var body: some View {
         Button(action: select) {
             HStack(alignment: .top, spacing: JunoSpace.cozy) {
-                ZStack {
-                    Circle()
-                        .strokeBorder(isSelected ? Color.junoForeground : Color.junoInput, lineWidth: 1.5)
-                    if isSelected {
-                        Circle()
-                            .fill(Color.junoForeground)
-                            .padding(4)
-                    }
-                }
-                .frame(width: 16, height: 16)
-                .padding(.top, 1)
+                JunoRadioMark(isOn: isSelected)
+                    .padding(.top, 1)
                 VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text(title)
                         .junoType(JunoType.ui.weight(.medium))

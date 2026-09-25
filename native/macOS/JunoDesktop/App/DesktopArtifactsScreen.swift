@@ -354,6 +354,7 @@ struct DesktopArtifactsScreen: View {
         )
         .contentShape(.rect)
         .onTapGesture { open(artifact) }
+        .desktopKeyboardOpen { open(artifact) }
         .onHover { inside in hover(artifact, inside) }
         .contextMenu { actions(artifact) }
         .accessibilityElement(children: .combine)
@@ -418,6 +419,7 @@ struct DesktopArtifactsScreen: View {
         )
         .contentShape(.rect(cornerRadius: JunoRadius.card))
         .onTapGesture { open(artifact) }
+        .desktopKeyboardOpen { open(artifact) }
         .onHover { inside in hover(artifact, inside) }
         .contextMenu { actions(artifact) }
         .accessibilityElement(children: .combine)
@@ -733,8 +735,9 @@ struct DesktopArtifactInset: View {
     }
 }
 
-/// A tile's 4:3 preview: a design's poster; otherwise the inert live
-/// thumbnail of the source.
+/// A tile's 4:3 preview: a design's poster; otherwise the web's
+/// `ArtifactPreview`, an excerpt of the source (an SVG as its picture), never
+/// a live render; the kind's glyph when there is no source yet.
 struct DesktopArtifactPreviewTile: View {
     let artifact: NativeArtifact
 
@@ -744,15 +747,8 @@ struct DesktopArtifactPreviewTile: View {
             if artifact.kind == .design {
                 DesktopDesignPoster(artifactID: artifact.id, version: artifact.currentVersion, isCurrent: true, glyphSize: 28)
                     .padding(JunoSpace.cozy)
-            } else if let content = artifact.currentContent, artifact.kind.supportsRenderedPreview {
-                NativeArtifactPreview(
-                    kind: artifact.kind,
-                    content: content,
-                    mode: .preview,
-                    policy: .thumbnail,
-                    language: artifact.language
-                )
-                .allowsHitTesting(false)
+            } else if let content = artifact.currentContent, !content.isEmpty {
+                DesktopArtifactExcerpt(source: content, kind: artifact.kind, well: Color.junoSecondary)
             } else {
                 JunoIconView(DesktopArtifactKinds.icon(artifact.kind), size: 28)
                     .foregroundStyle(Color.junoSecondaryInk)

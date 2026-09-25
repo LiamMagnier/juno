@@ -623,3 +623,77 @@ enum DesktopArtifactKindName {
         }
     }
 }
+
+// MARK: - Excerpt
+
+/// What an artifact's source looks like at tile size: the web's
+/// `ArtifactPreview`. An SVG as a picture drawn by AppKit (no script, no
+/// network); anything else as its first twenty lines, set as `<pre>` is on
+/// the web in the micro rung under a fade.
+///
+/// **Never a live render.** A page of tiles each booting a web view is the
+/// cost the web's own comment rules out for a list of two hundred, and an
+/// excerpt is honest about being one. Shared by the Outputs popover and the
+/// Artifacts grid, so the two draw one artifact the same way.
+struct DesktopArtifactExcerpt: View {
+    let source: String
+    let kind: NativeArtifactKind
+    /// The well behind the excerpt, which the fade dissolves into.
+    var well: Color = Color.junoCanvas
+
+    var body: some View {
+        if kind == .svg, let image = Self.svgImage(source) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .padding(JunoSpace.cozy)
+        } else {
+            Text(verbatim: Self.firstLines(source))
+                .junoType(.micro)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(JunoSpace.cozy)
+                // `minWidth: 0` holds the tile to its own width: the unwrapped
+                // lines overflow to the right and are clipped, never centred.
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
+                .overlay(alignment: .bottom) {
+                    // The clip, said out loud: the excerpt fades into the well
+                    // rather than ending mid-glyph.
+                    LinearGradient(colors: [well.opacity(0), well], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 48)
+                }
+                .clipped()
+        }
+    }
+
+    static func firstLines(_ source: String) -> String {
+        source.split(separator: "\n", omittingEmptySubsequences: false).prefix(20).joined(separator: "\n")
+    }
+
+    /// An SVG as a picture, drawn by AppKit: no script, no network. Nil
+    /// for anything that is not a complete document.
+    static func svgImage(_ source: String) -> NSImage? {
+        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("<svg") || trimmed.hasPrefix("<?xml"), trimmed.hasSuffix("</svg>"),
+            let data = trimmed.data(using: .utf8)
+        else { return nil }
+        return NSImage(data: data)
+    }
+}
+
+// MARK: - Keyboard
+
+extension View {
+    /// A page object that opens on a click (a tile, a row with its own Pin
+    /// and More inside it, so never wrapped in a Button): reachable with Full
+    /// Keyboard Access, with the system's focus ring, and opened with Return,
+    /// as the web's focusable link is.
+    func desktopKeyboardOpen(_ open: @escaping () -> Void) -> some View {
+        focusable(interactions: .activate)
+            .onKeyPress(.return) {
+                open()
+                return .handled
+            }
+    }
+}
+

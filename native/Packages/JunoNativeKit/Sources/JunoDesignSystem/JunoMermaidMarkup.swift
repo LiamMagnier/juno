@@ -179,7 +179,9 @@ public extension JunoMermaidMarkup {
     ///     because reloading resets the reader's zoom and pan.
     static func hostDocument(source: String, engine: String, isDark: Bool) -> String {
         let literal = escapedForJavaScript(source)
-        let theme = isDark ? "dark" : "default"
+        // Neutral in light, not Mermaid's lavender "default": §10.2 rule 5 (no
+        // violet anywhere) outranks the web here (register #179).
+        let theme = isDark ? "dark" : "neutral"
         return """
             <!doctype html>
             <html>

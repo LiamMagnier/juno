@@ -276,9 +276,13 @@ struct DesktopInlineArtifactCard: View {
     private var trailingControls: some View {
         HStack(spacing: JunoSpace.hairline) {
             if !card.isStreaming, hasContent, options.count > 1 {
-                InlineArtifactSwitch(
-                    options: options,
-                    selection: Binding(get: { view }, set: { chosenView = $0 })
+                // The shared switch at its compact size, so Preview / Code on
+                // the card and in the canvas dock beside it are one control.
+                JunoSegmented(
+                    options: options.map { JunoSegmentedOption($0.view, $0.title, count: $0.count) },
+                    selection: Binding(get: { view }, set: { chosenView = $0 }),
+                    accessibilityLabel: "Artifact view",
+                    size: .compact
                 )
             }
             if let open {
@@ -543,73 +547,14 @@ private struct InlineArtifactSweep: View {
 
 // MARK: - The switch
 
-/// Preview · Code · Console, on the card: the web's `SegmentedControl` at the
-/// card header's size — a `junoCanvas` track with a raised `junoCard` thumb.
-struct InlineArtifactSwitch: View {
+/// One view the inline card can show, with its words and, for the console,
+/// its count: the options the card's switch is built from.
+enum InlineArtifactSwitch {
     struct Option: Identifiable {
         let view: InlineArtifactView
         let title: String
         var count: Int? = nil
         var id: InlineArtifactView { view }
-    }
-
-    let options: [Option]
-    @Binding var selection: InlineArtifactView
-
-    @Namespace private var thumb
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(options) { option in
-                Button {
-                    withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-                        selection = option.view
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(option.title)
-                        if let count = option.count {
-                            Text("\(count)")
-                                .junoFont(size: 10.5, relativeTo: .caption2, design: .monospaced)
-                                .foregroundStyle(Color.junoSecondaryInk)
-                                .padding(.horizontal, 4)
-                                .frame(minWidth: 16, minHeight: 16)
-                                .background(Capsule(style: .continuous).fill(Color.junoMuted))
-                        }
-                    }
-                    .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
-                    .foregroundStyle(selection == option.view ? Color.junoForeground : Color.junoSecondaryInk)
-                    .padding(.horizontal, 10)
-                    .frame(minHeight: 28)
-                    .background {
-                        if selection == option.view {
-                            RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
-                                .fill(Color.junoCard)
-                                .shadow(color: .black.opacity(0.04), radius: 1, y: 1)
-                                .padding(.vertical, 2)
-                                .matchedGeometryEffect(id: "thumb", in: thumb)
-                        }
-                    }
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .contentShape(.rect)
-                .accessibilityAddTraits(selection == option.view ? .isSelected : [])
-            }
-        }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 2)
-        .background(
-            RoundedRectangle(cornerRadius: JunoRadius.menu, style: .continuous)
-                .fill(Color.junoCanvas)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.menu, style: .continuous)
-                .strokeBorder(Color.junoBorder.opacity(0.8), lineWidth: 1)
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Artifact view")
     }
 }
 

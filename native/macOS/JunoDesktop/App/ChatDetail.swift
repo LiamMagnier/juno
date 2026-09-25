@@ -114,6 +114,18 @@ enum DesktopOfflineState: Equatable {
         if syncPhase == .offline { return .offline }
         return nil
     }
+
+    /// The one sentence each state says, here once so the caption and the
+    /// footer's sync mark can never word it two ways (§1.5).
+    static let offlineSentence = "Offline · messages send when you're back"
+    static let unreachableSentence = "Juno is unreachable · showing your local copy"
+
+    var sentence: String {
+        switch self {
+        case .offline: Self.offlineSentence
+        case .unreachable: Self.unreachableSentence
+        }
+    }
 }
 
 /// One 28pt caption row: what is wrong, in 12pt secondary ink, with no fill —
@@ -134,9 +146,9 @@ struct DesktopOfflineCaption: View {
             JunoIconView(.cloudOff, size: 12)
             switch state {
             case .offline:
-                Text("Offline · messages send when you're back")
+                Text(DesktopOfflineState.offlineSentence)
             case .unreachable(let cause):
-                Text("Juno is unreachable · showing your local copy")
+                Text(DesktopOfflineState.unreachableSentence)
                     .help(cause)
                 // Link-style accent text in the ink rung, stated rather than
                 // left to a borderless style: in Chat that would be the fill

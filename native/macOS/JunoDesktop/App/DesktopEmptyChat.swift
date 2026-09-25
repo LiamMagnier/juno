@@ -248,50 +248,92 @@ private struct ChatGreetingBody: View {
 
 // MARK: - Starter chips
 
-/// One starter chip (§4.3): a word, a glyph, and the sentence it starts.
+/// One starter chip (§4.3): a word, a glyph, and three example prompts.
 ///
-/// **They seed; they never send.** Each seed ends in a space and stops where
-/// the reader's own subject begins — a chip that wrote the whole question
-/// would be a demo, and one that sent it would spend the reader's allowance on
-/// a sentence they did not write. The seeds are the web's, verbatim
-/// (`starter-chips.tsx`).
+/// **A chip opens examples; it does not write.** Pressing one unfolds three
+/// whole prompts under the row, and picking one seeds the composer with it.
+/// **An example seeds; it never sends**: a suggestion that sent itself would
+/// spend the reader's allowance on a sentence they did not write. The words
+/// are the web's `STARTER_CHIP_COPY`, verbatim (`starter-chips.tsx`).
 struct ChatStarterChip: Identifiable, Equatable {
     let label: String
     let icon: JunoIcon
-    let seed: String
+    let examples: [String]
 
     var id: String { label }
 
-    /// Research it will cite, a draft, code, and a plan — the four things Juno
+    /// Research it will cite, a draft, code, and a plan: the four things Juno
     /// is for, rather than the "brainstorm / summarize" filler that would
-    /// describe any chat product. Plan seeds a sentence and arms nothing.
+    /// describe any chat product.
     static let all: [ChatStarterChip] = [
-        ChatStarterChip(label: "Research", icon: .research, seed: "Research and cite sources on "),
-        ChatStarterChip(label: "Write", icon: .pencil, seed: "Help me write "),
-        ChatStarterChip(label: "Code", icon: .code, seed: "Write code that "),
-        ChatStarterChip(label: "Plan", icon: .task, seed: "Plan the steps to "),
+        ChatStarterChip(label: "Research", icon: .research, examples: [
+            "What does the latest research say about intermittent fasting? Cite the strongest studies.",
+            "Compare the three most popular note-taking apps for a small team, with sources.",
+            "Summarise what changed in EU AI regulation this year and link the primary texts.",
+        ]),
+        ChatStarterChip(label: "Write", icon: .pencil, examples: [
+            "Draft a short, friendly follow-up email after a job interview.",
+            "Write a toast for my sister’s wedding that is warm and under two minutes long.",
+            "Turn my rough notes into a clear one-page project update.",
+        ]),
+        ChatStarterChip(label: "Code", icon: .code, examples: [
+            "Write a Python script that renames photos by the date they were taken.",
+            "Build a React table component that sorts by any column.",
+            "Explain how this regular expression works, one part at a time.",
+        ]),
+        ChatStarterChip(label: "Plan", icon: .task, examples: [
+            "Plan a three-day trip to Lisbon with a mix of food, museums and walks.",
+            "Turn my goals for this quarter into a week-by-week plan.",
+            "Make a launch checklist for a small product release.",
+        ]),
     ]
 }
 
 /// The row of starter chips under the draft's composer: centred, wrapping,
-/// 8pt apart, on the canvas — not glass (§0.1).
+/// 8pt apart, on the canvas, not glass (§0.1).
 ///
-/// Dealt in after the greeting — 120ms, then 30ms a chip — so the row reads as
+/// Dealt in after the greeting (120ms, then 30ms a chip) so the row reads as
 /// an answer to the question above it; faded out over 120ms on a send, ahead
 /// of the greeting, because they are smaller and lower. Each chip's entrance
 /// is its own `animation(_:value:)` with its own delay, which is what lets one
 /// state flip stagger four views without four timers. Mounted for the life of
 /// the column and untouchable while hidden, for the reason ``ChatEmptyPose``
 /// gives.
+///
+/// **One chip is open at a time.** Its examples hang below the row as an
+/// overlay, so opening them never adds to the dock's footer or moves the
+/// composer the reader is about to type in. Pressing the chip again, or Esc,
+/// folds them away and gives focus back to the chip.
+///
+/// **The row steps aside once there is a draft** (`hasDraft`): suggestions
+/// under a half-written message are for a message the reader is no longer
+/// writing. It fades (opacity only, keeping its space so the composer never
+/// moves) and leaves the focus order, and comes back when the field is cleared.
 struct ChatStarterChips: View {
-    /// Whether the column is an ordinary draft — not private, not sent.
+    /// Whether the column is an ordinary draft, not private and not sent.
     let isShown: Bool
+    /// Whether the composer holds any text.
+    var hasDraft: Bool = false
+    /// Snapshots draw a chip open; the app never sets it.
+    var startsOpen: String? = nil
     let seed: (String) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pose = ChatEmptyPose.arriving
     /// The greeting's guard against a late deal, for the same reason.
     @State private var generation = 0
+    /// The chip whose examples are showing.
+    @State private var openLabel: String?
+    @FocusState private var focusedChip: String?
+    /// The chip row's height, which the examples hang below.
+    @State private var rowHeight: CGFloat = JunoChipMetrics.height
+
+    /// Hidden by a draft, not by the landing ending: a fade, never a re-deal.
+    private var isAvailable: Bool { isShown && !hasDraft }
+
+    private var open: ChatStarterChip? {
+        ChatStarterChip.all.first { $0.label == openLabel }
+    }
 
     var body: some View {
         JunoChipFlow(
@@ -300,42 +342,95 @@ struct ChatStarterChips: View {
             alignment: .center
         ) {
             ForEach(Array(ChatStarterChip.all.enumerated()), id: \.element.id) { index, chip in
-                Button {
-                    seed(chip.seed)
-                } label: {
-                    Label {
-                        Text(chip.label)
-                    } icon: {
-                        JunoIconView(chip.icon, size: JunoChipMetrics.glyphSize)
-                    }
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(JunoChipStyle())
-                .accessibilityHint("Starts your message with “\(chip.seed.trimmingCharacters(in: .whitespaces))”")
-                .accessibilityIdentifier("juno.desktop.chat.starter.\(chip.label.lowercased())")
-                .opacity(pose == .shown ? 1 : 0)
-                .offset(y: pose == .arriving ? JunoMotion.shift(DesktopChoreography.chipRise, reduceMotion: reduceMotion) : 0)
-                // Dealt in one at a time; taken away all at once.
-                .animation(
-                    pose == .shown
-                        ? JunoMotion.reduced(JunoMotion.riseIn, when: reduceMotion, tier: .tint)?
-                            .delay(DesktopChoreography.chipsBeat + DesktopChoreography.chipStagger * Double(index))
-                        : pose == .left ? JunoMotion.fast : nil,
-                    value: pose
-                )
+                chipButton(chip, index: index)
             }
         }
         .frame(maxWidth: .infinity)
-        .allowsHitTesting(isShown)
-        .accessibilityHidden(!isShown)
-        .onAppear { if isShown { deal() } }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = $0 }
+        // Hung below the row, outside its layout: the list's top sits 12pt
+        // under the row's foot, at its own height, and the row's own height
+        // never changes.
+        .overlay(alignment: .top) {
+            if let open, isAvailable {
+                ChatStarterExamples(chip: open) { prompt in
+                    seed(prompt)
+                    openLabel = nil
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .offset(y: rowHeight + JunoSpace.cozy)
+                .id(open.label)
+                .transition(.opacity)
+            }
+        }
+        .opacity(hasDraft ? 0 : 1)
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: hasDraft)
+        .allowsHitTesting(isAvailable)
+        .accessibilityHidden(!isAvailable)
+        .onKeyPress(.escape) {
+            guard let label = openLabel else { return .ignored }
+            openLabel = nil
+            focusedChip = label
+            return .handled
+        }
+        .onAppear {
+            if isShown { deal() }
+            if let startsOpen { openLabel = startsOpen }
+        }
         .onChange(of: isShown) { _, shown in
             if shown {
                 deal()
             } else {
                 generation += 1
+                openLabel = nil
                 pose = .left
             }
+        }
+        // A draft closes the list along with the row, so it is not still
+        // open when the row comes back.
+        .onChange(of: hasDraft) { _, drafting in
+            if drafting { openLabel = nil }
+        }
+    }
+
+    private func chipButton(_ chip: ChatStarterChip, index: Int) -> some View {
+        let expanded = openLabel == chip.label
+        return Button {
+            toggle(chip)
+        } label: {
+            Label {
+                Text(chip.label)
+            } icon: {
+                JunoIconView(chip.icon, size: JunoChipMetrics.glyphSize)
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(JunoChipStyle(isSelected: expanded))
+        .focused($focusedChip, equals: chip.label)
+        .accessibilityHint(expanded ? "Hides the examples" : "Shows example prompts")
+        .accessibilityAddTraits(expanded ? .isSelected : [])
+        .accessibilityIdentifier("juno.desktop.chat.starter.\(chip.label.lowercased())")
+        .opacity(pose == .shown ? 1 : 0)
+        .offset(y: pose == .arriving ? JunoMotion.shift(DesktopChoreography.chipRise, reduceMotion: reduceMotion) : 0)
+        // Dealt in one at a time; taken away all at once.
+        .animation(dealAnimation(index: index), value: pose)
+    }
+
+    private func dealAnimation(index: Int) -> Animation? {
+        switch pose {
+        case .shown:
+            let delay = DesktopChoreography.chipsBeat + DesktopChoreography.chipStagger * Double(index)
+            return JunoMotion.reduced(JunoMotion.riseIn, when: reduceMotion, tier: .tint)?.delay(delay)
+        case .left:
+            return JunoMotion.fast
+        default:
+            return nil
+        }
+    }
+
+    private func toggle(_ chip: ChatStarterChip) {
+        let next: String? = openLabel == chip.label ? nil : chip.label
+        withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint)) {
+            openLabel = next
         }
     }
 
@@ -351,6 +446,70 @@ struct ChatStarterChips: View {
             await Task.yield()
             guard generation == dealing else { return }
             pose = .shown
+        }
+    }
+}
+
+/// The open chip's three examples: plain rows between hairlines, muted at rest
+/// and foreground under the pointer the way a menu row lights, at most 576pt
+/// wide (the web's `max-w-xl divide-y divide-border/60`). Three prompts in
+/// full ink would read as a paragraph competing with the greeting.
+struct ChatStarterExamples: View {
+    let chip: ChatStarterChip
+    let pick: (String) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(chip.examples.enumerated()), id: \.element) { index, prompt in
+                if index > 0 {
+                    Rectangle()
+                        .fill(Color.junoBorder.opacity(0.6))
+                        .frame(height: 1)
+                        .accessibilityHidden(true)
+                }
+                Button {
+                    pick(prompt)
+                } label: {
+                    Text(verbatim: prompt)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(ChatStarterExampleRowStyle())
+                .padding(.vertical, 2)
+                .accessibilityHint("Puts this prompt in the message field")
+                .accessibilityIdentifier("juno.desktop.chat.starter.example.\(index)")
+            }
+        }
+        .frame(maxWidth: 576)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(chip.label)
+    }
+}
+
+/// A menu row on the canvas: 28pt, the control radius, hover wash.
+private struct ChatStarterExampleRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Row(configuration: configuration)
+    }
+
+    private struct Row: View {
+        let configuration: ButtonStyleConfiguration
+        @State private var hovered = false
+
+        var body: some View {
+            configuration.label
+                .junoType(.ui)
+                .multilineTextAlignment(.leading)
+                .foregroundStyle(hovered || configuration.isPressed ? Color.junoForeground : Color.junoSecondaryInk)
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.vertical, 6)
+                .frame(minHeight: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                        .fill(configuration.isPressed ? Color.junoSelectedFill : hovered ? Color.junoHover : Color.clear)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
+                .onHover { hovered = $0 }
         }
     }
 }

@@ -31,14 +31,21 @@ public enum JunoChipMetrics {
 /// box and the gap, so every chip in the product has the same geometry without
 /// each call site restating it.
 public struct JunoChipStyle: ButtonStyle {
-    public init() {}
+    /// Open, as a starter chip whose examples are showing: the selected tone,
+    /// one step past hover, with foreground ink (the web's `aria-expanded`).
+    let isSelected: Bool
+
+    public init(isSelected: Bool = false) {
+        self.isSelected = isSelected
+    }
 
     public func makeBody(configuration: Configuration) -> some View {
-        Chip(configuration: configuration)
+        Chip(configuration: configuration, isSelected: isSelected)
     }
 
     private struct Chip: View {
         let configuration: ButtonStyleConfiguration
+        let isSelected: Bool
         @State private var hovered = false
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -46,6 +53,7 @@ public struct JunoChipStyle: ButtonStyle {
 
         private var fill: Color {
             if configuration.isPressed { return Color.junoSecondary }
+            if isSelected { return Color.junoSelectedFill }
             return hovered ? Color.junoHover : Color.clear
         }
 
@@ -54,7 +62,7 @@ public struct JunoChipStyle: ButtonStyle {
                 .labelStyle(JunoChipLabelStyle())
                 .junoType(.ui)
                 .lineLimit(1)
-                .foregroundStyle(hovered || configuration.isPressed ? Color.junoForeground : Color.junoSecondaryInk)
+                .foregroundStyle(hovered || isSelected || configuration.isPressed ? Color.junoForeground : Color.junoSecondaryInk)
                 .padding(.leading, JunoChipMetrics.leadingPadding)
                 .padding(.trailing, JunoChipMetrics.trailingPadding)
                 .frame(height: JunoChipMetrics.height)

@@ -29,11 +29,22 @@ function shape(path: string): string {
   return path.replace(/\\\([^)]*\)/g, "*").replace(/\{[^}]*\}/g, "*");
 }
 
+/** Every Swift file under the kit, its folders included: the skills client
+ *  moved into `Skills/` with the Mac's Skills page, and a top-level-only read
+ *  lost its calls. */
+function swiftFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return swiftFiles(path);
+    return entry.name.endsWith(".swift") ? [path] : [];
+  });
+}
+
 /** Every `/api/work/...` literal in the shipped client sources. */
 function clientPaths(): Set<string> {
   const paths = new Set<string>();
-  for (const file of readdirSync(WORK_KIT).filter((name) => name.endsWith(".swift"))) {
-    const source = readFileSync(join(WORK_KIT, file), "utf8");
+  for (const file of swiftFiles(WORK_KIT)) {
+    const source = readFileSync(file, "utf8");
     for (const [, literal] of source.matchAll(/"(\/api\/work[^"]*)"/g)) {
       paths.add(shape(literal));
     }
@@ -71,11 +82,25 @@ test("every Work operation is reachable under /api rather than /api/v1", () => {
   // The global `servers` entry is /api/v1, so each Work operation carries the
   // same per-operation override /chat and /code already use — and an operation
   // that forgets it is documented at a URL that has never existed.
-  const section = CONTRACT.slice(CONTRACT.indexOf("\n  /work/hosts:"), CONTRACT.indexOf("\ncomponents:"));
-  const operations = [...section.matchAll(/^    (get|post|patch|put|delete):$/gm)];
-  const overrides = [...section.matchAll(/^      servers: \[\{ url: \/api \}\]$/gm)];
-  assert.equal(operations.length, 26);
-  assert.equal(overrides.length, operations.length);
+  //
+  // Read path item by path item: other sections (Memory, Skills, Settings…)
+  // now follow Work in the document, so a slice from /work/hosts to
+  // `components:` counted their operations too.
+  let operations = 0;
+  let overrides = 0;
+  let inWork = false;
+  for (const line of CONTRACT.slice(0, CONTRACT.indexOf("\ncomponents:")).split("\n")) {
+    const item = /^  (\/\S*):$/.exec(line);
+    if (item) {
+      inWork = item[1].startsWith("/work/");
+      continue;
+    }
+    if (!inWork) continue;
+    if (/^    (get|post|patch|put|delete):$/.test(line)) operations += 1;
+    if (/^      servers: \[\{ url: \/api \}\]$/.test(line)) overrides += 1;
+  }
+  assert.equal(operations, 39);
+  assert.equal(overrides, operations);
 });
 
 test("Work vocabularies are named, never re-enumerated", () => {

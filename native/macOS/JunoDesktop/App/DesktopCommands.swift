@@ -405,7 +405,7 @@ struct JunoDesktopCommands: Commands {
             Text("Juno \(JunoBuildInfo.current.version) is up to date")
         case .downloading(let version, let fraction):
             if let fraction {
-                Text("Downloading \(version) — \(Int((fraction * 100).rounded()))%")
+                Text("Downloading \(version), \(Int((fraction * 100).rounded()))%")
             } else {
                 Text("Downloading \(version)…")
             }

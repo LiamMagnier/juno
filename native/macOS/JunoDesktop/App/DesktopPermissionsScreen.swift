@@ -127,9 +127,11 @@ struct DesktopPermissionsScreen: View {
                         )
                     }
                     DesktopWorkRowList(items: model.ordered(thisMac: thisMac)) { host, _ in
-                        DesktopWorkHostRow(host: host, isThisMac: host.hostID == thisMac) {
-                            push(.host(host.hostID))
-                        }
+                        DesktopWorkHostRow(
+                            host: host,
+                            isThisMac: host.hostID == thisMac,
+                            open: { push(.host(host.hostID)) }
+                        )
                     }
                 }
             }
@@ -147,7 +149,14 @@ struct DesktopPermissionsScreen: View {
 struct DesktopWorkHostRow: View {
     let host: WorkHostSummary
     var isThisMac = false
-    let open: () -> Void
+    /// Opens the Mac's page. Nil draws the row as static content, with no
+    /// chevron and no hover: a row that looks like a door must open one.
+    let open: (() -> Void)?
+    /// Inside a grouped Form (Settings › Devices) the Form supplies the
+    /// insets and the row's rungs are the form's: title, then the 13pt
+    /// description every other Settings row uses. On the Permissions page the
+    /// row pads itself and hovers.
+    var inForm = false
 
     @State private var isHovering = false
 
@@ -168,49 +177,60 @@ struct DesktopWorkHostRow: View {
     }
 
     var body: some View {
-        Button(action: open) {
-            HStack(alignment: .center, spacing: JunoSpace.cozy) {
-                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                    HStack(spacing: JunoSpace.snug) {
-                        Text(host.displayName)
-                            .junoType(JunoType.ui.weight(.medium))
-                            .foregroundStyle(Color.junoForeground)
-                            .lineLimit(1)
-                        DesktopHostState(host: host)
-                        if isThisMac {
-                            DesktopWorkTag("This Mac")
-                        }
-                        if !revoked, !host.enabled {
-                            DesktopWorkTag("Work off")
-                        }
+        if let open {
+            Button(action: open) { content(chevron: true) }
+                .buttonStyle(.plain)
+                .contentShape(.rect)
+                .modifier(DesktopWorkRowSurface(isHovering: isHovering && !inForm))
+                .onHover { isHovering = $0 }
+                .accessibilityElement(children: .combine)
+                .accessibilityHint("Opens what this Mac may do")
+                .accessibilityIdentifier("juno.desktop.permissions.host.\(host.hostID)")
+        } else {
+            content(chevron: false)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("juno.desktop.permissions.host.\(host.hostID)")
+        }
+    }
+
+    private func content(chevron: Bool) -> some View {
+        HStack(alignment: .center, spacing: JunoSpace.cozy) {
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                HStack(spacing: JunoSpace.snug) {
+                    Text(host.displayName)
+                        .junoType(JunoType.ui.weight(.medium))
+                        .foregroundStyle(Color.junoForeground)
+                        .lineLimit(1)
+                    DesktopHostState(host: host)
+                    if isThisMac {
+                        DesktopWorkTag("This Mac")
                     }
-                    Text(sentence)
-                        .junoType(.ui)
-                        .foregroundStyle(Color.junoSecondaryInk)
-                        .lineLimit(1)
-                    Text(meta)
-                        .junoType(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(Color.junoSecondaryInk)
-                        .lineLimit(1)
-                        .padding(.top, JunoSpace.micro)
+                    if !revoked, !host.enabled {
+                        DesktopWorkTag("Work off")
+                    }
                 }
-                .opacity(revoked || !host.enabled ? 0.75 : 1)
-                Spacer(minLength: JunoSpace.snug)
+                Text(sentence)
+                    .junoType(inForm ? JunoType.label.weight(.regular) : .ui)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .lineLimit(1)
+                Text(meta)
+                    .junoType(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .lineLimit(1)
+                    .padding(.top, JunoSpace.micro)
+            }
+            .opacity(revoked || !host.enabled ? 0.75 : 1)
+            Spacer(minLength: JunoSpace.snug)
+            if chevron {
                 JunoIconView(.chevronRight, size: 14)
                     .foregroundStyle(Color.junoMutedForeground)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, JunoSpace.comfy)
-            .padding(.vertical, JunoSpace.cozy)
-            .contentShape(.rect)
         }
-        .buttonStyle(.plain)
-        .modifier(DesktopWorkRowSurface(isHovering: isHovering))
-        .onHover { isHovering = $0 }
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("Opens what this Mac may do")
-        .accessibilityIdentifier("juno.desktop.permissions.host.\(host.hostID)")
+        .padding(.horizontal, inForm ? 0 : JunoSpace.comfy)
+        .padding(.vertical, inForm ? 0 : JunoSpace.cozy)
+        .contentShape(.rect)
     }
 }
 

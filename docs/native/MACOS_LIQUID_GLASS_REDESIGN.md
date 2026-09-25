@@ -544,10 +544,12 @@ List(selection: $selection) {
 - **Empty Recent:** one row that can't be selected: "No conversations yet." in 13pt secondary ink, with "Start one above." in 12pt tertiary under it (web copy, `app-sidebar.tsx:1315-1329`).
 - **Loading** (only during the first bootstrap after sign-in, when the local store is empty): 6 placeholder rows with `.redacted(reason: .placeholder)` and an opacity breathe (1 → 0.62, 1.8s). The breathe stops under Reduce Motion.
 
-### 2.2 Search button (pinned above the list)
+### 2.2 Search row (after New chat)
 
-- A `Button` styled as a field: `.buttonStyle(.plain)`, 28pt tall, `RoundedRectangle(cornerRadius: 10)` filled with `junoGlassFill`.
-- Content: `ph.magnifyingglass` 14pt secondary, "Search" 13pt secondary, a spacer, then a "⌘K" keycap at 11pt tertiary.
+*Rewritten at the final review (2026-09-25), following the web's `app-sidebar.tsx` ("SEARCH IS A ROW… No shortcut hint") and the shell contract, which lists Search between New chat and Notifications.*
+
+- A plain `Button` row shaped like New chat: `JunoSymbol(ph.magnifyingglass)` in sidebar ink, "Search", `.buttonStyle(.plain)`, no fill, no keycap.
+- The chord rides the tooltip (`.help("Search  ⇧⌘F")`, read from `JunoShortcutRegistry`) and the menu bar, not the row.
 - It opens the panel in **Search** mode (§7.4). It is a button, not a live field, so there is exactly one search surface, as on the web.
 
 ### 2.3 Rows
@@ -745,20 +747,26 @@ VStack(spacing: 0) {
 
 ### 4.3 Starter chips
 
-| Chip | Glyph | Seed (verbatim, `starter-chips.tsx:40-60`) |
+*Rewritten at the final review (2026-09-25) to the web's `starter-chips.tsx` on `origin/main`: a chip opens examples; it does not write an opener.*
+
+| Chip | Glyph | Examples (verbatim, `STARTER_CHIP_COPY`) |
 |---|---|---|
-| Research | `ph.binoculars` | "Research and cite sources on " |
-| Write | `ph.pencilsimple` | "Help me write " |
-| Code | `juno.code` | "Write code that " |
-| Plan | `ph.treestructure` | "Plan the steps to " |
+| Research | `ph.binoculars` | three whole research prompts ("What does the latest research say about intermittent fasting? Cite the strongest studies." …) |
+| Write | `ph.pencilsimple` | three drafting prompts |
+| Code | `juno.code` | three coding prompts |
+| Plan | `ph.treestructure` | three planning prompts |
 
 - **`JunoChipStyle`** (content layer, **not glass**):
   - 28pt capsule, leading padding 10, trailing padding 12, 16pt glyph, 6pt gap.
   - 13pt label in `junoSecondaryInk`, 1pt `junoBorder` stroke, clear fill.
   - Hover: `junoHover` fill and foreground ink over 120ms. Press: `junoSecondary` fill and scale 0.97 over 70ms.
+  - **Open** (`JunoChipStyle(isSelected:)`): `junoSelectedFill`, foreground ink, the `.isSelected` trait.
 - **Layout:** centred, wrapping (`JunoFlowLayout`), 8pt gap.
 - **Entrance:** 120ms after the greeting, staggered 30ms per chip (opacity plus 4pt).
-- **A click seeds** the draft and focuses the field. It **never sends**. Plan does not arm a task.
+- **A chip is a toggle.** One is open at a time; pressing it again or Esc folds the list and returns focus to the chip.
+- **The examples** hang 12pt below the row as an overlay, outside its layout, so opening them never adds to the dock's footer or moves the composer: plain rows between hairlines at 60%, muted at rest, foreground with the hover wash under the pointer, at most 576pt wide.
+- **An example seeds** the whole prompt (`ChatComposerRequest.seed`) and closes the list. It **never sends**. Plan does not arm a task.
+- **The row steps aside while the composer holds text**: an opacity-only fade that keeps its space, out of the focus order and VoiceOver, back when the field is cleared.
 - **Hidden:** in private mode, during clarification, and after the first send.
 
 ---
@@ -1775,7 +1783,7 @@ Each spec is scored 1–10 on four criteria:
 | Toolbar visibility | `toolbarItemHidden`, gated on the crash repro | Keeps item identity; the fallback is `.disabled()` |
 | Chat title | System title, subtitle and `toolbarTitleMenu` | Native; replaces the web's h1 and project pill |
 | Page title | In-content header; toolbar title removed | Matches the web's `AppPageHeader`; the Window menu still gets the name |
-| Search | One panel, with a field-styled sidebar button and ⌘K/⇧⌘F | One surface, matching the web's sidebar button |
+| Search | One panel, with a Search row after New chat and ⌘K/⇧⌘F (final review: the web's row, no keycap) | One surface, matching the web's sidebar row |
 | Scrim for ⌘K | None | Spotlight-like; click-away and Esc dismiss |
 | Menu case | Title Case in native menus; web wording | Mac convention for components; copy stays verbatim |
 | Handoff | Single view identity with `lift` | Focus and draft survive; no geometry matching across containers |
@@ -2755,3 +2763,56 @@ Branch `mac/lg-p6c`, from `mac/liquid-glass-chat` at `be4ed1c8`, in parallel wit
 - **Regenerated at the merged tree** with no diff: the shell contract's Swift, the chat wire schema, `PARITY_MATRIX.md`, the design tokens, the icon catalogs, and both Xcode projects (`generate-projects.sh`).
 
 **Deferred (explicit, unchanged by integration).** A's legacy status ramp migration (#169), the iOS token pass (#171), the GitHub labels and required check; B's three drift items (the call's "Add Photos…", the primary action's words, Code's column on `JunoShellCodeSidebar`); C's generated Swift wire types, the OpenAPI chat schemas, per-app route statuses; Phase 6's server-driven lists and paired screenshots.
+
+---
+
+## Final review (2026-09-25): the four area reviews, applied (apply over everything above)
+
+Four read-only reviews (shell, transcript, overlays, pages) scored every screen on the SwiftUI skill's five dimensions and filed 65 findings. This pass applied every major finding and most minors; what was left is listed at the end. Register entries #172–#182 are in `WEB_TO_NATIVE_DESIGN.md` › "Final review".
+
+**Shell**
+
+- Starter chips follow `origin/main`'s `starter-chips.tsx`: a chip opens three whole example prompts (the web's `STARTER_CHIP_COPY`, verbatim) under the row as an overlay; one open at a time, Esc or a second press folds it, picking one seeds the whole prompt without sending. The row fades (opacity only, space kept) while the composer holds text. §4.3 rewritten.
+- The docked composer carries the web's footnote: the fork line, then the incognito line, then "Juno can make mistakes. Check important info." (`NativePrivateChatModel.isFork` marks Fork Privately). Never on the landing. The dead `DesktopChatDisclaimer` is gone.
+- Sidebar: one heading voice (`DesktopSidebarHeading`, secondary ink) for Pinned projects, Pinned chats, Recent and Agents; Search is a row after New chat (§2.2 rewritten; `DesktopSidebarSearchButton` deleted); titles and agent faces start on the nav glyph column (`JunoSidebarMetrics.titleLeading`), and every trailing mark sits in one 20pt `DesktopSidebarTrailingSlot`.
+- The footer's plan word reads the quota the popover reads (the web's `usageNote`: "{remaining} left" from 80%, "Limit reached" at 100%, the web's accessible name), falling back to the week's share only without `quota.used`.
+- Quick Entry: a handed-over prompt always lands (#172); the disc says "Start a new chat" / "Start a task in Juno Code"; Accessibility trust is read live; the titled panel's window buttons are hidden; new fixtures.
+- Incognito naming everywhere (#182). The long-paste hint, the sync mark's sentences (shared with the offline caption on `DesktopOfflineState`) and the menu-bar extra's rows lose their em dashes; running Code sessions wear a still glyph; Open Juno wears Juno's mark.
+- Hints read `JunoShortcutRegistry.chord(_:)` / `help(_:_:)` (Settings, Keyboard Shortcuts, New chat, Search).
+- A failed run's status mark is always a cross (#173).
+
+**Transcript**
+
+- The task card's overflow menu carries its ink on the Menu (visible in dark); approval and task-card buttons are regular size with 28pt labels, matching the connector card.
+- The Regenerate trigger fits its circle (8pt caret, no gap). File tiles cut at the end. A long prompt opens when find's current match is in it. Esc closes the find bar from any of its controls. The find bar and Scroll to latest honour Reduce Transparency and the snapshot harness (opaque stand-ins) and have fixtures.
+- The inline artifact switch is `JunoSegmented` at its new compact size (28pt, 11pt labels); the hand-built switch and its shadow are gone. The canvas and research menus use the §7.1 recipe; `menus` is down to Code's three.
+- Mermaid is `neutral` in light (#179). The clarify gate and the skill sheet use one field recipe (`junoFieldChrome`). A failed run's last Activity line is "Stopped before it finished" with the problem mark. The task panel labels its Task ID (#180). An expired connector's line opens Settings › Connectors. The waiting-approval announcement says where the approval is (#181).
+
+**Overlays and Settings**
+
+- `DesktopOutlineButton` dims when disabled. The announcement always has a close X (the one cancel action). An artifact's Share… sheet has a Done and says a revoke failure inline (`DesktopShareSheet`); the popover is sized per state (#174).
+- ⌘K's date and project menus are pinned outside the scrolling chips, which fade at the edges where more lies; offline notices are one line (#175). The web's `SearchX` is Phosphor's MagnifyingGlass, so the empty state's `.search` glyph was already parity (no change).
+- Settings › Devices: host rows sit in the Form without double padding (`inForm`), rows without a hook are static, "No Macs yet" and "No apps connected" are plain rows; the host sheet is a plain column under an SF heading with the §7.1 menus. Memories' row is drawn only with its control. Plan & usage stacks its price under the title (non-breaking date) and draws meter tracks in the border tone. The avatar has a ring and a camera badge. Archived Chats is sized per state. The model popover's Try Again takes no tint. Inline rename draws a ring and selects the name. Settings' rail search uses the shared empty state (#177); copy fixes (’, Try Again).
+
+**Pages**
+
+- This Mac's page: the local tile drops the duplicate "switched off" band, names its groups as the local offer, uses the web's mode names, and the server's unoffered rows point up at it (#176).
+- The Artifacts grid draws an excerpt (`DesktopArtifactExcerpt`, shared with the Outputs popover), never a live web view. Project tiles strip section tags (`JunoPromptPreview`). Project Settings uses the page field and `JunoPageMenu`; the project's ask field uses `ComposerPrimaryDisc`; the Overview rail is one column with hairlines and the web's mono instructions excerpt. Page cards open with Return under Full Keyboard Access (`desktopKeyboardOpen`).
+- Shared Agents views use `NativeAgentMetrics.target` (28pt on the Mac, 44 on the phone); the goal menu is Title Case on the Mac.
+- Library withholds Upload and the storage caption while loading or failed, left-aligns its caption columns at the web's widths, and its menus follow §7.1 (no chords in an in-window menu). Connections: Title Case menu items, control-radius buttons, the description at full width, dots only for live state (#178). Memory's Add matches its 32pt row. Radios are one `JunoRadioMark`. The automation editor's Cancel is a ghost.
+
+**Found while rendering the final set (fixed in the same pass)**
+
+- Quick Entry's system product picker drew the chosen glyph white on a white thumb offscreen, and outside a toolbar would spend the system accent on it; it is `JunoSegmented` at the compact size, with the words.
+- The starter examples hang by an offset under the measured row (an alignment-guide overlay drew them over the chips).
+- The host sheet's approval choice is the neutral radio group, not coral-edged choice cards, and it drops the duplicate "switched off" band as the page does; Screen control's description loses its em dash.
+- Settings › Connectors' empty row carries no Browse Apps of its own (the section header has it: one intent, one button).
+- Archived Chats' empty and failed states are 136pt, not 200, under the header.
+- Two web tests had gone stale on this branch: the Work contract test now reads JunoWorkKit's folders and counts Work operations path by path, and the Tasks-retirement test guards the phone only (the Mac's Tasks screen went in Phase 5 D).
+
+**Left for later (explicit)**
+
+- Model popover fixtures (the two stages and "Models unavailable") need `ComposerModelChip`'s stages pulled into views; the Settings sub-sheets and the menu-bar extra rows are still not drawn offscreen.
+- The Project › Sources tab still draws a card per file (the rail is fixed); the web's plain rows under "Files {n}" / "Artifacts {n}" wait.
+- Loading fixtures exist for the Library only; the other pages' skeletons and several error states are still unrendered.
+- The Agents hire flow's avatar swatches stay 44pt: they are pictures to choose between, sized for the face, not targets.

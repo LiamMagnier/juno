@@ -146,6 +146,23 @@ struct DesktopSettingsAccountPane: View {
                         .opacity(hoveringAvatar || uploadingAvatar ? 1 : 0)
                         .animation(JunoMotion.fast, value: hoveringAvatar)
                 }
+                // A hairline ring, so the initials' muted disc reads as a
+                // picture on the grouped row in light appearance.
+                .overlay { Circle().strokeBorder(Color.junoBorder, lineWidth: 1) }
+                // The one control for the picture, visible without a hover.
+                .overlay(alignment: .bottomTrailing) {
+                    if !uploadingAvatar {
+                        JunoIconView(.camera, size: 11)
+                            .foregroundStyle(Color.junoSecondaryInk)
+                            .frame(width: 20, height: 20)
+                            .background { Circle().fill(Color.junoCard) }
+                            .overlay { Circle().strokeBorder(Color.junoBorder, lineWidth: 1) }
+                            .offset(x: 2, y: 2)
+                            .opacity(hoveringAvatar ? 0 : 1)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .frame(minWidth: 28, minHeight: 28)
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)

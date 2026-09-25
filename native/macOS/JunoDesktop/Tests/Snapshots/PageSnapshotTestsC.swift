@@ -73,6 +73,7 @@ enum PageFixturesC {
         "permissions",
         "permissions-empty",
         "host-this-mac",
+        "host-this-mac-local-on",
         "host-other-mac",
         "host-revoked",
         "agents-roster",
@@ -162,6 +163,29 @@ enum PageFixturesC {
                     )
                 },
                 prepare: { await model.start(for: account) }
+            )
+        case "host-this-mac-local-on":
+            // This Mac with Juno Work switched on here and files offered: the
+            // local tile and the server's switches below it must agree.
+            let model = hostsModel(.normal)
+            let local = DesktopWorkHostModel(defaults: UserDefaults(suiteName: "juno.snapshots.host-local-on") ?? .standard)
+            local.allowWorkOnThisMac = true
+            local.allowsFileWork = true
+            return FinalFixture(
+                name: name,
+                width: pageWidth,
+                view: {
+                    AnyView(
+                        stack {
+                            DesktopHostPage(hostID: "host-studio", model: model, accountID: account, thisMac: "host-studio", localHost: local)
+                        }
+                        .frame(height: 3_300)
+                    )
+                },
+                prepare: {
+                    await model.start(for: account)
+                    await model.loadHost(id: "host-studio")
+                }
             )
         case "host-this-mac", "host-other-mac", "host-revoked":
             let model = hostsModel(.normal)

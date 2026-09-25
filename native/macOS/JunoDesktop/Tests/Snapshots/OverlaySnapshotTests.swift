@@ -88,6 +88,10 @@ enum OverlayFixtures {
         "archived-error",
         "archived-loading",
         "window-panel-over-chat",
+        "share-artifact-sheet",
+        "quick-entry-chat",
+        "quick-entry-code",
+        "quick-entry-no-accessibility",
     ]
 
     static let now = Date()
@@ -201,6 +205,33 @@ enum OverlayFixtures {
                 state.start(.chat("c-1"), service: SnapshotShareService(outcome: .failed))
                 await state.createTask?.value
             }
+
+        case "share-artifact-sheet":
+            // An artifact's Share… in its sheet: the popover's content with
+            // the sheet's Done, at the ready state's explicit frame.
+            let state = DesktopShareState()
+            return FinalFixture(
+                name: name,
+                width: DesktopSharePopover.size.width + 48,
+                view: { AnyView(popoverStandIn(DesktopShareSheet(state: state))) },
+                prepare: {
+                    state.start(.artifact("a-1"), service: SnapshotShareService(outcome: .share))
+                    await state.createTask?.value
+                }
+            )
+
+        // MARK: Quick Entry
+        case "quick-entry-chat", "quick-entry-code", "quick-entry-no-accessibility":
+            let product: DesktopProductMode = name == "quick-entry-code" ? .code : .chat
+            let trusted = name != "quick-entry-no-accessibility"
+            return FinalFixture(name: name, width: 656 + 48, view: {
+                AnyView(
+                    DesktopQuickEntryView(readTrust: { trusted }, dismiss: {}, startingProduct: product)
+                        .padding(24)
+                        .background(Color.junoCanvas)
+                        .environment(\.junoSnapshotOpaqueGlass, true)
+                )
+            })
 
         // MARK: Outputs
         case "outputs-one":

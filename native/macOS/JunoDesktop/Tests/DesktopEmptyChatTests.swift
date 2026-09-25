@@ -41,18 +41,16 @@ struct DesktopEmptyChatTests {
 
     // MARK: - Starter chips
 
-    /// The four chips, in the web's order, with the web's seeds verbatim: each
-    /// an opening that ends in a space where the reader's subject begins.
+    /// The four chips, in the web's order, each opening the web's three whole
+    /// example prompts (`STARTER_CHIP_COPY`), never a sentence opener.
     @Test
-    func theStarterChipsSeedTheWebsOpenings() {
+    func theStarterChipsOpenTheWebsExamples() {
         #expect(ChatStarterChip.all.map(\.label) == ["Research", "Write", "Code", "Plan"])
-        #expect(ChatStarterChip.all.map(\.seed) == [
-            "Research and cite sources on ",
-            "Help me write ",
-            "Write code that ",
-            "Plan the steps to ",
-        ])
-        #expect(ChatStarterChip.all.allSatisfy { $0.seed.hasSuffix(" ") })
+        #expect(ChatStarterChip.all.allSatisfy { $0.examples.count == 3 })
+        #expect(ChatStarterChip.all[0].examples.first == "What does the latest research say about intermittent fasting? Cite the strongest studies.")
+        #expect(ChatStarterChip.all[3].examples.last == "Make a launch checklist for a small product release.")
+        // Whole prompts: none ends mid-sentence waiting for the reader's subject.
+        #expect(ChatStarterChip.all.flatMap(\.examples).allSatisfy { !$0.hasSuffix(" ") })
         #expect(ChatStarterChip.all.map(\.icon) == [.research, .pencil, .code, .task])
     }
 

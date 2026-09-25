@@ -10,6 +10,18 @@ import Testing
 /// should have been Stop, a placeholder that forgot private mode, a third mark
 /// eating the sentence, a composer with no model before the catalog lands.
 struct ChatComposerTests {
+    // MARK: - A prompt handed over
+
+    /// Quick Entry's text lands even over a half-typed draft, which keeps its
+    /// words: it never waits, pending, for some later empty field.
+    @Test
+    func aHandedOverPromptLandsOverAHalfTypedDraft() {
+        #expect(ChatComposer.draft(consuming: "Plan a trip", into: "") == "Plan a trip")
+        #expect(ChatComposer.draft(consuming: "Plan a trip", into: "Half a thought") == "Half a thought\n\nPlan a trip")
+        #expect(ChatComposer.draft(consuming: "  ", into: "Half a thought") == "Half a thought")
+        #expect(ChatComposer.draft(consuming: " Plan a trip \n", into: "   ") == "Plan a trip")
+    }
+
     // MARK: - The disc
 
     /// Stop wins over everything — it is the one thing left to press — then a

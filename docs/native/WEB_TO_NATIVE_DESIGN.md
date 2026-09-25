@@ -472,3 +472,19 @@ Source: `MACOS_LIQUID_GLASS_REDESIGN.md`, “Phase 6 notes, part A”.
 169. The shipped status ramp (`junoSuccess`, `junoDanger`, `junoCaution`) is still hand-tuned text colour where the web draws `--success-ink`, `--destructive-ink` and `--warning-foreground`. It is read at about 300 sites across Code, Work, the phone and the Mac (43 of them in Chat's Mac files), several as fills, so it moves surface by surface with a look at each. *(was Phase 6 A P6A-2)*
 170. Native-only tokens with no web variable: Juno Code's terminal well and diff rows, the chart series palette past the accent and the citation teal. Registered, not deleted. *(was Phase 6 A P6A-3)*
 171. The phone keeps its shipped dark canvas, translucent border and row alphas until the iOS pass (as before; now on the register). *(was Phase 6 A P6A-4)*
+
+### Final review (#172–#182)
+
+Source: `MACOS_LIQUID_GLASS_REDESIGN.md`, “Final review”.
+
+172. A prompt handed to the window (Quick Entry's Return, a page's "Ask") always lands in the composer: an empty field takes it as it is, and a half-typed draft keeps its words and gains the prompt after a blank line. The web's seed replaces the field; the Mac keeps what the reader typed.
+173. A failed run's status mark is always its cross (the Differentiate Without Color glyph), never the 6pt dot: the web's `--destructive` and `--primary` are near twins at that size, and under Reduce Motion a running dot stops breathing, which left a running and a failed row identical. The near-identical hues are raised with web design.
+174. Share's popover is sized per state (ready 360 × 204, loading and error 176, revoked 180, blocked 132) instead of one 360 × 232 frame; #153's footer placement of More… stays for the ready state.
+175. ⌘K's offline notices name every type in one line ("Knowledge, memory and tasks: not searched while offline."), not a line each. Mac-only copy.
+176. On this Mac's own page, a switch the Mac has not offered says "This Mac has not offered this. Switch it on under On this Mac, above." (the reader is on the Mac); other Macs keep the web's sentence. The local tile's groups read "What this Mac offers" and its approval radios wear the web's three mode names.
+177. The Settings rail's no-results state is the shared empty state, "No settings match “{query}”", with a Phosphor glyph, not the system's `ContentUnavailableView`. Mac-only copy (the web's Settings has no rail search).
+178. Connections' status pills carry a dot only for live state (Connected, Connecting); Available, Setup needed and Unavailable are words alone. The web dots every state (solid or hollow). Follows #116.
+179. Mermaid diagrams use Mermaid's `neutral` theme in light; the web uses `default`, whose lavender nodes and violet strokes §10.2 rule 5 rules out. Dark is unchanged.
+180. The Task panel's Details end with a labelled, selectable "Task ID" row, not a bare id. Mac-only (the panel is Mac-only, #59).
+181. VoiceOver says where a waiting approval is: "…The approval is in the reply, under its activity line." or "…in the Activity panel." while the panel holds the run. The SPEC's "below the answer" was wrong for the Mac, which places the approval above the answer.
+182. The private mode is "Incognito" everywhere the Mac names it, as on the web: the toolbar toggle ("Turn on incognito" / "Leave incognito"), the menu's "New Incognito Chat", ⌘K's "New incognito chat", and the leave confirmation "Leave incognito?" / "It won't be saved." (the web leaves without asking; the menu and ⌘K rows are Mac-only).

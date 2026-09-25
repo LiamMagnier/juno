@@ -178,7 +178,8 @@ final class JunoMermaidMarkupTests: XCTestCase {
             engine: "",
             isDark: false
         )
-        XCTAssertTrue(light.contains("draw(\"default\")"))
+        // Neutral, not the lavender "default" (register #179).
+        XCTAssertTrue(light.contains("draw(\"neutral\")"))
     }
 
     func testHostDocumentExposesTheThemeAndResetHooks() {

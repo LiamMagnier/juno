@@ -694,37 +694,13 @@ private struct DesktopOutputPreview: View {
                 mediaPicture(attachment)
             } else if let poster = tile.poster {
                 designPoster(poster)
-            } else if tile.kind == .svg, let preview = tile.preview, let image = Self.svgImage(preview) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .padding(JunoSpace.cozy)
             } else if let preview = tile.preview {
-                excerpt(preview)
+                DesktopArtifactExcerpt(source: preview, kind: tile.kind)
             } else {
                 glyph
             }
         }
         .accessibilityHidden(true)
-    }
-
-    /// Set as `<pre>` is on the web: lines never wrap, the tile clips them.
-    private func excerpt(_ source: String) -> some View {
-        Text(verbatim: source.split(separator: "\n", omittingEmptySubsequences: false).prefix(20).joined(separator: "\n"))
-            .junoType(.micro)
-            .foregroundStyle(Color.junoSecondaryInk)
-            .fixedSize(horizontal: true, vertical: false)
-            .padding(JunoSpace.cozy)
-            // `minWidth: 0` holds the tile to its own width: the unwrapped
-            // lines overflow to the right and are clipped, never centred.
-            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
-            .overlay(alignment: .bottom) {
-                // The clip, said out loud: the excerpt fades into the well
-                // rather than ending mid-glyph.
-                LinearGradient(colors: [Color.junoCanvas.opacity(0), Color.junoCanvas], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 48)
-            }
-            .clipped()
     }
 
     @ViewBuilder
@@ -778,13 +754,7 @@ private struct DesktopOutputPreview: View {
         }
     }
 
-    /// An SVG as a picture, drawn by AppKit: no script, no network. Nil
-    /// for anything that is not a complete document.
     static func svgImage(_ source: String) -> NSImage? {
-        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("<svg") || trimmed.hasPrefix("<?xml"), trimmed.hasSuffix("</svg>"),
-            let data = trimmed.data(using: .utf8)
-        else { return nil }
-        return NSImage(data: data)
+        DesktopArtifactExcerpt.svgImage(source)
     }
 }

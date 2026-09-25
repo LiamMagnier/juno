@@ -914,6 +914,16 @@ extension WorkEventLog {
             // ``JunoWorkVocabulary/terminalReason(_:)`` is nil where the reason
             // adds nothing, so a clean finish is just "Finished".
             let reason = string(payload, "reason")
+            // A failure is not a finish: "Finished because it could not
+            // finish" contradicted itself under a tick. It takes the status
+            // copy ("This stopped before it finished"), and the problem mark.
+            if reason == "failed" {
+                return entry(
+                    event, "Stopped before it finished",
+                    string(payload, "detail", "summary"),
+                    .problem, .bad
+                )
+            }
             let because = vocabulary.terminalReason(reason)
             return entry(
                 event, because.map { "Finished because \($0)" } ?? "Finished",

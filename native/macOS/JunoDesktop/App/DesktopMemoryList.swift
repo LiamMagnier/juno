@@ -105,6 +105,10 @@ struct DesktopMemoryList: View {
         }
         .buttonStyle(.bordered)
         .tint(nil)
+        // The controls row's 32pt, beside the search field and the menu, at
+        // the control radius rather than `.large`'s capsule.
+        .controlSize(.large)
+        .buttonBorderShape(.roundedRectangle(radius: JunoRadius.control))
         .disabled(!enabled)
         .help(enabled ? "New memory" : "Turn memory on to add to it")
         .accessibilityLabel("New memory")

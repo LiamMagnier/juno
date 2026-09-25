@@ -542,12 +542,12 @@ struct MessageRegenerateMenu: View {
                 }
             }
         } label: {
-            // The web pulls the caret 4px into its 32px circle's rim; in the
-            // Mac's 28pt circle that puts it on the rim, so the pair is simply
-            // centred, which centres its ink.
-            HStack(spacing: 2) {
+            // The web pulls the caret into its circle's rim. At 16 + 2 + 12pt
+            // the pair was 30pt wide in a 28pt circle and crossed the ring;
+            // an 8pt caret with no gap is 24pt and sits inside it.
+            HStack(spacing: 0) {
                 JunoIconView(.refresh, size: 16)
-                JunoIconView(.chevronDown, size: 12, weight: .bold)
+                JunoIconView(.chevronDown, size: 8, weight: .bold)
                     .opacity(0.6)
             }
         }

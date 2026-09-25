@@ -74,11 +74,11 @@ struct DesktopSettingsDevicesPane: View {
             }
         case .loaded(let hosts):
             if hosts.isEmpty {
-                JunoEmptyState(
+                // A plain row inside the Form's section, not a dashed tile in
+                // a box (§10.2.8).
+                DesktopSettingRow(
                     title: "No Macs yet",
-                    message: "Turn on Juno Work for this Mac and it appears here on its own.",
-                    icon: .device,
-                    size: .panel
+                    description: "Turn on Juno Work for this Mac and it appears here on its own."
                 )
             } else {
                 if context.hostsAreStale {
@@ -94,7 +94,8 @@ struct DesktopSettingsDevicesPane: View {
                     DesktopWorkHostRow(
                         host: host,
                         isThisMac: host.hostID == context.services.workHostModel?.pairedHostID,
-                        open: { links.openHost?(host.hostID) }
+                        open: links.openHost.map { openHost in { openHost(host.hostID) } },
+                        inForm: true
                     )
                 }
             }

@@ -165,7 +165,7 @@ struct DesktopSettingsWindow: View {
             } else {
                 JunoEmptyState(
                     title: "Sign in to change settings",
-                    message: "Juno's settings belong to your account and sync across your devices.",
+                    message: "Juno’s settings belong to your account and sync across your devices.",
                     icon: .user
                 )
             }
@@ -311,7 +311,9 @@ struct DesktopSettingsSidebar: View {
         .searchable(text: $query, placement: .sidebar, prompt: "Search settings")
         .overlay {
             if visible.isEmpty {
-                ContentUnavailableView.search(text: query)
+                // Mac-only copy (register #177), on the shared empty state.
+                JunoEmptyState(title: "No settings match \u{201C}\(query)\u{201D}", icon: .search, size: .panel)
+                    .padding(JunoSpace.regular)
             }
         }
         .navigationSplitViewColumnWidth(

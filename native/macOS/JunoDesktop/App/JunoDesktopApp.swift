@@ -425,7 +425,7 @@ struct JunoDesktopApp: App {
         .windowResizability(.contentMinSize)
         .defaultLaunchBehavior(.suppressed)
 
-        // The menu bar item: New Chat, live Code sessions, Open Juno (§7.10).
+        // The menu bar item: New Chat, the chats that need you, live Code sessions, Open Juno (§7.10).
         // Read off the shared registry, so it is right with no window open.
         MenuBarExtra(isInserted: .constant(!JunoTestHost.isActive)) {
             DesktopMenuBarExtraContent()

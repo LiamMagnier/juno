@@ -417,7 +417,7 @@ struct DesktopDestinationView: View {
                 newChat: { startNewChat() }
             )
             .sheet(isPresented: $artifactShare.isPresented) {
-                DesktopSharePopover(state: artifactShare)
+                DesktopShareSheet(state: artifactShare)
             }
         } else {
             unavailable("Artifacts", "The synchronized artifact store is unavailable.")

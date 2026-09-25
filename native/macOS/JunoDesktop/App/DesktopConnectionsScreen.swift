@@ -338,22 +338,20 @@ struct DesktopConnectionsScreen: View {
     private func card(_ connector: NativeConnector) -> some View {
         let cardState = state(connector)
         return VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            HStack(alignment: .top, spacing: JunoSpace.cozy) {
+            HStack(alignment: .center, spacing: JunoSpace.cozy) {
                 DesktopConnectorMark(connector: connector)
-
-                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                    Text(connector.label)
-                        .font(.callout.weight(.semibold))
-                        .lineLimit(1)
-                    Text(descriptionText(connector, state: cardState))
-                        .junoCaption()
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
+                Text(connector.label)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
                 Spacer(minLength: JunoSpace.snug)
                 DesktopConnectorStatusPill(state: cardState)
             }
+            // Under the name and pill, at the tile's full width: squeezed
+            // beside the pill it truncated after four words above a gap.
+            Text(descriptionText(connector, state: cardState))
+                .junoCaption()
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
 
             Spacer(minLength: 0)
             action(connector, state: cardState)
@@ -426,13 +424,13 @@ struct DesktopConnectionsScreen: View {
                 .disabled(state == .connecting)
         case .setup:
             if let url = composioSetupURL(connector) {
-                Button("Set up in Composio…") { NSWorkspace.shared.open(url) }
+                Button("Set Up in Composio…") { NSWorkspace.shared.open(url) }
             }
         case .unavailable:
             EmptyView()
         }
         Divider()
-        Button("Copy identifier") {
+        Button("Copy Identifier") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(connector.id, forType: .string)
         }
@@ -453,6 +451,9 @@ struct DesktopConnectionsScreen: View {
         // accent tint would turn Connect and Disconnect coral (§0.4).
         .tint(nil)
         .controlSize(.large)
+        // The control radius every page button uses, not the capsule
+        // `.large` draws on macOS 26.
+        .buttonBorderShape(.roundedRectangle(radius: JunoRadius.control))
     }
 
     @ViewBuilder
@@ -865,8 +866,9 @@ private struct DesktopConnectorStatusPill: View {
         .accessibilityLabel(label)
     }
 
-    /// Filled where the state is settled, hollow where it is merely possible —
-    /// the same distinction the web draws with a solid versus an outlined dot.
+    /// A dot only for live state, connected or connecting (register #116,
+    /// and #178 for the difference from the web's dotted pill): the other
+    /// three states are words alone, never a decorative hollow dot.
     @ViewBuilder
     private var dot: some View {
         switch state {
@@ -875,9 +877,7 @@ private struct DesktopConnectorStatusPill: View {
                 .fill(tint)
                 .frame(width: DesktopConnectorGrid.statusDot, height: DesktopConnectorGrid.statusDot)
         case .available, .setup, .unavailable:
-            Circle()
-                .strokeBorder(tint, lineWidth: 1)
-                .frame(width: DesktopConnectorGrid.statusDot, height: DesktopConnectorGrid.statusDot)
+            EmptyView()
         }
     }
 

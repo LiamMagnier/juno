@@ -13,22 +13,48 @@ struct ScrollToLatestButton: View {
     let isShown: Bool
     let action: () -> Void
 
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.junoSnapshotOpaqueGlass) private var snapshotOpaqueGlass
+
     var body: some View {
         GlassEffectContainer {
             if isShown {
-                Button(action: action) {
-                    JunoIconView(.arrowDown, size: 16)
-                        .foregroundStyle(Color.junoForeground)
-                        .frame(width: 32, height: 32)
+                if reduceTransparency || snapshotOpaqueGlass {
+                    // The opaque stand-in: the popover's fill and a hairline,
+                    // under Reduce Transparency and in offscreen snapshots,
+                    // which cannot draw glass.
+                    Button(action: action) {
+                        face
+                            .background(Circle().fill(Color.junoPopover))
+                            .overlay(Circle().strokeBorder(Color.junoBorder, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Circle())
+                    .modifier(ScrollToLatestLabels())
+                } else {
+                    Button(action: action) { face }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .contentShape(Circle())
+                        .glassEffectTransition(.materialize)
+                        .modifier(ScrollToLatestLabels())
                 }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .contentShape(Circle())
-                .glassEffectTransition(.materialize)
-                .help("Scroll to latest")
-                .accessibilityLabel("Scroll to latest")
-                .accessibilityIdentifier("juno.desktop.chat.scroll-to-latest")
             }
         }
+    }
+
+    private var face: some View {
+        JunoIconView(.arrowDown, size: 16)
+            .foregroundStyle(Color.junoForeground)
+            .frame(width: 32, height: 32)
+    }
+}
+
+private struct ScrollToLatestLabels: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .help("Scroll to latest")
+            .accessibilityLabel("Scroll to latest")
+            .accessibilityIdentifier("juno.desktop.chat.scroll-to-latest")
     }
 }

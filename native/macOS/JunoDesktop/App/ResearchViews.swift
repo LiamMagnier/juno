@@ -381,7 +381,7 @@ struct DesktopResearchClarifyCard: View {
                 text: binding(question.id),
                 prompt: Text(question.suggestions.first.map { "e.g. \($0)" } ?? "Your answer")
             )
-            .textFieldStyle(.roundedBorder)
+            .junoFieldChrome()
             .labelsHidden()
             .onSubmit { if !busy { submit(trimmedAnswers) } }
             .accessibilityLabel(question.question)
@@ -530,12 +530,15 @@ struct DesktopResearchPanel: View {
                     Button("Cancel Research…", role: .destructive) { confirmingCancel = true }
                 } label: {
                     JunoIconView(.ellipsis, size: 14)
-                        .junoSecondaryInk()
                         .frame(width: 28, height: 28)
                         .contentShape(.rect)
                 }
-                .menuStyle(.borderlessButton)
+                .menuStyle(.button)
+                .buttonStyle(.borderless)
                 .menuIndicator(.hidden)
+                // The ink on the Menu, where the AppKit-backed trigger keeps it.
+                .tint(Color.junoSecondaryInk)
+                .foregroundStyle(Color.junoSecondaryInk)
                 .fixedSize()
                 .help("More research controls")
                 .accessibilityLabel("More research controls")

@@ -140,6 +140,18 @@ struct DesktopChatShellTests {
         )
     }
 
+    /// The footer reads the popover's number, the month's messages against the
+    /// cap (the web's `usageNote`): at 46 of 50 both warn, with what is left.
+    @Test
+    func thePlanWordReadsTheQuotaTheWebsWay() {
+        #expect(DesktopFooterPlanWord(planName: "Pro", used: 12, limit: 50) == DesktopFooterPlanWord(text: "Pro", tone: .quiet))
+        #expect(DesktopFooterPlanWord(planName: "Pro", used: 46, limit: 50) == DesktopFooterPlanWord(text: "4 left", tone: .warning))
+        #expect(DesktopFooterPlanWord(planName: "Pro", used: 40, limit: 50) == DesktopFooterPlanWord(text: "10 left", tone: .warning))
+        #expect(DesktopFooterPlanWord(planName: "Pro", used: 50, limit: 50) == DesktopFooterPlanWord(text: "Limit reached", tone: .destructive))
+        #expect(DesktopFooterPlanWord(planName: "Pro", used: 61, limit: 50) == DesktopFooterPlanWord(text: "Limit reached", tone: .destructive))
+        #expect(DesktopFooterPlanWord.percentUsed(used: 199, limit: 200) == 100)
+    }
+
     /// A plan that cannot run out is never told it is running out, whatever
     /// fraction the route reports for it.
     @Test

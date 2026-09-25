@@ -305,6 +305,11 @@ struct DesktopOutlineButton: View {
     var destructive = false
     let action: () -> Void
 
+    /// Stated ink overrides `.bordered`'s disabled dimming, so a disabled
+    /// button drew at full ink beside the enabled ones; the dimming is put
+    /// back by hand.
+    @Environment(\.isEnabled) private var isEnabled
+
     var body: some View {
         Button(action: action) {
             Group {
@@ -319,6 +324,7 @@ struct DesktopOutlineButton: View {
                 }
             }
             .foregroundStyle(destructive ? Color.junoDestructiveInk : Color.junoForeground)
+            .opacity(isEnabled ? 1 : 0.4)
         }
         .buttonStyle(.bordered)
         .tint(nil)
@@ -344,3 +350,27 @@ extension String {
         .joined(separator: " ")
     }
 }
+
+// MARK: - Fields
+
+extension View {
+    /// The Juno field on content (the task card's "Change it" recipe): a plain
+    /// text field at 13pt in a 28pt well at the field radius, the secondary
+    /// fill and a 1pt hairline. Never `.roundedBorder`, which draws a pure
+    /// black well in dark on the warm card and the system's small radius.
+    /// `fill` is the well; a sheet whose other fields sit on the card passes
+    /// `Color.junoCard` so its fields match.
+    func junoFieldChrome(fill: Color = Color.junoSecondary) -> some View {
+        textFieldStyle(.plain)
+            .junoFont(size: 13, relativeTo: .callout)
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, 5)
+            .frame(minHeight: 28)
+            .background(fill, in: RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                    .strokeBorder(Color.junoBorder.opacity(0.7), lineWidth: 1)
+            )
+    }
+}
+

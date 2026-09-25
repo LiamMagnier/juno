@@ -60,7 +60,6 @@ struct DesktopAnnouncementSheet: View {
                     Button("Not Now", action: close)
                         .buttonStyle(.borderless)
                         .foregroundStyle(Color.junoSecondaryInk)
-                        .keyboardShortcut(.cancelAction)
                         .frame(minHeight: 28)
                         .contentShape(.rect)
                 }
@@ -80,6 +79,24 @@ struct DesktopAnnouncementSheet: View {
             }
         }
         .padding(JunoSpace.section)
+        // Always a way out that does not follow a link: the web's
+        // DialogCloseButton, the one cancel action in the sheet (Esc).
+        .overlay(alignment: .topTrailing) {
+            Button(action: close) {
+                JunoIconView(.close, size: 14)
+                    .foregroundStyle(Color.junoForeground)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(Color.junoCard))
+                    .overlay(Circle().strokeBorder(Color.junoBorder, lineWidth: 1))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+            .help("Close")
+            .accessibilityLabel("Close")
+            .accessibilityIdentifier("juno.desktop.announcement.close")
+            .padding(JunoSpace.cozy)
+        }
         .frame(width: 560, height: 520)
         .presentationSizing(.page)
     }

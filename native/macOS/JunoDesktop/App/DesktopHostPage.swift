@@ -127,7 +127,11 @@ struct DesktopHostPage: View {
                 if isThisMac, let localHost, host.revokedAt == nil {
                     onThisMac(localHost)
                 }
-                DesktopHostSettings(detail: detail, locked: busy || host.revokedAt != nil) { patch in
+                DesktopHostSettings(
+                    detail: detail,
+                    locked: busy || host.revokedAt != nil,
+                    isThisMac: isThisMac && localHost != nil
+                ) { patch in
                     Task { await apply(patch) }
                 }
             }
@@ -268,6 +272,9 @@ struct DesktopHostPage: View {
 struct DesktopHostSettings: View {
     let detail: NativeWorkHostDetail
     let locked: Bool
+    /// This Mac's own page, where the local offer is drawn above: an
+    /// unoffered switch points there, not at "Juno on the Mac itself".
+    var isThisMac = false
     let patch: (NativeWorkHostPatch) -> Void
 
     private var host: WorkHostSummary { detail.host }
@@ -306,7 +313,10 @@ struct DesktopHostSettings: View {
             ? spec.detail
             : unofferedButOn
                 ? "This Mac is no longer offering this, and it is still switched on. It will lapse on its own at the next check-in; you can switch it off here now."
-                : "This Mac has not offered this. Switch it on in Juno on the Mac itself and it becomes available here."
+                : isThisMac
+                    // Mac-only copy (register #176): the reader is on the Mac.
+                    ? "This Mac has not offered this. Switch it on under On this Mac, above."
+                    : "This Mac has not offered this. Switch it on in Juno on the Mac itself and it becomes available here."
         return Toggle(isOn: Binding(get: { checked }, set: { patch(.toggle(spec.key, $0)) })) {
             VStack(alignment: .leading, spacing: JunoSpace.micro) {
                 Text(spec.label)

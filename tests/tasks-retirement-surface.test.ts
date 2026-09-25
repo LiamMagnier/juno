@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { catalogEntryMatchesModel } from "@/lib/models";
@@ -49,6 +49,10 @@ function code(relative: string): string {
 
 const ROUTE = "src/app/api/tasks/route.ts";
 const STORE = "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeScheduledTaskStore.swift";
+// The Mac's Tasks screen is gone (Phase 5 Stage D of the Liquid Glass
+// redesign): its routines live on the Automations page, which reads
+// `/api/work/schedules`, so no Mac surface renders `/api/tasks` any more. The
+// phone's screen is the one shipped client left to guard.
 const DESKTOP = "native/macOS/JunoDesktop/App/DesktopTasksScreen.swift";
 const MOBILE = "native/iOS/JunoMobile/App/JunoMobileTasksView.swift";
 
@@ -106,33 +110,26 @@ test("the store refuses a write the server would refuse, rather than sending it"
   assert.match(store, /case \.server\(409, _\) = refusal/);
 });
 
-test("both Tasks screens gate creation on the server's answer", () => {
-  assert.match(source(DESKTOP), /model\.isCreatable && !model\.isAtLimit/);
-  assert.match(source(MOBILE), /!model\.isCreatable \|\| model\.isAtLimit/);
-  for (const file of [DESKTOP, MOBILE]) {
-    assert.doesNotMatch(code(file), /isPlanLocked/, file);
-  }
+test("the Mac no longer has a Tasks screen to keep honest", () => {
+  assert.equal(existsSync(join(ROOT, DESKTOP)), false, `${DESKTOP} is back; guard it as the phone's is guarded`);
 });
 
-test("both Tasks screens disable a row's own controls once it has moved", () => {
-  const desktop = source(DESKTOP);
-  // The switch, Edit, Delete and the ⌫ command — every path that writes.
-  assert.match(desktop, /\.disabled\(model\.isMutating \|\| !model\.canEdit\(task\)\)/);
-  assert.match(desktop, /let editable = model\.canEdit\(task\)/);
-  assert.match(desktop, /model\.canEdit\(\$0\) \? \$0 : nil/);
+test("the phone's Tasks screen gates creation on the server's answer", () => {
+  assert.match(source(MOBILE), /!model\.isCreatable \|\| model\.isAtLimit/);
+  assert.doesNotMatch(code(MOBILE), /isPlanLocked/, MOBILE);
+});
 
+test("the phone's Tasks screen disables a row's own controls once it has moved", () => {
   const mobile = source(MOBILE);
   assert.match(mobile, /editable: model\.canEdit\(task\)/);
   assert.match(mobile, /\.disabled\(busy \|\| !editable\)/);
   assert.match(mobile, /\.disabled\(!editable\)/);
 });
 
-test("neither screen still says the reason is Pro", () => {
+test("the phone's screen no longer says the reason is Pro", () => {
   // The plan ceiling went with the surface: what a person may spend is their
   // usage window, not a count of schedules. "Tasks are part of Pro" would send
   // somebody to a purchase that changes nothing.
-  assert.match(source(DESKTOP), /These moved to Automations/);
-  assert.doesNotMatch(code(DESKTOP), /Tasks are part of Pro/);
   assert.match(source(MOBILE), /tasks\.moved\.title/);
   assert.doesNotMatch(code(MOBILE), /tasks\.locked/);
   const catalog = JSON.parse(source("native/iOS/JunoMobile/Resources/Localizable.xcstrings")) as {

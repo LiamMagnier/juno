@@ -260,7 +260,8 @@ struct FileTile: View {
                 .junoFont(size: 11, relativeTo: .caption, weight: .medium)
                 .foregroundStyle(Color.junoForeground)
                 .lineLimit(1)
-                .truncationMode(.middle)
+                // The web's `truncate`: cut at the end, never mid-word.
+                .truncationMode(.tail)
             Text(attachment.captionMeta)
                 .junoFont(size: 10.5, relativeTo: .caption2)
                 .monospacedDigit()

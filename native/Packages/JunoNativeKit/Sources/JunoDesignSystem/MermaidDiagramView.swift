@@ -474,7 +474,7 @@ private struct JunoMermaidWebView {
         if coordinator.appliedDark != isDark {
             coordinator.appliedDark = isDark
             webView.evaluateJavaScript(
-                "window.junoSetTheme && window.junoSetTheme(\"\(isDark ? "dark" : "default")\")"
+                "window.junoSetTheme && window.junoSetTheme(\"\(isDark ? "dark" : "neutral")\")"
             )
         }
         if coordinator.appliedResetToken != resetToken {

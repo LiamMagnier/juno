@@ -54,6 +54,27 @@ public enum JunoSegmentedMetrics {
     public static let segmentPadding: CGFloat = JunoSpace.cozy
     /// `size-3.5`: a mark beside a 13pt word.
     public static let iconSize: CGFloat = 14
+    /// The compact track, for a switch that sits in a card's header (an
+    /// inline artifact's Preview / Code): the pointer rung, 11pt labels.
+    public static let compactTrackHeight: CGFloat = 28
+    public static let compactSegmentPadding: CGFloat = JunoSpace.snug
+}
+
+/// How large a ``JunoSegmented`` is drawn: a page's 32pt control, or the
+/// compact 28pt one a card header carries.
+public enum JunoSegmentedSize: Sendable {
+    case regular
+    case compact
+
+    var trackHeight: CGFloat {
+        self == .compact ? JunoSegmentedMetrics.compactTrackHeight : JunoSegmentedMetrics.trackHeight
+    }
+
+    var segmentHeight: CGFloat { trackHeight - JunoSegmentedMetrics.inset * 2 }
+
+    var segmentPadding: CGFloat {
+        self == .compact ? JunoSegmentedMetrics.compactSegmentPadding : JunoSegmentedMetrics.segmentPadding
+    }
 }
 
 /// Juno's segmented control: an inset track with one raised thumb that
@@ -93,6 +114,7 @@ public struct JunoSegmented<Value: Hashable>: View {
     /// widest label's. A switch that spans its column fills; a filter in a
     /// page's controls row hugs its words.
     private let fills: Bool
+    private let size: JunoSegmentedSize
 
     @Namespace private var thumb
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -102,13 +124,15 @@ public struct JunoSegmented<Value: Hashable>: View {
         selection: Binding<Value>,
         accessibilityLabel: String,
         optionAccessibilityIdentifier: ((Value) -> String)? = nil,
-        fills: Bool = false
+        fills: Bool = false,
+        size: JunoSegmentedSize = .regular
     ) {
         self.options = options
         _selection = selection
         self.accessibilityLabel = accessibilityLabel
         self.optionAccessibilityIdentifier = optionAccessibilityIdentifier
         self.fills = fills
+        self.size = size
     }
 
     public var body: some View {
@@ -118,13 +142,14 @@ public struct JunoSegmented<Value: Hashable>: View {
                     option: option,
                     isSelected: option.value == selection,
                     thumb: thumb,
+                    size: size,
                     select: { select(option.value) }
                 )
                 .accessibilityIdentifier(optionAccessibilityIdentifier?(option.value) ?? "")
             }
         }
         .padding(JunoSegmentedMetrics.inset)
-        .frame(height: JunoSegmentedMetrics.trackHeight)
+        .frame(height: size.trackHeight)
         .background {
             RoundedRectangle(cornerRadius: JunoSegmentedMetrics.trackRadius, style: .continuous)
                 .fill(Color.junoCanvas)
@@ -165,6 +190,7 @@ private struct JunoSegmentButton<Value: Hashable>: View {
     let option: JunoSegmentedOption<Value>
     let isSelected: Bool
     let thumb: Namespace.ID
+    var size: JunoSegmentedSize = .regular
     let select: () -> Void
 
     @State private var isHovering = false
@@ -182,7 +208,7 @@ private struct JunoSegmentButton<Value: Hashable>: View {
                         .accessibilityHidden(true)
                 }
                 Text(option.title)
-                    .junoType(JunoType.ui.weight(.medium))
+                    .junoType(size == .compact ? JunoType.caption.weight(.medium) : JunoType.ui.weight(.medium))
                     // A segment never truncates: a label that cannot fit is a
                     // layout bug to fix at the call site.
                     .lineLimit(1)
@@ -210,9 +236,9 @@ private struct JunoSegmentButton<Value: Hashable>: View {
             // The ink is the one thing that changes without moving, so it keeps
             // its curve under Reduce Motion.
             .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: ink)
-            .padding(.horizontal, JunoSegmentedMetrics.segmentPadding)
+            .padding(.horizontal, size.segmentPadding)
             .frame(maxWidth: .infinity)
-            .frame(height: JunoSegmentedMetrics.segmentHeight)
+            .frame(height: size.segmentHeight)
             .background {
                 if isSelected {
                     JunoSegmentThumb()
@@ -320,3 +346,33 @@ struct JunoEqualWidthRow: Layout {
         return max((offered - gaps) / CGFloat(subviews.count), 0)
     }
 }
+
+// MARK: - Radio mark
+
+/// The one radio mark every page draws (register #83): a 16pt ring in the
+/// input ink, and, when chosen, a 1.5pt foreground ring around an 8pt
+/// foreground dot. Foreground, never the accent: a selection is not one of
+/// the accent's places. Hidden from VoiceOver; the row it sits in says
+/// whether it is chosen.
+public struct JunoRadioMark: View {
+    private let isOn: Bool
+
+    public init(isOn: Bool) {
+        self.isOn = isOn
+    }
+
+    public var body: some View {
+        ZStack {
+            Circle()
+                .strokeBorder(isOn ? Color.junoForeground : Color.junoInput, lineWidth: 1.5)
+            if isOn {
+                Circle()
+                    .fill(Color.junoForeground)
+                    .frame(width: 8, height: 8)
+            }
+        }
+        .frame(width: 16, height: 16)
+        .accessibilityHidden(true)
+    }
+}
+

@@ -665,15 +665,28 @@ final class DesktopSearchPanelModel {
         return Self.notices(server: server, types: serverTypes)
     }
 
+    /// "Knowledge, memory and tasks": the first name as it is, the rest in
+    /// running text, joined the way a sentence lists things.
+    static func joinedLabels(_ labels: [String]) -> String {
+        guard let first = labels.first else { return "" }
+        let rest = labels.dropFirst().map { $0.prefix(1).lowercased() + $0.dropFirst() }
+        switch rest.count {
+        case 0: return first
+        case 1: return "\(first) and \(rest[0])"
+        default: return ([first] + rest.dropLast()).joined(separator: ", ") + " and \(rest.last!)"
+        }
+    }
+
     static func notices(server: ServerState, types: [NativeUnifiedSearchType]) -> [String] {
         switch server {
         case .failed(let offline):
+            // One line for every type that shares the reason, not a line
+            // each: three near-identical sentences took a sixth of the panel.
+            // Mac-only copy (register #175).
             let ordered = NativeUnifiedSearchType.allCases.filter { types.contains($0) }
-            return ordered.map {
-                offline
-                    ? "\($0.label): not searched while offline."
-                    : "\($0.label): couldn’t be searched right now."
-            }
+            guard !ordered.isEmpty else { return [] }
+            let names = joinedLabels(ordered.map(\.label))
+            return [offline ? "\(names): not searched while offline." : "\(names): couldn’t be searched right now."]
         case .ready(let result):
             let shortfalls = result.shortfalls
             var lines = shortfalls.prefix(2).map { "\($0.type.label): \($0.detail ?? "")" }

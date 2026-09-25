@@ -89,6 +89,19 @@ struct DesktopArchivedChatsSheet: View {
 
     static let size = CGSize(width: 480, height: 520)
 
+    /// The sheet's height for what it shows: its header and footer (150),
+    /// then the empty state's panel (136) for an empty or failed list, four skeleton rows loading, and
+    /// the rows themselves up to 360 once ready. Explicit in every state (the
+    /// crash rules), and fitted, so a two-word empty state is not 60% blank.
+    static func height(for load: DesktopArchivedChats.Load) -> CGFloat {
+        let chrome: CGFloat = 150
+        switch load {
+        case .loading: return chrome + 4 * 50
+        case .failed: return chrome + 136
+        case .ready(let rows): return rows.isEmpty ? chrome + 136 : chrome + min(CGFloat(rows.count) * 50, 360)
+        }
+    }
+
     /// Rows on their way out, hidden while their change is in flight.
     @State private var leaving: Set<String> = []
     /// A failure under a row, by conversation.
@@ -121,7 +134,7 @@ struct DesktopArchivedChatsSheet: View {
             .padding(.top, JunoSpace.regular)
         }
         .padding(JunoSpace.roomy)
-        .frame(width: Self.size.width, height: Self.size.height, alignment: .topLeading)
+        .frame(width: Self.size.width, height: Self.height(for: load), alignment: .topLeading)
         .junoConfirmation($confirmation)
         .accessibilityIdentifier("juno.desktop.archived-chats")
     }

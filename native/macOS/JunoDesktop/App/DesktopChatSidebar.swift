@@ -185,7 +185,7 @@ struct DesktopChatSidebar: View {
                     Section(isExpanded: $pinnedChatsOpen) {
                         ForEach(pinned) { conversationRow($0) }
                     } header: {
-                        Text(JunoShellChatSidebar.Heading.pinned.label).textCase(nil)
+                        DesktopSidebarHeading(JunoShellChatSidebar.Heading.pinned.label)
                     }
                 }
 
@@ -196,7 +196,7 @@ struct DesktopChatSidebar: View {
                                 .onAppear { loadMoreIfLast(conversation, in: recent) }
                         }
                     } header: {
-                        Text(JunoShellChatSidebar.Heading.recent.label).textCase(nil)
+                        DesktopSidebarHeading(JunoShellChatSidebar.Heading.recent.label)
                     }
                 } else if isBootstrapping {
                     DesktopSidebarLoadingRows()
@@ -209,13 +209,6 @@ struct DesktopChatSidebar: View {
         // The selection is still the platform's — only its colour is Juno's.
         .junoSidebarSelectionTint()
         .junoProductSwitch(product: $product)
-        // One search surface, as on the web: a button that looks like a field
-        // and opens search, never a live field of its own (§2.2).
-        .safeAreaBar(edge: .top, spacing: 0) {
-            DesktopSidebarSearchButton(action: openSearch)
-                .padding(.horizontal, JunoSpace.close)
-                .padding(.bottom, JunoSpace.tight)
-        }
         // `safeAreaBar`, not `safeAreaInset`: the bar variant is what the
         // system's bottom scroll-edge effect is measured against, and that
         // effect is what lets the footer sit on a translucent column without an
@@ -266,8 +259,26 @@ struct DesktopChatSidebar: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .help("\(JunoShellChatSidebar.Action.new.label)  ⌘N")
+        .help(JunoShortcutRegistry.help(JunoShellChatSidebar.Action.new.label, .newChat))
         .accessibilityIdentifier("juno.desktop.sidebar.new-chat")
+
+        // Search is a row, as on the web (§2.2, `app-sidebar.tsx`): shaped
+        // like New chat, with no fill and no keycap. The chord lives in the
+        // tooltip and the menu bar, where a reader looking for it looks.
+        Button(action: openSearch) {
+            Label {
+                Text(JunoShellChatSidebar.Action.search.label)
+            } icon: {
+                JunoSymbol(JunoShellChatSidebar.Action.search.icon)
+                    .foregroundStyle(Color.junoSidebarInk)
+            }
+            .foregroundStyle(Color.junoSidebarInk)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .help(JunoShortcutRegistry.help(JunoShellChatSidebar.Action.search.label, .search))
+        .accessibilityIdentifier("juno.desktop.sidebar.search")
 
         // The inbox, right after New chat (Phase 5 C1, register #62).
         if let notificationsModel {
@@ -370,7 +381,7 @@ struct DesktopChatSidebar: View {
     /// `SectionAction always`: the fold's one standing affordance.
     private var agentsHeader: some View {
         HStack(spacing: JunoSpace.tight) {
-            Text(JunoShellChatSidebar.Heading.agents.label).textCase(nil)
+            DesktopSidebarHeading(JunoShellChatSidebar.Heading.agents.label)
             Spacer(minLength: 0)
             if let hireAgent {
                 Button(action: hireAgent) {
@@ -414,10 +425,13 @@ struct DesktopChatSidebar: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: JunoSpace.hairline)
-            if agent.state == .waiting {
-                NativeAgentNeedsYouDot()
+            DesktopSidebarTrailingSlot {
+                if agent.state == .waiting {
+                    NativeAgentNeedsYouDot()
+                }
             }
         }
+        .padding(.leading, JunoSidebarMetrics.titleLeading)
         .junoSidebarRowInk()
         .junoSidebarRowSelection(selected)
         .help(sentence)
@@ -433,7 +447,7 @@ struct DesktopChatSidebar: View {
 
     private var pinnedProjectsHeader: some View {
         HStack(spacing: JunoSpace.tight) {
-            Text(JunoShellChatSidebar.Heading.pinnedProjects.label).textCase(nil)
+            DesktopSidebarHeading(JunoShellChatSidebar.Heading.pinnedProjects.label)
             Spacer(minLength: 0)
             Button {
                 actions.newProject(nil)
@@ -682,42 +696,48 @@ enum DesktopChatSidebarContent {
     }
 }
 
-// MARK: - Search button
+// MARK: - Section heading
 
-/// A button dressed as a field (§2.2): the one way into search from the column.
-///
-/// The keycap names the shortcut that opens search **today**, ⇧⌘F. It becomes
-/// ⌘K when the command panel lands (Phase 3); a keycap promising a shortcut
-/// that does nothing yet would be the one lie on the column.
-struct DesktopSidebarSearchButton: View {
-    let action: () -> Void
+/// One voice for every heading in the column: Pinned projects, Pinned chats,
+/// Recent, Agents and Needs you at rest (the web's `text-label
+/// text-muted-foreground`). The ink is stated, not left to the list's header
+/// style, which draws near 1.7:1 on the vibrant column.
+struct DesktopSidebarHeading: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: JunoSpace.snug) {
-                JunoIconView(JunoShellChatSidebar.Action.search.icon, size: 14)
-                Text(JunoShellChatSidebar.Action.search.label)
-                    .junoFont(size: 13, relativeTo: .callout)
-                Spacer(minLength: 0)
-                // Keycaps take secondary ink, never tertiary: they have to be
-                // read (errata, accessibility).
-                Text("⇧⌘F")
-                    .junoFont(size: 11, relativeTo: .caption2)
-            }
-            .junoSecondaryInk()
-            .padding(.horizontal, JunoSpace.snug)
-            .frame(height: 28)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
-                    .fill(Color.junoGlassFill)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .help("\(JunoShellChatSidebar.Action.search.label)  ⇧⌘F")
-        .accessibilityLabel(JunoShellChatSidebar.Action.search.label)
-        .accessibilityIdentifier("juno.desktop.sidebar.search")
+        Text(text)
+            .textCase(nil)
+            .foregroundStyle(Color.junoSecondaryInk)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+// MARK: - Trailing slot
+
+/// The sidebar's column metrics (§2.3): where a row's words start, and the
+/// one box every trailing mark is centred in.
+enum JunoSidebarMetrics {
+    /// A title or an agent's face starts on the nav glyphs' column. The list
+    /// insets a plain row's content about 6pt less than a `Label`'s icon.
+    static let titleLeading: CGFloat = 6
+    /// The trailing slot: the kebab, a status dot, the pin, an unread or
+    /// needs-you dot and a pending spinner share one 20pt box, so every mark
+    /// down the column sits on one centre.
+    static let trailingSlot: CGFloat = 20
+}
+
+/// A row's trailing mark, centred in the column's one slot.
+struct DesktopSidebarTrailingSlot<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .frame(width: JunoSidebarMetrics.trailingSlot, height: JunoSidebarMetrics.trailingSlot)
     }
 }
 
@@ -767,8 +787,10 @@ private struct DesktopConversationRow: View {
                     .animation(justRenamed ? JunoMotion.slow : nil, value: conversation.title)
             }
             Spacer(minLength: JunoSpace.hairline)
-            trailingMark
+            DesktopSidebarTrailingSlot { trailingMark }
         }
+        // On the nav glyphs' column: the title IS the row's left edge.
+        .padding(.leading, JunoSidebarMetrics.titleLeading)
         .junoSidebarRowInk()
         .onHover { isHovering = $0 }
         .onChange(of: conversation.title) { _, _ in
@@ -793,9 +815,11 @@ private struct DesktopConversationRow: View {
             Menu {
                 DesktopConversationMenu(conversation: conversation, projects: projects, actions: actions)
             } label: {
+                // A 20pt face in the trailing slot, its hit area widened to
+                // the 28pt pointer target around it.
                 JunoIconView(.more, size: 16)
-                    .frame(width: 28, height: 20)
-                    .contentShape(.rect)
+                    .frame(width: JunoSidebarMetrics.trailingSlot, height: JunoSidebarMetrics.trailingSlot)
+                    .contentShape(Rectangle().inset(by: -4))
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
@@ -807,7 +831,6 @@ private struct DesktopConversationRow: View {
             // The row says the state in words (its value and help), so the
             // dot itself is silent.
             JunoStatusDot(signal.tone)
-                .frame(width: 16, height: 16)
                 .accessibilityHidden(true)
         } else if conversation.pinned {
             // Secondary rather than tertiary: a pin mark has to clear 3:1.

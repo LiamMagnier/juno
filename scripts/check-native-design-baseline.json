@@ -25,18 +25,13 @@
     }
   },
   "menus": {
-    "total": 9,
+    "total": 3,
     "modules": {
-      "JunoCode (shared)": 3,
-      "JunoDesktop (macOS)": 6
+      "JunoCode (shared)": 3
     },
     "files": {
       "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Preview/CodePreviewWindow.swift": 2,
-      "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Simulator/SimulatorPane.swift": 1,
-      "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift": 2,
-      "native/macOS/JunoDesktop/App/DesktopLibraryScreen.swift": 1,
-      "native/macOS/JunoDesktop/App/DesktopWorkSettings.swift": 2,
-      "native/macOS/JunoDesktop/App/ResearchViews.swift": 1
+      "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Simulator/SimulatorPane.swift": 1
     }
   },
   "motion": {
@@ -61,11 +56,11 @@
     }
   },
   "targets": {
-    "total": 217,
+    "total": 212,
     "modules": {
       "JunoNativeKit (shared)": 36,
       "JunoCode (shared)": 89,
-      "JunoDesktop (macOS)": 63,
+      "JunoDesktop (macOS)": 58,
       "JunoMobile (iOS)": 29
     },
     "files": {
@@ -111,8 +106,7 @@
       "native/iOS/JunoMobile/App/JunoMobileOnboarding.swift": 3,
       "native/iOS/JunoMobile/App/JunoMobileVoiceFullScreen.swift": 1,
       "native/iOS/JunoMobile/App/JunoMobileWorkspaceViews.swift": 7,
-      "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift": 1,
-      "native/macOS/JunoDesktop/App/DesktopAutomationEditor.swift": 6,
+      "native/macOS/JunoDesktop/App/DesktopAutomationEditor.swift": 4,
       "native/macOS/JunoDesktop/App/DesktopAutomationPage.swift": 4,
       "native/macOS/JunoDesktop/App/DesktopAutomationsScreen.swift": 4,
       "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift": 1,
@@ -122,7 +116,7 @@
       "native/macOS/JunoDesktop/App/DesktopConnectionsScreen.swift": 9,
       "native/macOS/JunoDesktop/App/DesktopHostPage.swift": 3,
       "native/macOS/JunoDesktop/App/DesktopVoice.swift": 1,
-      "native/macOS/JunoDesktop/App/DesktopWorkSettings.swift": 10,
+      "native/macOS/JunoDesktop/App/DesktopWorkSettings.swift": 8,
       "native/macOS/JunoDesktop/App/JunoDesktopRootView.swift": 3
     }
   },

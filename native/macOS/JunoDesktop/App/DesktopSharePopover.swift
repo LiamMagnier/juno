@@ -83,6 +83,9 @@ final class DesktopShareState {
 
     var isPresented = false
     private(set) var phase: Phase = .idle
+    /// A revoke the server refused, said on the popover's own line when it
+    /// sits in a sheet, where a toast would land on the window behind (§7.7).
+    private(set) var revokeFailed = false
     private(set) var target: DesktopShareTarget?
     private(set) var isRevoking = false
     /// "Copied" for 1.5s after Copy.
@@ -125,6 +128,7 @@ final class DesktopShareState {
         self.service = service
         copied = false
         isRevoking = false
+        revokeFailed = false
         isPresented = true
         createTask = Task { await create() }
     }
@@ -175,6 +179,7 @@ final class DesktopShareState {
     func revoke(notify: (JunoToast) -> Void) async {
         guard case .ready(let share) = phase, let service, !isRevoking else { return }
         isRevoking = true
+        revokeFailed = false
         defer { isRevoking = false }
         do {
             try await service.revoke(shareID: share.id)
@@ -183,6 +188,7 @@ final class DesktopShareState {
             phase = .revoked
             notify(.success("Link revoked. It no longer works."))
         } catch {
+            revokeFailed = true
             notify(.error("Couldn’t revoke the link."))
         }
     }
@@ -199,17 +205,32 @@ final class DesktopShareState {
 /// web's dialog, in a toolbar-anchored popover, with the system's More… for
 /// the share sheet.
 ///
-/// **An explicit frame** in every state (crash rule 2): 360 × 232, content
-/// top-aligned. **The signature detail** is the Copy button turning to a
-/// check and "Copied" — the one moment the popover changes under the
-/// pointer, and the acknowledgement the old silent copy never gave.
+/// **An explicit frame** in every state (crash rule 2), one constant per
+/// state so no state hangs a blank half-popover under its words (register
+/// #174): ready 360 × 204, loading and error 176, revoked 180, blocked 132.
+/// **The signature detail** is the Copy button turning to a check and
+/// "Copied": the one moment the popover changes under the pointer, and the
+/// acknowledgement the old silent copy never gave.
 struct DesktopSharePopover: View {
     @Bindable var state: DesktopShareState
+    /// In a sheet (an artifact's Share…), where toasts are never shown: a
+    /// revoke's outcome is said on the popover's own lines instead.
+    var presentsInSheet = false
 
     @Environment(\.junoToast) private var toast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    static let size = CGSize(width: 360, height: 232)
+    /// The widest state, for a caller that sizes around the popover.
+    static let size = CGSize(width: 360, height: 204)
+
+    static func size(for phase: DesktopShareState.Phase) -> CGSize {
+        switch phase {
+        case .ready: CGSize(width: 360, height: 204)
+        case .idle, .loading, .error: CGSize(width: 360, height: 176)
+        case .revoked: CGSize(width: 360, height: 180)
+        case .blocked: CGSize(width: 360, height: 132)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -229,7 +250,11 @@ struct DesktopSharePopover: View {
                 .transition(.opacity)
         }
         .padding(12)
-        .frame(width: Self.size.width, height: Self.size.height, alignment: .topLeading)
+        .frame(
+            width: Self.size(for: state.phase).width,
+            height: Self.size(for: state.phase).height,
+            alignment: .topLeading
+        )
         .animation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion, tier: .tint), value: state.phase)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("juno.desktop.share-popover")
@@ -326,7 +351,8 @@ struct DesktopSharePopover: View {
                     .lineLimit(1)
                 Spacer(minLength: JunoSpace.snug)
                 Button {
-                    Task { await state.revoke(notify: { toast($0) }) }
+                    let inSheet = presentsInSheet
+                    Task { await state.revoke(notify: { if !inSheet { toast($0) } }) }
                 } label: {
                     Text(state.isRevoking ? "Revoking…" : "Revoke Link")
                         .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
@@ -337,6 +363,9 @@ struct DesktopSharePopover: View {
                 .buttonStyle(.plain)
                 .disabled(state.isRevoking)
                 .accessibilityIdentifier("juno.desktop.share-popover.revoke")
+            }
+            if presentsInSheet, state.revokeFailed {
+                statusLine(icon: .error, text: "Couldn’t revoke the link.", ink: Color.junoDestructiveInk)
             }
             Spacer(minLength: 0)
             ShareLink(item: share.url) {
@@ -410,5 +439,39 @@ private struct DesktopShareLinkField: View {
                 }
             }
             .accessibilityLabel("Share link")
+    }
+}
+
+// MARK: - In a sheet
+
+/// An artifact's Share… (Phase 3 seam 7): the popover's content in a sheet,
+/// with the Done a sheet needs. A popover closes on an outside click and a
+/// sheet does not, so without it the reader had no way out but Esc, and the
+/// web's dialog has its close button. Explicit frames per state, as the
+/// popover's.
+struct DesktopShareSheet: View {
+    @Bindable var state: DesktopShareState
+
+    static let footerHeight: CGFloat = 52
+
+    var body: some View {
+        let size = DesktopSharePopover.size(for: state.phase)
+        VStack(spacing: 0) {
+            DesktopSharePopover(state: state, presentsInSheet: true)
+            Divider()
+            HStack {
+                Spacer(minLength: 0)
+                Button("Done") { state.close() }
+                    .buttonStyle(.bordered)
+                    .tint(nil)
+                    .keyboardShortcut(.cancelAction)
+                    .contentShape(.rect)
+                    .accessibilityIdentifier("juno.desktop.share-sheet.done")
+            }
+            .padding(.horizontal, JunoSpace.cozy)
+            .frame(height: Self.footerHeight)
+        }
+        .frame(width: size.width, height: size.height + Self.footerHeight)
+        .presentationSizing(.fitted)
     }
 }

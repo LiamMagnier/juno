@@ -305,6 +305,13 @@ struct DesktopMessageRow: View {
             }
             .background(Self.bubbleShape.fill(Color.junoSecondary))
             .clipShape(Self.bubbleShape)
+            // Find's current match may sit under the clamp's fade, where the
+            // bar's "3 of 12" would point at nothing visible: open the bubble.
+            .onChange(of: findHighlight?.current) { _, current in
+                if current != nil, isLongPrompt, !promptExpanded {
+                    promptExpanded = true
+                }
+            }
     }
 
     /// "Show more · 22 lines" — a control, so the interface face rather than

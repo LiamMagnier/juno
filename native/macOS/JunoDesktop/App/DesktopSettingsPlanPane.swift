@@ -73,48 +73,49 @@ struct DesktopSettingsPlanPane: View {
         let id = plan.planID.uppercased()
         let catalog = DesktopPlanCatalog.plan(id: id)
         let generating = id != "FREE" && plan.spend.capDisabled != true
-        return HStack(alignment: .top, spacing: JunoSpace.section) {
-            VStack(alignment: .leading, spacing: JunoSpace.micro) {
+        // Title and actions on one line, then the tagline and the price at
+        // the row's full width: squeezed beside the buttons, the sentence
+        // wrapped and orphaned its date.
+        return VStack(alignment: .leading, spacing: JunoSpace.micro) {
+            HStack(alignment: .center, spacing: JunoSpace.snug) {
+                Text(catalog?.name ?? plan.planName)
+                    .junoType(JunoType.bodyLarge.weight(.semibold))
+                    .foregroundStyle(Color.junoForeground)
+                if generating {
+                    Text("Active")
+                        .junoType(.label)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .padding(.horizontal, JunoSpace.snug)
+                        .padding(.vertical, JunoSpace.micro)
+                        .overlay(Capsule().strokeBorder(Color.junoBorder))
+                }
+                Spacer(minLength: JunoSpace.section)
                 HStack(spacing: JunoSpace.snug) {
-                    Text(catalog?.name ?? plan.planName)
-                        .junoType(JunoType.bodyLarge.weight(.semibold))
-                        .foregroundStyle(Color.junoForeground)
-                    if generating {
-                        Text("Active")
-                            .junoType(.label)
-                            .foregroundStyle(Color.junoSecondaryInk)
-                            .padding(.horizontal, JunoSpace.snug)
-                            .padding(.vertical, JunoSpace.micro)
-                            .overlay(Capsule().strokeBorder(Color.junoBorder))
+                    if id == "FREE" {
+                        Button("Upgrade") { presenter.present(in: .settings) }
+                            .buttonStyle(.junoProminent)
+                            .contentShape(.rect)
+                            .accessibilityIdentifier("juno.desktop.settings.upgrade")
+                    } else {
+                        DesktopOutlineButton(title: "Change Plan") { presenter.present(in: .settings) }
+                        DesktopOutlineButton(title: openingPortal ? "Opening…" : "Manage Billing") { openPortal() }
+                            .disabled(openingPortal)
                     }
                 }
-                if let tagline = catalog?.tagline {
-                    Text(tagline)
-                        .junoType(.ui)
-                        .foregroundStyle(Color.junoSecondaryInk)
-                }
-                Text(Self.priceSentence(price: catalog?.price ?? 0, renewsAt: plan.renewsAt, cancelAtPeriodEnd: plan.cancelAtPeriodEnd))
+                .fixedSize()
+            }
+            if let tagline = catalog?.tagline {
+                Text(tagline)
                     .junoType(.ui)
-                    .monospacedDigit()
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, JunoSpace.tight)
             }
-            .layoutPriority(1)
-            Spacer(minLength: 0)
-            HStack(spacing: JunoSpace.snug) {
-                if id == "FREE" {
-                    Button("Upgrade") { presenter.present(in: .settings) }
-                        .buttonStyle(.junoProminent)
-                        .contentShape(.rect)
-                        .accessibilityIdentifier("juno.desktop.settings.upgrade")
-                } else {
-                    DesktopOutlineButton(title: "Change Plan") { presenter.present(in: .settings) }
-                    DesktopOutlineButton(title: openingPortal ? "Opening…" : "Manage Billing") { openPortal() }
-                        .disabled(openingPortal)
-                }
-            }
-            .fixedSize()
+            Text(Self.priceSentence(price: catalog?.price ?? 0, renewsAt: plan.renewsAt, cancelAtPeriodEnd: plan.cancelAtPeriodEnd))
+                .junoType(.ui)
+                .monospacedDigit()
+                .foregroundStyle(Color.junoSecondaryInk)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, JunoSpace.tight)
         }
         .padding(.vertical, JunoSpace.snug)
     }
@@ -123,7 +124,9 @@ struct DesktopSettingsPlanPane: View {
     static func priceSentence(price: Int, renewsAt: Date?, cancelAtPeriodEnd: Bool) -> String {
         var sentence = price > 0 ? "\(DesktopPlanCatalog.price(price)) a month, excluding VAT." : "Free."
         if let renewsAt {
+            // Non-breaking spaces, so a wrap can never split the date.
             let date = renewsAt.formatted(.dateTime.month(.abbreviated).day().year())
+                .replacingOccurrences(of: " ", with: "\u{00A0}")
             sentence += " \(cancelAtPeriodEnd ? "Access ends" : "Renews") \(date)."
         }
         return sentence
@@ -267,7 +270,9 @@ struct DesktopMeterBar: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.junoSecondary)
+                // The border tone, not the row's own fill: an unfilled track
+                // in junoSecondary all but vanished on the grouped row.
+                Capsule().fill(Color.junoBorder)
                 Capsule()
                     .fill(tone)
                     .frame(width: proxy.size.width * Swift.min(1, Swift.max(0, fraction)))

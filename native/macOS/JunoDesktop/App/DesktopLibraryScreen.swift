@@ -110,7 +110,7 @@ struct DesktopLibraryScreen: View {
                 tone: .error,
                 title: "Couldn’t load your files",
                 detail: "Check your connection and try again.",
-                action: JunoToast.Action("Try again") { reload() }
+                action: JunoToast.Action("Try Again") { reload() }
             )
         }
         .junoToastSelection(selectionBar, id: selection)
@@ -184,7 +184,9 @@ struct DesktopLibraryScreen: View {
             }
         } else {
             JunoPageHeader("Library", lede: "Everything you upload or share in chats.") {
-                if let storage = model.storage, !isEmptyLibrary {
+                // Withheld while loading or failed, as Projects and
+                // Automations withhold theirs: nothing to count or add to yet.
+                if let storage = model.storage, !isLoading, !model.failed, !isEmptyLibrary {
                     DesktopPageLayoutReader { layout in
                         if layout.pageWidth >= 640 {
                             Text("\(Self.sizeLabel(storage.usedBytes)) of \(Self.sizeLabel(storage.quotaBytes)) used")
@@ -206,13 +208,13 @@ struct DesktopLibraryScreen: View {
                 .contentShape(.rect)
                 // Withheld while the empty state carries "Upload files": one
                 // prominent button per surface (the web shows both).
-                if !isEmptyLibrary {
+                if !isLoading, !model.failed, !isEmptyLibrary {
                     Button {
                         choosingUpload = true
                     } label: {
                         Label("Upload", icon: .upload)
                     }
-                        .contentShape(.rect)
+                    .contentShape(.rect)
                     .buttonStyle(.junoProminent)
                     .help("Upload files to your library")
                 }
@@ -230,14 +232,14 @@ struct DesktopLibraryScreen: View {
             } label: {
                 Label("Add Document…", icon: .filePlus)
             }
-            .keyboardShortcut("i", modifiers: [.command, .shift])
+            // No chords on an in-window menu (§7.1): the menu bar owns every
+            // chord, and ⌘R is Chat's Regenerate there.
             .disabled(documentIndex?.isReady != true || documentIndex?.isIngesting == true)
             Button {
                 reload()
             } label: {
                 Label("Refresh", icon: .refresh)
             }
-            .keyboardShortcut("r", modifiers: .command)
             .disabled(model.pending)
         } label: {
             JunoIconView(.ellipsis, size: 16)
@@ -316,7 +318,7 @@ struct DesktopLibraryScreen: View {
                 title: "Couldn’t load your files",
                 message: "Check your connection and try again.",
                 icon: .triangleAlert,
-                actionLabel: "Try again",
+                actionLabel: "Try Again",
                 action: reload,
                 tone: .error
             )
@@ -457,7 +459,7 @@ struct DesktopLibraryScreen: View {
                     .junoType(.caption)
                     .monospacedDigit()
                     .foregroundStyle(Color.junoSecondaryInk)
-                    .frame(width: DesktopLibraryListHeader.sizeWidth, alignment: .trailing)
+                    .frame(width: DesktopLibraryListHeader.sizeWidth, alignment: .leading)
                 Text(Self.ageLabel(item.createdAt))
                     .junoType(.caption)
                     .monospacedDigit()
@@ -477,6 +479,12 @@ struct DesktopLibraryScreen: View {
         .contentShape(.rect)
         .onTapGesture(count: 2) { quickLook(item) }
         .onTapGesture { click(item) }
+        // Return opens, Space is Quick Look, as in Finder.
+        .desktopKeyboardOpen { quickLook(item) }
+        .onKeyPress(.space) {
+            quickLook(item)
+            return .handled
+        }
         .onHover { inside in hover(item, inside) }
         .contextMenu { actions(for: item) }
         .draggable(DesktopLibraryDragItem(name: item.fileName)) {
@@ -611,6 +619,12 @@ struct DesktopLibraryScreen: View {
         .contentShape(.rect)
         .onTapGesture(count: 2) { quickLook(item) }
         .onTapGesture { click(item) }
+        // Return opens, Space is Quick Look, as in Finder.
+        .desktopKeyboardOpen { quickLook(item) }
+        .onKeyPress(.space) {
+            quickLook(item)
+            return .handled
+        }
         .onHover { inside in hover(item, inside) }
         .contextMenu { actions(for: item) }
         .accessibilityElement(children: .combine)
@@ -1048,17 +1062,23 @@ struct DesktopLibraryScreen: View {
     }
 
     private func indexDocumentsMenu(_ index: NativeDocumentIndexModel) -> some View {
-        Menu("Manage") {
+        Menu {
             ForEach(index.documents) { document in
                 Button("Remove \(document.sourceName)") {
                     Task { await index.remove(document) }
                 }
                 .help(indexDocumentDetail(document))
             }
+        } label: {
+            Text("Manage")
+                .frame(minHeight: 28)
+                .contentShape(.rect)
         }
-            .contentShape(.rect)
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
+        .menuIndicator(.hidden)
         .fixedSize()
+        .contentShape(.rect)
         .help("Remove a document from this Mac's search index")
         .accessibilityIdentifier("juno.desktop.library-document-index-manage")
     }
@@ -1260,9 +1280,11 @@ extension Optional where Wrapped == JunoPageLayout {
 }
 
 private struct DesktopLibraryListHeader: View {
-    static let typeWidth: CGFloat = 96
-    static let sizeWidth: CGFloat = 72
-    static let addedWidth: CGFloat = 112
+    /// The web's caption columns (4.5, 5.5 and 6rem), all left-aligned, 12pt
+    /// apart: a right-aligned Size against a left-aligned Added read as one run.
+    static let typeWidth: CGFloat = 72
+    static let sizeWidth: CGFloat = 88
+    static let addedWidth: CGFloat = 96
 
     let columns: DesktopLibraryColumns
     var showsType: Bool { columns.showsType }
@@ -1275,7 +1297,7 @@ private struct DesktopLibraryListHeader: View {
             if showsType {
                 Text("Type").frame(width: Self.typeWidth, alignment: .leading)
             }
-            Text("Size").frame(width: Self.sizeWidth, alignment: .trailing)
+            Text("Size").frame(width: Self.sizeWidth, alignment: .leading)
             Text("Added").frame(width: Self.addedWidth, alignment: .leading)
             Color.clear.frame(width: 28, height: 1)
         }

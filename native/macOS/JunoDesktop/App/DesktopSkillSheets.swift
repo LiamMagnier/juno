@@ -742,11 +742,7 @@ struct DesktopSkillMoveSheet: View {
             choice = id
         } label: {
             HStack(spacing: JunoSpace.cozy) {
-                ZStack {
-                    Circle().strokeBorder(choice == id ? Color.junoForeground : Color.junoInput, lineWidth: 1.5)
-                    if choice == id { Circle().fill(Color.junoForeground).padding(4) }
-                }
-                .frame(width: 16, height: 16)
+                JunoRadioMark(isOn: choice == id)
                 Text(name)
                     .junoType(.ui)
                     .foregroundStyle(id == nil ? Color.junoSecondaryInk : Color.junoForeground)

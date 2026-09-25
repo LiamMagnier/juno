@@ -66,7 +66,7 @@ public struct NativeAgentThreadHeader: View {
                     NativeAgentNeedsYouDot()
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: NativeAgentMetrics.target, alignment: .leading)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)

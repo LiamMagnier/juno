@@ -73,8 +73,9 @@ public enum JunoStatusTone: String, CaseIterable, Sendable {
 /// wherever the caller says something else on screen owns the loop.
 ///
 /// **Without colour.** Under Differentiate Without Color the dot becomes a
-/// 10pt glyph in the same ink — a spinner ring, a warning circle, a tick, a
-/// cross or a ring — so five states are five shapes.
+/// 10pt glyph in the same ink (a spinner ring, a warning circle, a tick, a
+/// cross or a ring) so five states are five shapes. `bad` is always its cross,
+/// so a failed run never reads as a running one that has stopped breathing.
 public struct JunoStatusDot: View {
     /// The dot's diameter: the web's `size-1.5`.
     public static let diameter: CGFloat = 6
@@ -120,7 +121,12 @@ public struct JunoStatusDot: View {
 
     public var body: some View {
         Group {
-            if withoutColor {
+            // A failed run is a cross at all times, not only without colour:
+            // the destructive and accent inks are near twins at 6pt (the web's
+            // --destructive and --primary), and under Reduce Motion a running
+            // dot stops breathing, which left the two rows identical. The
+            // Mac's addition (register #173).
+            if withoutColor || tone == .bad {
                 JunoIconView(tone.glyph, size: Self.glyphSize, weight: .bold)
                     .foregroundStyle(tone.color)
             } else {

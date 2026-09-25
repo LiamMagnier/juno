@@ -69,12 +69,12 @@ struct DesktopMenuBarExtraContent: View {
                     Button {
                         open(session)
                     } label: {
-                        JunoIconLabel(
-                            verbatim: "\(session.title) — \(session.status.label)",
-                            icon: Self.icon(for: session.status)
-                        )
+                        // The Needs You pattern: the title, and the status as
+                        // the item's second line, with the state's glyph.
+                        JunoIconLabel(verbatim: session.title, icon: Self.icon(for: session.status))
+                        Text(verbatim: session.status.label)
                     }
-                    .help("\(session.detail) · \(session.status.label)")
+                    .help("\(session.detail): \(session.status.label)")
                 }
             }
         }
@@ -83,16 +83,19 @@ struct DesktopMenuBarExtraContent: View {
             Button {
                 JunoDesktopWindow.showMainWindow(using: openWindow)
             } label: {
-                JunoIconLabel("Open Juno", icon: .external)
+                // Juno's own mark: this brings Juno's window forward, it does
+                // not leave the app (which is what the external arrow says).
+                JunoIconLabel("Open Juno", icon: .home)
             }
         }
     }
 
     /// The mark beside a running session: what state it is in, in the same
-    /// vocabulary the Code column's gutter uses.
-    private static func icon(for status: CodeRunStatus) -> JunoIcon {
+    /// vocabulary the Code column's gutter uses. A still glyph: a menu cannot
+    /// animate, and a spinner frozen mid-turn reads as a hang.
+    static func icon(for status: CodeRunStatus) -> JunoIcon {
         if status.needsApproval { return .permission }
-        return .loader
+        return .circleDot
     }
 
     private func open(_ session: DesktopWorkbenchRegistry.ActiveSession) {

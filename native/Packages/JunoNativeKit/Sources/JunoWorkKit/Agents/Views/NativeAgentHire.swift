@@ -290,7 +290,7 @@ public struct NativeAgentHireView: View {
                         .buttonStyle(.bordered)
                         .nativeAgentNeutralTint()
                         .controlSize(.small)
-                        .frame(minHeight: 44)
+                        .frame(minHeight: NativeAgentMetrics.target)
                         .contentShape(.rect)
                     }
                 }
@@ -347,7 +347,7 @@ public struct NativeAgentHireView: View {
             Spacer(minLength: JunoSpace.snug)
             Button("Cancel", action: onCancel)
                 .keyboardShortcut(.cancelAction)
-                .frame(minHeight: 44)
+                .frame(minHeight: NativeAgentMetrics.target)
                 .contentShape(.rect)
             Button(action: hire) {
                 if saving {
@@ -362,7 +362,7 @@ public struct NativeAgentHireView: View {
             // sheet's body (MACOS_LIQUID_GLASS_REDESIGN.md §0.1).
             .buttonStyle(.junoProminent)
             .disabled(!draft.isValid || saving)
-            .frame(minHeight: 44)
+            .frame(minHeight: NativeAgentMetrics.target)
             .contentShape(.rect)
             .accessibilityIdentifier("juno.agents.hire.submit")
         }
@@ -716,7 +716,7 @@ struct NativeAgentAppPicker: View {
                         .font(.callout)
                         .junoInk()
                 }
-                .frame(minHeight: 44)
+                .frame(minHeight: NativeAgentMetrics.target)
             }
             ForEach(orphaned, id: \.self) { id in
                 Toggle(isOn: binding(for: id)) {
@@ -728,7 +728,7 @@ struct NativeAgentAppPicker: View {
                             .junoCaption()
                     }
                 }
-                .frame(minHeight: 44)
+                .frame(minHeight: NativeAgentMetrics.target)
             }
         }
     }

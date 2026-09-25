@@ -151,6 +151,19 @@ struct DesktopProjectListingTests {
         #expect(shown.count == 2)
     }
 
+    /// A tile reads the instructions as the web's `promptPreview` does: the
+    /// section tags gone, never printed as markup.
+    @Test
+    func aTileStripsTheInstructionsSectionTags() {
+        let summary = DesktopProjectSummary(
+            project: project("t", "Tagged", updated: 0, instructions: "<role>\n You are a research assistant.\n</role>\n<style>Short answers.</style>"),
+            chatCount: 0,
+            files: []
+        )
+        #expect(summary.instructionsPreview == "You are a research assistant. Short answers.")
+        #expect(DesktopProjectSummary(project: project("e", "Empty", updated: 0), chatCount: 0, files: []).instructionsPreview == "No instructions yet.")
+    }
+
     /// The cover is the file named `__cover__`: never a source, never counted.
     @Test
     func theCoverIsNotASource() {

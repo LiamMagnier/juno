@@ -117,9 +117,14 @@ final class DesktopQuickEntryController {
         panel.isOpaque = false
         panel.hasShadow = true
         panel.appearance = appearance
+        // A titled panel keeps its traffic lights unless they are hidden, and
+        // they would draw over the composer's top-left corner.
+        [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].forEach {
+            panel.standardWindowButton($0)?.isHidden = true
+        }
         panel.contentView = NSHostingView(
             rootView: DesktopQuickEntryView(
-                isAccessibilityTrusted: isAccessibilityTrusted,
+                readTrust: { AXIsProcessTrusted() },
                 dismiss: { [weak self] in self?.hide() }
             )
             .desktopTextScale()
@@ -160,11 +165,26 @@ private final class DesktopQuickEntryPanel: NSPanel {
 /// ``DesktopWorkbenchRegistry`` to whichever window is open, and that window is
 /// brought forward; a window is opened only when there is none.
 struct DesktopQuickEntryView: View {
-    let isAccessibilityTrusted: Bool
+    /// Reads whether the app is trusted for Accessibility. Read on every
+    /// appearance and whenever the app comes forward, because the reader may
+    /// grant the permission while the panel is cached: a line asking for a
+    /// permission already given would be the panel's one lie.
+    let readTrust: () -> Bool
     let dismiss: () -> Void
 
+    @State private var isAccessibilityTrusted = true
     @State private var text = ""
-    @State private var product = DesktopProductMode.chat
+    @State private var product: DesktopProductMode
+
+    init(
+        readTrust: @escaping () -> Bool,
+        dismiss: @escaping () -> Void,
+        startingProduct: DesktopProductMode = .chat
+    ) {
+        self.readTrust = readTrust
+        self.dismiss = dismiss
+        _product = State(initialValue: startingProduct)
+    }
     @FocusState private var fieldFocused: Bool
     @Environment(\.openWindow) private var openWindow
 
@@ -182,6 +202,10 @@ struct DesktopQuickEntryView: View {
         product == .code ? "Describe a task for Juno Code…" : ChatComposerPlaceholder.text()
     }
 
+    private var startLabel: String {
+        product == .code ? "Start a task in Juno Code" : "Start a new chat"
+    }
+
     private var hint: String {
         product == .code ? "↩ starts a task in Juno Code" : "↩ starts a new chat"
     }
@@ -197,7 +221,16 @@ struct DesktopQuickEntryView: View {
         )
         .frame(width: Self.width)
         .padding(JunoSpace.snug)
-        .onAppear { fieldFocused = true }
+        .onAppear {
+            fieldFocused = true
+            isAccessibilityTrusted = readTrust()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            isAccessibilityTrusted = readTrust()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            isAccessibilityTrusted = readTrust()
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Ask Juno")
         .accessibilityIdentifier("juno.desktop.quick-entry")
@@ -231,13 +264,19 @@ struct DesktopQuickEntryView: View {
 
     private var controls: some View {
         HStack(spacing: JunoComposerMetrics.controlSpacing) {
-            // The window's own switch, so Quick Entry and the toolbar can
-            // never offer different products or draw them differently. Icons
-            // only, as in the toolbar: outside a toolbar a segmented picker
-            // would spell its labels out.
-            DesktopProductSwitch(product: $product)
-                .labelStyle(.iconOnly)
-                .fixedSize()
+            // The product list is the window's (`DesktopProductMode.switchable`),
+            // drawn with Juno's own switch at its compact size: outside a
+            // toolbar the system picker put the chosen glyph white on a
+            // white thumb, and when active would spend the system accent on
+            // it (§0.4). The thumb here is neutral, the words spelled out.
+            JunoSegmented(
+                options: DesktopProductMode.switchable.map { mode in
+                    JunoSegmentedOption(mode, mode.label, icon: mode.icon)
+                },
+                selection: $product,
+                accessibilityLabel: "Product",
+                size: .compact
+            )
             Text(hint)
                 .junoType(.caption)
                 .foregroundStyle(Color.junoSecondaryInk)
@@ -258,11 +297,15 @@ struct DesktopQuickEntryView: View {
                         .contentShape(.rect)
                 }
                 .buttonStyle(ComposerControlStyle())
-                .help("Open Privacy & Security › Accessibility — the global shortcut needs it")
+                .help("Opens Privacy & Security › Accessibility. The global shortcut needs it.")
                 .accessibilityIdentifier("juno.desktop.quick-entry.accessibility")
             }
+            // The send face, but not the send words: Return puts the text in
+            // a new chat's (or task's) field, and the reader sends it there.
             ComposerPrimaryDisc(
-                face: canSend ? .send : .disabled("Send"),
+                face: canSend ? .send : .disabled(startLabel),
+                label: startLabel,
+                help: "\(startLabel)  ↩",
                 identifier: "juno.desktop.quick-entry.send",
                 action: send
             )

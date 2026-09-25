@@ -184,7 +184,7 @@ struct DesktopAccountFooter: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.borderless)
-        .help("Settings  ⌘,")
+        .help(JunoShortcutRegistry.help("Settings", .settings))
         .accessibilityLabel("Settings")
         .accessibilityIdentifier("juno.desktop.footer.settings")
     }
@@ -208,13 +208,14 @@ struct DesktopAccountFooter: View {
 
 // MARK: - Plan word
 
-/// The footer's plan segment, as a pure rule over the plan — the web's
-/// `planSegment` (`app-sidebar.tsx`), on the native plan route's spend windows.
+/// The footer's plan segment, as a pure rule over the plan: the web's
+/// `usageNote` (`app-sidebar.tsx`).
 ///
-/// The web counts messages; the native route reports the fraction of the
-/// week's budget spent, which is also what the budget gate enforces, so the
-/// thresholds are read against that: under 80% the plan's name, from 80% the
-/// share that is left, at 100% "Limit reached".
+/// It reads the same number the account popover's usage block reads, the
+/// month's messages against the plan's cap (`quota`, seam 9), so the two can
+/// never disagree about one account: under 80% the plan's name, from 80%
+/// "{remaining} left" in warning, at 100% "Limit reached". A server that
+/// predates `quota.used` falls back to the week's share of the budget.
 struct DesktopFooterPlanWord: Equatable {
     enum Tone: Equatable {
         case quiet
@@ -239,16 +240,32 @@ struct DesktopFooterPlanWord: Equatable {
     }
 
     init(plan: DesktopUsagePlan) {
-        self.init(
-            planName: plan.planName,
-            weeklyFraction: plan.weekly.fraction,
-            isUnlimited: plan.isUnlimited,
-            isBrowseOnly: plan.isBrowseOnly
-        )
+        if let used = plan.quota.used, let limit = plan.quota.limit, limit > 0 {
+            self.init(planName: plan.planName, used: used, limit: limit)
+        } else {
+            self.init(
+                planName: plan.planName,
+                weeklyFraction: plan.weekly.fraction,
+                isUnlimited: plan.isUnlimited,
+                isBrowseOnly: plan.isBrowseOnly
+            )
+        }
     }
 
-    /// The rule itself, over the four facts it reads — so it can be checked
-    /// without a plan decoded from the wire.
+    /// The web's rule over the quota: `pct = min(100, round(used / limit ×
+    /// 100))`, and what is left clamped at zero.
+    init(planName: String, used: Int, limit: Int) {
+        let percent = Self.percentUsed(used: used, limit: limit)
+        if percent >= 100 {
+            self.init(text: "Limit reached", tone: .destructive)
+        } else if percent >= 80 {
+            self.init(text: "\(max(0, limit - used)) left", tone: .warning)
+        } else {
+            self.init(text: planName, tone: .quiet)
+        }
+    }
+
+    /// The fallback over the week's share, for a server without `quota.used`.
     init(planName: String, weeklyFraction: Double, isUnlimited: Bool, isBrowseOnly: Bool) {
         // An unlimited plan cannot run out, and a browse-only one has nothing
         // to run out of; both are simply their name.
@@ -275,11 +292,21 @@ struct DesktopFooterPlanWord: Equatable {
         return Int((clamped * 100).rounded())
     }
 
+    static func percentUsed(used: Int, limit: Int) -> Int {
+        guard limit > 0 else { return 0 }
+        return min(100, Int((Double(used) / Double(limit) * 100).rounded()))
+    }
+
     /// The whole truth rides the accessible name, so nothing a sighted reader
-    /// can see is lost to the truncation on that one line.
+    /// can see is lost to the truncation on that one line. The web's words.
     static func accessibilityLabel(name: String, plan: DesktopUsagePlan?) -> String {
         guard let plan else { return name }
-        if plan.isUnlimited { return "\(name), \(plan.planName) plan, no usage cap" }
+        if let used = plan.quota.used, let limit = plan.quota.limit, limit > 0 {
+            return "\(name), \(plan.planName) plan, \(used) of \(limit) messages used"
+        }
+        if plan.isUnlimited || plan.quota.limit == nil && plan.quota.used != nil {
+            return "\(name), \(plan.planName) plan, no message cap"
+        }
         return "\(name), \(plan.planName) plan, \(percentUsed(plan))% of this week's budget used"
     }
 }
@@ -310,13 +337,13 @@ struct DesktopFooterSyncMark: View {
 
     private var state: (icon: JunoIcon, ink: Color, reason: String)? {
         if case .unreachable = connectivity {
-            return (.cloudOff, Color.junoSecondaryInk, "Juno is unreachable — showing your local copy")
+            return (.cloudOff, Color.junoSecondaryInk, DesktopOfflineState.unreachableSentence)
         }
         switch syncPhase {
         case .offline:
-            return (.cloudOff, Color.junoSecondaryInk, "Offline — messages send when you're back")
+            return (.cloudOff, Color.junoSecondaryInk, DesktopOfflineState.offlineSentence)
         case .failed:
-            return (.error, Color.junoWarningInk, "Sync failed — open Settings › Data & privacy for details")
+            return (.error, Color.junoWarningInk, "Sync failed · open Settings › Data & privacy for details")
         case .idle, .synchronizing, .live, .none:
             return nil
         }
@@ -515,7 +542,7 @@ struct DesktopAccountPopover: View {
             usageBlock
                 .padding(.top, JunoSpace.cozy)
             divider
-            DesktopPopoverRow(title: "Settings…", icon: .settings, shortcut: "⌘,", action: openSettings)
+            DesktopPopoverRow(title: "Settings…", icon: .settings, shortcut: JunoShortcutRegistry.chord(.settings), action: openSettings)
             if let openUpgrade {
                 DesktopPopoverRow(title: "Upgrade Plan", icon: .sparkles, action: openUpgrade)
             }
@@ -523,7 +550,7 @@ struct DesktopAccountPopover: View {
                 DesktopPopoverRow(title: "Admin Panel", icon: .shieldCheck, trailing: .external, action: openAdmin)
             }
             divider
-            DesktopPopoverRow(title: "Keyboard Shortcuts", icon: .keyboard, shortcut: "⌘/", action: openShortcuts)
+            DesktopPopoverRow(title: "Keyboard Shortcuts", icon: .keyboard, shortcut: JunoShortcutRegistry.chord(.keyboardShortcuts), action: openShortcuts)
             divider
             DesktopPopoverRow(title: "Sign Out", icon: .logOut, ink: Color.junoDestructiveInk, action: signOut)
                 .accessibilityIdentifier("juno.desktop.account-menu.sign-out")

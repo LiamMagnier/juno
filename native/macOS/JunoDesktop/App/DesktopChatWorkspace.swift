@@ -347,7 +347,7 @@ struct DesktopChatWorkspace: View {
         .junoToastNotifier(toasts)
         // The web's words (`app-sidebar.tsx`), "Delete Chat" on the button.
         .junoConfirmation($deleteConfirmation)
-        .confirmationDialog("Leave this private chat?", isPresented: $confirmingLeavePrivate, titleVisibility: .visible) {
+        .confirmationDialog("Leave incognito?", isPresented: $confirmingLeavePrivate, titleVisibility: .visible) {
             Button("Leave", role: .destructive) { isPrivateChat = false }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -2137,8 +2137,8 @@ struct DesktopConversationView: View {
                 // header, and a row of suggestions under it would be asking
                 // for the one thing private mode does not keep.
                 if privateChat == nil {
-                    ChatStarterChips(isShown: isLanding) { opening in
-                        composerRequest = ChatComposerRequest(kind: .seed(opening))
+                    ChatStarterChips(isShown: isLanding, hasDraft: !draftIsEmpty) { prompt in
+                        composerRequest = ChatComposerRequest(kind: .seed(prompt))
                     }
                     .padding(.top, JunoSpace.regular)
                 }
@@ -2879,27 +2879,5 @@ struct DesktopConversationView: View {
         }
         planReadAt = Date()
         plan = loaded
-    }
-}
-
-private struct DesktopChatDisclaimer: View {
-    var body: some View {
-        // This line was `.foregroundStyle(.tertiary)` and measured **1.93:1** on
-        // the warm canvas in light appearance (2.27 dark) — not quiet, illegible,
-        // and less than half the 4.5:1 AA floor. It is also the app's only
-        // statement that the model can be wrong, so of everything on this screen
-        // it is the last text that should be unreadable. `junoMetaInk()` is the
-        // bottom of the ramp at 5.2:1 light / 7.2:1 dark; the line stays quiet
-        // through `caption2` and the absence of weight, which is how a tertiary
-        // role is expressed once contrast is off the table.
-        //
-        // `.accessibilityHidden(true)` came off with it. A safety notice that was
-        // both below the contrast floor *and* removed from the accessibility tree
-        // left a low-vision reader with no path to it at all — neither eyes nor
-        // VoiceOver. It is prose a person is meant to read, not decoration.
-        Text("Juno can be wrong — worth a second look on anything that matters.")
-            .font(.caption2)
-            .junoMetaInk()
-            .padding(.vertical, 7)
     }
 }

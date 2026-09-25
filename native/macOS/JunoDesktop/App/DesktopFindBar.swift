@@ -23,6 +23,8 @@ struct DesktopFindBar: View {
     var focusRequest = 0
 
     @FocusState private var focused: Bool
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.junoSnapshotOpaqueGlass) private var snapshotOpaqueGlass
 
     private var countLabel: String? {
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
@@ -91,13 +93,35 @@ struct DesktopFindBar: View {
             .padding(.leading, JunoSpace.cozy)
             .padding(.trailing, JunoSpace.hairline)
             .frame(height: 36)
-            .glassEffect(.regular, in: Capsule())
+            .modifier(DesktopFindBarSurface(opaque: reduceTransparency || snapshotOpaqueGlass))
+            // Esc closes from anywhere in the capsule (§6.14), not only from
+            // the field: with keyboard navigation on, Previous, Next and Done
+            // take focus too. Not Done's `.cancelAction`, which would take Esc
+            // for the whole window.
+            .onExitCommand(perform: done)
         }
         .frame(maxWidth: 480)
         .onAppear { focused = true }
         .onChange(of: focusRequest) { _, _ in focused = true }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Find")
+    }
+}
+
+/// The capsule's material: Liquid Glass, or, under Reduce Transparency and in
+/// the offscreen snapshots (which cannot draw glass), the popover's opaque
+/// fill and a hairline.
+private struct DesktopFindBarSurface: ViewModifier {
+    let opaque: Bool
+
+    func body(content: Content) -> some View {
+        if opaque {
+            content
+                .background(Capsule().fill(Color.junoPopover))
+                .overlay(Capsule().strokeBorder(Color.junoBorder, lineWidth: 1))
+        } else {
+            content.glassEffect(.regular, in: Capsule())
+        }
     }
 }
 

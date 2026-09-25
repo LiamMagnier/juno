@@ -2,6 +2,38 @@
 
 The owner paused the work. This page gives the exact state and the steps to resume. Nothing is pushed, and the redesign is not in any release: **1.6.0 shipped without it**, and it will ship as **1.7.0**.
 
+## Ready to ship (final review, 2026-09-25)
+
+**Verdict: READY** for the owner's release steps (merge into `main`, gate, push, deploy, 1.7.0, `release-macos.sh 1.7.0 --publish-dev`), with the runtime checks below left for a person at the screen. Nothing here was pushed or deployed.
+
+**What is in.** Phases 1–6 as integrated, plus the final review: four read-only area reviews (shell, transcript, overlays, pages) filed 65 findings; every major and most minors are applied. The spec's "Final review" section lists them; the register is #1–#182 (`WEB_TO_NATIVE_DESIGN.md` › "Final review", #172–#182). The headline changes: starter chips open the web's example prompts and step aside while there is a draft; the docked composer carries the web's footnote; one sidebar heading voice, Search as a row, one trailing slot; the footer's plan word reads the quota; Quick Entry lands its text, reads Accessibility live and uses Juno's switch; Incognito naming; approval and task buttons at one size; the task card's menu visible in dark; the Regenerate caret inside its circle; Mermaid neutral in light; excerpts (never live web views) in the Artifacts grid; the project page's field, menu, disc and rail; This Mac's host page without the duplicate band; keyboard-openable page cards; `JunoSegmented` compact, `JunoRadioMark`, `junoFieldChrome`; all six deprecated menus in Chat's files gone.
+
+**Verification** (tree as committed; derived data `/tmp/jgF-*`):
+
+| Check | Result |
+|---|---|
+| Mac Debug build (`build-for-testing`) | BUILD SUCCEEDED |
+| Mac Stable build (ad-hoc signing) | BUILD SUCCEEDED |
+| Mac unit tests (`-only-testing:JunoDesktopTests`) | TEST SUCCEEDED, 420 tests in 64 suites |
+| Snapshot suites (all 19, both appearances) | TEST SUCCEEDED, 37 tests in 19 suites (the changed suites re-rendered after the last fixes); 591 PNGs in `/tmp/juno-glass-snapshots/final-release/` |
+| iOS build (generic simulator) | BUILD SUCCEEDED |
+| JunoNativeKit package tests (`-warnings-as-errors`) | ok, 1,634 XCTests, 0 failures |
+| JunoWork + JunoCode package tests | ok, 1,367 XCTests, 0 failures, 12 skipped |
+| `native:sync:check` (13 gates) | all hold |
+| Design gates | type 0, motion 0, glass 24, targets 212 (was 217), prominent 9, menus 3 (was 9; the three left are Juno Code's); baselines re-locked |
+| `native:register:check` | 182 entries, 5 retired, every citation resolves |
+| Web: eslint | clean on the two web files changed (`tests/native-work-contract.test.ts`, `tests/tasks-retirement-surface.test.ts`) |
+| Web: `i18n:extract` | ran; the catalog did not change |
+| Web: `tsc --noEmit` | 25 errors, all in the push-notification files merged from `main` (`src/lib/notify/web-push.ts`, `src/app/api/push/subscriptions/route.ts`, `src/lib/apns.ts`, `src/lib/native-auth.ts`, `src/app/api/v1/devices/apns/route.ts`). This worktree's `node_modules` is a symlink to the main checkout's, whose Prisma client predates that schema and which has no `web-push` package; fixing it means writing to the shared checkout or installing, neither of which this pass may do. No error is in a file this branch changed. |
+| Web: `tsx --test tests/*.test.ts` | 4,085 pass, 0 fail, 39 skipped. Two web tests had gone stale on this branch (they passed on `main`) and were fixed: the Work contract test now reads JunoWorkKit's folders (the skills client moved into `Skills/`) and counts Work operations path by path (39; other sections now follow Work in the document), and the Tasks-retirement test guards the phone's screen only, asserting the Mac's Tasks screen (removed in Phase 5 D) stays gone. |
+
+**Known limits (explicit).**
+
+- Not drawn offscreen: the model popover's two stages and "Models unavailable", the Settings sub-sheets (password, email, two-step, delete, Diagnostics, import), the menu-bar extra's rows, and most pages' loading and error states (the Library's loading state is drawn). Toolbar items belong to a titled window and are never in the pictures; switches draw their "on" track grey offscreen.
+- Project › Sources still draws a card per file (the web's plain rows under "Files {n}" / "Artifacts {n}" are not built). The Agents hire flow's avatar swatches stay 44pt (pictures sized for the face).
+- The web's `--destructive` and `--primary` are near twins at 6pt; the Mac draws a failed run as a cross (#173) and the hue question goes to web design.
+- Runtime checks for a person at the screen (screen control is off here): the starter chips' Esc and focus return, the find bar's Esc from a focused button, Full Keyboard Access on page cards (Return opens, Space is Quick Look in the Library), Quick Entry's trust line after granting Accessibility, the inline rename's select-all, the Share sheet's Done, the announcement's close X, plus each lane's list in the sections below.
+
 ## Where the work lives
 
 | Thing | Location |

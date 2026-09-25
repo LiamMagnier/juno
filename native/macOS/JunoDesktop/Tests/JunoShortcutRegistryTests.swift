@@ -312,7 +312,7 @@ struct JunoShortcutRegistryTests {
             JunoShortcutRegistry.sections(in: menu).map { $0.compactMap(\.menuTitle) }
         }
         #expect(titles(.file) == [
-            ["New Chat", "New Private Chat"], ["New Chat"], ["Open Folder…"], ["Ask Juno…"],
+            ["New Chat", "New Incognito Chat"], ["New Chat"], ["Open Folder…"], ["Ask Juno…"],
         ])
         #expect(titles(.edit) == [["Find in Conversation…", "Find Next", "Find Previous"]])
         #expect(titles(.view) == [

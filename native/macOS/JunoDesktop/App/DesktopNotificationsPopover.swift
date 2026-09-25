@@ -37,8 +37,12 @@ struct DesktopNotificationsRow: View {
                 HStack(spacing: JunoSpace.tight) {
                     Text(Self.label)
                     Spacer(minLength: JunoSpace.hairline)
-                    if let tone = model.dotTone {
-                        DesktopUnreadDot(pressing: tone == .accent)
+                    // The column's one trailing slot, so this dot shares a
+                    // centre with every row's mark below it.
+                    DesktopSidebarTrailingSlot {
+                        if let tone = model.dotTone {
+                            DesktopUnreadDot(pressing: tone == .accent)
+                        }
                     }
                 }
             } icon: {

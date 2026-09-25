@@ -156,6 +156,8 @@ enum FinalSnapshotFixtures {
         // the redesigned shell. Its visual pass is track B; this is the
         // record of how it lands before that.
         "window-agents",
+        // The final review: a starter chip open on its three examples.
+        "starter-examples",
     ]
 
     /// A window's size: the spec's 1240-point acceptance window (§10.1), its
@@ -259,7 +261,9 @@ enum FinalSnapshotFixtures {
                     DesktopConversationView(
                         model: world.world.conversationModel,
                         attachmentModel: world.world.attachmentModel,
-                        profileName: "Liam",
+                        // The footer's own name, so the greeting and the
+                        // account row agree about who is signed in.
+                        profileName: world.world.session.profile.name ?? "Preview User",
                         configuration: world.configuration,
                         session: world.world.session,
                         draftProjectID: .constant(nil),
@@ -270,6 +274,20 @@ enum FinalSnapshotFixtures {
                     )
                     .frame(height: windowHeight - toolbarHeight)
                 })
+            })
+        case "starter-examples":
+            return FinalFixture(name: name, view: {
+                AnyView(
+                    ChatStarterChips(isShown: true, startsOpen: "Research") { _ in }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, JunoSpace.region)
+                        // Room under the row for the examples, which hang
+                        // below it outside its layout.
+                        .padding(.bottom, 160)
+                        .frame(width: 832, alignment: .top)
+                        .background(Color.junoCanvas)
+                        .junoAccentTint()
+                )
             })
         case "window-agents":
             let agents = NativeAgentsModel(client: NativeAgentsClient(sender: SnapshotAgentsSender()))

@@ -333,14 +333,10 @@ struct DesktopProjectSummary: Identifiable, Equatable {
         )
     }
 
-    /// Two lines of the instructions with their whitespace collapsed, as the
-    /// web's clamped paragraph reads them.
+    /// The instructions as the web's tile reads them (`promptPreview`): the
+    /// section tags stripped, whitespace collapsed, for a two-line clamp.
     var instructionsPreview: String {
-        let collapsed = project.instructions
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-        return collapsed.isEmpty ? "No instructions yet." : collapsed
+        JunoPromptPreview.text(project.instructions, fallback: "No instructions yet.")
     }
 }
 
@@ -453,6 +449,7 @@ struct DesktopProjectTile<MenuContent: View>: View {
         )
         .contentShape(.rect(cornerRadius: JunoRadius.card))
         .onTapGesture(perform: open)
+        .desktopKeyboardOpen(open)
         .onHover { hovering = $0 }
         .contextMenu { menu() }
         .accessibilityElement(children: .combine)

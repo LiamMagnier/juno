@@ -69,7 +69,7 @@ struct ChatSkillCaptureSheet: View {
 
             field("Name") {
                 TextField("Name", text: $draft.name, prompt: Text("Name"))
-                    .textFieldStyle(.roundedBorder)
+                    .junoFieldChrome(fill: Color.junoCard)
                     .labelsHidden()
                     .accessibilityIdentifier("juno.skill-capture.name")
                 slugHint
@@ -77,7 +77,7 @@ struct ChatSkillCaptureSheet: View {
 
             field("What it is for") {
                 TextField("What it is for", text: $draft.description)
-                    .textFieldStyle(.roundedBorder)
+                    .junoFieldChrome(fill: Color.junoCard)
                     .labelsHidden()
                     .accessibilityIdentifier("juno.skill-capture.description")
                 Text(WorkSkillDraft.descriptionHint)

@@ -151,6 +151,8 @@ struct DesktopTranscript: View {
     /// The window's toast host (§7.7): where a failed action on a reply, and
     /// a confirmation with no other evidence, are said.
     @Environment(\.junoToast) private var toast
+    /// The live message whose activity the panel holds, if it is open on it.
+    @Environment(\.junoActivityPanelMessageID) private var activityPanelMessageID
     /// A failed action on a reply — a rating that did not save, Read Aloud
     /// that could not start. Set, it is posted to the window's toast host and
     /// cleared.
@@ -491,7 +493,13 @@ struct DesktopTranscript: View {
         case .waiting:
             return PhaseAnnouncement(
                 key: "waiting:\(view.pendingApprovalIDs.joined())",
-                text: "Waiting for your approval. The approval is below the answer.",
+                // Where the approval actually is: in the reply under its
+                // activity line, or in the panel while the panel holds this
+                // run (register #181; the SPEC's "below the answer" was wrong
+                // for the Mac, which places it above).
+                text: activityPanelMessageID == live.id
+                    ? "Waiting for your approval. The approval is in the Activity panel."
+                    : "Waiting for your approval. The approval is in the reply, under its activity line.",
                 urgent: true
             )
         default:

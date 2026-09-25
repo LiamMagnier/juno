@@ -27,6 +27,18 @@ enum JunoShortcutRegistry {
         return entry
     }
 
+    /// An entry's chord as one string ("⇧⌘F"), for a tooltip or a hint that
+    /// names it: read from here, never typed at the call site, so a rebind
+    /// reaches every hint at once.
+    static func chord(_ id: JunoShortcutID) -> String {
+        entry(id).keys.joined()
+    }
+
+    /// A tooltip that names a command and its chord: "Search  ⇧⌘F".
+    static func help(_ title: String, _ id: JunoShortcutID) -> String {
+        "\(title)  \(chord(id))"
+    }
+
     /// A menu's entries, split into its sections in order.
     static func sections(in menu: JunoShortcutMenu) -> [[JunoShortcut]] {
         let inMenu = entries.filter { $0.menu == menu }
@@ -75,7 +87,7 @@ enum JunoShortcutRegistry {
             key: "o", [.command, .shift], group: .everywhere, in: .file, section: 1, glyph: .new
         ),
         JunoShortcut(
-            .newPrivateChat, menu: "New Private Chat", list: "New private chat",
+            .newPrivateChat, menu: "New Incognito Chat", list: "New incognito chat",
             key: "n", [.command, .shift], group: .everywhere, in: .file, section: 0, glyph: .privateChat
         ),
         // Quick Entry's global hotkey is installed by its controller; the menu

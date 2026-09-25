@@ -597,13 +597,11 @@ struct ChatWorkSaveSkillButton: View {
                 JunoIconView(.skills, size: 14)
                 Text("Save this as a skill")
             }
-            .frame(maxWidth: .infinity, minHeight: 20)
+            .frame(maxWidth: .infinity, minHeight: 28)
             .contentShape(.rect)
         }
         .buttonStyle(.bordered)
         .tint(nil)
-        .controlSize(.small)
-        .frame(minHeight: 28)
         .accessibilityIdentifier("juno.chat.work-card.save-skill")
     }
 }
@@ -680,12 +678,10 @@ struct ChatWorkLocalBlockerTile: View {
         Button {
             if let pane = blocker.pane { NSWorkspace.shared.open(pane) }
         } label: {
-            Text("Open System Settings").frame(minHeight: 20).contentShape(.rect)
+            Text("Open System Settings").frame(minHeight: 28).contentShape(.rect)
         }
         .buttonStyle(.bordered)
         .tint(nil)
-        .controlSize(.small)
-        .frame(minHeight: 28)
         .fixedSize()
     }
 }
@@ -730,13 +726,17 @@ struct ChatWorkRunControls: View {
                 }
             } label: {
                 JunoIconView(.more, size: 14)
-                    .foregroundStyle(Color.junoSecondaryInk)
                     .frame(width: 28, height: 28)
                     .contentShape(.rect)
             }
             .menuStyle(.button)
             .buttonStyle(.borderless)
             .menuIndicator(.hidden)
+            // The ink on the Menu, not its label: the AppKit-backed trigger
+            // drops a label's style and drew the dots near-black on the dark
+            // card. The approval card's More does the same.
+            .tint(Color.junoSecondaryInk)
+            .foregroundStyle(Color.junoSecondaryInk)
             .fixedSize()
             .disabled(state.isBusy)
             .help("More")
@@ -772,13 +772,11 @@ struct ChatWorkStopButton: View {
                 }
                 Text("Stop")
             }
-            .frame(minHeight: 20)
+            .frame(minHeight: 28)
             .contentShape(.rect)
         }
         .buttonStyle(.bordered)
         .tint(nil)
-        .controlSize(.small)
-        .frame(minHeight: 28)
         .disabled(stopping)
         .help("Stop the task")
         .accessibilityLabel("Stop the task")
@@ -1219,13 +1217,11 @@ struct ChatWorkQuestionCard: View {
                         JunoIconView(.arrowDown, size: 12)
                         Text("Reply below")
                     }
-                    .frame(minHeight: 20)
+                    .frame(minHeight: 28)
                     .contentShape(.rect)
                 }
                 .buttonStyle(.bordered)
                 .tint(nil)
-                .controlSize(.small)
-                .frame(minHeight: 28)
                 .help("Reply in the message box below")
                 .accessibilityLabel("Reply in the message box below")
             } else {
@@ -1287,11 +1283,9 @@ struct ChatWorkQuestionCard: View {
                     if sending { ProgressView().controlSize(.mini) }
                     Text("Reply")
                 }
-                .frame(minHeight: 20)
+                .frame(minHeight: 28)
                 .contentShape(.rect)
             }
-            .controlSize(.small)
-            .frame(minHeight: 28)
             .disabled(trimmed.isEmpty || sending || isBusy)
             .accessibilityIdentifier("juno.work.task-sheet.reply")
             if replyIsProminent {

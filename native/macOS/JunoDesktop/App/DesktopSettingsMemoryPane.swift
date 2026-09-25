@@ -51,11 +51,13 @@ struct DesktopSettingsMemoryPane: View {
                 isEnabled: settings.memoryEnabled && settings.memoryBackgroundLearning != nil,
                 identifier: "juno.desktop.settings.memory-background"
             )
-            DesktopSettingRow(
-                title: "Memories",
-                description: "See what Juno remembers, change it or forget it."
-            ) {
-                if let openMemory = links.openMemory {
+            // Drawn only while it can open something: a row with no control
+            // would be a dead end (DesktopSettingsLinks).
+            if let openMemory = links.openMemory {
+                DesktopSettingRow(
+                    title: "Memories",
+                    description: "See what Juno remembers, change it or forget it."
+                ) {
                     DesktopOutlineButton(title: "Manage", action: openMemory)
                         .accessibilityIdentifier("juno.desktop.settings.memory-manage")
                 }

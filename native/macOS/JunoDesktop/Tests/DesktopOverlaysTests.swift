@@ -207,17 +207,13 @@ struct DesktopOverlaysTests {
         #expect(rows.map(\.id) == ["local-conversation-c1"])
     }
 
-    /// Offline, one notice per server type in scope; otherwise the server's
+    /// Offline, one notice naming every server type in scope; otherwise the server's
     /// shortfalls, two and then the count of the rest.
     @Test
     func noticesSayWhatWasSearchedOnlyInPart() {
         #expect(
             DesktopSearchPanelModel.notices(server: .failed(offline: true), types: [.knowledge, .memory, .work])
-                == [
-                    "Knowledge: not searched while offline.",
-                    "Memory: not searched while offline.",
-                    "Tasks: not searched while offline.",
-                ]
+                == ["Knowledge, memory and tasks: not searched while offline."]
         )
         let coverage: [NativeSearchCoverage] = [
             .init(type: .knowledge, state: .partial, detail: "Still indexing."),

@@ -35,6 +35,19 @@ struct SettingsSnapshotTests {
     @Test(arguments: SettingsSnapshotFixtures.names)
     func drawsInBothAppearances(_ name: String) async throws {
         let world = try await SnapshotPreviewWorld.shared()
+        // The page router's hooks, as the app installs them, so every row that
+        // leads to a page draws its control (DesktopSettingsLinks).
+        let links = DesktopSettingsLinks.shared
+        links.openMemory = {}
+        links.openConnections = {}
+        links.openHost = { _ in }
+        links.openPermissions = {}
+        defer {
+            links.openMemory = nil
+            links.openConnections = nil
+            links.openHost = nil
+            links.openPermissions = nil
+        }
         let fixture = try #require(await SettingsSnapshotFixtures.fixture(named: name, world: world))
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             let url = try await TranscriptSnapshotRenderer.render(
@@ -69,6 +82,7 @@ enum SettingsSnapshotFixtures {
         "settings-connectors-empty",
         "settings-devices",
         "settings-devices-this-mac-only",
+        "settings-devices-host-sheet",
         "settings-voice",
         "settings-data",
         "settings-account",
@@ -111,6 +125,12 @@ enum SettingsSnapshotFixtures {
             let context = makeContext(world: world, hosts: [])
             await context.loadHosts()
             return window(.devices, context)
+        case "settings-devices-host-sheet":
+            let context = makeContext(world: world)
+            guard let host = context.services.workHostModel else { return nil }
+            return sheet(width: 600, height: 640) {
+                DesktopWorkHostSheet(host: host)
+            }
         case "settings-voice":
             let context = makeContext(world: world)
             await context.loadPlan()

@@ -362,7 +362,10 @@ struct DesktopActivityPanel: View {
                         connectorRow(
                             connector.label,
                             state: NativeToolPresentation.connectorFailure(connector.reason ?? "").text,
-                            warning: true
+                            warning: true,
+                            // "Sign in again in Settings" goes there: a line
+                            // that sends the reader somewhere is a link to it.
+                            opensSettings: connector.reason == "auth_expired"
                         )
                     }
                     if facts.connectorsReady.isEmpty, facts.connectorsFailed.isEmpty, let legacy = facts.connectors {
@@ -429,14 +432,28 @@ struct DesktopActivityPanel: View {
         return facts.context
     }
 
-    private func connectorRow(_ label: String, state: String, warning: Bool) -> some View {
+    private func connectorRow(_ label: String, state: String, warning: Bool, opensSettings: Bool = false) -> some View {
         HStack(spacing: JunoSpace.snug) {
             Text(label)
                 .junoFont(size: 13, relativeTo: .callout)
                 .foregroundStyle(Color.junoForeground)
-            Text(state)
-                .junoFont(size: 12, relativeTo: .footnote)
-                .foregroundStyle(warning ? Color.junoWarningInk : Color.junoSecondaryInk)
+            if opensSettings {
+                Button {
+                    DesktopSettingsRouter.open(.connectors)
+                } label: {
+                    Text(state)
+                        .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
+                        .foregroundStyle(Color.junoAccentInk)
+                        .frame(minHeight: 28)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .help("Open Settings › Connectors")
+            } else {
+                Text(state)
+                    .junoFont(size: 12, relativeTo: .footnote)
+                    .foregroundStyle(warning ? Color.junoWarningInk : Color.junoSecondaryInk)
+            }
         }
         .frame(minHeight: 24)
     }

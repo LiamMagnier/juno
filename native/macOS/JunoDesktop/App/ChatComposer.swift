@@ -1523,15 +1523,36 @@ struct ChatComposer: View {
         }
     }
 
+    /// The one quiet line under the dock (the web's `footnote`): what is
+    /// different about this chat outranks the standing notice. Docked
+    /// conversations only, never the landing, which carries its own header.
+    var footnote: String? {
+        guard fixedProjectID == nil else { return nil }
+        if let privateChat {
+            guard !privateChat.isEmpty else { return nil }
+            return privateChat.isFork
+                ? "This branch isn\u{2019}t saved. It continues from the fork point with full context."
+                : "Incognito chats are not saved or added to memory."
+        }
+        guard model.selectedConversationID != nil else { return nil }
+        return "Juno can make mistakes. Check important info."
+    }
+
     @ViewBuilder
     private var captionBelow: some View {
-        if isPrivate {
+        if let footnote {
             // Secondary rather than tertiary ink: tertiary is below 3:1 on the
-            // light canvas, and at 11pt this line is the whole promise.
-            Text("Incognito chats are not saved or added to memory.")
+            // light canvas, and at 11pt this line is the whole promise. A
+            // fixed slot, so every docked chat sits at the same height.
+            Text(footnote)
                 .junoType(.caption)
                 .foregroundStyle(Color.junoSecondaryInk)
+                .multilineTextAlignment(.center)
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .frame(maxWidth: .infinity)
+                .frame(height: 16)
+                .accessibilityIdentifier("juno.desktop.composer.footnote")
         }
     }
 
@@ -1868,7 +1889,7 @@ struct ChatComposer: View {
     /// offer, never a rule. The web's words.
     private var attachAsFileHint: some View {
         HStack(spacing: JunoSpace.snug) {
-            Text("That’s a long one — attach it as a file to keep the chat tidy?")
+            Text("That’s a long one. Attach it as a file to keep the chat tidy?")
                 .junoFont(size: 12, relativeTo: .footnote)
                 .foregroundStyle(Color.junoSecondaryInk)
             Spacer(minLength: JunoSpace.tight)
@@ -2037,12 +2058,29 @@ struct ChatComposer: View {
         draftProjectID = nil
     }
 
+    /// A prompt handed over from elsewhere (Quick Entry, a page's "Ask")
+    /// always lands, and is always consumed: it used to wait silently for an
+    /// empty field, so a half-typed draft kept it pending until some later
+    /// composer turned up empty and it appeared out of nowhere.
     private func consumeDraftPrompt() {
-        guard prompt.isEmpty, let seededPrompt = draftPrompt else { return }
-        prompt = seededPrompt
+        guard let pending = draftPrompt else { return }
         draftPrompt = nil
+        let next = Self.draft(consuming: pending, into: prompt)
+        guard next != prompt else { return }
+        prompt = next
         focused = true
         placeCaretAtEnd()
+    }
+
+    /// What the field holds once a pending prompt arrives. An empty field
+    /// takes it as it is; a half-typed draft keeps its words and gains the
+    /// new prompt after a blank line, so nothing the reader typed is lost and
+    /// nothing handed over is dropped.
+    static func draft(consuming pending: String, into current: String) -> String {
+        let incoming = pending.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !incoming.isEmpty else { return current }
+        let kept = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        return kept.isEmpty ? incoming : "\(kept)\n\n\(incoming)"
     }
 
     /// A starter chip (§4.3): the draft **becomes** the opening — the web's

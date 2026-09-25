@@ -1,6 +1,7 @@
 import SwiftUI
 
 #if os(macOS)
+import AppKit
 
 // MARK: - Confirmation
 
@@ -114,11 +115,25 @@ public struct JunoInlineRenameField: View {
         TextField("Name", text: $draft)
             .textFieldStyle(.plain)
             .focused($isFocused)
+            // An edge while renaming, so the row reads as a field being
+            // edited and not as a selected row (Finder's rename has one).
+            .background {
+                RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                    .strokeBorder(Color.junoRing, lineWidth: 1)
+                    .padding(.horizontal, -4)
+                    .padding(.vertical, -3)
+                    .accessibilityHidden(true)
+            }
             .onSubmit(finish)
             .onExitCommand(perform: cancel)
             .task {
                 draft = current
                 isFocused = true
+                // The whole name selected, as Finder's rename does, so typing
+                // replaces it. After the focus lands, which selects nothing
+                // reliably on its own.
+                await Task.yield()
+                NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
             }
             .onChange(of: isFocused) { wasFocused, focused in
                 if wasFocused, !focused { finish() }

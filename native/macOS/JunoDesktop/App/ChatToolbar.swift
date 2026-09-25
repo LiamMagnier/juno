@@ -51,7 +51,7 @@ struct ChatToolbar: ToolbarContent {
             Button(action: newChat) {
                 Label { Text("New chat") } icon: { JunoSymbol(.new) }
             }
-            .help("New chat  ⌘N")
+            .help(JunoShortcutRegistry.help("New chat", .newChat))
             .accessibilityIdentifier("New chat")
         }
         .hidden(!isSidebarCollapsed || !isChatRoute)
@@ -123,14 +123,16 @@ private struct DesktopPrivateChatButton: View {
     var body: some View {
         Button(action: action) {
             Label {
-                Text("Private chat")
+                Text("Incognito")
             } icon: {
                 JunoSymbol(.privateChat, weight: isPrivate ? .fill : .regular)
             }
             .contentShape(.rect)
         }
-        // The web's copy (`private-chat-toggle.tsx`).
-        .help(isPrivate ? "Private chat is on. Nothing is saved." : "Start private chat")
+        // The web's copy (`private-chat-toggle.tsx`): "Incognito" wherever the
+        // mode is named, so the toggle and the window title agree.
+        .help(isPrivate ? "Incognito is on. Nothing is saved." : "Turn on incognito")
+        .accessibilityLabel(isPrivate ? "Leave incognito" : "Turn on incognito")
         .accessibilityValue(isPrivate ? "On" : "Off")
         .accessibilityAddTraits(.isToggle)
         .accessibilityIdentifier("juno.desktop.private-chat")

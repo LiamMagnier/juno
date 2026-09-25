@@ -789,11 +789,13 @@ struct DesktopArtifactCanvas: View {
             } label: {
                 headerGlyph(.ellipsis)
             }
-            // A borderless menu with its indicator suppressed keeps the weight
-            // of the buttons beside it.
-            .menuStyle(.borderlessButton)
+            // The §7.1 recipe: a plain button face with its indicator
+            // suppressed keeps the weight of the buttons beside it.
+            .menuStyle(.button)
+            .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
+            .contentShape(.rect)
             .help("Copy or save this artifact’s source")
             .accessibilityLabel("Artifact actions")
             .accessibilityIdentifier("juno.desktop.chat.artifact-actions")
@@ -904,7 +906,9 @@ struct DesktopArtifactCanvas: View {
                         icon: .crosshair
                     )
                 }
-                .menuStyle(.borderlessButton)
+                .menuStyle(.button)
+                .buttonStyle(.borderless)
+                .menuIndicator(.visible)
                 .fixedSize()
                 .contentShape(.rect)
                 .help("Choose an element to target in an edit")

@@ -59,6 +59,9 @@ public final class NativePrivateChatModel {
     public private(set) var turns: [Turn] = []
     public private(set) var phase: Phase = .idle
     public private(set) var lastErrorDescription: String?
+    /// Whether this chat began as Fork Privately: the web's `forkedFrom`,
+    /// which changes the line under the dock ("This branch isn’t saved…").
+    public private(set) var isFork = false
 
     public var isStreaming: Bool { phase == .streaming }
     /// True while there is nothing to lose by closing.
@@ -93,6 +96,7 @@ public final class NativePrivateChatModel {
         turns = []
         phase = .idle
         lastErrorDescription = nil
+        isFork = false
     }
 
     /// Starts this private chat from turns that already happened elsewhere —
@@ -112,6 +116,7 @@ public final class NativePrivateChatModel {
         guard !kept.isEmpty else { return false }
         turns = kept
         lastErrorDescription = nil
+        isFork = true
         return true
     }
 

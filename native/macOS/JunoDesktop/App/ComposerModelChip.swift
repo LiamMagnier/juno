@@ -218,6 +218,9 @@ struct ComposerModelChip: View {
             Spacer(minLength: 0)
             Button("Try Again", action: reload)
                 .buttonStyle(.bordered)
+                // The popover inherits the composer's accent tint; a secondary
+                // button never wears it (§0.4).
+                .tint(nil)
                 .contentShape(.rect)
                 .accessibilityIdentifier("juno.desktop.chat-model.retry")
         }

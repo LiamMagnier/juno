@@ -950,7 +950,7 @@ struct NativeAgentNowTab: View {
                 } label: {
                     Text("Think it over")
                         .font(.callout)
-                        .frame(minHeight: 44)
+                        .frame(minHeight: NativeAgentMetrics.target)
                         .contentShape(.rect)
                 }
                 .buttonStyle(.borderless)
@@ -1037,7 +1037,7 @@ struct NativeAgentTaskLine: View {
             Button(action: open) {
                 Text("Open in chat")
                     .font(.callout)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
             }
             .buttonStyle(.borderless)
@@ -1168,11 +1168,11 @@ struct NativeAgentWelcome: View {
                 Button("Message \(agent.name)", action: message)
                     .buttonStyle(.bordered)
                     .nativeAgentNeutralTint()
-                    .frame(minHeight: 44)
+                    .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
                 Button("Later", action: later)
                     .buttonStyle(.borderless)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
             }
         }
@@ -1205,12 +1205,12 @@ struct NativeAgentIdeaTile: View {
                     .buttonStyle(.bordered)
                     .nativeAgentNeutralTint()
                     .disabled(busy)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
                 Button("Not now", action: dismiss)
                     .buttonStyle(.borderless)
                     .disabled(busy)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
             }
         }
@@ -1295,7 +1295,7 @@ struct NativeAgentGoalsTab: View {
                     .buttonStyle(.bordered)
                     .nativeAgentNeutralTint()
                     .disabled(!draft.isValid || model.isMutating)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
             }
         }
@@ -1366,23 +1366,23 @@ struct NativeAgentGoalTile: View {
                         .buttonStyle(.bordered)
                         .nativeAgentNeutralTint()
                         .disabled(busy)
-                        .frame(minHeight: 44)
+                        .frame(minHeight: NativeAgentMetrics.target)
                         .contentShape(.rect)
                 }
                 Menu {
                     if goal.status == .active {
                         Button("Pause") { setStatus(.paused) }
                     } else {
-                        Button("Make active") { setStatus(.active) }
+                        Button(nativeAgentMenuTitle("Make active")) { setStatus(.active) }
                     }
                     if goal.status != .achieved {
-                        Button("Mark achieved") { setStatus(.achieved) }
+                        Button(nativeAgentMenuTitle("Mark achieved")) { setStatus(.achieved) }
                     }
                     if goal.status != .dropped {
                         Button("Drop") { setStatus(.dropped) }
                     }
                     Divider()
-                    Button("Delete goal", role: .destructive, action: delete)
+                    Button(nativeAgentMenuTitle("Delete goal"), role: .destructive, action: delete)
                 } label: {
                     Text("Change")
                         .font(.callout)
@@ -1391,7 +1391,7 @@ struct NativeAgentGoalTile: View {
                 .buttonStyle(.borderless)
                 .fixedSize()
                 .disabled(busy)
-                .frame(minHeight: 44)
+                .frame(minHeight: NativeAgentMetrics.target)
                 .contentShape(.rect)
             }
         }
@@ -1424,7 +1424,7 @@ struct NativeAgentRoutinesTab: View {
                 .buttonStyle(.bordered)
                 .nativeAgentNeutralTint()
                 .disabled(agent.isPaused)
-                .frame(minHeight: 44)
+                .frame(minHeight: NativeAgentMetrics.target)
                 .contentShape(.rect)
             }
             if routines.isEmpty {
@@ -1561,7 +1561,7 @@ struct NativeAgentRoutineEditor: View {
                 Spacer()
                 Button("Cancel", action: onCancel)
                     .keyboardShortcut(.cancelAction)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
                 Button("Create routine", action: save)
                     .keyboardShortcut(.defaultAction)
@@ -1569,7 +1569,7 @@ struct NativeAgentRoutineEditor: View {
                     // sheet's body (MACOS_LIQUID_GLASS_REDESIGN.md §0.1).
                     .buttonStyle(.junoProminent)
                     .disabled(!isReady || isSaving)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
             }
             .padding(.horizontal, JunoSpace.roomy)
@@ -1642,7 +1642,7 @@ struct NativeAgentActivityTab: View {
                 openTask(task)
             } label: {
                 NativeAgentActivityLine(entry: entry)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)

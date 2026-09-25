@@ -458,10 +458,16 @@ struct DesktopAutomationEditor: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(!draft.canSave || saving)
                 .accessibilityIdentifier("juno.desktop.automation.save")
-                Button("Cancel", action: cancel)
-                    .buttonStyle(.bordered)
-                    .tint(nil)
-                    .disabled(saving)
+                // Ghost, as the web's WorkScheduleEditor has it (variant
+                // "ghost"): one filled button beside Save, not two.
+                Button(action: cancel) {
+                    Text("Cancel")
+                        .frame(minHeight: 28)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .disabled(saving)
             }
         }
     }
@@ -677,13 +683,8 @@ private struct DesktopAutomationRadioRow: View {
     var body: some View {
         Button(action: select) {
             HStack(alignment: .top, spacing: JunoSpace.close) {
-                ZStack {
-                    Circle()
-                        .strokeBorder(isSelected ? Color.junoForeground : Color.junoInput, lineWidth: isSelected ? 4.5 : 1)
-                        .frame(width: 14, height: 14)
-                }
-                .padding(.top, 2)
-                .accessibilityHidden(true)
+                JunoRadioMark(isOn: isSelected)
+                    .padding(.top, 1)
                 VStack(alignment: .leading, spacing: JunoSpace.micro) {
                     Text(option.label)
                         .junoType(JunoType.ui.weight(.medium))

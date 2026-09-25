@@ -145,13 +145,13 @@ struct NativeAgentProfileTab: View {
             Button("Revert", action: revert)
                 .buttonStyle(.borderless)
                 .disabled(patch.isEmpty || model.isMutating)
-                .frame(minHeight: 44)
+                .frame(minHeight: NativeAgentMetrics.target)
                 .contentShape(.rect)
             Button("Save changes", action: save)
                 .buttonStyle(.bordered)
                 .nativeAgentNeutralTint()
                 .disabled(!canSave || model.isMutating)
-                .frame(minHeight: 44)
+                .frame(minHeight: NativeAgentMetrics.target)
                 .contentShape(.rect)
                 .accessibilityIdentifier("juno.agents.profile.save")
         }
@@ -169,7 +169,7 @@ struct NativeAgentProfileTab: View {
                         Label("Export", icon: .download)
                             .font(.callout)
                     }
-                    .frame(minHeight: 44)
+                    .frame(minHeight: NativeAgentMetrics.target)
                 }
             }
             Text("Its own memory: what you told it and what it worked out. Every note is yours to edit or delete.")
@@ -184,7 +184,7 @@ struct NativeAgentProfileTab: View {
                     .buttonStyle(.bordered)
                     .nativeAgentNeutralTint()
                     .disabled(trimmedNewNote.isEmpty || model.isMutating)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: NativeAgentMetrics.target)
                     .contentShape(.rect)
             }
             if notes.isEmpty {
@@ -211,7 +211,7 @@ struct NativeAgentProfileTab: View {
                     Spacer(minLength: 0)
                     Button("Cancel") { editingNoteID = nil }
                         .buttonStyle(.borderless)
-                        .frame(minHeight: 44)
+                        .frame(minHeight: NativeAgentMetrics.target)
                         .contentShape(.rect)
                     Button("Save") { saveNote(note) }
                         .buttonStyle(.bordered)
@@ -220,7 +220,7 @@ struct NativeAgentProfileTab: View {
                             editingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                                 || model.isMutating
                         )
-                        .frame(minHeight: 44)
+                        .frame(minHeight: NativeAgentMetrics.target)
                         .contentShape(.rect)
                 }
             }
@@ -253,7 +253,7 @@ struct NativeAgentProfileTab: View {
                 .buttonStyle(.borderless)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .frame(minWidth: 44, minHeight: 44)
+                .frame(minWidth: NativeAgentMetrics.target, minHeight: NativeAgentMetrics.target)
                 .contentShape(.rect)
                 .accessibilityLabel("Note actions")
             }
@@ -275,7 +275,7 @@ struct NativeAgentProfileTab: View {
             }
             .buttonStyle(.bordered)
             .nativeAgentNeutralTint()
-            .frame(minHeight: 44)
+            .frame(minHeight: NativeAgentMetrics.target)
             .contentShape(.rect)
         }
     }

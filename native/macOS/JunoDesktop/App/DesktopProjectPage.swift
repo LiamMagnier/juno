@@ -378,17 +378,15 @@ struct DesktopProjectAskField: View {
                 .onSubmit(submit)
                 .padding(.vertical, JunoSpace.tight)
                 .accessibilityLabel(placeholder)
-            Button(action: submit) {
-                JunoIconView(.send, size: 16)
-                    .foregroundStyle(Color.junoOnAccent)
-                    .frame(width: 32, height: 32)
-                    .background(Circle().fill(trimmed.isEmpty ? Color.junoAccent.opacity(0.4) : Color.junoAccent))
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(trimmed.isEmpty)
-            .help("Start a chat in this project")
-            .accessibilityLabel("Start a chat in this project")
+            // The product's one "send this" disc: grey until there are words,
+            // then the coral Send (§0.4, §10.1), as every composer draws it.
+            ComposerPrimaryDisc(
+                face: trimmed.isEmpty ? .disabled("Start a chat in this project") : .send,
+                label: "Start a chat in this project",
+                help: "Start a chat in this project",
+                identifier: "juno.desktop.project.ask.send",
+                action: submit
+            )
         }
         .padding(.leading, JunoSpace.regular)
         .padding(.trailing, JunoSpace.snug)
@@ -531,6 +529,7 @@ struct DesktopProjectChats: View {
         )
         .contentShape(.rect)
         .onTapGesture { open(chat.id) }
+        .desktopKeyboardOpen { open(chat.id) }
         .onHover { inside in
             if inside { hovered = chat.id } else if hovered == chat.id { hovered = nil }
         }
@@ -598,65 +597,27 @@ struct DesktopProjectRail: View {
     let openMemory: (() -> Void)?
 
     var body: some View {
+        // One column divided by hairlines, the web's rail
+        // (`project-overview-rail.tsx`), not three cards stacked beside the
+        // chats: the rail is reference, and a card each made it louder than
+        // the list it sits beside.
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             if let cover = summary.cover, let fileAccess {
                 DesktopProjectCover(fileID: cover.id, fileAccess: fileAccess)
             }
-            card("Instructions", trailing: {
-                Button(action: editInstructions) {
-                    JunoIconView(.edit, size: 14)
-                        .foregroundStyle(Color.junoSecondaryInk)
-                        .frame(width: 28, height: 28)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.borderless)
-                .help("Edit instructions")
-                .accessibilityLabel("Edit instructions")
+            section("Instructions", trailing: {
+                iconAction(.edit, "Edit instructions", action: editInstructions)
             }) {
-                let text = project.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
-                Text(text.isEmpty ? "A prompt Juno follows in every chat, task and code session filed here." : text)
-                    .junoType(.ui)
-                    .foregroundStyle(text.isEmpty ? Color.junoSecondaryInk : Color.junoForeground)
-                    .lineLimit(6)
-                    .fixedSize(horizontal: false, vertical: true)
+                instructions
             }
-            card("Sources", trailing: { EmptyView() }) {
-                if summary.sources.isEmpty {
-                    Text("PDFs, documents and data Juno reads before answering here.")
-                        .junoType(.ui)
-                        .foregroundStyle(Color.junoSecondaryInk)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                        ForEach(summary.sources.prefix(5)) { file in
-                            HStack(spacing: JunoSpace.snug) {
-                                JunoIconView(file.kind.uppercased() == "IMAGE" ? .image : .file, size: 14)
-                                    .foregroundStyle(Color.junoSecondaryInk)
-                                    .accessibilityHidden(true)
-                                Text(file.fileName)
-                                    .junoType(.ui)
-                                    .foregroundStyle(Color.junoForeground)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
-                        }
-                    }
-                }
-                HStack(spacing: JunoSpace.cozy) {
-                    Button("Add a file", action: addFile)
-                        .contentShape(.rect)
-                        .buttonStyle(.bordered)
-                        .tint(nil)
-                    if summary.sources.count > 5 {
-                        Button("View all \(summary.sources.count)", action: viewSources)
-                            .contentShape(.rect)
-                            .buttonStyle(.borderless)
-                            .foregroundStyle(Color.junoSecondaryInk)
-                    }
-                }
-                .padding(.top, JunoSpace.tight)
+            divider
+            section("Sources", count: summary.sources.count, trailing: {
+                iconAction(.plus, "Add a file", action: addFile)
+            }) {
+                sources
             }
-            card("Memory", trailing: { EmptyView() }) {
+            divider
+            section("Memory", trailing: { EmptyView() }) {
                 Text("What Juno learns in this project’s chats stays here. Your other chats never see it.")
                     .junoType(.ui)
                     .foregroundStyle(Color.junoSecondaryInk)
@@ -672,8 +633,98 @@ struct DesktopProjectRail: View {
         }
     }
 
-    private func card<Trailing: View, Content: View>(
+    /// The web's excerpt: the source in the mono caption, muted, four lines,
+    /// then its size; the whole block opens the editor.
+    @ViewBuilder
+    private var instructions: some View {
+        let text = project.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.isEmpty {
+            Text("A prompt Juno follows in every chat, task and code session filed here.")
+                .junoType(.ui)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Button(action: editInstructions) {
+                VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                    Text(verbatim: text)
+                        .junoType(.monoSmall)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .lineLimit(4)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(Self.sizeLine(text))
+                        .junoType(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.junoSecondaryInk)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .help("Edit instructions")
+        }
+    }
+
+    @ViewBuilder
+    private var sources: some View {
+        if summary.sources.isEmpty {
+            Text("PDFs, documents and data Juno reads before answering here.")
+                .junoType(.ui)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                ForEach(summary.sources.prefix(5)) { file in
+                    HStack(spacing: JunoSpace.snug) {
+                        JunoIconView(file.kind.uppercased() == "IMAGE" ? .image : .file, size: 14)
+                            .foregroundStyle(Color.junoSecondaryInk)
+                            .accessibilityHidden(true)
+                        Text(file.fileName)
+                            .junoType(.ui)
+                            .foregroundStyle(Color.junoForeground)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+            }
+            if summary.sources.count > 5 {
+                Button("View all \(summary.sources.count)", action: viewSources)
+                    .contentShape(.rect)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .padding(.top, JunoSpace.tight)
+            }
+        }
+    }
+
+    /// "1,204 chars · 18 lines", tabular.
+    static func sizeLine(_ text: String) -> String {
+        let chars = text.count.formatted()
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).count
+        return "\(chars) chars · \(lines) \(lines == 1 ? "line" : "lines")"
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(Color.junoBorder.opacity(0.6))
+            .frame(height: 1)
+            .accessibilityHidden(true)
+    }
+
+    private func iconAction(_ icon: JunoIcon, _ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            JunoIconView(icon, size: 14)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .frame(width: 28, height: 28)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.borderless)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
+    private func section<Trailing: View, Content: View>(
         _ title: String,
+        count: Int? = nil,
         @ViewBuilder trailing: () -> Trailing,
         @ViewBuilder content: () -> Content
     ) -> some View {
@@ -684,22 +735,19 @@ struct DesktopProjectRail: View {
                     .fontWeight(.semibold)
                     .foregroundStyle(Color.junoForeground)
                     .accessibilityAddTraits(.isHeader)
+                if let count, count > 0 {
+                    Text("\(count)")
+                        .junoType(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.junoSecondaryInk)
+                }
                 Spacer(minLength: 0)
                 trailing()
             }
             .frame(minHeight: 28)
             content()
         }
-        .padding(JunoSpace.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                .fill(Color.junoCard)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                .strokeBorder(Color.junoBorder, lineWidth: 1)
-        )
     }
 }
 
@@ -778,6 +826,7 @@ struct DesktopProjectTasks: View {
                     }
                     .contentShape(.rect)
                     .onTapGesture { open(task) }
+                    .desktopKeyboardOpen { open(task) }
                     .accessibilityAddTraits(.isButton)
                 }
             }
@@ -993,6 +1042,7 @@ struct DesktopProjectSources: View {
         }
         .contentShape(.rect)
         .onTapGesture { openArtifact(artifact) }
+        .desktopKeyboardOpen { openArtifact(artifact) }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
     }
@@ -1115,30 +1165,22 @@ struct DesktopProjectSettings: View {
             title: "Identity and model",
             detail: "What Juno is called here, and which model answers by default."
         ) {
-            VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                Text("Persona name")
-                    .junoType(.ui)
-                    .fontWeight(.medium)
-                    .foregroundStyle(Color.junoForeground)
-                TextField(project.name, text: $persona)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Persona name")
-            }
+            // The page's own field and menu, not the system's rounded box and
+            // grey pop-up: one field and one menu recipe across every page.
+            DesktopSkillField(label: "Persona name", text: $persona, placeholder: project.name)
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 Text("Preferred model")
-                    .junoType(.ui)
-                    .fontWeight(.medium)
+                    .junoType(JunoType.ui.weight(.medium))
                     .foregroundStyle(Color.junoForeground)
-                Picker("Preferred model", selection: $preferredModel) {
-                    Text("Account default").tag(String?.none)
-                    ForEach(modelCatalog.filter { $0.modality != "image" }) { option in
-                        Text(option.displayName).tag(String?.some(option.id))
-                    }
-                }
-                .labelsHidden()
+                JunoPageMenu(
+                    options: [JunoPageMenuOption(String?.none, "Account default", menuTitle: "Account Default")]
+                        + modelCatalog.filter { $0.modality != "image" }.map { option in
+                            JunoPageMenuOption(String?.some(option.id), option.displayName)
+                        },
+                    selection: $preferredModel,
+                    accessibilityLabel: "Preferred model"
+                )
                 .fixedSize()
-                // Neutral: a picker is not one of the accent's places.
-                .tint(nil)
             }
             HStack {
                 Spacer(minLength: 0)

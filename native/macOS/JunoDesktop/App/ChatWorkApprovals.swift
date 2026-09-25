@@ -92,13 +92,11 @@ struct ChatWorkApprovalQueue: View {
             decideAll(batchable)
         } label: {
             Text(WorkApprovalWords.batchLabel(actions: batchable.map(\.request.action)))
-                .frame(minHeight: 20)
+                .frame(minHeight: 28)
                 .contentShape(.rect)
         }
         .buttonStyle(.bordered)
         .tint(nil)
-        .controlSize(.small)
-        .frame(minHeight: 28)
         .fixedSize()
         .disabled(isBusy)
         .accessibilityIdentifier("juno.work.approval-batch.allow")
@@ -368,12 +366,10 @@ struct ChatWorkApprovalCard: View {
         Button(role: .destructive) {
             decide(.denied, nil)
         } label: {
-            Text("Don\u{2019}t").frame(minHeight: 20).contentShape(.rect)
+            Text("Don\u{2019}t").frame(minHeight: 28).contentShape(.rect)
         }
         .buttonStyle(.bordered)
         .tint(Color.junoDestructiveInk)
-        .controlSize(.small)
-        .frame(minHeight: 28)
         .accessibilityIdentifier("juno.work.approval.deny")
 
         Button {
@@ -383,13 +379,11 @@ struct ChatWorkApprovalCard: View {
                 JunoIconView(.pencil, size: 12)
                 Text("Change it")
             }
-            .frame(minHeight: 20)
+            .frame(minHeight: 28)
             .contentShape(.rect)
         }
         .buttonStyle(.bordered)
         .tint(nil)
-        .controlSize(.small)
-        .frame(minHeight: 28)
         .accessibilityIdentifier("juno.work.approval.amend")
 
         verbButton
@@ -426,10 +420,8 @@ struct ChatWorkApprovalCard: View {
         let button = Button {
             decide(.allowed, nil)
         } label: {
-            Text(verb.verb).frame(minHeight: 20).contentShape(.rect)
+            Text(verb.verb).frame(minHeight: 28).contentShape(.rect)
         }
-        .controlSize(.small)
-        .frame(minHeight: 28)
         // "Send" alone, read out of context, is not enough to decide on.
         .accessibilityLabel("\(verb.verb): \(approval.summary)")
         .accessibilityIdentifier("juno.work.approval.allow")
@@ -487,10 +479,8 @@ struct ChatWorkApprovalCard: View {
                 let send = Button {
                     decide(.denied, trimmed)
                 } label: {
-                    Text("Send this instruction").frame(minHeight: 20).contentShape(.rect)
+                    Text("Send this instruction").frame(minHeight: 28).contentShape(.rect)
                 }
-                .controlSize(.small)
-                .frame(minHeight: 28)
                 .disabled(trimmed.isEmpty)
                 .accessibilityIdentifier("juno.work.approval.amend.send")
                 if isPrimary {

@@ -105,9 +105,19 @@ struct DesktopWorkHostTile: View {
     private var content: some View {
         switch layout {
         case .settingsTile:
-            JunoSettingsTile("Juno Work") {
+            // In its sheet (Settings › Devices › This Mac › Choose…): a plain
+            // column under an SF heading, not a card with a monospaced eyebrow
+            // inside the sheet (§10.2.6, §10.2.8).
+            VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                Text("Juno Work")
+                    .junoType(JunoType.ui.weight(.medium))
+                    .foregroundStyle(Color.junoForeground)
+                    .accessibilityAddTraits(.isHeader)
                 masterSwitch
-                reasonRow
+                // Not the "switched off" band under the switch that says it.
+                if host.blocker != .switchedOff {
+                    reasonRow
+                }
                 Divider()
                 capabilities
                 Divider()
@@ -126,7 +136,12 @@ struct DesktopWorkHostTile: View {
             // what is running, and its Revoke is the server's.
             VStack(alignment: .leading, spacing: JunoSpace.regular) {
                 masterSwitch
-                reasonRow
+                // Not the "switched off" band: the master switch just above
+                // says it and does it, and a card in the card repeating it
+                // was the page's duplicate control. Other reasons still show.
+                if host.blocker != .switchedOff {
+                    reasonRow
+                }
                 Divider()
                 capabilities
                 Divider()
@@ -191,7 +206,9 @@ struct DesktopWorkHostTile: View {
     /// covering all four would be a control nobody could grant honestly.
     private var capabilities: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            Text("What Juno Work may use")
+            // On this Mac's page the tile is the local offer, which the
+            // server's "What this Mac may do" below narrows.
+            Text(layout == .onThisMac ? "What this Mac offers" : "What Juno Work may use")
                 .junoCaption()
 
             DesktopWorkSwitchRow(
@@ -219,7 +236,7 @@ struct DesktopWorkHostTile: View {
 
             DesktopWorkSwitchRow(
                 title: "Screen control",
-                detail: "Screenshots, clicks and typing — it sees whatever is on screen, including windows the task has nothing to do with.",
+                detail: "Screenshots, clicks and typing. It sees whatever is on screen, including windows the task has nothing to do with.",
                 isOn: binding { host.allowsComputerUse } set: { host.allowsComputerUse = $0 }
             )
             // Both permissions, and switched off rather than merely unadvertised
@@ -258,47 +275,32 @@ struct DesktopWorkHostTile: View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             Text("When Juno should ask first")
                 .junoCaption()
-
-            // Cards rather than a menu: three options that fit on screen at once
-            // are three options the reader can compare, and this is the setting
-            // where comparing them is the whole decision.
-            if layout == .onThisMac {
-                // On a page the choice is a neutral radio row, as every other
-                // choice on the pages is: the accent never marks a selection
-                // there (Phase 4 §2.10).
-                DesktopAutomationPolicyGroup(
-                    label: "When Juno should ask first",
-                    options: WorkHostPolicy.ApprovalPolicy.allCases.map { policy in
-                        NativeWorkScheduleCopy.PolicyOption(
-                            value: policy.rawValue,
-                            label: Self.approvalTitle(policy),
-                            hint: Self.approvalDetail(policy)
-                        )
-                    },
-                    selection: Binding(
-                        get: { host.approvalPolicy.rawValue },
-                        set: { raw in
-                            if let policy = WorkHostPolicy.ApprovalPolicy(rawValue: raw) {
-                                host.approvalPolicy = policy
-                            }
-                        }
-                    ),
-                    showsLabel: false
-                )
-                .disabled(!host.allowWorkOnThisMac)
-                .accessibilityIdentifier("juno.desktop.settings.work-host-approval")
-            } else {
-                ForEach(WorkHostPolicy.ApprovalPolicy.allCases, id: \.self) { policy in
-                    JunoChoiceCard(
-                        title: LocalizedStringKey(Self.approvalTitle(policy)),
-                        detail: LocalizedStringKey(Self.approvalDetail(policy)),
-                        isSelected: host.approvalPolicy == policy,
-                        isEnabled: host.allowWorkOnThisMac,
-                        select: { host.approvalPolicy = policy }
+            // A neutral radio row, as every other choice on the pages and in
+            // sheets is: the accent never marks a selection (Phase 4 §2.10).
+            DesktopAutomationPolicyGroup(
+                label: "When Juno should ask first",
+                options: WorkHostPolicy.ApprovalPolicy.allCases.map { policy in
+                    NativeWorkScheduleCopy.PolicyOption(
+                        value: policy.rawValue,
+                        // The web's three mode names, the words the
+                        // server's "When Juno stops to ask" uses below.
+                        label: JunoWorkPermissionPolicy(rawValue: policy.rawValue)?.approvalModeLabel
+                            ?? Self.approvalTitle(policy),
+                        hint: Self.approvalDetail(policy)
                     )
-                }
-                .accessibilityIdentifier("juno.desktop.settings.work-host-approval")
-            }
+                },
+                selection: Binding(
+                    get: { host.approvalPolicy.rawValue },
+                    set: { raw in
+                        if let policy = WorkHostPolicy.ApprovalPolicy(rawValue: raw) {
+                            host.approvalPolicy = policy
+                        }
+                    }
+                ),
+                showsLabel: false
+            )
+            .disabled(!host.allowWorkOnThisMac)
+            .accessibilityIdentifier("juno.desktop.settings.work-host-approval")
 
             // Said once, here, because it is the property that makes every other
             // switch on this card meaningful: nothing a task, a schedule or a
@@ -339,14 +341,20 @@ struct DesktopWorkHostTile: View {
                     .junoCaption()
                 Spacer(minLength: JunoSpace.snug)
                 if let actions = host.grantActions {
-                    Menu("Add folder…") {
+                    Menu {
                         ForEach(Self.grantableModes, id: \.self) { mode in
-                            Button(Self.accessLabel(mode.rawValue)) {
+                            Button(Self.accessLabel(mode.rawValue).desktopMenuTitle) {
                                 _ = actions.addFolder(mode)
                             }
                         }
+                    } label: {
+                        Text("Add Folder…")
+                            .frame(minHeight: 28)
+                            .contentShape(.rect)
                     }
-                    .menuStyle(.borderlessButton)
+                    .menuStyle(.button)
+                    .buttonStyle(.borderless)
+                    .menuIndicator(.hidden)
                     .fixedSize()
                     .disabled(!host.allowsFileWork)
                     .accessibilityIdentifier("juno.desktop.settings.work-host-grants-add")
@@ -391,15 +399,21 @@ struct DesktopWorkHostTile: View {
                         .junoCodeSmall()
                         .junoSecondaryInk()
                 }
-                Menu("Change…") {
+                Menu {
                     ForEach(Self.grantableModes, id: \.self) { mode in
-                        Button(Self.accessLabel(mode.rawValue)) {
+                        Button(Self.accessLabel(mode.rawValue).desktopMenuTitle) {
                             actions.setMode(mode, WorkGrantID(value: grant.grantID))
                         }
                         .disabled(grant.accessMode == mode.rawValue)
                     }
+                } label: {
+                    Text("Change…")
+                        .frame(minHeight: 28)
+                        .contentShape(.rect)
                 }
-                .menuStyle(.borderlessButton)
+                .menuStyle(.button)
+                .buttonStyle(.borderless)
+                .menuIndicator(.hidden)
                 .fixedSize()
                 .accessibilityLabel("Change what Juno may do in \(grant.displayName)")
 

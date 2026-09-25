@@ -522,6 +522,36 @@ enum TranscriptSnapshotFixtures {
                         .environment(\.junoFindHighlight, JunoFindHighlight(query: "entry", current: 2))
                 })
             },
+            // The transcript's two glass sites, drawn with their opaque
+            // stand-in (offscreen cannot composite glass): the find capsule
+            // with a count and with none, and Scroll to latest.
+            TranscriptFixture(name: "find-bar-query", stage: 4) {
+                AnyView(
+                    DesktopFindBar(query: .constant("readme"), current: 2, total: 12, next: {}, previous: {}, done: {})
+                        .padding(24)
+                        .frame(width: 560)
+                        .background(Color.junoCanvas)
+                        .environment(\.junoSnapshotOpaqueGlass, true)
+                )
+            },
+            TranscriptFixture(name: "find-bar-no-matches", stage: 4) {
+                AnyView(
+                    DesktopFindBar(query: .constant("quasar flare"), current: nil, total: 0, next: {}, previous: {}, done: {})
+                        .padding(24)
+                        .frame(width: 560)
+                        .background(Color.junoCanvas)
+                        .environment(\.junoSnapshotOpaqueGlass, true)
+                )
+            },
+            TranscriptFixture(name: "scroll-to-latest", stage: 4) {
+                AnyView(
+                    ScrollToLatestButton(isShown: true, action: {})
+                        .padding(24)
+                        .frame(width: 120)
+                        .background(Color.junoCanvas)
+                        .environment(\.junoSnapshotOpaqueGlass, true)
+                )
+            },
         ]
     }
 

@@ -91,13 +91,13 @@ struct DesktopSettingsConnectorsPane: View {
             } else {
                 let list = rows(settings, linked: model.linked)
                 if list.isEmpty {
-                    JunoEmptyState(
+                    // A plain row inside the Form's section, not a dashed
+                    // tile in a box (§10.2.8), at the form's own rungs.
+                    // No control of its own: the section's header already
+                    // carries Browse Apps, and one intent gets one button.
+                    DesktopSettingRow(
                         title: "No apps connected",
-                        message: "Connect GitHub, your calendar, mail or notes and Juno can work inside them.",
-                        icon: .connectors,
-                        actionLabel: links.openConnections == nil ? nil : "Browse Apps",
-                        action: links.openConnections,
-                        size: .panel
+                        description: "Connect GitHub, your calendar, mail or notes and Juno can work inside them."
                     )
                 } else {
                     ForEach(list) { row in

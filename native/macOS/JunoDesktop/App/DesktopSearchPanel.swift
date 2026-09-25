@@ -586,10 +586,19 @@ private struct DesktopSearchPanelFilters: View {
         type.map { "\($0)" } ?? "everything"
     }
 
+    /// Whether chips lie past either end of the scrolling part, which is
+    /// what the edge fades say.
+    @State private var hiddenBefore = false
+    @State private var hiddenAfter = false
+
     var body: some View {
-        ScrollViewReader { scroller in
-            ScrollView(.horizontal) {
-                HStack(spacing: JunoSpace.tight) {
+        // The date and project menus are pinned at the trailing end, outside
+        // the scrolling chips: a filter you cannot see is a filter you will
+        // not remember is on, and the empty state's "widen the filters above"
+        // has to point at something on screen.
+        HStack(spacing: 0) {
+            ScrollViewReader { scroller in
+                ScrollView(.horizontal) {
                     HStack(spacing: JunoSpace.tight) {
                         ForEach(types, id: \.self) { type in
                             DesktopSearchFilterChip(
@@ -607,23 +616,38 @@ private struct DesktopSearchPanelFilters: View {
                     }
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Filter by type")
-                    divider
-                    windowMenu
-                    if !projects.isEmpty {
-                        divider
-                        projectMenu
-                    }
+                    .padding(.leading, JunoSpace.regular)
+                    .padding(.trailing, JunoSpace.snug)
+                    .frame(height: DesktopSearchPanelMetrics.filtersHeight)
                 }
-                .padding(.horizontal, JunoSpace.regular)
-                .frame(height: DesktopSearchPanelMetrics.filtersHeight)
+                .scrollIndicators(.never)
+                .onScrollGeometryChange(for: [Bool].self) { geometry in
+                    [
+                        geometry.contentOffset.x > 1,
+                        geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 1,
+                    ]
+                } action: { _, edges in
+                    hiddenBefore = edges[0]
+                    hiddenAfter = edges[1]
+                }
+                // The edges fade where chips run on past them: the cue that
+                // there is more to scroll, where an overlay scroller shows none.
+                .mask { edgeFade }
+                // The chosen chip stays in view: Tasks sits past the panel's
+                // edge, and ←/→ and ⌘K's Tasks rows choose it without a scroll.
+                .onChange(of: model.typeFilter, initial: true) { _, type in
+                    scroller.scrollTo(Self.chipID(type), anchor: .center)
+                }
             }
-            .scrollIndicators(.automatic)
-            // The chosen chip stays in view — Tasks sits past the panel's edge,
-            // and ←/→ and ⌘K's Tasks rows choose it without a scroll.
-            .onChange(of: model.typeFilter, initial: true) { _, type in
-                scroller.scrollTo(Self.chipID(type), anchor: .center)
+            divider
+            windowMenu
+            if !projects.isEmpty {
+                divider
+                projectMenu
             }
         }
+        .padding(.trailing, JunoSpace.regular)
+        .frame(height: DesktopSearchPanelMetrics.filtersHeight)
         .focusable(interactions: .edit)
         .focusEffectDisabled()
         .focused(focus, equals: .filters)
@@ -645,6 +669,17 @@ private struct DesktopSearchPanelFilters: View {
         let next = min(max(current + delta, 0), types.count - 1)
         model.setTypeFilter(types[next])
         return .handled
+    }
+
+    private var edgeFade: some View {
+        let ink = Color.junoForeground
+        return HStack(spacing: 0) {
+            LinearGradient(colors: [ink.opacity(0), ink], startPoint: .leading, endPoint: .trailing)
+                .frame(width: hiddenBefore ? 24 : 0)
+            Rectangle().fill(ink)
+            LinearGradient(colors: [ink, ink.opacity(0)], startPoint: .leading, endPoint: .trailing)
+                .frame(width: hiddenAfter ? 24 : 0)
+        }
     }
 
     private var divider: some View {

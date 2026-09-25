@@ -57,6 +57,7 @@ enum PageFixtures {
         "library-deleted",
         "library-empty",
         "library-error",
+        "library-loading",
         "library-selection",
         "library-uploading",
         "library-narrow",
@@ -102,6 +103,10 @@ enum PageFixtures {
             }
         case "library-error":
             return page(name, height: 560) { library(.fixture(items: nil, failed: true), view: "list") }
+        case "library-loading":
+            // No items yet and nothing failed: the skeleton, with the header's
+            // Upload and storage caption withheld until there is a list.
+            return page(name, height: 560) { library(.fixture(items: nil, storage: storage(used: 1_240_000_000)), view: "list") }
         case "library-selection":
             return page(name, height: 760) {
                 library(libraryModel(), view: "list", selection: [files[0].id, files[2].id])
