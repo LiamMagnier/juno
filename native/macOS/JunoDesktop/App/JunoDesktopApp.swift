@@ -1,7 +1,10 @@
 import AppKit
+import JunoCore
 import JunoDesignSystem
 import JunoCodeUI
+import JunoSync
 import SwiftUI
+import UserNotifications
 #if DEBUG
 import JunoPreviewSupport
 #endif
@@ -66,20 +69,25 @@ enum JunoDesktopWindow {
     }
 }
 
-/// Two things only AppKit can tell us: the app finished launching, and the app
-/// is about to quit.
+/// The things only AppKit can tell us: the app finished launching, the app is
+/// about to quit, the APNs token, and a click on one of Juno's notifications.
 ///
-/// Both are the updater's. Launch starts the ten-minute poll; termination is the
-/// moment a staged update can be swapped in without interrupting anyone, which
-/// is the whole reason the updater does not restart the app on its own.
-private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate {
+/// Launch and termination are the updater's. Launch starts the ten-minute
+/// poll; termination is the moment a staged update can be swapped in without
+/// interrupting anyone, which is the whole reason the updater does not restart
+/// the app on its own.
+///
+/// The notification center has one delegate, and this is it: a click on an
+/// agent's or a task's notification becomes a route the main window follows,
+/// and anything else — Juno Code's own local notifications — is handed to
+/// ``StudioRunMonitor`` exactly as if it were still the delegate.
+@MainActor
+private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         // A test host is an accessory: no Dock icon, no menu bar of its own,
         // and nothing that steals focus from the person running the suite.
         guard JunoTestHost.isActive else { return }
-        MainActor.assumeIsolated {
-            _ = NSApp.setActivationPolicy(.accessory)
-        }
+        _ = NSApp.setActivationPolicy(.accessory)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -113,6 +121,88 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate {
                 DesktopWorkbenchRegistry.shared.request(.openSession(id))
                 Self.presentMainWindowIfWithheld()
             }
+            // After the monitor, which claims the same slot when it installs.
+            UNUserNotificationCenter.current().delegate = self
+            // Every launch, as Apple asks: the token can change, and asking
+            // never prompts. A build signed without the push entitlement —
+            // every Developer ID build today — is refused, and the refusal
+            // lands in `didFailToRegister` below and nowhere else.
+            NSApplication.shared.registerForRemoteNotifications()
+        }
+    }
+
+    func application(
+        _ application: NSApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        NativePushRegistrar.shared.didRegister(deviceToken: deviceToken)
+    }
+
+    func application(
+        _ application: NSApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: any Error
+    ) {
+        NativePushRegistrar.shared.didFailToRegister(error)
+    }
+
+    /// A click on a notification.
+    ///
+    /// The async form, because forwarding needs the run monitor, and the
+    /// monitor lives on the main actor: awaiting it is how a nonisolated
+    /// callback reaches it. `userInfo` is narrowed to its strings here, where
+    /// it was delivered — every key a route reads is one, and the dictionary
+    /// itself cannot cross to the main actor.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        let info = Self.stringValues(of: response.notification.request.content.userInfo)
+        guard let route = JunoNotificationRoute(userInfo: info) else {
+            let codeNotifications = await MainActor.run { StudioRunMonitor.shared }
+            codeNotifications.userNotificationCenter(
+                center,
+                didReceive: response,
+                withCompletionHandler: {}
+            )
+            return
+        }
+        await Self.openRoute(route, notificationID: info["notificationId"])
+    }
+
+    /// Banners and sound while Juno is in front: the answer Code's monitor
+    /// gave when it was the delegate, so nothing Code raises looks different.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    nonisolated private static func stringValues(of userInfo: [AnyHashable: Any]) -> [String: String] {
+        var values: [String: String] = [:]
+        for (key, value) in userInfo {
+            guard let key = key as? String, let value = value as? String else { continue }
+            values[key] = value
+        }
+        return values
+    }
+
+    /// Hands a route to the main window and brings it forward. Opening only
+    /// navigates: nothing a notification carries answers anything.
+    private static func openRoute(_ route: JunoNotificationRoute, notificationID: String?) {
+        if let notificationID {
+            NativePushRegistrar.shared.markOpened(notificationID: notificationID)
+        }
+        NSApp.activate()
+        DesktopWorkbenchRegistry.shared.requestRoute(route)
+        let window = NSApp.windows.first {
+            $0.identifier?.rawValue.hasPrefix(JunoDesktopWindow.mainID) == true
+        }
+        if let window {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            presentMainWindowIfWithheld()
         }
     }
 

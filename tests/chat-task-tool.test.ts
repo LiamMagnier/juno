@@ -437,12 +437,15 @@ test("the chat route gates the tool and its prompt section on one flag", () => {
   assert.match(route, /const taskToolOn = chatTaskToolEnabled\(\{/);
   assert.match(route, /workHandoff: input\.workHandoff,/);
   assert.match(route, /taskHandoff: taskToolOn,/);
-  assert.match(route, /nativeTools: taskTool \? \[taskTool\] : undefined,/);
+  // The task tool and the handoff tool ride one list, each only when its own
+  // gate opened; an empty list is no native tools at all.
+  assert.match(route, /const nativeTools = \[taskTool, handoffTool\]\.filter\(/);
+  assert.match(route, /nativeTools: nativeTools\.length > 0 \? nativeTools : undefined,/);
   assert.match(route, /send\(\{ type: "work", session \}\);/);
-  // The private branch builds no task tool: it sits above the saved path's
-  // stream and must never reach the declaration.
+  // The private branch builds no task or handoff tool: it sits above the saved
+  // path's stream and must never reach either declaration.
   const privateBranch = route.slice(route.indexOf("if (input.privateMode) {"), route.indexOf("const durableFirstSubmission"));
-  assert.doesNotMatch(privateBranch, /createStartTaskTool|nativeTools|taskHandoff/);
+  assert.doesNotMatch(privateBranch, /createStartTaskTool|createHandoffTool|nativeTools|taskHandoff|handoff/);
 });
 
 test("a task started from a turn with any file in it asks first", () => {

@@ -67,6 +67,7 @@ import {
   ArrowUpRightIcon,
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
+  BellSimpleIcon,
   BinocularsIcon,
   BookmarkSimpleIcon,
   BookOpenIcon,
@@ -551,6 +552,9 @@ export const FileCode2 = glyph(FileCodeIcon, "file-code-2");
 export const FileSpreadsheet = glyph(FileXlsIcon, "file-spreadsheet");
 export const Paperclip = glyph(PaperclipIcon, "paperclip", { motion: "tilt" });
 export const Inbox = glyph(TrayIcon, "inbox");
+/** Notifications: a plain bell. It tilts under the pointer the way a bell
+ *  swings when it rings, the one thing a bell does. */
+export const Bell = glyph(BellSimpleIcon, "bell", { motion: "tilt" });
 export const Mail = glyph(EnvelopeSimpleIcon, "mail");
 export const MailWarning = glyph(EnvelopeSimpleIcon, "mail-warning");
 export const BookOpen = glyph(BookOpenIcon, "book-open");

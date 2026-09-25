@@ -1,5 +1,6 @@
 import JunoAuth
 import JunoCodeUI
+import JunoCore
 import JunoDesignSystem
 import JunoWorkKit
 import SwiftUI
@@ -51,6 +52,16 @@ struct JunoDesktopWorkspaceView: View {
     @State private var unscopedChatPrompt: String?
     /// Whether the request is for a private draft (⇧⌘N). Consumed with it.
     @State private var unscopedChatIsPrivate = false
+    /// A tapped notification's destination in Chat — an agent's page or a
+    /// thread — consumed once by the Chat workspace, which is the only view
+    /// that can select either.
+    @State private var chatRoute: DesktopWorkbenchRegistry.RouteRequest?
+    /// The legacy tasks workspace's own keys for its column, written here
+    /// before the swap so the workspace this switch builds reads the task on
+    /// its first evaluation instead of opening on the last one and then
+    /// jumping. See ``DesktopWorkWorkspace``'s `storedDestination`.
+    @SceneStorage("juno.desktop.work.selection") private var storedWorkSessionID = ""
+    @SceneStorage("juno.desktop.work.page") private var storedWorkPage = ""
     @State private var registry = DesktopWorkbenchRegistry.shared
 
     var body: some View {
@@ -86,6 +97,20 @@ struct JunoDesktopWorkspaceView: View {
                     isShowingLegacyTasks: product == .legacyWork
                 )
             )
+            // A tapped notification. Re-read from the registry rather than
+            // trusted from the change: every open window hears the change, and
+            // only the first to reach it may act on it.
+            .onChange(of: registry.pendingRoute, initial: true) { _, request in
+                guard let request, registry.pendingRoute == request else { return }
+                registry.consume(request)
+                switch request.route {
+                case .agent, .conversation:
+                    chatRoute = request
+                    product = .chat
+                case .workSession(let id):
+                    openWorkSession(id)
+                }
+            }
     }
 
     private func requestChat(prompt: String?, isPrivate: Bool) {
@@ -93,6 +118,27 @@ struct JunoDesktopWorkspaceView: View {
         unscopedChatIsPrivate = isPrivate
         unscopedChatRequestID = UUID()
         product = .chat
+    }
+
+    /// Opens the legacy tasks workspace on one task (a notification about a
+    /// task still running there; Phase 5 moves tasks into chats).
+    ///
+    /// A task newer than the model's last poll is not in its list yet, and the
+    /// column cannot follow a selection it has no summary for, so the list is
+    /// refreshed first and the task opened once it is there.
+    private func openWorkSession(_ id: String) {
+        storedWorkPage = ""
+        storedWorkSessionID = id
+        product = .legacyWork
+        guard let workModel = configuration.workModel,
+            !workModel.sessions.contains(where: { $0.sessionID == id })
+        else { return }
+        Task {
+            await workModel.refresh()
+            if let session = workModel.sessions.first(where: { $0.sessionID == id }) {
+                workModel.open(session)
+            }
+        }
     }
 
     @ViewBuilder
@@ -114,7 +160,9 @@ struct JunoDesktopWorkspaceView: View {
                         unscopedChatRequestID = nil
                         unscopedChatPrompt = nil
                         unscopedChatIsPrivate = false
-                    }
+                    },
+                    route: chatRoute,
+                    consumeRoute: { chatRoute = nil }
                 )
             } else {
                 JunoEmptyState(

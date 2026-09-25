@@ -665,10 +665,14 @@ public struct NativeAgentsClient: Sendable {
 
     private func decodeActivity(_ value: JunoJSONValue) throws -> NativeAgentActivity {
         let root = try object(value)
+        let kind = optionalString(root["kind"]) ?? "updated"
         return NativeAgentActivity(
             id: try string(root, "id"),
-            kind: optionalString(root["kind"]) ?? "updated",
-            title: try string(root, "title"),
+            kind: kind,
+            // The server titles every line it writes. A line without one is
+            // still a thing the agent did, and is said in general words rather
+            // than dropped from the log.
+            title: optionalString(root["title"]) ?? NativeAgentActivity.fallbackTitle(for: kind),
             detail: optionalString(root["detail"]),
             at: root["at"]?.date,
             sessionID: optionalString(root["sessionId"]),

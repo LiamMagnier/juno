@@ -224,6 +224,9 @@ const PHOSPHOR = {
   Palette: null,
   TextAlignLeft: null,
   Bell: null,
+  // The web's `AppIcons.notifications` (the sidebar inbox) is `Bell`, drawn with
+  // Phosphor's BellSimple in icons.tsx.
+  BellSimple: "Bell",
   FolderPlus: null,
   Shield: null,
   Compass: null,

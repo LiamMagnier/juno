@@ -37,6 +37,7 @@ import * as https from "node:https";
 
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { deliverRunNotification } from "@/lib/work/notify/deliver";
+import { isAttendedOrigin } from "@/lib/work/notifications";
 import {
   WORK_LEASED_STATUSES,
   appendEvents,
@@ -3005,11 +3006,12 @@ async function drive(runId: string, userId: string): Promise<void> {
      * anything passed in. That makes one call correct for every exit, including
      * the one where `finishRun` itself failed and the sweep will finish the job.
      *
-     * It never throws (its own try/catch returns a reason instead), it is
-     * idempotent against a key derived from the run, and it is inert unless a
-     * delivery channel is configured. So it cannot turn a finished run into a
-     * failed one, which is the only thing that would make it not worth doing
-     * here.
+     * It never throws (its own try/catch returns a reason instead) and it is
+     * idempotent against a key derived from the run. So it cannot turn a
+     * finished run into a failed one, which is the only thing that would make it
+     * not worth doing here. On the paused exit it reads what the run parked
+     * on — the approval or the question nobody answered in the attended wait —
+     * and that is the notification a person started it for.
      */
     const notified = await deliverRunNotification({ runId, userId });
     if (!notified.delivered && notified.reason) {
@@ -3617,6 +3619,15 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           executorId: EXECUTOR_ID,
           status: "waiting_input",
         });
+        // Nobody started a scheduled or triggered run, so nobody is waiting
+        // out the attended wait below in front of it: tell them now. A run a
+        // person started is told when it parks, which `drive`'s `finally`
+        // does; the question id keys both, so neither can send it twice. The
+        // `question_asked` it reads is still queued behind this run's earlier
+        // events, hence the few seconds' grace.
+        if (!isAttendedOrigin(run.origin)) {
+          void deliverRunNotification({ runId: input.runId, userId: input.userId, settleMs: 5_000 });
+        }
         const waited = await waitFor(
           () => pollAnswer(input.runId, question.id),
           ATTENDED_WAIT_MS
@@ -3700,6 +3711,9 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           executorId: EXECUTOR_ID,
           status: "waiting_approval",
         });
+        // As for a question: an unattended run says so now, an attended one
+        // when it parks. `approval:<id>` keys both.
+        if (!isAttendedOrigin(run.origin)) void deliverRunNotification({ runId: input.runId, userId: input.userId });
 
         const waited = await waitFor(async () => {
           const row = await prisma.workApproval.findFirst({

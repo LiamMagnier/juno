@@ -20,13 +20,26 @@ const TONE: Record<ClientAgentActivity["tone"], string> = {
 };
 
 /**
+ * The lines about one run, which open it: a task at its current state, an
+ * approval one of its tasks was given, and work handed to or taken from a
+ * teammate, whose run lives in the teammate's thread.
+ */
+const RUN_KINDS = new Set(["approval", "handed_off", "handoff_received"]);
+
+function opensRun(item: ClientAgentActivity): item is ClientAgentActivity & { sessionId: string } {
+  return item.sessionId !== null && (item.kind.startsWith("task_") || RUN_KINDS.has(item.kind));
+}
+
+/**
  * Activity: one log for everything the agent did.
  *
  * Grok Bot shipped with its audit view "coming"; this is the view. Its own
- * events (hired, paused, goals, ideas, routines, what it learned) and one line
- * per task at its current state, newest first. A task line opens the run where
- * it lives — `/work/<id>` resolves to the conversation that holds it — because
- * the full record of a run is the run's own log, not a copy of it here.
+ * events (hired, paused, goals, ideas, routines, what it learned, work it
+ * handed to a teammate or took from one), one line per task at its current
+ * state, and one per approval its tasks were given, newest first. A line about
+ * a run opens the run where it lives — `/work/<id>` resolves to the
+ * conversation that holds it — because the full record of a run is the run's
+ * own log, not a copy of it here.
  */
 export function AgentActivity({ agentId, refreshKey }: { agentId: string; refreshKey: number }) {
   const [items, setItems] = React.useState<ClientAgentActivity[] | null>(null);
@@ -99,7 +112,7 @@ export function AgentActivity({ agentId, refreshKey }: { agentId: string; refres
             style={staggerDelay(index, "tight")}
             className="motion-safe:animate-rise-in [animation-fill-mode:backwards]"
           >
-            {item.sessionId && item.kind.startsWith("task_") ? (
+            {opensRun(item) ? (
               <Link
                 href={`/work/${item.sessionId}`}
                 className="flex items-start gap-3 rounded-control px-2 py-2 transition-colors duration-fast ease-out-soft hover:bg-accent"

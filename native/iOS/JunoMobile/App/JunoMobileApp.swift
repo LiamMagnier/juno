@@ -35,6 +35,9 @@ struct JunoMobileApp: App {
     @State private var remoteCodeModel: CodeRemoteBrowserModel?
     @State private var workModel: NativeWorkModel?
     @State private var libraryModel: NativeLibraryModel?
+    /// The Work model's client, lent to the agents model so an agent's page
+    /// can answer its tasks' approvals and questions through the same routes.
+    private let workClient: NativeWorkClient?
     private let localStore: SQLiteAccountRepository?
     private let outbox: (any MutationOutboxRepository)?
     private let attachmentModel: NativeComposerAttachmentModel?
@@ -72,6 +75,7 @@ struct JunoMobileApp: App {
         _remoteCodeModel = State(initialValue: configuration.remoteCodeModel)
         _workModel = State(initialValue: configuration.workModel)
         _libraryModel = State(initialValue: configuration.libraryModel)
+        workClient = configuration.workClient
         requestSender = configuration.requestSender
         accountDataClient = configuration.accountDataClient
         voiceTranscriptClient = configuration.voiceTranscriptClient
@@ -167,6 +171,7 @@ struct JunoMobileApp: App {
             remoteCodeModel: remoteCodeModel,
             workModel: workModel,
             libraryModel: libraryModel,
+            workClient: workClient,
             requestSender: requestSender,
             accountDataClient: accountDataClient,
             voiceTranscriptClient: voiceTranscriptClient,
@@ -249,6 +254,11 @@ struct JunoMobileApp: App {
                 syncModel: syncModel,
                 sender: runtime
             )
+            // Both halves come from the one runtime: Work sends unary
+            // requests and follows a task's log over SSE, and giving it two
+            // transports would be two places for the bearer token to be
+            // refreshed. One client, shared with the agents model.
+            let workClient = NativeWorkClient(transport: runtime)
 
             return JunoMobileConfiguration(
                 authModel: authModel,
@@ -311,13 +321,8 @@ struct JunoMobileApp: App {
                 remoteCodeModel: CodeRemoteBrowserModel(
                     client: NativeCodeRemoteClient(sender: runtime, streamer: runtime)
                 ),
-                // Both halves come from the one runtime: Work sends unary
-                // requests and follows a task's log over SSE, and giving it two
-                // transports would be two places for the bearer token to be
-                // refreshed.
-                workModel: NativeWorkModel(
-                    client: NativeWorkClient(transport: runtime)
-                ),
+                workModel: NativeWorkModel(client: workClient),
+                workClient: workClient,
                 libraryModel: NativeLibraryModel(
                     client: NativeLibraryClient(sender: runtime),
                     // The picker draws the file, which means resolving its
@@ -369,9 +374,11 @@ struct JunoMobileApp: App {
     }
 }
 
-/// The two things SwiftUI's `App` cannot receive on its own: a Home Screen
-/// quick action, and a tapped notification. Both become a
-/// ``JunoMobileLaunchRequests`` request the root view acts on.
+/// The things SwiftUI's `App` cannot receive on its own: a Home Screen quick
+/// action, a tapped notification, and the APNs device token. The first two
+/// become a ``JunoMobileLaunchRequests`` request the root view acts on; the
+/// token goes to ``NativePushRegistrar``, which tells the server once an
+/// account is signed in.
 final class JunoMobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(
         _ application: UIApplication,
@@ -379,9 +386,27 @@ final class JunoMobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         JunoMobileCodeNotifications.shared.registerBackgroundTask()
+        // Every launch, as Apple asks: the token can change, and asking never
+        // prompts. Whether a push may show is a separate question, asked at
+        // sign-in (quietly) and in context (for banners).
+        application.registerForRemoteNotifications()
         // A quick action at cold launch arrives through the scene's
         // connection options (`configurationForConnecting`), not here.
         return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        NativePushRegistrar.shared.didRegister(deviceToken: deviceToken)
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: any Error
+    ) {
+        NativePushRegistrar.shared.didFailToRegister(error)
     }
 
     func application(
@@ -402,11 +427,14 @@ final class JunoMobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        let info = response.notification.request.content.userInfo
-        let deviceID = info["deviceID"] as? String
-        let sessionID = info["sessionID"] as? String
+        // Narrowed here, where `userInfo` was delivered: it is
+        // `[AnyHashable: Any]`, which cannot cross to the main actor, and
+        // every key a route reads is a string.
+        let info = JunoMobileLaunchRequests.stringValues(
+            of: response.notification.request.content.userInfo
+        )
         Task { @MainActor in
-            JunoMobileLaunchRequests.shared.handle(remoteDeviceID: deviceID, sessionID: sessionID)
+            JunoMobileLaunchRequests.shared.handle(notification: info)
         }
         completionHandler()
     }
@@ -474,6 +502,9 @@ private struct JunoMobileConfiguration {
     let codeModel: NativeCodeModel?
     var remoteCodeModel: CodeRemoteBrowserModel? = nil
     let workModel: NativeWorkModel?
+    /// Defaulted for the same reason `remoteCodeModel` is: the failed-launch
+    /// configuration has no client to name.
+    var workClient: NativeWorkClient? = nil
     let libraryModel: NativeLibraryModel?
     let requestSender: (any NativeAuthenticatedRequestSending)?
     let accountDataClient: NativeAccountDataClient?

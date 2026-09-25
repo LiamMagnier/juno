@@ -31,8 +31,12 @@
 /** Room the block may take in a voice model's instructions. */
 export const VOICE_MEMORY_MAX_CHARS = 3_500;
 
-/** Plain lines from a Markdown summary: "## Work context" → "Work context:". */
-function plain(markdown: string): string {
+/**
+ * Plain lines from Markdown: "## Work context" → "Work context:". Shared with
+ * an agent's persona (src/lib/voice-persona.ts), which is Markdown for the same
+ * reason a summary is — it was written for a chat model first.
+ */
+export function plain(markdown: string): string {
   return markdown
     .split("\n")
     .map((line) => {
@@ -40,13 +44,22 @@ function plain(markdown: string): string {
       if (heading) return `${heading[1].replace(/[*_`#]/g, "").trim()}:`;
       return line
         .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+        // A `*` bullet is a bullet before it is emphasis to strip.
+        .replace(/^\s*[-+*]\s+/, "- ")
         .replace(/[*_`]/g, "")
-        .replace(/^\s*[-+]\s+/, "- ")
         .trimEnd();
     })
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/** Cut at the last line that fits, so no fact ends mid-sentence. */
+export function cutAtLine(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const atLine = cut.lastIndexOf("\n");
+  return (atLine > max * 0.5 ? cut.slice(0, atLine) : cut).trimEnd();
 }
 
 export function voiceMemoryInstructions(profile: {
@@ -67,13 +80,7 @@ export function voiceMemoryInstructions(profile: {
   ];
   if (summary) lines.push(summary);
   if (notes.length) lines.push(`${summary ? "More recent notes" : "Notes"}:\n${notes.map((n) => `- ${n}`).join("\n")}`);
-  const block = lines.join("\n\n");
-  if (block.length <= VOICE_MEMORY_MAX_CHARS) return block;
-
-  // Cut at the last line that fits, so no fact ends mid-sentence.
-  const cut = block.slice(0, VOICE_MEMORY_MAX_CHARS);
-  const atLine = cut.lastIndexOf("\n");
-  return (atLine > VOICE_MEMORY_MAX_CHARS * 0.5 ? cut.slice(0, atLine) : cut).trimEnd();
+  return cutAtLine(lines.join("\n\n"), VOICE_MEMORY_MAX_CHARS);
 }
 
 /**

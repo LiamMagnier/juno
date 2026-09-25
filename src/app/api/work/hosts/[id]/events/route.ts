@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { recordWorkAudit } from "@/lib/work/audit";
+import { deliverRunNotification } from "@/lib/work/notify/deliver";
 import { appendEvents, finishRun, type WorkEventInput } from "@/lib/work/store";
 import {
   HOST_NOT_FOUND,
@@ -147,6 +148,14 @@ export async function POST(req: Request, { params }: RouteParams) {
         detail: report.detail,
       })
     : null;
+
+  // The cloud runner tells the owner from its own terminal path; a Mac's run
+  // ends here instead, so this is where it is said. Only the request that
+  // actually ended the run, and after the response: the host is draining its
+  // outbox and must not wait on a push service. The notification never throws.
+  if (finished?.finished) {
+    after(() => deliverRunNotification({ runId: run.id, userId: user.id }));
+  }
 
   return NextResponse.json({
     /** The relay's own cursor, which is what clients resume the stream from. */

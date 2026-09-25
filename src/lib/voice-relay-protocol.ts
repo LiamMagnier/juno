@@ -55,6 +55,12 @@ export type VoiceServerMessage =
        * for memory themselves.
        */
       memory?: boolean;
+      /**
+       * Present only for a call in an agent's thread: true when the call is
+       * that agent (the relay was given its persona), false when it could not
+       * be had and Juno answers. The persona itself never reaches the client.
+       */
+      persona?: boolean;
       /** The model actually serving the call, as the provider reports it. */
       model?: string;
       /** Non-fatal note about how the session came up; does not end the call. */

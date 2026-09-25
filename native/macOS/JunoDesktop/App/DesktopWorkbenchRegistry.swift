@@ -2,6 +2,7 @@ import Foundation
 import JunoCodeCore
 import JunoCodeKit
 import JunoCodeUI
+import JunoCore
 import Observation
 import SwiftUI
 
@@ -41,10 +42,24 @@ final class DesktopWorkbenchRegistry {
         let kind: Kind
     }
 
+    /// Where a tapped notification points: an agent's page, a thread, or a
+    /// Work task. Raised by the app delegate, which has no window of its own,
+    /// and consumed by whichever main window takes it first.
+    ///
+    /// Its own token rather than a `Request.Kind`: the Code window switches
+    /// over the kinds exhaustively, and none of these is a thing Code should
+    /// have to name.
+    struct RouteRequest: Identifiable, Equatable {
+        let id = UUID()
+        let route: JunoNotificationRoute
+    }
+
     private(set) weak var workbench: WorkbenchModel?
     private(set) weak var codeModel: NativeCodeModel?
     /// The request the main window has not yet consumed.
     private(set) var pendingRequest: Request?
+    /// The notification route the main window has not yet consumed.
+    private(set) var pendingRoute: RouteRequest?
 
     func register(workbench: WorkbenchModel?, codeModel: NativeCodeModel?) {
         self.workbench = workbench
@@ -76,6 +91,15 @@ final class DesktopWorkbenchRegistry {
     /// chat, which is still the honest place to start one.
     func requestWorkErrand(prompt: String?) {
         request(.newChat(prompt: prompt))
+    }
+
+    func requestRoute(_ route: JunoNotificationRoute) {
+        pendingRoute = RouteRequest(route: route)
+    }
+
+    func consume(_ routeRequest: RouteRequest) {
+        guard pendingRoute?.id == routeRequest.id else { return }
+        pendingRoute = nil
     }
 
     /// Every session that is still going to change on its own, across the

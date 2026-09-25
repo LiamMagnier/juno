@@ -60,6 +60,7 @@
     "work:trigger-poller": "NODE_OPTIONS=--conditions=react-server tsx scripts/work-trigger-poller.ts",
     "research:worker": "NODE_OPTIONS=--conditions=react-server tsx scripts/research-worker.ts",
     "memory:dreamer": "NODE_OPTIONS=--conditions=react-server tsx scripts/memory-dreamer.ts",
+    "agents:reflector": "NODE_OPTIONS=--conditions=react-server tsx scripts/agent-reflector.ts",
     "memory:bench": "NODE_OPTIONS=--conditions=react-server tsx scripts/memory-bench.ts",
     "import:recovery": "NODE_OPTIONS=--conditions=react-server tsx scripts/sweep-import-runs.ts",
     "search:check": "NODE_OPTIONS=--conditions=react-server tsx scripts/check-search-providers.ts",
@@ -154,6 +155,7 @@
     "tailwind-merge": "^2.5.4",
     "tailwindcss-animate": "^1.0.7",
     "unpdf": "^1.8.1",
+    "web-push": "^3.6.7",
     "zod": "^4.0.0"
   },
   "devDependencies": {
@@ -164,6 +166,7 @@
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/web-push": "^3.6.4",
     "autoprefixer": "^10.4.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.5.0",

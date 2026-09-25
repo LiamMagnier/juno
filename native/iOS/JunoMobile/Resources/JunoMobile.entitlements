@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Push: server notifications for Agents and Work. `development` is the value
+  Xcode writes; an App Store export rewrites it to `production`, so this file
+  does not change per channel. Each App ID (.JunoMobile, .debug, .next) needs the
+  Push Notifications capability enabled for signing to accept it.
+-->
 <plist version="1.0">
-<dict/>
+<dict>
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
 </plist>

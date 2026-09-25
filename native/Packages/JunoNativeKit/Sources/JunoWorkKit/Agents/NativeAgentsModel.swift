@@ -15,6 +15,11 @@ import Observation
 /// Pages are held per agent in ``details`` and edited in place after a write
 /// succeeds, so a goal just added appears without a round trip. The server
 /// derives every agent's state; nothing here guesses at it.
+///
+/// With a Work client it also reads what each waiting task is stopped at —
+/// ``gates`` — so an approval or a question can be answered on the agent's
+/// page, through the same routes and with the same digest check as the
+/// task's thread. Without one the page sends the person to the thread.
 @MainActor
 @Observable
 public final class NativeAgentsModel {
@@ -40,8 +45,21 @@ public final class NativeAgentsModel {
     public private(set) var isMutating = false
     public private(set) var lastErrorDescription: String?
     public private(set) var lastMutationExplanation: String?
+    /// What each agent's waiting tasks are stopped at, by agent id. Read from
+    /// the tasks' runs, so it stays empty without a Work client.
+    public private(set) var gates: [String: [NativeAgentGate]] = [:]
+    /// Each agent's latest run as its computer saw it, by agent id.
+    public private(set) var computers: [String: NativeAgentComputer] = [:]
+    /// Approvals and questions whose answer is on its way.
+    public private(set) var answeringIDs: Set<String> = []
+
+    /// Called when an agent starts needing the person between two reads of
+    /// the roster — never for the first read, which is a state and not a
+    /// change. Each app decides what a rise is worth: a sidebar dot, a sound.
+    @ObservationIgnored public var onNeedsYouRise: (@MainActor (NativeAgent) -> Void)?
 
     private let client: NativeAgentsClient
+    private let workClient: NativeWorkClient?
     private var accountID: AccountID?
     private var pollTask: Task<Void, Never>?
     private var lastRefreshReachedNothing = false
@@ -49,12 +67,28 @@ public final class NativeAgentsModel {
     /// keyed by what it asked for. Pressing Start again after a lost response —
     /// or after saying yes to the cost — must land on the same task.
     private var retriableTaskKeys: [String: String] = [:]
+    /// Who was waiting at the last roster read; nil until the first one.
+    @ObservationIgnored private var polledWaitingIDs: Set<String>?
+    /// Approvals and questions answered from this device. A run read that
+    /// left before the answer landed still lists them.
+    @ObservationIgnored private var settledGateIDs: Set<String> = []
+    /// The newest gate read per agent. An older read that finishes later is
+    /// dropped rather than put back over a newer one.
+    @ObservationIgnored private var gateReads: [String: Int] = [:]
 
     private static let pollInterval = Duration.seconds(60)
     private static let maximumPollInterval = Duration.seconds(300)
+    /// How many tasks one gate read looks at. A page with more waiting than
+    /// this is a page to open the threads from.
+    nonisolated private static let maximumGateReads = 5
+    /// How long one run read may take before the page stops waiting on it.
+    nonisolated private static let gateReadTimeout = Duration.seconds(8)
 
-    public init(client: NativeAgentsClient) {
+    /// - Parameter workClient: reads and answers the gates of an agent's
+    ///   tasks. Nil keeps the page read-only about them.
+    public init(client: NativeAgentsClient, workClient: NativeWorkClient? = nil) {
         self.client = client
+        self.workClient = workClient
     }
 
     // MARK: - Reading
@@ -78,6 +112,31 @@ public final class NativeAgentsModel {
     /// How many agents are waiting on the person, for a sidebar badge.
     public var needsYouCount: Int {
         agents.filter { $0.state == .waiting }.count
+    }
+
+    /// The roster in the sidebar's order: the agents that need the person
+    /// first, then the order they were hired in. Not ``orderedAgents``, which
+    /// ranks every state — rows that moved each time an agent started or
+    /// finished something would be a sidebar nobody can find anything in.
+    public var sidebarAgents: [NativeAgent] {
+        Self.sidebarOrder(agents)
+    }
+
+    /// Whether gates can be read and answered on an agent's page.
+    public var canAnswerInPlace: Bool {
+        workClient != nil
+    }
+
+    public func isAnswering(_ id: String) -> Bool {
+        answeringIDs.contains(id)
+    }
+
+    /// An agent's tasks, newest first: its page's when that is loaded, the
+    /// roster's one task otherwise.
+    public func tasks(for agentID: String) -> [NativeAgentTask] {
+        if let tasks = details[agentID]?.tasks, !tasks.isEmpty { return tasks }
+        guard let task = agent(id: agentID)?.task else { return [] }
+        return [task]
     }
 
     /// The freshest copy of one agent: the page's when it is open, the
@@ -118,6 +177,12 @@ public final class NativeAgentsModel {
         lastMutationExplanation = nil
         retriableTaskKeys = [:]
         lastRefreshReachedNothing = false
+        gates = [:]
+        computers = [:]
+        answeringIDs = []
+        polledWaitingIDs = nil
+        settledGateIDs = []
+        gateReads = [:]
         phase = .idle
     }
 
@@ -126,6 +191,8 @@ public final class NativeAgentsModel {
         do {
             let values = try await client.agents(for: accountID)
             guard self.accountID == accountID else { return }
+            let risen = Self.newlyWaiting(previous: polledWaitingIDs, current: values)
+            polledWaitingIDs = Set(values.filter { $0.state == .waiting }.map(\.id))
             agents = values
             // A page that is open keeps the newer derived state too, so its
             // header and the roster cannot disagree about what it is doing.
@@ -135,6 +202,9 @@ public final class NativeAgentsModel {
             lastErrorDescription = nil
             lastRefreshReachedNothing = false
             phase = .ready
+            for risenAgent in risen {
+                onNeedsYouRise?(risenAgent)
+            }
         } catch {
             guard self.accountID == accountID else { return }
             lastRefreshReachedNothing = true
@@ -514,6 +584,118 @@ public final class NativeAgentsModel {
         }
     }
 
+    // MARK: - Gates
+
+    /// Reads what an agent's waiting tasks are stopped at, and what its
+    /// newest run did on its computer.
+    ///
+    /// One read of each run (``NativeWorkClient/snapshot(sessionID:for:)``),
+    /// falling back to the plain session read when the stream is refused —
+    /// which still carries the approvals, if not the log a question is read
+    /// from. Quiet on failure: the page calls this on a clock, and a read that
+    /// did not land keeps the gate it had rather than putting an error on the
+    /// page every ten seconds.
+    public func loadGates(agentID: String) async {
+        guard let accountID, let workClient else { return }
+        let agentTasks = tasks(for: agentID)
+        let targets = Self.gateTargets(in: agentTasks)
+        guard !targets.isEmpty else {
+            gates[agentID] = nil
+            computers[agentID] = nil
+            return
+        }
+        let read = (gateReads[agentID] ?? 0) + 1
+        gateReads[agentID] = read
+
+        var updates: [String: WorkStreamUpdate] = [:]
+        for task in targets {
+            let update = await Self.readRun(task.sessionID, client: workClient, accountID: accountID)
+            if let update {
+                updates[task.sessionID] = update
+            }
+        }
+        guard self.accountID == accountID, gateReads[agentID] == read else { return }
+        apply(updates, tasks: agentTasks, agentID: agentID)
+    }
+
+    /// Answers an approval one of an agent's tasks is stopped at, through the
+    /// same route and digest check as the task's thread.
+    ///
+    /// The card leaves at once — the run is blocked on this answer, and a card
+    /// that stays after the tap reads as the tap not landing — and comes back
+    /// only if the answer failed and the approval can still be answered.
+    public func decide(
+        agentID: String,
+        _ approval: WorkApprovalRequest,
+        _ decision: JunoWorkApprovalDecision
+    ) async {
+        guard let accountID, let workClient else { return }
+        let id = approval.approvalID
+        guard !answeringIDs.contains(id) else { return }
+        let place = removeApproval(id, agentID: agentID)
+        answeringIDs.insert(id)
+        do {
+            _ = try await workClient.decide(on: approval, decision: decision, for: accountID)
+            guard self.accountID == accountID else { return }
+            answeringIDs.remove(id)
+            settledGateIDs.insert(id)
+            lastErrorDescription = nil
+        } catch {
+            guard self.accountID == accountID else { return }
+            answeringIDs.remove(id)
+            // Put back only what can still be answered. Restoring an expired
+            // card would offer a button that cannot work.
+            if let place, approval.isAnswerable(at: Date()) {
+                restoreApproval(approval, at: place, agentID: agentID)
+            }
+            record(error)
+            return
+        }
+        // Answering moves the task, and with it the agent's face.
+        await refresh()
+        await loadGates(agentID: agentID)
+    }
+
+    /// Replies to the question one of an agent's tasks is stopped at.
+    ///
+    /// Unlike an approval, the card stays while the reply travels: it holds
+    /// what the person wrote, and taking it away to put it back on a failure
+    /// would throw their words away with it.
+    @discardableResult
+    public func answer(
+        agentID: String,
+        sessionID: String,
+        question: WorkQuestionPrompt,
+        text: String
+    ) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let accountID, let workClient, !trimmed.isEmpty else { return false }
+        let id = question.questionID
+        guard !answeringIDs.contains(id) else { return false }
+        answeringIDs.insert(id)
+        do {
+            try await workClient.answer(
+                sessionID: sessionID,
+                questionID: id,
+                text: trimmed,
+                for: accountID
+            )
+            guard self.accountID == accountID else { return false }
+            answeringIDs.remove(id)
+            settledGateIDs.insert(id)
+            clearQuestion(id, agentID: agentID)
+            lastErrorDescription = nil
+        } catch {
+            guard self.accountID == accountID else { return false }
+            answeringIDs.remove(id)
+            record(error)
+            return false
+        }
+        await refresh()
+        await loadGates(agentID: agentID)
+        return true
+    }
+
     public func clearMutationMessage() {
         lastMutationExplanation = nil
     }
@@ -552,6 +734,157 @@ public final class NativeAgentsModel {
         agents.removeAll { $0.id == id }
         details[id] = nil
         activity[id] = nil
+        gates[id] = nil
+        computers[id] = nil
+    }
+
+    /// Lays a gate read over the page: the tasks' fresher states, the gates of
+    /// the ones still waiting, and the newest run's computer.
+    private func apply(
+        _ updates: [String: WorkStreamUpdate],
+        tasks agentTasks: [NativeAgentTask],
+        agentID: String
+    ) {
+        let hiddenApprovals = answeringIDs.union(settledGateIDs)
+        let previous = gates[agentID] ?? []
+        var loaded: [NativeAgentGate] = []
+        for task in agentTasks {
+            guard let update = updates[task.sessionID] else {
+                // Not read this time. A task still waiting keeps the gate it
+                // had, less anything answered since.
+                guard NativeAgentGate.isWaiting(task),
+                    var kept = previous.first(where: { $0.id == task.sessionID })
+                else { continue }
+                kept.approvals.removeAll { hiddenApprovals.contains($0.approvalID) }
+                loaded.append(kept)
+                continue
+            }
+            let current = NativeAgentGate.current(task, from: update.session)
+            if current != task {
+                replaceTask(current, agentID: agentID)
+            }
+            guard NativeAgentGate.isWaiting(current) else { continue }
+            let gate = NativeAgentGate.read(
+                update,
+                task: current,
+                hidingApprovals: hiddenApprovals,
+                answeredQuestions: settledGateIDs
+            )
+            loaded.append(gate)
+        }
+        gates[agentID] = loaded
+        if let latest = agentTasks.first, let update = updates[latest.sessionID] {
+            computers[agentID] = NativeAgentComputer.read(
+                update,
+                sessionID: latest.sessionID,
+                status: latest.status
+            )
+        }
+    }
+
+    /// Puts a task's fresher state on the page that lists it.
+    private func replaceTask(_ task: NativeAgentTask, agentID: String) {
+        guard let index = details[agentID]?.tasks.firstIndex(where: { $0.sessionID == task.sessionID }) else {
+            return
+        }
+        details[agentID]?.tasks[index] = task
+    }
+
+    /// Takes an approval off its gate, and says where it was.
+    private func removeApproval(_ id: String, agentID: String) -> (sessionID: String, index: Int)? {
+        guard let list = gates[agentID] else { return nil }
+        for (gateIndex, gate) in list.enumerated() {
+            guard let index = gate.approvals.firstIndex(where: { $0.approvalID == id }) else { continue }
+            _ = gates[agentID]?[gateIndex].approvals.remove(at: index)
+            return (sessionID: gate.id, index: index)
+        }
+        return nil
+    }
+
+    private func restoreApproval(
+        _ approval: WorkApprovalRequest,
+        at place: (sessionID: String, index: Int),
+        agentID: String
+    ) {
+        guard let gateIndex = gates[agentID]?.firstIndex(where: { $0.id == place.sessionID }) else { return }
+        let current = gates[agentID]?[gateIndex].approvals ?? []
+        guard !current.contains(where: { $0.approvalID == approval.approvalID }) else { return }
+        gates[agentID]?[gateIndex].approvals.insert(approval, at: min(place.index, current.count))
+    }
+
+    private func clearQuestion(_ id: String, agentID: String) {
+        guard let list = gates[agentID] else { return }
+        for (index, gate) in list.enumerated() where gate.question?.questionID == id {
+            gates[agentID]?[index].question = nil
+        }
+    }
+
+    /// The tasks a gate read looks at: the newest, whose run is the one "Its
+    /// computer" shows and which may have stopped to ask something the roster
+    /// has not heard about yet, then every other one that is waiting.
+    nonisolated static func gateTargets(in tasks: [NativeAgentTask]) -> [NativeAgentTask] {
+        guard let latest = tasks.first else { return [] }
+        var targets = [latest]
+        for task in tasks.dropFirst() where NativeAgentGate.isWaiting(task) {
+            targets.append(task)
+        }
+        return Array(targets.prefix(Self.maximumGateReads))
+    }
+
+    /// One run, read once. Bounded, because a proxy that buffers the stream
+    /// would otherwise hold the read — and every gate behind it — open until
+    /// the server closed its window minutes later.
+    private nonisolated static func readRun(
+        _ sessionID: String,
+        client: NativeWorkClient,
+        accountID: AccountID
+    ) async -> WorkStreamUpdate? {
+        let timeout = Self.gateReadTimeout
+        let snapshot = await withTaskGroup(of: WorkStreamUpdate?.self) { group in
+            group.addTask {
+                try? await client.snapshot(sessionID: sessionID, for: accountID)
+            }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+        if let snapshot { return snapshot }
+        // The plain read, for a connection that will not carry a stream: it
+        // has the approvals, if not the log.
+        guard let detail = try? await client.session(id: sessionID, for: accountID) else { return nil }
+        return WorkStreamUpdate(
+            session: detail.session,
+            run: detail.run,
+            events: detail.events,
+            approvals: detail.approvals
+        )
+    }
+
+    /// Waiting first, then the order they were hired in. Ties keep the
+    /// server's order, so rows never swap on a read that changed nothing.
+    nonisolated static func sidebarOrder(_ agents: [NativeAgent]) -> [NativeAgent] {
+        agents.enumerated()
+            .sorted { lhs, rhs in
+                let left = lhs.element.state == .waiting
+                let right = rhs.element.state == .waiting
+                if left != right { return left }
+                if lhs.element.sortOrder != rhs.element.sortOrder {
+                    return lhs.element.sortOrder < rhs.element.sortOrder
+                }
+                return lhs.offset < rhs.offset
+            }
+            .map { $0.element }
+    }
+
+    /// The agents waiting now that were not at the last read. A nil
+    /// `previous` is the first read, which is a state and not a rise.
+    nonisolated static func newlyWaiting(previous: Set<String>?, current: [NativeAgent]) -> [NativeAgent] {
+        guard let previous else { return [] }
+        return current.filter { $0.state == .waiting && !previous.contains($0.id) }
     }
 
     private func record(_ error: any Error) {

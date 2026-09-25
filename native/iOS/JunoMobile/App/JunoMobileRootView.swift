@@ -60,6 +60,10 @@ struct JunoMobileRootView: View {
   var workModel: NativeWorkModel?
   /// Backs the composer's "From your library".
   var libraryModel: NativeLibraryModel?
+  /// Lent to the agents model, so an agent's page answers its tasks'
+  /// approvals and questions in place. Nil keeps that page read-only about
+  /// them, which is what the preview harness gets.
+  var workClient: NativeWorkClient?
   /// The authenticated transport, used to mint a voice relay credential. See
   /// ``startVoice()`` for why the controller cannot be built at launch.
   var requestSender: (any NativeAuthenticatedRequestSending)?
@@ -126,6 +130,9 @@ struct JunoMobileRootView: View {
   /// rather than the screen so the roster survives leaving it and the store
   /// can be stopped — and emptied — at sign-out like every other account model.
   @State private var agentsModel: NativeAgentsModel?
+  /// The agent whose page is open, held here so a notification or a thread's
+  /// header can open one from outside the Agents screen.
+  @State private var selectedAgentID: String?
   #if DEBUG
     /// Set by `JUNO_START_OVERLAY=voice`, and acted on once the account is
     /// signed in — the launch flag fires before `restore()` finishes, and a
@@ -322,13 +329,22 @@ struct JunoMobileRootView: View {
         // stored, whether it was just made or survived an earlier sign-in.
         let agents =
           agentsModel
-          ?? requestSender.map { NativeAgentsModel(client: NativeAgentsClient(sender: $0)) }
+          ?? requestSender.map {
+            NativeAgentsModel(client: NativeAgentsClient(sender: $0), workClient: workClient)
+          }
         agentsModel = agents
         if let agents {
           Task { await agents.start(for: session.profile.id) }
         }
         libraryModel?.start(for: session.profile.id)
         documentIndex.start(for: session.profile.id)
+        // Pushes follow the account: the token the delegate was handed goes
+        // to the server now. Quiet delivery is taken without a prompt; the
+        // question about banners waits for a moment that explains it.
+        if let requestSender {
+          NativePushRegistrar.shared.start(for: session.profile.id, sender: requestSender)
+          Task { await NativePushRegistrar.shared.requestQuietAuthorizationIfUndetermined() }
+        }
         #if DEBUG
           if pendingVoiceLaunch {
             pendingVoiceLaunch = false
@@ -367,6 +383,10 @@ struct JunoMobileRootView: View {
         // An agent's brief, goals and memory belong to the account that
         // hired it; nothing of them may be on screen for whoever signs in next.
         agentsModel?.stop()
+        selectedAgentID = nil
+        // The server has already retired this session's tokens; this only
+        // forgets the account so the next sign-in registers afresh.
+        NativePushRegistrar.shared.stop()
         libraryModel?.stop()
         // Not merely "forget the list": the plaintext of every indexed
         // document is in that index, so `stop()` wipes the account's
@@ -572,7 +592,16 @@ struct JunoMobileRootView: View {
       pendingAskPrompt = prompt
     case .openConversation(let id):
       showingSettings = false
-      openConversation(id)
+      // Through the refresh-first path: a pushed conversation can be one this
+      // phone has not synced yet, such as an agent's thread the server has
+      // just made.
+      openAgentThread(id)
+    case .openAgent(let id):
+      showingSettings = false
+      openAgent(id)
+    case .openWorkSession(let id):
+      showingSettings = false
+      openWorkSession(id)
     case .openRemoteSession(let deviceID, let sessionID):
       showingSettings = false
       show(.code)
@@ -678,7 +707,11 @@ struct JunoMobileRootView: View {
       controller: JunoRealtimeVoiceController(
         authorization: JunoMobileVoiceAuthorization(
           sender: requestSender,
-          accountID: session.profile.id
+          accountID: session.profile.id,
+          // The open chat, so a call in an agent's thread is had with that
+          // agent. Never an incognito one: nothing about it may reach the
+          // server's context for the call.
+          conversationID: incognito ? nil : conversationModel?.selectedConversationID
         )
       ),
       accountID: session.profile.id,
@@ -976,6 +1009,9 @@ struct JunoMobileRootView: View {
     if destination != .chat, destination != .settings {
       conversationModel?.selectedConversationID = nil
     }
+    // Agents from the sidebar is the roster, not whichever page was last
+    // opened from a notification.
+    if destination == .agents { selectedAgentID = nil }
     show(destination)
   }
 
@@ -1084,7 +1120,9 @@ struct JunoMobileRootView: View {
         voiceID: memorySettingsModel?.settings?.voiceID,
         requestSender: requestSender,
         pendingPrompt: $pendingAskPrompt,
-        startDictation: $pendingDictation
+        startDictation: $pendingDictation,
+        agentsModel: agentsModel,
+        openAgent: openAgent
       )
       .transition(.opacity)
     } else {
@@ -1105,11 +1143,28 @@ struct JunoMobileRootView: View {
       NativeAgentsScreen(
         model: agentsModel,
         apps: agentApps,
+        selectedAgentID: $selectedAgentID,
         openConversation: openAgentThread
       )
+      // The moment to ask about banners: an agent has just joined, and it is
+      // the one who will need them. The roster growing while it is on screen
+      // is that moment, whether the hire was made here or arrived with the
+      // poll. Asked once; the system never shows the question twice.
+      .onChange(of: agentsModel.agents.count) { old, new in
+        guard new > old else { return }
+        askForBannersAfterHire()
+      }
     } else {
       unavailable
     }
+  }
+
+  private func askForBannersAfterHire() {
+    #if DEBUG
+      // No prompt over the preview harness's screenshots.
+      if previewSession != nil { return }
+    #endif
+    Task { await NativePushRegistrar.shared.requestFullAuthorization() }
   }
 
   /// The apps an agent may be given: only the connected ones, by name.
@@ -1132,6 +1187,31 @@ struct JunoMobileRootView: View {
       }
       conversationModel?.isDraftingNewConversation = false
       openConversation(id)
+    }
+  }
+
+  /// Opens an agent's page from outside the Agents screen: a notification, a
+  /// link, or the header of its thread.
+  private func openAgent(_ id: String) {
+    selectedAgentID = id
+    show(.agents)
+  }
+
+  /// Opens a Work task's thread from a notification or a link.
+  ///
+  /// The task can be newer than the last poll, so the list is brought up to
+  /// date first. `start` rather than `refresh`: on a cold launch from a tap
+  /// this runs before sign-in's own start has reached the model, and `start`
+  /// for the account it already follows is a refresh.
+  private func openWorkSession(_ id: String) {
+    show(.work)
+    guard let workModel, let accountID = currentSession?.profile.id else { return }
+    Task {
+      if !workModel.sessions.contains(where: { $0.sessionID == id }) {
+        await workModel.start(for: accountID)
+      }
+      guard let summary = workModel.sessions.first(where: { $0.sessionID == id }) else { return }
+      workModel.open(summary)
     }
   }
 

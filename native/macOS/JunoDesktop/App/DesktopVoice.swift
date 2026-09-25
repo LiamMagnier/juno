@@ -45,14 +45,26 @@ enum DesktopVoiceError: LocalizedError {
 ///
 /// The app supplies the bearer-authenticated request sender; JunoVoiceKit never
 /// reaches into Keychain or creates a second backend client.
+///
+/// **The open conversation rides along.** A call started from a chat names its
+/// thread, so the server can give the call that thread's voice — an agent's
+/// name and manner in the agent's own thread. The server decides what, if
+/// anything, the id changes; Code and a project's overview send none, and their
+/// calls are Juno's.
 struct JunoDesktopVoiceAuthorization: JunoVoiceRelayAuthorizing {
     let sender: any NativeAuthenticatedRequestSending
     let accountID: AccountID
+    var conversationID: String? = nil
 
     func relayToken() async throws -> JunoVoiceRelayToken {
+        var query: [URLQueryItem] = []
+        if let conversationID, !conversationID.isEmpty {
+            query.append(URLQueryItem(name: "conversationId", value: conversationID))
+        }
         let response = try await sender.send(
             try NativeBearerRequest(
                 path: "/api/voice/relay-token",
+                queryItems: query,
                 headers: try HTTPHeaders(["accept": "application/json"])
             ),
             for: accountID

@@ -6,6 +6,7 @@ import JunoCore
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
+import JunoWorkKit
 import SwiftUI
 
 /// Chat's navigation column (§2 of the Liquid Glass redesign), as a real macOS
@@ -45,10 +46,19 @@ struct DesktopChatSidebar: View {
     /// Opens search. The ⌘K / Search panel is Phase 3 (§7.4); until it lands
     /// this is the existing Search page.
     let openSearch: () -> Void
+    /// The account's agents, for the fold under the destinations. Nil or an
+    /// empty roster draws no fold at all.
+    var agentsModel: NativeAgentsModel? = nil
+    /// Opens an agent's thread by the agent's id, creating it if it has none.
+    var messageAgent: ((String) -> Void)? = nil
 
     @AppStorage("juno.sidebar.projects.expanded") private var pinnedProjectsOpen = true
     @AppStorage("juno.sidebar.pinned.expanded") private var pinnedChatsOpen = true
     @AppStorage("juno.sidebar.recent.expanded") private var recentOpen = true
+    /// The Agents fold's state is the reader's, and it survives a relaunch: a
+    /// column that reopened every agent after it had been folded away would
+    /// be a column arguing with the person who arranged it.
+    @AppStorage("juno.desktop.sidebar.agents.collapsed") private var agentsCollapsed = false
     /// How many Recent rows are drawn. Grows a page at a time as the last one
     /// scrolls into view (§2.1), so a four-year history is not four thousand
     /// rows laid out on launch.
@@ -127,6 +137,16 @@ struct DesktopChatSidebar: View {
             }
 
             if !filterToNeedsYou {
+                if let agentsModel, !agentsModel.agents.isEmpty {
+                    Section(isExpanded: agentsExpanded) {
+                        ForEach(agentsModel.sidebarAgents) { agent in
+                            agentRow(agent)
+                        }
+                    } header: {
+                        Text("Agents").textCase(nil)
+                    }
+                }
+
                 if !projects.isEmpty {
                     Section(isExpanded: $pinnedProjectsOpen) {
                         ForEach(projects) { project in
@@ -308,6 +328,51 @@ struct DesktopChatSidebar: View {
         .buttonStyle(.plain)
         .help(filterToNeedsYou ? "Show everything" : "Show only these")
         .accessibilityAddTraits(filterToNeedsYou ? .isSelected : [])
+    }
+
+    private var agentsExpanded: Binding<Bool> {
+        Binding(
+            get: { !agentsCollapsed },
+            set: { agentsCollapsed = !$0 }
+        )
+    }
+
+    /// One agent: its face, its name, and a dot while it needs the person —
+    /// the row's one trailing signal. The sentence the roster says is the
+    /// hover text and half of what the row says aloud, so the face itself is
+    /// decorative here.
+    ///
+    /// Lit while its page is open, and while its thread is the conversation on
+    /// screen: the thread is the agent too, as the web's row says.
+    private func agentRow(_ agent: NativeAgent) -> some View {
+        let sentence = NativeAgentFormat.stateSentence(for: agent)
+        let spoken = "\(agent.name). \(sentence)"
+        var selected = selection == .agent(agent.id)
+        if let thread = agent.conversationID, selection == .conversation(thread) {
+            selected = true
+        }
+
+        return HStack(spacing: JunoSpace.tight) {
+            JunoAgentFace(avatar: agent.avatar, state: agent.state, size: JunoAgentFaceSize.xs)
+            Text(agent.name)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: JunoSpace.hairline)
+            if agent.state == .waiting {
+                NativeAgentNeedsYouDot()
+            }
+        }
+        .junoSidebarRowInk()
+        .junoSidebarRowSelection(selected)
+        .help(sentence)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(spoken)
+        .tag(DesktopSidebarItem.agent(agent.id))
+        .contextMenu {
+            Button("Message") { messageAgent?(agent.id) }
+                .disabled(messageAgent == nil)
+            Button("Open") { selection = .agent(agent.id) }
+        }
     }
 
     private var pinnedProjectsHeader: some View {

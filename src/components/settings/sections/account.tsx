@@ -29,6 +29,14 @@ import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { AccountSecuritySection } from "@/components/auth/account-security";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { PLANS } from "@/lib/plans";
+import type { PushPreferences } from "@/lib/notify/types";
+import {
+  disableWebPush,
+  enableWebPush,
+  updateWebPushPrefs,
+  webPushStatus,
+  type WebPushState,
+} from "@/lib/notify/web-push-client";
 import { cn } from "@/lib/utils";
 
 function initials(name: string | null, email: string | null) {
@@ -36,7 +44,7 @@ function initials(name: string | null, email: string | null) {
 }
 
 /**
- * Who you are to Juno, how you sign in, what it may email you, and how to
+ * Who you are to Juno, how you sign in, how it may notify you, and how to
  * leave.
  *
  * The profile says the email once. It used to appear three times on this one
@@ -175,9 +183,14 @@ export function AccountSection() {
       <AccountSecuritySection email={email} />
 
       <SettingsGroup
-        title="Email notifications"
-        description={features.email ? undefined : "Email isn’t set up on this server yet. Your choices are kept for when it is."}
+        title="Notifications"
+        description={
+          features.email ? undefined : "Email isn’t set up on this server yet. Your email choices are kept for when it is."
+        }
       >
+        {features.webPush && features.webPushPublicKey ? (
+          <BrowserNotificationRows publicKey={features.webPushPublicKey} />
+        ) : null}
         <SettingRow
           label="Budget alerts"
           htmlFor="email-budget"
@@ -271,6 +284,124 @@ export function AccountSection() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
+
+/**
+ * Notifications on this browser: its Web Push subscription, and the two
+ * switches every push destination carries (a phone and a Mac have the same
+ * pair).
+ *
+ * Per browser, not per account. The subscription IS the preference, so it
+ * lives with the browser that holds it: turning it on here says nothing about
+ * the laptop at work. Nothing is registered and nothing prompts until the
+ * switch is pressed (src/lib/notify/web-push-client.ts).
+ *
+ * Absent where this browser cannot do it at all (iOS Safari in a tab, a
+ * private window with service workers off), rather than a switch that can
+ * only fail. Blocked is shown, because that one the reader can change.
+ */
+function BrowserNotificationRows({ publicKey }: { publicKey: string }) {
+  const saves = useSaveStates();
+  const [state, setState] = React.useState<WebPushState | null>(null);
+  const [prefs, setPrefs] = React.useState<PushPreferences | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void webPushStatus(publicKey).then((status) => {
+      if (cancelled) return;
+      setState(status.state);
+      setPrefs(status.prefs);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [publicKey]);
+
+  if (state === null || state === "unsupported") return null;
+
+  const turn = (on: boolean) => {
+    if (!on) {
+      setState("off");
+      void saves.track("webPush", async () => {
+        await disableWebPush();
+        return true;
+      });
+      return;
+    }
+    // Started in the click itself, before anything is awaited: the browser
+    // shows its permission prompt only while the gesture that asked is live.
+    const enabling = enableWebPush(publicKey);
+    setState("on");
+    void saves.track("webPush", async () => {
+      const result = await enabling;
+      if (!result.ok) {
+        setState(result.reason === "denied" ? "denied" : result.reason === "unsupported" ? "unsupported" : "off");
+        return false;
+      }
+      const status = await webPushStatus(publicKey);
+      setState(status.state);
+      setPrefs(status.prefs);
+      return status.state === "on";
+    });
+  };
+
+  const setPref = (key: keyof PushPreferences, value: boolean) => {
+    if (!prefs) return;
+    const previous = prefs;
+    setPrefs({ ...prefs, [key]: value });
+    void saves.track(key, async () => {
+      const ok = await updateWebPushPrefs({ [key]: value });
+      if (!ok) setPrefs(previous);
+      return ok;
+    });
+  };
+
+  const denied = state === "denied";
+  return (
+    <>
+      <SettingRow
+        label="Notifications on this browser"
+        htmlFor="web-push"
+        description={
+          denied
+            ? "Blocked in your browser settings. Allow notifications for this site there, then come back."
+            : "A notification from this browser when a task needs you or something finishes, even when Juno isn’t open."
+        }
+        status={saves.status("webPush")}
+        control={<Switch id="web-push" checked={state === "on"} disabled={denied} onCheckedChange={turn} />}
+      />
+      {state === "on" && prefs ? (
+        <>
+          <SettingRow
+            label="When something needs you"
+            htmlFor="web-push-needs-you"
+            description="Approvals and questions a task or an agent is waiting on."
+            status={saves.status("notifyNeedsYou")}
+            control={
+              <Switch
+                id="web-push-needs-you"
+                checked={prefs.notifyNeedsYou}
+                onCheckedChange={(on) => setPref("notifyNeedsYou", on)}
+              />
+            }
+          />
+          <SettingRow
+            label="Updates"
+            htmlFor="web-push-updates"
+            description="Finished tasks, and ideas your agents want to share."
+            status={saves.status("notifyUpdates")}
+            control={
+              <Switch
+                id="web-push-updates"
+                checked={prefs.notifyUpdates}
+                onCheckedChange={(on) => setPref("notifyUpdates", on)}
+              />
+            }
+          />
+        </>
+      ) : null}
     </>
   );
 }

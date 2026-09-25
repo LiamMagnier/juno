@@ -14,10 +14,10 @@
  * decision is explicit, per transition, and defaults to silence for anything
  * that does not need a person.
  *
- * The dispatch half is deliberately thin. Juno already has an email sender with
- * its own opt-in flags, and the native clients already have a wakeup channel
- * (the account change feed at /api/v1/changes/stream). This module decides
- * WHETHER and WHAT; it does not invent a fourth delivery mechanism.
+ * This module decides WHETHER and WHAT. The sending is elsewhere and goes
+ * through one door: notify/deliver.ts reads the run and hands the answer to
+ * `notifyUser` (the inbox row and every phone, Mac and browser that asked for
+ * pushes) and then to email.
  *
  * Free of `server-only` and Prisma so the decision table can be tested on its
  * own, which is the only part with any behaviour worth pinning.
@@ -32,6 +32,70 @@ import {
 /** What a schedule (or a session) asks for. Mirrors WorkSchedule.notifyPolicy. */
 export const WORK_NOTIFY_POLICIES = ["none", "on_finish", "on_attention", "all"] as const;
 export type WorkNotifyPolicy = (typeof WORK_NOTIFY_POLICIES)[number];
+
+/**
+ * The policy a run notifies under.
+ *
+ * A routine's own setting when it has one. Otherwise `on_attention` — the same
+ * default `WorkSchedule.notifyPolicy` carries, for the same reason: a manually
+ * started run is the case where the person is most likely still looking at
+ * the tab, and "only when it needs me" does not interrupt somebody about a task
+ * finishing on the screen in front of them.
+ *
+ * Except an agent's task (docs/design/AGENTS.md §8): an agent speaks when it
+ * has done something or needs something. Somebody who handed a teammate a job
+ * has walked away from it by definition, and "it is done" is the thing they
+ * are waiting to hear.
+ */
+export function runNotifyPolicy(input: {
+  /** `WorkSchedule.notifyPolicy`, or null when no routine started the run. */
+  schedulePolicy: string | null | undefined;
+  /** The session belongs to an agent (`WorkSession.agentId`). */
+  agentOwned: boolean;
+}): WorkNotifyPolicy {
+  if (input.schedulePolicy !== null && input.schedulePolicy !== undefined) {
+    return (WORK_NOTIFY_POLICIES as readonly string[]).includes(input.schedulePolicy)
+      ? (input.schedulePolicy as WorkNotifyPolicy)
+      : "on_attention";
+  }
+  return input.agentOwned ? "on_finish" : "on_attention";
+}
+
+/**
+ * Whether a person started this run, which is all that can honestly be known.
+ * There is no presence signal — `WorkSession.lastActivityAt` is bumped by the
+ * run itself — so this says "a person kicked this off", not "a person is
+ * watching right now".
+ */
+export function isAttendedOrigin(origin: string): boolean {
+  return origin !== "schedule" && origin !== "trigger";
+}
+
+/**
+ * What a paused run is actually waiting on.
+ *
+ * A cloud run that asks and gets no answer inside the attended wait is parked:
+ * its status becomes `paused` and its lease is released, so the one call that
+ * notifies — at the end of the executor's drive — used to see `paused`, which
+ * needs nobody, and said nothing. Under the default policy no approval and no
+ * question ever reached anyone. The block is still there in the rows: a
+ * pending approval that has not expired, or a question with no answer. The
+ * newer of the two is the one the run stopped on.
+ */
+export function effectiveNotifyStatus(input: {
+  status: WorkStatus;
+  /** When the run's newest pending, unexpired approval was raised. */
+  pendingApprovalAt: Date | null;
+  /** When the run's newest unanswered question was asked. */
+  openQuestionAt: Date | null;
+}): WorkStatus {
+  if (input.status !== "paused") return input.status;
+  const approval = input.pendingApprovalAt;
+  const question = input.openQuestionAt;
+  if (approval && (!question || approval.getTime() >= question.getTime())) return "waiting_approval";
+  if (question) return "waiting_input";
+  return "paused";
+}
 
 /**
  * How loudly one notification should arrive.
@@ -208,6 +272,10 @@ export interface WorkNotifyMessage {
  * built by concatenation is how a user ends up reading "Your task Organise
  * Downloads is host_offline". The states are few and each deserves its own
  * plain sentence.
+ *
+ * `actorName` is who did the work: an agent's name when the task is one of
+ * theirs, so "Quill needs an answer" reads as the teammate speaking. Juno when
+ * it is not given.
  */
 export function describeNotification(input: {
   title: string;
@@ -216,60 +284,62 @@ export function describeNotification(input: {
   hostName?: string | null;
   question?: string | null;
   approvalSummary?: string | null;
+  actorName?: string | null;
 }): WorkNotifyMessage {
   const title = input.title.trim() || "Your Juno task";
+  const actor = input.actorName?.trim() || "Juno";
 
   switch (input.status) {
     case "waiting_input":
       return {
         subject: `${title} has a question`,
-        summary: input.question?.trim() || "Juno needs an answer before it can carry on.",
+        summary: input.question?.trim() || `${actor} needs an answer before it can carry on.`,
         action: "Answer to continue",
       };
     case "waiting_approval":
       return {
         subject: `${title} needs your approval`,
         summary:
-          input.approvalSummary?.trim() || "Juno is waiting for you to approve one action.",
+          input.approvalSummary?.trim() || `${actor} is waiting for you to approve one action.`,
         action: "Review and decide",
       };
     case "host_offline":
       return {
         subject: `${title} stopped: ${input.hostName ?? "your Mac"} is not reachable`,
         summary:
-          `Juno could not finish because it needs ${input.hostName ?? "your Mac"}, ` +
+          `${actor} could not finish because it needs ${input.hostName ?? "your Mac"}, ` +
           "and the parts that need it did not run.",
         action: "Wake the Mac and retry, or move the task to the cloud",
       };
     case "completed":
       return {
         subject: `${title} is done`,
-        summary: "Juno finished the task and the result is ready.",
+        summary: `${actor} finished the task and the result is ready.`,
         action: "Open the result",
       };
     case "failed":
       return {
         subject: `${title} did not finish`,
-        summary: "Juno stopped because something went wrong. Nothing further was attempted.",
+        summary: `${actor} stopped because something went wrong. Nothing further was attempted.`,
         action: "See what happened",
       };
     case "budget_exceeded":
       return {
         subject: `${title} reached its limit`,
-        summary: "Juno stopped at the ceiling set for this task rather than spending past it.",
+        summary: `${actor} stopped at the ceiling set for this task rather than spending past it.`,
         action: "Raise the limit and retry, or leave it",
       };
     case "timed_out":
       return {
         subject: `${title} ran out of time`,
-        summary: "Juno stopped at the runtime limit set for this task.",
+        summary: `${actor} stopped at the runtime limit set for this task.`,
         action: "Raise the limit and retry, or leave it",
       };
     case "interrupted":
       return {
         subject: `${title} was interrupted`,
         summary:
-          "The machine running this task stopped reporting. Juno did not restart it on its own, " +
+          `The machine running this task stopped reporting. ${actor} did not restart it on its own, ` +
           "because it may already have changed something.",
         action: "Review what it did, then retry if you want to",
       };
@@ -282,7 +352,7 @@ export function describeNotification(input: {
     default:
       return {
         subject: `${title} is ${readableStatus(input.status)}`,
-        summary: "Juno is working on this task.",
+        summary: `${actor} is working on this task.`,
         action: null,
       };
   }

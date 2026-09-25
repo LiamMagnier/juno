@@ -117,9 +117,10 @@ export interface ClientAgentRoutine {
   lastRunAt: string | null;
 }
 
-/** One line in the agent's log: its own events and its tasks, merged and sorted newest first. */
+/** One line in the agent's log: its own events, its tasks and their approvals, merged and sorted newest first. */
 export interface ClientAgentActivity {
   id: string;
+  /** An `AgentEventKind`, `task_<status>` for a task, or `approval` for an answer one of its tasks was given. */
   kind: string;
   title: string;
   detail: string | null;

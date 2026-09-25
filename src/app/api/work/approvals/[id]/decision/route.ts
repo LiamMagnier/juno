@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
+import { authenticateNativeBearer } from "@/lib/native-auth";
+import { markRunNotificationsRead } from "@/lib/notifications";
 import { isWorkStatus } from "@/lib/work/domain";
 import { recordWorkAudit } from "@/lib/work/audit";
 import { appendEvents, dispatchRunCommand, setSessionAttention } from "@/lib/work/store";
@@ -30,6 +32,29 @@ const REFUSAL_MESSAGES: Record<ApprovalDecisionRefusal, string> = {
   not_standing_allowable:
     "Juno will not stop asking about this one. Allow it this time if you want it to happen.",
 };
+
+/**
+ * Which client answered, in the Work actor vocabulary (`web | macos | ios`).
+ *
+ * `requireUser` already accepted the request, so a bearer on it is a native
+ * app's — an invalid one would have been refused rather than read as the
+ * browser. Its sign-in names the platform in the app's own words ("macOS",
+ * "iOS", "iPadOS"; the older desktop build says "darwin"). A platform outside
+ * those, or a lookup that fails now, says nothing about the decision, so it is
+ * recorded as the web's rather than as a device it did not come from.
+ */
+async function decidingClient(req: Request): Promise<"web" | "macos" | "ios"> {
+  const authorization = req.headers.get("authorization");
+  if (!authorization) return "web";
+  try {
+    const { platform } = (await authenticateNativeBearer(authorization)).deviceSession;
+    if (/mac|darwin/i.test(platform)) return "macos";
+    if (/ios|ipad|iphone/i.test(platform)) return "ios";
+    return "web";
+  } catch {
+    return "web";
+  }
+}
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { user, error } = await requireUser();
@@ -66,6 +91,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!approval) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const now = new Date();
+  const via = await decidingClient(req);
   // The stored decision is read through the serialiser so an unreadable value
   // narrows to `pending` the same way it does everywhere else. That is safe
   // here because the conditional update below, not this value, is what actually
@@ -100,7 +126,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       userId: user.id,
       kind: "approval_replay_refused",
       severity: "refusal",
-      actor: "web",
+      actor: via,
       sessionId: approval.run.sessionId,
       runId: approval.runId,
       detail: {
@@ -129,7 +155,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // records the wrong person's decision.
   const recorded = await prisma.workApproval.updateMany({
     where: { id: approval.id, userId: user.id, decision: "pending" },
-    data: { decision: outcome.decision, decidedAt: now, decidedVia: "web" },
+    data: { decision: outcome.decision, decidedAt: now, decidedVia: via },
   });
 
   if (recorded.count === 0) {
@@ -143,7 +169,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       userId: user.id,
       kind: "approval_replay_refused",
       severity: "refusal",
-      actor: "web",
+      actor: via,
       sessionId: approval.run.sessionId,
       runId: approval.runId,
       detail: {
@@ -164,7 +190,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   await recordWorkAudit({
     userId: user.id,
     kind: "approval_decided",
-    actor: "web",
+    actor: via,
     sessionId: approval.run.sessionId,
     runId: approval.runId,
     detail: {
@@ -188,7 +214,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         payload: {
           approvalId: approval.id,
           decision: outcome.decision,
-          decidedVia: "web",
+          decidedVia: via,
           ...(reason ? { reason } : {}),
         },
         key: `approval:${approval.id}`,
@@ -248,6 +274,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       },
     });
   }
+
+  // Answered, so the inbox stops asking too: the run's "needs your approval"
+  // rows are read wherever the answer came from. Never allowed to fail the
+  // request, for the same reason as the dispatch above.
+  await markRunNotificationsRead(user.id, approval.runId, now).catch((markError: unknown) => {
+    console.warn("[work-approval] could not clear the run's notifications", {
+      runId: approval.runId,
+      error: markError instanceof Error ? markError.message : String(markError),
+    });
+  });
 
   // The question has been answered, so the session stops asking. The status
   // itself belongs to the executor — it moves the run off `waiting_approval`

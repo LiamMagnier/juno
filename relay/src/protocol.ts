@@ -92,6 +92,9 @@ export type ServerMessage =
       thinking: boolean;
       /** True when the call was given what Juno remembers about the caller. */
       memory?: boolean;
+      /** Present only for a call in an agent's thread: true when the call is
+       *  that agent, false when its persona could not be had and Juno answers. */
+      persona?: boolean;
       /** The model actually serving the call, as the provider reports it. */
       model?: string;
       /** A non-fatal note about how the session came up — a fallback protocol,

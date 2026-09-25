@@ -64,8 +64,23 @@ const PROVIDER_BLURB: Record<VoiceProviderId, string> = {
  * upward mid-sentence, which made a conversation feel like a taxi ride; usage
  * is still recorded and still shown where spending belongs.
  */
-export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onClose: () => void }) {
+export function RealtimeVoice({
+  voice,
+  onClose,
+  speakerName,
+}: {
+  voice: VoiceController;
+  onClose: () => void;
+  /**
+   * Who answers, when the call is in an agent's thread. Used only once the
+   * relay confirms the call is that agent (`voice.persona`): until then, or if
+   * its persona could not be had, the voice answering is Juno's, and the bar
+   * says so rather than naming someone who is not there.
+   */
+  speakerName?: string;
+}) {
   const phase: VoicePhase = voicePhaseOf(voice);
+  const speaker = voice.persona && speakerName ? speakerName : "Juno";
 
   const meterRef = React.useRef<HTMLSpanElement | null>(null);
   const levelRef = voice.levelRef;
@@ -89,10 +104,10 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
   const [announcement, setAnnouncement] = React.useState("");
   const prevPhase = React.useRef<VoicePhase | null>(null);
   React.useEffect(() => {
-    const next = announcementFor(phase, prevPhase.current);
+    const next = announcementFor(phase, prevPhase.current, speaker);
     prevPhase.current = phase;
     if (next) setAnnouncement(next);
-  }, [phase]);
+  }, [phase, speaker]);
 
   const live = voice.status === "live";
   const restartable = voice.status === "ended" || voice.status === "error";
@@ -185,7 +200,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
 
         <div className="flex shrink-0 items-center gap-0.5">
           {restartable ? (
-            <BarButton onClick={() => void voice.start()} label="Try the call again">
+            <BarButton onClick={() => void voice.retry()} label="Try the call again">
               <ActionIcons.refresh className="size-4" />
               <span>Retry</span>
             </BarButton>
@@ -199,7 +214,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
               {voice.assistantSpeaking && (
                 <BarButton
                   onClick={voice.interrupt}
-                  label="Stop Juno speaking"
+                  label={`Stop ${speaker} speaking`}
                   // It arrives with the speech it stops, so it fades in rather
                   // than landing in the bar in one frame.
                   className="motion-safe:animate-fade-in"
