@@ -86,9 +86,10 @@ final class DesktopWorkbenchRegistry {
     ///
     /// Work stopped being a product in Phase 1 of the Liquid Glass redesign,
     /// and an errand no longer has a workspace of its own to land in. It lands
-    /// where tasks are going: a chat, with the sentence in the composer. Phase
-    /// 5 arms "Do This as a Task" on that draft; until then it is an ordinary
-    /// chat, which is still the honest place to start one.
+    /// where tasks live: an ordinary chat, with the sentence in the composer.
+    /// Nothing is armed — there is no task switch on the web either. The model
+    /// reads the sentence and starts a task itself when it is one
+    /// (`start_task`), and the chat draws it (Phase 5).
     func requestWorkErrand(prompt: String?) {
         request(.newChat(prompt: prompt))
     }

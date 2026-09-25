@@ -1141,6 +1141,26 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         researchRunsByConversation[conversationID] = runs
     }
 
+    // MARK: Tasks the model started
+
+    /// Whether this app draws a task the model starts, and so says so on every
+    /// saved chat's request (`workHandoff`). Off by default: an app claims it
+    /// only once it draws the task card — the Mac does; the phone does not
+    /// yet, and a client that claimed it and drew nothing would start runs the
+    /// reader never sees. Private chats and Compare never carry it.
+    public var claimsWorkHandoff = false
+
+    /// The newest task the model started in each conversation, from the
+    /// stream's `work` frame, by conversation id. The app's follower adopts it
+    /// (the web's `onWorkStarted` → `useConversationWork.adopt`).
+    public private(set) var workStarts: [String: NativeChatWorkStart] = [:]
+
+    /// Records a `work` frame for its conversation. The frame names its own
+    /// conversation; a frame for another is filed there, never here.
+    func adoptWorkStart(_ start: NativeChatWorkStart, conversationID: String) {
+        workStarts[start.conversationID ?? conversationID] = start
+    }
+
     private func adoptResearchHandoff(
         _ handoff: NativeResearchHandoff,
         conversationID: String,
@@ -1223,6 +1243,27 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             researchErrors[runID] = NativeFailureMessage.presentable(error)
         }
         await refreshResearchRun(id: runID, conversationID: conversationID)
+    }
+
+    /// Steers a run from the composer: true when the server took it; on a
+    /// refusal, the server's own sentence when it gave one.
+    public func steerResearch(
+        runID: String, input: String, conversationID: String
+    ) async -> (accepted: Bool, notice: String?) {
+        guard let chatClient, let accountID else { return (false, nil) }
+        researchBusyRunIDs.insert(runID)
+        defer { researchBusyRunIDs.remove(runID) }
+        do {
+            try await chatClient.steerResearch(id: runID, input: input, for: accountID)
+            researchErrors[runID] = nil
+            await refreshResearchRun(id: runID, conversationID: conversationID)
+            return (true, nil)
+        } catch {
+            if case .server(_, _, let message, _)? = error as? NativeChatAPIError, !message.isEmpty {
+                return (false, message)
+            }
+            return (false, nil)
+        }
     }
 
     /// Starts a planned run as planned, or cancels it at the plan.
@@ -1448,6 +1489,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         chatApprovalInFlightID = nil
         chatApprovalErrors = [:]
         chatApprovalScopeRefusals = []
+        workStarts = [:]
         pendingMutationCount = 0
         conflictedMutationCount = 0
         lastErrorDescription = nil
@@ -1953,81 +1995,6 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         )
     }
 
-    @discardableResult
-    /// Appends the reader's turn and asks for no reply: the first half of
-    /// starting a task from the composer, where the task answers rather than
-    /// `/api/chat`.
-    ///
-    /// `clientID` belongs to the caller's composition, so a retry appends
-    /// nothing twice (`/api/conversations/{id}/messages` dedupes on the chat
-    /// and the client id). The turn shows at once as pending, and leaves again
-    /// if the append fails, so a retry puts back exactly one.
-    ///
-    /// - Returns: the stored message id, or nil with `chatErrorDescription` set.
-    public func appendUserTurn(
-        conversationID: String,
-        prompt: String,
-        clientID: String,
-        attachmentIDs: [String] = [],
-        attachments: [NativeChatAttachment] = []
-    ) async -> String? {
-        guard let accountID, let chatClient,
-            let conversation = conversations.first(where: { $0.id == conversationID }),
-            !conversation.isPending
-        else {
-            chatErrorDescription = conversationPendingMessage(conversationID)
-            return nil
-        }
-        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            chatErrorDescription = NativeChatAPIError.invalidMessage.localizedDescription
-            return nil
-        }
-        let now = Date()
-        let shown = transientMessagesByConversation[conversationID]?
-            .contains { $0.clientID == clientID } ?? false
-        if !shown {
-            appendTransient(
-                NativeChatMessage(
-                    id: "local-user-\(clientID)",
-                    conversationID: conversationID,
-                    clientID: clientID,
-                    role: .user,
-                    content: trimmed,
-                    reasoning: nil,
-                    model: nil,
-                    createdAt: now,
-                    revision: 0,
-                    isPending: true,
-                    attachments: attachments.filter { attachmentIDs.contains($0.id) }
-                )
-            )
-        }
-        if let index = conversations.firstIndex(where: { $0.id == conversationID }) {
-            conversations[index].lastMessageAt = now
-        }
-        do {
-            let appended = try await chatClient.appendUserMessage(
-                conversationID: conversationID,
-                clientID: clientID,
-                content: trimmed,
-                attachmentIDs: attachmentIDs,
-                for: accountID
-            )
-            guard self.accountID == accountID else { return nil }
-            replaceTransientUser(with: appended, conversationID: conversationID)
-            chatErrorDescription = nil
-            return appended.id
-        } catch {
-            guard self.accountID == accountID else { return nil }
-            transientMessagesByConversation[conversationID]?.removeAll {
-                $0.clientID == clientID && $0.isPending
-            }
-            chatErrorDescription = NativeFailureMessage.presentable(error)
-            return nil
-        }
-    }
-
     public func sendMessage(
         conversationID: String,
         prompt: String,
@@ -2516,7 +2483,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                         connectors: context.connectors,
                         fastMode: context.fastMode,
                         proMode: context.proMode,
-                        regenerateInstruction: context.regenerateInstruction
+                        regenerateInstruction: context.regenerateInstruction,
+                        workHandoff: claimsWorkHandoff
                     ),
                     for: context.accountID
                 )
@@ -2686,6 +2654,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     context: context
                 )
                 return .terminal
+            case .work(let start):
+                // The model started a task from this turn. Not terminal: the
+                // reply goes on to say so. The app's follower adopts it.
+                adoptWorkStart(start, conversationID: context.conversationID)
             case .handoff(let handoff):
                 // The turn became a research run: no answer is written, so the
                 // placeholder goes, and the run's row takes its place.

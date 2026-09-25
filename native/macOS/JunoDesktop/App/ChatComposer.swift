@@ -151,32 +151,187 @@ enum ChatComposerPlaceholder {
         case task
         /// A research run is gathering sources.
         case research
+
+        /// The web's words (`delegatedComposerPlaceholder`, `chat-view.tsx`),
+        /// its curly apostrophe included.
+        var placeholder: String {
+            switch self {
+            case .question: "Answer Juno\u{2019}s question…"
+            case .task: "Add an instruction to the running task…"
+            case .research: "Add a constraint, or paste a source to include…"
+            }
+        }
     }
 
+    /// The web's order: steer mode, then a pending clarification, then a
+    /// quote, then the surface's own line (an agent's thread, a private chat),
+    /// then the modality's, then "Message Juno…". Armed marks, which blank it
+    /// altogether, are the field's to apply.
     static func text(
         isPrivate: Bool = false,
         modality: String = "chat",
         isClarifying: Bool = false,
         quote: Quote? = nil,
-        steering: Steering? = nil
+        steering: Steering? = nil,
+        custom: String? = nil
     ) -> String {
+        if let steering { return steering.placeholder }
         if isClarifying { return "Or type your own answer…" }
         if let quote {
             return quote == .modify ? "Describe the change…" : "Ask about this selection…"
         }
-        if let steering {
-            switch steering {
-            case .question: return "Answer Juno's question…"
-            case .task: return "Add an instruction to the running task…"
-            case .research: return "Add a constraint, or paste a source to include…"
-            }
-        }
+        if let custom { return custom }
         if isPrivate { return "How can I help you today?" }
         switch modality {
         case "image": return "Describe an image to generate…"
         case "video": return "Describe a video to generate…"
         default: return "Message Juno…"
         }
+    }
+}
+
+/// An instruction the reader gave a running task that it has not read yet —
+/// one row of the queued strip above the field (the web's `PendingSteers`).
+struct ChatPendingSteer: Identifiable, Equatable {
+    let id: Int
+    let text: String
+    let at: Date
+}
+
+/// The composer talking to a run instead of starting a reply (Phase 5 A6):
+/// the web's `steering` prop on `Composer`, built by the conversation from
+/// the chat's task (``NativeConversationWork``) or its research run —
+/// research wins while it is accepting input (`chat-view.tsx`).
+struct ChatComposerSteering {
+    enum Kind: Equatable {
+        /// The task asked something; the text answers it.
+        case answer
+        /// The task is working; the text is a new instruction.
+        case instruction
+        /// A research run is gathering; the text is a constraint or a source.
+        case research
+    }
+
+    let kind: Kind
+    /// Steers with nothing streaming: a task was dispatched minutes ago and
+    /// no reply is being written for its whole life. Research steers only
+    /// while its turn streams.
+    let standalone: Bool
+    /// What the disc's Stop face ends, in words: "Stop generating" while a
+    /// reply streams, otherwise the run's own.
+    let stopLabel: String
+    var pending: [ChatPendingSteer] = []
+    /// A pinned "now" for the queue's times — the snapshot harness's; nil
+    /// reads the clock.
+    var clock: Date? = nil
+    /// Sends the text; true only when the server took it — the draft clears
+    /// only then.
+    let steer: (String) async -> Bool
+    /// What the Stop face does: the run, then the stream, as the web orders it.
+    let stop: () -> Void
+
+    var placeholder: String {
+        switch kind {
+        case .answer: ChatComposerPlaceholder.Steering.question.placeholder
+        case .instruction: ChatComposerPlaceholder.Steering.task.placeholder
+        case .research: ChatComposerPlaceholder.Steering.research.placeholder
+        }
+    }
+
+    var placeholderRung: ChatComposerPlaceholder.Steering {
+        switch kind {
+        case .answer: .question
+        case .instruction: .task
+        case .research: .research
+        }
+    }
+
+    /// The send face's name — the web's, verbatim.
+    var sendLabel: String {
+        switch kind {
+        case .answer: "Answer the task\u{2019}s question"
+        case .instruction: "Add this to the running task"
+        case .research: "Add to the research"
+        }
+    }
+
+    /// A task's steering (`workSteering`): standalone, and the Stop face ends
+    /// whichever of the two is moving — the reply while it streams, else the
+    /// task.
+    static func task(
+        answering: Bool,
+        isGenerating: Bool,
+        pending: [ChatPendingSteer],
+        steer: @escaping (String) async -> Bool,
+        stop: @escaping () -> Void
+    ) -> ChatComposerSteering {
+        ChatComposerSteering(
+            kind: answering ? .answer : .instruction,
+            standalone: true,
+            stopLabel: isGenerating ? "Stop generating" : "Stop the task",
+            pending: pending,
+            steer: steer,
+            stop: stop
+        )
+    }
+
+    /// A research run's steering, while it accepts input.
+    static func research(
+        steer: @escaping (String) async -> Bool,
+        stop: @escaping () -> Void
+    ) -> ChatComposerSteering {
+        ChatComposerSteering(
+            kind: .research, standalone: false, stopLabel: "Stop the research",
+            steer: steer, stop: stop
+        )
+    }
+
+    /// Steer mode (`composer.tsx`): steering, and either a reply streaming or
+    /// a standalone run — never while a clarification is being answered.
+    static func isSteering(
+        _ steering: ChatComposerSteering?, isGenerating: Bool, isClarifying: Bool = false
+    ) -> Bool {
+        guard let steering, !isClarifying else { return false }
+        return isGenerating || steering.standalone
+    }
+}
+
+/// What the disc shows, and what it is called, once steering is weighed in.
+///
+/// Outside steer mode it is ``ChatComposerFace/resolve(isGenerating:hasDraft:blockedReason:waitingReason:voiceAvailable:)``
+/// with the face's own words. In steer mode an empty field is the run's Stop,
+/// named for what it ends, and words in the field are its Send, named for
+/// where they go — the web's `sendLabel` / `stopLabel`, with the key kept in
+/// the tooltip.
+struct ChatComposerDisc: Equatable {
+    let face: ChatComposerFace
+    /// Nil keeps the face's own name.
+    let label: String?
+    let help: String?
+
+    static func resolve(
+        isGenerating: Bool,
+        hasDraft: Bool,
+        blockedReason: String?,
+        waitingReason: String?,
+        voiceAvailable: Bool = true,
+        steering: (sendLabel: String, stopLabel: String)? = nil
+    ) -> ChatComposerDisc {
+        guard let steering else {
+            return ChatComposerDisc(
+                face: ChatComposerFace.resolve(
+                    isGenerating: isGenerating, hasDraft: hasDraft, blockedReason: blockedReason,
+                    waitingReason: waitingReason, voiceAvailable: voiceAvailable
+                ),
+                label: nil, help: nil
+            )
+        }
+        if hasDraft {
+            if let blockedReason { return ChatComposerDisc(face: .disabled(blockedReason), label: nil, help: nil) }
+            if let waitingReason { return ChatComposerDisc(face: .busy(waitingReason), label: nil, help: nil) }
+            return ChatComposerDisc(face: .send, label: steering.sendLabel, help: "\(steering.sendLabel)  \u{21A9}")
+        }
+        return ChatComposerDisc(face: .stop, label: steering.stopLabel, help: "\(steering.stopLabel)  \u{2318}.")
     }
 }
 
@@ -294,9 +449,6 @@ struct ChatComposerTurn {
     /// them the moment it is sent.
     var attachments: [NativeChatAttachment] = []
     let deepResearch: Bool
-    /// "Do This as a Task": the turn is appended and a Work task answers it,
-    /// in this chat, instead of `/api/chat`.
-    var asTask: Bool = false
     let webSearch: Bool
     let connectors: [String]
     let fastMode: Bool
@@ -659,11 +811,13 @@ struct ChatComposer: View {
     /// in the `+` menu at all.
     let documentIndex: NativeDocumentIndexModel?
     let connectorModel: NativeConnectorModel?
-    /// The Work model, for "Do This as a Task". Nil hides the row.
-    var workModel: NativeWorkModel? = nil
-    /// Stops this chat's live task. Set while one runs: an empty field's disc
-    /// becomes its Stop (§6.8), and a streaming reply's Stop still wins.
-    var stopTask: (() -> Void)? = nil
+    /// The chat's task or research run, when the composer can talk to it
+    /// (Phase 5 A6). In steer mode Return goes to the run, an empty field's
+    /// disc is the run's Stop, and the queued instructions sit above the field.
+    var steering: ChatComposerSteering? = nil
+    /// The surface's own placeholder rung — an agent's thread says "Message
+    /// {name}…". Below steering, a clarification and a quote, as on the web.
+    var customPlaceholder: String? = nil
     /// The synced account settings, for the `+` menu's Memory switch.
     let memorySettings: NativeMemorySettingsModel<SQLiteAccountRepository>?
     @Binding var draftProjectID: String?
@@ -714,10 +868,8 @@ struct ChatComposer: View {
     @State private var selectedModelID = ""
     @State private var thinkingStopID = ""
     @State private var deepResearch = false
-    @State private var asTask = false
-    /// The client id of a task turn whose start failed, kept so pressing Send
-    /// again appends nothing twice. The work model holds the task's own key.
-    @State private var taskAttempt: (content: String, conversationID: String, clientID: String)?
+    /// A steer is on its way to the run; a second Return waits for it.
+    @State private var isSteeringInFlight = false
     @State private var webSearch = false
     // @AppStorage rather than @State: preferences that survive a relaunch, as
     // the web keeps them in localStorage and the phone in UserDefaults.
@@ -874,17 +1026,28 @@ struct ChatComposer: View {
         return nil
     }
 
-    private var face: ChatComposerFace {
-        ChatComposerFace.resolve(
-            isGenerating: isGenerating || (stopTask != nil && draftIsEmpty && !voiceActive),
+    /// Steer mode (Phase 5 A6): the composer talks to the chat's run. Never
+    /// during a call, whose disc is the call's, and never in a private chat,
+    /// which has no run.
+    private var inSteerMode: Bool {
+        !voiceActive && !isPrivate
+            && ChatComposerSteering.isSteering(steering, isGenerating: isGenerating)
+    }
+
+    private var disc: ChatComposerDisc {
+        ChatComposerDisc.resolve(
+            isGenerating: isGenerating,
             hasDraft: !draftIsEmpty,
             blockedReason: blockedReason,
-            waitingReason: waitingReason,
+            waitingReason: isSteeringInFlight ? "Sending your message" : waitingReason,
             // A call's transcript is filed as a conversation, so a private
             // chat has none to offer; and during a call the disc is the call's.
-            voiceAvailable: !isPrivate && !voiceActive
+            voiceAvailable: !isPrivate && !voiceActive,
+            steering: inSteerMode ? steering.map { ($0.sendLabel, $0.stopLabel) } : nil
         )
     }
+
+    private var face: ChatComposerFace { disc.face }
 
     /// Whether Return may send (or queue) right now.
     private var canSubmit: Bool {
@@ -898,7 +1061,9 @@ struct ChatComposer: View {
     private var placeholder: String {
         ChatComposerPlaceholder.text(
             isPrivate: isPrivate,
-            modality: selectedModel?.modality ?? "chat"
+            modality: selectedModel?.modality ?? "chat",
+            steering: inSteerMode ? steering?.placeholderRung : nil,
+            custom: customPlaceholder
         )
     }
 
@@ -959,17 +1124,8 @@ struct ChatComposer: View {
         selectedModel?.supportsWebSearch == true
     }
 
-    /// A task needs the Work transport, a chat that is filed (not private),
-    /// and no call in progress.
-    private var taskAvailable: Bool {
-        workModel != nil && !isPrivate && !voiceActive
-    }
-
-    private var taskArmed: Bool { asTask && taskAvailable }
-
     private var marks: [ChatComposerMark] {
         ChatComposerMark.marks(
-            task: taskArmed,
             research: deepResearch && researchAvailable,
             webSearch: webSearch && webSearchAvailable,
             connectors: isPrivate || voiceActive ? [] : connectedConnectors
@@ -977,6 +1133,15 @@ struct ChatComposer: View {
                 .map { (id: $0.id, label: $0.label) },
             documentCount: documentGroundingArmed ? indexedDocumentCount : nil
         )
+    }
+
+    /// The queued strip's identity, for its rise and its leaving.
+    private var pendingSteerIDs: [Int] {
+        steering?.pending.map(\.id) ?? []
+    }
+
+    private var pendingSteerMotion: Animation? {
+        JunoMotion.reduced(JunoMotion.riseIn, when: reduceMotion)
     }
 
     // MARK: Body
@@ -1059,6 +1224,8 @@ struct ChatComposer: View {
             dictation?.cancel()
         }
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: showsCollapsedDraft)
+        // The queued strip rises in with a steer and leaves as the run reads it.
+        .animation(pendingSteerMotion, value: pendingSteerIDs)
         // Once the draft is back under the inline ceiling, forget it was ever
         // expanded — otherwise the next huge paste lands straight in the field.
         .onChange(of: prompt) { _, text in
@@ -1207,6 +1374,18 @@ struct ChatComposer: View {
 
     @ViewBuilder
     private var aboveSlot: some View {
+        // The instructions the run has not read yet, rising in the moment the
+        // server takes one and leaving when the run reads it — the steering
+        // composer's one signature.
+        if let pending = steering?.pending, !pending.isEmpty, !isPrivate {
+            ComposerPendingSteers(steers: pending, now: steering?.clock)
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity.combined(with: .offset(y: JunoMotion.shift(4, reduceMotion: reduceMotion))),
+                        removal: .opacity
+                    )
+                )
+        }
         if let attachmentModel, !attachmentModel.attachments.isEmpty {
             ComposerAttachmentTiles(
                 attachments: attachmentModel.attachments,
@@ -1289,7 +1468,8 @@ struct ChatComposer: View {
                     plusMenu
                     Spacer(minLength: JunoSpace.snug)
                     modelChip
-                    if JunoSpeechService.isSupported {
+                    // Steering is text only: the mic steps aside (the web's).
+                    if JunoSpeechService.isSupported, !inSteerMode {
                         dictateButton
                     }
                 }
@@ -1411,7 +1591,6 @@ struct ChatComposer: View {
 
     private func disarm(_ id: String) {
         switch id {
-        case ChatComposerMark.taskID: asTask = false
         case ChatComposerMark.researchID: deepResearch = false
         case ChatComposerMark.webSearchID: webSearch = false
         case ChatComposerMark.documentsID: documentContext = false
@@ -1443,8 +1622,7 @@ struct ChatComposer: View {
             connectorsLoading: connectorModel?.phase == .loading,
             selectedConnectors: $selectedConnectors,
             manageConnections: manageConnections,
-            deepResearch: researchAvailable ? exclusive($deepResearch, clearing: $asTask) : nil,
-            task: taskAvailable ? exclusive($asTask, clearing: $deepResearch) : nil,
+            deepResearch: researchAvailable ? $deepResearch : nil,
             // A private turn carries only its words: the private route takes
             // no web search and no local documents, so the rows are absent
             // rather than on and ignored.
@@ -1454,18 +1632,6 @@ struct ChatComposer: View {
             memoryUnavailableReason: isPrivate ? "Incognito" : nil,
             documents: voiceActive || isPrivate || documentIndex == nil ? nil : $documentContext,
             documentCount: indexedDocumentCount
-        )
-    }
-
-    /// Task and Research are one choice between two ways to answer (§5.4):
-    /// turning one on turns the other off.
-    private func exclusive(_ value: Binding<Bool>, clearing other: Binding<Bool>) -> Binding<Bool> {
-        Binding(
-            get: { value.wrappedValue },
-            set: { on in
-                if on { other.wrappedValue = false }
-                value.wrappedValue = on
-            }
         )
     }
 
@@ -1540,17 +1706,19 @@ struct ChatComposer: View {
 
     /// The single morphing action (§5.3).
     private var primaryDisc: some View {
-        let face = self.face
-        let startsTask = face == .send && taskArmed
-        let stopsTask = face == .stop && !isGenerating
+        let disc = self.disc
+        let face = disc.face
         return ComposerPrimaryDisc(
             face: face,
-            label: startsTask ? "Start this as a task" : stopsTask ? "Stop the task" : nil,
-            help: startsTask ? "Start this as a task  \u{21A9}" : nil
+            label: disc.label,
+            help: disc.help
         ) {
             switch face {
             case .stop:
-                if isGenerating { stopGeneration() } else { stopTask?() }
+                // In steer mode the run's own Stop, which ends whichever of
+                // the reply and the run the reader is watching; otherwise the
+                // reply.
+                if inSteerMode, let steering { steering.stop() } else { stopGeneration() }
             // Never waits on a resolved model: a call can start before the
             // catalog lands, on Auto.
             case .voice: startVoice()
@@ -1916,6 +2084,11 @@ struct ChatComposer: View {
             sendVoiceTurn(voiceCall)
             return
         }
+        // Steer mode: the words go to the run, not to a new reply.
+        if inSteerMode, let steering {
+            steer(through: steering)
+            return
+        }
         guard canSubmit else { return }
         let turn = composeTurn()
         seedTranscriptImages(for: turn)
@@ -1930,6 +2103,25 @@ struct ChatComposer: View {
         dispatch(turn, restoreOnRefusal: false)
     }
 
+    /// Sends the field's words to the run and clears them only when the
+    /// server took them. Text only: attachments stay in the tray for the next
+    /// ordinary message, as the web's composer leaves them.
+    private func steer(through steering: ChatComposerSteering) {
+        let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !isSteeringInFlight else { return }
+        isSteeringInFlight = true
+        let sent = prompt
+        Task {
+            let accepted = await steering.steer(text)
+            isSteeringInFlight = false
+            // Only the words that went: anything typed meanwhile stays.
+            if accepted, prompt == sent {
+                prompt = ""
+                draftExpanded = false
+            }
+        }
+    }
+
     private func composeTurn() -> ChatComposerTurn {
         ChatComposerTurn(
             content: prompt,
@@ -1942,8 +2134,7 @@ struct ChatComposer: View {
             effort: reasoningEffort,
             attachmentIDs: attachmentModel?.uploadedIDs ?? [],
             attachments: attachmentModel?.messageAttachments ?? [],
-            deepResearch: deepResearch && researchAvailable && !taskArmed,
-            asTask: taskArmed,
+            deepResearch: deepResearch && researchAvailable,
             webSearch: webSearch && webSearchAvailable,
             connectors: isPrivate ? [] : Array(selectedConnectors.prefix(ComposerPlusMenuModel.connectorLimit)),
             fastMode: fastMode,
@@ -1971,7 +2162,6 @@ struct ChatComposer: View {
         draftExpanded = false
         attachmentModel?.clear()
         deepResearch = false
-        asTask = false
     }
 
     /// Puts a queued turn's words back in the field.
@@ -2010,10 +2200,6 @@ struct ChatComposer: View {
     private func dispatch(_ turn: ChatComposerTurn, restoreOnRefusal: Bool) {
         if let privateChat {
             dispatchPrivate(turn, to: privateChat)
-            return
-        }
-        if turn.asTask, let workModel {
-            dispatchTask(turn, to: workModel, restoreOnRefusal: restoreOnRefusal)
             return
         }
         let startsChat = turn.conversationID == nil && fixedProjectID == nil && onFirstTurn != nil
@@ -2080,99 +2266,6 @@ struct ChatComposer: View {
             // is news about something that did not happen.
             if turn.groundDocuments {
                 groundingNote = Self.groundingNote(for: grounding, documentCount: turn.documentCount)
-            }
-            Task { await model.generateTitleIfNeeded(conversationID: conversationID) }
-            didSendConversation?(conversationID)
-        }
-    }
-
-    /// Starts a composed turn as a task in this chat, in the web's order
-    /// (`19941547^:composer.tsx`): make sure the chat exists, append the
-    /// reader's turn under a stable client id, create the session with the
-    /// chat's id, then start its run. The work model reuses one idempotency
-    /// key for the last two while the same turn is retried, and the client id
-    /// is held here for the first, so a second press after a dropped
-    /// response appends and creates nothing twice.
-    private func dispatchTask(
-        _ turn: ChatComposerTurn, to workModel: NativeWorkModel, restoreOnRefusal: Bool
-    ) {
-        let startsChat = turn.conversationID == nil && fixedProjectID == nil && onFirstTurn != nil
-        firstTurnError = nil
-        if startsChat {
-            withAnimation(JunoMotion.handoff(reduceMotion: reduceMotion)) {
-                onFirstTurn?(.began(turn.content, attachments: turn.attachments))
-            }
-        }
-        isDispatching = true
-        groundingNote = nil
-        Task {
-            defer { isDispatching = false }
-            // 1. The chat. A task is never created against a pending id: the
-            //    server 404s a conversation it has no row for.
-            let conversationID: String?
-            if let existing = turn.conversationID {
-                conversationID = existing
-            } else {
-                model.isDraftingNewConversation = true
-                conversationID = await model.createConversationResolvingID(
-                    model: turn.modelID,
-                    projectID: turn.projectID
-                )
-            }
-            guard let conversationID,
-                model.conversations.contains(where: { $0.id == conversationID && !$0.isPending })
-            else {
-                if restoreOnRefusal { restore(turn) }
-                if startsChat { handBack() }
-                return
-            }
-            // 2. The reader's turn, under the same client id on a retry.
-            let clientID: String
-            if let held = taskAttempt, held.content == turn.content,
-                held.conversationID == conversationID
-            {
-                clientID = held.clientID
-            } else {
-                clientID = UUID().uuidString.lowercased()
-            }
-            taskAttempt = (turn.content, conversationID, clientID)
-            guard await model.appendUserTurn(
-                conversationID: conversationID,
-                prompt: turn.content,
-                clientID: clientID,
-                attachmentIDs: turn.attachmentIDs,
-                attachments: turn.attachments
-            ) != nil else {
-                if restoreOnRefusal { restore(turn) }
-                if startsChat { handBack() }
-                return
-            }
-            // 3 and 4. The session, filed under this chat, and its first run.
-            let modelID = turn.modelID
-            let session = await workModel.startTask(
-                goal: turn.content,
-                model: modelID.isEmpty || modelID == ChatComposerModels.autoModelID ? nil : modelID,
-                reasoningEffort: turn.effort?.rawValue,
-                attachmentIDs: turn.attachmentIDs.isEmpty ? nil : turn.attachmentIDs,
-                connectorIDs: turn.connectors,
-                conversationID: conversationID,
-                projectID: turn.projectID
-            )
-            guard session != nil else {
-                firstTurnError = workModel.lastErrorDescription
-                    ?? "Juno couldn\u{2019}t start this task. Your message is saved \u{2014} press Send to try again."
-                if restoreOnRefusal { restore(turn) }
-                if startsChat { onFirstTurn?(.accepted) }
-                return
-            }
-            taskAttempt = nil
-            if startsChat { onFirstTurn?(.accepted) }
-            if !restoreOnRefusal {
-                if prompt == turn.content { prompt = "" }
-                draftExpanded = false
-                attachmentModel?.clear()
-                asTask = false
-                deepResearch = false
             }
             Task { await model.generateTitleIfNeeded(conversationID: conversationID) }
             didSendConversation?(conversationID)
@@ -2411,5 +2504,84 @@ struct ChatComposer: View {
                 importError = "Could not attach \(url.lastPathComponent): \(error.localizedDescription)"
             }
         }
+    }
+}
+
+// MARK: - Pending steers
+
+/// The instructions a running task has not read yet, above the field (the
+/// web's `PendingSteers`). Opaque, inside the shell's above-slot: a
+/// `junoSecondary` tile at the field rung. No ✕: a queued steer is a committed
+/// row in the task's log, and there is nothing to withdraw it with — another
+/// instruction, after it, is how one is corrected.
+///
+/// The steering composer's signature: the strip rises in the moment the
+/// server takes a steer and leaves when the run reads it. Both are announced,
+/// because neither comes with a control to notice it by.
+struct ComposerPendingSteers: View {
+    let steers: [ChatPendingSteer]
+    /// A pinned "now" for fixtures; nil reads the clock each minute.
+    var now: Date? = nil
+
+    private var header: String {
+        steers.count == 1
+            ? "Queued \u{2014} Juno reads this before its next step"
+            : "Queued \u{2014} Juno reads these \(steers.count) before its next step, in order"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            Text(header)
+                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                .foregroundStyle(Color.junoSecondaryInk)
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                ForEach(steers) { steer in
+                    row(steer)
+                }
+            }
+        }
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.vertical, JunoSpace.close)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.junoSecondary, in: RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                .strokeBorder(Color.junoBorder.opacity(0.6), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.desktop.chat.pending-steers")
+        .onChange(of: steers.count) { previous, count in
+            if count > previous {
+                AccessibilityNotification.Announcement("Added to the task. \(header).").post()
+            }
+        }
+    }
+
+    private func row(_ steer: ChatPendingSteer) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+            JunoIconView(.cornerDownRight, size: 12)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
+                .accessibilityHidden(true)
+            Text(steer.text)
+                .junoFont(size: 13, relativeTo: .callout)
+                .foregroundStyle(Color.junoForeground)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Group {
+                if let now {
+                    Text(ChatWorkFormat.ago(steer.at, now: now))
+                } else {
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        Text(ChatWorkFormat.ago(steer.at, now: context.date))
+                    }
+                }
+            }
+            .junoFont(size: 11, relativeTo: .caption)
+            .foregroundStyle(Color.junoSecondaryInk)
+            .monospacedDigit()
+            .fixedSize()
+        }
+        .accessibilityElement(children: .combine)
     }
 }

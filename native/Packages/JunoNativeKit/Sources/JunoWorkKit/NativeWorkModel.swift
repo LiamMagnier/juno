@@ -94,6 +94,11 @@ public final class NativeWorkModel {
 
     private let client: NativeWorkClient
     private var accountID: AccountID?
+
+    /// The transport, for a surface that follows one conversation's tasks
+    /// beside this model (``NativeConversationWork``) rather than through its
+    /// one open session.
+    public var transport: NativeWorkClient { client }
     private var streamTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
     /// Whether the last `refresh()` reached the server at all. Distinct from

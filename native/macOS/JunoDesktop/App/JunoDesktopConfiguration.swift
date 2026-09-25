@@ -422,6 +422,11 @@ struct JunoDesktopConfiguration {
     func connectAssistantHooks() {
         guard let conversationModel else { return }
 
+        // The Mac draws the task a model starts (the chat's task card), so a
+        // saved chat's request says so (`workHandoff`). Only with the Work
+        // transport composed: without it there is no card to draw.
+        conversationModel.claimsWorkHandoff = workModel != nil
+
         // Vetoes only. `permitting` cannot grant a capability the composer did
         // not request, so a project with no local configuration — the overwhelming
         // majority — returns the turn exactly as it was built.

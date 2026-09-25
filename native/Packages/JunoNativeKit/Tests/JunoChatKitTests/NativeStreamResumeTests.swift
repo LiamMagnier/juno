@@ -258,6 +258,62 @@ final class NativeStreamResumeTests: XCTestCase {
         XCTAssertFalse(model.isGenerating, "the turn never finished")
     }
 
+    /// A saved chat on an app that draws the task card says so on its
+    /// request, and a `work` frame mid-reply is filed under its conversation
+    /// for the app's follower (Phase 5 brief A1).
+    func testAClaimedChatCarriesTheFlagAndFilesTheTaskItStarted() async throws {
+        let streamer = ResumeStreamer(bodies: [
+            "/api/chat": """
+            id: 1
+            data: {"type":"meta","conversationId":"conv_12345678","userMessageId":"msg-q","title":"Quotes","generationId":null}
+
+            id: 2
+            data: {"type":"work","session":{"id":"wsi_3f9a0c1e5b7d","projectId":null,"conversationId":"conv_12345678","title":"Compare the quotes","titleSource":"model","goal":"Compare the quotes.","status":"queued","needsAttention":false,"requestedTarget":"automatic","preferredHostId":null,"requestedModel":null,"reasoningEffort":null,"permissionPolicy":"balanced","pinned":false,"archived":false,"lastActivityAt":"2099-01-01T00:00:00.000Z","createdAt":"2099-01-01T00:00:00.000Z","updatedAt":"2099-01-01T00:00:00.000Z"}}
+
+            id: 3
+            data: {"type":"done","message":{"id":"assistant_12345678","role":"ASSISTANT","content":"Started a task.","reasoning":null,"model":"openai:gpt-5","createdAt":"2099-01-01T00:00:01.000Z","sources":[]},"finishReason":"stop"}
+
+
+            """,
+        ])
+        let (model, _) = try await makeModel(streamer: streamer)
+        model.claimsWorkHandoff = true
+        XCTAssertTrue(model.sendMessage(
+            conversationID: conversationID, prompt: "Compare the quotes", modelID: "openai:gpt-5",
+            reasoningEffort: nil
+        ))
+        try await waitUntilIdle(model)
+
+        let sent = await streamer.requests
+        let request = try XCTUnwrap(sent.first)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(request.body)) as? [String: Any])
+        XCTAssertEqual(body["workHandoff"] as? Bool, true)
+        XCTAssertEqual(model.workStarts[conversationID]?.sessionID, "wsi_3f9a0c1e5b7d")
+        XCTAssertEqual(model.selectedMessages.last?.content, "Started a task.")
+    }
+
+    /// Off by default: an app that does not draw the card never claims it.
+    func testAnUnclaimedChatSaysNothing() async throws {
+        let streamer = ResumeStreamer(bodies: [
+            "/api/chat": """
+            id: 1
+            data: {"type":"done","message":{"id":"assistant_12345678","role":"ASSISTANT","content":"Hi","reasoning":null,"model":"openai:gpt-5","createdAt":"2099-01-01T00:00:01.000Z","sources":[]},"finishReason":"stop"}
+
+
+            """,
+        ])
+        let (model, _) = try await makeModel(streamer: streamer)
+        XCTAssertFalse(model.claimsWorkHandoff)
+        XCTAssertTrue(model.sendMessage(
+            conversationID: conversationID, prompt: "Hi", modelID: "openai:gpt-5", reasoningEffort: nil
+        ))
+        try await waitUntilIdle(model)
+        let sent = await streamer.requests
+        let request = try XCTUnwrap(sent.first)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(request.body)) as? [String: Any])
+        XCTAssertNil(body["workHandoff"])
+    }
+
     private func makeModel(
         streamer: ResumeStreamer,
         question: Bool = false,

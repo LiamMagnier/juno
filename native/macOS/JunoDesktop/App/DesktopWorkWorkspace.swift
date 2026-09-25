@@ -4502,212 +4502,43 @@ enum DesktopWorkLog {
         }
     }
 
-    // MARK: Plan
+    // MARK: Plan, answer, conversation and current action
+    //
+    // Moved to JunoWorkKit's `WorkEventLog` (Phase 5 A2), which the chat's
+    // task card and its follower read too; the legacy window forwards to it
+    // until Stage D removes the window. Icons and tints stay here, in the app.
 
-    enum StepState: Equatable, Sendable {
-        case pending
-        case active
-        case done
-        case skipped
-        case failed
+    typealias StepState = WorkEventLog.StepState
+    typealias PlanStep = WorkEventLog.PlanStep
+    typealias Turn = WorkEventLog.Turn
 
-        init?(rawValue: String) {
-            switch rawValue {
-            case "pending": self = .pending
-            case "active": self = .active
-            case "done": self = .done
-            case "skipped": self = .skipped
-            case "failed": self = .failed
-            default: return nil
-            }
-        }
-    }
-
-    struct PlanStep: Identifiable, Equatable, Sendable {
-        let id: String
-        let title: String
-        let state: StepState
-
-        var icon: JunoIcon {
-            switch state {
-            case .pending: .circleDot
-            case .active: .loader
-            case .done: .check
-            case .skipped: .minus
-            case .failed: .close
-            }
-        }
-
-        var tint: Color {
-            switch state {
-            case .pending, .skipped: Color.junoMutedForeground
-            case .active: Color.junoAccent
-            case .done: Color.junoSuccess
-            case .failed: Color.junoDanger
-            }
-        }
-    }
-
-    /// The current plan, rebuilt from the newest plan event and then advanced by
-    /// the step events that followed it.
-    ///
-    /// Rebuilt rather than patched into the previous version: a re-plan can
-    /// drop, reorder or rename steps, and merging two versions produces a list
-    /// that was never anybody's plan.
     static func plan(from events: [WorkEvent]) -> [PlanStep] {
-        var steps: [PlanStep] = []
-        var planSeq = -1
-
-        for (event, kind) in visible(events) {
-            guard kind == .planCreated || kind == .planUpdated else { continue }
-            guard case .array(let raw)? = event.payload["steps"] else { continue }
-            planSeq = event.seq
-            steps = raw.enumerated().compactMap { index, entry in
-                let step = fields(entry)
-                guard let title = string(step, "title", "label", "summary") else { return nil }
-                let state = string(step, "state", "status").flatMap(StepState.init(rawValue:))
-                return PlanStep(
-                    id: string(step, "id", "stepId") ?? "\(index)",
-                    title: title,
-                    state: state ?? .pending
-                )
-            }
-        }
-
-        guard !steps.isEmpty else { return steps }
-
-        var byID = Dictionary(steps.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        for (event, kind) in visible(events) where event.seq > planSeq {
-            guard let id = string(event.payload, "stepId", "id"), let step = byID[id] else {
-                continue
-            }
-            switch kind {
-            case .stepStarted:
-                byID[id] = PlanStep(id: step.id, title: step.title, state: .active)
-            case .stepFinished:
-                let state = string(event.payload, "state", "status")
-                    .flatMap(StepState.init(rawValue:)) ?? .done
-                byID[id] = PlanStep(id: step.id, title: step.title, state: state)
-            default:
-                continue
-            }
-        }
-        // Rebuilt in the plan's own order rather than the dictionary's, which
-        // has none — a plan whose steps reorder themselves between frames is
-        // unreadable.
-        return steps.compactMap { byID[$0.id] }
+        WorkEventLog.plan(from: events)
     }
 
-    // MARK: The answer
-
-    /// The last thing the run said in prose, for the Result section.
-    ///
-    /// The last rather than all of them: a run narrates as it works, and the
-    /// concluding message is the one that answers the goal. The earlier ones
-    /// stay in the timeline, where a running commentary belongs.
-    ///
-    /// Read through ``WorkEventPayload/fields(of:)`` for the same reason every
-    /// other reader here is — the cloud runner nests its facts one level down
-    /// and this Mac's run host writes them flat, and a reader that knew only one
-    /// shape would find no answer at all for half the runs in the product.
     static func finalAnswer(in events: [WorkEvent]) -> String? {
-        var answer: String?
-        for (event, kind) in visible(events) where kind == .assistantMessage {
-            let payload = WorkEventPayload.fields(of: event)
-            guard let text = string(payload, "text", "message") else { continue }
-            answer = text
-        }
-        return answer
+        WorkEventLog.finalAnswer(in: events)
     }
 
-
-    // MARK: Conversation
-
-    /// One side of the thread's conversation.
-    struct Turn: Identifiable, Equatable, Sendable {
-        enum Role: Equatable, Sendable { case you, juno }
-        let id: String
-        let role: Role
-        let text: String
-        /// True for something the reader volunteered rather than an answer to a
-        /// question Juno asked. The two are different kinds on the wire and read
-        /// differently in the column, so the label says which it was.
-        let unprompted: Bool
-    }
-
-    /// The readable conversation, pulled out of the event stream.
-    ///
-    /// `deriveTurns` from `work-conversation.tsx`, kind for kind. Only three of
-    /// them carry prose one person addressed to another — what Juno said, what
-    /// it asked, and what the reader typed — and everything else in the stream
-    /// is machinery that belongs in Activity, where it is skimmed rather than
-    /// read.
-    ///
-    /// A `question_answered` row carrying `steering: true` is an instruction
-    /// written before the vocabulary had a kind for it. Older Macs and phones
-    /// still write those, so they are read as what they are rather than shown as
-    /// answers to a question nobody asked.
     static func turns(in events: [WorkEvent]) -> [Turn] {
-        var turns: [Turn] = []
-        for (event, kind) in visible(events) {
-            let payload = WorkEventPayload.fields(of: event)
-            switch kind {
-            case .assistantMessage:
-                guard let text = string(payload, "text", "message") else { continue }
-                turns.append(Turn(id: "\(event.id)", role: .juno, text: text, unprompted: false))
-            case .questionAsked:
-                guard let text = string(payload, "question", "text") else { continue }
-                turns.append(Turn(id: "\(event.id)", role: .juno, text: text, unprompted: false))
-            case .questionAnswered:
-                guard let text = string(payload, "text", "answer") else { continue }
-                let steering = payload["steering"]?.boolValue == true
-                turns.append(Turn(id: "\(event.id)", role: .you, text: text, unprompted: steering))
-            case .userMessage:
-                guard let text = string(payload, "text") else { continue }
-                turns.append(Turn(id: "\(event.id)", role: .you, text: text, unprompted: true))
-            default:
-                continue
-            }
-        }
-        return turns
+        WorkEventLog.turns(in: events)
     }
-
-    // MARK: Current action
 
     struct CurrentAction: Equatable, Sendable {
         let title: String
         let detail: String?
     }
 
-    /// The action in flight, or nil when nothing is.
-    ///
-    /// Cleared by the matching finish event and by every terminal or blocking
-    /// event, because the failure this guards against is the banner still saying
-    /// "Reading your Downloads folder" long after the run died — an endless
-    /// spinner in a different costume.
+    /// The action in flight, in words: the executor's own title, or the
+    /// tool's name put in English.
     static func currentAction(in events: [WorkEvent]) -> CurrentAction? {
-        var current: CurrentAction?
-        for (event, kind) in visible(events) {
-            switch kind {
-            case .toolStarted:
-                current = CurrentAction(
-                    title: string(event.payload, "summary", "title")
-                        ?? describeTool(string(event.payload, "tool", "name")),
-                    detail: string(event.payload, "detail", "target")
-                )
-            case .stepStarted:
-                current = CurrentAction(
-                    title: string(event.payload, "title", "label") ?? "Working",
-                    detail: nil
-                )
-            case .toolFinished, .toolDenied, .stepFinished, .runFinished, .paused, .error,
-                .questionAsked, .approvalRequested:
-                current = nil
-            default:
-                continue
-            }
+        WorkEventLog.currentAction(in: events).map { action in
+            CurrentAction(
+                title: action.title
+                    ?? (action.kind == .tool ? describeTool(action.tool) : "Working"),
+                detail: action.detail
+            )
         }
-        return current
     }
 
     /// What a tool call is doing, in English.
@@ -5190,5 +5021,30 @@ enum DesktopWorkLog {
         string(payload, "kind")
             .flatMap(JunoWorkArtifactKind.init(rawValue:))
             .map(DesktopWorkVocabulary.artifactKind)
+    }
+}
+
+/// How a plan step is drawn in the legacy window. The states are
+/// JunoWorkKit's (``WorkEventLog/StepState``); the marks are the app's.
+extension WorkEventLog.PlanStep {
+    var icon: JunoIcon {
+        switch state {
+        case .pending: .circleDot
+        case .active: .loader
+        case .done: .check
+        case .skipped: .minus
+        case .failed: .close
+        case .unreported: .circleDashed
+        }
+    }
+
+    var tint: Color {
+        switch state {
+        case .pending, .skipped: Color.junoMutedForeground
+        case .active: Color.junoAccent
+        case .done: Color.junoSuccess
+        case .failed: Color.junoDanger
+        case .unreported: Color.junoWarning
+        }
     }
 }

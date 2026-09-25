@@ -201,6 +201,10 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// The run's tool rows: `calculate` and `search_chats` (SPEC §3.1).
     case calculator, chats
 
+    /// A task's meter (Phase 5): Elapsed, Cost and Tokens — the web's
+    /// `WorkLiveMeter` glyphs.
+    case timer, coins, sigma
+
     /// The generated symbol this case wears, without a cut suffix: `ph.<name>`
     /// for Phosphor's drawings, `juno.<name>` for Juno's own.
     ///
@@ -410,6 +414,9 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .codeBrackets: "ph.code"
         case .calculator: "ph.calculator"
         case .chats: "ph.chats"
+        case .timer: "ph.timer"
+        case .coins: "ph.coins"
+        case .sigma: "ph.sigma"
         }
     }
 

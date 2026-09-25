@@ -519,16 +519,26 @@ public struct WorkRunSummary: Equatable, Sendable, Identifiable {
     public let lastSeq: Int
     public let startedAt: Date?
     public let finishedAt: Date?
+    /// Tokens read and written so far (`usage.inputTokens`, `outputTokens`),
+    /// for the run's meter. Zero when the server sent none.
+    public let inputTokens: Int
+    public let outputTokens: Int
 
     public var id: String { runID }
+
+    /// Every token the run has spent, the meter's "Tokens".
+    public var totalTokens: Int { inputTokens + outputTokens }
 
     public init(
         runID: String, sessionID: String, attempt: Int, status: String,
         terminalReason: String?, requestedTarget: String, effectiveTarget: String?,
         hostID: String?, effectiveModel: String?, degradation: [WorkDegradation],
         costMicroUsd: Int, maxCostMicroUsd: Int, lastSeq: Int,
-        startedAt: Date?, finishedAt: Date?
+        startedAt: Date?, finishedAt: Date?,
+        inputTokens: Int = 0, outputTokens: Int = 0
     ) {
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
         self.runID = runID
         self.sessionID = sessionID
         self.attempt = attempt

@@ -300,7 +300,7 @@ paths:
           description: >-
             Progressive chat events. The JSON payload of each data frame matches
             ChatSSEEvent (meta, title, activity, approval, delta, reasoning,
-            sources, resume, ping, then done, error or handoff).
+            sources, resume, work, ping, then done, error or handoff).
           content:
             text/event-stream:
               schema:
@@ -2172,6 +2172,13 @@ components:
         fastMode: { type: boolean }
         proMode: { type: boolean }
         regenerateInstruction: { type: string, minLength: 1, maxLength: 400 }
+        workHandoff:
+          type: boolean
+          description: >-
+            This client draws a task the model starts: the server may give the
+            model `start_task`, and the stream then carries a `work` frame. Sent
+            only as true, only on a saved chat, and only by an app that draws the
+            task card (the Mac); omitted otherwise.
         clientFeatures:
           type: array
           description: >-
@@ -2219,6 +2226,7 @@ components:
         - { $ref: '#/components/schemas/ChatProgressEvent' }
         - { $ref: '#/components/schemas/ChatResumeEvent' }
         - { $ref: '#/components/schemas/ChatHandoffEvent' }
+        - { $ref: '#/components/schemas/ChatWorkEvent' }
         - { $ref: '#/components/schemas/ChatPingEvent' }
         - { $ref: '#/components/schemas/ChatDoneEvent' }
         - { $ref: '#/components/schemas/ChatErrorEvent' }
@@ -2269,6 +2277,18 @@ components:
         to: { const: research }
         runId: { type: string }
         userMessageId: { type: [string, 'null'] }
+    ChatWorkEvent:
+      type: object
+      additionalProperties: true
+      required: [type, session]
+      description: >-
+        Not terminal. Sent only to a request that carried `workHandoff: true`,
+        at most once per generation, once a task the model started with
+        `start_task` has left `draft`. The session is `serializeSession`'s; the
+        client follows it through /api/work/sessions/{id}/events.
+      properties:
+        type: { const: work }
+        session: { $ref: '#/components/schemas/WorkSession' }
     ChatMetaEvent:
       type: object
       additionalProperties: true

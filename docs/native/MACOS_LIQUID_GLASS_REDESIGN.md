@@ -2017,3 +2017,11 @@ The brief re-read the live web at `origin/main` `fe0a501d` (2026-09-24). Where t
 65. The research report opens in its own window with Copy, Export Markdown… and Print…; the web opens a dialog.
 66. A skill's instructions are edited in SF, not mono.
 67. A task approval carries a hairline in its risk tone and no warning wash (extends #35).
+68. The task card's run words leave out a question that is still open, which its question card shows; the web prints it in both (Stage A, 2026-09-25).
+
+**Stage A notes (2026-09-25), where today's web was followed over the text above.**
+
+- **Status words.** The chat's card, settled rows and Task panel say the web's `STATUS_META` words verbatim ("Waiting to be picked up. Nothing is running yet.", "Out of budget", "This stopped before it finished.", and the rest). The legacy window's `DesktopWorkStatusStyle` had drifted in five places; it is left as it was until Stage D removes the window.
+- **The question card** is the web's `WorkQuestionCard`: "Waiting on you · asked {time}", the question, its why, one-press replies, and "Reply below" (sentence case, the web's button copy); a second open question says "Answer the question above it first; this one is next.".
+- **Plan steps** gain the web's derived `unreported` state (a step still open when the run finished, failed or paused), drawn as a dashed ring with "never finished". The legacy window reads the same derivation, so its stranded spinner goes too.
+- **The server does not yet let a native turn start a task.** `chatTaskToolEnabled` refuses a `regenerate` turn and needs the persisted user message id, and every native turn is sent as `regenerate: true` after its message is synced (so the route has no `userMessageId`). The Mac sends `workHandoff: true` and draws the frame as specified; a model-started task will reach it once the server's gate keys on "an answer is being replaced" rather than on the `regenerate` flag. Recorded as deferred; the web is unaffected.

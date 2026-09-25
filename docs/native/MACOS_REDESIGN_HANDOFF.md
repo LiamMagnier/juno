@@ -391,3 +391,16 @@ The Juno Code session has agreed not to cut Mac releases and that 1.7.0 is ours.
 - **Handed to track B:** Projects › Tasks tab and Task defaults; Automations "Recent runs" opening the run's chat; the agent page's gate cards (main's `NativeWorkApprovalCard` wording differs from the web's Work cards).
 - **Phase 3 (next here) inherits:** ⌘K "Open notifications" and the Search › Tasks scope inside the ⌘K panel.
 - The follow-up "the approval card's verb button draws in system blue" was fixed by the foundations' `.junoProminent`; Stage B's snapshots confirm it on the task approvals.
+
+## Phase 5 Stage A, 2026-09-25 (model-started tasks, placement, several tasks, steering)
+
+Two commits on `mac/liquid-glass-chat`: the merge of `origin/main` at `fe0a501d` (A0), and the stage itself (A1–A7). Snapshots in `/tmp/juno-glass-snapshots/p5-A/` (and `final/`).
+
+- **The wire.** `NativeChatGenerationRequest.workHandoff` (sent only as `true`); `NativeConversationModel.claimsWorkHandoff` (off by default; the Mac's configuration turns it on when Work is composed; iOS never does); the stream's `work` frame decodes into `NativeChatServerEvent.work(NativeChatWorkStart)` and is filed in `NativeConversationModel.workStarts`. The OpenAPI contract has both (`workHandoff`, `ChatWorkEvent`).
+- **The follower.** `JunoWorkKit/NativeConversationWork` is the web's `useConversationWork`: adopt from the frame (drafts and other chats refused), discover every 4s while the window is visible (`DesktopWindowVisibilityReader` feeds occlusion), follow the newest by `createdAt` through the event stream (reconnect at once on the server's close, back off 1s × n to 15s), earlier tasks as `history`. The chat no longer touches `NativeWorkModel.openSession`. Pure derivations moved to `JunoWorkKit/WorkEventLog` (plan with `unreported`, tally, turns, current action, open questions, pending steers); the legacy window's `DesktopWorkLog` forwards to them.
+- **The toggle is gone.** No "Do This as a Task" row, no Task mark, no `dispatchTask`, no `appendUserTurn`; errands are ordinary chats.
+- **Placement.** `ChatWorkPlacement` is the web's rule; the current task is the card, earlier ones `ChatWorkSettledRow`s with "Open ›" to the Task panel's first cut (`ChatWorkPanel`, Activity only, an earlier task read once with "As of {time}").
+- **The card** is rebuilt to the web's anatomy (see the spec's Stage A notes); the finished body and the approval cards are still the slice's until Stage B.
+- **Steering.** `ChatComposerSteering` (task: standalone; research: while its turn streams), `ChatComposerDisc` for the disc's words, the queued strip (`ComposerPendingSteers`), research steering through the new `POST /api/research/{id}/steer` client call.
+- **Found, not fixable from the Mac:** the server's `chatTaskToolEnabled` refuses `regenerate` turns and needs a persisted `userMessageId`; every native turn is `regenerate: true` after sync. So a model-started task will not reach the Mac until the server's gate changes (see the spec's Stage A notes). Everything on the Mac side is in place and tested against recorded frames.
+- **Needs a person at the screen (deferred):** a real model-started task end to end, the card appearing mid-reply, a steer accepted by a live run, Stop on a live run, the Task panel on a real earlier task.

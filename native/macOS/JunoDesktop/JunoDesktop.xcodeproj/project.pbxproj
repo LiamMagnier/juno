@@ -17,6 +17,7 @@
 		07A83475FE4A621A61851E47 /* DesktopCodeStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE0BCDD021BF5183D9F1413D /* DesktopCodeStudio.swift */; };
 		0A6653ED8572FB2B41D6CA8F /* ChatTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6330539AE11727BEC5C73A39 /* ChatTranscript.swift */; };
 		0DC18B6F023E4144EA8043DC /* DesktopWorkbenchRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDC996B507BE1F231C690796 /* DesktopWorkbenchRegistry.swift */; };
+		1301EB8C9C30D43423D1B2C6 /* ChatWorkPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10C11FBACF6699002E8F6ADD /* ChatWorkPanel.swift */; };
 		157B182726D958C47128E4B3 /* DesktopSearchScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18E25C3C510164E4281E592D /* DesktopSearchScreen.swift */; };
 		1A0041C92AF30D342DC8F31F /* ComposerAttachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87DB401D922C0C8DCAB04164 /* ComposerAttachments.swift */; };
 		1B3A077009879F194C09E901 /* ActivityPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA7385359BFDDE8BE6595FD /* ActivityPanel.swift */; };
@@ -45,6 +46,7 @@
 		41EC9D370B2856FDE84BCED7 /* DesktopCodeModelMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3B8EFA669098DBC556746C /* DesktopCodeModelMappingTests.swift */; };
 		436B5F3E43E4D083EC052871 /* DesktopNavigationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F7DAFF580CD4F8CAF1786FD /* DesktopNavigationState.swift */; };
 		453E57B4335819940C443928 /* ArtifactRuntime in Resources */ = {isa = PBXBuildFile; fileRef = 00919456BB838DDD70C15A26 /* ArtifactRuntime */; };
+		4649819A128D3DAFFB703F91 /* ChatWorkPlacementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A26E707EDA6E2B33A30AF2B /* ChatWorkPlacementTests.swift */; };
 		47D96B5E0848A0BF5C8E121D /* editor.js in Resources */ = {isa = PBXBuildFile; fileRef = 6210C6C1160169228FB44B4F /* editor.js */; };
 		47DF0131EACF190E4A9D473B /* DesktopUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3860896B80760B16162D025A /* DesktopUpdater.swift */; };
 		4C3C218723E4BC294E43678A /* DesktopWorkRegistrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73A8E5419B9997BCF678F158 /* DesktopWorkRegistrationTests.swift */; };
@@ -179,6 +181,7 @@
 		0B686C9AA50D7A315EE7582E /* DesktopWorkRunHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkRunHost.swift; sourceTree = "<group>"; };
 		0BCD0C57F737A1BCE0B8D622 /* DesktopShortcutsWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopShortcutsWindow.swift; sourceTree = "<group>"; };
 		0F6F78E25A138CC03095B9BF /* DesktopWorkExecutorAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkExecutorAdapter.swift; sourceTree = "<group>"; };
+		10C11FBACF6699002E8F6ADD /* ChatWorkPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWorkPanel.swift; sourceTree = "<group>"; };
 		136AB4B41FC7DFD6E4D1ACD3 /* FinishNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinishNote.swift; sourceTree = "<group>"; };
 		148E31CA4778540559260EC6 /* DesktopArtifactComponentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopArtifactComponentTests.swift; sourceTree = "<group>"; };
 		1494E7FFF5D8759026B73974 /* JunoDesktopPreviewRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoDesktopPreviewRoot.swift; sourceTree = "<group>"; };
@@ -239,6 +242,7 @@
 		765B98BD003AE4437A332095 /* DesktopWorkVocabulary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkVocabulary.swift; sourceTree = "<group>"; };
 		774077F2584C1A4709F9E8E2 /* DesktopDesignEditorHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDesignEditorHost.swift; sourceTree = "<group>"; };
 		776AB697CA35045582CA2A3A /* ComposerPlusMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerPlusMenu.swift; sourceTree = "<group>"; };
+		7A26E707EDA6E2B33A30AF2B /* ChatWorkPlacementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWorkPlacementTests.swift; sourceTree = "<group>"; };
 		7A3B8EFA669098DBC556746C /* DesktopCodeModelMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCodeModelMappingTests.swift; sourceTree = "<group>"; };
 		7BAC4F4FD70D084FA11CD9B6 /* DesktopSimulatorDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSimulatorDock.swift; sourceTree = "<group>"; };
 		808EF0C3D75DC5359F776E19 /* Newsreader24pt-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader24pt-Medium.ttf"; sourceTree = "<group>"; };
@@ -405,6 +409,7 @@
 				E1AD940C0E250215613B41FC /* ChatDetail.swift */,
 				6781593154504BF1EB46383C /* ChatToolbar.swift */,
 				6330539AE11727BEC5C73A39 /* ChatTranscript.swift */,
+				10C11FBACF6699002E8F6ADD /* ChatWorkPanel.swift */,
 				2487D65CB288F8DC1D550F77 /* ChatWorkRunCard.swift */,
 				87DB401D922C0C8DCAB04164 /* ComposerAttachments.swift */,
 				ED6CD2A24AF9C22BB13214E1 /* ComposerDictation.swift */,
@@ -528,6 +533,7 @@
 			children = (
 				860C2F4F840D28B7CCA34C43 /* ArtifactRuntimeSandboxTests.swift */,
 				55640B7AF1057C3FE76ECF4F /* ChatComposerTests.swift */,
+				7A26E707EDA6E2B33A30AF2B /* ChatWorkPlacementTests.swift */,
 				148E31CA4778540559260EC6 /* DesktopArtifactComponentTests.swift */,
 				C31EE69BC10B8DCBBD935BE0 /* DesktopArtifactStatusTests.swift */,
 				7078F6DE8A2BB72326BE41F2 /* DesktopChatDesignSourceTests.swift */,
@@ -756,6 +762,7 @@
 				3EF3572F29A9311B41969080 /* ChatDetail.swift in Sources */,
 				63B8EA34CC1FF06FFA9441FD /* ChatToolbar.swift in Sources */,
 				0A6653ED8572FB2B41D6CA8F /* ChatTranscript.swift in Sources */,
+				1301EB8C9C30D43423D1B2C6 /* ChatWorkPanel.swift in Sources */,
 				BE2E5EFB656101FBE4B49C0A /* ChatWorkRunCard.swift in Sources */,
 				1A0041C92AF30D342DC8F31F /* ComposerAttachments.swift in Sources */,
 				28371EAD1CAAA1B67FA68E9C /* ComposerDictation.swift in Sources */,
@@ -843,6 +850,7 @@
 			files = (
 				66E249B69254B5178881798B /* ArtifactRuntimeSandboxTests.swift in Sources */,
 				F68BE7FC1B3B911FA274D620 /* ChatComposerTests.swift in Sources */,
+				4649819A128D3DAFFB703F91 /* ChatWorkPlacementTests.swift in Sources */,
 				B5465B6B2C16E892EE7EB748 /* DesktopArtifactComponentTests.swift in Sources */,
 				69E11E717D21C0C6BE70BADC /* DesktopArtifactStatusTests.swift in Sources */,
 				8FD1C4164E8CDE6C7D2CD7ED /* DesktopChatDesignSourceTests.swift in Sources */,

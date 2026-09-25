@@ -74,7 +74,7 @@ struct ChatComposerTests {
         #expect(ChatComposerPlaceholder.text(isPrivate: true, isClarifying: true) == "Or type your own answer…")
         #expect(ChatComposerPlaceholder.text(quote: .modify) == "Describe the change…")
         #expect(ChatComposerPlaceholder.text(quote: .ask) == "Ask about this selection…")
-        #expect(ChatComposerPlaceholder.text(steering: .question) == "Answer Juno's question…")
+        #expect(ChatComposerPlaceholder.text(steering: .question) == "Answer Juno\u{2019}s question…")
         #expect(ChatComposerPlaceholder.text(steering: .task) == "Add an instruction to the running task…")
         #expect(ChatComposerPlaceholder.text(steering: .research) == "Add a constraint, or paste a source to include…")
     }
@@ -120,17 +120,15 @@ struct ChatComposerTests {
         #expect(ChatComposerMark.marks(research: false, webSearch: false, connectors: [], documentCount: nil).isEmpty)
     }
 
-    /// A task is the first thing the sentence is (§5.5): its mark leads, in
-    /// the treestructure glyph, and says how to take it back.
+    /// The model starts tasks (Phase 5 A3): there is no task mark to arm,
+    /// and nothing in the `+` menu's marks names one.
     @Test
-    func taskMarkLeads() {
+    func thereIsNoTaskMark() {
         let marks = ChatComposerMark.marks(
-            task: true, research: false, webSearch: true, connectors: [], documentCount: nil
+            research: true, webSearch: true, connectors: [], documentCount: nil
         )
-        #expect(marks.map(\.id) == ["task", "web"])
-        #expect(marks[0].label == "Task")
-        #expect(marks[0].glyph == .icon(.task))
-        #expect(marks[0].removeLabel == "Don\u{2019}t run this as a task")
+        #expect(marks.map(\.id) == ["research", "web"])
+        #expect(marks.allSatisfy { !$0.label.localizedCaseInsensitiveContains("task") })
     }
 
     /// Two, then one mark standing for the rest, which names them all.
@@ -232,4 +230,115 @@ struct ChatComposerTests {
             supportsStreaming: true
         )
     }
+
+    // MARK: - Steering (Phase 5 A6)
+
+    /// The web's placeholder ladder: steer mode first, then a clarification,
+    /// a quote, the surface's own line, the modality's, "Message Juno…".
+    @Test
+    func steeringLeadsThePlaceholderLadder() {
+        #expect(ChatComposerPlaceholder.text(isClarifying: true, quote: .ask, steering: .task)
+            == "Add an instruction to the running task…")
+        #expect(ChatComposerPlaceholder.text(isClarifying: true, quote: .ask) == "Or type your own answer…")
+        #expect(ChatComposerPlaceholder.text(quote: .ask, custom: "Message Ada…") == "Ask about this selection…")
+        #expect(ChatComposerPlaceholder.text(isPrivate: true, custom: "Message Ada…") == "Message Ada…")
+        #expect(ChatComposerPlaceholder.text(modality: "image", custom: "Message Ada…") == "Message Ada…")
+    }
+
+    /// The disc in steer mode: an empty field is the run's Stop, named for
+    /// what it ends; words are its Send, named for where they go.
+    @Test
+    func theDiscInSteerMode() {
+        let task = (sendLabel: "Add this to the running task", stopLabel: "Stop the task")
+        let empty = ChatComposerDisc.resolve(
+            isGenerating: false, hasDraft: false, blockedReason: nil, waitingReason: nil, steering: task
+        )
+        #expect(empty.face == .stop)
+        #expect(empty.label == "Stop the task")
+
+        let draft = ChatComposerDisc.resolve(
+            isGenerating: false, hasDraft: true, blockedReason: nil, waitingReason: nil, steering: task
+        )
+        #expect(draft.face == .send)
+        #expect(draft.label == "Add this to the running task")
+        #expect(draft.help == "Add this to the running task  \u{21A9}")
+
+        // A reply streaming beside a live task: Stop names the reply.
+        let streaming = ChatComposerSteering.task(
+            answering: false, isGenerating: true, pending: [], steer: { _ in true }, stop: {}
+        )
+        #expect(streaming.stopLabel == "Stop generating")
+        let streamingDisc = ChatComposerDisc.resolve(
+            isGenerating: true, hasDraft: false, blockedReason: nil, waitingReason: nil,
+            steering: (streaming.sendLabel, streaming.stopLabel)
+        )
+        #expect(streamingDisc.face == .stop)
+        #expect(streamingDisc.label == "Stop generating")
+
+        let research = ChatComposerSteering.research(steer: { _ in true }, stop: {})
+        let researchDisc = ChatComposerDisc.resolve(
+            isGenerating: true, hasDraft: true, blockedReason: nil, waitingReason: nil,
+            steering: (research.sendLabel, research.stopLabel)
+        )
+        #expect(researchDisc.label == "Add to the research")
+        #expect(research.stopLabel == "Stop the research")
+
+        // Outside steer mode, the faces are the composer's own.
+        let plain = ChatComposerDisc.resolve(
+            isGenerating: false, hasDraft: false, blockedReason: nil, waitingReason: nil
+        )
+        #expect(plain.face == .voice)
+        #expect(plain.label == nil)
+    }
+
+    /// The web's labels, verbatim.
+    @Test
+    func steeringLabels() {
+        let answer = ChatComposerSteering.task(
+            answering: true, isGenerating: false, pending: [], steer: { _ in true }, stop: {}
+        )
+        #expect(answer.kind == .answer)
+        #expect(answer.placeholder == "Answer Juno\u{2019}s question…")
+        #expect(answer.sendLabel == "Answer the task\u{2019}s question")
+        #expect(answer.stopLabel == "Stop the task")
+        let instruction = ChatComposerSteering.task(
+            answering: false, isGenerating: false, pending: [], steer: { _ in true }, stop: {}
+        )
+        #expect(instruction.placeholder == "Add an instruction to the running task…")
+        #expect(instruction.sendLabel == "Add this to the running task")
+        let research = ChatComposerSteering.research(steer: { _ in true }, stop: {})
+        #expect(research.placeholder == "Add a constraint, or paste a source to include…")
+    }
+
+    /// Steer mode: a task steers with nothing streaming; research only while
+    /// its turn streams; never while a clarification is being answered.
+    @Test
+    func steerModeRule() {
+        let task = ChatComposerSteering.task(
+            answering: false, isGenerating: false, pending: [], steer: { _ in true }, stop: {}
+        )
+        let research = ChatComposerSteering.research(steer: { _ in true }, stop: {})
+        #expect(ChatComposerSteering.isSteering(task, isGenerating: false))
+        #expect(!ChatComposerSteering.isSteering(research, isGenerating: false))
+        #expect(ChatComposerSteering.isSteering(research, isGenerating: true))
+        #expect(!ChatComposerSteering.isSteering(task, isGenerating: false, isClarifying: true))
+        #expect(!ChatComposerSteering.isSteering(nil, isGenerating: true))
+    }
+
+    /// A refused steer keeps the words: the steering closure says no, and the
+    /// composer clears only on yes. The routing is the conversation's; here,
+    /// the closure a fake follower hands over is what receives the text.
+    @Test
+    @MainActor
+    func aSteerReachesTheRunAndARefusalIsReported() async {
+        var received: [String] = []
+        let refusing = ChatComposerSteering.task(
+            answering: false, isGenerating: false, pending: [],
+            steer: { text in received.append(text); return false }, stop: {}
+        )
+        let accepted = await refusing.steer("Use euros")
+        #expect(accepted == false)
+        #expect(received == ["Use euros"])
+    }
+
 }

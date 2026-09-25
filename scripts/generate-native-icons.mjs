@@ -158,6 +158,10 @@ const PHOSPHOR = {
   PlayCircle: "PlayCircle",
   PauseCircle: "PauseCircle",
   StopCircle: "StopCircle",
+  // A task's meter: Elapsed, Cost, Tokens (`WorkLiveMeter`).
+  Timer: "Timer",
+  Coins: "Coins",
+  Sigma: "Sigma",
   Image: "Image",
   ImageBroken: "ImageOff",
   Crop: "Crop",

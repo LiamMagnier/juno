@@ -1047,6 +1047,18 @@ struct DesktopConversationView: View {
     /// Why a file could not be opened or saved, for the alert.
     @State private var mediaFailure: String?
     @Environment(\.junoTranscriptMedia) private var transcriptMedia
+    /// The window's toast host, for what a task action came to.
+    @Environment(\.junoToast) private var toast
+    /// This chat's tasks (Phase 5 A2): one follower per open, saved
+    /// conversation, which the card, the composer and the Task panel all
+    /// read. Never the legacy window's open session.
+    @State private var conversationWork: NativeConversationWork?
+    /// The task the Task panel shows, by session id, or nil when it is closed.
+    @State private var openTask: String?
+    /// Earlier tasks read once for the Task panel.
+    @State private var taskPanelReader = ChatWorkPanelReader()
+    /// Whether the window is on screen at all: discovery polls only then.
+    @State private var windowVisible = true
 
     var body: some View {
         // Clamped through `Color.clear.overlay { … }`, for the reason
@@ -1080,18 +1092,34 @@ struct DesktopConversationView: View {
                 openArtifact = nil
                 openActivity = nil
                 openResearch = nil
+                openTask = nil
                 find.close()
             }
+            // The chat's tasks, followed while it is open (Phase 5 A2). A
+            // draft or a private chat follows none; switching drops the
+            // follower with the chat it belonged to.
+            .task(id: workFollowerKey) {
+                guard let work = makeConversationWork() else {
+                    conversationWork = nil
+                    return
+                }
+                conversationWork = work
+                adoptWorkStart()
+                await work.run()
+                work.close()
+                if conversationWork === work { conversationWork = nil }
+            }
+            // A reply's `work` frame: the model started a task from this turn.
+            .onChange(of: pendingWorkStartID) { _, _ in adoptWorkStart() }
+            // After each reply, look again: the web discovers on `done` too.
+            .onChange(of: model.isGenerating) { wasGenerating, isGenerating in
+                guard wasGenerating, !isGenerating, let work = conversationWork else { return }
+                Task { await work.discover() }
+            }
+            .onChange(of: windowVisible) { _, visible in conversationWork?.isVisible = visible }
+            .background(DesktopWindowVisibilityReader { windowVisible = $0 })
             // The conversation's research runs, followed while it is open —
             // and again whenever a hand-off adds one.
-            // The chat's newest task, followed while the chat is open. A draft
-            // or private chat follows none, which lets go of a chat's task.
-            .task(id: "work:\(session.profile.id.rawValue):\(model.selectedConversationID ?? "")") {
-                let id = privateChat == nil
-                    && model.selectedConversation.map { !$0.isPending } == true
-                    ? model.selectedConversationID : nil
-                await configuration.workModel?.followConversation(id)
-            }
             .task(id: "\(session.profile.id.rawValue):\(model.selectedConversationID ?? ""):\(openResearchRunKey)") {
                 guard privateChat == nil, let conversationID = model.selectedConversationID else { return }
                 await model.followResearch(conversationID: conversationID)
@@ -1354,6 +1382,8 @@ struct DesktopConversationView: View {
                 }
             case .research(let runID):
                 researchPanel(runID)
+            case .task(let sessionID):
+                taskPanel(sessionID)
             }
         } content: {
             chatColumn
@@ -1393,6 +1423,7 @@ struct DesktopConversationView: View {
         if let openActivity {
             return .activity(messageID: openActivity.messageID, focusCallID: openActivity.focusCallID)
         }
+        if let openTask { return .task(sessionID: openTask) }
         return openResearch.map { .research(runID: $0) }
     }
 
@@ -1713,7 +1744,9 @@ struct DesktopConversationView: View {
                         ? { question in composerRequest = ChatComposerRequest(kind: .research(question)) }
                         : nil,
                     workRun: privateChat == nil ? workRunState : nil,
-                    workActions: workActions
+                    workRuns: privateChat == nil ? workRunEntries : [],
+                    workActions: workActions,
+                    openTask: { sessionID in openTaskPanel(sessionID) }
                 )
                 .environment(\.junoTranscriptMediaActions, mediaActions)
             }
@@ -1736,6 +1769,7 @@ struct DesktopConversationView: View {
         withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
             openActivity = nil
             openResearch = nil
+            openTask = nil
             openArtifact = DesktopChatArtifact(
                 reference: artifact,
                 stored: artifactResolver.artifact(for: artifact)
@@ -1748,6 +1782,7 @@ struct DesktopConversationView: View {
         withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
             openArtifact = nil
             openResearch = nil
+            openTask = nil
             openActivity = DesktopActivityTarget(messageID: messageID, focusCallID: callID)
         }
     }
@@ -1757,7 +1792,34 @@ struct DesktopConversationView: View {
         withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
             openArtifact = nil
             openActivity = nil
+            openTask = nil
             openResearch = runID
+        }
+    }
+
+    /// The Task panel on one of this chat's tasks — the newest opener wins the
+    /// dock. An earlier task is read once as it opens.
+    private func openTaskPanel(_ sessionID: String) {
+        withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
+            openArtifact = nil
+            openActivity = nil
+            openResearch = nil
+            openTask = sessionID
+        }
+        if conversationWork?.current?.sessionID != sessionID {
+            readTask(sessionID)
+        }
+    }
+
+    private func readTask(_ sessionID: String) {
+        let client = configuration.workModel?.transport
+        let accountID = session.profile.id
+        Task { await taskPanelReader.read(sessionID: sessionID, client: client, accountID: accountID) }
+    }
+
+    private func closeTask() {
+        withAnimation(JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)) {
+            openTask = nil
         }
     }
 
@@ -1918,10 +1980,8 @@ struct DesktopConversationView: View {
             workspaceModel: configuration.projectWorkspaceModel,
             documentIndex: configuration.documentIndexModel,
             connectorModel: configuration.connectorModel,
-            workModel: configuration.workModel,
-            stopTask: workRunState?.isLive == true && privateChat == nil
-                ? { [workModel = configuration.workModel] in Task { await workModel?.stopOpenRun() } }
-                : nil,
+            steering: composerSteering,
+            customPlaceholder: privateChat == nil ? threadAgent.map { "Message \($0.name)\u{2026}" } : nil,
             memorySettings: configuration.memorySettingsModel,
             draftProjectID: $draftProjectID,
             draftPrompt: $draftPrompt,
@@ -1944,36 +2004,197 @@ struct DesktopConversationView: View {
         .junoVoiceCall(voiceColumn)
     }
 
-    /// The task this chat started, while the work model follows it.
-    private var workRunState: ChatWorkRunState? {
-        guard let workModel = configuration.workModel,
-            let open = workModel.openSession,
-            let conversationID = model.selectedConversationID,
-            open.conversationID == conversationID
-        else { return nil }
-        return ChatWorkRunState.read(workModel, host: configuration.workHostModel, session: open)
+    // MARK: Tasks (Phase 5)
+
+    /// Which follower this column needs: one per account and saved
+    /// conversation, none for a draft or a private chat.
+    private var workFollowerKey: String {
+        let id = privateChat == nil && model.selectedConversation.map { !$0.isPending } == true
+            ? model.selectedConversationID ?? "" : ""
+        return "work:\(session.profile.id.rawValue):\(id)"
     }
 
-    /// The card's buttons. A run on this Mac is answered in-process
-    /// (`decideLocally`): only its coordinator holds the suspended tool.
-    private var workActions: ChatWorkRunActions {
-        let workModel = configuration.workModel
-        let host = configuration.workHostModel
-        return ChatWorkRunActions(
-            decide: { approval, decision in
-                if approval.isLocal {
-                    host?.localApprovalDecider?(
-                        approval.request.id, decision, approval.request.actionDigest
-                    )
-                } else {
-                    Task { await workModel?.decide(approval.request, decision) }
-                }
-            },
-            answer: { text in Task { _ = await workModel?.answer(text) } },
-            focusComposer: { composerRequest = ChatComposerRequest(kind: .focus) },
-            pause: { Task { await workModel?.pauseOpenRun() } },
-            resume: { Task { await workModel?.resumeOpenRun() } }
+    private func makeConversationWork() -> NativeConversationWork? {
+        guard privateChat == nil,
+            let conversation = model.selectedConversation, !conversation.isPending,
+            let workModel = configuration.workModel
+        else { return nil }
+        let work = NativeConversationWork(
+            conversationID: conversation.id, client: workModel.transport, accountID: session.profile.id
         )
+        work.isVisible = windowVisible
+        if let host = configuration.workHostModel {
+            work.localApprovals = { runID in host.localApprovals(forRun: runID) }
+            work.localApprovalDecider = { approval, decision in
+                host.localApprovalDecider?(approval.id, decision, approval.actionDigest)
+            }
+        }
+        // The web's `juno:work-sync`: the account's list hears of it.
+        work.didAct = { [weak workModel] in await workModel?.refresh() }
+        return work
+    }
+
+    /// The newest `work` frame for this conversation, by session id.
+    private var pendingWorkStartID: String? {
+        model.selectedConversationID.flatMap { model.workStarts[$0]?.sessionID }
+    }
+
+    /// Hands the reply's `work` frame to the follower (the web's `adopt`).
+    private func adoptWorkStart() {
+        guard let work = conversationWork,
+            let start = model.workStarts[work.conversationID],
+            let session = try? NativeWorkClient.decodeSessionSummary(start.sessionJSON)
+        else { return }
+        work.adopt(session)
+    }
+
+    /// The agent working in this thread, whose name re-voices the card.
+    private var workActor: String? {
+        threadAgent?.name
+    }
+
+    /// The task the card draws, from the follower.
+    private var workRunState: ChatWorkRunState? {
+        guard let work = conversationWork else { return nil }
+        return ChatWorkRunState.read(work, actor: workActor)
+    }
+
+    /// Every task of this chat, placed by the transcript: the current one and
+    /// each earlier one (register #53).
+    private var workRunEntries: [ChatWorkRunEntry] {
+        guard let work = conversationWork else { return [] }
+        var entries = work.history.map { session in
+            ChatWorkRunEntry(
+                session: session,
+                status: JunoWorkStatus(rawValue: session.status) ?? .interrupted,
+                isCurrent: false
+            )
+        }
+        if let current = work.current, let status = work.status {
+            entries.append(ChatWorkRunEntry(session: current, status: status, isCurrent: true))
+        }
+        return entries
+    }
+
+    /// The card's controls, each followed by a toast when it did not land.
+    private var workActions: ChatWorkRunActions {
+        guard let work = conversationWork else { return ChatWorkRunActions() }
+        let say = toast
+        func report(_ outcome: NativeConversationWork.Outcome) {
+            if !outcome.succeeded, let message = outcome.message { say(.error(message)) }
+        }
+        return ChatWorkRunActions(
+            decide: { approval, decision in Task { report(await work.decide(approval, decision)) } },
+            answer: { questionID, text in
+                Task { report(await work.answer(questionID: questionID, text: text)) }
+            },
+            focusComposer: { composerRequest = ChatComposerRequest(kind: .focus) },
+            stop: {
+                let outcome = await work.stop()
+                report(outcome)
+                return outcome.succeeded
+            },
+            pause: { Task { report(await work.pause()) } },
+            resume: { Task { report(await work.resume()) } },
+            tryAgain: { Task { report(await work.tryAgain()) } },
+            showDetails: work.current.map { current in { openTaskPanel(current.sessionID) } }
+        )
+    }
+
+    /// The Task panel: the current task from the follower, an earlier one read
+    /// once.
+    @ViewBuilder
+    private func taskPanel(_ sessionID: String) -> some View {
+        if let work = conversationWork, work.current?.sessionID == sessionID,
+            let state = ChatWorkRunState.read(work, actor: workActor)
+        {
+            ChatWorkPanel(title: taskTitle(state.session), source: .live(state), close: closeTask)
+        } else {
+            let earlier = conversationWork?.history.first { $0.sessionID == sessionID }
+            ChatWorkPanel(
+                title: earlier.map(taskTitle) ?? "Task",
+                source: .snapshot(taskPanelReader.snapshot(for: sessionID)),
+                close: closeTask,
+                retry: { readTask(sessionID) }
+            )
+        }
+    }
+
+    private func taskTitle(_ session: WorkSessionSummary) -> String {
+        let title = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? session.goal : title
+    }
+
+    // MARK: Steering (Phase 5 A6)
+
+    /// The newest research run of this chat that is accepting input.
+    private var acceptingResearchRun: NativeResearchRun? {
+        model.researchRuns(for: model.selectedConversationID).last { !$0.phase.isTerminal && $0.phase.isWorking }
+    }
+
+    /// What the composer steers, built as `chat-view.tsx` builds the web's
+    /// prop: research while it is accepting input, otherwise the chat's task.
+    private var composerSteering: ChatComposerSteering? {
+        guard privateChat == nil, let conversationID = model.selectedConversationID else { return nil }
+        if let run = acceptingResearchRun {
+            return .research(
+                steer: { text in await steerResearch(runID: run.id, text: text, conversationID: conversationID) },
+                stop: {
+                    // The run first, so the money stops even if tearing the
+                    // stream down goes wrong; then the stream.
+                    Task { await model.controlResearch(runID: run.id, action: .cancel, conversationID: conversationID) }
+                    model.stopGeneration()
+                }
+            )
+        }
+        guard let work = conversationWork, let mode = work.composerMode else { return nil }
+        let isGenerating = model.isGenerating && model.activeChatConversationID == conversationID
+        return .task(
+            answering: { if case .answer = mode { true } else { false } }(),
+            isGenerating: isGenerating,
+            pending: work.pendingSteers.map { ChatPendingSteer(id: $0.id, text: $0.text, at: $0.at) },
+            steer: { text in await steerTask(work, text: text) },
+            stop: {
+                // A streaming reply wins: it is the thing moving on screen.
+                if model.isGenerating { model.stopGeneration() } else {
+                    Task {
+                        let outcome = await work.stop()
+                        if !outcome.succeeded, let message = outcome.message { toast(.error(message)) }
+                    }
+                }
+            }
+        )
+    }
+
+    /// Return in the composer while a task is live: the open question's answer,
+    /// or a new instruction, with the web's toasts.
+    private func steerTask(_ work: NativeConversationWork, text: String) async -> Bool {
+        switch work.composerMode {
+        case .answer(let question):
+            let outcome = await work.answer(questionID: question.questionID, text: text)
+            if !outcome.succeeded, let message = outcome.message { toast(.error(message)) }
+            return outcome.succeeded
+        case .instruction:
+            let outcome = await work.steer(text)
+            if let message = outcome.message {
+                toast(outcome.succeeded ? .success(message) : .error(message))
+            }
+            return outcome.succeeded
+        case nil:
+            return false
+        }
+    }
+
+    /// Return in the composer while a research run accepts input: a source
+    /// when it is a link, otherwise a constraint.
+    private func steerResearch(runID: String, text: String, conversationID: String) async -> Bool {
+        let result = await model.steerResearch(runID: runID, input: text, conversationID: conversationID)
+        if result.accepted {
+            toast(.success("Added to this research run"))
+        } else {
+            toast(.error(result.notice ?? "That could not be added to the run."))
+        }
+        return result.accepted
     }
 
     /// Whether ↑ has a message to reopen: one you sent, saved, and not mid-reply.

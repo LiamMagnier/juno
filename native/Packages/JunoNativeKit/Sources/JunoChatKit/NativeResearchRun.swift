@@ -446,6 +446,30 @@ extension NativeChatAPIClient {
     }
 }
 
+extension NativeChatAPIClient {
+    /// Steers a run that is already going (`POST /api/research/{id}/steer`):
+    /// a link pins a source, anything else is a constraint written into the
+    /// plan — the web's rule (`use-conversation-run.ts`). Neither costs the
+    /// work already done. The server refuses a run that is not accepting input
+    /// with a sentence of its own, which the error carries.
+    public func steerResearch(id: String, input: String, for accountID: AccountID) async throws {
+        try requireIdentifier(id)
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { throw NativeChatAPIError.invalidMessage }
+        let isSource = text.range(of: "^https?://", options: [.regularExpression, .caseInsensitive]) != nil
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/research/\(id)/steer",
+                method: .post,
+                headers: try HTTPHeaders(["Content-Type": "application/json"]),
+                body: try JSONEncoder().encode(isSource ? ["sourceUrl": text] : ["constraint": text])
+            ),
+            for: accountID
+        )
+        guard (200...299).contains(response.statusCode) else { throw serverError(response) }
+    }
+}
+
 public enum NativeResearchControl: String, Sendable {
     case pause, resume, finish, cancel
 }

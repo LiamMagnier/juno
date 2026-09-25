@@ -11,8 +11,9 @@ import SwiftUI
 /// the text, Code brings it forward on the New task screen with the text as the
 /// prompt. The panel is the whole of the feature; it holds no state a window
 /// does not already own. (Work left the switch in Phase 1 of the Liquid Glass
-/// redesign; what used to be an errand for it is a chat now, and Phase 5 arms
-/// "Do This as a Task" on it.)
+/// redesign; what used to be an errand for it is an ordinary chat now. Nothing
+/// is armed: the model decides whether the sentence is a task and starts one
+/// itself, as it does on the web.)
 ///
 /// **The hotkey needs Accessibility.** A global key monitor only receives
 /// events when the app is trusted for accessibility, so the panel says so in

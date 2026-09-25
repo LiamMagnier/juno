@@ -133,9 +133,15 @@ struct DesktopTranscript: View {
     var openResearch: ((String) -> Void)? = nil
     /// "Research this": sends a question as a Research request.
     var researchThis: ((String) -> Void)? = nil
-    /// The chat's newest task, when the work model is following it (§6.8).
+    /// The chat's current task, as its follower has it (§6.8, Phase 5 A5).
     var workRun: ChatWorkRunState? = nil
+    /// Every task of this chat, current and earlier, placed by the web's rule
+    /// (Phase 5 A4): the current one draws ``workRun``'s card, each earlier
+    /// one a settled row.
+    var workRuns: [ChatWorkRunEntry] = []
     var workActions = ChatWorkRunActions()
+    /// Opens the Task panel on a task, by session id.
+    var openTask: ((String) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The window's toast host (§7.7): where a failed action on a reply, and
     /// a confirmation with no other evidence, are said.
@@ -218,6 +224,10 @@ struct DesktopTranscript: View {
                             researchRow(run)
                         }
                     }
+                    // A task follows the reply after the turn that started it.
+                    ForEach(workPlacement[message.id] ?? []) { entry in
+                        workRow(entry)
+                    }
                 }
 
                 // Runs whose question is not on screen follow the transcript.
@@ -227,11 +237,10 @@ struct DesktopTranscript: View {
                     researchRow(run)
                 }
 
-                // The chat's task follows the turn that started it — the
-                // newest one only, as the web shows it.
-                if let workRun {
-                    ChatWorkRunCard(state: workRun, actions: workActions)
-                        .id("work:\(workRun.session.sessionID)")
+                // A task no turn on screen started: at the foot, as the web
+                // places one with no earlier question.
+                ForEach(workAtFoot) { entry in
+                    workRow(entry)
                 }
 
                 // A private chat's turns, or a first turn on its way to
@@ -484,6 +493,61 @@ struct DesktopTranscript: View {
             )
         default:
             return nil
+        }
+    }
+
+    // MARK: Tasks
+
+    /// Where each task sits: the id of the message it follows (the web's
+    /// `MessageList` rule, ``ChatWorkPlacement``).
+    private var workPlacement: [String: [ChatWorkRunEntry]] {
+        guard showsStoreState, !workRuns.isEmpty else { return [:] }
+        let turns = model.selectedMessages.map {
+            ChatWorkPlacement.Turn(id: $0.id, isUser: $0.role == .user, createdAt: $0.createdAt)
+        }
+        var placed: [String: [ChatWorkRunEntry]] = [:]
+        for entry in workRuns {
+            guard let anchor = ChatWorkPlacement.anchor(for: entry.createdAt, in: turns) else { continue }
+            placed[anchor, default: []].append(entry)
+        }
+        return placed
+    }
+
+    /// The tasks with no turn on screen to follow.
+    private var workAtFoot: [ChatWorkRunEntry] {
+        guard showsStoreState else { return [] }
+        let turns = model.selectedMessages.map {
+            ChatWorkPlacement.Turn(id: $0.id, isUser: $0.role == .user, createdAt: $0.createdAt)
+        }
+        return workRuns.filter { ChatWorkPlacement.anchor(for: $0.createdAt, in: turns) == nil }
+    }
+
+    /// The task's live step moves only when nothing else on screen does: a
+    /// reply being written, or a research row that owns the loop, wins.
+    private var workOwnsLoop: Bool {
+        !model.isGenerating && loopingResearchRunID == nil
+    }
+
+    /// The card's state for the current task, with the loop given up when
+    /// something else on screen owns it.
+    private func currentWorkState(_ entry: ChatWorkRunEntry) -> ChatWorkRunState? {
+        guard entry.isCurrent, var state = workRun, state.session.sessionID == entry.id else { return nil }
+        state.ownsLoop = state.ownsLoop && workOwnsLoop
+        return state
+    }
+
+    @ViewBuilder
+    private func workRow(_ entry: ChatWorkRunEntry) -> some View {
+        if let state = currentWorkState(entry) {
+            ChatWorkRunCard(state: state, actions: workActions)
+                .id("work:\(entry.id)")
+        } else {
+            ChatWorkSettledRow(
+                session: entry.session,
+                status: entry.status,
+                open: { openTask?(entry.id) }
+            )
+            .id("work:\(entry.id)")
         }
     }
 

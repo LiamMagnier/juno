@@ -739,18 +739,25 @@ public struct NativeWorkClient: Sendable {
     }
 
     /// Delivers the user's reply to a question a run stopped to ask.
+    ///
+    /// `idempotencyKey`, when given, lets the route recognise a retried press
+    /// of the same answer (the web accepts one and keys the event on it); nil
+    /// sends none, as every caller did before, and the route then keys the
+    /// answer on its question.
     public func answer(
         sessionID: String,
         questionID: String,
         text: String,
+        idempotencyKey: String? = nil,
         for accountID: AccountID
     ) async throws {
         try validate(sessionID)
         try validate(questionID)
-        let body: [String: JunoJSONValue] = [
+        var body: [String: JunoJSONValue] = [
             "questionId": .string(questionID),
             "text": .string(text),
         ]
+        if let idempotencyKey { body["idempotencyKey"] = .string(idempotencyKey) }
         _ = try await send(
             .post, "/api/work/sessions/\(sessionID)/answer", body: .object(body), for: accountID
         )
@@ -1128,6 +1135,22 @@ public struct NativeWorkClient: Sendable {
     /// would fail the decode of the whole list because one session has never
     /// run.
     private func decodeSession(_ value: JunoJSONValue) throws -> WorkSessionSummary {
+        try Self.decodeSessionValue(value)
+    }
+
+    /// A session serialised by the web's `serializeSession` — from a list, a
+    /// detail, or a chat stream's `work` frame, which Chat hands over as the
+    /// session's raw JSON (`NativeChatWorkStart.sessionJSON`). One reader, so a
+    /// task adopted from the stream and the same task discovered a moment
+    /// later cannot disagree about any field.
+    public static func decodeSessionSummary(_ data: Data) throws -> WorkSessionSummary {
+        let value: JunoJSONValue
+        do { value = try JSONDecoder().decode(JunoJSONValue.self, from: data) }
+        catch { throw WorkRemoteError.malformedResponse }
+        return try decodeSessionValue(value)
+    }
+
+    private static func decodeSessionValue(_ value: JunoJSONValue) throws -> WorkSessionSummary {
         guard case .object(let object) = value,
             case .string(let sessionID)? = object["id"],
             case .string(let title)? = object["title"],
@@ -1297,7 +1320,9 @@ public struct NativeWorkClient: Sendable {
             maxCostMicroUsd: integer(budget["maxCostMicroUsd"]),
             lastSeq: integer(object["lastSeq"]),
             startedAt: object["startedAt"]?.date,
-            finishedAt: object["finishedAt"]?.date
+            finishedAt: object["finishedAt"]?.date,
+            inputTokens: integer(usage["inputTokens"]),
+            outputTokens: integer(usage["outputTokens"])
         )
     }
 
@@ -1411,6 +1436,10 @@ public struct NativeWorkClient: Sendable {
     /// `1e30` — from a bug, a migration, or a hostile relay — would take the
     /// whole app down instead of rendering an implausible number.
     private func integer(_ value: JunoJSONValue?) -> Int {
+        Self.integer(value)
+    }
+
+    private static func integer(_ value: JunoJSONValue?) -> Int {
         guard let number = value?.numberValue, number.isFinite else { return 0 }
         if number >= Double(Int.max) { return .max }
         if number <= Double(Int.min) { return .min }

@@ -565,6 +565,11 @@ public enum NativeChatServerEvent: Equatable, Sendable {
     /// only). Terminal: no `done` follows and no assistant row is written; the
     /// client follows the run instead (SPEC §2.3 rule 6, §9.6.1).
     case handoff(NativeResearchHandoff)
+    /// The model started a background task from this turn (`start_task`,
+    /// `route.ts` `onStarted`): at most once per generation, once the session
+    /// has left `draft`. Not terminal — the reply goes on to say so in a
+    /// sentence. The app's task follower adopts it.
+    case work(NativeChatWorkStart)
     /// The SSE `id:` of the frame just delivered: the generation's frame
     /// sequence number, which a reconnect resumes after
     /// (`/api/chat/stream/{id}?after=seq`). Not a frame of its own.
@@ -589,6 +594,39 @@ public struct NativeResearchHandoff: Equatable, Sendable {
     public init(runID: String, userMessageID: String?) {
         self.runID = runID
         self.userMessageID = userMessageID
+    }
+}
+
+/// The session a `work` frame carries, as far as the chat needs to place
+/// and name it.
+///
+/// Chat cannot import the Work package, so the session's own JSON rides
+/// along untouched (``sessionJSON``) for the Work side to decode with its
+/// own reader (`NativeWorkClient.decodeSessionSummary`) — one decoder for a
+/// session, wherever it arrives from.
+public struct NativeChatWorkStart: Equatable, Sendable {
+    public let sessionID: String
+    public let conversationID: String?
+    public let title: String
+    public let status: String
+    public let createdAt: Date?
+    /// The frame's `session` object, re-encoded.
+    public let sessionJSON: Data
+
+    public init(
+        sessionID: String,
+        conversationID: String?,
+        title: String,
+        status: String,
+        createdAt: Date?,
+        sessionJSON: Data
+    ) {
+        self.sessionID = sessionID
+        self.conversationID = conversationID
+        self.title = title
+        self.status = status
+        self.createdAt = createdAt
+        self.sessionJSON = sessionJSON
     }
 }
 
@@ -726,6 +764,13 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
     /// longer string is cut rather than sent to a strict schema that would
     /// refuse the whole request over it. Nil is not encoded at all.
     public let regenerateInstruction: String?
+    /// Says this client draws a task the model starts (`workHandoff` on the
+    /// route, `src/lib/chat/request.ts`): the server may then give the model
+    /// `start_task`, and the stream carries a `work` frame when it does.
+    /// Only a saved chat claims it, and only on an app that draws the task
+    /// card — a client that says yes and draws nothing would start runs the
+    /// reader never sees. False is not encoded, like the flags above.
+    public let workHandoff: Bool
 
     /// The route's cap on ``regenerateInstruction``, in characters.
     public static let regenerateInstructionLimit = 400
@@ -752,8 +797,10 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
         connectors: [String] = [],
         fastMode: Bool = false,
         proMode: Bool = false,
-        regenerateInstruction: String? = nil
+        regenerateInstruction: String? = nil,
+        workHandoff: Bool = false
     ) {
+        self.workHandoff = workHandoff
         self.conversationID = conversationID
         self.modelID = modelID
         self.reasoningEffort = reasoningEffort
@@ -1201,6 +1248,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             fastMode: request.fastMode ? true : nil,
             proMode: request.proMode ? true : nil,
             regenerateInstruction: request.regenerateInstruction,
+            workHandoff: request.workHandoff ? true : nil,
             clientFeatures: NativeChatClientFeatures.declared,
             timeZone: NativeChatClientFeatures.timeZone,
             locale: NativeChatClientFeatures.locale
@@ -1416,14 +1464,15 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
         mediaModality: NativeMediaProgress.Modality = .image
     ) throws -> NativeChatServerEvent {
         // The frame's type is read on its own first. A frame this build does
-        // not describe — `work` (a hand-off to a background task), or anything
-        // the server adds later — is skipped before its body is decoded at all:
+        // not describe — anything the server adds later — is skipped before
+        // its body is decoded at all:
         // its fields may share a name with one of ours and not its shape, and a
         // decode failure there would end a stream that is still writing.
         guard let frame = try? JSONDecoder().decode(FrameTypeWire.self, from: payload) else {
             throw NativeChatAPIError.malformedResponse
         }
         guard Self.decodedFrameTypes.contains(frame.type) else { return .ping }
+        if frame.type == "work" { return try decodeWorkFrame(payload) }
         let envelope: EventEnvelopeWire
         do { envelope = try JSONDecoder().decode(EventEnvelopeWire.self, from: payload) }
         catch { throw NativeChatAPIError.malformedResponse }
@@ -1563,8 +1612,36 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
     /// type is skipped as a ``NativeChatServerEvent/ping``.
     private static let decodedFrameTypes: Set<String> = [
         "meta", "title", "delta", "reasoning", "sources", "done", "error",
-        "activity", "approval", "progress", "resume", "handoff", "ping",
+        "activity", "approval", "progress", "resume", "handoff", "work", "ping",
     ]
+
+    /// `{type: "work", session: ClientWorkSession}` (`serializers.ts`
+    /// `serializeSession`). Read on its own rather than through the shared
+    /// envelope: its `session` is an object no other frame has, and its
+    /// `title` and `status` would collide with the envelope's own keys. A
+    /// session this build cannot read skips the frame rather than failing the
+    /// reply the model is still writing — the follower's discovery finds the
+    /// task a moment later all the same.
+    private func decodeWorkFrame(_ payload: Data) throws -> NativeChatServerEvent {
+        guard let root = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+            let session = root["session"] as? [String: Any],
+            let id = session["id"] as? String, validText(id, maximum: 256),
+            let status = session["status"] as? String, validText(status, maximum: 40),
+            let json = try? JSONSerialization.data(withJSONObject: session)
+        else { return .ping }
+        let conversationID = (session["conversationId"] as? String).flatMap {
+            validText($0, maximum: 256) ? $0 : nil
+        }
+        let title = (session["title"] as? String).flatMap { validText($0, maximum: 1_000) ? $0 : nil } ?? ""
+        return .work(NativeChatWorkStart(
+            sessionID: id,
+            conversationID: conversationID,
+            title: title,
+            status: status,
+            createdAt: (session["createdAt"] as? String).flatMap(parseDate),
+            sessionJSON: json
+        ))
+    }
 
     /// One `done`-frame attachment, or nil when it is not one this client can
     /// name. Lossy on purpose: a malformed file entry must not take the
@@ -1925,6 +2002,9 @@ private struct GenerationRequestWire: Encodable {
     /// Omitted when nil, like the flags above: the route only reads it on a
     /// regenerate, and a plain turn's body stays byte-identical.
     let regenerateInstruction: String?
+    /// `true` or absent, never `false`: a saved chat on an app that draws
+    /// the task card (``NativeChatGenerationRequest/workHandoff``).
+    let workHandoff: Bool?
     /// The grammar this client renders (the rework's `clientFeatures`), with
     /// the zone and locale `current_time` and research read. Always sent: the
     /// route's schema is NOT strict (`chatBodySchema` is a plain `z.object`,
