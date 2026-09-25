@@ -108,6 +108,13 @@ struct JunoDesktopConfiguration {
     var skillLibraryModel: NativeSkillLibraryModel? = nil
     /// The assistants gallery (Phase 4 B4).
     var assistantsModel: NativeAssistantsModel? = nil
+    /// The account's Macs for the Permissions pages (Phase 4 C2): the list,
+    /// one Mac's detail, its switches and revoking it. Its own model rather
+    /// than `workModel`'s host list, which swallows a failed read.
+    ///
+    /// Defaulted, and therefore a `var` among lets, for the reason
+    /// ``agentsModel`` is.
+    var workHostsModel: NativeWorkHostsModel? = nil
     let libraryModel: NativeLibraryModel?
     /// The Library page's own model (Phase 4 A4): paged, filtered on the
     /// server, with delete and Undo. The composer's picker keeps
@@ -397,6 +404,9 @@ struct JunoDesktopConfiguration {
                 memoryPageModel: NativeMemoryPageModel(client: NativeMemoryClient(sender: runtime)),
                 skillLibraryModel: NativeSkillLibraryModel(client: NativeSkillsClient(sender: runtime)),
                 assistantsModel: NativeAssistantsModel(client: NativeAssistantsClient(sender: runtime)),
+                workHostsModel: NativeWorkHostsModel(
+                    client: NativeWorkClient(sender: runtime, streamer: runtime)
+                ),
                 libraryModel: NativeLibraryModel(
                     client: NativeLibraryClient(sender: runtime),
                     // The picker draws the file, which means resolving its

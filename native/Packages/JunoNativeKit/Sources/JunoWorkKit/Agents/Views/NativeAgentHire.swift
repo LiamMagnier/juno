@@ -17,10 +17,18 @@ import SwiftUI
 /// Public so the Mac's sidebar can open it from the Agents fold's "New agent"
 /// (the web's `/agents/new`) without going through the roster.
 public struct NativeAgentHireView: View {
+    /// A sheet (the iPhone, and anywhere the screen hires on its own), or a
+    /// page pushed on the Mac's stack (the web's `/agents/new`).
+    public enum Presentation: Sendable {
+        case sheet
+        case page
+    }
+
     let model: NativeAgentsModel
     let apps: [NativeAgentAppChoice]
     let onCancel: () -> Void
     let onHired: (NativeAgent) -> Void
+    let presentation: Presentation
 
     @State private var templateID: String
     @State private var draft: NativeAgentDraft
@@ -35,12 +43,14 @@ public struct NativeAgentHireView: View {
         apps: [NativeAgentAppChoice],
         template: NativeAgentTemplate,
         onCancel: @escaping () -> Void,
-        onHired: @escaping (NativeAgent) -> Void
+        onHired: @escaping (NativeAgent) -> Void,
+        presentation: Presentation = .sheet
     ) {
         self.model = model
         self.apps = apps
         self.onCancel = onCancel
         self.onHired = onHired
+        self.presentation = presentation
         var initial = NativeAgentDraft(template: template)
         initial.connectorIDs = Self.suggestedApps(for: template, among: apps)
         _templateID = State(initialValue: template.id)
@@ -69,6 +79,90 @@ public struct NativeAgentHireView: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        if presentation == .page {
+            pageBody
+        } else {
+            sheetBody
+        }
+        #else
+        sheetBody
+        #endif
+    }
+
+    #if os(macOS)
+    /// The Mac's hire page (Phase 4 C3): a wide page under the caption
+    /// "Agents", the web's four sections without their numbers — the order
+    /// already says it — and Hire as the page's one prominent action, beside
+    /// Cancel.
+    private var pageBody: some View {
+        JunoPage(measure: .wide) {
+            JunoPageHeader(
+                "New agent",
+                caption: "Agents",
+                lede: "A teammate with its own brief, goals and memory. It works in the cloud and asks before anything it cannot take back."
+            )
+        } content: {
+            VStack(alignment: .leading, spacing: JunoSpace.region) {
+                pageSection("What should it take on?") { templates }
+                pageSection("Name and face") { nameAndFace }
+                pageSection("How it works") { howItWorks }
+                pageSection("A first goal", optional: true) { firstGoal }
+                HStack(spacing: JunoSpace.snug) {
+                    Button(action: hire) {
+                        HStack(spacing: JunoSpace.tight) {
+                            if saving {
+                                ProgressView().controlSize(.small)
+                            }
+                            Text(hireTitle)
+                        }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.junoProminent)
+                    .disabled(!draft.isValid || saving)
+                    .contentShape(.rect)
+                    .accessibilityIdentifier("juno.agents.hire.submit")
+                    Button("Cancel", action: onCancel)
+                        .keyboardShortcut(.cancelAction)
+                        .buttonStyle(.bordered)
+                        .tint(nil)
+                        .contentShape(.rect)
+                    if let failure {
+                        Text(failure)
+                            .junoType(.caption)
+                            .foregroundStyle(Color.junoDestructiveInk)
+                            .lineLimit(2)
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("juno.agents.hire")
+    }
+
+    private func pageSection<Content: View>(
+        _ title: String,
+        optional: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                Text(title)
+                    .junoType(.heading)
+                    .foregroundStyle(Color.junoForeground)
+                if optional {
+                    Text("Optional")
+                        .junoType(.ui)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+            content()
+        }
+    }
+    #endif
+
+    private var sheetBody: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: JunoSpace.region) {
@@ -175,12 +269,12 @@ public struct NativeAgentHireView: View {
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 NativeAgentFieldLabel(title: "Name")
                 TextField("Name", text: nameBinding)
-                    .textFieldStyle(.roundedBorder)
+                    .nativeAgentField()
             }
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 NativeAgentFieldLabel(title: "What it is for")
                 TextField("Inbox and calendar", text: roleBinding)
-                    .textFieldStyle(.roundedBorder)
+                    .nativeAgentField()
             }
             let suggestions = template.names.filter { $0 != trimmedName }
             if !suggestions.isEmpty {
@@ -194,6 +288,7 @@ public struct NativeAgentHireView: View {
                             draft.name = suggestion
                         }
                         .buttonStyle(.bordered)
+                        .nativeAgentNeutralTint()
                         .controlSize(.small)
                         .frame(minHeight: 44)
                         .contentShape(.rect)
@@ -237,7 +332,7 @@ public struct NativeAgentHireView: View {
 
     private var firstGoal: some View {
         TextField("Something it works towards over time", text: firstGoalBinding)
-            .textFieldStyle(.roundedBorder)
+            .nativeAgentField()
     }
 
     // MARK: Footer
@@ -396,6 +491,9 @@ struct NativeAgentFacePreview: View {
                 RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                     .strokeBorder(Color.junoBorder, lineWidth: 0.5)
             }
+            #if os(iOS)
+            // Not on the web, and gone from the Mac's hire page (Phase 4
+            // C3); the iPhone keeps its layout.
             Picker("Preview a state", selection: $state) {
                 ForEach(Self.states) { option in
                     Text(option.label).tag(option)
@@ -404,6 +502,7 @@ struct NativeAgentFacePreview: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .frame(maxWidth: 300)
+            #endif
         }
     }
 }

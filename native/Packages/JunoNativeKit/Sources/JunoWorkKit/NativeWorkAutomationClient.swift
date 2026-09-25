@@ -57,6 +57,17 @@ public struct NativeWorkAutomationClient: Sendable {
         _ draft: NativeWorkScheduleDraft,
         for accountID: AccountID
     ) async throws -> NativeWorkSchedule {
+        try await edit(id: id, draft, for: accountID).schedule
+    }
+
+    /// A full edit, with the server's sentences about what the change did to
+    /// fires already queued and to the next one (`scheduling`,
+    /// `runs.explanation`), which the web shows as its toast.
+    public func edit(
+        id: String,
+        _ draft: NativeWorkScheduleDraft,
+        for accountID: AccountID
+    ) async throws -> NativeWorkScheduleChange {
         try validate(id)
         let response = try await send(
             .patch,
@@ -64,6 +75,13 @@ public struct NativeWorkAutomationClient: Sendable {
             body: .object(scheduleBody(draft, includeNullHost: true)),
             for: accountID
         )
+        return try change(from: response)
+    }
+
+    /// One automation by id, for a page opened before the list has it.
+    public func schedule(id: String, for accountID: AccountID) async throws -> NativeWorkSchedule {
+        try validate(id)
+        let response = try await get("/api/work/schedules/\(id)", query: [], for: accountID)
         return try decodeSchedule(try require(response, named: "schedule"))
     }
 
@@ -72,6 +90,16 @@ public struct NativeWorkAutomationClient: Sendable {
         enabled: Bool,
         for accountID: AccountID
     ) async throws -> NativeWorkSchedule {
+        try await changeEnabled(id: id, enabled: enabled, for: accountID).schedule
+    }
+
+    /// Pause or resume, with the server's sentences about the runs pausing
+    /// cancelled and the one it could not stop.
+    public func changeEnabled(
+        id: String,
+        enabled: Bool,
+        for accountID: AccountID
+    ) async throws -> NativeWorkScheduleChange {
         try validate(id)
         let response = try await send(
             .patch,
@@ -79,12 +107,20 @@ public struct NativeWorkAutomationClient: Sendable {
             body: .object(["enabled": .bool(enabled)]),
             for: accountID
         )
-        return try decodeSchedule(try require(response, named: "schedule"))
+        return try change(from: response)
     }
 
     public func delete(id: String, for accountID: AccountID) async throws {
+        _ = try await remove(id: id, for: accountID)
+    }
+
+    /// Deletes an automation and returns the server's own sentence about the
+    /// fires it cancelled and any run it could not stop (`runs.explanation`).
+    public func remove(id: String, for accountID: AccountID) async throws -> String? {
         try validate(id)
-        _ = try await send(.delete, "/api/work/schedules/\(id)", body: nil, for: accountID)
+        let response = try await send(.delete, "/api/work/schedules/\(id)", body: nil, for: accountID)
+        guard let root = try object(response), case .object(let runs)? = root["runs"] else { return nil }
+        return nonEmpty(runs["explanation"]?.stringValue)
     }
 
     /// Starts one manual fire without moving the schedule's next clock fire.
@@ -132,6 +168,46 @@ public struct NativeWorkAutomationClient: Sendable {
             throw WorkRemoteError.malformedResponse
         }
         return try values.map(decodeRun)
+    }
+
+    /// The history the automation page reads: its Work runs and, for a Code
+    /// automation, its Code runs (`{ runs, codeRuns }`).
+    public func history(
+        for scheduleID: String,
+        limit: Int = 10,
+        accountID: AccountID
+    ) async throws -> NativeWorkScheduleHistory {
+        try validate(scheduleID)
+        let query = [URLQueryItem(name: "limit", value: String(min(100, max(1, limit))))]
+        let response = try await get(
+            "/api/work/schedules/\(scheduleID)/runs", query: query, for: accountID
+        )
+        guard let root = try object(response) else { throw WorkRemoteError.malformedResponse }
+        var runs: [NativeWorkScheduleRun] = []
+        if case .array(let values)? = root["runs"] { runs = try values.map(decodeRun) }
+        var codeRuns: [NativeWorkScheduleCodeRun] = []
+        if case .array(let values)? = root["codeRuns"] { codeRuns = values.compactMap(decodeCodeRun) }
+        return NativeWorkScheduleHistory(runs: runs, codeRuns: codeRuns)
+    }
+
+    /// Mints the token for the "Something calls it" trigger. A second call
+    /// rolls it: the previous token stops working.
+    public func issueFireToken(id: String, for accountID: AccountID) async throws -> NativeWorkFireToken {
+        try validate(id)
+        let response = try await send(
+            .post, "/api/work/schedules/\(id)/token", body: .object([:]), for: accountID
+        )
+        guard let root = try object(response) else { throw WorkRemoteError.malformedResponse }
+        return NativeWorkFireToken(
+            token: root["token"]?.stringValue ?? "",
+            issuedAt: root["issuedAt"]?.date,
+            url: root["url"]?.stringValue ?? ""
+        )
+    }
+
+    public func revokeFireToken(id: String, for accountID: AccountID) async throws {
+        try validate(id)
+        _ = try await send(.delete, "/api/work/schedules/\(id)/token", body: nil, for: accountID)
     }
 
     // MARK: - Wire
@@ -315,7 +391,52 @@ public struct NativeWorkAutomationClient: Sendable {
             legacyScheduledTaskID: root["legacyScheduledTaskId"]?.stringValue,
             createdAt: createdAt,
             updatedAt: updatedAt,
-            triggers: triggers
+            triggers: triggers,
+            runKind: optionalString(root["runKind"]) ?? "work",
+            hasFireToken: root["hasFireToken"]?.boolValue ?? false,
+            fireTokenIssuedAt: root["fireTokenIssuedAt"]?.date,
+            codeRepository: Self.repository(root["codeConfig"])
+        )
+    }
+
+    /// `owner/name` out of a Code automation's `codeConfig.repo`, tolerant of
+    /// a config this build cannot fully read.
+    private static func repository(_ value: JunoJSONValue?) -> String? {
+        guard case .object(let config)? = value, case .object(let repo)? = config["repo"],
+            let owner = repo["owner"]?.stringValue, !owner.isEmpty,
+            let name = repo["name"]?.stringValue, !name.isEmpty
+        else { return nil }
+        return "\(owner)/\(name)"
+    }
+
+    private func change(from response: HTTPResponse) throws -> NativeWorkScheduleChange {
+        guard let root = try object(response), let value = root["schedule"] else {
+            throw WorkRemoteError.malformedResponse
+        }
+        var notes: [String] = []
+        if let scheduling = nonEmpty(root["scheduling"]?.stringValue) { notes.append(scheduling) }
+        if case .object(let runs)? = root["runs"], let explanation = nonEmpty(runs["explanation"]?.stringValue) {
+            notes.append(explanation)
+        }
+        return NativeWorkScheduleChange(schedule: try decodeSchedule(value), notes: notes)
+    }
+
+    private func nonEmpty(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func decodeCodeRun(_ value: JunoJSONValue) -> NativeWorkScheduleCodeRun? {
+        guard case .object(let root) = value, let id = root["id"]?.stringValue else { return nil }
+        return NativeWorkScheduleCodeRun(
+            id: id,
+            title: root["title"]?.stringValue ?? "",
+            status: root["status"]?.stringValue ?? "queued",
+            conversationID: nonEmpty(root["conversationId"]?.stringValue),
+            pullRequestURL: nonEmpty(root["prUrl"]?.stringValue),
+            branch: nonEmpty(root["branch"]?.stringValue),
+            createdAt: root["createdAt"]?.date
         )
     }
 
@@ -348,7 +469,9 @@ public struct NativeWorkAutomationClient: Sendable {
             hostID: root["hostId"]?.stringValue,
             createdAt: root["createdAt"]?.date,
             startedAt: root["startedAt"]?.date,
-            finishedAt: root["finishedAt"]?.date
+            finishedAt: root["finishedAt"]?.date,
+            attempt: integer(root["attempt"], fallback: 1),
+            terminalDetail: nonEmpty(root["terminalDetail"]?.stringValue)
         )
     }
 

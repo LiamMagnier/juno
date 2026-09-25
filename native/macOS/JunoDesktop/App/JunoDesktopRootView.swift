@@ -423,6 +423,7 @@ struct JunoDesktopRootView: View {
         configuration.codeHostModel?.stop()
         configuration.workModel?.stop()
         configuration.workAutomationModel?.stop()
+        configuration.workHostsModel?.stop()
         configuration.agentsModel?.stop()
         configuration.agentsModel?.onNeedsYouRise = nil
         // Clears the Dock badge and the menu-bar extra's list with the account.

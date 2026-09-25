@@ -1423,6 +1423,101 @@ paths:
         '403': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
         '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/hosts/{hostId}:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeWorkHost
+      summary: One Mac and what has been shared with it
+      description: >-
+        The Permissions host page reads this. Grants are named, never located:
+        no path reaches a client that is not the Mac holding it.
+        `pendingCommands` and `routableCapabilities` are absent from an older
+        deployment and are read tolerantly.
+      parameters:
+        - in: path
+          name: hostId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The host, its grants, the instructions still on their way to it, and what it offered that this relay can route.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkHostDetailResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    patch:
+      servers: [{ url: /api }]
+      operationId: updateNativeWorkHost
+      summary: Change a Mac's switches or ceiling, or restore its access
+      description: >-
+        `hostPatchSchema`: the master switch, the five capability switches, the
+        approval ceiling, and `revoked: false` to un-revoke. The apps and sites
+        lists and the capability manifest are the Mac's to report and are
+        refused here. Switching a capability on that the Mac has not offered
+        leaves it off and names it in `refused`.
+      parameters:
+        - in: path
+          name: hostId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                enabled: { type: boolean }
+                allowsFileWork: { type: boolean }
+                allowsBrowser: { type: boolean }
+                allowsComputerUse: { type: boolean }
+                allowsShell: { type: boolean }
+                allowsBackground: { type: boolean }
+                approvalPolicy: { type: string, x-juno-work-vocabulary: permissionPolicies }
+                revoked: { const: false }
+      responses:
+        '200':
+          description: The host as it now stands.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                required: [host]
+                properties:
+                  host: { $ref: '#/components/schemas/WorkHost' }
+                  refused: { type: array, items: { type: string } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: revokeNativeWorkHost
+      summary: Revoke a Mac's access
+      description: >-
+        From this moment the Mac can claim nothing; what was queued or claimed
+        for it is cancelled and counted in `cancelledCommands`. It stays listed,
+        heartbeating, so its access can be restored.
+      parameters:
+        - in: path
+          name: hostId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The revoked host and how many instructions were cancelled.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                required: [host]
+                properties:
+                  host: { $ref: '#/components/schemas/WorkHost' }
+                  cancelledCommands: { type: integer, minimum: 0 }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
   /work/hosts/{hostId}/commands:
     get:
       servers: [{ url: /api }]
@@ -1956,6 +2051,22 @@ paths:
         '404': { $ref: '#/components/responses/GeneralRouteError' }
         '409': { $ref: '#/components/responses/GeneralRouteError' }
   /work/schedules/{scheduleId}:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeWorkSchedule
+      summary: One schedule
+      description: For an automation page opened before the list holds it.
+      parameters:
+        - in: path
+          name: scheduleId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The schedule.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkScheduleResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
     patch:
       servers: [{ url: /api }]
       operationId: updateNativeWorkSchedule
@@ -2594,6 +2705,55 @@ paths:
       description: Removes it from the library; existing chats are not deleted.
       responses:
         '200': { description: Deleted., content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/schedules/{scheduleId}/token:
+    post:
+      servers: [{ url: /api }]
+      operationId: issueNativeWorkScheduleFireToken
+      summary: Issue (or roll) the token something outside Juno fires this automation with
+      description: >-
+        Returned once: only its hash is stored. Issuing another replaces the one
+        before, which stops working.
+      parameters:
+        - in: path
+          name: scheduleId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '200':
+          description: The token, when it was issued, and the fire URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                required: [token]
+                properties:
+                  token: { type: string }
+                  issuedAt: { type: string, format: date-time }
+                  url: { type: string }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: revokeNativeWorkScheduleFireToken
+      summary: Revoke the fire token
+      parameters:
+        - in: path
+          name: scheduleId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Acknowledged. Anything still calling with the token now gets a 401.
+          content: { application/json: { schema: { type: object, additionalProperties: true } } }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
 components:
@@ -3927,6 +4087,11 @@ components:
         lastRunAt: { type: [string, 'null'], format: date-time }
         nextRunAt: { type: [string, 'null'], format: date-time }
         legacyScheduledTaskId: { type: [string, 'null'], description: The ScheduledTask this was migrated from, when it was. }
+        runKind: { type: string, description: "`work` or `code`. A Code automation is listed and runnable on the Mac and edited on the web." }
+        codeConfig: {}
+        codeConfigVersion: { type: integer, minimum: 1 }
+        hasFireToken: { type: boolean, description: Whether a fire token exists. Only its hash is stored, so the token is never read back. }
+        fireTokenIssuedAt: { type: [string, 'null'], format: date-time }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         triggers: { type: array, items: { $ref: '#/components/schemas/WorkTrigger' } }
@@ -3963,6 +4128,28 @@ components:
       required: [ok]
       properties:
         ok: { type: boolean }
+    WorkHostDetailResponse:
+      type: object
+      additionalProperties: true
+      required: [host]
+      properties:
+        host: { $ref: '#/components/schemas/WorkHost' }
+        grants:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            required: [id, kind, displayName, accessMode]
+            properties:
+              id: { type: string }
+              kind: { type: string }
+              displayName: { type: string }
+              accessMode: { type: string }
+              hostId: { type: [string, 'null'] }
+              revokedAt: { type: [string, 'null'], format: date-time }
+              lastUsedAt: { type: [string, 'null'], format: date-time }
+        pendingCommands: { type: integer, minimum: 0 }
+        routableCapabilities: { type: array, items: { type: string } }
     WorkHostsResponse:
       type: object
       additionalProperties: false
@@ -4352,6 +4539,21 @@ components:
       properties:
         runs: { type: array, items: { $ref: '#/components/schemas/WorkRun' } }
         nextBefore: { type: string, format: date-time, description: Absent on a short page. }
+        codeRuns:
+          type: array
+          description: A Code automation's runs, each a Code session of its own (`serializeTask`), interleaved with `runs` by the client.
+          items:
+            type: object
+            additionalProperties: true
+            required: [id, status, createdAt]
+            properties:
+              id: { type: string }
+              title: { type: string }
+              status: { type: string }
+              conversationId: { type: [string, 'null'] }
+              prUrl: { type: [string, 'null'] }
+              branch: { type: [string, 'null'] }
+              createdAt: { type: string, format: date-time }
     AgentFace:
       type: object
       required: [shape, tone, eyes, mark]

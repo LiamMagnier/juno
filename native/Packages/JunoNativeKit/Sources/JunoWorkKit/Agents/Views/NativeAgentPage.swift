@@ -58,15 +58,27 @@ struct NativeAgentPage: View {
     /// Just hired: the page opens with a word of welcome, once.
     var welcome = false
     var dismissWelcome: (() -> Void)?
+    /// The missing-agent state's way back to the roster ("All agents").
+    var allAgents: (() -> Void)?
 
     @State private var tab: NativeAgentTab = .now
     @State private var costQuestion: NativeAgentCostQuestion?
     @State private var confirmingRetire = false
+    /// The first moments after a hire, when the face arrives at its larger
+    /// size before it settles (the web's landing → greeting → settling).
+    @State private var arriving = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
+    #if os(macOS)
+    @Environment(\.junoToast) private var toast
+    #endif
 
     private var retireTitle: String {
+        #if os(macOS)
+        "Retire \(model.agent(id: agentID)?.name ?? "this agent")?"
+        #else
         "Delete \(model.agent(id: agentID)?.name ?? "this agent")?"
+        #endif
     }
 
     var body: some View {
@@ -74,11 +86,45 @@ struct NativeAgentPage: View {
             if let agent = model.agent(id: agentID) {
                 page(agent)
             } else if model.loadingDetailID == agentID {
+                #if os(macOS)
+                JunoPage(measure: .wide) {
+                    HStack(spacing: JunoSpace.roomy) {
+                        JunoSkeleton(height: JunoAgentFaceSize.lg, width: JunoAgentFaceSize.lg, cornerRadius: JunoAgentFaceSize.lg / 2)
+                        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                            JunoSkeleton(height: 28, width: 220)
+                            JunoSkeleton(height: 14, width: 160)
+                            JunoSkeleton(height: 14, width: 280)
+                        }
+                    }
+                    .padding(.bottom, JunoSpace.section)
+                } content: {
+                    VStack(spacing: JunoSpace.cozy) {
+                        ForEach(0..<3, id: \.self) { _ in
+                            JunoSkeleton(height: 72, cornerRadius: JunoRadius.card)
+                        }
+                    }
+                }
+                .accessibilityLabel("Loading agent")
+                #else
                 ProgressView()
                     .controlSize(.small)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityLabel("Loading agent")
+                #endif
             } else {
+                #if os(macOS)
+                JunoPage(measure: .wide) {
+                    EmptyView()
+                } content: {
+                    JunoEmptyState(
+                        title: "This agent is no longer here",
+                        message: "It may have been retired. Its thread and tasks are still in your chats.",
+                        icon: .agents,
+                        actionLabel: "All agents",
+                        action: { if let allAgents { allAgents() } else { dismiss() } }
+                    )
+                }
+                #else
                 NativeAgentsNotice(
                     title: "This agent is no longer here",
                     message: model.lastErrorDescription ?? "It may have been retired on another device.",
@@ -86,6 +132,7 @@ struct NativeAgentPage: View {
                     actionLabel: back == nil ? nil : "Back to agents",
                     action: back
                 )
+                #endif
             }
         }
         #if os(iOS)
@@ -123,16 +170,129 @@ struct NativeAgentPage: View {
             isPresented: $confirmingRetire,
             titleVisibility: .visible
         ) {
+            #if os(macOS)
+            Button("Retire", role: .destructive) { retire() }
+                .contentShape(.rect)
+            Button("Keep It", role: .cancel) {}
+                .contentShape(.rect)
+            #else
             Button("Delete agent", role: .destructive) { retire() }
                 .contentShape(.rect)
             Button("Cancel", role: .cancel) {}
                 .contentShape(.rect)
+            #endif
         } message: {
+            #if os(macOS)
+            Text("Its routines stop and it leaves the roster. Its thread and its tasks are kept. This cannot be undone.")
+            #else
             Text("Its routines stop. Its thread and its tasks stay, as ordinary chats and tasks.")
+            #endif
         }
+        #if os(macOS)
+        // A standing condition in the window's toast host rather than a box
+        // in the page (Phase 4 §2.8): posted when it changes, taken down when
+        // a later request succeeds.
+        .junoToastStatus(id: "agents.page.error", model.lastErrorDescription) { .error($0) }
+        #endif
         .accessibilityIdentifier("juno.agents.page")
     }
 
+    #if os(macOS)
+    /// The Mac's page (Phase 4 C3): a wide page whose header is the agent —
+    /// the face, the name on the title rung, the role, its state in words and
+    /// the sentence — with Message as the one prominent action; then the
+    /// welcome, once; then the five tabs.
+    private func page(_ agent: NativeAgent) -> some View {
+        JunoPage(measure: .wide) {
+            NativeAgentPageHeader(
+                agent: agent,
+                arriving: arriving,
+                message: { message(agent) },
+                togglePause: { togglePause(agent) },
+                thinkItOver: { thinkItOver(agent) },
+                editProfile: { tab = .profile },
+                retire: { confirmingRetire = true },
+                isMutating: model.isMutating
+            )
+        } content: {
+            VStack(alignment: .leading, spacing: JunoSpace.section) {
+                if welcome {
+                    NativeAgentWelcome(
+                        agent: agent,
+                        message: {
+                            dismissWelcome?()
+                            message(agent)
+                        },
+                        later: { dismissWelcome?() }
+                    )
+                    .transition(.opacity)
+                }
+                JunoSegmented(
+                    options: tabOptions(agent),
+                    selection: $tab,
+                    accessibilityLabel: "\(agent.name)’s page"
+                )
+                .fixedSize()
+                tabContent(agent)
+            }
+            .animation(
+                JunoMotion.reduced(JunoMotion.standard, when: reduceMotion, tier: .tint),
+                value: welcome
+            )
+        }
+        .onChange(of: tab) { _, _ in model.clearMutationMessage() }
+        .onAppear {
+            guard welcome, !reduceMotion else { return }
+            arriving = true
+        }
+        .task(id: welcome) {
+            guard arriving else { return }
+            try? await Task.sleep(for: .milliseconds(1_600))
+            withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)) { arriving = false }
+        }
+    }
+
+    /// Now carries the count of what needs the person as its badge; Goals
+    /// and Routines their counts, as the web's control does.
+    private func tabOptions(_ agent: NativeAgent) -> [JunoSegmented<NativeAgentTab>.Option] {
+        let detail = model.details[agentID]
+        let goals = detail?.goals.filter { $0.status == .active }.count ?? 0
+        let routines = detail?.routines.count ?? 0
+        return [
+            .init(.now, "Now", badge: agent.needsYou > 0 ? agent.needsYou : nil),
+            .init(.goals, "Goals", count: goals > 0 ? goals : nil),
+            .init(.routines, "Routines", count: routines > 0 ? routines : nil),
+            .init(.activity, "Activity"),
+            .init(.profile, "Profile"),
+        ]
+    }
+
+    /// "Think it over now": the person asking, answered in the web's words.
+    private func thinkItOver(_ agent: NativeAgent) {
+        Task {
+            guard let outcome = await model.reflect(agentID: agent.id, force: true) else { return }
+            model.clearMutationMessage()
+            switch outcome {
+            case .reflected(let ideas, _, _):
+                toast(.success(
+                    ideas > 0
+                        ? "\(agent.name) has \(ideas) new \(ideas == 1 ? "idea" : "ideas")."
+                        : "\(agent.name) looked things over. Nothing new to suggest."
+                ))
+            case .skipped(let reason):
+                toast(JunoToast(
+                    id: "agent-reflect",
+                    tone: nil,
+                    title: reason == "paused"
+                        ? "\(agent.name) is paused."
+                        : reason == "no_answer"
+                            ? "It could not think that over just now. Try again in a moment."
+                            : "It thought things over a moment ago."
+                ))
+            }
+        }
+    }
+    #else
     private func page(_ agent: NativeAgent) -> some View {
         NativeAgentsScroll(maxWidth: JunoReadingMeasure.reading) {
             VStack(alignment: .leading, spacing: JunoSpace.section) {
@@ -183,6 +343,7 @@ struct NativeAgentPage: View {
         }
         .onChange(of: tab) { _, _ in model.clearMutationMessage() }
     }
+    #endif
 
     @ViewBuilder
     private func tabContent(_ agent: NativeAgent) -> some View {
@@ -259,7 +420,21 @@ struct NativeAgentPage: View {
     }
 
     private func togglePause(_ agent: NativeAgent) {
-        Task { await model.setPaused(id: agent.id, paused: !agent.isPaused) }
+        let pausing = !agent.isPaused
+        Task {
+            await model.setPaused(id: agent.id, paused: pausing)
+            #if os(macOS)
+            // The model says "Paused." or "Resumed." when it worked; the
+            // page says it the web's way instead.
+            guard model.lastMutationExplanation != nil else { return }
+            model.clearMutationMessage()
+            toast(.success(
+                pausing
+                    ? "\(agent.name) is paused. Its routines are off until you resume it."
+                    : "\(agent.name) is back."
+            ))
+            #endif
+        }
     }
 
     private func startIdea(_ idea: NativeAgentIdea, confirm: Bool) {
@@ -329,8 +504,15 @@ struct NativeAgentPage: View {
     }
 
     private func retire() {
+        #if os(macOS)
+        let name = model.agent(id: agentID)?.name ?? "The agent"
+        #endif
         Task {
             guard await model.retire(id: agentID) else { return }
+            #if os(macOS)
+            model.clearMutationMessage()
+            toast(.success("\(name) was retired. Its thread and its tasks are kept."))
+            #endif
             // Back to the roster: on the Mac by the page's own control, in a
             // navigation stack by popping this page.
             if let back {
@@ -438,6 +620,7 @@ struct NativeAgentHeader: View {
 
             Button(agent.isPaused ? "Resume" : "Pause", action: togglePause)
                 .buttonStyle(.bordered)
+                .nativeAgentNeutralTint()
                 .disabled(isMutating)
                 .frame(minHeight: 44)
                 .contentShape(.rect)
@@ -450,6 +633,7 @@ struct NativeAgentHeader: View {
             }
             .menuStyle(.button)
             .buttonStyle(.bordered)
+            .nativeAgentNeutralTint()
             .menuIndicator(.hidden)
             .fixedSize()
             .frame(minWidth: 44, minHeight: 44)
@@ -458,6 +642,130 @@ struct NativeAgentHeader: View {
         }
     }
 }
+
+#if os(macOS)
+/// The Mac's agent header, in the page template's place: the face (the
+/// page's one piece of character, main's faces unchanged), the name on the
+/// title rung, the role, and the state in words · the sentence; then Message
+/// (the one prominent action), Pause or Resume, and More. The rule under it
+/// is the template's.
+struct NativeAgentPageHeader: View {
+    let agent: NativeAgent
+    let arriving: Bool
+    let message: () -> Void
+    let togglePause: () -> Void
+    let thinkItOver: () -> Void
+    let editProfile: () -> Void
+    let retire: () -> Void
+    let isMutating: Bool
+
+    @Environment(\.junoPageLayout) private var layout
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: JunoSpace.roomy) {
+                    face
+                    identity
+                    Spacer(minLength: JunoSpace.section)
+                    actions
+                }
+                VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                    HStack(alignment: .center, spacing: JunoSpace.roomy) {
+                        face
+                        identity
+                    }
+                    actions
+                }
+            }
+            .padding(.bottom, JunoSpace.roomy)
+            Rectangle()
+                .fill(Color.junoBorder)
+                .frame(height: 1)
+                .accessibilityHidden(true)
+        }
+        .padding(.bottom, JunoSpace.section)
+    }
+
+    private var face: some View {
+        JunoAgentFace(
+            avatar: agent.avatar,
+            state: agent.state,
+            size: arriving ? JunoAgentFaceSize.xl : JunoAgentFaceSize.lg,
+            name: agent.name
+        )
+    }
+
+    private var identity: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            Text(agent.name)
+                .junoPageTitle(columnWidth: layout?.columnWidth)
+                .foregroundStyle(Color.junoForeground)
+                .accessibilityAddTraits(.isHeader)
+            if !agent.role.isEmpty {
+                Text(agent.role)
+                    .junoType(.body)
+                    .foregroundStyle(Color.junoSecondaryInk)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                if agent.state == .waiting {
+                    NativeAgentNeedsYouDot()
+                }
+                Text(agent.state.label)
+                    .junoType(JunoType.ui.weight(.medium))
+                    .foregroundStyle(Color.junoForeground)
+                Text("·")
+                    .junoType(.ui)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .accessibilityHidden(true)
+                Text(NativeAgentFormat.stateSentence(for: agent))
+                    .junoType(.ui)
+                    .foregroundStyle(agent.state == .waiting ? Color.junoForeground : Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, JunoSpace.hairline)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var actions: some View {
+        HStack(spacing: JunoSpace.close) {
+            Button(action: message) {
+                Label("Message", icon: .message)
+            }
+            .buttonStyle(.junoProminent)
+            .contentShape(.rect)
+            .accessibilityIdentifier("juno.agents.message")
+
+            Button(agent.isPaused ? "Resume" : "Pause", action: togglePause)
+                .buttonStyle(.bordered)
+                .tint(nil)
+                .disabled(isMutating)
+                .contentShape(.rect)
+
+            Menu {
+                Button("Think It Over Now", action: thinkItOver)
+                    .disabled(agent.status != .active)
+                Button("Edit Profile", action: editProfile)
+                Divider()
+                Button("Retire…", role: .destructive, action: retire)
+            } label: {
+                JunoIconView(.more, size: 16)
+                    .foregroundStyle(Color.junoMutedForeground)
+                    .frame(width: 28, height: 28)
+                    .contentShape(.rect)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("More")
+            .accessibilityLabel("More for \(agent.name)")
+        }
+        .fixedSize()
+    }
+}
+#endif
 
 // MARK: - Now
 
@@ -859,6 +1167,7 @@ struct NativeAgentWelcome: View {
             HStack(spacing: JunoSpace.snug) {
                 Button("Message \(agent.name)", action: message)
                     .buttonStyle(.bordered)
+                    .nativeAgentNeutralTint()
                     .frame(minHeight: 44)
                     .contentShape(.rect)
                 Button("Later", action: later)
@@ -894,6 +1203,7 @@ struct NativeAgentIdeaTile: View {
             HStack(spacing: JunoSpace.snug) {
                 Button("Start", action: start)
                     .buttonStyle(.bordered)
+                    .nativeAgentNeutralTint()
                     .disabled(busy)
                     .frame(minHeight: 44)
                     .contentShape(.rect)
@@ -970,7 +1280,7 @@ struct NativeAgentGoalsTab: View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             NativeAgentHeading(title: "New goal")
             TextField("Something it works towards over time", text: $draft.title)
-                .textFieldStyle(.roundedBorder)
+                .nativeAgentField()
                 .onSubmit(add)
             HStack(spacing: JunoSpace.snug) {
                 Picker("Check-ins", selection: $draft.cadence) {
@@ -983,6 +1293,7 @@ struct NativeAgentGoalsTab: View {
                 Spacer(minLength: JunoSpace.snug)
                 Button("Add goal", action: add)
                     .buttonStyle(.bordered)
+                    .nativeAgentNeutralTint()
                     .disabled(!draft.isValid || model.isMutating)
                     .frame(minHeight: 44)
                     .contentShape(.rect)
@@ -1053,6 +1364,7 @@ struct NativeAgentGoalTile: View {
                 if goal.status == .active {
                     Button("Work on this", action: workOn)
                         .buttonStyle(.bordered)
+                        .nativeAgentNeutralTint()
                         .disabled(busy)
                         .frame(minHeight: 44)
                         .contentShape(.rect)
@@ -1110,6 +1422,7 @@ struct NativeAgentRoutinesTab: View {
                     Label("New routine", icon: .plus)
                 }
                 .buttonStyle(.bordered)
+                .nativeAgentNeutralTint()
                 .disabled(agent.isPaused)
                 .frame(minHeight: 44)
                 .contentShape(.rect)
@@ -1200,7 +1513,7 @@ struct NativeAgentRoutineEditor: View {
                     VStack(alignment: .leading, spacing: JunoSpace.tight) {
                         NativeAgentFieldLabel(title: "Name")
                         TextField("Weekly digest", text: $draft.name)
-                            .textFieldStyle(.roundedBorder)
+                            .nativeAgentField()
                     }
                     VStack(alignment: .leading, spacing: JunoSpace.tight) {
                         NativeAgentFieldLabel(title: "What it does each time")

@@ -31,6 +31,17 @@ import SwiftUI
 ///   name and the directory layout leak.
 struct DesktopWorkHostTile: View {
     let host: DesktopWorkHostModel
+    /// Where the content is drawn. Settings › Code and the Work window show
+    /// the whole tile; this Mac's page under Permissions shows only what is
+    /// decided *here* — the switches this Mac offers, the macOS permissions
+    /// they need, the folders and apps it hands over — as its "On this Mac"
+    /// group (Phase 4 register #68), with the server's switches below it.
+    var layout: Layout = .settingsTile
+
+    enum Layout {
+        case settingsTile
+        case onThisMac
+    }
 
     /// Bumped when the *macOS* permissions are re-read, and read at the top of
     /// `body`.
@@ -70,22 +81,7 @@ struct DesktopWorkHostTile: View {
         // with no read in *this* body re-renders nothing at all.
         _ = switchGeneration
 
-        return JunoSettingsTile("Juno Work") {
-            masterSwitch
-            reasonRow
-            Divider()
-            capabilities
-            Divider()
-            approvals
-            Divider()
-            grantedFolders
-            Divider()
-            applications
-            Divider()
-            activity
-            Divider()
-            pairing
-        }
+        return content
         .onAppear { refreshPermissions() }
         .onReceive(
             NotificationCenter.default.publisher(
@@ -102,6 +98,44 @@ struct DesktopWorkHostTile: View {
                 "Juno Work stops here immediately and this Mac disappears from the list of "
                     + "places a task can run. It comes back the next time you sign in on this Mac."
             )
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch layout {
+        case .settingsTile:
+            JunoSettingsTile("Juno Work") {
+                masterSwitch
+                reasonRow
+                Divider()
+                capabilities
+                Divider()
+                approvals
+                Divider()
+                grantedFolders
+                Divider()
+                applications
+                Divider()
+                activity
+                Divider()
+                pairing
+            }
+        case .onThisMac:
+            // No activity and no pairing here: the page's header already says
+            // what is running, and its Revoke is the server's.
+            VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                masterSwitch
+                reasonRow
+                Divider()
+                capabilities
+                Divider()
+                approvals
+                Divider()
+                grantedFolders
+                Divider()
+                applications
+            }
         }
     }
 
@@ -228,16 +262,43 @@ struct DesktopWorkHostTile: View {
             // Cards rather than a menu: three options that fit on screen at once
             // are three options the reader can compare, and this is the setting
             // where comparing them is the whole decision.
-            ForEach(WorkHostPolicy.ApprovalPolicy.allCases, id: \.self) { policy in
-                JunoChoiceCard(
-                    title: LocalizedStringKey(Self.approvalTitle(policy)),
-                    detail: LocalizedStringKey(Self.approvalDetail(policy)),
-                    isSelected: host.approvalPolicy == policy,
-                    isEnabled: host.allowWorkOnThisMac,
-                    select: { host.approvalPolicy = policy }
+            if layout == .onThisMac {
+                // On a page the choice is a neutral radio row, as every other
+                // choice on the pages is: the accent never marks a selection
+                // there (Phase 4 §2.10).
+                DesktopAutomationPolicyGroup(
+                    label: "When Juno should ask first",
+                    options: WorkHostPolicy.ApprovalPolicy.allCases.map { policy in
+                        NativeWorkScheduleCopy.PolicyOption(
+                            value: policy.rawValue,
+                            label: Self.approvalTitle(policy),
+                            hint: Self.approvalDetail(policy)
+                        )
+                    },
+                    selection: Binding(
+                        get: { host.approvalPolicy.rawValue },
+                        set: { raw in
+                            if let policy = WorkHostPolicy.ApprovalPolicy(rawValue: raw) {
+                                host.approvalPolicy = policy
+                            }
+                        }
+                    ),
+                    showsLabel: false
                 )
+                .disabled(!host.allowWorkOnThisMac)
+                .accessibilityIdentifier("juno.desktop.settings.work-host-approval")
+            } else {
+                ForEach(WorkHostPolicy.ApprovalPolicy.allCases, id: \.self) { policy in
+                    JunoChoiceCard(
+                        title: LocalizedStringKey(Self.approvalTitle(policy)),
+                        detail: LocalizedStringKey(Self.approvalDetail(policy)),
+                        isSelected: host.approvalPolicy == policy,
+                        isEnabled: host.allowWorkOnThisMac,
+                        select: { host.approvalPolicy = policy }
+                    )
+                }
+                .accessibilityIdentifier("juno.desktop.settings.work-host-approval")
             }
-            .accessibilityIdentifier("juno.desktop.settings.work-host-approval")
 
             // Said once, here, because it is the property that makes every other
             // switch on this card meaningful: nothing a task, a schedule or a

@@ -34,6 +34,22 @@ public struct WorkHostSummary: Equatable, Sendable, Identifiable {
     public let queuedRunCount: Int
     public let lastSeenAt: Date
     public let revokedAt: Date?
+    /// "macos", as the registration route takes it.
+    public let platform: String
+    public let appVersion: String
+    /// The switches in force: the Mac's claim after its owner narrowed it.
+    public let toggles: Set<NativeWorkHostToggle>
+    /// The switches the Mac itself last said it can offer (the stored
+    /// advertisement's `toggles`). A switch outside this set is off because
+    /// the Mac cannot do it, not because somebody turned it off.
+    public let advertisedToggles: Set<NativeWorkHostToggle>
+    /// The approval ceiling in force on this Mac.
+    public let approvalPolicy: JunoWorkPermissionPolicy
+    /// The ceiling the Mac itself asked for, when its advertisement says.
+    public let advertisedPolicy: JunoWorkPermissionPolicy?
+    public let allowedApps: [String]
+    public let blockedApps: [String]
+    public let allowedDomains: [String]
 
     public var id: String { hostID }
 
@@ -46,10 +62,23 @@ public struct WorkHostSummary: Equatable, Sendable, Identifiable {
         enabled && revokedAt == nil && (state == "online" || state == "idle")
     }
 
+    public func allows(_ toggle: NativeWorkHostToggle) -> Bool {
+        toggle == .enabled ? enabled : toggles.contains(toggle)
+    }
+
     public init(
         hostID: String, deviceID: String, displayName: String, state: String,
         enabled: Bool, capabilities: [String], activeRunCount: Int,
-        queuedRunCount: Int, lastSeenAt: Date, revokedAt: Date?
+        queuedRunCount: Int, lastSeenAt: Date, revokedAt: Date?,
+        platform: String = "macos",
+        appVersion: String = "",
+        toggles: Set<NativeWorkHostToggle> = [],
+        advertisedToggles: Set<NativeWorkHostToggle> = [],
+        approvalPolicy: JunoWorkPermissionPolicy = .balanced,
+        advertisedPolicy: JunoWorkPermissionPolicy? = nil,
+        allowedApps: [String] = [],
+        blockedApps: [String] = [],
+        allowedDomains: [String] = []
     ) {
         self.hostID = hostID
         self.deviceID = deviceID
@@ -61,6 +90,144 @@ public struct WorkHostSummary: Equatable, Sendable, Identifiable {
         self.queuedRunCount = queuedRunCount
         self.lastSeenAt = lastSeenAt
         self.revokedAt = revokedAt
+        self.platform = platform
+        self.appVersion = appVersion
+        self.toggles = toggles
+        self.advertisedToggles = advertisedToggles
+        self.approvalPolicy = approvalPolicy
+        self.advertisedPolicy = advertisedPolicy
+        self.allowedApps = allowedApps
+        self.blockedApps = blockedApps
+        self.allowedDomains = allowedDomains
+    }
+}
+
+/// One switch on a host (`hostPatchSchema`'s booleans), by its wire name.
+public enum NativeWorkHostToggle: String, CaseIterable, Sendable, Hashable {
+    case enabled
+    case allowsFileWork
+    case allowsBrowser
+    case allowsComputerUse
+    case allowsShell
+    case allowsBackground
+
+    /// `TOGGLE_NOUN`, for the sentence naming switches the Mac has not offered.
+    public var noun: String {
+        switch self {
+        case .enabled: "Juno Work"
+        case .allowsFileWork: "file access"
+        case .allowsBrowser: "your browser"
+        case .allowsComputerUse: "screen control"
+        case .allowsShell: "shell commands"
+        case .allowsBackground: "working while you are away"
+        }
+    }
+}
+
+/// One folder (or file, or connector scope) shared with a host, by the name
+/// its owner gave it and never by path.
+public struct NativeWorkHostGrant: Equatable, Sendable, Identifiable {
+    public let id: String
+    /// `local_folder | local_file | cloud_folder | cloud_file | connector_scope`.
+    public let kind: String
+    public let displayName: String
+    /// `read | read_write_no_delete | read_write`.
+    public let accessMode: String
+    public let revokedAt: Date?
+    public let lastUsedAt: Date?
+
+    public init(
+        id: String, kind: String, displayName: String, accessMode: String,
+        revokedAt: Date?, lastUsedAt: Date?
+    ) {
+        self.id = id
+        self.kind = kind
+        self.displayName = displayName
+        self.accessMode = accessMode
+        self.revokedAt = revokedAt
+        self.lastUsedAt = lastUsedAt
+    }
+}
+
+/// `GET /api/work/hosts/{id}`: one Mac and what has been shared with it.
+public struct NativeWorkHostDetail: Equatable, Sendable {
+    public let host: WorkHostSummary
+    /// Nil when the route could not read them, which is not the same as none.
+    public let grants: [NativeWorkHostGrant]?
+    /// Instructions queued or claimed at this Mac and not yet expired.
+    public let pendingCommands: Int
+    /// The manifest's capability keys this relay can route.
+    public let routableCapabilities: [String]
+
+    public init(
+        host: WorkHostSummary,
+        grants: [NativeWorkHostGrant]?,
+        pendingCommands: Int,
+        routableCapabilities: [String]
+    ) {
+        self.host = host
+        self.grants = grants
+        self.pendingCommands = pendingCommands
+        self.routableCapabilities = routableCapabilities
+    }
+}
+
+/// `PATCH /api/work/hosts/{id}`, as `hostPatchSchema` accepts it: the
+/// switches, the approval ceiling, and un-revoking. The apps and sites lists
+/// and the capability manifest are the Mac's to report, and the route refuses
+/// them.
+public struct NativeWorkHostPatch: Equatable, Sendable {
+    public var toggles: [NativeWorkHostToggle: Bool]
+    public var approvalPolicy: JunoWorkPermissionPolicy?
+    /// `false` only: un-revokes. Revoking is DELETE.
+    public var restore: Bool
+
+    public init(
+        toggles: [NativeWorkHostToggle: Bool] = [:],
+        approvalPolicy: JunoWorkPermissionPolicy? = nil,
+        restore: Bool = false
+    ) {
+        self.toggles = toggles
+        self.approvalPolicy = approvalPolicy
+        self.restore = restore
+    }
+
+    public static func toggle(_ key: NativeWorkHostToggle, _ value: Bool) -> NativeWorkHostPatch {
+        NativeWorkHostPatch(toggles: [key: value])
+    }
+
+    /// The request body, keys sorted so two patches of the same change are
+    /// byte-identical.
+    public var body: JunoJSONValue {
+        var object: [String: JunoJSONValue] = [:]
+        for (key, value) in toggles { object[key.rawValue] = .bool(value) }
+        if let approvalPolicy { object["approvalPolicy"] = .string(approvalPolicy.rawValue) }
+        if restore { object["revoked"] = .bool(false) }
+        return .object(object)
+    }
+}
+
+/// A patch's answer: the host as it now stands, and the switches the request
+/// asked to turn on that the Mac has not advertised (which stay off).
+public struct NativeWorkHostPatchResult: Equatable, Sendable {
+    public let host: WorkHostSummary
+    public let refused: [NativeWorkHostToggle]
+
+    public init(host: WorkHostSummary, refused: [NativeWorkHostToggle]) {
+        self.host = host
+        self.refused = refused
+    }
+}
+
+/// A revocation's answer: the host, and how many instructions on their way to
+/// it were cancelled.
+public struct NativeWorkHostRevocation: Equatable, Sendable {
+    public let host: WorkHostSummary
+    public let cancelledCommands: Int
+
+    public init(host: WorkHostSummary, cancelledCommands: Int) {
+        self.host = host
+        self.cancelledCommands = cancelledCommands
     }
 }
 

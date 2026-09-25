@@ -80,12 +80,12 @@ struct NativeAgentProfileTab: View {
                     VStack(alignment: .leading, spacing: JunoSpace.tight) {
                         NativeAgentFieldLabel(title: "Name")
                         TextField("Name", text: $name)
-                            .textFieldStyle(.roundedBorder)
+                            .nativeAgentField()
                     }
                     VStack(alignment: .leading, spacing: JunoSpace.tight) {
                         NativeAgentFieldLabel(title: "What it is for")
                         TextField("Inbox and calendar", text: $role)
-                            .textFieldStyle(.roundedBorder)
+                            .nativeAgentField()
                     }
                 }
             }
@@ -149,6 +149,7 @@ struct NativeAgentProfileTab: View {
                 .contentShape(.rect)
             Button("Save changes", action: save)
                 .buttonStyle(.bordered)
+                .nativeAgentNeutralTint()
                 .disabled(!canSave || model.isMutating)
                 .frame(minHeight: 44)
                 .contentShape(.rect)
@@ -177,10 +178,11 @@ struct NativeAgentProfileTab: View {
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: JunoSpace.snug) {
                 TextField("Something it should know", text: $newNote)
-                    .textFieldStyle(.roundedBorder)
+                    .nativeAgentField()
                     .onSubmit(addNote)
                 Button("Add", action: addNote)
                     .buttonStyle(.bordered)
+                    .nativeAgentNeutralTint()
                     .disabled(trimmedNewNote.isEmpty || model.isMutating)
                     .frame(minHeight: 44)
                     .contentShape(.rect)
@@ -213,6 +215,7 @@ struct NativeAgentProfileTab: View {
                         .contentShape(.rect)
                     Button("Save") { saveNote(note) }
                         .buttonStyle(.bordered)
+                        .nativeAgentNeutralTint()
                         .disabled(
                             editingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                                 || model.isMutating
@@ -271,6 +274,7 @@ struct NativeAgentProfileTab: View {
                 Text("Delete \(agent.name)…")
             }
             .buttonStyle(.bordered)
+            .nativeAgentNeutralTint()
             .frame(minHeight: 44)
             .contentShape(.rect)
         }

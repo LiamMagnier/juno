@@ -119,8 +119,28 @@ public struct NativeWorkSchedule: Equatable, Sendable, Identifiable {
     public let createdAt: Date
     public let updatedAt: Date
     public let triggers: [NativeWorkScheduleTrigger]
+    /// `work` or `code` (`ClientWorkSchedule.runKind`). Kept raw, like
+    /// `target`: a newer server may add a kind, and an unknown one must not
+    /// read as a task automation this Mac could edit.
+    public let runKind: String
+    /// Whether a fire token has been issued for the "Something calls it"
+    /// trigger. Only its hash is stored, so the token itself is never read back.
+    public let hasFireToken: Bool
+    public let fireTokenIssuedAt: Date?
+    /// `owner/name` of a Code automation's repository, when its `codeConfig`
+    /// names one.
+    public let codeRepository: String?
 
     public var targetValue: JunoWorkTarget? { JunoWorkTarget(rawValue: target) }
+
+    /// A Code automation: listed and runnable on the Mac, edited on the web
+    /// (Phase 4 register #67).
+    public var isCode: Bool { runKind == "code" }
+
+    /// Whether the Mac's editor can change this automation: a task
+    /// automation. A trigger of a kind this build does not know is kept as it
+    /// is and saved back untouched, as the web's editor does.
+    public var isEditableHere: Bool { runKind == "work" }
 
     public var model: String? { runConfig["model"]?.stringValue }
 
@@ -136,7 +156,7 @@ public struct NativeWorkSchedule: Equatable, Sendable, Identifiable {
     public static let knownTriggerKinds: Set<String> = [
         "once", "hourly", "daily", "weekdays", "weekly", "monthly", "yearly", "cron",
         "email_filter", "calendar_window", "topic_monitor", "connector_event", "folder_change",
-        "manual",
+        "manual", "api",
     ]
 
     public init(
@@ -163,7 +183,11 @@ public struct NativeWorkSchedule: Equatable, Sendable, Identifiable {
         legacyScheduledTaskID: String?,
         createdAt: Date,
         updatedAt: Date,
-        triggers: [NativeWorkScheduleTrigger]
+        triggers: [NativeWorkScheduleTrigger],
+        runKind: String = "work",
+        hasFireToken: Bool = false,
+        fireTokenIssuedAt: Date? = nil,
+        codeRepository: String? = nil
     ) {
         self.id = id
         self.sessionID = sessionID
@@ -189,6 +213,28 @@ public struct NativeWorkSchedule: Equatable, Sendable, Identifiable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.triggers = triggers
+        self.runKind = runKind
+        self.hasFireToken = hasFireToken
+        self.fireTokenIssuedAt = fireTokenIssuedAt
+        self.codeRepository = codeRepository
+    }
+
+    /// The same schedule with its switch moved, everything else as it was.
+    public func withEnabled(_ enabled: Bool) -> NativeWorkSchedule {
+        NativeWorkSchedule(
+            id: id, sessionID: sessionID, name: name, enabled: enabled,
+            instructions: instructions, instructionsVersion: instructionsVersion,
+            target: target, hostID: hostID, timezone: timezone,
+            runConfig: runConfig, runConfigVersion: runConfigVersion, budget: budget,
+            unattendedPolicy: unattendedPolicy, hostOfflinePolicy: hostOfflinePolicy,
+            maxConcurrentRuns: maxConcurrentRuns, notifyPolicy: notifyPolicy,
+            missedRunPolicy: missedRunPolicy, retryPolicy: retryPolicy,
+            lastRunAt: lastRunAt, nextRunAt: nextRunAt,
+            legacyScheduledTaskID: legacyScheduledTaskID,
+            createdAt: createdAt, updatedAt: updatedAt, triggers: triggers,
+            runKind: runKind, hasFireToken: hasFireToken,
+            fireTokenIssuedAt: fireTokenIssuedAt, codeRepository: codeRepository
+        )
     }
 
     public var draft: NativeWorkScheduleDraft {
@@ -288,6 +334,11 @@ public struct NativeWorkScheduleRun: Equatable, Sendable, Identifiable {
     public let createdAt: Date?
     public let startedAt: Date?
     public let finishedAt: Date?
+    /// Which attempt of its session this run is, from 1.
+    public let attempt: Int
+    /// The scheduler's own sentence for a fire it did not run ("The Mac was
+    /// away, so this fire was skipped."), when it wrote one.
+    public let terminalDetail: String?
 
     public init(
         id: String,
@@ -300,7 +351,9 @@ public struct NativeWorkScheduleRun: Equatable, Sendable, Identifiable {
         hostID: String?,
         createdAt: Date?,
         startedAt: Date?,
-        finishedAt: Date?
+        finishedAt: Date?,
+        attempt: Int = 1,
+        terminalDetail: String? = nil
     ) {
         self.id = id
         self.sessionID = sessionID
@@ -313,6 +366,81 @@ public struct NativeWorkScheduleRun: Equatable, Sendable, Identifiable {
         self.createdAt = createdAt
         self.startedAt = startedAt
         self.finishedAt = finishedAt
+        self.attempt = max(1, attempt)
+        self.terminalDetail = terminalDetail
+    }
+}
+
+/// One Code run of a Code automation, as `serializeTask` sends it: each fire
+/// is a session of its own with its own branch and pull request.
+public struct NativeWorkScheduleCodeRun: Equatable, Sendable, Identifiable {
+    public let id: String
+    public let title: String
+    /// The Code task's own status (`queued | running | awaiting_approval |
+    /// done | cancelled | …`), mapped to a Work status by
+    /// ``NativeWorkScheduleCopy/workStatus(forCodeTask:)``.
+    public let status: String
+    public let conversationID: String?
+    public let pullRequestURL: String?
+    public let branch: String?
+    public let createdAt: Date?
+
+    public init(
+        id: String,
+        title: String,
+        status: String,
+        conversationID: String?,
+        pullRequestURL: String?,
+        branch: String?,
+        createdAt: Date?
+    ) {
+        self.id = id
+        self.title = title
+        self.status = status
+        self.conversationID = conversationID
+        self.pullRequestURL = pullRequestURL
+        self.branch = branch
+        self.createdAt = createdAt
+    }
+}
+
+/// An automation's history as the runs route returns it: the Work runs and,
+/// for a Code automation, the Code runs. Two shapes, kept apart until the page
+/// interleaves them by time, as the web does.
+public struct NativeWorkScheduleHistory: Equatable, Sendable {
+    public let runs: [NativeWorkScheduleRun]
+    public let codeRuns: [NativeWorkScheduleCodeRun]
+
+    public init(runs: [NativeWorkScheduleRun], codeRuns: [NativeWorkScheduleCodeRun] = []) {
+        self.runs = runs
+        self.codeRuns = codeRuns
+    }
+}
+
+/// The result of a change the server may say something about: the saved row,
+/// and the server's own sentences about what happened to queued fires and to
+/// the next fire (`scheduling`, `runs.explanation`), in that order.
+public struct NativeWorkScheduleChange: Equatable, Sendable {
+    public let schedule: NativeWorkSchedule
+    public let notes: [String]
+
+    public init(schedule: NativeWorkSchedule, notes: [String] = []) {
+        self.schedule = schedule
+        self.notes = notes
+    }
+}
+
+/// The token something outside Juno fires an automation with. Returned once,
+/// by the call that mints it: only its hash is stored.
+public struct NativeWorkFireToken: Equatable, Sendable {
+    public let token: String
+    public let issuedAt: Date?
+    public let url: String
+
+    public init(token: String, issuedAt: Date?, url: String) {
+        self.token = token
+        self.issuedAt = issuedAt
+        self.url = url
     }
 }
 

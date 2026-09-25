@@ -38,6 +38,11 @@ struct DesktopPushAction: Sendable {
 extension EnvironmentValues {
     /// The enclosing destination's push. Outside a page stack it does nothing.
     @Entry var desktopPush: DesktopPushAction = .none
+    /// Replaces the page on top of the enclosing stack — New automation
+    /// becoming the automation it made, New agent the agent it hired — so
+    /// back returns to the list rather than to a spent form. Outside a page
+    /// stack it does nothing.
+    @Entry var desktopReplace: DesktopPushAction = .none
 }
 
 /// Requests to open a page that come from outside the Chat window's detail
@@ -143,6 +148,10 @@ struct DesktopPageStack<Root: View, Page: View>: View {
     let router: DesktopPageRouter
     @ViewBuilder let root: () -> Root
     @ViewBuilder let page: (DesktopPageRoute) -> Page
+    /// Told what is pushed whenever it changes: how the Agents destination
+    /// keeps the window's open agent — its sidebar row — in step with a
+    /// back button or a push from the page.
+    var pathChanged: (([DesktopPageRoute]) -> Void)? = nil
 
     @State private var path: [DesktopPageRoute] = []
 
@@ -157,8 +166,16 @@ struct DesktopPageStack<Root: View, Page: View>: View {
                 }
         }
         .environment(\.desktopPush, DesktopPushAction { path.append($0) })
+        .environment(\.desktopReplace, DesktopPushAction { route in
+            if path.isEmpty {
+                path = [route]
+            } else {
+                path[path.count - 1] = route
+            }
+        })
         .onAppear(perform: follow)
         .onChange(of: router.pending) { _, _ in follow() }
+        .onChange(of: path) { _, value in pathChanged?(value) }
     }
 
     /// Takes a request meant for this destination: pushes its route over the
