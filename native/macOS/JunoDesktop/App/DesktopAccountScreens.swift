@@ -64,10 +64,26 @@ struct DesktopDestinationView: View {
         if destination == .chat {
             page
         } else {
-            NavigationStack {
+            DesktopPageStack(destination: destination, router: .shared) {
                 page
-                    .navigationTitle(destination.label)
+            } page: { route in
+                routePage(route)
             }
+        }
+    }
+
+    /// The page a route pushes. One `navigationDestination` for all of them,
+    /// at the stack root (Phase 4 brief §2.5).
+    @ViewBuilder
+    private func routePage(_ route: DesktopPageRoute) -> some View {
+        switch route {
+        case .project(let id):
+            projectPage(id)
+        case .artifact(let id, let version):
+            artifactPage(id, version: version)
+        case .document, .skill, .newSkill, .automation, .newAutomation, .host, .agent, .newAgent:
+            // Built by later stages (B and C); nothing pushes these yet.
+            unavailable("Not available", "This page is not on the Mac yet.")
         }
     }
 
@@ -147,11 +163,7 @@ struct DesktopDestinationView: View {
                 unavailable("Library", "The authenticated file library is unavailable.")
             }
         case .artifacts:
-            if let model = configuration.artifactModel {
-                DesktopArtifactsScreen(model: model)
-            } else {
-                unavailable("Artifacts", "The synchronized artifact store is unavailable.")
-            }
+            artifactsPage
         case .agents:
             if let model = configuration.agentsModel {
                 NativeAgentsScreen(
@@ -172,21 +184,10 @@ struct DesktopDestinationView: View {
                 unavailable("Connections", "The connector service is unavailable.")
             }
         case .design:
-            // The artifact store is the hard dependency, not the transport: the
-            // page lists the designs this account already has, and those are
-            // projected from the encrypted database. A request sender is what
-            // *starting* one needs, and its absence disables the presets with a
-            // reason rather than emptying the page.
-            if let model = configuration.artifactModel {
-                DesktopDesignScreen(
-                    model: model,
-                    accountID: session.profile.id,
-                    requestSender: configuration.requestSender,
-                    syncModel: configuration.syncModel
-                )
-            } else {
-                unavailable("Design", "The synchronized artifact store is unavailable.")
-            }
+            // Never reached: `.design` is normalized to Artifacts with the
+            // Designs filter before it is stored (Phase 4 A2). Drawn as
+            // Artifacts all the same, should an old caller get here.
+            artifactsPage
         case .memory:
             if let model = configuration.memorySettingsModel {
                 // No back control: the column's More menu opened this page and
@@ -198,6 +199,25 @@ struct DesktopDestinationView: View {
                 unavailable("Memory", "The synchronized settings store is unavailable.")
             }
         }
+    }
+
+    @ViewBuilder
+    private var artifactsPage: some View {
+        if let model = configuration.artifactModel {
+            DesktopArtifactsScreen(model: model)
+        } else {
+            unavailable("Artifacts", "The synchronized artifact store is unavailable.")
+        }
+    }
+
+    @ViewBuilder
+    private func projectPage(_ id: String) -> some View {
+        unavailable("Project", "This project page is not on the Mac yet.")
+    }
+
+    @ViewBuilder
+    private func artifactPage(_ id: String, version: Int?) -> some View {
+        unavailable("Artifact", "This artifact page is not on the Mac yet.")
     }
 
     private func openConversation(_ id: String) {

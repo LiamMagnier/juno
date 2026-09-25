@@ -94,5 +94,5 @@ final class SnapshotDesignProvider: DesignPreviewProviding {
     }
 
     func designPreviewState(artifactID _: String, version _: Int) -> NativeDesignPreviewState { state }
-    func loadDesignPreview(artifactID _: String, version _: Int) async {}
+    func loadDesignPreview(artifactID _: String, version _: Int, isCurrent _: Bool) async {}
 }

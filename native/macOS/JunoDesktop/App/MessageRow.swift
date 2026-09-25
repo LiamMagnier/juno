@@ -704,12 +704,13 @@ struct DesktopMessageRow: View {
                         case .artifact(let artifact):
                             let card = artifactResolver.card(
                                 for: artifact,
-                                messageID: shown.id,
+                                message: shown,
                                 messageIsPending: shown.isPending
                             )
+                            let message = shown
                             DesktopInlineArtifactCard(
                                 card: card,
-                                open: card.isStreaming ? nil : { actions.openArtifact(artifact) }
+                                open: card.isStreaming ? nil : { actions.openArtifact(artifact, message) }
                             )
                         }
                     }

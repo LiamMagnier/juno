@@ -109,8 +109,10 @@ struct DesktopTranscript: View {
     let accountID: AccountID
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     /// Asks the conversation column to dock the canvas. A row cannot own that
-    /// panel — see ``DesktopConversationView/openArtifact``.
-    let openArtifact: (NativeMessageContent.ArtifactReference) -> Void
+    /// panel — see ``DesktopConversationView/openArtifact``. The message is
+    /// the tag's own, so the column resolves the row the web's
+    /// `resolveArtifactTag` would (M11's retired rows).
+    let openArtifact: (NativeMessageContent.ArtifactReference, NativeChatMessage) -> Void
     /// The window's Share — publish, copy, and say so in the Share popover;
     /// nil when the account has no share service. Reached from every reply's
     /// More menu, as on the web, not only from the toolbar.

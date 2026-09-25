@@ -15,6 +15,9 @@ import Foundation
 /// from a literal.
 public struct ChatArtifactResolver: Equatable, Sendable {
     public let conversationID: String?
+    /// This conversation's rows, keyed by their **own** identifier. A row M11
+    /// retired to `{identifier}~{last 6 of id}` when a re-emission changed its
+    /// type (`artifacts-store.ts` `retiredIdentifier`) is its own key here.
     private let byIdentifier: [String: NativeArtifact]
 
     public init(artifacts: [NativeArtifact], conversationID: String?) {
@@ -25,9 +28,10 @@ public struct ChatArtifactResolver: Equatable, Sendable {
         }
         var rows: [String: NativeArtifact] = [:]
         for artifact in artifacts where artifact.conversationID == conversationID {
-            // One row per identifier per conversation on the server; should two
-            // ever meet here (a streamed row beside its synced self), the one
-            // further along wins.
+            // Only rows that genuinely share an identifier meet here — a
+            // streamed row beside its synced self — and the one further along
+            // wins. A retired row has an identifier of its own and never
+            // competes with the row that took its old one.
             if let existing = rows[artifact.identifier], existing.currentVersion >= artifact.currentVersion {
                 continue
             }
@@ -38,19 +42,82 @@ public struct ChatArtifactResolver: Equatable, Sendable {
 
     public static let empty = ChatArtifactResolver(artifacts: [], conversationID: nil)
 
-    /// The stored row for a reference, or nil.
-    public func artifact(for reference: NativeMessageContent.ArtifactReference) -> NativeArtifact? {
-        guard !reference.identifier.isEmpty else { return nil }
-        return byIdentifier[reference.identifier]
+    /// The stored row a tag in one message means — the web's
+    /// `resolveArtifactTag` (`src/lib/chat-client-state.ts`).
+    ///
+    /// Usually the one row with the tag's identifier. When a re-emission
+    /// changed the type, the server gave the identifier to a new row and
+    /// retired the old one to `{identifier}~{id tail}`; a tag written before
+    /// that change must still open what it made. So among the rows that have
+    /// held the identifier, the one this message created wins; otherwise the
+    /// newest that existed when the message was written; otherwise the oldest.
+    ///
+    /// Two candidates can both be this message's own (one message emitted
+    /// both types); the oldest by `(createdAt, id)` wins, so the answer never
+    /// depends on dictionary order.
+    ///
+    /// - Parameters:
+    ///   - messageID: the message carrying the tag.
+    ///   - messageCreatedAt: when it was written. A streaming placeholder
+    ///     passes its local stamp. Nil reads as "before every candidate", as
+    ///     the web's `Date.parse` of a missing stamp does.
+    public func artifact(
+        for reference: NativeMessageContent.ArtifactReference,
+        messageID: String?,
+        messageCreatedAt: Date?
+    ) -> NativeArtifact? {
+        let identifier = reference.identifier
+        guard !identifier.isEmpty else { return nil }
+        let current = byIdentifier[identifier]
+        let retiredPrefix = identifier + "~"
+        var held = byIdentifier.filter { $0.key.hasPrefix(retiredPrefix) }.map(\.value)
+        if held.isEmpty { return current }
+        if let current { held.append(current) }
+        held.sort { lhs, rhs in
+            lhs.createdAt != rhs.createdAt ? lhs.createdAt < rhs.createdAt : lhs.id < rhs.id
+        }
+        if let messageID, let own = held.first(where: { $0.messageID == messageID }) {
+            return own
+        }
+        var pick = held[0]
+        if let messageCreatedAt {
+            for candidate in held where candidate.createdAt <= messageCreatedAt {
+                pick = candidate
+            }
+        }
+        return pick
+    }
+
+    /// The stored row with this id, if it is one of this conversation's.
+    /// The canvas dock follows the row it opened by id, so a later type
+    /// change — which gives the tag's identifier to a new row — cannot swap
+    /// what is open.
+    public func artifact(id: String) -> NativeArtifact? {
+        byIdentifier.values.first { $0.id == id }
     }
 
     /// Everything an inline card draws, resolved the way the web resolves it.
     public func card(
         for reference: NativeMessageContent.ArtifactReference,
         messageID: String,
+        messageCreatedAt: Date?,
         messageIsPending: Bool
     ) -> ChatArtifactCard {
-        ChatArtifactCard(reference: reference, stored: artifact(for: reference), messageID: messageID, messageIsPending: messageIsPending)
+        ChatArtifactCard(
+            reference: reference,
+            stored: artifact(for: reference, messageID: messageID, messageCreatedAt: messageCreatedAt),
+            messageID: messageID,
+            messageIsPending: messageIsPending
+        )
+    }
+
+    /// ``card(for:messageID:messageCreatedAt:messageIsPending:)`` for a message.
+    public func card(
+        for reference: NativeMessageContent.ArtifactReference,
+        message: NativeChatMessage,
+        messageIsPending: Bool
+    ) -> ChatArtifactCard {
+        card(for: reference, messageID: message.id, messageCreatedAt: message.createdAt, messageIsPending: messageIsPending)
     }
 }
 

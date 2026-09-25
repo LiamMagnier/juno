@@ -94,8 +94,21 @@ enum DesktopNavigationState {
     /// the column in Phase 1 — must not strand the window on a blank pane. Those
     /// fall back to Chat like any other unknown string.
     static func destination(fromStored raw: String) -> DesktopDestination {
-        DesktopDestination(rawValue: raw) ?? .chat
+        normalized(DesktopDestination(rawValue: raw) ?? .chat).destination
     }
+
+    /// The destination a request really means, and the Artifacts filter it
+    /// carries. `.design` is Artifacts filtered to Designs, as the web's
+    /// `/design` redirects to `/artifacts?type=DESIGN`; everything else is
+    /// itself.
+    static func normalized(
+        _ destination: DesktopDestination
+    ) -> (destination: DesktopDestination, artifactsType: String?) {
+        destination == .design ? (.artifacts, designsType) : (destination, nil)
+    }
+
+    /// The web's `ArtifactType` for a design (`?type=DESIGN`).
+    static let designsType = "DESIGN"
 
     /// The window's title for a given state: what the Window menu, Mission
     /// Control and ⌘` call this window, and what the toolbar shows on a chat.
