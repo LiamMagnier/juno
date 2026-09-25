@@ -155,10 +155,10 @@ struct DesktopLibraryPicker: View {
         // which was the other view in this file declaring one. Nothing here
         // needs to grow, so nothing here asks to.
         .frame(width: 740, height: 560)
-        // Sheet contract: the warm ground inside the content, the platter left to
-        // the system. `.fitted` rather than `.form` precisely because the frame
-        // above is deliberate — see the note on it.
-        .junoSheetSurface(.fitted)
+        // A system sheet on its own ground (Phase 3 B6): no fill of Juno's.
+        // `.fitted` rather than `.form` precisely because the frame above is
+        // deliberate — see the note on it.
+        .presentationSizing(.fitted)
         .task {
             model.selection = []
             await model.refresh()

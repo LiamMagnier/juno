@@ -202,6 +202,7 @@ const PHOSPHOR = {
   Sun: "Sun",
   Moon: "Moon",
   Monitor: "Monitor",
+  Keyboard: "Keyboard",
   BookOpen: "BookOpen",
   Wrench: "Wrench",
   CheckCircle: "CheckCircle2",
@@ -274,6 +275,9 @@ const PHOSPHOR = {
   // drawings for those concepts.
   Calculator: null,
   Chats: null,
+
+  // Phase 3 Stage B: the ⌘K panel's "Roadmap & feature requests" row.
+  MapTrifold: "Map",
 };
 
 /** Glyphs with a `.fill` twin: the "on" drawings §8.6 asks for — a pinned row,

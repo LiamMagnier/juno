@@ -47,6 +47,10 @@ struct ChatDetail<Content: View>: View {
     let toolbar: ChatToolbar
     /// The window's toasts, drawn once over this column (§7.7).
     let toasts: JunoToastCenter
+    /// Where this column sits in the window, for the ⌘K / Search panel to
+    /// centre itself on (Phase 3 B1): its frame in the window's coordinate
+    /// space and the toolbar's depth over it.
+    var panelAnchorChanged: (DesktopPanelAnchor) -> Void = { _ in }
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -77,6 +81,14 @@ struct ChatDetail<Content: View>: View {
                 }
             }
             .toolbar { toolbar }
+            .onGeometryChange(for: DesktopPanelAnchor.self) { proxy in
+                DesktopPanelAnchor(
+                    frame: proxy.frame(in: .named(DesktopSearchPanelMetrics.coordinateSpace)),
+                    toolbarInset: proxy.safeAreaInsets.top
+                )
+            } action: { anchor in
+                panelAnchorChanged(anchor)
+            }
     }
 }
 

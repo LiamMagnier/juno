@@ -146,10 +146,26 @@ struct DesktopChatWorkspace: View {
     @State private var isInCall = false
     /// The conversation whose sidebar row is showing its rename field.
     @State private var renamingConversationID: String?
-    /// The conversation Delete… is asking about.
-    @State private var pendingDeletion: NativeConversation?
+    /// Delete…, asking first in the web's words (Phase 3 B6).
+    @State private var deleteConfirmation: JunoConfirmation?
     @State private var newProjectRequest: DesktopNewProjectRequest?
     @State private var share = DesktopShareState()
+    /// The ⌘K / Search panel (Phase 3 B1): one per window, over the split
+    /// view, centred on the detail column that `ChatDetail` measures.
+    @State private var searchPanel = DesktopSearchPanelModel()
+    @State private var panelAnchor = DesktopPanelAnchor()
+    /// Archived Chats (Phase 3 B5). Nothing on this base opens it yet: the
+    /// sidebar's More reaches it at integration (seam 8).
+    @State private var showingArchivedChats = false
+    /// The toolbar's Outputs popover (Phase 3 B3).
+    @State private var isOutputsPresented = false
+    /// Artifact and Quick Look requests from the toolbar and the panel, on
+    /// their way to the conversation column that owns both.
+    @State private var outputRequests = DesktopChatOutputRequests()
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openURL) private var openURL
     /// ⌘U from the menu bar, or a file dropped on the chat column, on its way
     /// to the composer — which owns the importer and the attachment rules.
     @State private var composerRequest: ChatComposerRequest?
@@ -265,24 +281,29 @@ struct DesktopChatWorkspace: View {
         } detail: {
             detail
         }
+        // The ⌘K / Search panel, over the whole window (Phase 3 B1).
+        .desktopSearchPanel(
+            searchPanel,
+            anchor: panelAnchor,
+            hooks: panelHooks,
+            projects: configuration.projectModel?.projects ?? [],
+            commands: { panelCommandContext },
+            perform: performPanelAction
+        )
         .focusedSceneValue(\.junoWorkspaceActions, workspaceActions)
         // Every part of the window posts to the one host: the sidebar's
         // archive, the transcript's failed actions, the pages.
         .junoToastNotifier(toasts)
-        // Opener and actions on one line: the targets gate reads a dialog's
-        // buttons as system-drawn only when its brace opens on that line.
-        .confirmationDialog("Delete this conversation?", isPresented: isConfirmingDeletion, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { deletePendingConversation() }
-            Button("Cancel", role: .cancel) { pendingDeletion = nil }
-        } message: {
-            // The web's copy, verbatim (`app-sidebar.tsx`).
-            Text("This permanently removes the conversation and its messages. This can't be undone.")
-        }
+        // The web's words (`app-sidebar.tsx`), "Delete Chat" on the button.
+        .junoConfirmation($deleteConfirmation)
         .confirmationDialog("Leave this private chat?", isPresented: $confirmingLeavePrivate, titleVisibility: .visible) {
             Button("Leave", role: .destructive) { isPrivateChat = false }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("It won't be saved.")
+        }
+        .sheet(isPresented: $showingArchivedChats) {
+            archivedChatsSheet
         }
         .sheet(item: $newProjectRequest) { request in
             if let projectModel = configuration.projectModel {
@@ -337,13 +358,15 @@ struct DesktopChatWorkspace: View {
         // it in one gesture, and whichever of the two lands first, the popover
         // it opened must stay open (see ``DesktopShareState/conversationID``).
         .onChange(of: model.selectedConversationID) { _, selected in
+            isOutputsPresented = false
             guard DesktopShareState.selectionClosesPopover(sharing: share.conversationID, selected: selected)
             else { return }
-            share.isPresented = false
+            share.close()
         }
         .onChange(of: currentDestination) { _, value in
             guard value != .chat else { return }
-            share.isPresented = false
+            share.close()
+            isOutputsPresented = false
             isPrivateChat = false
         }
         // Leaving private mode IS the erase. Nothing else holds these turns,
@@ -376,9 +399,13 @@ struct DesktopChatWorkspace: View {
             offline: offlineState,
             retryConnection: retryConnection,
             toolbar: toolbar,
-            toasts: toasts
+            toasts: toasts,
+            panelAnchorChanged: { panelAnchor = $0 }
         ) {
             destinationContent
+                // The toolbar's popovers and the panel ask the conversation
+                // column to open an artifact or a file through this.
+                .environment(outputRequests)
                 // One media loader per signed-in account, for the transcript
                 // and the composer that seeds it. A different account is a
                 // new loader with an empty cache.
@@ -474,6 +501,8 @@ struct DesktopChatWorkspace: View {
             isPrivate: isPrivateChat,
             canGoPrivate: configuration.privateChatModel != nil && !isInCall,
             share: share,
+            outputs: outputsContext,
+            isOutputsPresented: $isOutputsPresented,
             newChat: beginDraft,
             startShare: shareSelectedConversation,
             togglePrivate: togglePrivateChat
@@ -487,36 +516,18 @@ struct DesktopChatWorkspace: View {
             && !model.selectedMessages.isEmpty
     }
 
-    /// Publishes the open conversation, puts the link on the pasteboard, and
-    /// says so in the popover.
-    ///
-    /// The Mac copies rather than opening a share sheet: a link is going into a
-    /// message or a document the reader is already writing. The route is
-    /// idempotent per conversation, so sharing twice yields the same link.
+    /// Opens the Share popover on the open conversation (Phase 3 B2), which
+    /// makes its link. The route is idempotent per conversation, so sharing
+    /// twice yields the same link; nothing reaches the pasteboard until Copy.
     private func shareSelectedConversation() {
         guard let client = configuration.shareClient,
-              let conversationID = model.selectedConversationID,
-              share.phase != .working || share.conversationID != conversationID
+              let conversationID = model.selectedConversationID
         else { return }
-        share.conversationID = conversationID
-        share.phase = .working
-        share.isPresented = true
-        let accountID = session.profile.id
-        Task {
-            do {
-                let published = try await client.share(conversationID: conversationID, for: accountID)
-                // A share started for another chat since then owns the popover
-                // and the pasteboard: copying this link over that one would
-                // leave the popover describing a link that is not the one
-                // pasted.
-                guard share.conversationID == conversationID else { return }
-                JunoPasteboard.copy(published.url.absoluteString)
-                share.phase = .copied(published.url)
-            } catch {
-                guard share.conversationID == conversationID else { return }
-                share.phase = .failed("The conversation couldn’t be published. Try again in a moment.")
-            }
-        }
+        isOutputsPresented = false
+        share.start(
+            .chat(conversationID),
+            service: DesktopNativeShareService(client: client, accountID: session.profile.id)
+        )
     }
 
     // MARK: Private chat
@@ -587,7 +598,7 @@ struct DesktopChatWorkspace: View {
         DesktopConversationActions(
             rename: { conversation in
                 // The row holds the field, so the row has to be on screen.
-                if columnVisibility == .detailOnly { columnVisibility = .all }
+                columnVisibility = DesktopChatRename.columns(forRenameFrom: columnVisibility)
                 renamingConversationID = conversation.id
             },
             commitRename: { conversation, name in
@@ -619,7 +630,9 @@ struct DesktopChatWorkspace: View {
             archive: { conversation, undoManager in
                 setArchived(conversation.id, archived: true, undoManager: undoManager)
             },
-            delete: { conversation in pendingDeletion = conversation }
+            delete: { conversation in
+                deleteConfirmation = DesktopChatDeletion.confirmation { deleteConversation(conversation) }
+            }
         )
     }
 
@@ -665,22 +678,22 @@ struct DesktopChatWorkspace: View {
         undoManager.setActionName("Archive Chat")
     }
 
-    private var isConfirmingDeletion: Binding<Bool> {
-        Binding(
-            get: { pendingDeletion != nil },
-            set: { if !$0 { pendingDeletion = nil } }
-        )
-    }
-
-    /// Deletes the conversation Delete… asked about. A real delete — the
-    /// store enqueues `conversation.delete` — which is why it asks first.
-    private func deletePendingConversation() {
-        guard let conversation = pendingDeletion else { return }
-        pendingDeletion = nil
+    /// Deletes a conversation Delete… asked about. A real delete — the
+    /// store enqueues `conversation.delete` — which is why it asks first. A
+    /// delete the store could not take leaves the row where it was and says
+    /// "Delete failed.", as the web does.
+    private func deleteConversation(_ conversation: NativeConversation) {
         if model.selectedConversationID == conversation.id {
             beginDraft()
         }
-        Task { await model.deleteConversation(id: conversation.id) }
+        let model = model
+        let toasts = toasts
+        Task {
+            await model.deleteConversation(id: conversation.id)
+            if !DesktopChatDeletion.succeeded(id: conversation.id, in: model.conversations) {
+                toasts.post(.error(DesktopChatDeletion.failure))
+            }
+        }
     }
 
     private func projectCreated(_ projectID: String, for request: DesktopNewProjectRequest) {
@@ -701,8 +714,216 @@ struct DesktopChatWorkspace: View {
         destination.wrappedValue = .projects
     }
 
+    /// The sidebar's Search and ⇧⌘F: the panel, in Search.
     private func openSearch() {
-        destination.wrappedValue = .search
+        presentSearchPanel(.search)
+    }
+
+    /// Opens the ⌘K / Search panel in `mode`. Any popover anchored below is
+    /// closed first (crash rule 4). Seam 1 wires ⌘K to `.commands` here.
+    private func presentSearchPanel(_ mode: DesktopSearchPanelModel.Mode) {
+        share.close()
+        isOutputsPresented = false
+        searchPanel.services = panelServices
+        searchPanel.present(mode)
+    }
+
+    // MARK: The panel (Phase 3 B1)
+
+    /// The seams the integration wires (§2.3, rows 3–6). All unset on this
+    /// base, so the rows that need them are absent.
+    private var panelHooks: DesktopCommandCatalog.Hooks { .none }
+
+    /// What Search searches with: this Mac's encrypted store, the server's
+    /// unified search for what only it holds, and the Recent list.
+    private var panelServices: DesktopSearchPanelModel.Services {
+        var services = DesktopSearchPanelModel.Services()
+        let accountID = session.profile.id
+        if let store = configuration.localStore {
+            let index = NativeSearchStore(repository: store)
+            services.localSearch = { query in
+                try await index.search(accountID: StorageAccountID(accountID.rawValue), query: query)
+            }
+        }
+        if let sender = configuration.requestSender {
+            let client = NativeUnifiedSearchClient(sender: sender)
+            services.serverSearch = { query, types, projectID, window in
+                try await client.search(query: query, types: types, projectID: projectID, window: window, for: accountID)
+            }
+            services.recents = { try await client.recents(limit: 8, for: accountID) }
+        }
+        let model = model
+        let projectModel = configuration.projectModel
+        services.localRecents = {
+            DesktopSearchPanelModel.localRecents(
+                conversations: model.conversations,
+                projects: projectModel?.projects ?? [],
+                codeSessions: DesktopPanelCodeSession.fromWorkbench()
+            )
+        }
+        let authModel = configuration.authModel
+        let syncModel = configuration.syncModel
+        services.isOffline = {
+            DesktopOfflineState.resolve(connectivity: authModel.connectivity, syncPhase: syncModel?.phase) != nil
+        }
+        services.projectOfConversation = { id in
+            model.conversations.first { $0.id == id }?.projectId
+        }
+        return services
+    }
+
+    /// What the Command menu lists besides its fixed rows.
+    private var panelCommandContext: DesktopCommandCatalog.Context {
+        DesktopCommandCatalog.Context(
+            conversations: model.conversations,
+            codeSessions: DesktopPanelCodeSession.fromWorkbench(),
+            projects: configuration.projectModel?.projects ?? [],
+            isDark: isDarkNow
+        )
+    }
+
+    /// The theme as drawn: the account's choice, or the system's.
+    private var isDarkNow: Bool {
+        switch configuration.memorySettingsModel?.settings?.theme {
+        case .dark: true
+        case .light: false
+        case .system, .none: colorScheme == .dark
+        }
+    }
+
+    /// Runs a row the panel handed back. Each case lands on an action this
+    /// window already has.
+    private func performPanelAction(_ action: DesktopPanelAction) {
+        switch action {
+        case .newChat:
+            beginDraft()
+        case .newPrivateChat:
+            beginPrivateDraft()
+        case .newCodeSession:
+            DesktopWorkbenchRegistry.shared.request(.newCodeTask(prompt: nil))
+        case .page(let page):
+            if let openPage = panelHooks.openPage {
+                openPage(page)
+                return
+            }
+            // The three with a page on this base, until the router lands.
+            switch page {
+            case .designs, .newDesign: destination.wrappedValue = .design
+            case .newAgent: selection.wrappedValue = .destination(.agents)
+            case .skills, .automations, .newAutomation, .assistants, .newAssistant, .permissions: break
+            }
+        case .searchEverything:
+            presentSearchPanel(.search)
+        case .toggleSidebar:
+            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+        case .openNotifications:
+            panelHooks.openNotifications?()
+        case .openCode:
+            product = .code
+        case .destination(let target):
+            if target == .projects { requestedProjectID = nil }
+            selection.wrappedValue = .destination(target)
+        case .roadmap:
+            openWebPath("/roadmap")
+        case .conversation(let id, _):
+            Task { await openThread(id) }
+        case .codeSession(let id):
+            DesktopWorkbenchRegistry.shared.request(.openSession(id))
+        case .project(let id):
+            openProject(id)
+        case .settings:
+            DesktopSettingsRouter.open(.general, using: openSettings)
+        case .upgrade:
+            panelHooks.openUpgrade?()
+        case .toggleTheme:
+            toggleAccountTheme()
+        case .keyboardShortcuts:
+            openWindow(id: JunoDesktopWindow.shortcutsID)
+        case .artifact(let id, let conversationID):
+            openArtifact(id: id, conversationID: conversationID)
+        case .taskRecord(let sessionID):
+            panelHooks.openTaskRecord?(sessionID)
+        case .web(let path):
+            openWebPath(path)
+        }
+    }
+
+    /// ⌘K's Switch to Dark/Light Mode: writes the account's theme, as the
+    /// web's does. Seam 13 folds this and Stage A's ⇧⌘L into one helper.
+    private func toggleAccountTheme() {
+        guard let settingsModel = configuration.memorySettingsModel else { return }
+        let next: NativeThemePreference = isDarkNow ? .light : .dark
+        Task { await settingsModel.updateSettings(NativeSettingsPatch(theme: next)) }
+    }
+
+    private func openWebPath(_ path: String) {
+        guard let url = URL(string: JunoBackend.productionURLString + path) else { return }
+        openURL(url)
+    }
+
+    /// An artifact from Search: its conversation with the canvas open when
+    /// this Mac holds it, the Artifacts page otherwise.
+    private func openArtifact(id: String, conversationID: String?) {
+        guard let artifact = configuration.artifactModel?.artifacts.first(where: { $0.id == id }) else {
+            selection.wrappedValue = .destination(.artifacts)
+            return
+        }
+        let conversation = conversationID ?? artifact.conversationID
+        openConversation(conversation)
+        outputRequests.post(
+            .artifact(DesktopChatOutputRequests.reference(for: artifact), conversationID: conversation)
+        )
+    }
+
+    // MARK: Outputs (Phase 3 B3)
+
+    /// What the open chat made and used, for the toolbar's Outputs chip.
+    private var outputsContext: DesktopOutputsContext {
+        guard currentDestination == .chat, !isPrivateChat,
+            let conversationID = model.selectedConversationID
+        else { return DesktopOutputsContext() }
+        let artifacts = ChatSessionOutputs.conversationArtifacts(
+            configuration.artifactModel?.artifacts ?? [],
+            conversationID: conversationID
+        )
+        let model = model
+        let outputRequests = outputRequests
+        return DesktopOutputsContext(
+            outputs: ChatSessionOutputs.read(
+                artifacts: artifacts,
+                messages: model.selectedMessages,
+                modelName: { id in model.model(withID: id)?.displayName ?? junoDisplayModelName(id) }
+            ),
+            sender: configuration.requestSender,
+            accountID: session.profile.id,
+            openArtifact: { tile in
+                guard let artifact = artifacts.first(where: { $0.id == tile.id }) else { return }
+                outputRequests.post(
+                    .artifact(DesktopChatOutputRequests.reference(for: artifact), conversationID: conversationID)
+                )
+            },
+            quickLook: { attachment in outputRequests.post(.quickLook(attachment)) }
+        )
+    }
+
+    // MARK: Archived Chats (Phase 3 B5)
+
+    private var archivedChatsSheet: some View {
+        let model = model
+        return DesktopArchivedChatsSheet(
+            load: DesktopArchivedChats.load(phase: model.phase, conversations: model.conversations),
+            restore: { conversation in
+                await model.setArchived(id: conversation.id, archived: false)
+                return model.conversations.first { $0.id == conversation.id }?.isArchived == false
+            },
+            delete: { conversation in
+                await model.deleteConversation(id: conversation.id)
+                return DesktopChatDeletion.succeeded(id: conversation.id, in: model.conversations)
+            },
+            open: { id in openConversation(id) },
+            done: { showingArchivedChats = false }
+        )
+        .presentationSizing(.fitted)
     }
 
     /// Opens a conversation some other surface points at.
@@ -1200,6 +1421,13 @@ struct DesktopConversationView: View {
                 Text(reason)
             }
             .quickLookPreview($quickLookURL)
+            // The toolbar's Outputs and the ⌘K panel open an artifact's canvas
+            // or a file's Quick Look here, where both are owned.
+            .desktopOutputRequests(
+                conversationID: privateChat == nil ? model.selectedConversationID : nil,
+                openArtifact: { open(artifact: $0) },
+                quickLook: { attachment in withFile(attachment) { quickLookURL = $0 } }
+            )
             .sheet(item: $imageEditTarget) { target in
                 imageEditSheet(target)
             }
@@ -1320,9 +1548,9 @@ struct DesktopConversationView: View {
                 close: { imageEditTarget = nil }
             )
             .frame(minWidth: 560, minHeight: 640)
-            // The sheet contract at the presentation site, as the Library
-            // applies it: the warm canvas, not the system's window grey.
-            .junoSheetSurface(.fitted)
+            // A system sheet: its own ground and edge, no fill of Juno's
+            // (Phase 3 B6).
+            .presentationSizing(.fitted)
         }
     }
 

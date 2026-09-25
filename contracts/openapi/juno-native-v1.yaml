@@ -1144,6 +1144,190 @@ paths:
                   changed: { type: boolean }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /recents:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeRecents
+      summary: The merged Chat, task, Code and project timeline, newest first
+      description: >-
+        What the Mac's Search panel lists before anything is typed ("Recent").
+        Archived chats are left out. Each row carries the web path it opens.
+      parameters:
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 200, default: 40 } }
+        - { in: query, name: filter, schema: { type: string, default: all } }
+      responses:
+        '200':
+          description: One page of recent rows, and a count per filter.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, kind, title, updatedAt, href]
+                      properties:
+                        id: { type: string }
+                        kind: { type: string, enum: [chat, work, code, project] }
+                        title: { type: string }
+                        updatedAt: { type: string, format: date-time }
+                        pinned: { type: boolean }
+                        status: { type: string }
+                        needsAttention: { type: boolean }
+                        projectId: { type: [string, 'null'] }
+                        href: { type: string }
+                        subtitle: { type: string }
+                  counts: { type: object, additionalProperties: { type: integer } }
+                  filter: { type: string }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /search:
+    get:
+      servers: [{ url: /api }]
+      operationId: searchNativeEverything
+      summary: Unified search across everything the account owns
+      description: >-
+        The web palette's search (`src/lib/search/types.ts`). The Mac asks it
+        for memory, knowledge and work (`types=memory,knowledge,work`) and
+        searches chats, messages, projects, files and artifacts in its own
+        encrypted store. Marks are UTF-16 offsets into the text they mark.
+        `query` is echoed so a late answer can be dropped; an unknown type in
+        `types` is ignored rather than refused.
+      parameters:
+        - { in: query, name: q, schema: { type: string, maxLength: 200 } }
+        - { in: query, name: types, description: 'Comma-separated: conversation, message, project, file, knowledge, artifact, memory, work.', schema: { type: string, maxLength: 200 } }
+        - { in: query, name: projectId, schema: { type: string, maxLength: 60 } }
+        - { in: query, name: window, schema: { type: string, enum: [any, week, month, year] } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 25 } }
+      responses:
+        '200':
+          description: Groups in the web's order, and what each source covered.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [query, groups, total, coverage, partial]
+                properties:
+                  query: { type: string }
+                  total: { type: integer, minimum: 0 }
+                  partial: { type: boolean }
+                  groups:
+                    type: array
+                    items:
+                      type: object
+                      required: [type, label, hits]
+                      properties:
+                        type: { type: string, enum: [conversation, message, project, file, knowledge, artifact, memory, work] }
+                        label: { type: string }
+                        hits:
+                          type: array
+                          items:
+                            type: object
+                            required: [id, type, title, titleMarks, snippet, href, locator, projectId, updatedAt, score]
+                            properties:
+                              id: { type: string }
+                              type: { type: string }
+                              title: { type: string }
+                              titleMarks: { type: array, items: { type: object, required: [start, end], properties: { start: { type: integer }, end: { type: integer } } } }
+                              snippet:
+                                type: [object, 'null']
+                                required: [text, marks]
+                                properties:
+                                  text: { type: string }
+                                  marks: { type: array, items: { type: object, required: [start, end], properties: { start: { type: integer }, end: { type: integer } } } }
+                              href: { type: string }
+                              locator: { type: [string, 'null'] }
+                              projectId: { type: [string, 'null'] }
+                              updatedAt: { type: string, format: date-time }
+                              score: { type: number }
+                  coverage:
+                    type: array
+                    items:
+                      type: object
+                      required: [type, state, detail]
+                      properties:
+                        type: { type: string }
+                        state: { type: string, enum: [complete, partial, unavailable] }
+                        detail: { type: [string, 'null'] }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /share:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeShares
+      summary: The account's live share links, newest first
+      responses:
+        '200':
+          description: Every link that still works.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [shares]
+                properties:
+                  shares: { type: array, items: { type: object, additionalProperties: true } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: createNativeShare
+      summary: Create (or return the existing) share link for a chat or an artifact
+      description: >-
+        Idempotent per target. The link is a snapshot: later turns or edits
+        stay private. A 403 with `code: share_taken_down` carries the sentence
+        the client shows in place of the link, and is not retried.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - { type: object, required: [kind, conversationId], properties: { kind: { const: CHAT }, conversationId: { type: string } } }
+                - { type: object, required: [kind, artifactId], properties: { kind: { const: ARTIFACT }, artifactId: { type: string } } }
+      responses:
+        '200':
+          description: The link.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [share]
+                properties:
+                  share:
+                    type: object
+                    required: [id, kind, token, url]
+                    properties:
+                      id: { type: string }
+                      kind: { type: string, enum: [CHAT, ARTIFACT] }
+                      token: { type: string }
+                      url: { type: string, format: uri }
+                      title: { type: [string, 'null'] }
+                      snapshotAt: { type: string, format: date-time }
+                      views: { type: integer, minimum: 0 }
+                      createdAt: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '403':
+          description: This target cannot be shared.
+          content:
+            application/json:
+              schema: { type: object, required: [code], properties: { code: { const: share_taken_down }, error: { type: string } } }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /share/{shareId}:
+    parameters:
+      - { in: path, name: shareId, required: true, schema: { type: string } }
+    delete:
+      servers: [{ url: /api }]
+      operationId: revokeNativeShare
+      summary: Revoke a share link; anyone opening it afterwards sees nothing
+      responses:
+        '200':
+          description: Revoked.
+          content: { application/json: { schema: { type: object, additionalProperties: true } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
   # ---------------------------------------------------------------------------
   # Juno Work
   #

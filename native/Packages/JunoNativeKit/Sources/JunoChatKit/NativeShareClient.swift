@@ -59,7 +59,19 @@ public struct NativeShareClient: Sendable {
     /// Creates a link, or returns the existing one — the route is idempotent per
     /// target, so tapping Share twice does not litter the account with links.
     public func share(conversationID: String, for accountID: AccountID) async throws -> NativeShare {
-        let body = CreateWire(kind: "CHAT", conversationId: conversationID)
+        try await create(CreateWire(kind: "CHAT", conversationId: conversationID, artifactId: nil), for: accountID)
+    }
+
+    /// The same for an artifact: a snapshot of it as it is now, later edits
+    /// private (`kind: "ARTIFACT"`, `artifactId`).
+    public func share(artifactID: String, for accountID: AccountID) async throws -> NativeShare {
+        try await create(CreateWire(kind: "ARTIFACT", conversationId: nil, artifactId: artifactID), for: accountID)
+    }
+
+    /// `POST /api/share`. A 403 with `code: "share_taken_down"` is the one
+    /// refusal the reader can be told about in words — the server's own
+    /// sentence — and it is ``NativeShareError/blocked(_:)``, never a retry.
+    private func create(_ body: CreateWire, for accountID: AccountID) async throws -> NativeShare {
         let response = try await sender.send(
             try NativeBearerRequest(
                 path: "/api/share",
@@ -72,8 +84,20 @@ public struct NativeShareClient: Sendable {
             ),
             for: accountID
         )
-        guard (200...299).contains(response.statusCode),
-              let wire = try? JSONDecoder().decode(CreateResponseWire.self, from: response.body),
+        return try Self.decodeCreate(status: response.statusCode, body: response.body)
+    }
+
+    /// The create route's answer, as a share or the error it means. Internal
+    /// so the blocked case can be pinned without a transport.
+    static func decodeCreate(status: Int, body: Data) throws -> NativeShare {
+        if status == 403,
+            let refusal = try? JSONDecoder().decode(RefusalWire.self, from: body),
+            refusal.code == "share_taken_down"
+        {
+            throw NativeShareError.blocked(refusal.error)
+        }
+        guard (200...299).contains(status),
+              let wire = try? JSONDecoder().decode(CreateResponseWire.self, from: body),
               let share = wire.share.model
         else { throw NativeShareError.failed }
         return share
@@ -111,11 +135,21 @@ public struct NativeShareClient: Sendable {
 
 public enum NativeShareError: Error, Equatable, Sendable {
     case failed
+    /// The server will not share this target (`share_taken_down`): its own
+    /// sentence, when it sent one.
+    case blocked(String?)
 }
 
 private struct CreateWire: Encodable {
     let kind: String
-    let conversationId: String
+    /// Exactly one of these is sent; `nil` is left out of the body.
+    let conversationId: String?
+    let artifactId: String?
+}
+
+private struct RefusalWire: Decodable {
+    let code: String?
+    let error: String?
 }
 
 private struct ShareWire: Decodable {
