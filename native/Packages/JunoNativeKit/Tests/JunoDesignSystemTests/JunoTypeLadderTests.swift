@@ -28,8 +28,9 @@ final class JunoTypeLadderTests: XCTestCase {
         Expected(rung: .title, generated: JunoGeneratedType.title, size: 22, lineHeight: 1.25, tracking: -0.012, weight: .semibold, face: .sans, name: "title"),
         Expected(rung: .heading, generated: JunoGeneratedType.heading, size: 18, lineHeight: 1.3, tracking: -0.006, weight: .semibold, face: .sans, name: "heading"),
         Expected(rung: .bodyLarge, generated: JunoGeneratedType.bodyLg, size: 17, lineHeight: 1.6, tracking: 0, weight: .regular, face: .sans, name: "bodyLarge"),
+        Expected(rung: .reading, generated: JunoGeneratedType.reading, size: 16, lineHeight: 1.7, tracking: 0, weight: .regular, face: .sans, name: "reading"),
         Expected(rung: .body, generated: JunoGeneratedType.body, size: 15, lineHeight: 1.6, tracking: 0, weight: .regular, face: .sans, name: "body"),
-        Expected(rung: .prose, generated: nil, size: 15, lineHeight: 1.65, tracking: 0, weight: .regular, face: .sans, name: "prose"),
+        Expected(rung: .prose, generated: JunoGeneratedType.reading, size: 16, lineHeight: 1.7, tracking: 0, weight: .regular, face: .sans, name: "prose"),
         Expected(rung: .ui, generated: JunoGeneratedType.ui, size: 13, lineHeight: 1.5, tracking: 0, weight: .regular, face: .sans, name: "ui"),
         Expected(rung: .label, generated: JunoGeneratedType.label, size: 12, lineHeight: 1.4, tracking: 0.01, weight: .medium, face: .sans, name: "label"),
         Expected(rung: .caption, generated: JunoGeneratedType.caption, size: 11, lineHeight: 1.45, tracking: 0.02, weight: .regular, face: .sans, name: "caption"),
@@ -68,11 +69,13 @@ final class JunoTypeLadderTests: XCTestCase {
         XCTAssertEqual(JunoSerif.Face.nearest(to: JunoType.display(size: 40).weight, italic: false), .regular)
     }
 
-    /// The prose leading is `.prose-juno`'s own, stated in `globals.css`
-    /// rather than on the Tailwind ladder.
-    func testProseLeadingIsTheReadersLeading() {
-        XCTAssertEqual(JunoType.prose.lineHeight, 1.65)
-        XCTAssertEqual(JunoType.prose.size, JunoType.body.size)
+    /// `.prose-juno` is set on the `reading` rung in `globals.css` today, so
+    /// the prose rung is that rung — not `body` at a leading of its own, which
+    /// is what it was until Phase 6 read it against the web.
+    func testProseIsTheReadingRung() {
+        XCTAssertEqual(JunoType.prose, JunoType.reading)
+        XCTAssertEqual(JunoProseMetrics.bodySize, JunoType.reading.size)
+        XCTAssertEqual(JunoProseMetrics.lineHeight, JunoType.reading.lineHeight)
     }
 
     /// Only the greeting is serif, nothing is above semibold, and nothing is

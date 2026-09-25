@@ -24,6 +24,10 @@
 # Usage:
 #   npm run native:test                 # all three packages
 #   npm run native:test JunoNativeKit   # one, by directory name
+#   JUNO_SWIFT_FILTER='<regex>' npm run native:test JunoNativeKit
+#                                       # only the tests the regex matches
+#                                       # (`swift test --filter`); what
+#                                       # `native:consumption:test` uses
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -43,6 +47,14 @@ fi
 echo "[native:test] scratch: $SCRATCH_ROOT"
 mkdir -p "$SCRATCH_ROOT"
 
+# Same flags as the full run, so a filtered pass never builds differently from
+# the one CI does (and never throws the incremental build away).
+FILTER_ARGS=()
+if [ -n "${JUNO_SWIFT_FILTER:-}" ]; then
+  FILTER_ARGS=(--filter "$JUNO_SWIFT_FILTER")
+  echo "[native:test] filter: $JUNO_SWIFT_FILTER"
+fi
+
 failed=()
 for pkg in "${PACKAGES[@]}"; do
   path="native/Packages/$pkg"
@@ -58,6 +70,7 @@ for pkg in "${PACKAGES[@]}"; do
     --package-path "$path" \
     --scratch-path "$SCRATCH_ROOT/$pkg" \
     --no-parallel \
+    ${FILTER_ARGS[@]+"${FILTER_ARGS[@]}"} \
     -Xswiftc -warnings-as-errors; then
     echo "[native:test] $pkg ok"
   else

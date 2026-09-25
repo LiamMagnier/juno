@@ -541,3 +541,14 @@ Merged in order, each merge built and committed: `mac/lg-p5c`, `mac/liquid-glass
 - **Lane worktrees removed** (`juno-glass-pages`, `-p5c`, `-p4b`, `-p4c`, `-p3`, `-p3b`, `-p3c`; each was clean at its branch tip). The branches are kept: `mac/lg-p5c`, `mac/liquid-glass-pages`, `mac/lg-p4b`, `mac/lg-p4c`, `mac/lg-p3`, `mac/lg-p3b`, `mac/lg-p3c`, `fix/download-feed-cancel`. `origin/main` was re-fetched and is still `fe0a501d`, already merged.
 - **Runtime checks left for a person at the screen** (screen control is off): each lane's list, plus ⌘K's page rows and Open notifications, Settings' links from Settings and from a window on Code, the View menu's pages, Share… on an artifact, Use a Skill and `/slug` reaching the server, Archived Chats from More.
 - **Then ship**, per the owner's standing instruction (the release steps in the paused update above): merge into `main`, gate, push, deploy, 1.7.0 / 88, `release-macos.sh 1.7.0 --publish-dev`.
+
+## Phase 6, part A, 2026-09-25 (`mac/lg-p6a`, from `be4ed1c8`)
+
+Sync tooling, spec §A4.1 / §A4.3 / §A4.6. Full notes: the spec's "Phase 6 notes, part A".
+
+- **Consumption tests:** `JunoTokenConsumptionTests` (JunoNativeKit) — every `Color.juno*` on a ledger (generated pair, alias, accent, or native-only with its reason), no palette outside `JunoDesignSystem`, every hand-typed colour literal on a register that only shrinks, every generated token read or declared unread, every `JunoType` rung the generated rung. Run it with `npm run native:consumption:test`.
+- **Hand-typed tokens deleted:** the accent HSL tables (derived from the projection via `JunoColorToken.hsl`), the custom accent's white, `JunoType.prose`'s 1.65 (it is the `reading` rung, as `.prose-juno` is), the prose metrics' 16 / 1.7, the phone's Ultra ramp, the design desk label's neutral grey. What stays is registered: the phone's shipped grounds, the legacy status ramp, Code's terminal and diff wells, the chart palette, the custom accent's dark inks, the artifact console and design desk.
+- **CI:** `design:contract:check` and `design:editor:check` in `native.yml`; the generators count as native changes; `native-parity.yml` requires `native: done` / `native: n/a` on PRs touching the §A4.6 web files, mirrored in CODEOWNERS (the script checks the two lists agree). The Mac's icon test gained the bundle → case direction.
+- **npm:** `native:sync:check`, `native:parity:label`, `native:consumption:test`.
+- **For the owner in GitHub:** create the two labels and make "Native parity label" required.
+- **Not in this part:** the shell contract, the wire schema, the parity ledger, server-driven lists, paired screenshots (Phase 6 items 1b, 3, 4, 6, 7); the legacy status ramp's migration; the iOS token pass.

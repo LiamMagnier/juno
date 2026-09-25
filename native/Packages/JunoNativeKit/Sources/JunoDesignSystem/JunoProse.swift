@@ -25,10 +25,11 @@ public enum JunoProseStyle: Sendable, Equatable {
 
 /// `.prose-juno`'s numbers, in points at the default text size.
 public enum JunoProseMetrics {
-    /// `font-size: 1rem`.
-    public static let bodySize: CGFloat = 16
-    /// `line-height: 1.7`.
-    public static let lineHeight: CGFloat = 1.7
+    /// `font-size: 1rem`: the `reading` rung, read from the projection so a
+    /// retune of the rung on the web reaches the transcript.
+    public static let bodySize: CGFloat = JunoGeneratedType.reading.minSize
+    /// `line-height: 1.7`: the `reading` rung's.
+    public static let lineHeight: CGFloat = JunoGeneratedType.reading.lineHeight
     /// `> * + * { margin-top: 0.85em }`: 13.6pt.
     public static let blockGap: CGFloat = 0.85 * bodySize
     /// `h3, h4, h5 { line-height: 1.3; margin-top: 1.3em }`.
