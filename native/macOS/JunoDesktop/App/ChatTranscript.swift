@@ -131,6 +131,9 @@ struct DesktopTranscript: View {
     var openActivity: ((String, String?) -> Void)? = nil
     /// Opens the Research panel on a run, by id.
     var openResearch: ((String) -> Void)? = nil
+    /// The report window, a recap's "Inspect methodology & sources", and
+    /// the recaps hidden on this Mac (Phase 5 B6).
+    var researchActions = ChatResearchActions()
     /// "Research this": sends a question as a Research request.
     var researchThis: ((String) -> Void)? = nil
     /// The chat's current task, as its follower has it (§6.8, Phase 5 A5).
@@ -211,6 +214,7 @@ struct DesktopTranscript: View {
         ScrollView {
             // The web's reading column, metric for metric: `max-w-3xl`
             // (768pt) at `space-y-6` (24pt) — see `message-list.tsx`.
+            let research = researchPlacement
             LazyVStack(alignment: .leading, spacing: JunoSpace.section) {
                 ForEach(Array(model.selectedMessages.enumerated()), id: \.element.id) {
                     index, message in
@@ -218,11 +222,10 @@ struct DesktopTranscript: View {
                         .modifier(DesktopMessageRise(rises: index >= animateFrom))
                         .environment(\.junoFindHighlight, find?.highlight(for: message.id))
                         .id(message.id)
-                    // A research run follows the question it answers.
-                    if message.role == .user {
-                        ForEach(researchRuns.filter { $0.userMessageID == message.id }) { run in
-                            researchRow(run)
-                        }
+                    // A research run follows the question it answers, or the
+                    // turn it was started after.
+                    ForEach(research.byMessage[message.id] ?? []) { run in
+                        researchRow(run)
                     }
                     // A task follows the reply after the turn that started it.
                     ForEach(workPlacement[message.id] ?? []) { entry in
@@ -230,10 +233,8 @@ struct DesktopTranscript: View {
                     }
                 }
 
-                // Runs whose question is not on screen follow the transcript.
-                ForEach(researchRuns.filter { run in
-                    !model.selectedMessages.contains { $0.id == run.userMessageID && $0.role == .user }
-                }) { run in
+                // Runs with no turn on screen to follow: the transcript's foot.
+                ForEach(research.atFoot) { run in
                     researchRow(run)
                 }
 
@@ -553,11 +554,38 @@ struct DesktopTranscript: View {
 
     // MARK: Research
 
-    /// This conversation's background research runs (SPEC §9.11.3).
+    /// This conversation's background research runs that draw something
+    /// (SPEC §9.11.3, the native mirror's C4): live ones, finished ones seen
+    /// working, and the recap of a report that lives only on its run, unless
+    /// it was hidden here.
     private var researchRuns: [NativeResearchRun] {
         guard showsStoreState else { return [] }
-        // A run first seen finished is its completion message: no row.
-        return model.researchRuns(for: model.selectedConversationID).filter(\.seenLive)
+        return model.researchRuns(for: model.selectedConversationID).filter { run in
+            switch run.presentation {
+            case .none: false
+            case .row: true
+            case .recap: !researchActions.dismissed.contains(run.id)
+            }
+        }
+    }
+
+    /// Where each run goes: under the question it answers; else after the
+    /// last turn created at or before it (the web places its runs by
+    /// `createdAt` among the messages); else at the foot.
+    private var researchPlacement: (byMessage: [String: [NativeResearchRun]], atFoot: [NativeResearchRun]) {
+        let messages = model.selectedMessages
+        var byMessage: [String: [NativeResearchRun]] = [:]
+        var atFoot: [NativeResearchRun] = []
+        for run in researchRuns {
+            if let question = run.userMessageID, messages.contains(where: { $0.id == question && $0.role == .user }) {
+                byMessage[question, default: []].append(run)
+            } else if let created = run.createdAt, let anchor = messages.last(where: { $0.createdAt <= created }) {
+                byMessage[anchor.id, default: []].append(run)
+            } else {
+                atFoot.append(run)
+            }
+        }
+        return (byMessage, atFoot)
     }
 
     /// The newest live run owns the loop — only while no chat run works
@@ -569,7 +597,26 @@ struct DesktopTranscript: View {
 
     @ViewBuilder
     private func researchRow(_ run: NativeResearchRun) -> some View {
-        if run.phase == .awaitingStart, let conversationID = model.selectedConversationID {
+        if run.presentation == .recap {
+            ResearchRecapCard(
+                run: run,
+                openReport: run.reportBody == nil ? nil : { researchActions.openReport?(run.id) },
+                inspect: { researchActions.inspect?(run.id) },
+                dismiss: { researchActions.dismissRecap?(run.id) }
+            )
+            .id("research:\(run.id)")
+        } else if run.phase == .awaitingClarification, let conversationID = model.selectedConversationID {
+            DesktopResearchClarifyCard(
+                run: run,
+                atTail: model.selectedMessages.last?.id == run.userMessageID || run.userMessageID == nil,
+                busy: model.researchBusyRunIDs.contains(run.id),
+                error: model.researchErrors[run.id],
+                submit: { answers in
+                    Task { await model.clarifyResearch(runID: run.id, answers: answers, conversationID: conversationID) }
+                }
+            )
+            .id("research:\(run.id)")
+        } else if run.phase == .awaitingStart, let conversationID = model.selectedConversationID {
             DesktopResearchPlanCard(
                 run: run,
                 atTail: model.selectedMessages.last?.id == run.userMessageID || run.userMessageID == nil,
@@ -583,7 +630,15 @@ struct DesktopTranscript: View {
             DesktopResearchRow(
                 run: run,
                 ownsLoop: loopingResearchRunID == run.id,
-                open: { openResearch?(run.id) }
+                open: {
+                    // "Open report" opens the report's own window; anything
+                    // still going opens the Research panel.
+                    if run.phase == .done, run.reportBody != nil, let openReport = researchActions.openReport {
+                        openReport(run.id)
+                    } else {
+                        openResearch?(run.id)
+                    }
+                }
             )
             .id("research:\(run.id)")
         }

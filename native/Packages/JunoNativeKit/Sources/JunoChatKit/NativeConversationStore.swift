@@ -1177,42 +1177,83 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         )
     }
 
-    /// Follows a conversation's research runs while it is open: reads the
-    /// runs the server lists for it once, then polls each run that is not
-    /// finished — every 2.5s while one works, every 8s while all wait on the
-    /// reader or are paused — until the task is cancelled (the conversation
-    /// closes) or nothing is left to follow. A run that finishes brings its
-    /// completion message in through sync.
+    /// Follows a conversation's research runs while it is open.
+    ///
+    /// It reads the runs the server lists for the conversation — every live
+    /// one, whether or not the server derives a phase, so a run begun on the
+    /// web shows its row here too — and reads once each finished run this
+    /// Mac has not seen, so a report that exists only on its run (today's web
+    /// background runs) can be shown as its recap. Then it polls each open
+    /// run: at once while it is behind the server's newest event, every 2.5s
+    /// while one works, every 8s while all wait on the reader or are paused.
+    /// With nothing open it looks at the list again every 8s, for a run
+    /// started elsewhere, until the task is cancelled (the conversation
+    /// closes). A run that finishes brings its completion message in through
+    /// sync.
     public func followResearch(conversationID: String) async {
-        guard let chatClient, let accountID, !conversationID.isEmpty else { return }
-        if let summaries = try? await chatClient.researchRuns(conversationID: conversationID, for: accountID),
-            self.accountID == accountID
-        {
-            // Background runs only (they carry a server-derived phase): a
-            // profile-1 run answered inside its own chat turn. A live one is
-            // followed; a finished one is already its completion message.
-            for summary in summaries.reversed() where summary.phase != nil && summary.live {
-                if researchRun(id: summary.id) == nil {
-                    upsertResearchRun(
-                        NativeResearchRun(id: summary.id, conversationID: conversationID, state: summary.state, phase: summary.phase ?? .planning),
-                        conversationID: conversationID
-                    )
-                }
-            }
-        }
+        guard let accountID, !conversationID.isEmpty else { return }
+        await discoverResearchRuns(conversationID: conversationID, readFinished: true)
         while !Task.isCancelled, self.accountID == accountID {
             let open = researchRuns(for: conversationID).filter { !$0.phase.isTerminal }
-            guard !open.isEmpty else { return }
+            if open.isEmpty {
+                try? await Task.sleep(for: .seconds(8))
+                guard !Task.isCancelled, self.accountID == accountID else { return }
+                await discoverResearchRuns(conversationID: conversationID, readFinished: false)
+                continue
+            }
             var working = false
             for run in open {
                 guard !Task.isCancelled else { return }
-                await refreshResearchRun(id: run.id, conversationID: conversationID)
+                await catchUpResearchRun(id: run.id, conversationID: conversationID)
                 if let fresh = researchRun(id: run.id) {
                     working = working || fresh.phase.isWorking
                     if fresh.phase.isTerminal { await researchRunFinished(conversationID: conversationID) }
                 }
             }
             try? await Task.sleep(for: .seconds(working ? 2.5 : 8))
+        }
+    }
+
+    /// The conversation's runs from the server's list: live ones are
+    /// followed; finished ones this Mac has not seen are read once when
+    /// `readFinished` (the ten newest), so their recap can be drawn.
+    private func discoverResearchRuns(conversationID: String, readFinished: Bool) async {
+        guard let chatClient, let accountID,
+            let summaries = try? await chatClient.researchRuns(conversationID: conversationID, for: accountID),
+            self.accountID == accountID
+        else { return }
+        var unreadFinished: [NativeResearchRunSummary] = []
+        for summary in summaries.reversed() where researchRun(id: summary.id) == nil {
+            if summary.live {
+                upsertResearchRun(
+                    NativeResearchRun(
+                        id: summary.id, conversationID: conversationID, state: summary.state,
+                        phase: summary.phase ?? NativeResearchRun.Phase(state: summary.state),
+                        createdAt: summary.createdAt, assistantMessageID: summary.assistantMessageID
+                    ),
+                    conversationID: conversationID
+                )
+            } else if readFinished, summary.assistantMessageID == nil {
+                // A finished run with a completion message is that message;
+                // one without may be a report that lives only on the run.
+                unreadFinished.append(summary)
+            }
+        }
+        for summary in unreadFinished.suffix(10) {
+            guard !Task.isCancelled, self.accountID == accountID,
+                let run = try? await chatClient.researchRun(id: summary.id, for: accountID),
+                self.accountID == accountID
+            else { continue }
+            upsertResearchRun(run, conversationID: conversationID)
+        }
+    }
+
+    /// Reads a run, and again at once while it is behind the server's newest
+    /// event (a run far ahead drains in a few quick reads, not at 2.5s each).
+    private func catchUpResearchRun(id: String, conversationID: String) async {
+        for _ in 0..<8 {
+            await refreshResearchRun(id: id, conversationID: conversationID)
+            guard let fresh = researchRun(id: id), fresh.isBehind, !Task.isCancelled else { return }
         }
     }
 
@@ -1225,11 +1266,37 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         upsertResearchRun(fresh, conversationID: conversationID)
     }
 
+    /// A run read whole, for a surface that opens without the conversation —
+    /// the report window. It is not filed or followed.
+    public func loadResearchRun(id: String) async -> NativeResearchRun? {
+        if let known = researchRun(id: id) { return known }
+        guard let chatClient, let accountID else { return nil }
+        return try? await chatClient.researchRun(id: id, for: accountID)
+    }
+
+    /// The citation check on a report's answer, read once and kept: nil
+    /// when there is none or it could not be read.
+    public func researchAudit(messageID: String) async -> NativeResearchAudit? {
+        if let known = researchAudits[messageID] { return known }
+        guard let chatClient, let accountID,
+            let audit = await chatClient.researchCitations(messageID: messageID, for: accountID)
+        else { return nil }
+        researchAudits[messageID] = audit
+        return audit
+    }
+
+    @ObservationIgnored private var researchAudits: [String: NativeResearchAudit] = [:]
+
     private func researchRunFinished(conversationID: String) async {
         await syncModel.refresh()
         await reload()
         scheduleHydration(conversationID: conversationID)
     }
+
+    /// Whether this server refused "Finish now" as a request it does not
+    /// take (a 400: today's server has no `finish`). The control is hidden
+    /// from then on, for this account's server.
+    public private(set) var researchFinishUnsupported = false
 
     /// Pause, resume, finish now or cancel a run.
     public func controlResearch(runID: String, action: NativeResearchControl, conversationID: String) async {
@@ -1240,9 +1307,56 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             try await chatClient.controlResearch(id: runID, action: action, for: accountID)
             researchErrors[runID] = nil
         } catch {
+            if action == .finish, case .server(let status, _, _, _)? = error as? NativeChatAPIError, status == 400 {
+                // Not a failure to report: this server does not do it.
+                researchFinishUnsupported = true
+                researchErrors[runID] = nil
+            } else {
+                researchErrors[runID] = NativeFailureMessage.presentable(error)
+            }
+        }
+        await refreshResearchRun(id: runID, conversationID: conversationID)
+    }
+
+    /// Answers a run's clarify gate — or skips it with no answers — then
+    /// reads the run again (the response is nested, so it is not read).
+    public func clarifyResearch(runID: String, answers: [String: String], conversationID: String) async {
+        guard let chatClient, let accountID else { return }
+        researchBusyRunIDs.insert(runID)
+        defer { researchBusyRunIDs.remove(runID) }
+        do {
+            try await chatClient.clarifyResearch(id: runID, answers: answers, for: accountID)
+            researchErrors[runID] = nil
+        } catch {
             researchErrors[runID] = NativeFailureMessage.presentable(error)
         }
         await refreshResearchRun(id: runID, conversationID: conversationID)
+    }
+
+    /// Cancels the run an in-chat research turn started, after Stop.
+    ///
+    /// On today's server, stopping the stream ends the answer but not the run
+    /// behind it: a later read re-drives it, and it keeps spending and writes
+    /// a second report. The Mac has no run id for it, so it cancels the
+    /// newest live run the server lists for the conversation that was created
+    /// at or after the question, and that the server derives no phase for (a
+    /// background-research server stops its own). The run may not be listed
+    /// yet at the moment of Stop, so it looks twice.
+    func cancelInChatResearch(conversationID: String, since: Date) async {
+        guard let chatClient, let accountID else { return }
+        for attempt in 0..<2 {
+            if attempt > 0 { try? await Task.sleep(for: .seconds(3)) }
+            guard self.accountID == accountID,
+                let summaries = try? await chatClient.researchRuns(conversationID: conversationID, for: accountID)
+            else { continue }
+            let started = summaries.filter { summary in
+                summary.live && summary.phase == nil && (summary.createdAt ?? .distantPast) >= since
+            }
+            guard let newest = started.max(by: { ($0.createdAt ?? .distantPast) < ($1.createdAt ?? .distantPast) })
+            else { continue }
+            try? await chatClient.controlResearch(id: newest.id, action: .cancel, for: accountID)
+            return
+        }
     }
 
     /// Steers a run from the composer: true when the server took it; on a
@@ -1490,6 +1604,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         chatApprovalErrors = [:]
         chatApprovalScopeRefusals = []
         workStarts = [:]
+        researchAudits = [:]
+        activeResearchTurn = nil
         pendingMutationCount = 0
         conflictedMutationCount = 0
         lastErrorDescription = nil
@@ -2388,6 +2504,14 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             let chatClient
         else { return }
         chatPhase = .stopping
+        // A Research turn answered in the chat also started a run the server
+        // would otherwise go on driving: cancel that too (brief B6.8).
+        if let turn = activeResearchTurn {
+            activeResearchTurn = nil
+            Task { @MainActor [weak self] in
+                await self?.cancelInChatResearch(conversationID: turn.conversationID, since: turn.since)
+            }
+        }
         Task { @MainActor [weak self] in
             do {
                 _ = try await chatClient.cancelGeneration(id: generationID, for: accountID)
@@ -2399,7 +2523,13 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         }
     }
 
+    /// The Research turn this Mac is streaming, if the one running is one:
+    /// where it was sent and when, less two minutes for the server's clock.
+    private var activeResearchTurn: (conversationID: String, since: Date)?
+
     private func launchGeneration(_ context: RetryContext, needsAppend: Bool) {
+        activeResearchTurn = context.deepResearch
+            ? (context.conversationID, Date().addingTimeInterval(-120)) : nil
         generationTask?.cancel()
         generationTask = Task { @MainActor [weak self] in
             await self?.performGeneration(context, needsAppend: needsAppend)

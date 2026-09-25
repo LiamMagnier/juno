@@ -15,6 +15,10 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
     public enum Phase: String, Equatable, Sendable {
         case planning
         case awaitingStart = "awaiting_start"
+        /// Waiting on the reader to fill in what the goal left open (the
+        /// clarify gate) — a gate, not work: nothing moves and nothing polls
+        /// fast until it is answered or skipped.
+        case awaitingClarification = "awaiting_clarification"
         case searching, reading, reviewing, writing, checking, paused, done, stopped, failed
 
         public var isTerminal: Bool { self == .done || self == .stopped || self == .failed }
@@ -22,14 +26,15 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
         public var isWorking: Bool {
             switch self {
             case .planning, .searching, .reading, .reviewing, .writing, .checking: true
-            case .awaitingStart, .paused, .done, .stopped, .failed: false
+            case .awaitingStart, .awaitingClarification, .paused, .done, .stopped, .failed: false
             }
         }
 
         /// A phase from a run's `state`, for a server that does not derive one.
         public init(state: String, latestEventKind: String? = nil) {
             switch state {
-            case "accepted", "clarifying", "planning", "awaiting_clarification": self = .planning
+            case "accepted", "clarifying", "planning": self = .planning
+            case "awaiting_clarification": self = .awaitingClarification
             case "awaiting_plan_confirmation", "awaiting_user_input": self = .awaitingStart
             case "investigating": self = latestEventKind == "source_read" ? .reading : .searching
             case "reviewing": self = .reviewing
@@ -130,6 +135,80 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
         }
     }
 
+    /// What the goal left open, asked before the research starts (the web's
+    /// `ResearchClarification`).
+    public struct Clarification: Equatable, Sendable, Identifiable {
+        public let id: String
+        public let question: String
+        /// One line: what changes about the research depending on the answer.
+        public let why: String?
+        /// Examples of the answer's shape; a press fills the field.
+        public let suggestions: [String]
+        /// False only when the answer is needed; nil or true is optional.
+        public let skippable: Bool
+
+        public init(id: String, question: String, why: String? = nil, suggestions: [String] = [], skippable: Bool = true) {
+            self.id = id
+            self.question = question
+            self.why = why
+            self.suggestions = suggestions
+            self.skippable = skippable
+        }
+    }
+
+    /// The citation check's totals (`auditSummary`): how many of the report's
+    /// claims hold against the passages they cite.
+    public struct AuditSummary: Equatable, Sendable {
+        public var claims = 0
+        public var supported = 0
+        public var partiallySupported = 0
+        public var unsupported = 0
+        public var contradicted = 0
+        public var unverified = 0
+
+        public init(
+            claims: Int = 0, supported: Int = 0, partiallySupported: Int = 0,
+            unsupported: Int = 0, contradicted: Int = 0, unverified: Int = 0
+        ) {
+            self.claims = claims
+            self.supported = supported
+            self.partiallySupported = partiallySupported
+            self.unsupported = unsupported
+            self.contradicted = contradicted
+            self.unverified = unverified
+        }
+
+        /// Nothing the check could fault.
+        public var isClean: Bool { contradicted + unsupported == 0 }
+
+        /// The web's `auditHeadline`, word for word.
+        public var headline: String {
+            let problems = unsupported + partiallySupported + contradicted
+            if claims == 0 { return "No checkable claims in this answer" }
+            if problems == 0, unverified == 0 { return "Every claim checks out against its sources" }
+            var parts = ["\(supported)/\(claims) claims supported"]
+            if contradicted > 0 { parts.append("\(contradicted) contradicted") }
+            if unsupported > 0 { parts.append("\(unsupported) unsupported") }
+            if partiallySupported > 0 { parts.append("\(partiallySupported) partly supported") }
+            if unverified > 0 { parts.append("\(unverified) not checked") }
+            return parts.joined(separator: " \u{00B7} ")
+        }
+    }
+
+    /// One `state_changed` event, kept for the working clock on a server
+    /// that sends no `workingMs`.
+    public struct StateTransition: Equatable, Sendable {
+        public let seq: Int
+        public let state: String
+        public let at: Date
+
+        public init(seq: Int, state: String, at: Date) {
+            self.seq = seq
+            self.state = state
+            self.at = at
+        }
+    }
+
     public let id: String
     public var conversationID: String?
     /// The question the run answers: the reader's message.
@@ -166,6 +245,25 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
     /// after it finishes. A run first seen finished is its completion
     /// message and has no row (SPEC §9.11.3).
     public var seenLive = false
+    /// The clarify gate's questions (`plan.clarifications`).
+    public var clarifications: [Clarification] = []
+    /// What the run has spent, when the server says (`costMicroUsd`).
+    public var costMicroUsd: Int?
+    /// The citation check's totals, once the report has been checked.
+    public var audit: AuditSummary?
+    /// The run's own error sentence, when it ended on one.
+    public var error: String?
+    /// The newest event the server holds: while ``lastSeq`` is behind it, the
+    /// next poll goes at once (`maxSeq`).
+    public var maxSeq = 0
+    /// Whether the server derived the phase itself — a background-research
+    /// server. Today's server does not, and refuses "Finish now".
+    public var derivesPhase = false
+    /// Who confirmed the plan (`plan_confirmed.by`): "auto" on the in-chat
+    /// path, whose report is already the chat's answer.
+    public var confirmedBy: String?
+    /// Every state change seen, oldest first, for the working clock.
+    public var transitions: [StateTransition] = []
 
     public init(
         id: String,
@@ -236,6 +334,154 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
         return phase.isWorking ? base + max(0, now.timeIntervalSince(fetchedAt)) : base
     }
 
+    /// Behind the server's newest event: poll again at once.
+    public var isBehind: Bool { lastSeq < maxSeq }
+
+    /// The report's own words: the first Markdown artifact's body, else the
+    /// raw text (the web's `reportBody`).
+    public var reportBody: String? {
+        guard let report else { return nil }
+        return Self.reportBody(report)
+    }
+
+    /// The name a report goes by: its artifact's title unless that is the
+    /// generic "Research report", then the run's title, then the goal.
+    public var displayTitle: String {
+        if let report, let title = Self.reportTitle(report) { return title }
+        if let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return title }
+        return goal
+    }
+
+    /// A report the in-chat path wrote: its chat answer already carries it,
+    /// so it gets nothing more in the transcript (the native mirror's C4.2).
+    public var isInChatReport: Bool {
+        confirmedBy == "auto" && (report?.contains("identifier=\"research-report\"") ?? false)
+    }
+
+    /// Sources opened and read.
+    public var readSourceCount: Int { sources.filter(\.read).count }
+
+    /// "a/b objectives answered", when the plan had objectives.
+    public var objectivesAnswered: (covered: Int, total: Int)? {
+        guard !questions.isEmpty else { return nil }
+        return (questions.filter { $0.status == "covered" }.count, questions.count)
+    }
+
+    /// How the transcript draws a run (the native mirror's C4).
+    public enum Presentation: Equatable, Sendable {
+        /// The one-line row, the plan card or the clarify gate.
+        case row
+        /// A finished run with no answer of its own in the chat.
+        case recap
+        /// Nothing: its answer in the chat is the report.
+        case none
+    }
+
+    public var presentation: Presentation {
+        guard phase.isTerminal else { return .row }
+        if isInChatReport { return .none }
+        // A background run that finished with a completion message: that
+        // message is the report; the row stays only where it was seen working.
+        if assistantMessageID != nil { return seenLive ? .row : .none }
+        // Today's web background runs write the report on the run alone.
+        if report != nil || !sources.isEmpty { return .recap }
+        return seenLive ? .row : .none
+    }
+
+    /// The web's `RESEARCH_STATE_MESSAGE` for a state.
+    public static func stateSentence(_ state: String) -> String {
+        switch state {
+        case "accepted": "Getting ready"
+        case "clarifying": "Working out what the question leaves open"
+        case "awaiting_clarification": "Waiting for you to fill in a few details"
+        case "planning": "Working out what to look up"
+        case "awaiting_plan_confirmation": "Waiting for you to confirm the plan"
+        case "investigating": "Researchers are searching and reading"
+        case "reviewing": "Reviewing what the researchers found"
+        case "synthesizing": "Writing the report"
+        case "validating_citations": "Checking every citation against its source"
+        case "awaiting_user_input": "Waiting for your answer"
+        case "paused": "Paused"
+        case "completed": "Finished"
+        case "partially_completed": "Stopped early with what it had"
+        case "cancelled": "Cancelled"
+        default: "Stopped after an error"
+        }
+    }
+
+    /// Working states: the clock runs only in these.
+    static let workingStates: Set<String> = [
+        "clarifying", "planning", "investigating", "reviewing", "synthesizing", "validating_citations",
+    ]
+
+    /// Working time from the state changes, gates and pauses left out — the
+    /// web's `workingElapsedMs` (`run-clock.ts`), for a server that sends no
+    /// `workingMs`.
+    public static func workingElapsedMs(
+        transitions: [StateTransition], state: String, createdAt: Date?, now: Date
+    ) -> Int? {
+        var total: TimeInterval = 0
+        var current: String?
+        var since = Date.distantPast
+        for transition in transitions.sorted(by: { $0.seq < $1.seq }) {
+            if let current, workingStates.contains(current) {
+                total += max(0, transition.at.timeIntervalSince(since))
+            }
+            current = transition.state
+            since = transition.at
+        }
+        if transitions.isEmpty {
+            guard workingStates.contains(state), let createdAt else { return nil }
+            return Int((max(0, now.timeIntervalSince(createdAt)) * 1_000).rounded())
+        }
+        if let current, workingStates.contains(current) { total += max(0, now.timeIntervalSince(since)) }
+        if total == 0, !workingStates.contains(state) { return nil }
+        return Int((total * 1_000).rounded())
+    }
+
+    /// The first Markdown `<juno:artifact>`'s body, else the whole text.
+    public static func reportBody(_ report: String) -> String {
+        if let artifact = reportArtifact(report) {
+            let body = artifact.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !body.isEmpty { return body }
+        }
+        return report.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The artifact's title, unless it is the generic "research report".
+    public static func reportTitle(_ report: String) -> String? {
+        guard let title = reportArtifact(report)?.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !title.isEmpty, title.lowercased() != "research report"
+        else { return nil }
+        return title
+    }
+
+    /// The first `<juno:artifact>` of type MARKDOWN, else the first at all.
+    private static func reportArtifact(_ report: String) -> (title: String?, content: String)? {
+        var artifacts: [(type: String?, title: String?, content: String)] = []
+        var rest = report[...]
+        while let open = rest.range(of: "<juno:artifact") {
+            guard let tagEnd = rest[open.upperBound...].range(of: ">") else { break }
+            let attributes = String(rest[open.upperBound..<tagEnd.lowerBound])
+            let bodyStart = tagEnd.upperBound
+            let close = rest[bodyStart...].range(of: "</juno:artifact>")
+            let content = String(rest[bodyStart..<(close?.lowerBound ?? rest.endIndex)])
+            artifacts.append((attribute("type", in: attributes), attribute("title", in: attributes), content))
+            guard let close else { break }
+            rest = rest[close.upperBound...]
+        }
+        guard let chosen = artifacts.first(where: { $0.type?.uppercased() == "MARKDOWN" }) ?? artifacts.first
+        else { return nil }
+        return (chosen.title, chosen.content)
+    }
+
+    private static func attribute(_ name: String, in attributes: String) -> String? {
+        // A leading space, so `title` never matches inside `subtitle`.
+        guard let start = attributes.range(of: " \(name)=\"") else { return nil }
+        guard let end = attributes[start.upperBound...].range(of: "\"") else { return nil }
+        return String(attributes[start.upperBound..<end.lowerBound])
+    }
+
     /// The row's count: sources read while live, cited at rest.
     public var shownSourceCount: Int {
         phase.isTerminal ? counts.cited : counts.read
@@ -246,6 +492,8 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
         switch phase {
         case .planning: return NativeRunPhraseLine([NativeRunPhrase("Planning the research")])
         case .awaitingStart: return NativeRunPhraseLine([NativeRunPhrase("Ready to start")])
+        case .awaitingClarification:
+            return NativeRunPhraseLine([NativeRunPhrase("Waiting for you to fill in a few details")])
         case .searching:
             if let query = phaseQuery, !query.isEmpty {
                 return NativeRunPhraseLine([NativeRunPhrase([.phrase("Searching for"), .quote(query)])])
@@ -271,6 +519,7 @@ public struct NativeResearchRun: Equatable, Sendable, Identifiable {
         switch phase {
         case .planning: "Planning"
         case .awaitingStart: "Ready to start"
+        case .awaitingClarification: "Before Juno starts"
         case .searching: "Searching"
         case .reading: "Reading"
         case .reviewing: "Reviewing"
@@ -470,6 +719,133 @@ extension NativeChatAPIClient {
     }
 }
 
+extension NativeChatAPIClient {
+    /// Answers the clarify gate (`POST /api/research/{id}/clarify`): the
+    /// answers the reader gave, by question id; none at all is "skip and
+    /// research as written". The response is nested, so it is not read as a
+    /// view; the caller reads the run again.
+    public func clarifyResearch(id: String, answers: [String: String], for accountID: AccountID) async throws {
+        try requireIdentifier(id)
+        let trimmed = answers.compactMapValues { value -> String? in
+            let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return clean.isEmpty ? nil : String(clean.prefix(600))
+        }
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/research/\(id)/clarify",
+                method: .post,
+                headers: try HTTPHeaders(["Content-Type": "application/json"]),
+                body: try JSONEncoder().encode(["answers": trimmed])
+            ),
+            for: accountID
+        )
+        guard (200...299).contains(response.statusCode) else { throw serverError(response) }
+    }
+
+    /// The citation check for an answer (`GET /api/research/citations`), or
+    /// nil when there is none. A failure is also nil: a report with no marks
+    /// reads fine, and an error here would be noise.
+    public func researchCitations(messageID: String, for accountID: AccountID) async -> NativeResearchAudit? {
+        guard (try? requireIdentifier(messageID)) != nil,
+            let request = try? NativeBearerRequest(
+                path: "/api/research/citations",
+                queryItems: [URLQueryItem(name: "messageId", value: messageID)]
+            ),
+            let response = try? await sender.send(request, for: accountID),
+            (200...299).contains(response.statusCode)
+        else { return nil }
+        return NativeResearchAudit.decode(response.body)
+    }
+}
+
+/// A report's citation check, claim by claim (`ClaimAuditView`): what each
+/// cited source was used for, and whether the passage holds the claim up.
+public struct NativeResearchAudit: Equatable, Sendable {
+    public struct Link: Equatable, Sendable {
+        /// The citation's number, `[n]`: 1-based and positional.
+        public let sourceIndex: Int
+        /// `supports` or `contradicts`.
+        public let stance: String
+        /// The passage, verbatim from the copy Juno saved.
+        public let passage: String
+
+        public init(sourceIndex: Int, stance: String, passage: String) {
+            self.sourceIndex = sourceIndex
+            self.stance = stance
+            self.passage = passage
+        }
+    }
+
+    public struct Claim: Equatable, Sendable {
+        public let text: String
+        /// `supported`, `partially supported`, `unsupported`, `contradicted`
+        /// or `unverified`.
+        public let label: String
+        public let links: [Link]
+
+        public init(text: String, label: String, links: [Link]) {
+            self.text = text
+            self.label = label
+            self.links = links
+        }
+    }
+
+    public let claims: [Claim]
+
+    public init(claims: [Claim]) {
+        self.claims = claims
+    }
+
+    /// The claims that cite source `n`, with the passage each rests on.
+    public func evidence(forSource number: Int) -> [(claim: Claim, link: Link)] {
+        claims.flatMap { claim in
+            claim.links.filter { $0.sourceIndex == number }.map { (claim, $0) }
+        }
+    }
+
+    /// The web's `STATES` label for a claim's verdict.
+    public static func verdict(_ label: String) -> String {
+        switch label {
+        case "supported": "Supported"
+        case "partially supported": "Partly supported"
+        case "unsupported": "Unsupported"
+        case "contradicted": "Contradicted"
+        default: "Not checked"
+        }
+    }
+
+    /// `{audit: ClaimAuditView | null}`; nil for null or anything unreadable.
+    static func decode(_ data: Data) -> NativeResearchAudit? {
+        struct Envelope: Decodable {
+            struct Audit: Decodable {
+                struct Claim: Decodable {
+                    struct Link: Decodable {
+                        let sourceIndex: Int
+                        let stance: String?
+                        let passage: String?
+                    }
+                    let text: String
+                    let label: String?
+                    let links: LossyList<Link>?
+                }
+                let claims: LossyList<Claim>?
+            }
+            let audit: Audit?
+        }
+        guard let envelope = try? JSONDecoder().decode(Envelope.self, from: data), let audit = envelope.audit
+        else { return nil }
+        return NativeResearchAudit(claims: (audit.claims?.elements ?? []).map { claim in
+            Claim(
+                text: claim.text,
+                label: claim.label ?? "unverified",
+                links: (claim.links?.elements ?? []).map {
+                    Link(sourceIndex: $0.sourceIndex, stance: $0.stance ?? "supports", passage: $0.passage ?? "")
+                }
+            )
+        })
+    }
+}
+
 public enum NativeResearchControl: String, Sendable {
     case pause, resume, finish, cancel
 }
@@ -484,6 +860,19 @@ public struct NativeResearchRunSummary: Equatable, Sendable {
     public let live: Bool
     public let assistantMessageID: String?
     public let createdAt: Date?
+}
+
+extension NativeResearchRun {
+    /// A run view's bytes as a run — the client's own decoding, for tests.
+    static func decodedView(_ data: Data, previous: NativeResearchRun? = nil) -> NativeResearchRun? {
+        guard let wire = try? JSONDecoder().decode(ResearchRunEnvelopeWire.self, from: data) else { return nil }
+        return wire.run(previous: previous) { value in
+            let precise = ISO8601DateFormatter()
+            precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = precise.date(from: value) { return date }
+            return ISO8601DateFormatter().date(from: value)
+        }
+    }
 }
 
 private struct ResearchRunListWire: Decodable {
@@ -513,9 +902,52 @@ private struct ResearchRunEnvelopeWire: Decodable {
             struct Objective: Decodable {
                 let id: String?
                 let question: String?
+                let status: String?
+            }
+            struct Clarification: Decodable {
+                let id: String
+                let question: String
+                let why: String?
+                let suggestions: [String]?
+                let skippable: Bool?
+
+                private enum CodingKeys: String, CodingKey { case id, question, why, suggestions, skippable }
+
+                init(from decoder: any Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    id = try container.decode(String.self, forKey: .id)
+                    question = try container.decode(String.self, forKey: .question)
+                    why = try? container.decodeIfPresent(String.self, forKey: .why)
+                    suggestions = try? container.decodeIfPresent([String].self, forKey: .suggestions)
+                    skippable = try? container.decodeIfPresent(Bool.self, forKey: .skippable)
+                }
             }
             let approach: String?
             let objectives: LossyList<Objective>?
+            let clarifications: LossyList<Clarification>?
+        }
+        struct Audit: Decodable {
+            let claims: Int?
+            let supported: Int?
+            let partiallySupported: Int?
+            let unsupported: Int?
+            let contradicted: Int?
+            let unverified: Int?
+        }
+        /// A money figure the server sends as a decimal string or a number.
+        struct Micros: Decodable {
+            let value: Int?
+
+            init(from decoder: any Decoder) throws {
+                let container = try decoder.singleValueContainer()
+                if let text = try? container.decode(String.self) {
+                    value = Int(text)
+                } else if let number = try? container.decode(Double.self) {
+                    value = Int(number)
+                } else {
+                    value = nil
+                }
+            }
         }
         struct Question: Decodable {
             let id: String
@@ -582,11 +1014,14 @@ private struct ResearchRunEnvelopeWire: Decodable {
         let report: String?
         let revising: Bool?
         let finishRequested: Bool?
+        let costMicroUsd: Micros?
+        let auditSummary: Audit?
+        let error: String?
 
         private enum CodingKeys: String, CodingKey {
             case id, conversationId, goal, state, title, phase, phaseDetail, plan, questions, counts, workingMs,
                  createdAt, finishedAt, assistantMessageId, leadModel, latestFindings, sources, steering, estimate,
-                 report, revising, finishRequested
+                 report, revising, finishRequested, costMicroUsd, auditSummary, error
         }
 
         init(from decoder: any Decoder) throws {
@@ -613,12 +1048,16 @@ private struct ResearchRunEnvelopeWire: Decodable {
             report = try? container.decodeIfPresent(String.self, forKey: .report)
             revising = try? container.decodeIfPresent(Bool.self, forKey: .revising)
             finishRequested = try? container.decodeIfPresent(Bool.self, forKey: .finishRequested)
+            costMicroUsd = try? container.decodeIfPresent(Micros.self, forKey: .costMicroUsd)
+            auditSummary = try? container.decodeIfPresent(Audit.self, forKey: .auditSummary)
+            error = try? container.decodeIfPresent(String.self, forKey: .error)
         }
     }
 
     let run: Run
     let events: LossyList<Event>?
     let lastSeq: Int?
+    let maxSeq: Int?
 
     func run(previous: NativeResearchRun?, parseDate: (String) -> Date?) -> NativeResearchRun {
         let events = self.events?.elements ?? []
@@ -636,8 +1075,15 @@ private struct ResearchRunEnvelopeWire: Decodable {
             }
         }
         steps = Array(steps.sorted { $0.id > $1.id }.prefix(50))
-        let phase = run.phase.flatMap(NativeResearchRun.Phase.init(rawValue:))
-            ?? NativeResearchRun.Phase(state: run.state, latestEventKind: latestKind)
+        let report = run.report.flatMap { $0.isEmpty ? nil : $0 }
+        let serverPhase = run.phase.flatMap(NativeResearchRun.Phase.init(rawValue:))
+        var phase = serverPhase ?? NativeResearchRun.Phase(state: run.state, latestEventKind: latestKind)
+        // The clarify gate is a gate on either server: nothing moves until the
+        // reader answers or skips (the native mirror's C6).
+        if run.state == "awaiting_clarification" { phase = .awaitingClarification }
+        // Stopped early with nothing written reads as stopped, never "Report
+        // ready" with no report to open.
+        if run.state == "partially_completed", report == nil { phase = .stopped }
         let questions: [NativeResearchRun.Question]
         if let typed = run.questions?.elements, !typed.isEmpty {
             questions = typed.map {
@@ -646,7 +1092,15 @@ private struct ResearchRunEnvelopeWire: Decodable {
         } else {
             questions = (run.plan?.objectives?.elements ?? []).enumerated().compactMap { index, objective in
                 guard let question = objective.question, !question.isEmpty else { return nil }
-                return NativeResearchRun.Question(id: objective.id ?? "q\(index)", question: question)
+                // An objective's coverage in the question chips' words.
+                let status: String =
+                    switch objective.status {
+                    case "covered": "covered"
+                    case "partially_covered": "partial"
+                    case "blocked": "thin"
+                    default: "pending"
+                    }
+                return NativeResearchRun.Question(id: objective.id ?? "q\(index)", question: question, status: status)
             }
         }
         let sources = (run.sources?.elements ?? []).compactMap { source -> NativeResearchRun.Source? in
@@ -664,7 +1118,32 @@ private struct ResearchRunEnvelopeWire: Decodable {
             searches: run.counts?.searches ?? 0,
             pages: run.counts?.pages ?? readCount
         )
-        return NativeResearchRun(
+        // The plan's confirmation and every state change, kept across polls:
+        // each poll carries only the events after the last.
+        var confirmedBy = previous?.confirmedBy
+        var transitions = previous?.transitions ?? []
+        let knownTransitions = Set(transitions.map(\.seq))
+        for event in events {
+            if event.kind == "plan_confirmed", confirmedBy == nil,
+                case .string(let by)? = event.payload?["by"]
+            {
+                confirmedBy = by
+            }
+            if event.kind == "state_changed", !knownTransitions.contains(event.seq),
+                case .string(let state)? = event.payload?["state"],
+                let at = event.createdAt.flatMap(parseDate)
+            {
+                transitions.append(NativeResearchRun.StateTransition(seq: event.seq, state: state, at: at))
+            }
+        }
+        let fetchedAt = Date()
+        let createdAt = run.createdAt.flatMap(parseDate)
+        let workingMs = run.workingMs.map { Int($0.rounded()) }
+            ?? NativeResearchRun.workingElapsedMs(
+                transitions: transitions, state: run.state, createdAt: createdAt, now: fetchedAt
+            )
+        let cursor = max(previous?.lastSeq ?? 0, lastSeq ?? events.map(\.seq).max() ?? 0)
+        var decoded = NativeResearchRun(
             id: run.id,
             conversationID: run.conversationId ?? previous?.conversationID,
             userMessageID: previous?.userMessageID,
@@ -677,9 +1156,9 @@ private struct ResearchRunEnvelopeWire: Decodable {
             approach: run.plan?.approach.flatMap { $0.isEmpty ? nil : $0 },
             questions: questions,
             counts: counts,
-            workingMs: run.workingMs.map { Int($0.rounded()) },
-            fetchedAt: Date(),
-            createdAt: run.createdAt.flatMap(parseDate),
+            workingMs: workingMs,
+            fetchedAt: fetchedAt,
+            createdAt: createdAt,
             finishedAt: run.finishedAt.flatMap(parseDate),
             assistantMessageID: run.assistantMessageId,
             leadModel: run.leadModel?.label,
@@ -693,12 +1172,34 @@ private struct ResearchRunEnvelopeWire: Decodable {
             steering: (run.steering?.elements ?? []).map { NativeResearchRun.Steering(text: $0.text, appliedAtRound: $0.appliedAtRound) },
             estimateMinutes: run.estimate?.minutesUpTo,
             estimatePages: run.estimate?.pagesUpTo,
-            report: run.report.flatMap { $0.isEmpty ? nil : $0 },
+            report: report,
             revising: run.revising ?? false,
             finishRequested: run.finishRequested ?? false,
             steps: steps,
-            lastSeq: max(previous?.lastSeq ?? 0, lastSeq ?? events.map(\.seq).max() ?? 0)
+            lastSeq: cursor
         )
+        decoded.clarifications = (run.plan?.clarifications?.elements ?? []).map {
+            NativeResearchRun.Clarification(
+                id: $0.id, question: $0.question,
+                why: $0.why.flatMap { $0.isEmpty ? nil : $0 },
+                suggestions: ($0.suggestions ?? []).filter { !$0.isEmpty },
+                skippable: $0.skippable ?? true
+            )
+        }
+        decoded.costMicroUsd = run.costMicroUsd?.value
+        decoded.audit = run.auditSummary.map {
+            NativeResearchRun.AuditSummary(
+                claims: $0.claims ?? 0, supported: $0.supported ?? 0,
+                partiallySupported: $0.partiallySupported ?? 0, unsupported: $0.unsupported ?? 0,
+                contradicted: $0.contradicted ?? 0, unverified: $0.unverified ?? 0
+            )
+        }
+        decoded.error = run.error.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        decoded.maxSeq = max(maxSeq ?? 0, cursor)
+        decoded.derivesPhase = serverPhase != nil
+        decoded.confirmedBy = confirmedBy
+        decoded.transitions = transitions
+        return decoded
     }
 }
 

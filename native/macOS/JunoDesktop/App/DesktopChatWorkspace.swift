@@ -1010,6 +1010,11 @@ struct DesktopConversationView: View {
     /// answered in the chat), or nil. It shares the dock with the canvas and
     /// Activity: the newest opener wins (SPEC §8.5).
     @State private var openResearch: String?
+    /// The view the Research panel opens on — Sources, from a recap.
+    @State private var openResearchTab: DesktopResearchPanel.Tab?
+    /// The research receipts hidden on this Mac, for this account.
+    @State private var dismissedRecaps: Set<String> = []
+    @Environment(\.openWindow) private var openWindow
     /// ⌘F in this conversation.
     @State private var find = TranscriptFindModel()
     /// Sources' logos, fetched once per site for this window.
@@ -1134,6 +1139,9 @@ struct DesktopConversationView: View {
             .background(DesktopWindowVisibilityReader { windowVisible = $0 })
             // The conversation's research runs, followed while it is open —
             // and again whenever a hand-off adds one.
+            .task(id: session.profile.id.rawValue) {
+                dismissedRecaps = Set(UserDefaults.standard.stringArray(forKey: dismissedRecapsKey) ?? [])
+            }
             .task(id: "\(session.profile.id.rawValue):\(model.selectedConversationID ?? ""):\(openResearchRunKey)") {
                 guard privateChat == nil, let conversationID = model.selectedConversationID else { return }
                 await model.followResearch(conversationID: conversationID)
@@ -1488,8 +1496,14 @@ struct DesktopConversationView: View {
                 control: { action in
                     Task { await model.controlResearch(runID: runID, action: action, conversationID: conversationID) }
                 },
+                // Today's server answers "Finish now" with a 400: hide it
+                // where the server derives no phase, or once it has refused.
+                canFinish: run.derivesPhase && !model.researchFinishUnsupported,
+                initialTab: openResearchTab,
+                openInWindow: run.reportBody == nil ? nil : { openReport(runID) },
                 close: closeResearch
             )
+            .id("\(runID):\(openResearchTab?.rawValue ?? "")")
         }
     }
 
@@ -1766,6 +1780,12 @@ struct DesktopConversationView: View {
                     find: find,
                     openActivity: { messageID, callID in openActivityPanel(messageID: messageID, callID: callID) },
                     openResearch: { runID in openResearchPanel(runID) },
+                    researchActions: ChatResearchActions(
+                        openReport: { runID in openReport(runID) },
+                        inspect: { runID in openResearchPanel(runID, tab: .sources) },
+                        dismissRecap: { runID in dismissRecap(runID) },
+                        dismissed: dismissedRecaps
+                    ),
                     researchThis: privateChat == nil
                         ? { question in composerRequest = ChatComposerRequest(kind: .research(question)) }
                         : nil,
@@ -1814,13 +1834,30 @@ struct DesktopConversationView: View {
     }
 
     /// The Research panel on a run — the newest opener wins the dock.
-    private func openResearchPanel(_ runID: String) {
+    private func openResearchPanel(_ runID: String, tab: DesktopResearchPanel.Tab? = nil) {
+        openResearchTab = tab
         withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
             openArtifact = nil
             openActivity = nil
             openTask = nil
             openResearch = runID
         }
+    }
+
+    /// A research report in its own window (register #65).
+    private func openReport(_ runID: String) {
+        openWindow(id: JunoDesktopWindow.researchReportID, value: runID)
+    }
+
+    /// Where this account's hidden research receipts are remembered.
+    private var dismissedRecapsKey: String { "juno.research.recap.dismissed.\(session.profile.id.rawValue)" }
+
+    /// Hides a run's recap on this Mac, for good (the web's ✕ lasts the page).
+    private func dismissRecap(_ runID: String) {
+        withAnimation(JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)) {
+            dismissedRecaps.insert(runID)
+        }
+        UserDefaults.standard.set(Array(dismissedRecaps).sorted(), forKey: dismissedRecapsKey)
     }
 
     /// The Task panel on one of this chat's tasks — the newest opener wins the

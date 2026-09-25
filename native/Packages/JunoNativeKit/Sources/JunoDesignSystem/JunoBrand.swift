@@ -204,6 +204,8 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// A task's meter (Phase 5): Elapsed, Cost and Tokens — the web's
     /// `WorkLiveMeter` glyphs.
     case timer, coins, sigma
+    /// The research report window's Print… (the web's `Printer`).
+    case printer
 
     /// The generated symbol this case wears, without a cut suffix: `ph.<name>`
     /// for Phosphor's drawings, `juno.<name>` for Juno's own.
@@ -417,6 +419,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .timer: "ph.timer"
         case .coins: "ph.coins"
         case .sigma: "ph.sigma"
+        case .printer: "ph.printer"
         }
     }
 

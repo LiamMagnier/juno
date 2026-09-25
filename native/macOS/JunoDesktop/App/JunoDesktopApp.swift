@@ -30,6 +30,9 @@ enum JunoDesktopWindow {
     /// Git, tools, appearance. A window of its own because a coding agent's
     /// configuration is page-sized, and it opens beside the session it tunes.
     static let codeSettingsID = "juno.code.settings"
+    /// A research report in its own window, keyed by its run's id: opening
+    /// the same report twice brings its window forward (register #65).
+    static let researchReportID = "juno.research-report"
     /// The File menu's item that opens another main window. Named here because
     /// ``JunoDesktopAppDelegate`` invokes it by title when a launch comes up
     /// with no window at all.
@@ -389,6 +392,19 @@ struct JunoDesktopApp: App {
         }
         .defaultSize(width: 640, height: 720)
         .windowResizability(.contentSize)
+
+        // A research report, read in a window of its own (Phase 5 B6,
+        // register #65): opened from the research row, the recap and the
+        // Research panel's Report view.
+        WindowGroup("Research Report", id: JunoDesktopWindow.researchReportID, for: String.self) { $runID in
+            if let runID {
+                ResearchReportWindow(runID: runID, configuration: configuration)
+                    .junoAccountAppearance(configuration)
+            }
+        }
+        .defaultSize(width: 880, height: 720)
+        .windowResizability(.contentMinSize)
+        .defaultLaunchBehavior(.suppressed)
 
         // The menu bar item: New Chat, live Code sessions, Open Juno (§7.10).
         // Read off the shared registry, so it is right with no window open.

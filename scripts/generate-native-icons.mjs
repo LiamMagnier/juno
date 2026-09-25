@@ -162,6 +162,8 @@ const PHOSPHOR = {
   Timer: "Timer",
   Coins: "Coins",
   Sigma: "Sigma",
+  // The research report window's Print… (`report-reader.tsx`).
+  Printer: "Printer",
   Image: "Image",
   ImageBroken: "ImageOff",
   Crop: "Crop",
