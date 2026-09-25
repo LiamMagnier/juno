@@ -381,10 +381,31 @@ paths:
       description: >-
         Existing owner-scoped attachment library, capped at 300 newest items.
         Files taken out of the Library (DELETE /library/{id}) are not listed.
+        The Mac's Library page (Phase 4) pages it as the web's use-library.ts
+        does: limit, sort, q, kind, includeDeleted (the Recently deleted view)
+        and the previous answer's nextCursor. The first page also carries
+        counts, total and storage; items may carry inUse, keptIn, knowledge,
+        versionCount and deletedAt. Clients decode every added field
+        tolerantly.
       parameters:
         - in: query
           name: kind
           schema: { type: string, enum: [IMAGE, FILE] }
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: sort
+          schema: { type: string, enum: [newest, oldest, name, size] }
+        - in: query
+          name: includeDeleted
+          schema: { type: string, enum: ['true'] }
+        - in: query
+          name: cursor
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1 }
       responses:
         '200':
           description: Signed access URLs are short-lived and must never be persisted.
@@ -449,6 +470,137 @@ paths:
         '404':
           description: "Not in the reader's Library: not theirs, already deleted, or already removed."
           content: { application/json: { schema: { $ref: '#/components/schemas/GeneralRouteErrorEnvelope' } } }
+  /attachments/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    patch:
+      servers: [{ url: /api }]
+      operationId: renameNativeAttachment
+      description: Rename a file the owner holds (the Library's Rename…).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fileName]
+              properties: { fileName: { type: string, minLength: 1 } }
+      responses:
+        '200':
+          description: The saved name.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { fileName: { type: string } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /attachments/{id}/restore:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    post:
+      servers: [{ url: /api }]
+      operationId: restoreNativeAttachment
+      description: >-
+        Bring a file back from Recently deleted. A 404 means no deleted file
+        has that id: it was restored already, which the Library does not
+        treat as a failure.
+      responses:
+        '200':
+          description: Restored.
+          content: { application/json: { schema: { type: object } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '410': { $ref: '#/components/responses/GeneralRouteError' }
+  /attachments/{id}/versions:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeAttachmentVersions
+      description: The current version, then the earlier ones kept when the file was replaced.
+      responses:
+        '200':
+          description: Versions, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [versions]
+                properties:
+                  versions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        version: { type: integer }
+                        current: { type: boolean }
+                        fileName: { type: string }
+                        size: { type: integer }
+                        createdAt: { type: string }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /attachments/{id}/versions/{version}/restore:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+      - in: path
+        name: version
+        required: true
+        schema: { type: integer, minimum: 1 }
+    post:
+      servers: [{ url: /api }]
+      operationId: restoreNativeAttachmentVersion
+      description: Make an earlier version current; the current one is kept.
+      responses:
+        '200':
+          description: Restored.
+          content: { application/json: { schema: { type: object } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '410': { $ref: '#/components/responses/GeneralRouteError' }
+  /projects:
+    post:
+      servers: [{ url: /api }]
+      operationId: createNativeUnnamedProject
+      description: >-
+        Create a project. The Mac sends an empty body only for a project left
+        unnamed, which the server creates as "Untitled project" and names from
+        its first chat; a named project goes through /mutations
+        (project.create), which requires a name.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 120 }
+                instructions: { type: string }
+      responses:
+        '201':
+          description: The new project's id.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties: { id: { type: string } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
   /artifacts:
     get:
       servers: [{ url: /api }]
@@ -553,6 +705,40 @@ paths:
             application/json: { schema: { $ref: '#/components/schemas/ArtifactExportFormats' } }
             application/octet-stream: { schema: { type: string, format: binary } }
         '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /artifacts/{artifactId}/poster:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeDesignPoster
+      description: >-
+        The owner's picture of a DESIGN artifact: the first page of version v
+        (the current one without v), drawn by the server as SVG — the web's
+        designPosterUrl, with r the poster renderer. A version a later one
+        superseded is immutable; the current version revalidates by ETag
+        (If-None-Match, 304). 404 (JSON) for anything that is not a readable
+        design of the caller's; the Mac then falls back to
+        /api/design/{id}/export?format=svg.
+      parameters:
+        - in: path
+          name: artifactId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: v
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: r
+          schema: { type: integer, minimum: 1 }
+        - in: header
+          name: If-None-Match
+          schema: { type: string }
+      responses:
+        '200':
+          description: The poster.
+          content: { image/svg+xml: { schema: { type: string } } }
+        '304': { description: The cached poster is current. }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
         '429': { $ref: '#/components/responses/GeneralRouteError' }

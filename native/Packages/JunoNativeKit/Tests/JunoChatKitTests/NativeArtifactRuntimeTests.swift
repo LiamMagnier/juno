@@ -295,6 +295,7 @@ final class ArtifactRuntimeBridgeTests: XCTestCase {
         XCTAssertEqual(verdict("ftp://example.com/x"), "block")
     }
 
+    @MainActor
     func testTheSchemeServesOnlyWhatWasBundled() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("runtime-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

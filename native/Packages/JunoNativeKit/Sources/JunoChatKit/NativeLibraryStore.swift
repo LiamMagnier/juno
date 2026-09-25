@@ -5,15 +5,37 @@ import JunoCore
 import JunoSync
 import Observation
 
-/// One file the account has already shared with Juno.
+/// One file the account has already shared with Juno — a row of
+/// `GET /api/library` (the web's `LibraryItem`, `library-types.ts`).
+///
+/// Everything past the first six fields is optional and decoded tolerantly:
+/// the composer's picker reads only the name, type, size and date, and a
+/// server a step behind or ahead still decodes.
 public struct NativeLibraryItem: Identifiable, Equatable, Sendable {
     public let id: String
-    public let fileName: String
+    public var fileName: String
     public let mimeType: String
     public let size: Int
     /// `IMAGE` or `FILE`, as the server writes it.
     public let kind: String
     public let createdAt: Date
+    /// The stored object's path (`/api/files/…`) or a signed URL.
+    public var url: String?
+    /// The chat the file was sent in, for "Open source chat".
+    public var conversationID: String?
+    public var version: Int
+    /// How many versions the file has; above one, Versions… is offered.
+    public var versionCount: Int
+    public var origin: String?
+    public var parserState: String?
+    /// When the file went to Recently deleted.
+    public var deletedAt: Date?
+    /// Where a live file is used outside the Library.
+    public var inUse: NativeLibraryUse?
+    /// In Recently deleted but still live where it is used.
+    public var keptIn: NativeLibraryUse?
+    /// What indexing made of the file; nil for files no extractor claims.
+    public var knowledge: NativeLibraryKnowledge?
 
     public init(
         id: String,
@@ -21,7 +43,17 @@ public struct NativeLibraryItem: Identifiable, Equatable, Sendable {
         mimeType: String,
         size: Int,
         kind: String,
-        createdAt: Date
+        createdAt: Date,
+        url: String? = nil,
+        conversationID: String? = nil,
+        version: Int = 1,
+        versionCount: Int = 1,
+        origin: String? = nil,
+        parserState: String? = nil,
+        deletedAt: Date? = nil,
+        inUse: NativeLibraryUse? = nil,
+        keptIn: NativeLibraryUse? = nil,
+        knowledge: NativeLibraryKnowledge? = nil
     ) {
         self.id = id
         self.fileName = fileName
@@ -29,9 +61,40 @@ public struct NativeLibraryItem: Identifiable, Equatable, Sendable {
         self.size = size
         self.kind = kind
         self.createdAt = createdAt
+        self.url = url
+        self.conversationID = conversationID
+        self.version = version
+        self.versionCount = versionCount
+        self.origin = origin
+        self.parserState = parserState
+        self.deletedAt = deletedAt
+        self.inUse = inUse
+        self.keptIn = keptIn
+        self.knowledge = knowledge
     }
 
     public var isImage: Bool { kind.uppercased() == "IMAGE" }
+}
+
+/// A file's search index, as `/api/library` reports it (`index-status.tsx`).
+public struct NativeLibraryKnowledge: Equatable, Sendable {
+    /// `queued`, `processing`, `ready`, `partial`, `failed`, … — kept as the
+    /// server's word.
+    public let state: String
+    public let error: String?
+    public let blockCount: Int?
+    public let pageCount: Int?
+    /// The knowledge document behind the file, when the server names it
+    /// (not today; Phase 4 A7 lights up the document inspector when it does).
+    public let documentID: String?
+
+    public init(state: String, error: String? = nil, blockCount: Int? = nil, pageCount: Int? = nil, documentID: String? = nil) {
+        self.state = state
+        self.error = error
+        self.blockCount = blockCount
+        self.pageCount = pageCount
+        self.documentID = documentID
+    }
 }
 
 public enum NativeLibraryError: Error, Equatable, LocalizedError, Sendable {
@@ -56,7 +119,7 @@ public enum NativeLibraryError: Error, Equatable, LocalizedError, Sendable {
 /// object**: no re-upload, no second copy of the bytes, and the old message
 /// keeps its file.
 public struct NativeLibraryClient: Sendable {
-    private let sender: any NativeAuthenticatedRequestSending
+    let sender: any NativeAuthenticatedRequestSending
 
     public init(sender: any NativeAuthenticatedRequestSending) {
         self.sender = sender
@@ -71,24 +134,10 @@ public struct NativeLibraryClient: Sendable {
             for: accountID
         )
         guard (200...299).contains(response.statusCode) else { throw failure(response) }
-        guard let decoded = try? JSONDecoder().decode(ItemsWire.self, from: response.body) else {
+        guard let page = NativeLibraryPage.decode(response.body) else {
             throw NativeLibraryError.malformedResponse
         }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let plain = ISO8601DateFormatter()
-        return decoded.items.map { wire in
-            NativeLibraryItem(
-                id: wire.id,
-                fileName: wire.fileName,
-                mimeType: wire.mimeType,
-                size: wire.size,
-                kind: wire.kind,
-                createdAt: formatter.date(from: wire.createdAt)
-                    ?? plain.date(from: wire.createdAt)
-                    ?? .distantPast
-            )
-        }
+        return page.items
     }
 
     /// Clones `ids` into unlinked attachments the composer can send.
@@ -127,7 +176,7 @@ public struct NativeLibraryClient: Sendable {
         }
     }
 
-    private func failure(_ response: HTTPResponse) -> NativeLibraryError {
+    func failure(_ response: HTTPResponse) -> NativeLibraryError {
         let envelope = try? JSONDecoder().decode(
             NativeAPIErrorEnvelope.self, from: response.body
         )
@@ -256,18 +305,6 @@ public final class NativeLibraryModel {
             return nil
         }
     }
-}
-
-private struct ItemsWire: Decodable {
-    struct Item: Decodable {
-        let id: String
-        let fileName: String
-        let mimeType: String
-        let size: Int
-        let kind: String
-        let createdAt: String
-    }
-    let items: [Item]
 }
 
 private struct AttachRequestWire: Encodable {

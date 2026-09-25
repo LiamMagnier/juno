@@ -198,6 +198,9 @@ const PHOSPHOR = {
   Sun: "Sun",
   Moon: "Moon",
   Monitor: "Monitor",
+  // The Artifacts page's design presets (PRESET_GLYPHS).
+  DeviceMobile: "Smartphone",
+  DeviceTablet: "Tablet",
   BookOpen: "BookOpen",
   Wrench: "Wrench",
   CheckCircle: "CheckCircle2",

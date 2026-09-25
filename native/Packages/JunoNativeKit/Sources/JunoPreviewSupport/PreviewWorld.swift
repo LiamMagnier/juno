@@ -23,6 +23,9 @@ public final class PreviewWorld {
     public let accountID: AccountID
     public let conversationModel: NativeConversationModel<SQLiteAccountRepository>
     public let projectModel: NativeProjectModel<SQLiteAccountRepository>
+    /// A project's local configuration (persona, model, tools). Present so a
+    /// project page's Settings tab draws all of its cards in the harness.
+    public let projectWorkspaceModel: ProjectWorkspaceModel<SQLiteAccountRepository>
     public let artifactModel: NativeArtifactModel<SQLiteAccountRepository>
     public let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>
     public let searchModel: NativeSearchModel<SQLiteAccountRepository>
@@ -148,6 +151,7 @@ public final class PreviewWorld {
             syncModel: syncModel,
             sender: sender
         )
+        projectWorkspaceModel = ProjectWorkspaceModel(repository: repository)
         artifactModel = NativeArtifactModel(
             repository: repository,
             syncModel: syncModel,
@@ -196,6 +200,7 @@ public final class PreviewWorld {
 
         await conversationModel.start(for: accountID)
         await projectModel.start(for: accountID)
+        await projectWorkspaceModel.start(for: accountID)
         await artifactModel.start(for: accountID)
         await memorySettingsModel.start(for: accountID)
         searchModel.start(for: accountID)
