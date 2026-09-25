@@ -33,6 +33,38 @@ struct DesktopIconCatalogTests {
         }
     }
 
+    /// The other direction (spec §A4.3): every symbol the Mac's catalog ships
+    /// is worn by a `JunoIcon` case, and made it into the bundle.
+    ///
+    /// A symbol no case wears is weight the generator should not be emitting;
+    /// one missing from the bundle is a template actool dropped without
+    /// failing the build. `JunoBrandTests` makes the same case ↔ asset check
+    /// against both catalogs on disk; this is the Mac's, against what ships.
+    @Test
+    func everyShippedSymbolHasACaseAndIsInTheBundle() throws {
+        let catalog = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // → Tests
+            .deletingLastPathComponent() // → JunoDesktop
+            .appendingPathComponent("Resources/Icons.xcassets")
+        let entries = try FileManager.default.contentsOfDirectory(atPath: catalog.path)
+        let shipped = Set(
+            entries.filter { $0.hasSuffix(".symbolset") }.map { String($0.dropLast(".symbolset".count)) }
+        )
+        #expect(shipped.count > 100, "Icons.xcassets was not read: \(catalog.path)")
+
+        var worn: Set<String> = []
+        for icon in JunoIcon.allCases {
+            worn.insert(icon.assetName(.regular))
+            worn.insert(icon.assetName(.bold))
+            if icon.hasFill { worn.insert(icon.assetName(.fill)) }
+        }
+        #expect(shipped.subtracting(worn).sorted() == [], "symbols no JunoIcon case wears")
+        #expect(worn.subtracting(shipped).sorted() == [], "JunoIcon cuts with no symbol in the catalog")
+        for name in shipped.sorted() where NSImage(named: name) == nil {
+            Issue.record("\(name) is in Icons.xcassets but not in the app bundle")
+        }
+    }
+
     /// The fixture: Phosphor's `Plus` at 100pt. The box is 16/14 of the point
     /// size (114.3pt) and is the symbol's whole advance; the regular plus spans
     /// 192 of the grid's 256 units, so its ink is three quarters of the box.

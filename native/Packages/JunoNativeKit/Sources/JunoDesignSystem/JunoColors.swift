@@ -16,7 +16,11 @@ import AppKit
 /// **The names are the redesign's (§8.1 of `MACOS_LIQUID_GLASS_REDESIGN.md`).**
 /// Each accessor names the CSS variable it resolves, so a change on the web has
 /// one obvious landing site here, and `JunoColorConsumptionTests` fails if an
-/// accessor stops resolving to its generated counterpart. The older names
+/// accessor stops resolving to its generated counterpart.
+/// `JunoTokenConsumptionTests` holds the ledger of *every* accessor: a new one
+/// fails until it resolves to a generated pair there or is registered as
+/// native-only with its reason, and a new hand-typed triple anywhere in the
+/// product sources fails the same way. The older names
 /// (`junoSurface`, `junoMutedForeground`, `junoSidebarForeground`,
 /// `junoFocusRing`, `junoSidebarSelection`, …) still compile and resolve to the
 /// same values; they are aliases, not a second palette, and each says which

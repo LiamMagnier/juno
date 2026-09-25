@@ -24,3 +24,22 @@
 
 # The published native contract. Drift here breaks shipped apps.
 /contracts/                     @LiamMagnier
+
+# Web files the native apps mirror by hand (docs/native/MACOS_LIQUID_GLASS_REDESIGN.md
+# §A4.6): the chat request the apps send, the sidebar's rows, which drawing each
+# icon concept wears, and the colour and type tokens. The generators catch a
+# drifted projection; nothing else catches a field added to the chat body or a
+# row moved in the sidebar. So a pull request that touches one of these carries
+# the label "native: done" (the apps were updated, here or in a linked PR) or
+# "native: n/a" (the change does not reach them). The `native parity` workflow
+# fails without one. Make that check required in branch protection for it to
+# block a merge.
+#
+# Keep this list and WATCHED in scripts/check-native-parity-label.mjs the same;
+# that script fails when they differ.
+/src/lib/chat/request.ts              @LiamMagnier
+/src/app/api/chat/                    @LiamMagnier
+/src/components/app/app-sidebar.tsx   @LiamMagnier
+/src/lib/app-icons.ts                 @LiamMagnier
+/src/components/ui/icons.tsx          @LiamMagnier
+/src/app/globals.css                  @LiamMagnier

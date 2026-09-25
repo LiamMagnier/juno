@@ -37,44 +37,14 @@ public enum JunoAccent: String, CaseIterable, Sendable, Identifiable {
         self = JunoAccent(rawValue: (setting ?? "").lowercased()) ?? .coral
     }
 
-    /// `--primary` in light mode, as HSL degrees / percent / percent.
-    ///
-    /// Four of these moved down in lightness so that white on the fill clears
-    /// 4.5:1 with the accent's own button label — sage was worst, at 3.20:1.
-    /// Hue and saturation are untouched on every one, so each accent keeps its
-    /// character exactly; only the value changed. Recomputed: coral 46% =
-    /// 4.85:1 · teal 31.5% = 4.54:1 · violet 60% = 5.00:1 · sage 42.5% = 4.52:1.
-    /// Amber already passed at 7.13:1 because its ``onAccent`` is dark ink.
-    private var light: (h: Double, s: Double, l: Double) {
-        switch self {
-        case .coral: (15, 0.54, 0.46)
-        case .juniper: (152, 0.44, 0.31)
-        case .teal: (180, 0.63, 0.315)
-        case .violet: (249, 0.59, 0.60)
-        case .amber: (39, 0.67, 0.55)
-        case .sage: (120, 0.18, 0.425)
-        }
-    }
-
-    /// `--primary` in dark mode. Coral is deliberately identical in both, as it is
-    /// on the web; the others lift.
-    private var dark: (h: Double, s: Double, l: Double) {
-        switch self {
-        case .coral: (15, 0.54, 0.46)
-        case .juniper: (152, 0.42, 0.54)
-        case .teal: (187, 0.58, 0.49)
-        case .violet: (249, 0.66, 0.71)
-        case .amber: (38, 0.73, 0.63)
-        case .sage: (120, 0.23, 0.61)
-        }
-    }
-
     /// `--primary`: the action colour, per appearance.
     ///
-    /// Read from ``generatedPalette`` — the projection of the `[data-accent]`
-    /// blocks — rather than rebuilt from the HSL triples above, which stay only
-    /// for ``hsl(dark:)``. The two agree (`JunoAccentTests` pins it), but the
-    /// projection is the one `design:tokens:check` keeps honest.
+    /// Read from ``generatedPalette``, the projection of the `[data-accent]`
+    /// blocks in `globals.css`. Coral is the same in both appearances, as on
+    /// the web; the other five lift in dark. Four of the light values sit lower
+    /// than their first cut so white on the fill clears 4.5:1 (coral 4.85,
+    /// teal 4.54, violet 5.00, sage 4.52; amber takes dark ink at 7.13). That
+    /// tuning lives on the web now, and arrives here through the projection.
     public var color: Color { Color.junoAdaptive(generatedPalette.primary) }
 
     /// `--primary-foreground`: the text colour that stays legible *on* this
@@ -99,8 +69,12 @@ public enum JunoAccent: String, CaseIterable, Sendable, Identifiable {
     /// wheel from whichever accent is in force. Reading the triplet is the only
     /// way to do that and still answer the accent picker — the alternative is a
     /// hard-coded companion that clashes with four of the five accents.
+    ///
+    /// Derived from the generated `--primary` rather than kept as a second,
+    /// hand-typed table of triples (Phase 6): the table and the projection
+    /// could only ever agree by someone remembering to edit both.
     public func hsl(dark isDark: Bool) -> (h: Double, s: Double, l: Double) {
-        isDark ? dark : light
+        generatedPalette.primary.resolve(dark: isDark).hsl
     }
 }
 
@@ -227,16 +201,20 @@ public struct JunoCustomAccent: Equatable, Sendable {
     public var ink: Color { color }
 
     public var onAccent: Color {
-        Color.junoAdaptive(
-            light: takesDarkInk(dark: false) ? Self.inkLight : Self.white,
-            dark: takesDarkInk(dark: true) ? Self.inkDark : Self.white
+        let white = JunoGeneratedColors.primaryForeground
+        return Color.junoAdaptive(
+            light: takesDarkInk(dark: false) ? Self.inkLight : white.light,
+            dark: takesDarkInk(dark: true) ? Self.inkDark : white.dark
         )
     }
 
-    /// `hsl(30 3% 12%)` and `hsl(40 6% 10%)`: the web's near-black on a pale accent.
+    /// `hsl(30 3% 12%)` and `hsl(40 6% 10%)`: the web's near-black on a pale
+    /// accent. Hand-typed on purpose, and registered as such in
+    /// `JunoTokenConsumptionTests`: the web states them in script
+    /// (`app-provider.tsx`), not in `globals.css`, so the token generator has
+    /// nothing to project. The white beside them is `--primary-foreground`.
     static let inkLight = JunoColorToken(hsl: (30, 0.03, 0.12))
     static let inkDark = JunoColorToken(hsl: (40, 0.06, 0.10))
-    static let white = JunoColorToken(unchecked: 1, 1, 1)
 }
 
 public extension JunoColorToken {

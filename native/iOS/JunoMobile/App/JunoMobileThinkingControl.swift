@@ -232,15 +232,11 @@ private struct JunoMobileThinkingRamp: View {
 
     /// `--ultra-from` / `--ultra-to`, with the account's accent at both ends so
     /// the ramp leaves and returns to the colour the rest of the app is in.
+    /// Read from the generated projection; these were hand-typed copies of the
+    /// same triples until Phase 6.
     private var ramp: [Color] {
-        let from = Color.junoAdaptive(
-            light: JunoColorToken(hsl: (h: 252, s: 1, l: 0.68)),
-            dark: JunoColorToken(hsl: (h: 252, s: 1, l: 0.76))
-        )
-        let to = Color.junoAdaptive(
-            light: JunoColorToken(hsl: (h: 271, s: 0.91, l: 0.65)),
-            dark: JunoColorToken(hsl: (h: 271, s: 0.93, l: 0.73))
-        )
+        let from = Color.junoAdaptive(JunoGeneratedColors.ultraFrom)
+        let to = Color.junoAdaptive(JunoGeneratedColors.ultraTo)
         return [.junoAccent, from, to, from, .junoAccent]
     }
 

@@ -1,0 +1,51 @@
+# The native-parity label (docs/native/MACOS_LIQUID_GLASS_REDESIGN.md §A4.6).
+#
+# A few web files decide things the Mac and iPhone apps mirror by hand: the chat
+# request (src/lib/chat/request.ts, src/app/api/chat/), the sidebar's rows
+# (app-sidebar.tsx), the icon concepts (app-icons.ts, icons.tsx) and the tokens
+# (globals.css). The generators catch a drifted projection; nothing caught a
+# field added to the chat body or a row moved in the sidebar, which is how the
+# Mac came to send twelve fields to a six-field schema. So a pull request that
+# touches one of them carries "native: done" or "native: n/a", and this check
+# fails until it does. The list lives in scripts/check-native-parity-label.mjs
+# and CODEOWNERS; the script fails if the two differ.
+#
+# Its own workflow rather than a job in native.yml, because it has to re-run
+# when a label is added — and a `labeled` event on native.yml would cancel and
+# restart that workflow's macOS jobs through its concurrency group.
+#
+# It runs on every pull request and passes when no watched file changed, rather
+# than using a `paths:` filter: a required check skipped by a path filter stays
+# "expected" forever and blocks the merge it was meant to allow. To make it
+# block, mark "Native parity label" required in branch protection.
+
+name: native parity
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+concurrency:
+  group: native-parity-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  label:
+    name: Native parity label
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The three-dot diff needs the merge base of the PR's two tips.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # No `npm ci`: the script imports nothing outside `node:*`. Base, head
+      # and labels come from the pull_request event payload.
+      - name: Web files the apps mirror carry a parity label
+        run: node scripts/check-native-parity-label.mjs

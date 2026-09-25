@@ -189,17 +189,14 @@ public struct JunoType: Equatable, Sendable {
     public static let reading = JunoType(JunoGeneratedType.reading, textStyle: .body)
     /// SF 15, ×1.6. The composer field, anything read in flow.
     public static let body = JunoType(JunoGeneratedType.body, textStyle: .body)
-    /// ``body`` at the assistant's reading leading, ×1.65 — the web's
-    /// `.prose-juno`, which states `line-height: 1.65` itself (in `globals.css`,
-    /// not on the Tailwind ladder, so it is pinned by test rather than
-    /// generated).
-    public static let prose = JunoType(
-        size: JunoGeneratedType.body.minSize,
-        weight: weight(css: JunoGeneratedType.body.weight),
-        tracking: JunoGeneratedType.body.tracking,
-        lineHeight: proseLineHeight,
-        textStyle: .body
-    )
+    /// The web's `.prose-juno`: the assistant's reply. `globals.css` now sets
+    /// it on the ``reading`` rung (16 on 1.7), so this is that rung.
+    ///
+    /// It used to be ``body`` at a hand-typed 1.65 leading, from before the web
+    /// moved its prose up a rung, and nothing noticed because nothing read the
+    /// literal against the web (Phase 6). The Mac transcript draws its prose
+    /// through `JunoProseMetrics`, which reads the same rung.
+    public static let prose = JunoType(JunoGeneratedType.reading, textStyle: .body)
     /// SF 13, ×1.5 — the Mac's own `.body` size. Controls, rows, chips, menus.
     public static let ui = JunoType(JunoGeneratedType.ui, textStyle: .callout)
     /// SF 12 medium, +0.01em, ×1.4. Metadata, pills.
@@ -210,16 +207,19 @@ public struct JunoType: Equatable, Sendable {
     /// `text-micro` with `font-mono` everywhere it is used.
     public static let micro = JunoType(JunoGeneratedType.micro, face: .mono, textStyle: .caption2)
     /// SF Mono 13 on a 20pt line: code.
+    ///
+    /// Hand-typed on purpose, and registered as such in
+    /// `JunoTokenConsumptionTests`: the web states its code face in component
+    /// CSS (`.aicss-cb`: `font-size: 13px; line-height: 20px`), not on the
+    /// Tailwind ladder, so the generator has no rung to project.
     public static let mono = JunoType(
         size: 13, lineHeight: 20.0 / 13.0, face: .mono, textStyle: .callout
     )
-    /// SF Mono 12, ×1.5: ids, counts, costs.
+    /// SF Mono 12, ×1.5: ids, counts, costs. Registered with ``mono``, for
+    /// the same reason.
     public static let monoSmall = JunoType(
         size: 12, lineHeight: 1.5, face: .mono, textStyle: .footnote
     )
-
-    /// `.prose-juno`'s `line-height`.
-    static let proseLineHeight: CGFloat = 1.65
 
     // MARK: Variants
 

@@ -64,11 +64,14 @@ public struct JunoColorToken: Hashable, Sendable {
         JunoColorToken(unchecked: red, green, blue, opacity * min(max(factor, 0), 1))
     }
 
-    /// The same hue and saturation, `delta` lighter (positive) or darker
-    /// (negative) in HSL lightness — the unit every web colour token is
-    /// written in, so a declared divergence can be stated as "one step darker
-    /// than the web" and keep meaning that when the web moves.
-    public func adjustingLightness(by delta: Double) -> JunoColorToken {
+    /// This token as the web writes it: hue in degrees, saturation and
+    /// lightness as 0…1. The inverse of ``init(hsl:)``.
+    ///
+    /// For effects that move *within* a colour — the voice aura's companion
+    /// hue, the greeting name's lightness step — so they can start from the
+    /// generated projection rather than from a second, hand-typed copy of the
+    /// triple (`JunoAccent` carried six of those until Phase 6).
+    public var hsl: (h: Double, s: Double, l: Double) {
         let maxC = max(red, green, blue)
         let minC = min(red, green, blue)
         let lightness = (maxC + minC) / 2
@@ -84,6 +87,15 @@ public struct JunoColorToken: Hashable, Sendable {
             }
             if hue < 0 { hue += 360 }
         }
+        return (hue, saturation, lightness)
+    }
+
+    /// The same hue and saturation, `delta` lighter (positive) or darker
+    /// (negative) in HSL lightness — the unit every web colour token is
+    /// written in, so a declared divergence can be stated as "one step darker
+    /// than the web" and keep meaning that when the web moves.
+    public func adjustingLightness(by delta: Double) -> JunoColorToken {
+        let (hue, saturation, lightness) = hsl
         let shifted = JunoColorToken(
             hsl: (hue, saturation, min(max(lightness + delta, 0), 1))
         )

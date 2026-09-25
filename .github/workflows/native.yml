@@ -75,9 +75,13 @@ jobs:
             echo "native=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if printf '%s\n' "$files" | grep -qE '^(native/|contracts/|scripts/native|\.github/workflows/native\.yml$)'; then
+          # The generators count as native: a change to how tokens or icons are
+          # projected is exactly what the Swift consumption tests
+          # (JunoTokenConsumptionTests, JunoBrandTests) exist to judge.
+          pattern='^(native/|contracts/|scripts/native|scripts/generate-(native-icons|design-tokens)|scripts/icon-sources/|\.github/workflows/native\.yml$)'
+          if printf '%s\n' "$files" | grep -qE "$pattern"; then
             echo "native=true" >> "$GITHUB_OUTPUT"
-            printf '%s\n' "$files" | grep -E '^(native/|contracts/|scripts/native|\.github/workflows/native\.yml$)' | head -20
+            printf '%s\n' "$files" | grep -E "$pattern" | head -20
           else
             echo "native=false" >> "$GITHUB_OUTPUT"
             echo "No native, contract or native-workflow changes — skipping the macOS jobs."
@@ -122,6 +126,21 @@ jobs:
       - name: Icons have not drifted
         run: npm run native:icons:check
 
+      # The Design document contract: the JSON Schema the Swift `Codable`
+      # design types are checked against, projected from the zod schemas in
+      # src/lib/design. Nothing in CI ran it, so a schema change nobody
+      # mirrored reached the Mac as a document it could not decode (spec §A4.6).
+      - name: Design contract has not drifted
+        run: npm run design:contract:check
+
+      # The Design editor the Mac hosts offline (Resources/DesignEditor) is
+      # stamped with a hash of every editor source. Only release-ios.yml
+      # checked it, so the bundle sat stale on main until release time, which
+      # is where the redesign's audit found it (spec §A4.5). The check hashes
+      # sources and reads index.html; it needs no esbuild or Tailwind.
+      - name: Design editor bundle is current
+        run: npm run design:editor:check
+
   # ---------------------------------------------------------------------------
   # The four design rules from docs/native/REWORK_PLAN.md, as build failures.
   #
@@ -158,7 +177,14 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # The shared packages, under the same strict-concurrency, warnings-as-errors
-  # settings the release gates use. `--scratch-path` is deliberately outside the
+  # settings the release gates use.
+  #
+  # JunoNativeKit also carries the Swift half of the web → native sync gates
+  # (spec §A4.1, §A4.3): JunoTokenConsumptionTests proves every Color.juno* and
+  # JunoType rung reads the generated tokens, every hand-typed colour is on a
+  # shrinking register and every generated token is read or declared unread;
+  # JunoBrandTests proves every JunoIcon case has its symbols in both catalogs
+  # and every symbol has a case. Both read the checked-out tree via #filePath. `--scratch-path` is deliberately outside the
   # checkout: a `.build` directory inside a File Provider-backed tree picks up
   # resource forks that break product signing.
   #

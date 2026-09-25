@@ -2619,3 +2619,54 @@ The lanes numbered their entries provisionally and in parallel, so several numbe
 - **`junoSheetSurface` iOS-only**, until the Agents and Code sheets move off it.
 - **Hand-written dialogs** that carry more than a confirm and a cancel (Reset Memory's Export First, Regenerate's choices) stay system `confirmationDialog`s rather than the shared helper.
 - **Owner questions** still open: interface language on the Mac, the Mac-only usage cards, plans and intervals for native Upgrade, "Get the apps" (Phase 3 brief §8); the Phase 4 brief's four (§8).
+
+---
+
+## Phase 6 notes, part A (sync tooling: consumption tests, CI gates, the parity label)
+
+Lane `mac/lg-p6a`, from `mac/liquid-glass-chat` at `be4ed1c8`. Spec §A4.1, §A4.3 and §A4.6; §11 Phase 6 items 1 (the consumption half), 2 and 5. The shell contract, the wire schema, the parity ledger, server-driven lists and paired screenshots (items 1's second half, 3, 4, 6, 7) are not in this part.
+
+### What was built
+
+- **`JunoTokenConsumptionTests`** (JunoNativeKit, JunoDesignSystemTests), the Swift half of §A4.1. It proves the apps *read* the projection, which `design:tokens:check` cannot:
+  1. **A colour ledger.** Every `Color.juno*` declared in `JunoDesignSystem`, found by scanning the sources, is in the test's ledger as one of: resolved against its `JunoGeneratedColors` pair (in both appearances), an alias of another entry, the account's accent (checked for all six), a builder, or **native-only with its reason**. A new accessor fails by name until it is one of those; a ledger entry whose accessor is gone fails too.
+  2. **No second palette.** No `Color.juno*` is declared outside `JunoDesignSystem` (the packages and both apps are scanned).
+  3. **A hand-typed register.** Every colour written as numbers anywhere in the product sources (`JunoColorToken(unchecked:)`, `JunoColorToken(hsl: (…))`, `Color(red:|white:|hue:)`, `NSColor`/`UIColor` numerals) is keyed `File.swift:declaration` and must be on `handTypedRegister` with its reason. The register only shrinks: an entry whose literal is gone fails.
+  4. **The reverse direction.** Every member of `JunoGeneratedColors`, `JunoGeneratedType`, `JunoGeneratedRadius`, `JunoGeneratedSpace`, `JunoGeneratedDuration` and `JunoGeneratedEasing` is read by a product source or declared unread with a reason (`unreadGenerated`). A variable the web adds reaches the projection through `npm run design:tokens`, and this fails until someone decides whether the apps paint it. A declared-unread token that becomes read fails, so the list cannot go stale.
+  5. **The type ledger.** Every public `JunoType` rung equals its `JunoGeneratedType` rung (size, line height, tracking, weight), or is the greeting's display rung, or is registered (`mono`, `monoSmall`).
+  The scanners were checked by mutation: a probe `Color.junoBogus = Color(red: 0.5, …)` failed tests 1 and 3 by name.
+- **Hand-typed tokens deleted** (no visible change):
+  - `JunoAccent`'s two tables of `--primary` HSL triples. `hsl(dark:)` now derives from the generated palette through a new `JunoColorToken.hsl` (the inverse of `init(hsl:)`, which `adjustingLightness` now shares).
+  - `JunoCustomAccent`'s white is `--primary-foreground`.
+  - `JunoType.prose` is the `reading` rung (below), and `proseLineHeight` is gone; `JunoProseMetrics.bodySize` and `.lineHeight` read `JunoGeneratedType.reading`.
+  - The phone's Ultra ramp (`JunoMobileThinkingControl`) reads `--ultra-from` / `--ultra-to` instead of four hand-typed copies of them.
+  - The Mac's "Preparing design" label on the design desk is `--muted-foreground`'s light value, not a neutral `Color(white: 0.45)` (the desk is light in both appearances; the ink is a step darker and warm).
+- **Icons (§A4.3).** The `--check` mode and its CI step already existed (`native:icons:check`, the `contract` job), as did the package's two-way case ↔ symbol test over both catalogs on disk (`JunoBrandTests.testEveryCaseHasItsSymbolsInBothCatalogs`). Added the Mac's own direction: `DesktopIconCatalogTests.everyShippedSymbolHasACaseAndIsInTheBundle` (every symbol in `Icons.xcassets` is worn by a case and is in the built bundle).
+- **CI (§A4.6).**
+  - `native.yml` `contract` job: **Design contract has not drifted** (`design:contract:check`) and **Design editor bundle is current** (`design:editor:check`), beside the tokens and icons steps. The `changes` filter now counts the token and icon generators (`scripts/generate-native-icons.mjs`, `scripts/generate-design-tokens.ts`, `scripts/icon-sources/`) as native, so a change to a projection runs the Swift consumption tests.
+  - `native-parity.yml` (new): **Native parity label**. A pull request touching `src/lib/chat/request.ts`, `src/app/api/chat/**`, `app-sidebar.tsx`, `app-icons.ts`, `icons.tsx` or `globals.css` needs the label `native: done` or `native: n/a`. It runs on every PR (and on `labeled` / `unlabeled`) and passes when none of those changed, so it can be made required without blocking unrelated merges. Its own workflow so a label event cannot cancel `native.yml`'s macOS jobs.
+  - `CODEOWNERS` lists the same six paths in a section that explains the label; `scripts/check-native-parity-label.mjs` fails if CODEOWNERS and its `WATCHED` list differ.
+- **npm scripts.** `native:sync:check` (every Linux sync gate in one run, all outcomes reported: the Swift, capability and Work contracts, tokens, icons, the design contract, the editor bundle, the parity label), `native:parity:label` (the label gate; locally it diffs `origin/main...HEAD` and takes `--labels`), and `native:consumption:test` (the Swift consumption, colour, type and icon tests, through `scripts/native-test.sh`, which gained `JUNO_SWIFT_FILTER`).
+- **The Design editor bundle** was rebuilt with `npm run design:editor`: byte-identical to the committed one (`1.0.0+2efcc6ad8d3a`). §A4's "stale today" is no longer true; it went fresh with an earlier lane.
+
+### Errata
+
+- **§8.2 / §6.4.** `prose` is the `reading` rung, 16 on 1.7, because the web's `.prose-juno` is set on it today; the table's "prose ×1.65" (and `JunoType.prose`'s 15 on 1.65) predated the web's move. `JunoType.prose` had no caller, so nothing redraws.
+- **§A4 "What exists".** `design:editor:check` passes, and now runs in `native.yml` as well as `release-ios.yml`.
+- **§A4.3.** The asset ↔ case test was already in the package (Phase 1); this part adds the Mac bundle's direction rather than a first test.
+
+### Register (provisional; renumbered at integration)
+
+| # | Difference |
+|---|---|
+| P6A-1 | The apps draw `--foreground` on every ground. The web's per-ground inks (`--secondary-foreground` 16% and `--accent-foreground` 14% in light, against `--foreground`'s 11%) are not painted; `unreadGenerated` lists them. |
+| P6A-2 | The shipped status ramp (`junoSuccess`, `junoDanger`, `junoCaution`) is still hand-tuned text colour where the web draws `--success-ink`, `--destructive-ink` and `--warning-foreground`. It is read at about 300 sites across Code, Work, the phone and the Mac (43 of them in Chat's Mac files), several as fills, so it moves surface by surface with a look at each (deferred, below). |
+| P6A-3 | Native-only tokens with no web variable: Juno Code's terminal well and diff rows, the chart series palette past the accent and the citation teal. Registered, not deleted. |
+| P6A-4 | The phone keeps its shipped dark canvas, translucent border and row alphas until the iOS pass (as before; now on the register). |
+
+### Deferred (explicit)
+
+- **The legacy status ramp** (P6A-2): move each surface's call sites to `junoSuccessInk` / `junoDestructiveInk` / `junoWarningInk` (text) or `junoWarning` / `junoDestructive` / a new `--success` fill accessor (fills), with snapshots of each, then give `junoSuccess` to `--success`. Code's 16 Mac sites and the shared kit's belong to their owners.
+- **The iOS token pass** (P6A-4).
+- **Owner, in GitHub** (nothing was pushed): create the labels `native: done` and `native: n/a`, and mark **Native parity label** required in branch protection. CODEOWNERS and both workflows take effect when this branch reaches `main`.
+- **Phase 6 items not in this part:** the shell contract (`contracts/product/juno-shell-v1.json`, generated Swift, a TypeScript parity test), the chat wire JSON Schema with per-field native status, `contracts/parity/features.json` with a generated `PARITY_MATRIX.md`, server-driven composer tools / skills / More items, paired Playwright / XCUITest screenshots.

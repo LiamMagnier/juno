@@ -51,7 +51,9 @@ struct InlineDesignPreviewBody: View {
                     Self.deskColor
                     Text("Preparing design")
                         .junoFont(size: 13, relativeTo: .callout)
-                        .foregroundStyle(Color(white: 0.45))
+                        // The desk is light in both appearances, so the
+                        // label takes the light secondary ink in both.
+                        .foregroundStyle(Color(juno: JunoGeneratedColors.mutedForeground.light))
                 }
                 .modifier(ArtifactPreviewSheet())
             case .unavailable, .failed:
