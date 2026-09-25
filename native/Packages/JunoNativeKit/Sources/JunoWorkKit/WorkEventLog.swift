@@ -6,11 +6,11 @@ import JunoCore
 /// the reader's instructions it has not reached yet.
 ///
 /// Pure functions of the event list, shared by every surface that draws a run
-/// — the chat's task card and its follower (``NativeConversationWork``), and
-/// the Mac's legacy Tasks window until it goes — so two drawings of one run
-/// cannot disagree about how far it has got. Moved here from the Mac's
-/// `DesktopWorkLog`, which now forwards to it. Icons and tints are the app's:
-/// nothing here knows how a state is drawn.
+/// — the chat's task card, its follower (``NativeConversationWork``) and the
+/// Task panel — so two drawings of one run cannot disagree about how far it
+/// has got. Moved here from the Mac's `DesktopWorkLog` (Phase 5 A2, and the
+/// rest in Stage D, when the old Work window went). Icons and tints are the
+/// app's: nothing here knows how a state is drawn.
 ///
 /// Every reader is defensive, for the reason the log is: `WorkEvent.payload` is
 /// JSON written by an executor that may be a release ahead of this build, so a
@@ -500,5 +500,443 @@ public enum WorkEventLog {
     /// length, which keys its refetch).
     public static func producedArtifactCount(in events: [WorkEvent]) -> Int {
         visible(events).filter { $0.1 == .artifactCreated || $0.1 == .artifactUpdated }.count
+    }
+}
+
+// MARK: - The log, line by line
+
+/// The rest of what the Mac's old Work window read out of a run's log, moved
+/// here when Phase 5 Stage D removed the window (`DesktopWorkLog`): every
+/// visible event as a sentence, what the run read and wrote, whether a batch
+/// of changes still stands, and the work between two turns. The chat's Task
+/// panel reads the first two; the phone keeps its own copy
+/// (`JunoMobileWorkView`).
+///
+/// The words are the Mac's; the marks are semantic (``Entry/Mark``) and the
+/// app draws them, since nothing here knows how a state is drawn.
+extension WorkEventLog {
+    // MARK: Reading, continued
+
+    private static func number(_ payload: [String: JunoJSONValue], _ keys: String...) -> Int? {
+        for key in keys {
+            if let value = payload[key]?.numberValue { return Int(value) }
+        }
+        return nil
+    }
+
+    /// A count that may have been written either as a number or as the array
+    /// it counts.
+    private static func count(_ payload: [String: JunoJSONValue], _ key: String) -> Int? {
+        if let value = payload[key]?.numberValue { return Int(value) }
+        if case .array(let items)? = payload[key] { return items.count }
+        return nil
+    }
+
+    /// Plural forms written out rather than left to `^[…](inflect: true)`,
+    /// which only resolves through a `LocalizedStringKey`; these are `String`s
+    /// rendered verbatim.
+    private static func fileCount(_ count: Int) -> String {
+        count == 1 ? "1 file changed" : "\(count) files changed"
+    }
+
+    private static func changeCount(_ count: Int) -> String {
+        count == 1 ? "1 change" : "\(count) changes"
+    }
+
+    // MARK: References
+
+    public enum ReferenceDirection: Equatable, Sendable {
+        case read
+        case written
+    }
+
+    /// Something the run read or wrote, named without a path.
+    public struct Reference: Identifiable, Equatable, Sendable {
+        public let id: String
+        public let direction: ReferenceDirection
+        public let label: String
+        public let detail: String?
+
+        public init(id: String, direction: ReferenceDirection, label: String, detail: String?) {
+            self.id = id
+            self.direction = direction
+            self.label = label
+            self.detail = detail
+        }
+    }
+
+    /// Everything the run read or wrote, as far as the stream reported it.
+    ///
+    /// Sources and file changes are one list because that is the question
+    /// somebody actually has — what did it touch. A changed file is listed only
+    /// by its name: an entry that arrives as a bare string is overwhelmingly a
+    /// path, and no surface prints one, so a change that cannot be named is
+    /// stated by its size instead.
+    public static func references(in events: [WorkEvent]) -> [Reference] {
+        var references: [Reference] = []
+
+        for (event, kind) in visible(events) {
+            switch kind {
+            case .sourceCited:
+                let url = string(event.payload, "url", "href")
+                guard let label = string(event.payload, "title", "label") ?? url else { continue }
+                references.append(
+                    Reference(
+                        id: "\(event.seq)",
+                        direction: .read,
+                        label: label,
+                        detail: string(event.payload, "publisher", "site") ?? url
+                    )
+                )
+
+            case .filesChanged, .batchApplied:
+                var entries: [JunoJSONValue] = []
+                if case .array(let files)? = event.payload["files"] {
+                    entries = files
+                } else if case .array(let items)? = event.payload["items"] {
+                    entries = items
+                }
+
+                let named = entries.enumerated().compactMap { index, entry -> Reference? in
+                    let record = fields(entry)
+                    guard let label = string(record, "label", "name", "displayName", "title")
+                    else { return nil }
+                    let bytes = number(record, "bytes", "size")
+                    return Reference(
+                        id: "\(event.seq)-\(index)",
+                        direction: .written,
+                        label: label,
+                        // The change verb sentence-cased, not the raw `created`
+                        // / `moved` / `renamed` token the executor writes.
+                        detail: bytes.map { "\($0.formatted(.byteCount(style: .file)))" }
+                            ?? string(record, "change", "action")
+                                .map(JunoWorkVocabulary.sentenceCased)
+                    )
+                }
+
+                if !named.isEmpty {
+                    references.append(contentsOf: named)
+                    continue
+                }
+
+                let changed = count(event.payload, "count") ?? entries.count
+                guard changed > 0 else { continue }
+                references.append(
+                    Reference(
+                        id: "\(event.seq)",
+                        direction: .written,
+                        label: fileCount(changed),
+                        detail: string(event.payload, "summary")
+                    )
+                )
+
+            default:
+                continue
+            }
+        }
+
+        return references
+    }
+
+    /// Whether the run has applied a batch of changes that was not later
+    /// undone — read only to decide whether saying that undo is not available
+    /// from here is worth saying.
+    public static func hasAppliedBatch(in events: [WorkEvent]) -> Bool {
+        var applied = 0
+        var undone = 0
+        for (_, kind) in visible(events) {
+            if kind == .batchApplied { applied += 1 }
+            if kind == .batchUndone { undone += 1 }
+        }
+        return applied > undone
+    }
+
+    // MARK: Entries
+
+    /// One visible event as a line a person can read.
+    public struct Entry: Identifiable, Equatable, Sendable {
+        /// What kind of thing happened, for the app to draw a mark for.
+        public enum Mark: Equatable, Sendable {
+            case started, plan, check, message, tool, refused, approval, file,
+                link, batch, undo, agent, problem, limit, device, paused
+        }
+
+        public enum Tone: Equatable, Sendable {
+            case quiet
+            case normal
+            case warning
+            case bad
+            case good
+        }
+
+        public let id: Int
+        public let title: String
+        public let detail: String?
+        public let mark: Mark
+        public let tone: Tone
+        /// When it happened.
+        public let at: Date
+
+        public init(id: Int, title: String, detail: String?, mark: Mark, tone: Tone, at: Date) {
+            self.id = id
+            self.title = title
+            self.detail = detail
+            self.mark = mark
+            self.tone = tone
+            self.at = at
+        }
+    }
+
+    /// Kinds whose whole content is already shown by a section of its own.
+    private static let renderedElsewhere: Set<JunoWorkEventKind> = [.planCreated, .planUpdated]
+
+    /// Every visible event but the plan's, oldest first.
+    public static func entries(in events: [WorkEvent]) -> [Entry] {
+        visible(events)
+            .filter { !renderedElsewhere.contains($0.1) }
+            .map { describe($0.0, $0.1) }
+    }
+
+    // MARK: Work between turns
+
+    /// A stretch of activity between two things somebody said, folded into
+    /// one "Worked for…" line.
+    public struct WorkGroup: Identifiable, Equatable, Sendable {
+        public let id: Int
+        public let entries: [Entry]
+        /// The turn this work led up to, or nil for work after the last turn —
+        /// the run still going, or a run that ended without a closing word.
+        public let beforeTurnID: String?
+
+        public init(id: Int, entries: [Entry], beforeTurnID: String?) {
+            self.id = id
+            self.entries = entries
+            self.beforeTurnID = beforeTurnID
+        }
+
+        public var duration: TimeInterval {
+            guard let first = entries.first, let last = entries.last else { return 0 }
+            return max(0, last.at.timeIntervalSince(first.at))
+        }
+
+        /// "Worked for 4m", or "Worked" when everything happened in one second.
+        public var title: String {
+            let seconds = Int(duration.rounded())
+            if seconds < 1 { return "Worked" }
+            if seconds < 60 { return "Worked for \(seconds)s" }
+            let minutes = seconds / 60
+            if minutes < 60 { return "Worked for \(minutes)m" }
+            let hours = minutes / 60
+            let rest = minutes % 60
+            return rest == 0 ? "Worked for \(hours)h" : "Worked for \(hours)h \(rest)m"
+        }
+    }
+
+    /// The kinds that become a turn, and therefore break a group. Mirrors
+    /// ``turns(in:)``: a kind added there is added here.
+    private static let turnKinds: Set<JunoWorkEventKind> = [
+        .assistantMessage, .questionAsked, .questionAnswered, .userMessage,
+    ]
+
+    public static func workGroups(in events: [WorkEvent]) -> [WorkGroup] {
+        var groups: [WorkGroup] = []
+        var pending: [Entry] = []
+        for (event, kind) in visible(events) {
+            if turnKinds.contains(kind) {
+                if !pending.isEmpty {
+                    groups.append(WorkGroup(id: pending[0].id, entries: pending, beforeTurnID: "\(event.id)"))
+                    pending = []
+                }
+                continue
+            }
+            guard !renderedElsewhere.contains(kind) else { continue }
+            pending.append(describe(event, kind))
+        }
+        if !pending.isEmpty {
+            groups.append(WorkGroup(id: pending[0].id, entries: pending, beforeTurnID: nil))
+        }
+        return groups
+    }
+
+    /// One event as a sentence a person can read.
+    ///
+    /// An exhaustive switch, not a lookup with a fallback: a kind added to the
+    /// contract and forgotten here is a compile error rather than a blank row.
+    /// The payload is lifted (``WorkEventPayload/fields(of:)``), because the
+    /// cloud runner wraps each kind's facts in one sub-object and this Mac's
+    /// run host does not; one reader is then correct for both executors.
+    private static func describe(_ event: WorkEvent, _ kind: JunoWorkEventKind) -> Entry {
+        let payload = WorkEventPayload.fields(of: event)
+        let vocabulary = JunoWorkVocabulary.self
+        switch kind {
+        case .runStarted:
+            return entry(
+                event, "Started",
+                string(payload, "target").map { vocabulary.target($0, hostName: nil) },
+                .started, .quiet
+            )
+        case .planCreated:
+            return entry(event, "Wrote a plan", nil, .plan, .quiet)
+        case .planUpdated:
+            return entry(event, "Revised the plan", string(payload, "reason"), .plan, .quiet)
+        case .stepStarted:
+            return entry(
+                event, string(payload, "title", "label") ?? "Started a step", nil, .started, .normal
+            )
+        case .stepFinished:
+            return entry(
+                event, string(payload, "title", "label") ?? "Finished a step",
+                string(payload, "summary"), .check, .quiet
+            )
+        case .assistantMessage:
+            return entry(
+                event, string(payload, "text", "message") ?? "Said something", nil, .message, .normal
+            )
+        case .toolStarted:
+            return entry(
+                event, string(payload, "summary") ?? vocabulary.toolPresent(string(payload, "tool", "name")),
+                string(payload, "target", "detail"), .tool, .normal
+            )
+        case .toolFinished:
+            // Past tense here, present tense on `toolStarted`: a log that says
+            // "Reading a file" under a finished run describes nothing happening.
+            return entry(
+                event,
+                string(payload, "summary") ?? vocabulary.toolPast(string(payload, "tool", "name")),
+                string(payload, "result", "detail"), .check, .quiet
+            )
+        case .toolDenied:
+            return entry(
+                event,
+                "Refused: \(vocabulary.action(string(payload, "tool", "name")))",
+                string(payload, "reason", "explanation"), .refused, .warning
+            )
+        case .questionAsked:
+            return entry(
+                event, string(payload, "question", "text") ?? "Asked you a question", nil,
+                .message, .warning
+            )
+        case .questionAnswered:
+            return entry(event, "You answered", string(payload, "text", "answer"), .message, .quiet)
+        // Said without being asked, which is why it does not read as an answer.
+        // The payload keeps `question_answered`'s field names, so a row an
+        // older build wrote renders through the same accessor.
+        case .userMessage:
+            return entry(event, "You added an instruction", string(payload, "text"), .message, .quiet)
+        case .approvalRequested:
+            return entry(
+                event, string(payload, "summary") ?? "Asked for approval",
+                string(payload, "action").map(vocabulary.action), .approval, .warning
+            )
+        case .approvalResolved:
+            return entry(
+                event,
+                string(payload, "decision") == "denied" ? "You refused an action" : "You allowed an action",
+                string(payload, "summary") ?? string(payload, "action").map(vocabulary.action),
+                .approval, .quiet
+            )
+        case .artifactCreated:
+            return entry(
+                event, "Created \(string(payload, "title") ?? "a file")",
+                artifactKindPhrase(payload), .file, .good
+            )
+        case .artifactUpdated:
+            return entry(
+                event, "Updated \(string(payload, "title") ?? "a file")",
+                artifactKindPhrase(payload), .file, .quiet
+            )
+        case .sourceCited:
+            return entry(
+                event, string(payload, "title", "url") ?? "Cited a source",
+                string(payload, "url"), .link, .quiet
+            )
+        case .filesChanged:
+            let changed = count(payload, "files") ?? count(payload, "count")
+            return entry(
+                event, changed.map(fileCount) ?? "Changed files", string(payload, "summary"), .file, .normal
+            )
+        case .batchPreview:
+            let size = count(payload, "items") ?? count(payload, "count")
+            return entry(
+                event,
+                size.map { "Prepared \(changeCount($0)) for review" } ?? "Prepared a batch of changes",
+                string(payload, "summary"), .batch, .normal
+            )
+        case .batchApplied:
+            let size = count(payload, "items") ?? count(payload, "count")
+            return entry(
+                event, size.map { "Applied \(changeCount($0))" } ?? "Applied a batch of changes",
+                string(payload, "summary"), .check, .good
+            )
+        case .batchUndone:
+            let size = count(payload, "reversedCount") ?? count(payload, "count")
+            return entry(
+                event, size.map { "Undid \(changeCount($0))" } ?? "Undid a batch of changes",
+                string(payload, "summary"), .undo, .quiet
+            )
+        case .subagentUpdate:
+            // Never the bare `agentId`: an identifier in the title slot is the
+            // one row that is unreadable to the person it is for.
+            return entry(
+                event, string(payload, "title") ?? "A sub-agent reported in",
+                string(payload, "status", "summary"), .agent, .quiet
+            )
+        case .degraded:
+            return entry(
+                event, "Ran with less than you asked for", string(payload, "explanation"), .problem, .warning
+            )
+        case .budgetWarning:
+            return entry(
+                event, "Approaching a limit", string(payload, "detail", "explanation"), .limit, .warning
+            )
+        case .hostDisconnected:
+            return entry(
+                event, "\(string(payload, "hostName") ?? "The Mac") disconnected",
+                string(payload, "detail"), .device, .warning
+            )
+        case .hostReconnected:
+            return entry(
+                event, "\(string(payload, "hostName") ?? "The Mac") reconnected", nil, .device, .good
+            )
+        case .paused:
+            return entry(event, "Paused", string(payload, "reason"), .paused, .quiet)
+        case .resumed:
+            return entry(event, "Resumed", nil, .started, .quiet)
+        case .validationResult:
+            let passed = payload["ok"]?.boolValue != false
+            return entry(
+                event, passed ? "Checked its own work" : "A check did not pass",
+                string(payload, "detail", "summary"),
+                passed ? .check : .problem,
+                passed ? .quiet : .warning
+            )
+        case .runFinished:
+            // ``JunoWorkVocabulary/terminalReason(_:)`` is nil where the reason
+            // adds nothing, so a clean finish is just "Finished".
+            let reason = string(payload, "reason")
+            let because = vocabulary.terminalReason(reason)
+            return entry(
+                event, because.map { "Finished because \($0)" } ?? "Finished",
+                string(payload, "detail", "summary"),
+                .check, reason == "completed" ? .good : .warning
+            )
+        case .error:
+            return entry(
+                event, "Something went wrong", string(payload, "message", "detail"), .problem, .bad
+            )
+        }
+    }
+
+    private static func entry(
+        _ event: WorkEvent, _ title: String, _ detail: String?, _ mark: Entry.Mark, _ tone: Entry.Tone
+    ) -> Entry {
+        Entry(id: event.seq, title: title, detail: detail, mark: mark, tone: tone, at: event.createdAt)
+    }
+
+    /// An artifact event's kind as a noun, never the raw `spreadsheet` token.
+    private static func artifactKindPhrase(_ payload: [String: JunoJSONValue]) -> String? {
+        string(payload, "kind")
+            .flatMap(JunoWorkArtifactKind.init(rawValue:))
+            .map(JunoWorkVocabulary.artifactKind)
     }
 }

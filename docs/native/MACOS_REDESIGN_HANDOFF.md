@@ -87,7 +87,7 @@ Every stage above built and passed at its commit:
 3. *(done — stage 3, above)*
 4. *(done — stage 4 and stage 4b, above)*. The Mac speaks the final SPEC's grammar and always declares it; nothing waits on the server shipping it.
 5. *(done — Phase 2 review, above; the final snapshot set is in `/tmp/juno-glass-snapshots/final/`, the transcript suite under `final/transcript/`)*.
-6. **Phase 5, Work merged into Chat** (spec §11 Phase 5; runs before 3 and 4, per the errata). Covers `conversationID` on work sessions, "Do This as a Task", run cards, the Needs-you fold, notifications, and deleting `DesktopWorkWorkspace`.
+6. *(done on this branch: Phase 5 Stages A, B and D, 2026-09-25; Stage C is on lane `mac/lg-p5c` at `7a51af53`, to be integrated. See "Phase 5 Stage D" at the end for what is left at the screen.)*
 7. **Phase 3:** popovers, menus, sheets and Settings. This includes the ⌘K panel, the share popover, the toast host and the menu bar.
 8. **Phase 4:** secondary pages on the `JunoPage` template, plus Skills, Automations, Permissions and Assistants.
 9. **Phase 6:** sync tooling. Consumption tests, the shell contract, the wire schema, the parity ledger and CI gates.
@@ -404,3 +404,15 @@ Two commits on `mac/liquid-glass-chat`: the merge of `origin/main` at `fe0a501d`
 - **Steering.** `ChatComposerSteering` (task: standalone; research: while its turn streams), `ChatComposerDisc` for the disc's words, the queued strip (`ComposerPendingSteers`), research steering through the new `POST /api/research/{id}/steer` client call.
 - **Found, not fixable from the Mac:** the server's `chatTaskToolEnabled` refuses `regenerate` turns and needs a persisted `userMessageId`; every native turn is `regenerate: true` after sync. So a model-started task will not reach the Mac until the server's gate changes (see the spec's Stage A notes). Everything on the Mac side is in place and tested against recorded frames.
 - **Needs a person at the screen (deferred):** a real model-started task end to end, the card appearing mid-reply, a steer accepted by a live run, Stop on a live run, the Task panel on a real earlier task.
+
+## Phase 5 Stage D, 2026-09-25 (the old Work window removed; tasks without a conversation)
+
+One commit on `mac/liquid-glass-chat`. Snapshots in `/tmp/juno-glass-snapshots/phase5-d/` (and `final/`, the sign-off set re-rendered).
+
+- **Gone:** `DesktopWorkWorkspace.swift`, `DesktopTasksScreen.swift`, `.legacyWork`, Window › Tasks (Legacy) and its shell actions, the Work-window scene keys, the preview switches for the old window, and the legacy UI-test paths. A window stored on `"work"` opens on Chat.
+- **Kept, untouched** (only moved-into): the host, run host, executor adapter, grants and vocabulary; `DesktopWorkSettings.swift` (now also holding `DesktopWorkBlockerRow` and `DesktopWorkStartPath`) and `DesktopWorkAutomations.swift`, both for track B to port. The rest of `DesktopWorkLog` is in `JunoWorkKit/WorkEventLog`.
+- **New:** `DesktopTaskRecordSheet` (a task with no conversation, live and answerable, from Search › Tasks or a notification) and the Search page's **Tasks** scope (`GET /api/work/sessions?limit=100&archived=true`). `NativeConversationWork` gained a task-keyed mode for the sheet. Details in the spec's Phase 5 errata, "Stage D notes".
+- **Phase 5 status:** A, B and D are here; C (signals, the Needs-you fold, the Notifications inbox, the Dock badge, the menu-bar extra, agents in the thread) is on `mac/lg-p5c`. With C integrated, Phase 5 is done. Integration will meet this stage in `JunoDesktopWorkspaceView` (routes now all land in Chat, which resolves `.workSession`), `DesktopChatWorkspace` (the task sheet), `DesktopSearchScreen` (the Tasks scope) and `DesktopCommands`.
+- **Runtime checks left for a person at the screen (screen control is off), for all of Phase 5:** a real model-started task end to end (blocked on the server's `chatTaskToolEnabled` gate, see the Stage A notes); the card appearing mid-reply; a steer accepted by a live run; Stop on a live run; a local approval answered from the card and from the task sheet; a legacy task answered from the sheet (Reply, an option, Pause and Resume, Try Again re-following the stream); Quick Look, Open With and Save As on a deliverable (in a chat and in the sheet, including the unvalidated-file question over the sheet); Save this as a skill against the server; Search › Tasks against the live server (archived tasks listed, a chat task opening its chat after sync); a `/work/{id}` notification for a task with and without a chat; the report window's Print; and Stage C's banner, Dock badge and menu-bar extra once integrated.
+- **Found, not fixed (outside this stage):** a chat's task follower does not re-follow the stream after Try Again on a finished task (its discovery keeps the same session and the stream has ended); the task sheet's follower does. The fix is small and belongs with the chat card.
+

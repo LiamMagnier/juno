@@ -133,6 +133,8 @@ struct DesktopChatWorkspace: View {
     @State private var requestedProjectID: String?
     /// Why the last ⇧⌘U screenshot did not land in the composer.
     @State private var screenshotFailure: String?
+    /// A task with no conversation, open in its sheet (register #63).
+    @State private var taskRecord: DesktopTaskRecordPresentation?
     /// True while the chat route is a private chat (§5.8): nothing saved,
     /// synced or remembered, and the window titled "Incognito chat". The
     /// toolbar's Private toggle and ⇧⌘N set it; any navigation clears it, and
@@ -291,6 +293,14 @@ struct DesktopChatWorkspace: View {
                 }
             }
         }
+        .sheet(item: $taskRecord) { presentation in
+            DesktopTaskRecordSheet(
+                work: presentation.work,
+                files: presentation.files,
+                pairedHostID: configuration.workHostModel?.pairedHostID,
+                close: { taskRecord = nil }
+            )
+        }
         .alert("Screenshot unavailable", isPresented: screenshotFailurePresented) {
             Button("OK", role: .cancel) { screenshotFailure = nil }
         } message: {
@@ -409,7 +419,8 @@ struct DesktopChatWorkspace: View {
             isPrivateChat: isPrivateChat,
             callActiveChanged: { isInCall = $0 },
             shareConversation: replyShare,
-            forkPrivately: replyFork
+            forkPrivately: replyFork,
+            openTaskRecord: { task in presentTaskRecord(task.sessionID, session: task) }
         )
     }
 
@@ -744,9 +755,7 @@ struct DesktopChatWorkspace: View {
         }
     }
 
-    /// A notification's destination, once. A task's route arrives here
-    /// already turned into its conversation by the root
-    /// (`JunoDesktopWorkspaceView`), which is where the session is looked up.
+    /// A notification's destination, once.
     private func followPendingRoute() {
         guard let route else { return }
         consumeRoute?()
@@ -755,9 +764,55 @@ struct DesktopChatWorkspace: View {
             selection.wrappedValue = .agent(id)
         case .conversation(let id):
             Task { await openThread(id) }
-        case .workSession:
-            break
+        case .workSession(let id):
+            Task { await openWorkSession(id) }
         }
+    }
+
+    /// A task's notification opens the task's chat, as the web redirects
+    /// `/work/{id}` to `/chat/{conversationId}`; a task with no conversation
+    /// opens its sheet (register #63).
+    ///
+    /// A task newer than the model's last poll is not in its list yet, and an
+    /// archived one never is, so a missing id refreshes the list once and
+    /// then asks for the task itself. One that still cannot be read opens the
+    /// sheet by id, which says so and offers Try Again.
+    private func openWorkSession(_ id: String) async {
+        guard let workModel = configuration.workModel else { return }
+        var task = workModel.sessions.first { $0.sessionID == id }
+        if task == nil {
+            await workModel.refresh()
+            task = workModel.sessions.first { $0.sessionID == id }
+        }
+        if task == nil {
+            task = try? await workModel.transport.session(id: id, for: session.profile.id).session
+        }
+        if let conversationID = task?.conversationID {
+            await openThread(conversationID)
+        } else {
+            presentTaskRecord(id, session: task)
+        }
+    }
+
+    /// Opens a task's sheet with a follower keyed on it.
+    private func presentTaskRecord(_ sessionID: String, session task: WorkSessionSummary?) {
+        guard let workModel = configuration.workModel else { return }
+        let work = NativeConversationWork(
+            sessionID: sessionID, session: task, client: workModel.transport, accountID: session.profile.id
+        )
+        work.isVisible = true
+        if let host = configuration.workHostModel {
+            work.localApprovals = { runID in host.localApprovals(forRun: runID) }
+            work.localApprovalDecider = { approval, decision in
+                host.localApprovalDecider?(approval.id, decision, approval.actionDigest)
+            }
+        }
+        // The web's `juno:work-sync`: the account's list hears of it.
+        work.didAct = { [weak workModel] in await workModel?.refresh() }
+        taskRecord = DesktopTaskRecordPresentation(
+            work: work,
+            files: ChatWorkFiles(client: workModel.transport, accountID: session.profile.id)
+        )
     }
 
     /// What the menu bar can do to this window while it is focused.

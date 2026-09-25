@@ -1,8 +1,10 @@
 import AppKit
 import Foundation
 import JunoChatKit
+import JunoCore
 import JunoDesignSystem
 import JunoStorage
+import JunoWorkKit
 import SwiftUI
 
 /// Global search over the encrypted account store.
@@ -17,6 +19,12 @@ import SwiftUI
 /// different states and are shown as different states. An empty result list while
 /// that index is being built would read as "no matches", which is the one lie a
 /// search surface must not tell.
+///
+/// **Tasks** (Phase 5 Stage D) is the one scope read from the server rather
+/// than the store: every task on the account, archived ones too, newest
+/// first. A task with a chat opens it; one the old Work window started, with
+/// no chat, opens its sheet (register #63). The ⌘K panel that replaces this
+/// page in Phase 3 carries the scope forward.
 struct DesktopSearchScreen: View {
     @Bindable var model: NativeSearchModel<SQLiteAccountRepository>
     let openConversation: (String) -> Void
@@ -27,10 +35,39 @@ struct DesktopSearchScreen: View {
     /// where there is no conversation to return to, which disables the control
     /// rather than leaving one that does nothing.
     var openResearchRun: (() -> Void)?
+    /// Reads the account's tasks for the Tasks scope. Nil where Work is not
+    /// composed, which leaves the scope out.
+    var taskSource: (() async throws -> [WorkSessionSummary])? = nil
+    /// Opens a task: its chat, or its sheet when it has none.
+    var openTask: (WorkSessionSummary) -> Void = { _ in }
+    /// The scope to open on, and the tasks already read — for fixtures.
+    var initialScope = DesktopSearchScope.everything
+    var initialTasks: DesktopSearchTaskList? = nil
+    /// A pinned "now" for fixtures; nil reads the clock.
+    var now: Date? = nil
 
-    @State private var scope = DesktopSearchScope.everything
+    @State private var scopeChoice: DesktopSearchScope?
     @State private var selection: NativeSearchResult.ID?
+    @State private var taskList: DesktopSearchTaskList?
+    @State private var taskSelection: WorkSessionSummary.ID?
     @FocusState private var fieldFocused: Bool
+
+    private var scope: DesktopSearchScope {
+        get { scopeChoice ?? initialScope }
+        nonmutating set { scopeChoice = newValue }
+    }
+
+    private var scopeBinding: Binding<DesktopSearchScope> {
+        Binding(get: { scope }, set: { scope = $0 })
+    }
+
+    /// The scopes this Mac can offer: Tasks only where there is a server to
+    /// read them from.
+    private var scopes: [DesktopSearchScope] {
+        DesktopSearchScope.allCases.filter { $0 != .tasks || taskSource != nil }
+    }
+
+    private var tasks: DesktopSearchTaskList { taskList ?? initialTasks ?? .loading }
 
     private var query: Binding<String> {
         Binding(
@@ -63,10 +100,10 @@ struct DesktopSearchScreen: View {
                     submit: openPrimaryResult
                 )
                 JunoSegmented(
-                    options: DesktopSearchScope.allCases.map {
+                    options: scopes.map {
                         JunoSegmented<DesktopSearchScope>.Option($0, $0.title)
                     },
-                    selection: $scope,
+                    selection: scopeBinding,
                     accessibilityLabel: "Search in"
                 )
             }
@@ -88,12 +125,30 @@ struct DesktopSearchScreen: View {
             if let current = selection, ids.contains(current) { return }
             selection = ids.first
         }
+        .onChange(of: visibleTaskIDs) { _, ids in
+            if let current = taskSelection, ids.contains(current) { return }
+            taskSelection = ids.first
+        }
+        // Read each time the scope is chosen, so a task started since shows.
+        .task(id: scope) {
+            guard scope == .tasks, initialTasks == nil else { return }
+            await readTasks()
+        }
     }
 
     // MARK: - Content
 
     @ViewBuilder
     private var content: some View {
+        if scope == .tasks {
+            tasksContent
+        } else {
+            storeContent
+        }
+    }
+
+    @ViewBuilder
+    private var storeContent: some View {
         switch model.phase {
         case .idle where model.query.isEmpty:
             JunoEmptyState(
@@ -259,6 +314,132 @@ struct DesktopSearchScreen: View {
         )
     }
 
+    // MARK: - Tasks
+
+    /// The account's tasks as rows: the title, "Updated {ago}", and the status
+    /// pill in one column at the trailing edge. **Signature detail:** the
+    /// pills line up down that edge, so a reader scans the statuses before
+    /// the titles, and a live task's dot is the one coral mark on the page.
+    @ViewBuilder
+    private var tasksContent: some View {
+        switch tasks {
+        case .loading:
+            DesktopSearchTaskSkeleton()
+                .junoPageColumn()
+                .accessibilityIdentifier("juno.desktop.search-tasks-loading")
+        case .failed:
+            JunoEmptyState(
+                title: "Couldn\u{2019}t load tasks",
+                message: "Check your connection and try again.",
+                icon: .error,
+                actionLabel: taskSource == nil ? nil : "Try Again",
+                action: taskSource == nil ? nil : { Task { await readTasks() } },
+                size: .panel,
+                tone: .error
+            )
+            .taskScopeState()
+            .accessibilityIdentifier("juno.desktop.search-tasks-failed")
+        case .ready(let all) where all.isEmpty:
+            JunoEmptyState(
+                title: "No tasks yet",
+                message: "Tasks Juno runs for you appear here.",
+                icon: .task,
+                size: .panel
+            )
+            .taskScopeState()
+            .accessibilityIdentifier("juno.desktop.search-tasks-empty")
+        case .ready where visibleTasks.isEmpty:
+            JunoEmptyState(
+                title: "No results",
+                message: "No task matches \u{201C}\(model.query)\u{201D}.",
+                icon: .search,
+                size: .panel
+            )
+            .taskScopeState()
+            .accessibilityIdentifier("juno.desktop.search-tasks-no-results")
+        case .ready:
+            List(selection: $taskSelection) {
+                ForEach(visibleTasks) { task in
+                    taskRow(task)
+                        .tag(task.id)
+                }
+            }
+            .listStyle(.inset)
+            .junoSidebarSelectionTint()
+            .scrollContentBackground(.hidden)
+            .onKeyPress(.return) {
+                openPrimaryResult()
+                return .handled
+            }
+            .accessibilityIdentifier("juno.desktop.search-tasks")
+            .junoPageColumn()
+        }
+    }
+
+    private func taskRow(_ task: WorkSessionSummary) -> some View {
+        let status = JunoWorkStatus(rawValue: task.status) ?? .interrupted
+        let title = Self.title(of: task)
+        let updated = "Updated \(ChatWorkFormat.ago(task.lastActivityAt, now: now ?? Date()))"
+        return HStack(alignment: .center, spacing: JunoSpace.cozy) {
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                Text(emphasizingQuery(in: title))
+                    .junoRowLabel()
+                    .lineLimit(1)
+                Text(task.archived ? "\(updated) \u{00B7} Archived" : updated)
+                    .junoCaption()
+                    .lineLimit(1)
+            }
+            Spacer(minLength: JunoSpace.regular)
+            ChatWorkStatusPill(status: status)
+        }
+        .padding(.vertical, JunoSpace.hairline)
+        .junoSidebarRowInk()
+        .listRowBackground(taskSelection == task.id ? Color.junoSidebarSelection : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { openTask(task) }
+        .contextMenu {
+            Button(task.conversationID == nil ? "Open Task" : "Open in Chat") { openTask(task) }
+            Button("Copy Title") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(title, forType: .string)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), \(ChatWorkVocabulary.label(status)), \(updated)")
+        .accessibilityHint(task.conversationID == nil ? "Opens the task" : "Opens its chat")
+        .accessibilityIdentifier("juno.desktop.search-task.\(task.id)")
+    }
+
+    static func title(of task: WorkSessionSummary) -> String {
+        let title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? task.goal : title
+    }
+
+    /// The tasks the query matches — every word, in the title or the goal —
+    /// newest activity first.
+    private var visibleTasks: [WorkSessionSummary] {
+        guard case .ready(let all) = tasks else { return [] }
+        return DesktopSearchTaskList.matching(all, query: model.query)
+    }
+
+    private var visibleTaskIDs: [WorkSessionSummary.ID] {
+        scope == .tasks ? visibleTasks.map(\.id) : []
+    }
+
+    private func readTasks() async {
+        guard let taskSource else { return }
+        if case .ready = tasks {} else { taskList = .loading }
+        do {
+            taskList = .ready(try await taskSource())
+        } catch is CancellationError {
+            return
+        } catch {
+            // What was read stays on screen; only a first read fails loudly.
+            if case .ready = tasks { return }
+            taskList = .failed
+        }
+    }
+
     // MARK: - Research
 
     /// The deep-research run happening in Chat, reported on the screen whose
@@ -359,7 +540,7 @@ struct DesktopSearchScreen: View {
             Text(statusText)
                 .junoCaption()
             Spacer(minLength: JunoSpace.regular)
-            Text("Encrypted store on this Mac")
+            Text(scope == .tasks ? "Tasks on your account" : "Encrypted store on this Mac")
                 .junoCaption()
         }
         .padding(.horizontal, JunoSpace.regular)
@@ -372,7 +553,14 @@ struct DesktopSearchScreen: View {
     }
 
     private var statusText: String {
-        switch model.phase {
+        if scope == .tasks {
+            switch tasks {
+            case .loading: return "Reading your tasks\u{2026}"
+            case .failed: return "Tasks unavailable"
+            case .ready: return countText
+            }
+        }
+        return switch model.phase {
         case .idle:
             model.query.isEmpty ? "Nothing searched yet" : "Waiting for a searchable word"
         case .searching:
@@ -385,6 +573,10 @@ struct DesktopSearchScreen: View {
     }
 
     private var countText: String {
+        if scope == .tasks {
+            let count = visibleTasks.count
+            return count == 1 ? "1 task" : "\(count) tasks"
+        }
         let count = visibleResults.count
         let noun = count == 1 ? "result" : "results"
         guard scope != .everything else { return "\(count) \(noun)" }
@@ -412,6 +604,11 @@ struct DesktopSearchScreen: View {
     // MARK: - Opening
 
     private func openPrimaryResult() {
+        if scope == .tasks {
+            let chosen = taskSelection.flatMap { id in visibleTasks.first { $0.id == id } }
+            if let task = chosen ?? visibleTasks.first { openTask(task) }
+            return
+        }
         let chosen = selection.flatMap { id in
             visibleResults.first { $0.id == id }
         }
@@ -512,12 +709,14 @@ struct DesktopSearchScreen: View {
 /// Chats and messages share one scope: to a reader looking for a conversation
 /// they are the same thing found two ways, and splitting them would put two
 /// segments in the bar that answer the same question.
-private enum DesktopSearchScope: String, CaseIterable, Identifiable, Hashable {
+enum DesktopSearchScope: String, CaseIterable, Identifiable, Hashable {
     case everything
     case chats
     case projects
     case files
     case artifacts
+    /// The account's tasks, read from the server (Phase 5 Stage D).
+    case tasks
 
     var id: Self { self }
 
@@ -528,6 +727,7 @@ private enum DesktopSearchScope: String, CaseIterable, Identifiable, Hashable {
         case .projects: "Projects"
         case .files: "Files"
         case .artifacts: "Artifacts"
+        case .tasks: "Tasks"
         }
     }
 
@@ -538,6 +738,7 @@ private enum DesktopSearchScope: String, CaseIterable, Identifiable, Hashable {
         case .projects: kind == .project
         case .files: kind == .file
         case .artifacts: kind == .artifact
+        case .tasks: false
         }
     }
 }
@@ -554,5 +755,72 @@ private extension NativeSearchResultKind {
         case .artifact: "Artifacts"
         case .memory: "Memory"
         }
+    }
+}
+
+/// The Tasks scope's read: not yet, failed, or the account's tasks.
+enum DesktopSearchTaskList: Equatable {
+    case loading
+    case failed
+    case ready([WorkSessionSummary])
+
+    /// Every word of the query in the title or the goal, ignoring case and
+    /// accents; newest activity first.
+    static func matching(_ tasks: [WorkSessionSummary], query: String) -> [WorkSessionSummary] {
+        let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        let sorted = tasks.sorted { $0.lastActivityAt > $1.lastActivityAt }
+        guard !words.isEmpty else { return sorted }
+        return sorted.filter { task in
+            words.allSatisfy { word in
+                task.title.range(of: word, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+                    || task.goal.range(of: word, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+            }
+        }
+    }
+}
+
+/// Rows of the shape the Tasks scope will draw while it reads: a title, a
+/// caption and a pill — skeleton rows, not a spinner.
+private struct DesktopSearchTaskSkeleton: View {
+    private static let widths: [(CGFloat, CGFloat)] = [(248, 96), (196, 112), (284, 88), (172, 104), (228, 92)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Self.widths.indices, id: \.self) { index in
+                HStack(spacing: JunoSpace.cozy) {
+                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                        bar(width: Self.widths[index].0, height: 10)
+                        bar(width: Self.widths[index].1, height: 8)
+                    }
+                    Spacer(minLength: JunoSpace.regular)
+                    Capsule(style: .continuous)
+                        .fill(Color.junoMuted)
+                        .frame(width: 64, height: 20)
+                }
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.vertical, JunoSpace.cozy)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.top, JunoSpace.snug)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Reading your tasks")
+    }
+
+    private func bar(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: JunoRadius.micro, style: .continuous)
+            .fill(Color.junoMuted)
+            .frame(width: width, height: height)
+    }
+}
+
+private extension View {
+    /// A Tasks-scope state panel: in the page's column, just under the
+    /// controls, where the rows would start.
+    func taskScopeState() -> some View {
+        junoPageColumn()
+            .padding(.top, JunoSpace.regular)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }

@@ -35,6 +35,9 @@ struct DesktopDestinationView: View {
     var shareConversation: (() -> Void)? = nil
     /// Fork Privately, which the window answers by starting a private chat.
     var forkPrivately: (([NativePrivateChatModel.Turn]) -> Void)? = nil
+    /// Opens the sheet for a task with no conversation (register #63); the
+    /// window presents it.
+    var openTaskRecord: (WorkSessionSummary) -> Void = { _ in }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -111,7 +114,9 @@ struct DesktopDestinationView: View {
                     // nowhere is worse than no link.
                     openResearchRun: conversationModel.selectedConversationID.map { id in
                         { openConversation(id) }
-                    }
+                    },
+                    taskSource: taskSource,
+                    openTask: openTask
                 )
             } else {
                 unavailable("Search", "The encrypted search index is unavailable.")
@@ -220,6 +225,25 @@ struct DesktopDestinationView: View {
                 await conversationModel.reload()
             }
             openConversation(id)
+        }
+    }
+
+    /// Search › Tasks: every task on the account, archived ones too, the
+    /// newest hundred. Nil without Work, which leaves the scope out.
+    private var taskSource: (() async throws -> [WorkSessionSummary])? {
+        guard let workModel = configuration.workModel else { return nil }
+        let client = workModel.transport
+        let accountID = session.profile.id
+        return { try await client.sessions(includingArchived: true, limit: 100, for: accountID) }
+    }
+
+    /// A task opens its chat, as the web sends `/work/{id}` to its
+    /// conversation; one with no conversation opens its sheet.
+    private func openTask(_ task: WorkSessionSummary) {
+        if let conversationID = task.conversationID {
+            openAgentThread(conversationID)
+        } else {
+            openTaskRecord(task)
         }
     }
 

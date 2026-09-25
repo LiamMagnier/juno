@@ -1,41 +1,31 @@
 import JunoDesignSystem
 import SwiftUI
 
+/// The window's two products (§1.4).
+///
+/// Work stopped being a product in Phase 1 and its old workspace went in
+/// Phase 5 Stage D: tasks live in the chats that started them, and one with no
+/// chat opens in a sheet (register #63). A window an older build stored as
+/// "work" restores to Chat, because `init(rawValue:)` no longer knows it and
+/// the root falls back.
 enum DesktopProductMode: String, CaseIterable, Identifiable {
     case chat
     case code
-    /// The old Juno Work workspace, reachable only from Window › Tasks (Legacy).
-    ///
-    /// Work stopped being a product in Phase 1 of the Liquid Glass redesign:
-    /// tasks are merging into Chat (§1.6, Phase 5), and a third segment beside
-    /// Chat and Code advertised a product that is going away. It stays a case —
-    /// not a sheet or a window of its own — so that people with tasks already
-    /// running can still answer their approvals, and so it swaps in exactly
-    /// like a product: instantly, with only one split view alive. Nothing
-    /// enumerates it: the switch, the View menu, Quick Entry and the Shortcuts
-    /// window all read ``switchable``. Phase 5 deletes the case.
-    ///
-    /// The raw value stays "work" because it is a `@SceneStorage` value, and a
-    /// window stored by an older build should restore to the same workspace.
-    case legacyWork = "work"
 
     var id: Self { self }
 
     /// The products the Chat/Code switch offers, in its order — ⌘1 and ⌘2.
     static let switchable: [Self] = [.chat, .code]
 
-    /// ⌘1 · ⌘2, in the switch's own order. The legacy workspace has none: it is
-    /// a Window-menu item, not a product the keyboard should land on by
-    /// accident.
+    /// ⌘1 · ⌘2, in the switch's own order.
     var keyboardDigit: Character? {
         switch self {
         case .chat: "1"
         case .code: "2"
-        case .legacyWork: nil
         }
     }
 
-    /// ⌘ and the digit, or nothing for the legacy workspace.
+    /// ⌘ and the digit.
     var keyboardShortcut: KeyboardShortcut? {
         keyboardDigit.map { KeyboardShortcut(KeyEquivalent($0), modifiers: .command) }
     }
@@ -44,7 +34,6 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
         switch self {
         case .chat: "Chat"
         case .code: "Code"
-        case .legacyWork: "Tasks (Legacy)"
         }
     }
 
@@ -56,7 +45,6 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
         switch self {
         case .chat: .home
         case .code: .code
-        case .legacyWork: .work
         }
     }
 
@@ -83,9 +71,10 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
 /// neutral highlight. No tint is applied here or above it (§0.4): the toolbar
 /// owner sits above the one `.junoAccentTint()` in the window.
 ///
-/// The selection is optional so the legacy Work workspace — which is not in
-/// the switch — reads as *no segment chosen* rather than as a selection with no
-/// tag, which SwiftUI would log as an invalid state.
+/// The selection is optional so a product outside ``DesktopProductMode/switchable``
+/// would read as *no segment chosen* rather than as a selection with no tag,
+/// which SwiftUI logs as an invalid state. Since Phase 5 Stage D every product
+/// is switchable, so this is a guard, not a case that happens.
 struct DesktopProductSwitch: View {
     @Binding var product: DesktopProductMode
 
@@ -150,7 +139,7 @@ extension View {
         }
     }
 
-    /// The name Code's and the legacy Work column still call.
+    /// The name Code's column still calls.
     ///
     /// It used to pin a segmented control in a strip above the list; it now
     /// installs the same toolbar switch as ``junoProductSwitch(product:)``, so

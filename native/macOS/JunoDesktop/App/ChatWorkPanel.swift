@@ -172,7 +172,7 @@ struct ChatWorkPanel: View {
 
     @ViewBuilder
     private var activity: some View {
-        let entries = DesktopWorkLog.entries(in: events)
+        let entries = WorkEventLog.entries(in: events)
         if entries.isEmpty {
             Text("Nothing has happened on this task yet.")
                 .junoFont(size: 13, relativeTo: .callout)
@@ -189,7 +189,7 @@ struct ChatWorkPanel: View {
 
     @ViewBuilder
     private var filesView: some View {
-        let written = DesktopWorkLog.references(in: events).filter { $0.direction == .written }
+        let written = WorkEventLog.references(in: events).filter { $0.direction == .written }
         if files.isEmpty, written.isEmpty {
             JunoEmptyState(
                 title: "No files yet",
@@ -452,7 +452,7 @@ struct ChatWorkFileRow: View {
 /// a 14pt glyph in the entry's tone, the line at 13pt, its detail at 11pt, and
 /// when it happened in mono.
 struct ChatWorkActivityRow: View {
-    let entry: DesktopWorkLog.Entry
+    let entry: WorkEventLog.Entry
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {

@@ -36,18 +36,6 @@ public enum JunoPreviewEnvironment {
         value(for: "--juno-preview-tab", env: "JUNO_PREVIEW_TAB")
     }
 
-    /// Lands Juno Work on its overview instead of on an open task.
-    ///
-    /// `--juno-preview-tab work` opens the densest thread in the product, which
-    /// is the right default and also means Work's *home* — the page that answers
-    /// "what is waiting on me" before any task is picked — had no launch of its
-    /// own. Nothing in the window clears a selection either, so the one surface
-    /// a reader meets first was the one surface a screenshot could not reach.
-    public static var opensWorkOverview: Bool {
-        CommandLine.arguments.contains("--juno-preview-work-overview")
-            || ProcessInfo.processInfo.environment["JUNO_PREVIEW_WORK_OVERVIEW"] == "1"
-    }
-
     /// Opens one Juno Code session's log, from `--juno-preview-code-session <id>`
     /// or `JUNO_PREVIEW_CODE_SESSION`.
     ///
@@ -88,14 +76,6 @@ public enum JunoPreviewEnvironment {
     /// `notifications`, `code`, `appearance`, …
     public static var initialSettingsRoute: String? {
         value(for: "--juno-preview-settings-route", env: "JUNO_PREVIEW_SETTINGS_ROUTE")
-    }
-
-    /// Opens the densest Work thread directly on its Files & cost surface.
-    /// This keeps artifact/version QA deterministic and avoids relying on
-    /// screen-coordinate automation against a resizable macOS window.
-    public static var opensWorkFiles: Bool {
-        CommandLine.arguments.contains("--juno-preview-work-files")
-            || ProcessInfo.processInfo.environment["JUNO_PREVIEW_WORK_FILES"] == "1"
     }
 
     /// Optional accent override from `--juno-preview-accent <name>` or

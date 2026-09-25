@@ -224,23 +224,14 @@ public final class PreviewWorld {
             codeModel.open(task)
         }
 
-        // Open the task the Work screenshots are of. Without this the thread is
-        // the "no task selected" placeholder, which is a state worth capturing
-        // but not the one anybody reaching for `--juno-preview-tab work` is
-        // after. The view's own scene storage still wins if a previous launch
-        // left a selection behind.
-        //
-        // `--juno-preview-work-overview` suppresses it, because the placeholder
-        // is Work's *home* — the landing page somebody sees before they pick a
-        // task — and it was the one surface in the product with no reachable
-        // launch. Opening a task is the only way in, and once a task is open
-        // nothing in the window closes it again, so the page could be redesigned
-        // but never looked at.
-        if !JunoPreviewEnvironment.opensWorkOverview,
-            let session = workModel.sessions.first(where: {
-                $0.sessionID == PreviewWorkFixtures.openSessionID
-            })
-        {
+        // Open the task the phone's Work screenshots are of
+        // (`--juno-preview-tab work`). Without this its thread is the "no task
+        // selected" placeholder, which is a state worth capturing but not the
+        // one anybody reaching for the tab is after. The Mac's Work window,
+        // and its overview and files switches, went in Phase 5 Stage D.
+        if let session = workModel.sessions.first(where: {
+            $0.sessionID == PreviewWorkFixtures.openSessionID
+        }) {
             workModel.open(session)
         }
 

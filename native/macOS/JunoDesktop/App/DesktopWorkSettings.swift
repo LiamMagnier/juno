@@ -839,3 +839,234 @@ private struct DesktopWorkBundleList: View {
         .accessibilityIdentifier(accessibilityPrefix)
     }
 }
+
+// MARK: - This Mac
+//
+// Host setup, moved here from the old Work window when Phase 5 Stage D
+// removed it. Track B moves the tile, and these with it, into Settings ›
+// Permissions.
+
+/// The one sentence about this Mac, with the control that answers it — as a
+/// quiet inline row.
+///
+/// The settings card draws it, from the same model the host runs on, so the
+/// card and any later surface that explains why this Mac is not serving work
+/// cannot come to describe one state in two vocabularies.
+///
+/// A row, not a panel: a hairline card at the card radius, the sentence in the
+/// caption, and a *ghost* button — the folder-grant empty state on the web is
+/// exactly this, and the filled coral button it replaces was the loudest
+/// thing on a page whose point is the composer above it.
+struct DesktopWorkBlockerRow: View {
+    let host: DesktopWorkHostModel
+    /// Whether to draw the ready line when there is no blocker. A surface
+    /// whose job is something else says nothing when all is well, while the
+    /// settings card, which exists to be read, confirms it.
+    var confirmsReady = false
+    /// The accessibility namespace of the surface drawing this.
+    var identifier = "juno.work.host"
+
+    var body: some View {
+        if let blocker = host.blocker {
+            HStack(alignment: .center, spacing: JunoSpace.cozy) {
+                // A spinner for what is settling by itself, the state's own mark
+                // for what is waiting on the reader.
+                if blocker.isSettling {
+                    ProgressView().controlSize(.small)
+                        .frame(width: 16, height: 16)
+                } else {
+                    JunoIconView(blocker.icon, size: 15)
+                        .junoSecondaryInk()
+                        .frame(width: 16, height: 16)
+                }
+                Text(blocker.sentence)
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Spacer(minLength: JunoSpace.snug)
+                if let title = blocker.actionTitle, host.canTake(blocker) {
+                    Button(title) { _ = host.take(blocker) }
+                        .buttonStyle(.plain)
+                        .junoFont(size: 12, relativeTo: .callout, weight: .medium)
+                        .junoInk()
+                        .padding(.horizontal, JunoSpace.cozy)
+                        .frame(height: 28)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                                .strokeBorder(Color.junoBorder, lineWidth: 1)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
+                        .help(blocker.actionDetail ?? title)
+                        .accessibilityIdentifier("\(identifier)-action")
+                }
+            }
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.cozy)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .strokeBorder(Color.junoHairline, lineWidth: 0.5)
+            )
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(identifier)
+        } else if confirmsReady {
+            HStack(spacing: JunoSpace.cozy) {
+                JunoIconView(.check, size: 15)
+                    .foregroundStyle(Color.junoSuccess)
+                    .frame(width: 16, height: 16)
+                Text("This Mac is serving Juno Work.")
+                    .junoCaption()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier(identifier)
+        }
+    }
+}
+
+/// The two consents that let this Mac serve work, as one card of steps.
+///
+/// The long-form explanation of ``DesktopWorkBlockerRow``, kept for the
+/// Permissions page track B builds from the host tile; the snapshot suite
+/// draws it until then. `compose` is where its "New task" leads.
+struct DesktopWorkStartPath: View {
+    let host: DesktopWorkHostModel
+    let blocker: DesktopWorkBlocker
+    /// The way past this panel. A Mac that will not host work can still dispatch
+    /// it to the cloud.
+    let compose: () -> Void
+
+    private static let measure: CGFloat = 460
+
+    var body: some View {
+        VStack(spacing: JunoSpace.roomy) {
+            Spacer(minLength: JunoSpace.section)
+
+            VStack(alignment: .leading, spacing: JunoSpace.roomy) {
+                heading
+                VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                    step(
+                        1,
+                        title: "Allow Juno Work on this Mac",
+                        detail: DesktopWorkBlocker.switchedOff.actionDetail ?? "",
+                        isDone: host.allowWorkOnThisMac,
+                        blocker: .switchedOff
+                    )
+                    step(
+                        2,
+                        title: "Give it something to work with",
+                        detail: DesktopWorkBlocker.nothingAllowed.actionDetail ?? "",
+                        isDone: !host.policy.advertisedCapabilities.isEmpty,
+                        blocker: .nothingAllowed
+                    )
+                    readyStep
+                }
+            }
+            .padding(JunoSpace.roomy)
+            .frame(maxWidth: Self.measure, alignment: .leading)
+            .junoCard(cornerRadius: JunoRadius.card)
+
+            Button("New task", action: compose)
+                .accessibilityIdentifier("juno.work.start-path.new-task")
+
+            Spacer(minLength: JunoSpace.section)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, JunoSpace.region)
+        .animation(JunoMotion.standard, value: blocker)
+        .accessibilityIdentifier("juno.work.start-path")
+    }
+
+    private var heading: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            JunoIconView(.device, size: 24)
+                .foregroundStyle(Color.junoAccent)
+                .accessibilityHidden(true)
+            Text("Set up Juno Work on this Mac")
+                .junoEmptyTitle()
+            Text(
+                "Juno Work runs tasks in the cloud already. Two decisions let it run them "
+                    + "here, where your files and your signed-in apps are."
+            )
+            .junoCaption()
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func step(
+        _ number: Int,
+        title: String,
+        detail: String,
+        isDone: Bool,
+        blocker stepBlocker: DesktopWorkBlocker
+    ) -> some View {
+        let isCurrent = self.blocker == stepBlocker
+        HStack(alignment: .top, spacing: JunoSpace.cozy) {
+            marker(number: number, isDone: isDone, isCurrent: isCurrent)
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                Text(title)
+                    .junoRowLabel()
+                    .foregroundStyle(isDone || isCurrent ? Color.junoForeground : Color.junoMutedForeground)
+                Text(detail)
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if isCurrent, let actionTitle = stepBlocker.actionTitle, host.canTake(stepBlocker) {
+                    Button(actionTitle) { _ = host.take(stepBlocker) }
+                        .padding(.top, JunoSpace.tight)
+                        .accessibilityIdentifier(
+                            "juno.work.start-path.step-\(number)-action"
+                        )
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var readyStep: some View {
+        let isReady = host.willServeDispatchedWork
+        return HStack(alignment: .top, spacing: JunoSpace.cozy) {
+            marker(number: 3, isDone: isReady, isCurrent: blocker.isSettling)
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                Text(isReady ? "This Mac is serving Juno Work" : "This Mac starts serving")
+                    .junoRowLabel()
+                    .foregroundStyle(isReady ? Color.junoForeground : Color.junoMutedForeground)
+                Text(
+                    isReady
+                        ? "A task sent here now runs on this Mac."
+                        : blocker.isSettling || blocker == .signedOut
+                            ? blocker.sentence
+                            : "Once both are done, tasks sent here run on this Mac."
+                )
+                .junoCaption()
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func marker(number: Int, isDone: Bool, isCurrent: Bool) -> some View {
+        Group {
+            if isDone {
+                JunoIconView(.check, size: 16)
+                    .foregroundStyle(Color.junoSuccess)
+            } else if isCurrent, blocker.isSettling {
+                ProgressView().controlSize(.small)
+            } else {
+                Text("\(number)")
+                    .junoCodeSmall()
+                    .foregroundStyle(isCurrent ? Color.junoAccent : Color.junoMutedForeground)
+                    .frame(width: 20, height: 20)
+                    .overlay(
+                        Circle().strokeBorder(
+                            isCurrent ? Color.junoAccent : Color.junoBorder,
+                            lineWidth: 1
+                        )
+                    )
+            }
+        }
+        .frame(width: 22, height: 22)
+        .accessibilityHidden(true)
+    }
+}

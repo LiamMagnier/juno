@@ -273,6 +273,90 @@ final class NativeConversationWorkTests: XCTestCase {
 
     // MARK: - Fixtures
 
+    // MARK: Keyed on one task (Stage D, register #63)
+
+    /// A task the old Work window started has no conversation: its follower
+    /// is keyed on the task, draws the list's copy until the stream says
+    /// more, and never discovers.
+    func testATaskKeyedFollowerStartsFromTheListsCopy() {
+        let legacy = summary(id: "wsi_old", created: 10, conversation: "")
+        let keyed = NativeConversationWork(
+            sessionID: "wsi_old", session: WorkSessionSummary(
+                sessionID: legacy.sessionID, title: "Reconcile the invoices", goal: legacy.goal,
+                status: "waiting_input", needsAttention: true, requestedTarget: "local",
+                effectiveTarget: "local", hostID: "host_mac", hostDisplayName: nil, pinned: false,
+                archived: false, lastActivityAt: legacy.lastActivityAt, currentRunID: "run_1",
+                lastSeq: 4, conversationID: nil, createdAt: legacy.createdAt
+            ),
+            client: NativeWorkClient(transport: FollowerTransport()), accountID: account
+        )
+        defer { keyed.close() }
+        XCTAssertEqual(keyed.sessionID, "wsi_old")
+        XCTAssertEqual(keyed.conversationID, "")
+        XCTAssertEqual(keyed.current?.title, "Reconcile the invoices")
+        XCTAssertEqual(keyed.status, .waitingInput)
+        XCTAssertFalse(keyed.hasReadLog)
+        XCTAssertFalse(keyed.isUnreachable)
+
+        // A chat's follower is keyed on nothing.
+        let chat = follower()
+        XCTAssertNil(chat.sessionID)
+    }
+
+    /// Known only by id (a notification's `/work/{id}`), the task is filled
+    /// in by the stream's first frame; another task's frame is ignored.
+    func testATaskKnownOnlyByIdIsFilledInByItsStream() {
+        let keyed = NativeConversationWork(
+            sessionID: "wsi_old", session: nil,
+            client: NativeWorkClient(transport: FollowerTransport()), accountID: account
+        )
+        defer { keyed.close() }
+        XCTAssertNil(keyed.current)
+
+        keyed.apply(WorkStreamUpdate(
+            session: summary(id: "someone_else", created: 5), run: nil, events: [], approvals: []
+        ), isSnapshot: true)
+        XCTAssertNil(keyed.current)
+
+        keyed.apply(WorkStreamUpdate(
+            session: summary(id: "wsi_old", created: 5, status: "running"),
+            run: WorkRunSummary(
+                runID: "run_1", sessionID: "wsi_old", attempt: 1, status: "waiting_input",
+                terminalReason: nil, requestedTarget: "local", effectiveTarget: "local",
+                hostID: "host_mac", effectiveModel: nil, degradation: [], costMicroUsd: 0,
+                maxCostMicroUsd: 0, lastSeq: 2, startedAt: nil, finishedAt: nil
+            ),
+            events: [event(1, "question_asked", ["questionId": .string("q_1"), "question": .string("Flag them?")])],
+            approvals: []
+        ), isSnapshot: true)
+        XCTAssertEqual(keyed.current?.sessionID, "wsi_old")
+        XCTAssertEqual(keyed.status, .waitingInput)
+        XCTAssertEqual(keyed.openQuestions.map(\.questionID), ["q_1"])
+        XCTAssertTrue(keyed.hasReadLog)
+    }
+
+    /// A stream that cannot be reached before anything was read is the
+    /// sheet's error state; a chat's follower has nothing to reconnect.
+    func testATaskKeyedFollowerSaysWhenItCannotReachTheTask() async throws {
+        let keyed = NativeConversationWork(
+            sessionID: "wsi_old", session: nil,
+            client: NativeWorkClient(transport: FollowerTransport()), accountID: account
+        )
+        defer { keyed.close() }
+        await keyed.discover()
+        for _ in 0..<60 where !keyed.isUnreachable {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(keyed.isUnreachable)
+        XCTAssertFalse(keyed.hasReadLog)
+        keyed.reconnect()
+        XCTAssertFalse(keyed.isUnreachable)
+
+        let chat = follower()
+        chat.reconnect()
+        XCTAssertFalse(chat.isUnreachable)
+    }
+
     private func follower() -> NativeConversationWork {
         NativeConversationWork(
             conversationID: "conv_1", client: NativeWorkClient(transport: FollowerTransport()),

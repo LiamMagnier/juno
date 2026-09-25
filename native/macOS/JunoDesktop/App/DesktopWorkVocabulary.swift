@@ -30,6 +30,41 @@ extension JunoWorkVocabulary {
     }
 }
 
+/// How a line of a task's log is drawn: the Activity panel's mark and ink
+/// for each of ``WorkEventLog/Entry``'s semantic marks and tones. The words
+/// are JunoWorkKit's; the marks are the app's.
+extension WorkEventLog.Entry {
+    var icon: JunoIcon {
+        switch mark {
+        case .started: .play
+        case .plan, .agent: .models
+        case .check: .check
+        case .message: .message
+        case .tool: .tools
+        case .refused: .permission
+        case .approval: .shield
+        case .file: .file
+        case .link: .link
+        case .batch: .list
+        case .undo: .arrowLeft
+        case .problem: .error
+        case .limit: .usage
+        case .device: .device
+        case .paused: .pause
+        }
+    }
+
+    var tint: Color {
+        switch tone {
+        case .quiet: Color.junoMutedForeground
+        case .normal: Color.junoForeground
+        case .warning: Color.junoCaution
+        case .bad: Color.junoDanger
+        case .good: Color.junoSuccess
+        }
+    }
+}
+
 // MARK: - Status pill
 
 /// A task's status, as a tinted capsule.
@@ -78,5 +113,128 @@ struct DesktopWorkStatusPill: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(style.label)
         .help(style.sentence)
+    }
+}
+
+// MARK: - Status vocabulary
+
+/// How Work says a status on this platform: its tint above all, which the
+/// chat's ``ChatWorkStatusPill`` and ``DesktopWorkStatusPill`` both read.
+///
+/// Moved here from the old Work window when Phase 5 Stage D removed it. A
+/// lookup rather than an extension on ``JunoWorkStatus``, because the label,
+/// the sentence and the tint are the app's business and the contract enum is
+/// shared with the phone and the relay. The chat's words are
+/// ``ChatWorkVocabulary``'s (the web's `STATUS_META`, verbatim); the labels
+/// and sentences here are the old window's, kept for the pill until track B's
+/// pages settle which one they draw.
+struct DesktopWorkStatusStyle {
+    let label: String
+    /// Sentence form, for empty states and accessibility. Never a fragment.
+    let sentence: String
+    let symbol: String
+    let tint: Color
+
+    static func of(_ status: JunoWorkStatus) -> DesktopWorkStatusStyle {
+        switch status {
+        case .draft:
+            DesktopWorkStatusStyle(
+                label: "Draft",
+                sentence: "This task has been written but never started, so nothing is running and nothing is queued.",
+                symbol: "square.and.pencil",
+                tint: Color.junoMutedForeground
+            )
+        case .queued:
+            DesktopWorkStatusStyle(
+                label: "Queued",
+                sentence: "Waiting for an executor to pick this up.",
+                symbol: "clock",
+                tint: Color.junoMutedForeground
+            )
+        case .preparing:
+            DesktopWorkStatusStyle(
+                label: "Preparing",
+                sentence: "Fetching inputs, resolving permissions and starting up.",
+                symbol: "hourglass",
+                tint: Color.junoAccent
+            )
+        case .running:
+            DesktopWorkStatusStyle(
+                label: "Running",
+                sentence: "Juno is working on this now.",
+                symbol: "bolt.horizontal",
+                tint: Color.junoAccent
+            )
+        case .waitingInput:
+            DesktopWorkStatusStyle(
+                label: "Needs an answer",
+                sentence: "Juno has asked you something and cannot continue until you answer.",
+                symbol: "questionmark.bubble",
+                tint: Color.junoCaution
+            )
+        case .waitingApproval:
+            DesktopWorkStatusStyle(
+                label: "Needs approval",
+                sentence: "Juno is waiting for you to allow or refuse an action.",
+                symbol: "shield.lefthalf.filled",
+                tint: Color.junoCaution
+            )
+        case .paused:
+            DesktopWorkStatusStyle(
+                label: "Paused",
+                sentence: "You stopped this. It can be resumed.",
+                symbol: "pause.circle",
+                tint: Color.junoMutedForeground
+            )
+        case .completed:
+            DesktopWorkStatusStyle(
+                label: "Done",
+                sentence: "This finished.",
+                symbol: "checkmark.circle",
+                tint: Color.junoSuccess
+            )
+        case .failed:
+            DesktopWorkStatusStyle(
+                label: "Failed",
+                sentence: "The run itself reported that it could not finish.",
+                symbol: "xmark.circle",
+                tint: Color.junoDanger
+            )
+        case .cancelled:
+            DesktopWorkStatusStyle(
+                label: "Cancelled",
+                sentence: "This was cancelled before it finished.",
+                symbol: "slash.circle",
+                tint: Color.junoMutedForeground
+            )
+        case .interrupted:
+            DesktopWorkStatusStyle(
+                label: "Interrupted",
+                sentence: "The executor stopped reporting and its lease expired. Juno does not restart an interrupted run on its own, because it may already have changed something.",
+                symbol: "exclamationmark.triangle",
+                tint: Color.junoCaution
+            )
+        case .hostOffline:
+            DesktopWorkStatusStyle(
+                label: "Mac unreachable",
+                sentence: "The Mac this needed went away mid-run. Wake it and try again, or move the task to the cloud.",
+                symbol: "laptopcomputer.slash",
+                tint: Color.junoCaution
+            )
+        case .budgetExceeded:
+            DesktopWorkStatusStyle(
+                label: "Hit its limit",
+                sentence: "This stopped because it reached the ceiling set for it.",
+                symbol: "gauge.with.dots.needle.100percent",
+                tint: Color.junoCaution
+            )
+        case .timedOut:
+            DesktopWorkStatusStyle(
+                label: "Timed out",
+                sentence: "This ran for longer than its time limit allowed and was stopped.",
+                symbol: "clock.badge.exclamationmark",
+                tint: Color.junoCaution
+            )
+        }
     }
 }

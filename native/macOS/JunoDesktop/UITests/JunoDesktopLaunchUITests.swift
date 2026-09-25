@@ -165,90 +165,6 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         return app
     }
 
-    /// Work lands on its home, opens a task from the column, and comes back.
-    ///
-    /// **The round trip is the point.** This used to drive a five-row filter
-    /// section that no longer exists, and it asserted the overview only as the
-    /// thing left behind when a filter emptied — which is exactly how the page
-    /// became unreachable in the shipping app without a test noticing: once a
-    /// task was open, nothing in the window ever cleared the selection again.
-    /// Opening a task and returning to the overview is the navigation somebody
-    /// actually performs, so it is the navigation this asserts.
-    func testWorkOpensOnItsHomeAndReturnsToItFromATask() {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "-ApplePersistenceIgnoreState", "YES",
-            "--juno-ui-preview",
-            "--juno-preview-tab", "work",
-            "--juno-preview-work-overview",
-            "--juno-preview-size", "1240x800",
-        ]
-        app.launch()
-        openMainWindowIfNeeded(in: app)
-
-        // The home: the composer is the page's first control, and the group that
-        // exists to be noticed is on it.
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.work.composer.goal"]
-                .firstMatch.waitForExistence(timeout: 12)
-        )
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.work.overview.attention"]
-                .firstMatch.waitForExistence(timeout: 5)
-        )
-        // By label rather than by identifier. The row is a `Button` whose label
-        // is a stack of six views including a combined status chip, and macOS
-        // exposes that as a container whose identifier XCUITest will not match —
-        // asserting on the sentence the row actually reads out is both findable
-        // and closer to what the test means.
-        XCTAssertTrue(
-            app.descendants(matching: .any)
-                .matching(
-                    NSPredicate(
-                        format: "label BEGINSWITH %@", "Reconcile the Q3 vendor invoices"
-                    )
-                )
-                .firstMatch.waitForExistence(timeout: 5)
-        )
-
-        // "New task" no longer opens a sheet — it puts the caret in the composer
-        // that is already on the page.
-        let newTask = app.descendants(matching: .any)["juno.work.sidebar.new-task"].firstMatch
-        XCTAssertTrue(newTask.exists)
-        newTask.firstMatch.click()
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.work.composer.goal"]
-                .firstMatch.waitForExistence(timeout: 5)
-        )
-
-        // A task, from the column.
-        let task = app.descendants(matching: .any)["juno.work.sidebar.task.wk-invoices"].firstMatch
-        XCTAssertTrue(task.waitForExistence(timeout: 5))
-        task.click()
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.work.surface"]
-                .waitForExistence(timeout: 8)
-        )
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.work.run-facts"]
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.work.approval"]
-                .waitForExistence(timeout: 5)
-        )
-
-        // And back. "New task" *is* the home: the composer page is a
-        // destination, not the absence of one.
-        let overview = app.descendants(matching: .any)["juno.work.sidebar.new-task"].firstMatch
-        XCTAssertTrue(overview.exists)
-        overview.click()
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.work.composer.goal"]
-                .firstMatch.waitForExistence(timeout: 8)
-        )
-    }
-
     func testProjectsOpenOnTheIndexAndCanStartAScopedChatInsideAProject() {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -430,22 +346,21 @@ final class JunoDesktopLaunchUITests: XCTestCase {
     }
 
     /// The Chat/Code switch sits in the sidebar's segment of the toolbar and
-    /// reaches the other product; the legacy tasks workspace is reached only
-    /// from Window › Tasks (Legacy).
+    /// reaches the other product, and the old Work workspace has no door left.
     ///
     /// The switch used to head each column in a strip of its own under the
     /// toolbar, labelled "Juno product", with Work as a third segment. Phase 1
     /// of the Liquid Glass redesign made it a toolbar item (§1.4) and took
-    /// Work out of it (§1.6), so this pins the new shape: the switch shares the
-    /// traffic lights' band and sits beside them, Work has no segment, and the
-    /// old workspace is one Window-menu item away.
-    func testProductSwitchSitsInTheToolbarAndLegacyTasksAreInTheWindowMenu() {
+    /// Work out of it (§1.6); Phase 5 Stage D removed the old workspace and
+    /// its Window-menu item. This pins that shape: the switch shares the
+    /// traffic lights' band and sits beside them, Work has no segment, and
+    /// the Window menu has no Tasks item.
+    func testProductSwitchSitsInTheToolbarAndWorkHasNoDoor() {
         let app = XCUIApplication()
         app.launchArguments = [
             "-ApplePersistenceIgnoreState", "YES",
             "--juno-ui-preview",
-            "--juno-preview-tab", "work",
-            "--juno-preview-work-overview",
+            "--juno-preview-tab", "chat",
             // 1239, not 1240: the harness treats the scene default as "leave the
             // window alone", and this window has to be measured at the size asked.
             "--juno-preview-size", "1239x800",
@@ -454,20 +369,12 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         openMainWindowIfNeeded(in: app)
 
         let productSwitch = app.descendants(matching: .any)["Juno product"]
-        XCTAssertTrue(productSwitch.waitForExistence(timeout: 12), "The legacy workspace has no product switch.")
-        assertSwitchInToolbar(in: app, product: "legacy tasks")
-        XCTAssertTrue(app.buttons["juno.work.new-task"].exists)
+        XCTAssertTrue(productSwitch.waitForExistence(timeout: 12), "Chat has no product switch.")
+        assertSwitchInToolbar(in: app, product: "chat")
         XCTAssertFalse(
             app.descendants(matching: .any)["juno.product-brand.work"].exists,
             "Work is not a product any more; it has no segment."
         )
-
-        app.descendants(matching: .any)["juno.product-brand.chat"].click()
-        XCTAssertTrue(
-            app.buttons.matching(labelBeginsWith("New chat")).firstMatch.waitForExistence(timeout: 8),
-            "Legacy tasks → Chat"
-        )
-        assertSwitchInToolbar(in: app, product: "chat")
 
         app.descendants(matching: .any)["juno.product-brand.code"].click()
         XCTAssertTrue(
@@ -484,12 +391,19 @@ final class JunoDesktopLaunchUITests: XCTestCase {
             "The Code column's search field overlaps the product switch."
         )
 
-        // The one door back to the old workspace, until Phase 5 retires it.
+        app.descendants(matching: .any)["juno.product-brand.chat"].click()
+        XCTAssertTrue(
+            app.buttons.matching(labelBeginsWith("New chat")).firstMatch.waitForExistence(timeout: 8),
+            "Code → Chat"
+        )
+
+        // The old workspace's Window-menu door is gone with it.
         app.menuBarItems["Window"].click()
-        let legacyTasks = app.menuItems["Tasks (Legacy)"]
-        XCTAssertTrue(legacyTasks.waitForExistence(timeout: 3), "Window › Tasks (Legacy) is missing.")
-        legacyTasks.click()
-        XCTAssertTrue(app.buttons["juno.work.new-task"].waitForExistence(timeout: 8), "Window › Tasks (Legacy)")
+        XCTAssertFalse(
+            app.menuItems.matching(labelBeginsWith("Tasks")).firstMatch.waitForExistence(timeout: 2),
+            "The Window menu still has a Tasks item."
+        )
+        app.typeKey(.escape, modifierFlags: [])
     }
 
     /// The switch is a toolbar item: inside the toolbar's band, and to the
@@ -551,14 +465,6 @@ final class JunoDesktopLaunchUITests: XCTestCase {
             .init(name: "chat-1440", size: "1440x900", arguments: ["--juno-preview-tab", "chat"]),
             .init(name: "code-1240", size: "1239x800", arguments: ["--juno-preview-tab", "code"]),
             .init(name: "code-1440", size: "1440x900", arguments: ["--juno-preview-tab", "code"]),
-            .init(
-                name: "work-1240", size: "1239x800",
-                arguments: ["--juno-preview-tab", "work", "--juno-preview-work-overview"]
-            ),
-            .init(
-                name: "work-1440", size: "1440x900",
-                arguments: ["--juno-preview-tab", "work", "--juno-preview-work-overview"]
-            ),
             .init(name: "library", size: "1239x800", arguments: ["--juno-preview-tab", "library"]),
             .init(name: "artifacts", size: "1239x800", arguments: ["--juno-preview-tab", "artifacts"]),
             .init(name: "connections", size: "1239x800", arguments: ["--juno-preview-tab", "connections"]),
@@ -650,9 +556,6 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         let captures: [(name: String, tab: String, size: String, extra: [String])] = [
             ("chat-1240", "chat", "1240x800", []),
             ("code-1240", "code", "1240x800", []),
-            ("work-home-1240", "work", "1240x800", ["--juno-preview-work-overview"]),
-            ("work-home-1440", "work", "1440x900", ["--juno-preview-work-overview"]),
-            ("work-thread-1440", "work", "1440x900", []),
             ("settings-1240", "settings", "1240x800", []),
         ]
         for capture in captures {

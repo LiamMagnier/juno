@@ -76,8 +76,8 @@ struct DesktopShortcutsWindow: View {
         ]),
     ]
 
-    // No Work group: Work is not a product any more, and its legacy
-    // workspace (Window › Tasks (Legacy)) takes no shortcuts of its own (§1.6).
+    // No Work group: Work is not a product any more (§1.6); tasks live in
+    // the chats that started them.
 
     /// Every row, in group order, for the one table.
     static let shortcuts: [Shortcut] = groups.flatMap(\.shortcuts)

@@ -6,7 +6,11 @@ import Testing
 
 @testable import JunoDesktop
 
-/// Looks at the Work setup path, in both appearances, as macOS draws it.
+/// Looks at this Mac's Work setup, in both appearances, as macOS draws it:
+/// the start path and the settings card's reason row, which moved into
+/// `DesktopWorkSettings.swift` with the host tile when Phase 5 Stage D removed
+/// the old Work window (track B takes them into Settings › Permissions). The
+/// window's own column footer went with the window.
 ///
 /// This exists because a green build proves nothing about layout on this
 /// platform. The repo's own record has one constant putting the same control
@@ -92,24 +96,6 @@ struct DesktopWorkStartPathSnapshots {
                     )
                 }
                 .padding(JunoSpace.roomy)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            // The task column's footer, at the width the sidebar gives it. Its
-            // own capture because a row that reads well at 760pt can still wrap
-            // its button off the edge at 260.
-            try await capture(
-                named: "work-sidebar-footer",
-                in: directory,
-                appearance: appearance,
-                size: CGSize(width: 272, height: 180)
-            ) { host in
-                VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                    DesktopWorkBlockerRow(host: host)
-                    Button("New task") {}
-                        .buttonStyle(.plain)
-                }
-                .padding(JunoSpace.cozy)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }

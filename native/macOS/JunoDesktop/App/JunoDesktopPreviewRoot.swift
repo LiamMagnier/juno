@@ -136,13 +136,13 @@ private struct JunoDesktopPreviewWorkspace: View {
 
     /// The product `--juno-preview-tab` asks for.
     ///
-    /// "code" and "work" are products rather than destinations — "work" being
-    /// the legacy tasks workspace now — and everything else is a Chat
-    /// destination, resolved by ``requestedDestination`` below.
+    /// "code" is a product rather than a destination; everything else is a
+    /// Chat destination, resolved by ``requestedDestination`` below. "work"
+    /// named the old Work workspace until Phase 5 Stage D and now lands on
+    /// Chat.
     private static var requestedProduct: DesktopProductMode {
         switch JunoPreviewEnvironment.initialDestination {
         case "code": .code
-        case "work": .legacyWork
         default: .chat
         }
     }
@@ -168,8 +168,8 @@ private struct JunoDesktopPreviewWorkspace: View {
 
     /// The `--juno-preview-tab` value as a sidebar destination.
     ///
-    /// "code" and "work" are handled by `product` above and are not
-    /// destinations; anything the enum does not recognise resolves to nil so the
+    /// "code" is handled by `product` above and is not a destination; "work"
+    /// and anything else the enum does not recognise resolve to nil, so the
     /// harness falls through to Chat rather than opening a blank pane.
     private static var requestedDestination: DesktopDestination? {
         guard let raw = JunoPreviewEnvironment.initialDestination,

@@ -35,34 +35,37 @@ struct JunoDesktopSmokeTests {
     /// `DesktopProductMode.rawValue` under "juno.desktop.product" and restores it
     /// by `init(rawValue:)`. Renaming a case therefore silently retires every
     /// stored window: the lookup fails, the `?? .chat` fallback fires, and a
-    /// reader who left the app in Work comes back to Chat with no error anywhere
-    /// to explain it. Pinning the strings makes that rename a failing test.
+    /// reader who left the app in Code comes back to Chat with no error
+    /// anywhere to explain it. Pinning the strings makes that rename a failing
+    /// test.
     @Test
     func productModesHaveStableSceneStorageValues() {
         #expect(DesktopProductMode.chat.rawValue == "chat")
         #expect(DesktopProductMode.code.rawValue == "code")
-        // The legacy workspace keeps Work's stored value, so a window saved
-        // by an older build restores to the same place.
-        #expect(DesktopProductMode.legacyWork.rawValue == "work")
         // Every case is pinned above, so a product added without a line here
         // fails rather than shipping an unpinned scene-storage value.
-        #expect(DesktopProductMode.allCases.count == 3)
+        #expect(DesktopProductMode.allCases.count == 2)
     }
 
-    /// Two products (§1.4 of the Liquid Glass redesign). The switch, the View
-    /// menu and Quick Entry all read `switchable`; the legacy Work workspace
-    /// is in none of them and has no shortcut — Window › Tasks (Legacy) is the
-    /// only way to it.
+    /// The old Work workspace went in Phase 5 Stage D. A window an older
+    /// build stored on it ("work") no longer names a product, so the root's
+    /// `?? .chat` fallback opens it on Chat rather than on nothing.
+    @Test
+    func aWindowStoredOnTheOldWorkWorkspaceRestoresToChat() {
+        #expect(DesktopProductMode(rawValue: "work") == nil)
+        #expect(DesktopProductMode(rawValue: "work") ?? .chat == .chat)
+    }
+
+    /// Two products (§1.4 of the Liquid Glass redesign), and the switch, the
+    /// View menu and Quick Entry all read `switchable`.
     @Test
     func theSwitchOffersChatAndCodeOnly() {
         #expect(DesktopProductMode.switchable == [.chat, .code])
+        #expect(DesktopProductMode.switchable == DesktopProductMode.allCases)
         #expect(DesktopProductMode.chat.keyboardDigit == "1")
         #expect(DesktopProductMode.code.keyboardDigit == "2")
-        #expect(DesktopProductMode.legacyWork.keyboardDigit == nil)
-        #expect(DesktopProductMode.legacyWork.keyboardShortcut == nil)
         #expect(DesktopProductMode.chat.help == "Chat  ⌘1")
         #expect(DesktopProductMode.code.help == "Code  ⌘2")
-        #expect(!DesktopProductMode.switchable.contains(.legacyWork))
     }
 
     /// The switch draws the selected product in its solid cut, so both

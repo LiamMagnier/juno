@@ -36,6 +36,11 @@ struct ChatWorkRunState {
     var blockers: [ChatWorkLocalBlocker] = []
 
     var isLive: Bool { !status.isTerminal && status != .draft }
+    /// Whether an approval here can still be answered — the one that holds
+    /// the surface's prominent button.
+    var hasAnswerableApproval: Bool {
+        approvals.contains { $0.request.isAnswerable(at: now ?? Date()) }
+    }
     /// What the run changed outside Juno, in the Mac's tool words.
     var performed: WorkEventLog.PerformedActions {
         WorkEventLog.performedActions(
@@ -91,6 +96,10 @@ struct ChatWorkRunActions {
     var saveSkill: (() -> Void)? = nil
     /// Answers a question with one of its own options: question id, text.
     var answer: (String, String) -> Void = { _, _ in }
+    /// Answers a question typed into the card's own field, where there is no
+    /// composer to reply in (the task sheet, register #63): question id,
+    /// text. True when the server took it, which is when the field clears.
+    var reply: ((String, String) async -> Bool)? = nil
     var focusComposer: () -> Void = {}
     /// The header's Stop. True when the cancel landed; the button keeps its
     /// spinner until the status drops it.
@@ -268,6 +277,11 @@ struct ChatWorkRunEntry: Identifiable, Equatable {
 struct ChatWorkRunCard: View {
     let state: ChatWorkRunState
     var actions = ChatWorkRunActions()
+    /// Drawn inside the task sheet (register #63) rather than a chat: the
+    /// sheet's header carries the title, the status and the controls, so the
+    /// card leaves its own out, and a question is answered in the card
+    /// because there is no composer below it.
+    var standalone = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
@@ -279,15 +293,20 @@ struct ChatWorkRunCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-                .padding(.horizontal, JunoSpace.snug)
-                .padding(.top, JunoSpace.hairline)
-                .padding(.bottom, JunoSpace.snug)
+            if !standalone {
+                header
+                    .padding(.horizontal, JunoSpace.snug)
+                    .padding(.top, JunoSpace.hairline)
+                    .padding(.bottom, JunoSpace.snug)
+            }
             Group {
                 if state.isLive { live } else { finished }
             }
             .id(state.isLive)
             .transition(.opacity)
+            // Without its header the card's first line would sit on the
+            // 8pt inset; this gives it the 16 its sides have.
+            .padding(.top, standalone ? JunoSpace.snug : 0)
         }
         .padding(JunoSpace.snug)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -341,13 +360,7 @@ struct ChatWorkRunCard: View {
                 .transition(.opacity)
             }
             Spacer(minLength: JunoSpace.snug)
-            HStack(spacing: JunoSpace.hairline) {
-                if state.isLive, let stop = actions.stop {
-                    ChatWorkStopButton(stop: stop)
-                        .transition(.opacity)
-                }
-                overflow
-            }
+            ChatWorkRunControls(state: state, actions: actions)
         }
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: state.status)
     }
@@ -357,42 +370,6 @@ struct ChatWorkRunCard: View {
             .junoFont(size: 13, relativeTo: .callout)
             .foregroundStyle(Color.junoSecondaryInk)
             .fixedSize(horizontal: false, vertical: true)
-    }
-
-    @ViewBuilder
-    private var overflow: some View {
-        let canResume = state.status == .paused && actions.resume != nil
-        let canPause = state.isLive && state.status != .paused && actions.pause != nil
-        let canRetry = ChatWorkVocabulary.canTryAgain(state.status) && actions.tryAgain != nil
-        if canResume || canPause || canRetry || actions.showDetails != nil {
-            Menu {
-                if canResume, let resume = actions.resume {
-                    Button("Resume", action: resume)
-                } else if canPause, let pause = actions.pause {
-                    Button("Pause", action: pause)
-                }
-                if canRetry, let tryAgain = actions.tryAgain {
-                    Button("Try Again", action: tryAgain)
-                }
-                if let showDetails = actions.showDetails {
-                    if canResume || canPause || canRetry { Divider() }
-                    Button("Show Details", action: showDetails)
-                }
-            } label: {
-                JunoIconView(.more, size: 14)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .frame(width: 28, height: 28)
-                    .contentShape(.rect)
-            }
-            .menuStyle(.button)
-            .buttonStyle(.borderless)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .disabled(state.isBusy)
-            .help("More")
-            .accessibilityLabel("More")
-            .accessibilityIdentifier("juno.chat.work-card.more")
-        }
     }
 
     // MARK: Live
@@ -433,7 +410,13 @@ struct ChatWorkRunCard: View {
                     isBusy: state.isBusy,
                     now: state.now,
                     answer: { text in actions.answer(question.questionID, text) },
-                    replyBelow: actions.focusComposer
+                    replyBelow: actions.focusComposer,
+                    reply: standalone
+                        ? actions.reply.map { reply in { text in await reply(question.questionID, text) } }
+                        : nil,
+                    // One prominent button per surface: an approval still to
+                    // be answered holds it, so the reply steps down.
+                    replyIsProminent: !state.hasAnswerableApproval
                 )
             }
             if !state.approvals.isEmpty {
@@ -704,6 +687,62 @@ struct ChatWorkLocalBlockerTile: View {
         .controlSize(.small)
         .frame(minHeight: 28)
         .fixedSize()
+    }
+}
+
+// MARK: - Controls
+
+/// A task's header controls: the web's Stop while it runs, and the overflow
+/// menu (register #57) with Pause or Resume, Try Again and Show Details. The
+/// card's header and the task sheet's draw the same pair.
+struct ChatWorkRunControls: View {
+    let state: ChatWorkRunState
+    let actions: ChatWorkRunActions
+
+    var body: some View {
+        HStack(spacing: JunoSpace.hairline) {
+            if state.isLive, let stop = actions.stop {
+                ChatWorkStopButton(stop: stop)
+                    .transition(.opacity)
+            }
+            overflow
+        }
+    }
+
+    @ViewBuilder
+    private var overflow: some View {
+        let canResume = state.status == .paused && actions.resume != nil
+        let canPause = state.isLive && state.status != .paused && actions.pause != nil
+        let canRetry = ChatWorkVocabulary.canTryAgain(state.status) && actions.tryAgain != nil
+        if canResume || canPause || canRetry || actions.showDetails != nil {
+            Menu {
+                if canResume, let resume = actions.resume {
+                    Button("Resume", action: resume)
+                } else if canPause, let pause = actions.pause {
+                    Button("Pause", action: pause)
+                }
+                if canRetry, let tryAgain = actions.tryAgain {
+                    Button("Try Again", action: tryAgain)
+                }
+                if let showDetails = actions.showDetails {
+                    if canResume || canPause || canRetry { Divider() }
+                    Button("Show Details", action: showDetails)
+                }
+            } label: {
+                JunoIconView(.more, size: 14)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .frame(width: 28, height: 28)
+                    .contentShape(.rect)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.borderless)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .disabled(state.isBusy)
+            .help("More")
+            .accessibilityLabel("More")
+            .accessibilityIdentifier("juno.chat.work-card.more")
+        }
     }
 }
 
@@ -1117,6 +1156,11 @@ struct ChatWorkSettledRow: View {
 /// question, why it asks, its one-press replies, and "Reply below" to the
 /// composer — which is in answer mode for exactly this question. A second
 /// open question waits its turn.
+///
+/// Where there is no composer (the task sheet, register #63) the current
+/// question carries its own field and "Reply" instead — the sheet's
+/// signature detail: a task that predates chats is still answered where it
+/// asks.
 struct ChatWorkQuestionCard: View {
     let question: WorkQuestionPrompt
     var isCurrent = true
@@ -1124,6 +1168,16 @@ struct ChatWorkQuestionCard: View {
     var now: Date? = nil
     let answer: (String) -> Void
     let replyBelow: () -> Void
+    /// Sends a typed answer from the card's own field; true when the server
+    /// took it. Nil in a chat, where the composer answers.
+    var reply: ((String) async -> Bool)? = nil
+    /// Whether "Reply" is the surface's one prominent button.
+    var replyIsProminent = true
+    /// A typed answer, for fixtures.
+    var initialDraft = ""
+
+    @State private var draft: String?
+    @State private var sending = false
 
     private var asked: String {
         guard let askedAt = question.askedAt else { return "Waiting on you" }
@@ -1157,7 +1211,9 @@ struct ChatWorkQuestionCard: View {
                 }
                 .disabled(isBusy)
             }
-            if isCurrent {
+            if isCurrent, let reply {
+                inlineReply(reply)
+            } else if isCurrent {
                 Button(action: replyBelow) {
                     HStack(spacing: JunoSpace.tight) {
                         JunoIconView(.arrowDown, size: 12)
@@ -1189,5 +1245,60 @@ struct ChatWorkQuestionCard: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("juno.chat.work-card.question")
+    }
+
+    /// The field and "Reply", on the composer's field recipe at the tile's
+    /// inner radius. Return sends; the text clears only when the server took
+    /// it, so a refused answer is still there to send again.
+    private func inlineReply(_ reply: @escaping (String) async -> Bool) -> some View {
+        let text = Binding(get: { draft ?? initialDraft }, set: { draft = $0 })
+        let trimmed = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let send = {
+            guard !trimmed.isEmpty, !sending else { return }
+            sending = true
+            Task {
+                if await reply(trimmed) { draft = "" }
+                sending = false
+            }
+        }
+        return HStack(alignment: .bottom, spacing: JunoSpace.snug) {
+            TextField(
+                "Answer Juno’s question…", text: text,
+                prompt: Text("Answer Juno’s question…").foregroundStyle(Color.junoSecondaryInk),
+                axis: .vertical
+            )
+            .textFieldStyle(.plain)
+            .junoFont(size: 13, relativeTo: .callout)
+            .foregroundStyle(Color.junoForeground)
+            .lineLimit(1...4)
+            .onSubmit(send)
+            .padding(.horizontal, JunoSpace.snug + 2)
+            .padding(.vertical, 5)
+            .frame(minHeight: 28)
+            .background(Color.junoSecondary, in: RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                    .strokeBorder(Color.junoBorder.opacity(0.7), lineWidth: 1)
+            )
+            .accessibilityLabel("Your answer")
+            .accessibilityIdentifier("juno.work.task-sheet.reply-field")
+            let button = Button(action: send) {
+                HStack(spacing: JunoSpace.tight) {
+                    if sending { ProgressView().controlSize(.mini) }
+                    Text("Reply")
+                }
+                .frame(minHeight: 20)
+                .contentShape(.rect)
+            }
+            .controlSize(.small)
+            .frame(minHeight: 28)
+            .disabled(trimmed.isEmpty || sending || isBusy)
+            .accessibilityIdentifier("juno.work.task-sheet.reply")
+            if replyIsProminent {
+                button.buttonStyle(.junoProminent)
+            } else {
+                button.buttonStyle(.bordered).tint(nil)
+            }
+        }
     }
 }

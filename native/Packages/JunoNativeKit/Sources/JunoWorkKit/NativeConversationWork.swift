@@ -28,6 +28,12 @@ import Observation
 /// 3. **Follow** the newest by `createdAt` through its event stream,
 ///    reconnecting at once when the server closes its window and backing off
 ///    1s × n up to 15s on errors; a new run id resets the cursor.
+///
+/// **Keyed on one task** instead (``init(sessionID:session:client:accountID:)``),
+/// it follows that task alone, with no discovery: the Mac's sheet for a task
+/// the old Work window started, which has no conversation to report in
+/// (register #63). Everything the card does — answer, decide, stop — works
+/// the same on it.
 @MainActor
 @Observable
 public final class NativeConversationWork {
@@ -69,7 +75,12 @@ public final class NativeConversationWork {
         }
     }
 
+    /// The chat this follower serves; empty for one keyed on a task that has
+    /// no conversation.
     public let conversationID: String
+    /// The one task this follower is keyed on, or nil for a chat's follower,
+    /// which finds its tasks by discovery.
+    public let sessionID: String?
 
     /// The task the card follows: the newest composed, not the most recently
     /// active, so an older task that wakes up does not take the card from the
@@ -90,6 +101,12 @@ public final class NativeConversationWork {
     /// Whether discovery has answered at least once, so a chat that has no
     /// task is told apart from one not read yet.
     public private(set) var hasDiscovered = false
+    /// Whether any frame of the task's stream has arrived, so a task not read
+    /// yet is told apart from one with nothing in its log.
+    public private(set) var hasReadLog = false
+    /// The stream could not be reached and nothing has been read yet: a task
+    /// keyed follower's error state. Cleared by the first frame.
+    public private(set) var isUnreachable = false
 
     /// Whether the conversation is on screen in a visible window. Discovery
     /// polls only while it is; becoming visible again looks at once.
@@ -114,6 +131,10 @@ public final class NativeConversationWork {
     private var cursor: (runID: String?, after: Int) = (nil, 0)
     private var streamTask: Task<Void, Never>?
     private var followedSessionID: String?
+    /// Whether a stream task is still running, and which one: a follow that is
+    /// replaced must not mark its successor idle when it ends.
+    private var isFollowing = false
+    private var followGeneration = 0
     private var artifactCount = -1
     /// The steer whose last send failed and the key it went under, so the
     /// obvious second press is recognised by the route rather than queued
@@ -129,8 +150,23 @@ public final class NativeConversationWork {
 
     public init(conversationID: String, client: NativeWorkClient, accountID: AccountID) {
         self.conversationID = conversationID
+        self.sessionID = nil
         self.client = client
         self.accountID = accountID
+    }
+
+    /// A follower keyed on one task — one with no conversation, which the Mac
+    /// shows in a sheet (register #63). `session` is the task as a list last
+    /// saw it, drawn until the stream's first frame; nil when it is known only
+    /// by id (a notification's `/work/{id}`). Nothing is read until ``run()``.
+    public init(
+        sessionID: String, session: WorkSessionSummary?, client: NativeWorkClient, accountID: AccountID
+    ) {
+        self.conversationID = session?.conversationID ?? ""
+        self.sessionID = sessionID
+        self.client = client
+        self.accountID = accountID
+        if session?.sessionID == sessionID { current = session }
     }
 
     // MARK: Lifecycle
@@ -149,6 +185,15 @@ public final class NativeConversationWork {
         streamTask?.cancel()
         streamTask = nil
         followedSessionID = nil
+        isFollowing = false
+    }
+
+    /// Reaches for a task-keyed follower's stream again at once, rather than
+    /// after the backoff: the error state's Try Again.
+    public func reconnect() {
+        guard let sessionID else { return }
+        isUnreachable = false
+        follow(sessionID)
     }
 
     // MARK: Finding the task
@@ -171,7 +216,15 @@ public final class NativeConversationWork {
     }
 
     /// Asks the server for this conversation's tasks and follows the newest.
+    ///
+    /// A follower keyed on one task has nothing to discover: it follows that
+    /// task, and follows it again when its stream has ended and the task is
+    /// live once more (a Resume or Try Again from any device).
     public func discover() async {
+        if let sessionID {
+            if !isFollowing, !hasReadLog || !isFinished { follow(sessionID) }
+            return
+        }
         let asked = adoptions
         let listed: [WorkSessionSummary]
         do {
@@ -247,7 +300,13 @@ public final class NativeConversationWork {
     private func follow(_ sessionID: String) {
         streamTask?.cancel()
         followedSessionID = sessionID
+        followGeneration += 1
+        let generation = followGeneration
+        isFollowing = true
         streamTask = Task { [weak self] in
+            defer {
+                if let self, self.followGeneration == generation { self.isFollowing = false }
+            }
             var failures = 0
             while !Task.isCancelled {
                 guard let self, self.followedSessionID == sessionID else { return }
@@ -275,6 +334,7 @@ public final class NativeConversationWork {
                     return
                 } catch {
                     failures += 1
+                    if !self.hasReadLog { self.isUnreachable = true }
                     let wait = min(Self.maximumBackoff, failures)
                     try? await Task.sleep(for: .seconds(wait))
                 }
@@ -285,7 +345,10 @@ public final class NativeConversationWork {
     /// One frame. A snapshot for a different run than the cursor's starts the
     /// log again: a retried task is a new attempt with its own sequence.
     func apply(_ update: WorkStreamUpdate, isSnapshot: Bool) {
-        if let session = update.session, session.sessionID == current?.sessionID {
+        hasReadLog = true
+        isUnreachable = false
+        // A task-keyed follower may know its task only by id until now.
+        if let session = update.session, session.sessionID == (current?.sessionID ?? sessionID) {
             current = session
         }
         if let run = update.run, run.sessionID == current?.sessionID {

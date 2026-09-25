@@ -2,14 +2,13 @@ import JunoAuth
 import JunoCodeUI
 import JunoCore
 import JunoDesignSystem
-import JunoWorkKit
 import SwiftUI
 
 /// The window's contents for the current product, and the one moment of motion
 /// between them.
 ///
-/// **Why the workspaces are never on screen together.** Chat, Code and the
-/// legacy Work workspace are each a `NavigationSplitView`, and a SwiftUI
+/// **Why the workspaces are never on screen together.** Chat and Code are
+/// each a `NavigationSplitView`, and a SwiftUI
 /// transition between two of them keeps both alive for the length of the
 /// animation — two split views, two AppKit split-view controllers, negotiating
 /// sizes against the same window at the same time. That is precisely the shape
@@ -24,8 +23,9 @@ import SwiftUI
 /// app uses for something small arriving.
 ///
 /// **Two products.** The switch offers Chat and Code (§1.4). Work is no longer
-/// a product: its old workspace is reachable only from Window › Tasks (Legacy)
-/// (§1.6), and an errand handed over from Quick Entry opens a chat instead.
+/// a product and its old workspace is gone (Phase 5 Stage D): a task lives in
+/// the chat that started it, one with no chat opens in a sheet over Chat
+/// (register #63), and an errand handed over from Quick Entry opens a chat.
 struct JunoDesktopWorkspaceView: View {
     let configuration: JunoDesktopConfiguration
     let session: NativeAuthenticatedSession
@@ -39,8 +39,7 @@ struct JunoDesktopWorkspaceView: View {
     /// from the live app's launch policy.
     var consumeInitialDestination: (() -> Void)? = nil
 
-    /// A "New chat" raised from Code, the legacy workspace, the menu bar or
-    /// Quick Entry is deliberately not a session with no folder or a task with
+    /// A "New chat" raised from Code, the menu bar or Quick Entry is deliberately not a session with no folder or a task with
     /// no goal. It is an ordinary Juno conversation, so it crosses the product
     /// boundary and is consumed exactly once by the Chat workspace.
     ///
@@ -52,17 +51,10 @@ struct JunoDesktopWorkspaceView: View {
     @State private var unscopedChatPrompt: String?
     /// Whether the request is for a private draft (⇧⌘N). Consumed with it.
     @State private var unscopedChatIsPrivate = false
-    /// A tapped notification's destination in Chat — an agent's page or a
-    /// thread, or a task's thread — consumed once by the Chat workspace,
-    /// which is the only view that can select either.
+    /// A tapped notification's destination in Chat — an agent's page, a
+    /// thread, or a task (its chat, or the task sheet) — consumed once by the
+    /// Chat workspace, which is the only view that can open any of them.
     @State private var chatRoute: DesktopWorkbenchRegistry.RouteRequest?
-    /// The legacy Tasks window's own keys for its column, written before a
-    /// task with no conversation opens there, so the workspace this switch
-    /// builds reads the task on its first evaluation instead of opening on
-    /// the last one and then jumping. Stage D replaces that window with the
-    /// task sheet and these go with it.
-    @SceneStorage("juno.desktop.work.selection") private var storedWorkSessionID = ""
-    @SceneStorage("juno.desktop.work.page") private var storedWorkPage = ""
     @State private var registry = DesktopWorkbenchRegistry.shared
 
     var body: some View {
@@ -88,56 +80,23 @@ struct JunoDesktopWorkspaceView: View {
                 }
             }
             // What the menu bar reaches in *every* product: a new private chat
-            // (⇧⌘N, which lives in Chat whatever the window was showing) and
-            // the legacy tasks workspace.
+            // (⇧⌘N, which lives in Chat whatever the window was showing).
             .focusedSceneValue(
                 \.junoShellActions,
                 DesktopShellActions(
-                    newPrivateChat: { requestChat(prompt: nil, isPrivate: true) },
-                    openLegacyTasks: { product = .legacyWork },
-                    isShowingLegacyTasks: product == .legacyWork
+                    newPrivateChat: { requestChat(prompt: nil, isPrivate: true) }
                 )
             )
             // A tapped notification. Re-read from the registry rather than
             // trusted from the change: every open window hears the change, and
-            // only the first to reach it may act on it.
+            // only the first to reach it may act on it. Every route lands in
+            // Chat; a task's is resolved there (its chat, or the task sheet).
             .onChange(of: registry.pendingRoute, initial: true) { _, request in
                 guard let request, registry.pendingRoute == request else { return }
                 registry.consume(request)
-                switch request.route {
-                case .agent, .conversation:
-                    chatRoute = request
-                    product = .chat
-                case .workSession(let id):
-                    openWorkSession(id)
-                }
-            }
-    }
-
-    /// A task's notification opens the task's chat, as the web redirects
-    /// `/work/{id}` to `/chat/{conversationId}`.
-    ///
-    /// A task newer than the model's last poll is not in its list yet, so the
-    /// list is refreshed once when the id is missing. A task with no
-    /// conversation — one started in the old Tasks window — opens there until
-    /// Stage D replaces it with the task sheet.
-    private func openWorkSession(_ id: String) {
-        guard let workModel = configuration.workModel else { return }
-        Task {
-            if !workModel.sessions.contains(where: { $0.sessionID == id }) {
-                await workModel.refresh()
-            }
-            let session = workModel.sessions.first { $0.sessionID == id }
-            if let conversationID = session?.conversationID {
-                chatRoute = DesktopWorkbenchRegistry.RouteRequest(route: .conversation(id: conversationID))
+                chatRoute = request
                 product = .chat
-                return
             }
-            storedWorkPage = ""
-            storedWorkSessionID = id
-            product = .legacyWork
-            if let session { workModel.open(session) }
-        }
     }
 
     private func requestChat(prompt: String?, isPrivate: Bool) {
@@ -198,27 +157,6 @@ struct JunoDesktopWorkspaceView: View {
                 JunoEmptyState(
                     title: "Code unavailable",
                     message: "The authenticated Code transport could not be composed.",
-                    icon: .error
-                )
-            }
-
-        case .legacyWork:
-            // Kept only so that tasks already running can still be answered
-            // (§1.6); Phase 5 deletes this branch with the workspace. No errand
-            // routing reaches it any more — an errand opens a chat.
-            if let workModel = configuration.workModel {
-                DesktopWorkWorkspace(
-                    model: workModel,
-                    hostModel: configuration.workHostModel,
-                    configuration: configuration,
-                    session: session,
-                    product: $product,
-                    newChat: { requestChat(prompt: nil, isPrivate: false) }
-                )
-            } else {
-                JunoEmptyState(
-                    title: "Tasks unavailable",
-                    message: "The authenticated Work transport could not be composed.",
                     icon: .error
                 )
             }

@@ -18,26 +18,23 @@ struct JunoDesktopRootView: View {
     @State private var workbenchModel: WorkbenchModel?
     /// The main window is a launch surface, not a resume surface. Keep this
     /// pending until the Chat workspace has consumed the one-shot route so a
-    /// stored Code or legacy-tasks product, or a stored Chat destination,
-    /// cannot win the first frame.
+    /// stored Code product, or a stored Chat destination, cannot win the
+    /// first frame.
     @State private var startupRoutePending = true
 
     /// The window always opens on Chat, whatever product it was left on.
     ///
-    /// The legacy tasks workspace is the one most likely to be mid-flight when
-    /// the app opens — a task running on this Mac, a task waiting on an
-    /// approval — and that is exactly the argument for *not* opening on it.
-    /// Restoring straight into a thread means the first thing a new window
-    /// presents is an approval card for an action the reader has no context
-    /// for yet, decided in the second after launch. And since Phase 1 of the
-    /// Liquid Glass redesign it is not a product at all: Window › Tasks
-    /// (Legacy) is its only door, and a launch that restored into it would be
-    /// Work reappearing after it was taken out of everything else.
+    /// Restoring straight into a working surface means the first thing a new
+    /// window presents may be an approval for an action the reader has no
+    /// context for yet, decided in the second after launch. A window an older
+    /// build stored on the old Work workspace ("work") restores to Chat too:
+    /// the case went in Phase 5 Stage D, so `init(rawValue:)` no longer
+    /// knows it.
     private var productBinding: Binding<DesktopProductMode> {
         Binding(
             get: {
-                // Do not let a restored Code or legacy-tasks selection paint
-                // even one launch frame. The route is released only after
+                // Do not let a restored Code selection paint even one launch
+                // frame. The route is released only after
                 // Chat appears.
                 guard !startupRoutePending else { return .chat }
                 return DesktopProductMode(rawValue: storedProduct) ?? .chat
@@ -134,9 +131,9 @@ struct JunoDesktopRootView: View {
                 // A session restored from the Keychain that the server has not
                 // confirmed: the workspace is real, local and usable; only its
                 // freshness is unknown. Chat says so in its own column (§1.5).
-                // Code and the legacy workspace are not redesigned yet, so they
-                // get the same one-line caption — with its Retry — above them,
-                // in place of the full-window banner this replaced.
+                // Code is not redesigned yet, so it gets the same one-line
+                // caption — with its Retry — above it, in place of the
+                // full-window banner this replaced.
                 if productBinding.wrappedValue != .chat,
                    case .unreachable(let cause) = configuration.authModel.connectivity
                 {
