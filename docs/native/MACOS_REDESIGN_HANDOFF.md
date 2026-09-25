@@ -381,3 +381,13 @@ The Juno Code session has agreed not to cut Mac releases and that 1.7.0 is ours.
 **Blocking the release:** the live feed (`/api/downloads`) still reports macOS "Not published yet". The owner must make sure `JUNO_RELEASES_GITHUB_TOKEN` (fine-grained, `LiamMagnier/juno`, Contents: read) is in `~/juno/.env` on the VM, then redeploy or restart. Otherwise the release script's feed check reverts the publish to draft.
 
 **Still waiting on the owner:** permission to download the React, Babel and Tailwind browser bundles, and Newsreader Regular Italic.
+
+## Phase 5 brief, 2026-09-25 (the rest of Work in Chat)
+
+`docs/native/MACOS_PHASE5_WORK_IN_CHAT_BRIEF.md` specifies the rest of Phase 5 in four stages, each building and committing on its own: **A** (merge `origin/main`, then model-started tasks, placement, several tasks per chat, steering), **B** (the finished card, the Task panel, approvals, "Save this as a skill", research), **C** (row dots, Needs you, the Agents fold, the Notifications inbox, local notifications, Dock badge, menu-bar extra, agents in the thread), **D** (delete `DesktopWorkWorkspace.swift`, `.legacyWork` and Window › Tasks (Legacy); tasks without a conversation in a sheet from Search › Tasks). The spec gained "Phase 5 errata" and register #53–#67.
+
+- **Decided:** the follow-up "Web parity: tasks are now started by the model" is settled by following the web. The Mac sends `workHandoff: true`, decodes the `work` frame, and loses the slice's "Do This as a Task" toggle. "How often it asks" is a project default on the web now, so it goes to track B with Projects.
+- **Main moved:** `origin/main` is at `fe0a501d` (three commits after this branch's last merge: push notifications end to end, the Notifications inbox, native push, Mac local notifications for agents, the Mac sidebar's Agents fold, agent handoff, the agent thread header). Stage A merges it first. Track B must take the same merge (from main or from this branch) before the integration step.
+- **Handed to track B:** Projects › Tasks tab and Task defaults; Automations "Recent runs" opening the run's chat; the agent page's gate cards (main's `NativeWorkApprovalCard` wording differs from the web's Work cards).
+- **Phase 3 (next here) inherits:** ⌘K "Open notifications" and the Search › Tasks scope inside the ⌘K panel.
+- The follow-up "the approval card's verb button draws in system blue" was fixed by the foundations' `.junoProminent`; Stage B's snapshots confirm it on the task approvals.
