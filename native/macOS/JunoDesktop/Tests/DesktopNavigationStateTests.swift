@@ -229,12 +229,15 @@ struct DesktopNavigationStateTests {
 
     @Test
     func everyDestinationRoundTripsThroughSceneStorage() {
-        for destination in DesktopDestination.allCases where destination != .design {
+        // Design reads back as Artifacts (A2); Search, retired with Phase 3's
+        // panel, as Chat (integration).
+        for destination in DesktopDestination.allCases where destination != .design && destination != .search {
             #expect(
                 DesktopNavigationState.destination(fromStored: destination.rawValue)
                     == destination
             )
         }
+        #expect(DesktopNavigationState.destination(fromStored: DesktopDestination.search.rawValue) == .chat)
     }
 
     // MARK: - Design is a type in Artifacts (Phase 4 A2)
@@ -353,8 +356,9 @@ struct DesktopNavigationStateTests {
             #expect(DesktopNavigationState.destination(fromStored: retired) == .chat)
         }
 
-        // Every destination but Design, which reads back as Artifacts (A2).
-        for destination in DesktopDestination.allCases where destination != .design {
+        // Every destination but Design, which reads back as Artifacts (A2),
+        // and Search, which reads back as Chat now that the panel replaced it.
+        for destination in DesktopDestination.allCases where destination != .design && destination != .search {
             #expect(DesktopNavigationState.destination(fromStored: destination.rawValue) == destination)
         }
     }

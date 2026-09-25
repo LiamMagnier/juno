@@ -68,8 +68,9 @@ struct DesktopPanelRow: Identifiable, Equatable {
     var snippet: NativeSearchSnippet? = nil
     /// Trailing muted text: a relative time, "Pinned", a locator.
     var meta: String? = nil
-    /// Keycaps, one per key ("⇧", "⌘", "N"). Literal on this base; the
-    /// integration reads them from `JunoShortcutRegistry` (seam 2).
+    /// Keycaps, one per key ("⇧", "⌘", "N"), read from
+    /// ``JunoShortcutRegistry`` so the panel, the menu bar and the Keyboard
+    /// Shortcuts window cannot disagree (Phase 3 seam 2).
     var hint: [String] = []
     let icon: JunoIcon
     /// Leaves the app (the web's roadmap): a trailing ↗.
@@ -161,6 +162,11 @@ enum DesktopCommandCatalog {
     /// A raw substring test matched "rate" inside "gene-RATE-d" and sent a
     /// chat's exact title to the Artifacts page; a word start still finds
     /// "doc" in "documents" and "pull req" in "Open pull requests".
+    /// A command's keycaps, as the registry binds them.
+    static func keys(_ id: JunoShortcutID) -> [String] {
+        JunoShortcutRegistry.entry(id).keys
+    }
+
     static func atWordStart(_ hay: String, _ needle: String) -> Bool {
         guard !needle.isEmpty else { return true }
         var searchStart = hay.startIndex
@@ -288,12 +294,12 @@ enum DesktopCommandCatalog {
     /// The Actions group: the web's rows and keywords, in its order.
     private static var actionCommands: [Command] { [
         Command(
-            id: "new-chat", label: "New chat", hint: ["⌘", "N"], icon: .new,
+            id: "new-chat", label: "New chat", hint: Self.keys(.newChat), icon: .new,
             keywords: "start compose message", action: .newChat
         ),
         // The Mac's own (P3-14): ⇧⌘N, private mode inline.
         Command(
-            id: "new-private-chat", label: "New private chat", hint: ["⇧", "⌘", "N"], icon: .privateChat,
+            id: "new-private-chat", label: "New private chat", hint: Self.keys(.newPrivateChat), icon: .privateChat,
             keywords: "private incognito temporary unsaved", action: .newPrivateChat
         ),
         Command(
@@ -323,7 +329,7 @@ enum DesktopCommandCatalog {
             keywords: "find messages files artifacts memory", action: .searchEverything
         ),
         Command(
-            id: "toggle-sidebar", label: "Toggle sidebar", hint: ["⌃", "⌘", "S"], icon: .panelLeft,
+            id: "toggle-sidebar", label: "Toggle sidebar", hint: Self.keys(.toggleSidebar), icon: .panelLeft,
             keywords: "collapse expand rail panel", action: .toggleSidebar
         ),
         Command(
@@ -389,7 +395,7 @@ enum DesktopCommandCatalog {
     private static func settingsCommands(isDark: Bool) -> [Command] {
         [
             Command(
-                id: "settings", label: "Settings", hint: ["⌘", ","], icon: .settings,
+                id: "settings", label: "Settings", hint: Self.keys(.settings), icon: .settings,
                 keywords: "preferences account theme", action: .settings
             ),
             Command(
@@ -399,11 +405,11 @@ enum DesktopCommandCatalog {
             ),
             Command(
                 id: "theme", label: isDark ? "Switch to light mode" : "Switch to dark mode",
-                hint: ["⇧", "⌘", "L"], icon: isDark ? .sun : .moon,
+                hint: Self.keys(.toggleTheme), icon: isDark ? .sun : .moon,
                 keywords: "theme dark light appearance", action: .toggleTheme
             ),
             Command(
-                id: "shortcuts", label: "Keyboard shortcuts", hint: ["⌘", "/"], icon: .keyboard,
+                id: "shortcuts", label: "Keyboard shortcuts", hint: Self.keys(.keyboardShortcuts), icon: .keyboard,
                 keywords: "keys help", action: .keyboardShortcuts
             ),
         ]

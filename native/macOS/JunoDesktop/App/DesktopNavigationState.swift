@@ -104,7 +104,13 @@ enum DesktopNavigationState {
     static func normalized(
         _ destination: DesktopDestination
     ) -> (destination: DesktopDestination, artifactsType: String?) {
-        destination == .design ? (.artifacts, designsType) : (destination, nil)
+        switch destination {
+        case .design: (.artifacts, designsType)
+        // The Search page retired with Phase 3's panel: a window restored on
+        // it opens on Chat.
+        case .search: (.chat, nil)
+        default: (destination, nil)
+        }
     }
 
     /// The web's `ArtifactType` for a design (`?type=DESIGN`).

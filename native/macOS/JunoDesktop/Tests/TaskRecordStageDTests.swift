@@ -33,8 +33,8 @@ struct TaskRecordStageDTests {
             task("b", "Reconcile the invoices", active: 300),
             task("c", "Draft the digest", active: 120),
         ]
-        #expect(DesktopSearchTaskList.matching(tasks, query: "").map(\.sessionID) == ["b", "c", "a"])
-        #expect(DesktopSearchTaskList.matching(tasks, query: "   ").map(\.sessionID) == ["b", "c", "a"])
+        #expect(DesktopPanelTasks.matching(tasks, query: "").map(\.sessionID) == ["b", "c", "a"])
+        #expect(DesktopPanelTasks.matching(tasks, query: "   ").map(\.sessionID) == ["b", "c", "a"])
     }
 
     /// Every word must be found, in the title or the goal, ignoring case and
@@ -45,24 +45,15 @@ struct TaskRecordStageDTests {
             task("a", "Book the Lisbon hotel", goal: "Find a café-friendly hotel near the office", active: 10),
             task("b", "Reconcile the invoices", goal: "Match Q3 invoices to orders", active: 20),
         ]
-        #expect(DesktopSearchTaskList.matching(tasks, query: "lisbon CAFE").map(\.sessionID) == ["a"])
-        #expect(DesktopSearchTaskList.matching(tasks, query: "invoices orders").map(\.sessionID) == ["b"])
-        #expect(DesktopSearchTaskList.matching(tasks, query: "invoices hotel").isEmpty)
-    }
-
-    @Test
-    func theTasksScopeIsReadFromTheServerNotTheStore() {
-        #expect(DesktopSearchScope.tasks.title == "Tasks")
-        for kind in [NativeSearchResultKind.conversation, .message, .project, .file, .artifact, .memory] {
-            #expect(!DesktopSearchScope.tasks.includes(kind))
-        }
-        #expect(DesktopSearchScope.allCases.last == .tasks)
+        #expect(DesktopPanelTasks.matching(tasks, query: "lisbon CAFE").map(\.sessionID) == ["a"])
+        #expect(DesktopPanelTasks.matching(tasks, query: "invoices orders").map(\.sessionID) == ["b"])
+        #expect(DesktopPanelTasks.matching(tasks, query: "invoices hotel").isEmpty)
     }
 
     @Test
     func aTaskFallsBackToItsGoalWhenItHasNoTitle() {
-        #expect(DesktopSearchScreen.title(of: task("a", "  ", goal: "Tidy the Receipts folder", active: 0)) == "Tidy the Receipts folder")
-        #expect(DesktopSearchScreen.title(of: task("b", "Draft the digest", active: 0)) == "Draft the digest")
+        #expect(DesktopPanelTasks.title(of: task("a", "  ", goal: "Tidy the Receipts folder", active: 0)) == "Tidy the Receipts folder")
+        #expect(DesktopPanelTasks.title(of: task("b", "Draft the digest", active: 0)) == "Draft the digest")
     }
 
     // MARK: The sheet

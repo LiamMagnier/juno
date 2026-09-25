@@ -2176,3 +2176,446 @@ Built on `mac/lg-p4c` from `1876f3ac` (Stage A1–A3), in parallel with Stages A
 83. **Retire…** in the agent page's More asks at once, with the web's profile-tab dialog ("Retire {name}?", "Keep It" / "Retire"); the web's menu item switches to the Profile tab.
 84. **Automation rows** put Run Now, Pause/Resume and Its Task behind More (and the context menu) instead of the web's hover buttons, and add Delete…, which the web's list does not have.
 85. **More's Skills and Assistants** lead to a placeholder page on this branch; Stage B's pages replace it at integration.
+
+---
+
+## Phase 3 errata (the three stage notes, folded at integration 2026-09-25; apply over §5.4, §7 and the Phase 3 brief)
+
+Each stage wrote its decisions, register entries, seams and review into `docs/native/phase3/STAGE-{A,B,C}-NOTES.md`; they are kept here as written, with their headings moved down two levels, and the folder is deleted. Their `P3-n` numbers are provisional: the final numbers are in "Integration register" below. The seams they list are wired (see "Integration, seams wired").
+
+### Phase 3 Stage A: the menu bar, the shortcut registry, the Shortcuts window and the menu recipe
+
+Branch `mac/lg-p3`, built from `1150f081` (the brief) on `250b5b13`. The integration step folds this file into the spec's "Phase 3 errata", the register and the handoff (brief §6), then deletes it.
+
+#### What was built
+
+- **`App/JunoShortcutRegistry.swift`**: one table of every chord the Chat and Code windows answer to. Each `JunoShortcut` has an id, a Title Case `menuTitle`, a sentence-case `listLabel`, a key and modifiers, keycaps, a group, a binding (`.menu(…)`, `.system`, `.field`, `.menuOnly(…)`), a section, a context (`.always`, `.chat`, `.code`) and a glyph. The menu bar and the Keyboard Shortcuts window both read it.
+- **`App/DesktopCommands.swift`**: the menu bar is generated from the registry.
+  - Every item goes through `DesktopCommandContext`, which resolves its action, title and glyph from the focused values. A nil action disables the item, and a disabled item does not claim its chord.
+  - Hand-listed are only the updater's items, the system groups (`SidebarCommands`, `ToolbarCommands`) and Window › Tasks (Legacy), which is verbatim.
+  - File: New Chat ⌘N (New Task in Code, New Window with nothing focused) · New Private Chat ⇧⌘N | New Chat ⇧⌘O | Open Folder… ⌘O | Ask Juno… ⌥Space.
+  - Edit: the three find items.
+  - View: Chat ⌘1 · Code ⌘2 | Command Menu… ⌘K · Search… ⇧⌘F | Switch to Dark/Light Mode ⇧⌘L, then the system's items.
+  - Chat: Attach Files… ⌘U · Attach Screenshot… ⇧⌘U | Focus Composer ⇧⎋ · Stop Generating ⌘. · Regenerate ⌘R | Copy Last Response ⇧⌘C · Copy Last Code Block ⇧⌘; | then `DesktopConversationMenu` with "Rename…".
+  - Session: Code's items, without the ⌘K row.
+  - Help: Juno Help · Keyboard Shortcuts ⌘/ · Roadmap & Feature Requests.
+- **`App/ChatCommands.swift`**: the Chat menu's rules, all pure and tested.
+  - Copy Last Response: the newest reply with words, through `copyableMarkdown`.
+  - Copy Last Code Block: `NativeMessageContent.parts` then `JunoMarkdown.blocks`, skipping a finished Mermaid fence and the web's visual languages, as `markdown.tsx` does.
+  - Regenerate's enabling rule, and the artifact count that decides whether it asks first.
+  - Stop's precedence.
+  - The web's toast words: "Copied the last response." / "No response to copy yet." / "Couldn’t copy.", and "Copied the last code block." / "No code block in this conversation yet." / "Could not copy.". The "nothing" cases are toneless, as the web's `toast.message` is.
+  - It also holds the focused-value keys and the `junoChatCommands(_:)` host. The host publishes the actions and shows the reply's own "Regenerate this answer?" dialog when a menu-bar Regenerate would replace artifacts.
+- **`App/DesktopShortcutsWindow.swift`**: rewritten to be generated from `JunoShortcutRegistry.groups`.
+  - 640 wide, with two columns balanced by the registry (`DesktopShortcutsLayout` picks the split whose taller column is shortest; a group is never split). 24pt margins, 32pt between columns, 32pt rows on `junoBorder` hairlines, and no zebra striping, table chrome or count.
+  - Group headings are SF 13 medium in the secondary ink and are marked as headers.
+  - Keycaps: one per key, on `junoSecondary` with a hairline, radius 6, 20×20 minimum, `micro` medium in the secondary ink, 4pt apart. Alternatives are joined by "or".
+  - VoiceOver reads each row as one element ("Search, Shift Command F").
+  - Height comes from the registry. The window opens at full height and scrolls only if a small screen makes it shorter (minimum 320).
+- **Wiring (bounded):**
+  - `DesktopChatWorkspace`: the `workspaceActions` property, a new `chatCommands` property beside it, and one `.junoChatCommands(chatCommands)` line beside the `.focusedSceneValue` at the top of `body`.
+  - `JunoDesktopWorkspaceView`: a `toggleTheme` field on `DesktopShellActions`, a `colorScheme` read, and the `JunoChatKit` import.
+  - `ChatComposer`:
+    - The stop face's `.keyboardShortcut` is removed.
+    - `stopWhatIsRunning()` is the one function behind both the disc and the menu.
+    - `.focusedSceneValue(\.junoComposerStop, …)` is published while something can be stopped.
+    - `.focus` now also puts the caret at the end.
+  - `ComposerPlusMenu`: the ⌘U and ⇧⌘U chords are removed, and New Project… wears `ph.plus`.
+  - `DesktopVoice`: the older `DesktopVoiceDock` options menu now follows the recipe. The voice model is an inline `Picker` under "Voice Model", with "Share Screen" / "Stop Sharing Screen" and `.help`.
+  - `DesktopConversationMenu`: the rows are data (`rows(pinned:renameTitle:showsOpenProject:)`) with the web's glyphs. It also accepts an optional conversation and actions, for the menu bar's disabled state, so callers are unchanged. Every row is written inside the one `Section`.
+- **Icons:**
+  - `Keyboard` (`ph.keyboard`) is added at the brief's shared spot, identical to B's edit.
+  - `Command` (`ph.command`) is Stage A's own, appended at the end of the generator map and of `JunoIcon`, with comments naming the stage.
+- **Gate:** `scripts/check-native-menus.mjs` (rule `menus`) counts `.borderlessButton` and `BorderlessButtonMenuStyle` in Mac-shipped code. It is wired into `native:design:check`, with `native:design:menus` in `package.json`. Its baseline is 21 (22 before A5, less `DesktopVoice`), and every remaining site belongs to another lane (brief §0.11).
+
+#### Decisions and corrections (for the "Phase 3 errata")
+
+1. **Chat or Session, never both.** `CommandsBuilder` supports `if`/`else` from macOS 13, so the Session menu replaces Chat while the focused window shows Code. Chat stands otherwise, including when no window is focused, with its items disabled. The menu bar therefore keeps the same number of menus, and Chat's ⌘. and Code's ⌘. are never both on screen.
+2. **Stop Generating stays enabled while the draft has words.** The brief says "enabled only when the face would be Stop". Typing a correction turns the disc to Send, and ⌘. must still stop what is running: the web's Esc stops whatever is in the field, and Code's Session › Stop argued the same. So the item is enabled whenever `ChatCommands.stopTarget` is non-nil: steer mode stops the run, and otherwise the reply stops while one streams. The disc and the menu call the same function.
+3. **The composer publishes Stop under its own focused key** (`junoComposerStop`). Only the composer knows what its face would stop, including a task running with nothing streaming. The menu bar merges it into the Chat actions only while the Chat window has published them, so a composer can never answer ⌘. from Code.
+4. **Regenerate asks first from the window.** A menu-bar Regenerate of a reply that wrote artifacts shows the reply's own dialog ("Regenerate this answer?", "Regenerate", "Its N artifacts will be replaced."). It is hosted by `junoChatCommands`, because the row that owns the other copy is lazily built and may not exist. The regenerate itself is the row's Try Again: `retryLastMessage(conversationID:modelID: nil, instruction: nil)`.
+5. **⌘K opens Search in Chat until B's panel lands** (seam 1: `openCommandMenu = openSearch`). In Code it opens Code's own palette, resolved in `DesktopCommandContext`, so no edit was needed in Code's file.
+6. **The Chat menu's conversation items** are the title menu's list without Open Project, as the brief lists them. With no saved chat on screen (a draft, a private chat or a page) the rows stay and are disabled.
+7. **AppKit localizes menu chords to the reader's keyboard layout.**
+   - On this Mac's French layout the built menu bar draws ⌘1 as ⌘&, ⌘2 as ⌘é, ⌘. as ⌘;, ⌘/ as ⌘: and ⇧⌘; as ⇧⌘). This is `allowsAutomaticKeyEquivalentLocalization`, and it is the physical-key behaviour the web gets from `e.code`.
+   - The Shortcuts window lists the US characters, as the web's sheet does.
+   - The menu-bar tests prove that no two items share a press in whatever form the layout gives them, rather than pinning US characters.
+   - No Spelling and Grammar item exists, so **⇧⌘; stays Copy Last Code Block** and the ⌥⇧⌘C fallback was not needed.
+8. **The theme toggle writes an explicit light or dark to the account**, never System, as the web's `toggleTheme` does. The item is named for where it goes ("Switch to Dark Mode" with a moon glyph, "Switch to Light Mode" with a sun). The toggle type is `DesktopShellActions.ThemeToggle`, so it does not take the name `DesktopThemeToggle` that seam 13 reserves for integration.
+9. **The Composer group lists both of Stop's keys**: "Stop generating" ⌘. (the Mac's menu item) and the web's own row, "Stop generating · close a menu", with esc (the composer's own Esc, which the Mac has always answered).
+10. **Code's rows are one key per row.** Three combined rows would not fit a 280pt column at 13pt: "Previous · next session", "Allow · always allow · decline the focused request" and "Slash commands · /compact folds the context". They became "Previous session", "Next session", "Allow the focused request", "Always allow the focused request", "Decline the focused request" and "Slash commands, like /compact". "Send review comments to Juno" became "Send your review to Juno" for the same reason. Code's ⌘K "Command palette" row went, because ⌘K is Command menu (Everywhere) and in Code it opens that palette.
+11. **The escape keycap reads "esc"**, the word on a Mac keyboard. At the 10.5pt `micro` rung the ⎋ glyph reads as a stray circle. The menu bar still draws ⎋ natively.
+12. **Glyphs without a web drawing:** Juno Help uses `ph.question` and Roadmap & Feature Requests uses `ph.arrowsquareout`. The web's Roadmap row uses `MapTrifold`, which is Stage B's glyph, so integration may swap it. Command Menu… uses the new `ph.command`, Focus Composer `ph.cursortext`, Stop Generating `ph.stopcircle`, Copy Last Code Block `ph.code`, and Find Next / Find Previous the find bar's `ph.caretdown` / `ph.caretup`.
+13. **`MessageActions`**: audited, no change needed. Every action row carries a glyph; the rows without one are information (the model and receipt lines) or the provider list's fallback.
+
+#### Register entries (provisional)
+
+- **P3-19.** Chords are shown in the menu bar and the Shortcuts window only, not inside in-window menus: the `+` menu lost ⌘U and ⇧⌘U, and the stop face lost ⌘.
+- **P3-20.** Keyboard Shortcuts is a window with a Code group and the Mac's own keys (⌘1 and ⌘2, ⌃⌘S, ⌥Space, ⇧⌘N, ⇧⌘F, ⌘., ⌘R, ⌘G and ⇧⌘G, ⇧⌘U); the web's is a dialog.
+- **P3-21.** The Chat menu adds ⌘R Regenerate and ⌘. Stop Generating; the web stops with Esc and has no regenerate chord.
+- **P3-22.** The Shortcuts window's group headings are SF 13 medium, not the web's mono label.
+- **P3-25.** The Session menu replaces the Chat menu while Code is showing; the web has no menu bar.
+- **P3-26.** The Shortcuts window's escape keycap reads "esc" and every key is its own cap; the web writes "Esc" in a single cap.
+- **P3-27.** Code's shortcut rows are one key per row, in shorter words (decision 10).
+
+#### Seams left for the integration step
+
+- **Seam 1:** `DesktopWorkspaceActions.openCommandMenu` is the Chat workspace's `openSearch` today. Wire it to B's `DesktopSearchPanelModel.present(.commands)`.
+- **Seam 2:** B's panel hints and the account popover's ⌘/ and ⌘, should read `JunoShortcutRegistry.entry(_:).keys`. The sidebar's Search button keycap (`DesktopChatSidebar.swift`, `DesktopSidebarSearchButton`, outside A's region) still says "⇧⌘F" and should read the registry too, and become ⌘K if the panel takes that row.
+- **Seam 13:** the theme toggle is written twice: A's `DesktopShellActions.ThemeToggle` in `JunoDesktopWorkspaceView`, and B's ⌘K row.
+- **Chat › Share…** reaches `DesktopConversationActions.share`, which B's `DesktopShareState` replaces.
+
+#### Chords outside the menu bar that remain (owned by other lanes)
+
+`rg -n 'keyboardShortcut\(' native/macOS/JunoDesktop/App` still finds these chords the registry also places. Each is inert while its Chat item is disabled, because every Chat item needs the chat route, so none of them collide.
+
+| Chord | Where | Owner |
+|---|---|---|
+| ⌘R | `DesktopLibraryScreen:152`, `DesktopConnectionsScreen:113` (Refresh) | Phase 4 |
+| ⌘R | `DesktopWorkWorkspace:496` | Phase 5 D (deleted there) |
+| ⌘R, ⇧⌘N | `DesktopTasksScreen:529, 498` | dead file |
+| ⇧⌘C | `DesktopArtifactsScreen:1193` | Phase 4 |
+| ⌘, | `DesktopCodeAccountFooter:177` | Code (Settings is system-drawn) |
+| ⇧⎋ | `DesktopCodeWorkspace:1621` | Code (the Chat menu is not in the menu bar while Code shows) |
+| ⌘N | `DesktopMenuBarExtra:40` | Phase 5 (the extra's own menu, not the menu bar) |
+
+#### Gates
+
+The targets gate fell from 291 to 284 because the conversation menu's rows now sit inside its `Section`. It was **not** re-baselined; integration re-locks it. The menus baseline is new at 21. Type 0, motion 0, glass 28 and prominent 9 held.
+
+#### 5-Dimension Review (from the snapshots, light and dark)
+
+| Surface | Philosophy | Hierarchy | Craft | Functionality | Originality |
+|---|---|---|---|---|---|
+| Keyboard Shortcuts window | 8 | 7 | 8 | 8 | 7 |
+| Chat menu and row menu (as drawn rows) | 8 | 7 | 8 | 8 | 7 |
+
+The window's three levels are the titlebar name, the group headings (13 medium, secondary ink) and the row labels (13 regular, foreground), with the caps (10.5 mono) as a fourth. The signature detail is the separate, equal-square keycaps.
+
+#### Runtime checks left for a person at the screen
+
+- Every menu item from the keyboard, in Chat and in Code.
+- ⌘. in each product: Chat stops the reply or the steered run; Code stops the run.
+- ⌘R on a reply with artifacts shows the confirmation.
+- ⇧⌘L writes the theme, and every window follows.
+- ⌘K in Code opens Code's palette; in Chat it opens Search until B lands.
+- ⇧⎋ puts the caret at the end of the draft.
+- ⇧⌘C and ⇧⌘; show their toasts.
+- The Session and Chat menus swap when switching product.
+- The Keyboard Shortcuts window opens at its full height.
+- Chat › Archive's Undo (⌘Z) through the key window's undo manager.
+
+### Phase 3 Stage B notes: ⌘K and Search, Share, Outputs, the account popover, Archived Chats, dialogs and sheet fills
+
+Branch `mac/lg-p3b` in `juno-glass-p3b`, from `250b5b13`. The brief is `docs/native/MACOS_PHASE3_OVERLAYS_BRIEF.md` (copied unchanged from `mac/lg-p3` `1150f081`). The integration step (§6 of the brief) folds these notes into the spec's "Phase 3 errata", the register, `MACOS_REDESIGN_HANDOFF.md` and `WEB_TO_NATIVE_DESIGN.md`, then deletes this folder.
+
+#### What was built
+
+##### B0. Clients and the contract
+
+- `JunoChatKit/NativeUnifiedSearchClient.swift` (new, iOS-safe, not wired on iOS):
+  - `search(query:types:projectID:window:for:)` → `GET /api/search`, decoding `UnifiedSearchResult` exactly: groups, hits (`id`, `type`, `title`, `titleMarks`, `snippet{text, marks}`, `locator`, `projectId`, `updatedAt`, `href`, `score`), `coverage[]`, `partial`, `total` and the echoed `query`.
+  - `recents(limit:for:)` → `GET /api/recents?limit=`.
+  - The web's vocabulary as Swift: `NativeUnifiedSearchType` (`SEARCH_TYPES` order, `SEARCH_TYPE_LABELS`), `NativeSearchWindow` (`SEARCH_WINDOW_LABELS`, `windowSince`).
+  - Marks are **UTF-16 offsets** (JavaScript string indices); `NativeSearchMark.ranges(_:in:)` walks the UTF-16 view and drops a mark that splits a character or runs past the text.
+  - An unknown type (a newer server's group or coverage row) is dropped, never fatal; one unreadable hit does not cost its group.
+  - `answers(_:)` is the echo guard; `shortfalls` is the coverage the palette mentions.
+- `NativeShareClient`: `share(artifactID:for:)`; `403 {code: "share_taken_down", error}` decodes to `NativeShareError.blocked(reason)` (new case). The chat call is unchanged for iOS.
+- `contracts/openapi/juno-native-v1.yaml`: `/recents` (GET), `/search` (GET), `/share` (GET, POST), `/share/{shareId}` (DELETE), inline schemas, placed before the Juno Work block (after `/notifications/{notificationId}`). `GET /conversations?archived=` was not added: Archived Chats reads the local store (see B5). The Swift contract is regenerated; `info.version` is unchanged.
+- Tests: `JunoChatKitTests/NativeUnifiedSearchClientTests` (recorded JSON: marks, partial coverage, the echo guard, an unknown type ignored, UTF-16 marks, the request's query items, recents, a failing route, the blocked share, the artifact share body).
+
+##### B1. The ⌘K / Search panel
+
+- `App/DesktopSearchPanelModel.swift` — one `@Observable` per window: mode, query, filters, the two halves' states, the Recent list, the cursor (by row identity, so the server's groups slotting in never move it), `present(_:)`/`dismiss()`, the merge (`resultRows`), notices, status words, and the hit routing table (`DesktopSearchRoute`).
+- `App/DesktopCommandCatalog.swift` — the web's command list with its keywords verbatim, the ported `atWordStart` matcher, `DesktopPanelAction` (a value, so routing is testable) and the hooks (`openNotifications`, `openUpgrade`, `openPage(DesktopPanelPage)`, `openTaskRecord`).
+- `App/DesktopSearchPanel.swift` — the view and the host overlay (`.desktopSearchPanel(…)` on the split view): glass shell in one `GlassEffectContainer` at radius 20, the field band (18pt magnifier, 17pt field, "esc" cap or the ✕), the filter row, the notices band, the list with its floor, rows, headers, keycaps and states.
+- Wiring in `DesktopChatWorkspace.swift`: `openSearch()` now calls `presentSearchPanel(.search)` (the sidebar's Search and ⇧⌘F), which closes Share and Outputs first (crash rule 4). `presentSearchPanel(.commands)` is what seam 1 calls. `performPanelAction` maps each action onto an action the window already had. `ChatDetail` reports the detail column's frame and toolbar depth (`panelAnchorChanged`) so the panel centres on the column, 72pt below the toolbar, `min(640, detail − 32)` wide, height `56 + filters 44 + notices + list` with a 208pt floor and a `min(480, window − 144)` cap.
+- Search engine (decision 7): chats, messages, projects, files and artifacts from `NativeSearchStore` over `configuration.localStore`; knowledge, memory and tasks from `/api/search?types=knowledge,memory,work`. Both debounce 180ms and cancel the previous run (a generation counter); the local results draw first. The store's own memory rows are not listed, so a fact never appears twice. Each local group is capped at six rows (the web's `DEFAULT_LIMIT_PER_TYPE`). Local marks are literal, case- and diacritic-insensitive matches of each word of two or more characters.
+- Recent: `recents(limit: 8)` online; offline (or on failure) this Mac's chats, Code sessions and projects by recency. The last list stays up while a fresh one loads; a skeleton shows only before the first.
+- `DesktopSearchScreen.swift` is no longer routed to (nothing sets `.search`); it and the `.search` branch are the integration's to delete (§6.3).
+
+##### B2. Share
+
+- `App/DesktopSharePopover.swift`: `DesktopShareTarget` (`.chat`, `.artifact`), `DesktopShareService` (live over `NativeShareClient`, stubbable), `DesktopShareState` (moved here from `ChatToolbar.swift`, rewritten as the web's five states: loading, error, blocked, ready, revoked; Copy → "Copied" for 1.5s; Revoke Link → "Revoking…", toasts in the window's host) and `DesktopSharePopover` (360 × 232 in every state).
+- Opening makes the link; nothing reaches the pasteboard until Copy (the web's behaviour; the interim Mac popover copied on open). Every Share entry point (toolbar, title menu, row menu, reply's Share Chat…) goes through `shareSelectedConversation()` → `share.start(.chat(id), …)`.
+- `DesktopShareResultPopover` and its interim copy ("Creating a link…", "Link copied…", "The conversation couldn’t be published…") are deleted.
+
+##### B3. Outputs
+
+- `App/DesktopOutputsPopover.swift`: `ChatSessionOutputs.read(artifacts:messages:modelName:)`, a line-for-line port of `readSession()`; the toolbar chip (`ph.filetext` + a rolling count, "Outputs — {n} in this chat" / "What this chat used", help "Outputs"); the 336-wide popover with a height computed from its rows (cap 400, scroller inside); tiles as the web's `ArtifactPreview` draws them (first twenty lines of source in the micro rung, clipped and faded; SVG and a design's poster drawn as pictures by AppKit, no web view; generated media as itself); the used rows with openable uploads.
+- The chip is a new first `ToolbarItem` in the Share/Private capsule, declared unconditionally, hidden with `.hidden(!isChatRoute || nothing to show)`.
+- `DesktopChatOutputRequests` carries "open this artifact's canvas" and "Quick Look this file" from the toolbar (and from ⌘K's artifact hits) down to the conversation column, which owns both; the column consumes a request a turn after its conversation is on screen (`.desktopOutputRequests(…)` in `DesktopConversationView`).
+
+##### B4. The account popover
+
+- Rewritten in `DesktopAccountFooter.swift` (the footer row is unchanged): identity with an SF plan pill on `junoGlassFill`; the usage block (`DesktopAccountUsage`); Settings… (⌘,), Upgrade Plan (only while `openUpgrade` is wired: nil on this base), Admin Panel ↗ (owners); Keyboard Shortcuts (⌘/, opens the Shortcuts window); Sign Out. No Profile…, no Get the apps (P3-15).
+- Heights are constants per row set (`DesktopAccountPopoverRows`): base 246, +10 when the usage block carries a sentence, +28 for each of Upgrade and Admin.
+
+##### B5. Archived Chats
+
+- `App/DesktopArchivedChatsSheet.swift`: a fitted system sheet, 480 × 520, no custom ground; the web's title and description; 48pt rows (title over "Archived {date}", Restore `ph.boxarrowup`, Delete `ph.trash`); four skeleton rows; `JunoEmptyState(.panel)` "Nothing archived." and the error tone "Couldn’t load archived chats."; Done (`.bordered`, `.tint(nil)`, `.cancelAction`).
+- Restore and Delete hide the row at once; a failure brings it back with the reason under it for six seconds ("Couldn’t restore the chat." / "Delete failed."), never a toast.
+- **Data source: the local store**, not `GET /api/conversations?archived=only`. The sync projection carries every conversation with its `archivedAt` and no archive filter (`src/lib/sync-entities.ts`, `conversation`), so chats archived before this Mac first synced are in the store too; `NativeConversationModel.conversations` keeps archived rows (only the sidebar filters them). Restore and delete are the store's own mutations (`setArchived`, `deleteConversation`); success is read back from the store.
+- Presented from the workspace (`showingArchivedChats`); nothing on this base opens it until seam 8.
+
+##### B6. Dialogs, rename and sheet fills
+
+- Delete conversation moved to `.junoConfirmation` with `DesktopChatDeletion` (the web's title and message, "Delete Chat"). A delete the store could not take leaves the row where it was and posts "Delete failed.".
+- Rename… from the title menu reveals a hidden sidebar first (`DesktopChatRename.columns(forRenameFrom:)`, tested) — the behaviour was already there; it is now a tested rule.
+- `.alert` audit on chat surfaces:
+
+  | Site | Kind | Result |
+  |---|---|---|
+  | Delete this conversation? (`DesktopChatWorkspace`) | choice | moved to `.junoConfirmation`, "Delete Chat" |
+  | Leave this private chat? (`DesktopChatWorkspace`) | choice | already a confirmation dialog; left as specified |
+  | Regenerate this answer? (`MessageRow`) | choice | already a confirmation dialog; left as specified |
+  | Delete this project? (`DesktopChatSidebar`) | choice | already a confirmation dialog; Phase 4's file |
+  | Screenshot unavailable | error | stays `.alert` |
+  | Voice is unavailable | error | stays `.alert` |
+  | Couldn’t open the file | error | stays `.alert` |
+
+- `junoSheetSurface` removed at the image-edit sheet (`DesktopChatWorkspace`) and the Library picker (`DesktopLibraryPicker`); each keeps its explicit frame and takes `.presentationSizing(.fitted)`.
+
+#### Errata: where today's web was followed
+
+- The Command menu's Chats group lists every non-Code conversation (`kind !== "code"`), as the web does; the sidebar's own filter is `kind == "chat"`. Title matches in Chats, Code sessions and Projects are substring matches (the web's `includes`), not word starts; only the fixed rows use `atWordStart`.
+- A Tasks hit whose task has no conversation carries `href: "/chat"` (`chatPathForSession`); the Mac reads its session id from the hit's `work:` id for seam 6, and leaves `work-event:` hits without a conversation out (no session id to open).
+- The web's Share opens by creating the link and copies nothing until Copy; the Mac now does the same.
+- "Chat restored." (the web's toast) is not posted: a sheet hosts no toasts, and the row leaving is the acknowledgement (P3-18).
+
+#### Register entries (provisional; renumbered at integration)
+
+Used from the brief: P3-10 (semibold marks), P3-11 (date and project as menus), P3-12 (local and server halves), P3-13 (rows left out), P3-14 (New private chat), P3-15 (no Get the apps), P3-16 (Share popover with More…), P3-17 (Quick Look from Outputs), P3-18 (failures under the row in Archived Chats; no "Chat restored." toast).
+
+New:
+
+- **P3-25.** When only the server half of Search fails while this Mac is online, the panel lists what this Mac found and says "{Type}: couldn’t be searched right now." for each server type in scope; the web, with one half, shows its error tile. The error tile is kept for a search where both halves failed.
+- **P3-26.** The panel's keycaps are the Mac's chords: New chat ⌘N, Toggle sidebar ⌃⌘S, Settings ⌘,, Switch to Dark/Light Mode ⇧⌘L, Keyboard shortcuts ⌘/ (the web prints ⌘⇧O and ⌘⇧S, and no Settings hint). Seam 2 replaces the literals with registry lookups.
+- **P3-27.** Recent's Code rows switch the window to Code (the web's Code sessions are not this Mac's local ones); offline, Recent lists this Mac's own workbench sessions, which open directly.
+- **P3-28.** The filter chips at rest have no fill (the brief's recipe inside glass); the web's rest chip sits on `--secondary`.
+- **P3-29.** The panel's field shows an "esc" keycap at rest; the web has none.
+- **P3-30.** The account popover's usage block reads "This week · {n}% used" until the plan route carries `quota` (seam 9); the web reads "Messages {used} / {limit}".
+- **P3-31.** Share's More… sits at the foot of the popover in the ready state, so the fixed 232pt frame reads as a footer rather than a gap under the caption.
+
+#### New Mac-only copy (copy audit)
+
+Every other visible string is the web's, byte for byte (curly apostrophes and quotes kept; the web's own em dash in "Outputs — {n} in this chat" kept as web copy).
+
+- Panel: "New private chat"; "{Type}: not searched while offline." (Knowledge, Memory, Tasks — Appendix A); "{Type}: couldn’t be searched right now." (P3-25); the "esc" keycap; menu rows "Any Time", "Past Week", "Past Month", "Past Year", "All Projects" (Title Case of the web's words); "Untitled Project" (Title Case in the menu only).
+- Share: "More…", "Try Again", "Create a New Link", "Revoke Link" (Title Case of the web's words); help "Share the link another way".
+- Account: "Settings…", "Upgrade Plan", "Admin Panel", "Keyboard Shortcuts", "Sign Out" (Title Case); "This week", "{n}% used", "Browse only", "Unavailable" (kept from the Mac's footer until seam 9).
+- Archived Chats: "Done"; the accessibility hint "Opens the chat"; the skeleton's label "Loading archived chats".
+- Outputs: help "Open {file}" on tiles and upload rows.
+
+#### Seams left for the integration (§2.3)
+
+| # | Seam | State on this branch |
+|---|---|---|
+| 1 | ⌘K → `presentSearchPanel(.commands)` | `DesktopChatWorkspace.presentSearchPanel(_:)` exists; nothing on this base presses ⌘K (Stage A's menu). ⌘K inside the open panel closes it; ⇧⌘F in Commands switches to Search. |
+| 2 | Keycap hints | literal (`DesktopCommandCatalog`, `DesktopAccountPopover`) |
+| 3 | `Hooks.openNotifications` | nil → "Open notifications" absent |
+| 4 | `Hooks.openUpgrade`, the account popover's `openUpgrade` | nil → "Plans & upgrade" and "Upgrade Plan" absent (`DesktopAccountPopoverRows.canUpgrade(planID:)` is ready for the gate) |
+| 5 | `Hooks.openPage(DesktopPanelPage)` | nil → Skills, Automations, New automation, Assistants, New assistant, Permissions absent; Designs and New design fall back to `.design`, New agent to the Agents page |
+| 6 | `Hooks.openTaskRecord(sessionID)` | nil → Tasks hits without a conversation absent |
+| 7 | `DesktopSharePopover` for `.artifact(id)` | built and tested; no artifact surface presents it yet |
+| 8 | `showingArchivedChats` | state in the workspace; nothing opens it yet |
+| 9 | `DesktopAccountUsage.init(plan:)` | reads today's fields |
+| 13 | The theme toggle | B's ⌘K row writes `theme` through `NativeMemorySettingsStore.updateSettings` (`toggleAccountTheme()`); fold with A's ⇧⌘L |
+
+Also for the integration: the shared `Keyboard` icon edit is byte-identical to Stage A's; `MapTrifold` is B's, appended at the end of the generator map and of `JunoIcon`.
+
+#### Deferred (explicit)
+
+- Opening a message hit at its message (`?m=`): the conversation opens; scrolling to the message is not built.
+- The panel's Tab into the filter row walks the type chips with ← →; the date and project menus are reached with the pointer (or Full Keyboard Access).
+- Seams 1–9 and 13 above.
+- Deleting `DesktopSearchScreen.swift` and the `.search` branch (integration, §6.3).
+- `junoSheetSurface` survivors on the Mac that are not B's: `DesktopSettingsScreen` ×2 (C), the page files (Phase 4), Code's (the Code session).
+
+#### Runtime checks left for a person at the screen
+
+⌘K (once wired) and ⇧⌘F / the sidebar's Search: focus in the field, Esc, clicking outside, focus returning to the composer; the panel's glass over a live transcript; a live `/api/search` answer landing under local results without moving the cursor; the filter menus; a real share create, Copy, Revoke and Create a New Link; More…'s share sheet; Outputs' tiles opening the canvas and Quick Look; the account popover's Keyboard Shortcuts opening the window; a restore and a delete in Archived Chats against the server (once seam 8 opens it); the delete confirmation's "Delete failed." path.
+
+#### 5-Dimension review (Philosophy · Hierarchy · Craft · Functionality · Originality), from the snapshots
+
+| Surface | Light | Dark | Notes |
+|---|---|---|---|
+| Panel, Commands | 8 · 8 · 8 · 8 · 7 | 8 · 8 · 8 · 8 · 7 | Floor holds the shape; keycaps as separate caps; one fill for the active row |
+| Panel, Search | 8 · 8 · 8 · 8 · 8 | 8 · 8 · 8 · 8 · 8 | Semibold matched words carry the "why"; notices band plain, not rounded |
+| Share | 8 · 8 · 8 · 8 · 7 | 8 · 8 · 8 · 8 · 7 | Copy → Copied is the one moving part; one prominent button per state |
+| Outputs | 8 · 8 · 7 · 8 · 8 | 8 · 8 · 7 · 8 · 8 | A single output fills the width; excerpts clip like `<pre>` |
+| Account popover | 8 · 8 · 8 · 8 · 7 | 8 · 8 · 8 · 8 · 7 | The 18-dot bar is the signature; neutral plan pill |
+| Archived Chats | 8 · 8 · 8 · 8 · 7 | 8 · 8 · 8 · 8 · 7 | No prominent button; failures stay with their row |
+
+Fixed before committing (from the first render): matched words drew bold rather than semibold; the notices band took the panel's container shape and rounded its corners; notices repeated the error tile's message; the Share Copy button was shorter than the field; the image tile ignored its 4:3 ratio; code excerpts wrapped and then centred instead of clipping; the account popover's fixed heights left a 30–40pt gap; the archived dates ignored the view's locale.
+
+### Phase 3 Stage C notes: Settings to web parity, Upgrade, text size, theme and accent, onboarding and announcements
+
+Branch `mac/lg-p3c`, from `250b5b13`. Brief: `docs/native/MACOS_PHASE3_OVERLAYS_BRIEF.md` §5. These notes are folded into the spec's "Phase 3 errata", the register, `MACOS_REDESIGN_HANDOFF.md` and `API_GAPS.md` at integration (§6), then deleted.
+
+#### What was built
+
+- **C0, data (additive, iOS unchanged):**
+  - `NativeAccountSettings` and `NativeSettingsPatch` gain `name`, `memoryBackgroundLearning`, `memorySensitiveTopics`, `actionApprovalPolicy`, `lockdownMode`, `blockedConnectors`, `monthlySpendCapEur` (`Int??` in the patch, so `null` can be sent) and the read-only `spendCapDisabled`. The sync record decodes them when present; every older payload still decodes.
+  - `NativeMemorySettingsModel.saveSettings(_:)` returns `.saved` / `.queued` / `.failed(reason)` for a row's save status. `updateSettings(_:)` still works and now wraps it.
+  - `NativeServerSettingsClient` (`GET` / `PATCH /api/settings`) and `refreshServerSettings()`: the model lays the server's answer over the sync record.
+  - `NativeUsagePlan` gains `quota {plan, used, limit}` and `spend {spentMicroUsd, reservedMicroUsd, budgetMicroUsd, eurPerUsd, capSource, capDisabled}`; `NativeUsageDay` gains `costMicroUsd`. Both have public `decode(_:)`.
+  - New clients: `NativeBillingClient` (checkout, portal), `NativeAnnouncementsClient` (current, dismiss), `NativeAccountSecurityClient` (status, 2FA start/confirm/disable, password, email, sign out everywhere, reset email, avatar upload), `NativeImportClient` (multipart import, the web's refusals). `NativeAccountDataClient` gains the Juno package export (`format=juno`, `.zip`, or `.json` when the server has no storage) and `deleteAllConversations()`. One shared `NativeWebRouteError` carries the server's sentence and blamed field.
+  - Contract: the paths above in one commented block before Agents; Swift contract regenerated.
+- **C1, the Settings window:** `DesktopSettingsSection` in the web's order with Devices and "Plan & usage" (raw value `billing` kept, `.usage` / `.connections` kept), the web's aliases through `DesktopSettingsSection.resolve(_:)` and `DesktopSettingsRouter.open(named:)`. `NavigationSplitView` with the source list (web `SettingsIcons`) and `.searchable(placement: .sidebar)`; detail is a grouped `Form` with its background hidden over the window's `containerBackground(Color.junoCanvas, for: .window)`. No subtitles. 820 × 600, minimum 680 × 480. The window applies the account theme, `.junoAccentTint()` and `desktopTextScale()`. Rows (`DesktopSettingsRows.swift`): `DesktopSettingRow`, `DesktopSettingToggleRow`, `DesktopSettingsGroupHeader`, `DesktopSaveStatus` and `DesktopSaveStates` (the web's `useSaveStates`: 1.8s Saved, 5s Not saved, newest write wins, announced once). `junoSheetSurface` is gone from every Settings file: sheets are system sheets with an explicit frame and `.presentationSizing(.form)` (`DesktopSettingsSheet`).
+- **C2, the panes**, one file each, the web's rows and words.
+- **C3, Plan & usage:** plan block, three meters, the spend ceiling, 30 day history. `DesktopUsageScreen.swift` deleted; `DesktopUsageModelIdentity` (used by its tests) moved into `DesktopUsageModel.swift`.
+- **C4, Upgrade:** `DesktopUpgradeSheet` + `DesktopPlanCatalog` (Swift copy of `plans.ts`, pinned by a test) + `DesktopUpgradePresenter.shared.present()`, attached to the Chat window (through `.desktopFirstRunSheets(_:)`) and to Settings.
+- **C5:** `DesktopTextSize` (`juno.textSize`, the web's ids, scale = px ÷ 16) on the Chat root, Settings and Quick Entry. `JunoAccentSelection` resolves a `#rrggbb` accent (`JunoCustomAccent`, the web's clamp rule); `Color.junoAccent`/`junoAccentInk`/`junoOnAccent` read the resolved colour (three one-line changes in `JunoColors.swift`). The enum's API is unchanged.
+- **C6:** `DesktopFirstRunPresenter` (rules pure and tested), `DesktopOnboardingSheet`, `DesktopAnnouncementSheet` with `DesktopAnnouncementLink` routing.
+
+#### Errata (today's web over the spec or brief)
+
+1. **The sync mutation schema is `.strict()`** (`src/lib/sync-mutations.ts`): `settings.update` accepts only theme, accent, defaultModel, customInstructions, responseLanguage, uiLocale, personality, memoryEnabled, voiceId, favoriteModels and the two emails. Every other field goes through `PATCH /api/settings`. This also fixes the Mac's Background processing picker, which had been sending `backgroundProviderMode` through the outbox, where the server refuses it.
+2. **The meters turn to the warning ink at 90%**, not 80% as the brief says: the web's `meterTone` is `share >= 1 ? destructive : share >= 0.9 ? warning : primary`.
+3. **`spend.userCapEur` is not in `/api/profile/usage`.** The ceiling field reads `monthlySpendCapEur` from `GET /api/settings`.
+4. **The Yearly FAQ entry is filtered** when annual plans are not for sale (the web's `annualOnly`), so the Mac's Upgrade shows four questions, not five.
+5. **The web's Settings rail labels the Plan section "Plan & usage"**; the Code section stays last on the Mac.
+
+#### Register (provisional numbers; C continues from P3-25)
+
+- P3-1 … P3-9 as the brief's Appendix C (search field, grouped form, Code last, "on this Mac", no interface language, text size scope, graphite ring, monthly-only Upgrade sheet, onboarding theme to the account and no dot field), and P3-23 (Devices starts with this Mac) and P3-24 (Sign Out asks first).
+- **P3-25.** Models › On this device shows Fast mode only. The composer keeps no stored default for thinking effort or web search (both are `@State` in `ChatComposer.swift`), so those two rows would change nothing; they return when the composer reads `juno.desktop.composer.*` defaults.
+- **P3-26.** A pinned model's Unpin star is drawn in the foreground ink, not the web's coral (accent budget).
+- **P3-27.** Import shows "Uploading" with an indeterminate bar: the authenticated sender returns only when the server answers, so there is no byte count to show.
+- **P3-28.** A custom accent's accent text is the clamped colour itself; the web keeps the preset's `--primary-ink`.
+- **P3-29.** Devices' empty state on the Mac: "No Macs yet" / "Turn on Juno Work for this Mac and it appears here on its own." (the switch is the group above), not "Get the Mac app".
+- **P3-31.** Devices › This Mac is the Work switch and a "What this Mac may do" row whose "Choose…" opens the full Juno Work card (`DesktopWorkHostTile`, unchanged) in a sheet. The brief moved the card itself into the pane; drawn there it filled the window, pushed "Your Macs" off screen and put a card inside the form's group. The web's Devices is a list whose rows open a Mac to choose what it may do, which this follows.
+- **P3-32.** Each Upgrade card puts its action under the price, above the features; the web puts it at the card's foot. At the sheet's 640pt the foot is below the fold, and the one coral button is the choice the sheet exists for.
+- **P3-33.** Account › Notifications is one group, as on the web: "Notifications on this Mac" (the permission, with the push reach as its description), "When something needs you", "Updates", then the two email rows. The brief's separate "Notifications on this Mac" section would have repeated its own title as its first row.
+- **P3-34.** An import's result stays in its row, in the web's sentence, as the web shows it; only "Nothing new to import…" is a toast (the web's own toast). The brief asked for the result as a toast.
+- **P3-30.** Plan & usage shows its actions whatever the server's `features.billing` says (native clients cannot read it); a server without Stripe answers checkout and the portal with its own "Billing is not configured." sentence, shown inline or as a toast.
+
+#### New Mac-only copy (Appendix A additions)
+
+"Where each new message starts on this Mac. The composer can change any of them." · "Dictation uses this Mac’s own speech recognition." · "This Mac" · "No Macs yet" / "Turn on Juno Work for this Mac and it appears here on its own." · the About group's rows ("Juno for Mac {version}", "Check for Updates…", "Install and Relaunch", "Diagnostics…", "What this Mac has synced, what is queued, and what failed.") · "Juno couldn’t read that file." (an import file this Mac cannot open) · "Couldn’t load these settings" (Memory's sensitive subjects when `GET /api/settings` fails) · "Done" (Upgrade, Diagnostics) · "Choose a JPEG, PNG, WebP or GIF under 5 MB." (the avatar open panel) · "{n} pt" beside the text-size slider · "Allow Juno Work on this Mac" / "Lets tasks you start from your phone, the web or this window run here. Off, this Mac runs nothing sent to it." · "What this Mac may do" / "Files, your browser, screen control, when Juno asks first, and the folders and apps a task may use." / "Choose…" · "Off in System Settings. Allow notifications for Juno there, then come back." · the host states "Awake", "Awake, running {n}", "Idle", "Not answering", "Asleep or offline", "Work is off on this Mac", "Revoked".
+
+#### Seams left (brief §2.3)
+
+- 4 / 12: `DesktopUpgradePresenter.shared.present()` exists; the account popover's and ⌘K's `openUpgrade` and the composer's `openUpgrade` (`DesktopChatWorkspace.swift:1999`, still Settings › Plan & usage) are wired at integration.
+- 9: `NativeUsagePlan.quota` (`used`, `limit`) is available for B's `DesktopAccountUsage.init(plan:)`.
+- 10: `DesktopSettingsLinks.shared` (`openMemory`, `openConnections`, `openHost`, `openPermissions`) — all nil; their controls are absent.
+- 11: `DesktopSettingsHostRow` stands in for Phase 4 C's `DesktopWorkHostRow`.
+- 14: "What Juno noticed" stays in Settings › Memory.
+- Contract: B may add `get:` under the same `/conversations` key (the `archived` parameter); merge the two operations under one key.
+
+#### Left for other owners
+
+- `DesktopWorkHostTile` (Phase 4 C / Phase 5 D's file) still draws its own card and a mono "Juno Work" eyebrow; in Devices it sits in a group with the form's row fill cleared, so there is no card inside a card, but the eyebrow is theirs to retire.
+- `JunoVoiceAura`, `JunoVoiceOrb` and `JunoProviderGlow` read `JunoAccentSelection.shared.current.hsl(dark:)`, which is coral while a custom accent is in force; switching them to the selection's new `hsl(dark:)` is a one-line change each for whoever owns voice.
+
+#### 5-Dimension review (Philosophy, Hierarchy, Craft, Functionality, Originality; from the snapshots, both appearances)
+
+| Surface | P | H | C | F | O | Signature detail |
+|---|---|---|---|---|---|---|
+| General | 8 | 8 | 8 | 8 | 7 | the accent swatches and the custom well recolour the window while choosing |
+| Personalization | 8 | 8 | 8 | 8 | 7 | the instructions well saves on focus loss, with Saved beside its label |
+| Memory | 8 | 7 | 8 | 8 | 7 | one switch per sensitive subject, the web's words |
+| Models | 8 | 8 | 8 | 7 | 7 | pinned models with their provider marks and a filled star |
+| Connectors | 8 | 8 | 8 | 8 | 7 | an app's switch is its whole permission, reading included |
+| Devices | 8 | 8 | 8 | 8 | 7 | the live dot only beside a Mac that is awake |
+| Voice | 7 | 8 | 8 | 7 | 7 | the circular preview beside the voice |
+| Data & privacy | 8 | 8 | 8 | 8 | 7 | Copy Link turning into the check |
+| Account | 8 | 8 | 8 | 8 | 7 | the camera over the photo on hover |
+| Plan & usage | 8 | 8 | 8 | 8 | 8 | the busiest of thirty days in the accent |
+| Upgrade | 8 | 8 | 8 | 8 | 8 | the recommended card's coral button, above the fold |
+| Onboarding | 8 | 8 | 8 | 8 | 8 | a swatch recolours Start Chatting at once |
+| Announcement | 8 | 8 | 8 | 8 | 7 | the 16:9 visual |
+
+Fixed before commit (each had scored under 7 on its first render): coral pop-up values (tinted by the window's accent; now neutral), the name field's right-aligned text, a beige instructions well, a red-filled destructive button (now the destructive ink on the neutral outline), the Work card filling Devices (P3-31), Upgrade's actions below the fold (P3-32), the announcement visual overflowing its frame, grey meters (now drawn bars in the web's tones), Plan's price sentence wrapping and "Manage Billing" truncating, and a "Notifications on this Mac" heading repeated as its own first row (P3-33).
+
+#### Snapshot harness notes
+
+- Switches and linear progress views are AppKit controls that draw in their inactive-window colours offscreen (a grey "on" track), so the accent on switches is checked at the screen; Plan & usage's meters are drawn bars, so their tones show in the pictures.
+- The Settings source list is drawn as a plain column in the pictures (`DesktopSettingsSnapshotRail`): the platform's sidebar list and its search field need the split view's titled window.
+
+#### Runtime checks left (a person at the screen)
+
+Checkout and the portal in the browser; 2FA set-up with a real authenticator; the avatar upload; a real import upload; the first-run sheet on a fresh account; a live announcement with video; the theme, accent (custom colour panel included) and text size switching live in the Chat window, Settings and Quick Entry; the Upgrade sheet over Settings vs the Chat window (`present()` reads the key window); Delete all conversations against the server.
+
+---
+
+## Integration (2026-09-25): every lane merged into `mac/liquid-glass-chat`
+
+Merged in this order, each merge built (app and test target) and committed on its own: `mac/lg-p5c` (Phase 5 C, `d472d263`), `mac/liquid-glass-pages` (Phase 4 A, `8c0b1e62`), `mac/lg-p4b` (Phase 4 B, `be7c6a07`), `mac/lg-p4c` (Phase 4 C, `9af37e25`), `mac/lg-p3` (Phase 3 A, `0384de2d`), `mac/lg-p3b` (Phase 3 B, `bbcfd129`), `mac/lg-p3c` (Phase 3 C, `cef45688`), `fix/download-feed-cancel` (the web's download feed fix, `e9cf2b2e`), then `origin/main` (already contained at `fe0a501d`). Generated files (the Swift contract, the icon catalogues, both Xcode projects) were regenerated after every merge, never hand-merged; the OpenAPI file took both lanes' new paths.
+
+**Where two lanes wrote the same thing differently** (the chat track and the pages track had each merged `origin/main` at `fe0a501d`, so several files met twice):
+
+- **Kept from the chat track:** Phase 5 D's removal of the old Work window (`DesktopWorkWorkspace.swift` stays deleted; Phase 4 C's edit to it is dropped with it, since Automations live on the Chat window's stack), the sidebar's Needs you, Agents heading, status dots and Notifications row, the chat's task follower, `DesktopNavigationState.selection(…openProjectID:selectedAgentID:)`.
+- **Kept from the pages track:** Open in Conversation (`followCanvasRequest`), the resolver's `open(artifact:message:)`, the Bell / BellSimple split.
+- **One shape for the shared foundations:** `JunoPageHeader(_:caption:lede:)` (the order Phase 4 B and C share; Phase 4 A's project page moved to it) and one `JunoEmptyState(…actions:)` initializer drawn in a row. `NativeAgentHireView` is public (Phase 5 C) with Phase 4 C's page presentation.
+- **Phase 3 A's generated menu bar** was taken whole, less what Phase 5 D had already removed (Window › Tasks (Legacy) and the shell actions behind it). One `DesktopKeycap`: the Shortcuts window's replaces the Skills page's copy.
+- **Outputs and ⌘K open a canvas** through a message-less `open(artifact:)` that finds the stored row by its own identifier (`ChatArtifactResolver.artifact(identifier:)`, additive), and closes the Task panel as the transcript's open does.
+
+### Integration, seams wired
+
+Phase 3 brief §2.3, rows 1–14, and the Phase 4 brief's §0.4:
+
+| # | Seam | Wired to |
+|---|---|---|
+| 1 | ⌘K (`openCommandMenu`) | the panel in Commands (`presentSearchPanel(.commands)`) |
+| 2 | Panel keycaps | `JunoShortcutRegistry.entry(_:).keys` (`DesktopCommandCatalog.keys`), with a test that every hint is the registry's chord |
+| 3 | Open notifications | the sidebar's Notifications popover, whose state the window now holds; the column is shown first when hidden |
+| 4 | Plans & upgrade, Upgrade Plan | `DesktopUpgradePresenter.shared.present(in: .chat)`; the ⌘K row always (as the web's), the popover row for Free, Pro and Max |
+| 5 | Pages | `DesktopPageRouter`: Skills, Automations, New automation (`.newAutomation`), Assistants, New assistant (the editor, `openNewAssistant()`), Permissions, Designs and New design (Artifacts › Designs, with the size menu), New agent (`.newAgent`) |
+| 6 | A task with no chat | the window's `openWorkSession` (its chat, or the task sheet) |
+| 7 | Share an artifact | the Artifacts page's Share… opens the Share popover's content in a sheet (there is no toolbar anchor on a page; the web's is a dialog) |
+| 8 | Archived Chats | More › Archived Chats |
+| 9 | The popover's usage block | "Messages {used} / {limit}" from `/api/profile/usage` `quota`, warning at 80%, destructive at the cap; the week's share when the server sends no `used` |
+| 10 | Settings' page links | `DesktopPageLinks` (installed at launch): the router plus the main window forward; a window showing Code switches to Chat when it becomes active with a request pending |
+| 11 | Settings › Devices rows | Phase 4 C's `DesktopWorkHostRow` (with "This Mac"); Stage C's interim row is deleted |
+| 12 | The composer's quota link | the Upgrade sheet |
+| 13 | Switch to Dark / Light Mode | one `DesktopThemeToggle` for the menu bar's ⇧⌘L and the ⌘K row |
+| 14 | "What Juno noticed" | **not moved** (deferred): the Memory page's Edits are the server's drafted changes, not the on-device proposals, so the review stays in Settings › Memory |
+| 4-§0.4 | The composer's Use a Skill | `+` › Use a Skill ▸ (the skills by name with the description on a second line, the armed one checked, "Manage Skills…"), a typed `/slug …` (the web's rule: only a slug naming one of the reader's skills; a bare `/slug` only arms it), the skill's mark first among the marks, and `skillSlug` on `/api/chat` (`NativeChatGenerationRequest.skillSlug`, carried through retries). Per send, like Research; not in a private chat or a call. |
+
+**Also at integration.** The Search page is retired: `DesktopSearchScreen.swift` is deleted, a stored `.search` destination reads as Chat, and Phase 5 D's Tasks scope lives on as the panel's Tasks group, which adds the account's tasks this Mac has read (every query word in the title or goal) after the server's hits, never one twice, a task without a chat opening its sheet. The View menu lists the Chat window's pages without chords (Library, Projects, Artifacts, Agents; Assistants, Skills, Automations), generated from the registry like every other item. `junoSheetSurface` cannot be made iOS-only yet; its Mac callers are `ChatSkillCaptureSheet` (Phase 5 B), `DesktopTaskRecordSheet` (Phase 5 D), `NativeAgentHireView` and the agent page's form (Agents, shared with the iPhone), and Code's `DesktopCodeWorkspace` (2) and `JunoCodeUI` Studio (3).
+
+**Gates re-locked** (`native:design:baseline`): type 0, motion 0, glass 24 (was 25), targets 217 (was 257), prominent 9, menus 9 (was 21). Every change is a fall; nothing was raised.
+
+### Integration register (final numbers)
+
+The lanes numbered their entries provisionally and in parallel, so several numbers were taken twice. The final numbers are below; the entries' text stays where each lane wrote it (Phase 5 errata, Phase 4 errata A–C, Phase 3 errata), and a comment in code that cites a lane's provisional number means that lane's entry.
+
+| Final | Lane and provisional number | Entry |
+|---|---|---|
+| #1–#68 | as written (Phases 1, 2, 5 A/B/D) | unchanged |
+| #69–#71 | Phase 5 C #69–#71 | unchanged |
+| #72 | Phase 4 A #69 | Artifacts opening |
+| #73 | Phase 4 A #70 | Design is a type |
+| #74 | Phase 4 A #71 | Poster fallback |
+| #75 | Phase 4 A #72 + B #56 | Pins: projects and assistants wear a neutral pin |
+| #76 | Phase 4 A #73 + B #57 + C (brief #57) | Eyebrows are SF captions; detail pages use the system back button |
+| #77 | Phase 4 A #74 + B #58 | Meta lines and counts in SF with tabular digits |
+| #78–#90 | Phase 4 A #75–#87 | Library … `?new=design`, in order |
+| #91 | Phase 4 B #59 | Connections has no "Use in chats" |
+| #92 | Phase 4 B #60 | Assistants has no "Start chat"; a tile opens its editor |
+| #93 | Phase 4 B #65 | Memory's Activity is a sheet |
+| #94 | Phase 4 B #66 + C (brief #66) | New automation, New skill and New agent are pushed pages; the assistant editor stays a sheet |
+| #95 | Phase 4 C (brief #67) | Code automations are listed and run on the Mac, edited on the web |
+| #96 | Phase 4 C (brief #68) | This Mac's host page adds "On this Mac" |
+| #97–#108 | Phase 4 B #74–#85 | Memory diffs … Skills' Add ▾, in order |
+| #109–#119 | Phase 4 C #74–#84 | Permissions order … automation rows, in order (C #85, "More's Skills and Assistants lead to a placeholder", is retired: Stage B's pages are wired) |
+| — | Phase 4 C (brief #71) | folded into #83 (headings on the `heading` rung) |
+| #120–#143 | Phase 3 brief Appendix C, P3-1–P3-24 | in order |
+| #144–#146 | Phase 3 A's P3-25–P3-27 | Session menu in Chat's place; "esc" keycap; Code's rows one key each |
+| #147–#153 | Phase 3 B's P3-25–P3-31 | panel partial-failure notice … Share's More… at the foot (B's P3-30 is retired: seam 9 reads the quota) |
+| #154–#163 | Phase 3 C's P3-25–P3-34 | Models' Fast mode only … Plan & usage without `features.billing`, in the order the notes list them |
+| #164 | Integration | The View menu lists the Chat window's pages, without chords; the web has no menu bar. |
+| #165 | Integration | ⌘K's Tasks group adds the account's tasks this Mac has read to the server's hits; the web lists only the server's. |
+| #166 | Integration | Skills are offered from the `+` menu's Use a Skill (§5.4) and a typed `/slug`; the web lists them in its `/` palette, which the Mac composer does not have yet. |
+| #167 | Integration | An artifact's Share… is a sheet on the Artifacts page (the Share popover's content); the web's is a dialog, the Mac's chat share a toolbar popover. |
+
+### Integration, deferred (explicit)
+
+- **Runtime checks at the screen** (screen control is off): every lane's list stands (Phase 5 A–D, Phase 4 A–C, Phase 3 A–C), plus the integration's own: ⌘K's page rows landing on their pushed pages, "Open notifications" opening the popover from a hidden column, Settings' links bringing the main window forward on the right page (and from a window showing Code), the View menu's pages, Share… on an artifact, a typed `/slug` and Use a Skill reaching `/api/chat` as `skillSlug`, Archived Chats from More.
+- **Seam 14** ("What Juno noticed" into the Memory page), above.
+- **The composer's `/` and `@` palette** and the quote card (Ask / Modify): Phase 3 brief §7.1; Use a Skill and `/slug` cover skills until then.
+- **`junoSheetSurface` iOS-only**, until the Agents and Code sheets move off it.
+- **Hand-written dialogs** that carry more than a confirm and a cancel (Reset Memory's Export First, Regenerate's choices) stay system `confirmationDialog`s rather than the shared helper.
+- **Owner questions** still open: interface language on the Mac, the Mac-only usage cards, plans and intervals for native Upgrade, "Get the apps" (Phase 3 brief §8); the Phase 4 brief's four (§8).

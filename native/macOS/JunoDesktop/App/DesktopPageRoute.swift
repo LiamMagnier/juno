@@ -87,6 +87,8 @@ final class DesktopPageRouter {
     private(set) var pending: Request?
     private(set) var artifactsFilter: ArtifactsFilter?
     private(set) var pendingCanvas: CanvasRequest?
+    /// ⌘K's "New assistant": the Assistants page opens its editor once.
+    private(set) var newAssistantRequest: UUID?
 
     /// Opens a destination, optionally pushing one page onto it.
     ///
@@ -134,6 +136,19 @@ final class DesktopPageRouter {
     func takeArtifactsFilter() -> ArtifactsFilter? {
         defer { artifactsFilter = nil }
         return artifactsFilter
+    }
+
+    /// Assistants, with the New assistant editor up (the web's
+    /// `/assistants?new=1`).
+    func openNewAssistant() {
+        newAssistantRequest = UUID()
+        open(.assistants)
+    }
+
+    /// Whether the Assistants page should open its editor, once.
+    func takeNewAssistantRequest() -> Bool {
+        defer { newAssistantRequest = nil }
+        return newAssistantRequest != nil
     }
 }
 

@@ -230,3 +230,13 @@ owner decision recorded in `REWORK_PLAN.md`: kill, demote to one static accent, 
 Whatever is decided, encoding *which AI lab you are talking to* as hue and *reasoning
 effort* as brightness fails the still-frame test — it is information that cannot be read,
 only sensed — and that part should go regardless.
+
+## Overlays, menus and keys on the Mac (Phase 3, integrated 2026-09-25)
+
+How the web's palette, dialogs and menus land on the Mac, as the three Phase 3 stages built them (details in the spec's "Phase 3 errata"):
+
+- **One panel for ⌘K and Search.** The web has two palettes; the Mac has one glass panel with Commands and Search modes (⌘K and ⇧⌘F open the same panel). Matched words are semibold in the row's ink, never coral. Chats, messages, projects, files and artifacts are searched on this Mac; memory, knowledge and tasks on the server, and the account's tasks this Mac has read fill the Tasks group beside the server's hits.
+- **Keys live in one table.** `JunoShortcutRegistry` generates the menu bar, the Keyboard Shortcuts window and the panel's keycaps, so none of them can disagree. In-window menus show no chords; the menu bar does. The View menu also lists the Chat window's pages, without chords.
+- **Dialogs are the system's.** A share is the Share popover (or its content in a sheet where there is no toolbar anchor, as on the Artifacts page); confirmations use the shared `junoConfirmation` helper with the web's words and Title Case buttons; renames happen in place.
+- **Menus** use the `.menuStyle(.button)` recipe with Title Case items and Phosphor glyphs; the `menus` gate holds the count of the deprecated style.
+- **Settings** follows the web's order and words, with the Mac's grouped form, and links to pages open them in the main window.

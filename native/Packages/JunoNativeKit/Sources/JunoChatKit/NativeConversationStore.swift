@@ -1510,6 +1510,9 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         /// dropped Pro would answer with less thought than they asked for.
         let fastMode: Bool
         let proMode: Bool
+        /// The skill armed for this turn, carried through retries for the
+        /// reason the tool flags are: a retry is the request the reader made.
+        var skillSlug: String? = nil
         /// Set only when this turn is a *fork*: the message it branches away
         /// from, and the parent both revisions will hang under.
         ///
@@ -2128,7 +2131,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         proMode: Bool = false,
         // The files `attachmentIDs` names, as the reader's turn should show
         // them while it is on its way. Defaulted for the same call sites.
-        attachments: [NativeChatAttachment] = []
+        attachments: [NativeChatAttachment] = [],
+        // The skill the composer armed (`skillSlug` on the route). Defaulted
+        // for the call sites with no skill UI.
+        skillSlug: String? = nil
     ) -> Bool {
         sendMessage(
             conversationID: conversationID,
@@ -2143,7 +2149,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             fastMode: fastMode,
             proMode: proMode,
             branchPlacement: nil,
-            attachments: attachments
+            attachments: attachments,
+            skillSlug: skillSlug
         )
     }
 
@@ -2165,7 +2172,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         fastMode: Bool,
         proMode: Bool,
         branchPlacement: BranchPlacement?,
-        attachments: [NativeChatAttachment] = []
+        attachments: [NativeChatAttachment] = [],
+        skillSlug: String? = nil
     ) -> Bool {
         guard !chatPhase.isActive, let accountID, chatClient != nil,
             let conversation = conversations.first(where: { $0.id == conversationID }),
@@ -2229,6 +2237,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             connectors: permitted.connectorIDs,
             fastMode: fastMode,
             proMode: proMode,
+            skillSlug: skillSlug,
             branchPlacement: branchPlacement,
             userMessageID: nil,
             userCreatedAt: now,
@@ -2614,7 +2623,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                         fastMode: context.fastMode,
                         proMode: context.proMode,
                         regenerateInstruction: context.regenerateInstruction,
-                        workHandoff: claimsWorkHandoff
+                        workHandoff: claimsWorkHandoff,
+                        skillSlug: context.skillSlug
                     ),
                     for: context.accountID
                 )

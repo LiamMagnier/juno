@@ -204,10 +204,6 @@ import Testing
         }
         let hosts = [host("old", state: "offline", revoked: true), host("studio", state: "online"), host("air", state: "idle")]
         #expect(DesktopSettingsDevicesPane.ordered(hosts).map(\.hostID) == ["studio", "air", "old"])
-        #expect(DesktopSettingsHostRow.isAwake(hosts[1]))
-        #expect(!DesktopSettingsHostRow.isAwake(hosts[2]))
-        #expect(!DesktopSettingsHostRow.isAwake(hosts[0]))
-        #expect(DesktopSettingsHostRow.stateSentence(hosts[0]) == "Revoked")
     }
 
     // MARK: First run

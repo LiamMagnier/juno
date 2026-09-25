@@ -337,7 +337,7 @@ enum SignalsFixtures {
                 id: \.offset
             ) { _, count in
                 List {
-                    DesktopNotificationsRow(model: inbox(count: count))
+                    DesktopNotificationsRow(model: inbox(count: count), isOpen: .constant(false))
                 }
                 .listStyle(.sidebar)
                 .scrollContentBackground(.hidden)

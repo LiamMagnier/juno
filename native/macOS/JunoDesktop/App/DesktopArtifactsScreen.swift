@@ -23,7 +23,8 @@ struct DesktopArtifactsScreen: View {
     var accountID: AccountID?
     var requestSender: (any NativeAuthenticatedRequestSending)?
     var syncModel: NativeSyncModel<SQLiteAccountRepository>?
-    /// Track A's share popover. The menu item is hidden while this is nil.
+    /// Share… (Phase 3's share popover content, in a sheet). The menu item is
+    /// hidden while this is nil.
     var shareArtifact: ((NativeArtifact) -> Void)?
     /// A new chat, for "Start building" and "Ask Juno in a New Chat".
     var newChat: (() -> Void)?

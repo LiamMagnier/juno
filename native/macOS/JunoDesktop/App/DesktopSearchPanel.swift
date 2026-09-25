@@ -581,36 +581,49 @@ private struct DesktopSearchPanelFilters: View {
 
     private var isFocused: Bool { focus.wrappedValue == .filters }
 
+    /// A chip's scroll identity, so the chosen one is kept in view.
+    private static func chipID(_ type: NativeUnifiedSearchType?) -> String {
+        type.map { "\($0)" } ?? "everything"
+    }
+
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: JunoSpace.tight) {
+        ScrollViewReader { scroller in
+            ScrollView(.horizontal) {
                 HStack(spacing: JunoSpace.tight) {
-                    ForEach(types, id: \.self) { type in
-                        DesktopSearchFilterChip(
-                            title: type?.label ?? "Everything",
-                            isSelected: model.typeFilter == type,
-                            showsFocus: isFocused && model.typeFilter == type
-                        ) {
-                            model.setTypeFilter(type)
-                            // A click leaves the caret in the field, so typing
-                            // goes on refining the query; Tab reaches the row.
-                            focus.wrappedValue = .field
+                    HStack(spacing: JunoSpace.tight) {
+                        ForEach(types, id: \.self) { type in
+                            DesktopSearchFilterChip(
+                                title: type?.label ?? "Everything",
+                                isSelected: model.typeFilter == type,
+                                showsFocus: isFocused && model.typeFilter == type
+                            ) {
+                                model.setTypeFilter(type)
+                                // A click leaves the caret in the field, so typing
+                                // goes on refining the query; Tab reaches the row.
+                                focus.wrappedValue = .field
+                            }
+                            .id(Self.chipID(type))
                         }
                     }
-                }
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel("Filter by type")
-                divider
-                windowMenu
-                if !projects.isEmpty {
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Filter by type")
                     divider
-                    projectMenu
+                    windowMenu
+                    if !projects.isEmpty {
+                        divider
+                        projectMenu
+                    }
                 }
+                .padding(.horizontal, JunoSpace.regular)
+                .frame(height: DesktopSearchPanelMetrics.filtersHeight)
             }
-            .padding(.horizontal, JunoSpace.regular)
-            .frame(height: DesktopSearchPanelMetrics.filtersHeight)
+            .scrollIndicators(.automatic)
+            // The chosen chip stays in view — Tasks sits past the panel's edge,
+            // and ←/→ and ⌘K's Tasks rows choose it without a scroll.
+            .onChange(of: model.typeFilter, initial: true) { _, type in
+                scroller.scrollTo(Self.chipID(type), anchor: .center)
+            }
         }
-        .scrollIndicators(.automatic)
         .focusable(interactions: .edit)
         .focusEffectDisabled()
         .focused(focus, equals: .filters)

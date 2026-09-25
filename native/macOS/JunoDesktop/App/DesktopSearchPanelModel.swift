@@ -2,6 +2,7 @@ import Foundation
 import JunoChatKit
 import JunoCodeCore
 import JunoDesignSystem
+import JunoWorkKit
 import Observation
 
 /// The ⌘K / Search panel's state: one per Chat window (Phase 3 brief, B1).
@@ -63,6 +64,10 @@ final class DesktopSearchPanelModel {
         /// The project a conversation belongs to, for the project filter over
         /// local results.
         var projectOfConversation: @MainActor (String) -> String? = { _ in nil }
+        /// The account's tasks this Mac has read (`NativeWorkModel`), for the
+        /// Tasks group beside the server's hits: Phase 5 D's Search › Tasks
+        /// scope, folded into the panel at integration.
+        var localTasks: @MainActor () -> [WorkSessionSummary] = { [] }
 
         static let none = Services()
     }
@@ -371,7 +376,8 @@ final class DesktopSearchPanelModel {
             projectFilter: projectFilter,
             projectOfConversation: services.projectOfConversation,
             hooks: hooks,
-            now: now
+            now: now,
+            tasks: services.localTasks()
         )
     }
 
@@ -460,7 +466,8 @@ final class DesktopSearchPanelModel {
         projectFilter: String?,
         projectOfConversation: (String) -> String?,
         hooks: DesktopCommandCatalog.Hooks,
-        now: Date
+        now: Date,
+        tasks: [WorkSessionSummary] = []
     ) -> [DesktopPanelRow] {
         let since = window.since(now: now)
         var byType: [NativeUnifiedSearchType: [DesktopPanelRow]] = [:]
@@ -501,6 +508,40 @@ final class DesktopSearchPanelModel {
                         )
                     )
                 }
+            }
+        }
+
+        // The account's tasks this Mac holds (Phase 5 D's Tasks scope): every
+        // query word in the title or the goal, after the server's hits and
+        // never one of them twice, up to the group's six. A task with a chat
+        // opens it; one without opens its sheet (seam 6).
+        if typeFilter == nil || typeFilter == .work, projectFilter == nil {
+            let shown = Set((byType[.work] ?? []).compactMap { row in
+                row.id.hasPrefix("server-work:") ? String(row.id.dropFirst("server-work:".count)) : nil
+            })
+            for task in DesktopPanelTasks.matching(tasks, query: query) {
+                guard (byType[.work]?.count ?? 0) < 6 else { break }
+                guard !shown.contains(task.id) else { continue }
+                if let since, task.lastActivityAt < since { continue }
+                let action: DesktopPanelAction
+                if let conversationID = task.conversationID {
+                    action = .conversation(id: conversationID)
+                } else if hooks.openTaskRecord != nil {
+                    action = .taskRecord(sessionID: task.id)
+                } else {
+                    continue
+                }
+                byType[.work, default: []].append(
+                    DesktopPanelRow(
+                        id: "task-\(task.id)",
+                        group: NativeUnifiedSearchType.work.label,
+                        label: DesktopPanelTasks.title(of: task),
+                        labelMarks: marks(of: query, in: DesktopPanelTasks.title(of: task)),
+                        meta: DesktopCommandCatalog.relativeTime(task.lastActivityAt, now: now),
+                        icon: icon(for: .work),
+                        action: action
+                    )
+                )
             }
         }
 
@@ -760,5 +801,29 @@ enum DesktopSearchRoute {
         let segments = components.path.split(separator: "/").map(String.init)
         guard segments.count >= 2, segments[0] == "a" else { return nil }
         return segments[1]
+    }
+}
+
+/// The account's tasks as the panel lists them (Phase 5 D's Search › Tasks
+/// scope, moved here with the Search page's retirement).
+enum DesktopPanelTasks {
+    /// A task's name: its title, or its goal when it has none.
+    static func title(of task: WorkSessionSummary) -> String {
+        let title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? task.goal : title
+    }
+
+    /// Every word of the query in the title or the goal, ignoring case and
+    /// accents; newest activity first.
+    static func matching(_ tasks: [WorkSessionSummary], query: String) -> [WorkSessionSummary] {
+        let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        let sorted = tasks.sorted { $0.lastActivityAt > $1.lastActivityAt }
+        guard !words.isEmpty else { return sorted }
+        return sorted.filter { task in
+            words.allSatisfy { word in
+                task.title.range(of: word, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+                    || task.goal.range(of: word, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+            }
+        }
     }
 }

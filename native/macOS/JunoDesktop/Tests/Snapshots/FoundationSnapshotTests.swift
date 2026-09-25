@@ -64,7 +64,6 @@ enum FoundationFixtures {
         "inline-rename",
         "window-library",
         "window-connections",
-        "window-search",
     ]
 
     private typealias F = FinalSnapshotFixtures
@@ -139,20 +138,6 @@ enum FoundationFixtures {
                 prepare: {
                     world.showDraft()
                     await world.world.connectorModel.refresh()
-                }
-            )
-        case "window-search":
-            return FinalFixture(
-                name: name,
-                width: F.windowWidth,
-                view: {
-                    AnyView(page(world: world, selection: nil) {
-                        DesktopSearchScreen(model: world.world.searchModel, openConversation: { _ in })
-                    })
-                },
-                prepare: {
-                    world.showDraft()
-                    world.world.searchModel.setQuery("", debounced: false)
                 }
             )
         default:

@@ -455,6 +455,8 @@ struct ChatComposerTurn {
     let proMode: Bool
     let groundDocuments: Bool
     let documentCount: Int
+    /// The skill the message is sent under (`skillSlug`), or nil.
+    var skillSlug: String? = nil
 }
 
 /// A new chat's first send, as the empty state needs to hear of it (§10.1).
@@ -855,6 +857,11 @@ struct ChatComposer: View {
     var editLastMessage: (() -> Void)? = nil
     /// "Manage Connections…" in the `+` menu. Nil leaves the row out.
     var manageConnections: (() -> Void)? = nil
+    /// The skills library (Phase 4 B): "Use a Skill" and a typed `/slug`,
+    /// sent as `skillSlug`. Nil leaves both out.
+    var skillLibrary: NativeSkillLibraryModel? = nil
+    /// "Manage Skills…" in Use a Skill. Nil leaves the row out.
+    var manageSkills: (() -> Void)? = nil
     /// The quota line's link. Nil draws the sentence alone.
     var openUpgrade: (() -> Void)? = nil
     /// Hears whether the draft is empty — nothing typed, nothing attached —
@@ -869,6 +876,9 @@ struct ChatComposer: View {
     @State private var selectedModelID = ""
     @State private var thinkingStopID = ""
     @State private var deepResearch = false
+    /// The skill armed for the next message, by its slash name. Per-send, as
+    /// research is, and as the web's is.
+    @State private var skillSlug: String?
     /// A steer is on its way to the run; a second Return waits for it.
     @State private var isSteeringInFlight = false
     @State private var webSearch = false
@@ -1125,8 +1135,22 @@ struct ChatComposer: View {
         selectedModel?.supportsWebSearch == true
     }
 
+    /// Whether a skill can be armed here: not in a private chat, not in a
+    /// call (a skill's method is written to be read), and only with the
+    /// library.
+    private var skillsAvailable: Bool {
+        skillLibrary != nil && !isPrivate && !voiceActive
+    }
+
+    private var armedSkill: (slug: String, name: String?, description: String?)? {
+        guard skillsAvailable, let skillSlug else { return nil }
+        let choice = skillLibrary?.chooseable.first { $0.slug == skillSlug }
+        return (skillSlug, choice?.name, choice?.description)
+    }
+
     private var marks: [ChatComposerMark] {
         ChatComposerMark.marks(
+            skill: armedSkill,
             research: deepResearch && researchAvailable,
             webSearch: webSearch && webSearchAvailable,
             connectors: isPrivate || voiceActive ? [] : connectedConnectors
@@ -1598,6 +1622,7 @@ struct ChatComposer: View {
 
     private func disarm(_ id: String) {
         switch id {
+        case ChatComposerMark.skillID: skillSlug = nil
         case ChatComposerMark.researchID: deepResearch = false
         case ChatComposerMark.webSearchID: webSearch = false
         case ChatComposerMark.documentsID: documentContext = false
@@ -1629,6 +1654,10 @@ struct ChatComposer: View {
             connectorsLoading: connectorModel?.phase == .loading,
             selectedConnectors: $selectedConnectors,
             manageConnections: manageConnections,
+            skills: skillsAvailable ? skillLibrary?.chooseable : nil,
+            skillsLoading: skillLibrary?.isLoading == true,
+            skillSlug: $skillSlug,
+            manageSkills: manageSkills,
             deepResearch: researchAvailable ? $deepResearch : nil,
             // A private turn carries only its words: the private route takes
             // no web search and no local documents, so the rows are absent
@@ -2093,6 +2122,18 @@ struct ChatComposer: View {
             steer(through: steering)
             return
         }
+        // A typed `/slug …` naming one of the reader's skills arms it and sends
+        // the words after it (the web's `readSkillInvocation`): the route takes
+        // `skillSlug` and never reads a leading slash, so `/usr/local` stays a
+        // sentence. A bare `/slug` only arms it, as picking it from the menu does.
+        if skillsAvailable, let typed = skillLibrary?.invocation(in: prompt) {
+            skillSlug = typed.choice.slug
+            prompt = typed.remainder
+            if typed.remainder.isEmpty {
+                draftExpanded = false
+                return
+            }
+        }
         guard canSubmit else { return }
         let turn = composeTurn()
         seedTranscriptImages(for: turn)
@@ -2144,7 +2185,8 @@ struct ChatComposer: View {
             fastMode: fastMode,
             proMode: proMode,
             groundDocuments: documentGroundingArmed,
-            documentCount: indexedDocumentCount
+            documentCount: indexedDocumentCount,
+            skillSlug: armedSkill?.slug
         )
     }
 
@@ -2166,6 +2208,7 @@ struct ChatComposer: View {
         draftExpanded = false
         attachmentModel?.clear()
         deepResearch = false
+        skillSlug = nil
     }
 
     /// Puts a queued turn's words back in the field.
@@ -2270,7 +2313,8 @@ struct ChatComposer: View {
                 connectors: turn.connectors,
                 fastMode: turn.fastMode,
                 proMode: turn.proMode,
-                attachments: turn.attachments
+                attachments: turn.attachments,
+                skillSlug: turn.skillSlug
             )
             guard sent else {
                 if restoreOnRefusal { restore(turn) }
@@ -2285,6 +2329,7 @@ struct ChatComposer: View {
                 draftExpanded = false
                 attachmentModel?.clear()
                 deepResearch = false
+                if skillSlug == turn.skillSlug { skillSlug = nil }
             }
             // Written only after the turn was accepted, and only when grounding
             // was armed: a note about documents beside a message that never left

@@ -59,6 +59,10 @@ struct DesktopChatSidebar: View {
     var runs: WorkRunsByConversation = .empty
     /// The inbox behind the Notifications row. Nil draws no row.
     var notificationsModel: NativeNotificationsModel? = nil
+    /// Whether the Notifications popover is up, when the window holds it (⌘K
+    /// opens it too). Nil keeps it on the row.
+    var showingNotifications: Binding<Bool>? = nil
+    @State private var notificationsOpenHere = false
     /// The fold's state is the reader's, and it survives a relaunch: a column
     /// that reopened every agent after it had been folded away would be a
     /// column arguing with the person who arranged it.
@@ -267,7 +271,10 @@ struct DesktopChatSidebar: View {
 
         // The inbox, right after New chat (Phase 5 C1, register #62).
         if let notificationsModel {
-            DesktopNotificationsRow(model: notificationsModel)
+            DesktopNotificationsRow(
+                model: notificationsModel,
+                isOpen: showingNotifications ?? $notificationsOpenHere
+            )
         }
 
         ForEach(DesktopDestination.sidebarCases) { item in

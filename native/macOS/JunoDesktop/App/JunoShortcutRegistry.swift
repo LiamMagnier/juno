@@ -107,7 +107,22 @@ enum JunoShortcutRegistry {
             key: "/", [.command], group: .everywhere, in: .help, section: 0, glyph: .keyboard
         ),
         JunoShortcut(.roadmap, menuOnly: "Roadmap & Feature Requests", in: .help, section: 0, glyph: .externalLink),
-    ]
+    ] + pages
+
+    /// View's pages: the sidebar's four, then More's three, in the web's order
+    /// (`app-sidebar.tsx`). No chords — the web binds none — so they are menu
+    /// items only, and never rows of the Shortcuts window.
+    private static let pages: [JunoShortcut] = [
+        JunoShortcutID.pageLibrary, .pageProjects, .pageArtifacts, .pageAgents,
+        .pageAssistants, .pageSkills, .pageAutomations,
+    ].compactMap { id in
+        guard let page = id.page else { return nil }
+        return JunoShortcut(
+            id, menuOnly: page.label, in: .view,
+            section: DesktopDestination.moreCases.contains(page) ? 4 : 3,
+            glyph: page.junoIcon
+        )
+    }
 
     // MARK: Products
 
@@ -292,6 +307,22 @@ enum JunoShortcutID: String, CaseIterable, Sendable {
     case codePreview, codeOpenFile, codeSendReview, codeSlashCommands, codeMention
     // Menu items with no chord
     case codeCreatePullRequest, help, roadmap
+    // View's pages (the Chat window's destinations), no chord
+    case pageLibrary, pageProjects, pageArtifacts, pageAgents, pageAssistants, pageSkills, pageAutomations
+
+    /// The Chat window's page a View item opens, for the page entries.
+    var page: DesktopDestination? {
+        switch self {
+        case .pageLibrary: .library
+        case .pageProjects: .projects
+        case .pageArtifacts: .artifacts
+        case .pageAgents: .agents
+        case .pageAssistants: .assistants
+        case .pageSkills: .skills
+        case .pageAutomations: .automations
+        default: nil
+        }
+    }
 }
 
 /// The Shortcuts window's groups, in its order (§7.9 plus Code).

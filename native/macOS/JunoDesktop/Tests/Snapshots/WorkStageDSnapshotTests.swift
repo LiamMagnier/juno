@@ -39,32 +39,6 @@ struct WorkStageDSnapshotTests {
         try await render(sheet, name: name, width: DesktopTaskRecordView.size.width)
     }
 
-    @Test
-    func theTasksScopeDrawsInTheWindow() async throws {
-        let world = try await SnapshotPreviewWorld.shared()
-        world.showDraft()
-        world.world.searchModel.setQuery("", debounced: false)
-        let view = FoundationFixtures.page(world: world, selection: nil) {
-            F.search(.ready(F.tasks), world: world)
-        }
-        try await render(view, name: "search-tasks-scope", width: FinalSnapshotFixtures.windowWidth)
-    }
-
-    @Test(arguments: ["search-tasks-loading", "search-tasks-empty", "search-tasks-error"])
-    func theTasksScopeStatesDraw(_ name: String) async throws {
-        let world = try await SnapshotPreviewWorld.shared()
-        world.world.searchModel.setQuery("", debounced: false)
-        let list: DesktopSearchTaskList = switch name {
-        case "search-tasks-loading": .loading
-        case "search-tasks-empty": .ready([])
-        default: .failed
-        }
-        let view = NavigationStack { F.search(list, world: world) }
-            .frame(height: 520)
-            .junoAccentTint()
-        try await render(view, name: name, width: FinalSnapshotFixtures.detailWidth)
-    }
-
     private func render<V: View>(_ view: V, name: String, width: CGFloat) async throws {
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             let url = try await TranscriptSnapshotRenderer.render(
@@ -279,16 +253,5 @@ enum WorkStageDFixtures {
             task("wsi_archive", "Tidy the Receipts folder", "completed", ago: 9 * 86_400 + 4_000, chat: nil, archived: true),
             task("wsi_budget", "Summarise the Q2 budget variance", "cancelled", ago: 17 * 86_400, chat: "conv-5"),
         ]
-    }
-
-    static func search(_ list: DesktopSearchTaskList, world: SnapshotPreviewWorld) -> some View {
-        DesktopSearchScreen(
-            model: world.world.searchModel,
-            openConversation: { _ in },
-            taskSource: { [] },
-            initialScope: .tasks,
-            initialTasks: list,
-            now: now
-        )
     }
 }

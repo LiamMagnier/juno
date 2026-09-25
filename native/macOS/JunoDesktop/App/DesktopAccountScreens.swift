@@ -37,9 +37,6 @@ struct DesktopDestinationView: View {
     var shareConversation: (() -> Void)? = nil
     /// Fork Privately, which the window answers by starting a private chat.
     var forkPrivately: (([NativePrivateChatModel.Turn]) -> Void)? = nil
-    /// Opens the sheet for a task with no conversation (register #63); the
-    /// window presents it.
-    var openTaskRecord: (WorkSessionSummary) -> Void = { _ in }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// What the Agents destination's stack holds, as it last said: how the
     /// window's open agent (its sidebar row) follows a back button, and how a
@@ -51,6 +48,8 @@ struct DesktopDestinationView: View {
     @State private var agentsStackGeneration = 0
     /// The agent just hired, whose page opens with a word of welcome, once.
     @State private var welcomedAgentID: String?
+    /// The Artifacts page's Share… (seam 7), one per window like the chat's.
+    @State private var artifactShare = DesktopShareState()
 
     var body: some View {
         // One identity per destination, so a change of page is a real
@@ -217,7 +216,9 @@ struct DesktopDestinationView: View {
     @ViewBuilder
     private var page: some View {
         switch destination {
-        case .chat:
+        // The Search page is gone: ⌘K / Search is the panel (Phase 3). A stored
+        // `.search` reads as Chat.
+        case .chat, .search:
             // One view for an ordinary chat and a private one (§5.8): private
             // mode is the same column and the same composer with the in-memory
             // model behind them, so turning it on or off keeps the composer —
@@ -239,28 +240,6 @@ struct DesktopDestinationView: View {
                 forkPrivately: forkPrivately,
                 openAgent: openAgent
             )
-        case .search:
-            if let model = configuration.searchModel {
-                DesktopSearchScreen(
-                    model: model,
-                    openConversation: openConversation,
-                    // The run in flight in Chat, so the screen a reader uses to
-                    // find things can say "Juno is reading twelve pages about
-                    // this right now" instead of "No results".
-                    researchActivity: conversationModel.researchActivity,
-                    // Only offered when there is a conversation to return to.
-                    // A run always belongs to one, but a reader can reach Search
-                    // from a draft that has not been created yet, and a link to
-                    // nowhere is worse than no link.
-                    openResearchRun: conversationModel.selectedConversationID.map { id in
-                        { openConversation(id) }
-                    },
-                    taskSource: taskSource,
-                    openTask: openTask
-                )
-            } else {
-                unavailable("Search", "The encrypted search index is unavailable.")
-            }
         case .projects:
             if let model = configuration.projectModel {
                 DesktopProjectsScreen(
@@ -424,8 +403,22 @@ struct DesktopDestinationView: View {
                 accountID: session.profile.id,
                 requestSender: configuration.requestSender,
                 syncModel: configuration.syncModel,
+                // Share… on a row (Phase 3 seam 7): the Share popover's
+                // content, as the web's dialog, in a sheet over the page.
+                shareArtifact: configuration.shareClient.map { client in
+                    let accountID = session.profile.id
+                    return { artifact in
+                        artifactShare.start(
+                            .artifact(artifact.id),
+                            service: DesktopNativeShareService(client: client, accountID: accountID)
+                        )
+                    }
+                },
                 newChat: { startNewChat() }
             )
+            .sheet(isPresented: $artifactShare.isPresented) {
+                DesktopSharePopover(state: artifactShare)
+            }
         } else {
             unavailable("Artifacts", "The synchronized artifact store is unavailable.")
         }
@@ -521,25 +514,6 @@ struct DesktopDestinationView: View {
                 await conversationModel.reload()
             }
             openConversation(id)
-        }
-    }
-
-    /// Search › Tasks: every task on the account, archived ones too, the
-    /// newest hundred. Nil without Work, which leaves the scope out.
-    private var taskSource: (() async throws -> [WorkSessionSummary])? {
-        guard let workModel = configuration.workModel else { return nil }
-        let client = workModel.transport
-        let accountID = session.profile.id
-        return { try await client.sessions(includingArchived: true, limit: 100, for: accountID) }
-    }
-
-    /// A task opens its chat, as the web sends `/work/{id}` to its
-    /// conversation; one with no conversation opens its sheet.
-    private func openTask(_ task: WorkSessionSummary) {
-        if let conversationID = task.conversationID {
-            openAgentThread(conversationID)
-        } else {
-            openTaskRecord(task)
         }
     }
 

@@ -27,6 +27,12 @@ struct DesktopAssistantsScreen: View {
     @State private var confirmation: JunoConfirmation?
     @State private var dealt = false
 
+    private func followNewAssistantRequest() {
+        if DesktopPageRouter.shared.takeNewAssistantRequest() {
+            editing = DesktopAssistantEditing(assistant: nil)
+        }
+    }
+
     var body: some View {
         JunoPage(measure: .wide) {
             JunoPageHeader(
@@ -63,6 +69,9 @@ struct DesktopAssistantsScreen: View {
             await model.loadIfNeeded()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { dealt = true }
         }
+        // ⌘K's "New assistant" (``DesktopPageRouter/openNewAssistant()``).
+        .onAppear(perform: followNewAssistantRequest)
+        .onChange(of: DesktopPageRouter.shared.newAssistantRequest) { _, _ in followNewAssistantRequest() }
         .sheet(item: $editing) { editing in
             DesktopAssistantEditor(model: model, assistant: editing.assistant, models: models)
         }

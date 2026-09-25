@@ -67,8 +67,16 @@ enum JunoDesktopWindow {
     /// route when it appears.
     @MainActor
     static func follow(_ route: JunoNotificationRoute) {
-        NSApp.activate()
         DesktopWorkbenchRegistry.shared.requestRoute(route)
+        presentMainWindow()
+    }
+
+    /// Activates the app and brings the main window forward, opening one the
+    /// way File › New Window does when there is none — for requests made from
+    /// outside the window (a notification, Settings' page links).
+    @MainActor
+    static func presentMainWindow() {
+        NSApp.activate()
         if !bringMainWindowForward() {
             JunoDesktopAppDelegate.presentMainWindowIfWithheld()
         }
@@ -112,6 +120,8 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate, UNU
         guard !JunoTestHost.isActive else { return }
         MainActor.assumeIsolated {
             DispatchQueue.main.async { Self.presentMainWindowIfWithheld() }
+            // Settings' rows that open a page in the main window (seam 10).
+            DesktopPageLinks.install()
             #if DEBUG
             if JunoPreviewEnvironment.isActive {
                 // The harness never polls, downloads or stages anything. It only

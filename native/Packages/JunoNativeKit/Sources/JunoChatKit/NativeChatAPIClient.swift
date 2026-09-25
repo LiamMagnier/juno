@@ -771,6 +771,11 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
     /// card — a client that says yes and draws nothing would start runs the
     /// reader never sees. False is not encoded, like the flags above.
     public let workHandoff: Bool
+    /// The skill the reader armed for this turn (the composer's Use a Skill,
+    /// or a typed `/slug`), by its slash name: `skillSlug` on the route
+    /// (`src/lib/chat/request.ts`), which never parses the message for a
+    /// leading slash. Nil is not encoded.
+    public let skillSlug: String?
 
     /// The route's cap on ``regenerateInstruction``, in characters.
     public static let regenerateInstructionLimit = 400
@@ -798,9 +803,11 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
         fastMode: Bool = false,
         proMode: Bool = false,
         regenerateInstruction: String? = nil,
-        workHandoff: Bool = false
+        workHandoff: Bool = false,
+        skillSlug: String? = nil
     ) {
         self.workHandoff = workHandoff
+        self.skillSlug = skillSlug
         self.conversationID = conversationID
         self.modelID = modelID
         self.reasoningEffort = reasoningEffort
@@ -1249,6 +1256,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             proMode: request.proMode ? true : nil,
             regenerateInstruction: request.regenerateInstruction,
             workHandoff: request.workHandoff ? true : nil,
+            skillSlug: request.skillSlug,
             clientFeatures: NativeChatClientFeatures.declared,
             timeZone: NativeChatClientFeatures.timeZone,
             locale: NativeChatClientFeatures.locale
@@ -2005,6 +2013,8 @@ private struct GenerationRequestWire: Encodable {
     /// `true` or absent, never `false`: a saved chat on an app that draws
     /// the task card (``NativeChatGenerationRequest/workHandoff``).
     let workHandoff: Bool?
+    /// The armed skill's slash name, or absent.
+    let skillSlug: String?
     /// The grammar this client renders (the rework's `clientFeatures`), with
     /// the zone and locale `current_time` and research read. Always sent: the
     /// route's schema is NOT strict (`chatBodySchema` is a plain `z.object`,

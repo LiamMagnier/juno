@@ -87,8 +87,15 @@ struct DesktopSettingsDevicesPane: View {
                         tone: .warning
                     )
                 }
+                // Phase 4 C's row, the web's `WorkHostRow`, as the Permissions
+                // page draws it (seam 11); it opens the Mac's page in the main
+                // window.
                 ForEach(Self.ordered(hosts)) { host in
-                    DesktopSettingsHostRow(host: host, open: links.openHost.map { open in { open(host.hostID) } })
+                    DesktopWorkHostRow(
+                        host: host,
+                        isThisMac: host.hostID == context.services.workHostModel?.pairedHostID,
+                        open: { links.openHost?(host.hostID) }
+                    )
                 }
             }
         }
@@ -116,76 +123,6 @@ struct DesktopSettingsDevicesPane: View {
     /// Live Macs first, revoked ones last, each in the server's order.
     static func ordered(_ hosts: [WorkHostSummary]) -> [WorkHostSummary] {
         hosts.filter { $0.revokedAt == nil } + hosts.filter { $0.revokedAt != nil }
-    }
-}
-
-/// One Mac in "Your Macs": its name, its state in words, the live dot only
-/// while it is awake, and a chevron when it can be opened (seam 11 — Phase 4
-/// C's `DesktopWorkHostRow` replaces this row at integration).
-struct DesktopSettingsHostRow: View {
-    let host: WorkHostSummary
-    /// Opens the Mac's page. Nil until the page router is merged; the row is
-    /// then plain text, with no chevron.
-    var open: (() -> Void)?
-
-    var body: some View {
-        let content = HStack(spacing: JunoSpace.cozy) {
-            JunoIconView(.device, size: 16)
-                .foregroundStyle(Color.junoSecondaryInk)
-            VStack(alignment: .leading, spacing: JunoSpace.micro) {
-                Text(host.displayName)
-                    .junoType(JunoType.ui.weight(.medium))
-                    .foregroundStyle(host.revokedAt == nil ? Color.junoForeground : Color.junoSecondaryInk)
-                    .lineLimit(1)
-                HStack(spacing: JunoSpace.tight) {
-                    if Self.isAwake(host) {
-                        Circle()
-                            .fill(Color.junoAccent)
-                            .frame(width: 6, height: 6)
-                            .accessibilityHidden(true)
-                    }
-                    Text(Self.stateSentence(host))
-                        .junoType(JunoType.label.weight(.regular))
-                        .foregroundStyle(Color.junoSecondaryInk)
-                        .lineLimit(1)
-                }
-            }
-            Spacer(minLength: 0)
-            if open != nil {
-                JunoIconView(.chevronRight, size: 12)
-                    .foregroundStyle(Color.junoTertiaryInk)
-            }
-        }
-        .frame(minHeight: 36)
-        .contentShape(.rect)
-
-        if let open {
-            Button(action: open) { content }
-                .buttonStyle(.plain)
-                .contentShape(.rect)
-                .accessibilityLabel("\(host.displayName), \(Self.stateSentence(host))")
-        } else {
-            content
-                .accessibilityElement(children: .combine)
-        }
-    }
-
-    static func isAwake(_ host: WorkHostSummary) -> Bool {
-        host.revokedAt == nil && host.state == "online"
-    }
-
-    /// The Mac's state in words.
-    static func stateSentence(_ host: WorkHostSummary) -> String {
-        if host.revokedAt != nil { return "Revoked" }
-        if !host.enabled { return "Work is off on this Mac" }
-        switch host.state {
-        case "online":
-            let running = host.activeRunCount
-            return running == 0 ? "Awake" : "Awake, running \(running)"
-        case "idle": return "Idle"
-        case "stale": return "Not answering"
-        default: return "Asleep or offline"
-        }
     }
 }
 

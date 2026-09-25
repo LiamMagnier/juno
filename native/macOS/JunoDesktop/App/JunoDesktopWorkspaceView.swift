@@ -58,6 +58,7 @@ struct JunoDesktopWorkspaceView: View {
     @State private var chatRoute: DesktopWorkbenchRegistry.RouteRequest?
     @State private var registry = DesktopWorkbenchRegistry.shared
     /// The appearance on screen, which names View › Switch to Dark/Light Mode.
+    @Environment(\.appearsActive) private var appearsActive
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -101,19 +102,23 @@ struct JunoDesktopWorkspaceView: View {
                 chatRoute = request
                 product = .chat
             }
+            // A page asked for from outside the window (Settings' links, the
+            // menu bar): only Chat has the page stacks, so the active window
+            // shows Chat and its workspace follows the request.
+            .onChange(of: DesktopPageRouter.shared.pending?.id, initial: true) { _, _ in adoptPageRequest() }
+            .onChange(of: appearsActive) { _, _ in adoptPageRequest() }
+    }
+
+    private func adoptPageRequest() {
+        guard appearsActive, DesktopPageRouter.shared.pending != nil, product != .chat else { return }
+        product = .chat
     }
 
     /// ⇧⌘L, View › Switch to Dark/Light Mode: the other appearance, written
-    /// to the account's theme as the web's ⌘⇧L writes it — explicitly light
-    /// or dark, never back to System. The window follows the account's theme
-    /// (`JunoDesktopRootView`), so the scheme read here is the one on screen.
+    /// to the account's theme as the web's ⌘⇧L writes it (``DesktopThemeToggle``,
+    /// which ⌘K's row shares).
     private var themeToggle: DesktopShellActions.ThemeToggle? {
-        guard let settingsModel = configuration.memorySettingsModel, settingsModel.settings != nil
-        else { return nil }
-        let isDark = colorScheme == .dark
-        return DesktopShellActions.ThemeToggle(isDark: isDark) {
-            Task { await settingsModel.updateSettings(NativeSettingsPatch(theme: isDark ? .light : .dark)) }
-        }
+        DesktopThemeToggle.action(settingsModel: configuration.memorySettingsModel, drawn: colorScheme)
     }
 
     private func requestChat(prompt: String?, isPrivate: Bool) {

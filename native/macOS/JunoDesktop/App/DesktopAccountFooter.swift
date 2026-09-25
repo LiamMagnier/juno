@@ -134,9 +134,14 @@ struct DesktopAccountFooter: View {
                     isAccountOpen = false
                     DesktopSettingsRouter.open(.general, using: openSettings)
                 },
-                // Seam 4: Stage C's Upgrade presenter, wired at integration.
-                // Until then the row is absent, never a dead end.
-                openUpgrade: nil,
+                // Stage C's Upgrade sheet (seam 4), for plans that can still
+                // go up; the row is absent otherwise, never a dead end.
+                openUpgrade: DesktopAccountPopoverRows.canUpgrade(planID: plan?.planID)
+                    ? {
+                        isAccountOpen = false
+                        DesktopUpgradePresenter.shared.present(in: .chat)
+                    }
+                    : nil,
                 openAdmin: {
                     isAccountOpen = false
                     if let url = URL(string: "\(JunoBackend.productionURLString)/admin") {
@@ -397,9 +402,21 @@ struct DesktopAccountUsage: Equatable {
                 sentence: Self.uncappedSentence(isOwner: plan.planID.uppercased() == "OWNER"),
                 tone: .quiet
             )
+        } else if let used = plan.quota.used, let limit = plan.quota.limit, limit > 0 {
+            // The web's block (`user-menu.tsx`): the month's messages against
+            // the plan's cap, read from the usage route's `quota` (seam 9).
+            let fraction = min(1, max(0, Double(used) / Double(limit)))
+            self.init(
+                caption: "Messages",
+                readout: "\(used) / \(limit)",
+                fraction: fraction,
+                sentence: nil,
+                tone: fraction >= 1 ? .destructive : fraction >= 0.8 ? .warning : .quiet
+            )
         } else if plan.isBrowseOnly {
             self.init(caption: "This week", readout: "Browse only", fraction: nil, sentence: nil, tone: .quiet)
         } else {
+            // A server that predates `quota.used`: the week's share, as before.
             self.init(
                 caption: "This week",
                 readout: "\(DesktopFooterPlanWord.percentUsed(plan))% used",

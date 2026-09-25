@@ -412,6 +412,15 @@ Status: documented in `contracts/openapi/juno-native-v1.yaml` (additive; `info.v
 
 Open: `/api/library` items carry `knowledge` but no document id, so the document inspector (`/knowledge/documents/{id}`) has no way in on either client (Phase 4 brief §8.4).
 
+### Phase 3 (macOS menus, ⌘K, Settings, Upgrade) — open gaps found
+
+Status: open; recorded at integration (2026-09-25).
+
+- **Which plans and billing intervals are for sale.** The web reads `purchasablePlans` and `purchasableAnnualPlans` on the server; native clients cannot, so the Mac's Upgrade sheet offers monthly plans only and cannot hide a plan that is not for sale (Phase 3 brief §8.3, register P3-8). Needed: the two lists on the bootstrap or a small `GET` route.
+- **`features.billing`.** Plan & usage cannot tell whether the server has Stripe; it shows its actions and a server without billing answers the checkout with an error (Stage C, P3-30 of its notes).
+- **Interface language.** The Mac ships no string catalogue for its new copy, so Settings › General leaves Interface language out (P3-5). Needed on the client, not the server: a `Localizable.xcstrings` pass over the Phase 3–5 copy.
+- **`/api/profile/usage` `quota.used`.** The account popover reads "Messages {used} / {limit}" from it (integration, seam 9); a server that predates `used` falls back to the week's percentage.
+
 ## Contract exit criteria
 
 The API gap phase is complete only when:

@@ -68,6 +68,16 @@ final class NativeWorkFrameTests: XCTestCase {
         XCTAssertNil(unclaimed["workHandoff"], "false is said by saying nothing")
     }
 
+    /// The composer's armed skill travels as `skillSlug`; with none armed the
+    /// key is absent (integration: Phase 4 B's library on the wire).
+    func testTheArmedSkillTravelsAsSkillSlug() async throws {
+        let armed = try await sentBody(workHandoff: false, skillSlug: "tidy-inbox")
+        XCTAssertEqual(armed["skillSlug"] as? String, "tidy-inbox")
+
+        let none = try await sentBody(workHandoff: false)
+        XCTAssertNil(none["skillSlug"])
+    }
+
     /// A private turn persists nothing a task could hang off: its body has no
     /// such key at all.
     func testThePrivateBodyNeverCarriesTheFlag() async throws {
@@ -120,7 +130,7 @@ final class NativeWorkFrameTests: XCTestCase {
         return (collected, request)
     }
 
-    private func sentBody(workHandoff: Bool) async throws -> [String: Any] {
+    private func sentBody(workHandoff: Bool, skillSlug: String? = nil) async throws -> [String: Any] {
         let streamer = FrameStreamer(body: sse([
             #"{"type":"done","finishReason":"stop","message":{"id":"msg-a","role":"ASSISTANT","content":"Hi","createdAt":"2026-09-24T17:58:03.000Z"}}"#,
         ]))
@@ -131,7 +141,8 @@ final class NativeWorkFrameTests: XCTestCase {
                 modelID: "anthropic:claude-sonnet-4-6",
                 reasoningEffort: nil,
                 generationID: "gen-00000003",
-                workHandoff: workHandoff
+                workHandoff: workHandoff,
+                skillSlug: skillSlug
             ),
             for: account
         )

@@ -29,6 +29,10 @@ struct DesktopWorkspaceActions {
     /// ⌘F, ⌘G and ⇧⌘G: find in the conversation on screen. Nil wherever
     /// there is none, which disables the three items.
     var findInConversation: ((DesktopFindCommand.Kind) -> Void)? = nil
+    /// View's pages: opens one of the Chat window's destinations in this
+    /// window. Nil where the window cannot (Code), and the item then goes
+    /// through ``DesktopPageLinks``, which switches the window to Chat.
+    var openPage: ((DesktopDestination) -> Void)? = nil
 }
 
 /// What the menu bar can do to the focused *window*, whichever product it is
@@ -252,6 +256,15 @@ struct DesktopCommandContext {
             return sessionAction(code?.openFile)
         case .codeCreatePullRequest:
             return code?.createPullRequest
+
+        // View's pages: in this window when it shows Chat, otherwise through
+        // the page router, which brings the main window forward on Chat.
+        case .pageLibrary, .pageProjects, .pageArtifacts, .pageAgents,
+            .pageAssistants, .pageSkills, .pageAutomations:
+            guard let page = id.page else { return nil }
+            if let openPage = workspace?.openPage { return { openPage(page) } }
+            // Menu actions run on the main thread.
+            return { MainActor.assumeIsolated { DesktopPageLinks.open(page) } }
 
         // Drawn by the system, or answered by a focused control: never a
         // menu item of ours.

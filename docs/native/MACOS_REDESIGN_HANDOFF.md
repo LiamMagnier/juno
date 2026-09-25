@@ -521,3 +521,22 @@ Built in `../juno-glass-p4c` from `1876f3ac` (Stage A1–A3), in parallel with S
 - The spend hint does not name the usage window (register #77): no spend-window read on the Mac yet.
 - History rows for sessions this Mac has not synced are inert (register #80).
 - Phase 5: the Needs-you link on Permissions, deleting the legacy Work window and its host tile.
+
+## Phase 3, 2026-09-25 (three stages: `mac/lg-p3`, `mac/lg-p3b`, `mac/lg-p3c`)
+
+Built in parallel from `250b5b13` against `docs/native/MACOS_PHASE3_OVERLAYS_BRIEF.md`. Their notes are folded into the spec's "Phase 3 errata" (the `docs/native/phase3/` folder is gone).
+
+- **A** (`4bc0cb53`): `JunoShortcutRegistry` generates the menu bar and the Keyboard Shortcuts window; the Chat menu (⌘U, ⇧⌘U, ⇧⎋, ⌘., ⌘R, ⇧⌘C, ⇧⌘;, and the conversation items); Code's Session menu in Chat's place while Code shows; View › Command Menu… ⌘K, Search… ⇧⌘F, Switch to Dark/Light Mode ⇧⌘L; menu icons; the `menus` gate.
+- **B** (`9a79bb3d`): the ⌘K / Search panel (Commands and Search, local and server halves), Share (the web's five states), Outputs, the account popover rebuilt to today's web menu, Archived Chats, the dialog and sheet-fill fixes on chat surfaces.
+- **C** (`e330d5a9`): Settings in the web's order with Devices and Plan & usage, the Upgrade sheet, text size, theme and custom accents, onboarding and announcements.
+
+## Integration, 2026-09-25 (every lane into `mac/liquid-glass-chat`)
+
+Merged in order, each merge built and committed: `mac/lg-p5c`, `mac/liquid-glass-pages`, `mac/lg-p4b`, `mac/lg-p4c`, `mac/lg-p3`, `mac/lg-p3b`, `mac/lg-p3c`, `fix/download-feed-cancel`, `origin/main` (already contained, `fe0a501d`). Then one integration commit that wires the seams. The spec's "Integration" section has the conflict decisions, the seams table, the final register numbers (#72–#167) and the deferred list.
+
+- **Wired:** ⌘K → the panel; the panel's keycaps from the registry; ⌘K's Open notifications, Plans & upgrade, page rows (through `DesktopPageRouter`, incl. New assistant and New agent), and tasks without a chat (the task sheet); Share… on an artifact (a sheet on the Artifacts page); More › Archived Chats; the popover's usage block from `quota`; Settings' page links (`DesktopPageLinks`, installed at launch); Devices rows as `DesktopWorkHostRow`; the composer's quota link to the Upgrade sheet; one `DesktopThemeToggle`; the composer's Use a Skill, typed `/slug` and `skillSlug` on `/api/chat`; the View menu's pages.
+- **Retired:** the Search page (`DesktopSearchScreen.swift`); its Tasks scope is the panel's Tasks group (`DesktopPanelTasks`).
+- **Not moved:** "What Juno noticed" stays in Settings › Memory (seam 14; the Memory page's Edits are server drafts, not the on-device proposals). `junoSheetSurface` keeps Mac callers (Phase 5 B/D sheets, the Agents sheets, Code).
+- **Snapshots:** `/tmp/juno-glass-snapshots/integration/` (every suite, `final/` the window set, `integration/` the new fixtures: the composer's skill mark, ⌘K's Tasks group, ⌘K's New rows, the popover's quota).
+- **Runtime checks left for a person at the screen** (screen control is off): each lane's list, plus ⌘K's page rows and Open notifications, Settings' links from Settings and from a window on Code, the View menu's pages, Share… on an artifact, Use a Skill and `/slug` reaching the server, Archived Chats from More.
+- **Then ship**, per the owner's standing instruction (the release steps in the paused update above): merge into `main`, gate, push, deploy, 1.7.0 / 88, `release-macos.sh 1.7.0 --publish-dev`.

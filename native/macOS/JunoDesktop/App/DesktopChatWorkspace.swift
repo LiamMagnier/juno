@@ -159,6 +159,9 @@ struct DesktopChatWorkspace: View {
     /// Archived Chats (Phase 3 B5). Nothing on this base opens it yet: the
     /// sidebar's More reaches it at integration (seam 8).
     @State private var showingArchivedChats = false
+    /// The sidebar's Notifications popover, held here so ⌘K's "Open
+    /// notifications" opens the same one (Phase 3 seam 3).
+    @State private var showingNotifications = false
     /// The toolbar's Outputs popover (Phase 3 B3).
     @State private var isOutputsPresented = false
     /// Artifact and Quick Look requests from the toolbar and the panel, on
@@ -320,7 +323,9 @@ struct DesktopChatWorkspace: View {
                 messageAgent: messageAgent,
                 hireAgent: configuration.agentsModel == nil ? nil : { isHiringAgent = true },
                 runs: needsYouSignals.runs,
-                notificationsModel: configuration.notificationsModel
+                notificationsModel: configuration.notificationsModel,
+                showingNotifications: $showingNotifications,
+                openArchivedChats: { showingArchivedChats = true }
             )
             .junoSidebarColumn()
         } detail: {
@@ -520,8 +525,7 @@ struct DesktopChatWorkspace: View {
             isPrivateChat: isPrivateChat,
             callActiveChanged: { isInCall = $0 },
             shareConversation: replyShare,
-            forkPrivately: replyFork,
-            openTaskRecord: { task in presentTaskRecord(task.sessionID, session: task) }
+            forkPrivately: replyFork
         )
     }
 
@@ -815,9 +819,47 @@ struct DesktopChatWorkspace: View {
 
     // MARK: The panel (Phase 3 B1)
 
-    /// The seams the integration wires (§2.3, rows 3–6). All unset on this
-    /// base, so the rows that need them are absent.
-    private var panelHooks: DesktopCommandCatalog.Hooks { .none }
+    /// The seams (Phase 3 brief §2.3, rows 3–6), wired to the pages and
+    /// sheets the other lanes built. A row whose hook is nil stays absent.
+    private var panelHooks: DesktopCommandCatalog.Hooks {
+        var hooks = DesktopCommandCatalog.Hooks()
+        if configuration.notificationsModel != nil {
+            hooks.openNotifications = openNotifications
+        }
+        // Always, as the web's "Plans & upgrade" row is; the sheet itself
+        // says what the reader's plan is.
+        hooks.openUpgrade = { DesktopUpgradePresenter.shared.present(in: .chat) }
+        hooks.openPage = openPanelPage
+        if configuration.workModel != nil {
+            hooks.openTaskRecord = { sessionID in Task { await openWorkSession(sessionID) } }
+        }
+        return hooks
+    }
+
+    /// The Notifications popover, from ⌘K: on its row, so the column is shown
+    /// first when it was hidden.
+    private func openNotifications() {
+        if columnVisibility == .detailOnly { columnVisibility = .all }
+        showingNotifications = true
+    }
+
+    /// A page ⌘K names (seam 5), through the Phase 4 router: the destination,
+    /// and the route its stack pushes.
+    private func openPanelPage(_ page: DesktopPanelPage) {
+        switch page {
+        case .skills: pageRouter.open(.skills)
+        case .automations: pageRouter.open(.automations)
+        case .newAutomation: pageRouter.open(.automations, route: .newAutomation)
+        case .assistants: pageRouter.open(.assistants)
+        case .newAssistant: pageRouter.openNewAssistant()
+        case .permissions: pageRouter.open(.permissions)
+        // Design is a type in Artifacts (Phase 4 A2): the Designs filter, and
+        // for New design its size menu, as the web's `?new=design`.
+        case .designs: pageRouter.open(.design)
+        case .newDesign: pageRouter.open(.design, opensNewMenu: true)
+        case .newAgent: pageRouter.open(.agents, route: .newAgent(template: nil))
+        }
+    }
 
     /// What Search searches with: this Mac's encrypted store, the server's
     /// unified search for what only it holds, and the Recent list.
@@ -854,6 +896,8 @@ struct DesktopChatWorkspace: View {
         services.projectOfConversation = { id in
             model.conversations.first { $0.id == id }?.projectId
         }
+        let workModel = configuration.workModel
+        services.localTasks = { workModel?.sessions ?? [] }
         return services
     }
 
@@ -869,11 +913,7 @@ struct DesktopChatWorkspace: View {
 
     /// The theme as drawn: the account's choice, or the system's.
     private var isDarkNow: Bool {
-        switch configuration.memorySettingsModel?.settings?.theme {
-        case .dark: true
-        case .light: false
-        case .system, .none: colorScheme == .dark
-        }
+        DesktopThemeToggle.isDark(theme: configuration.memorySettingsModel?.settings?.theme, drawn: colorScheme)
     }
 
     /// Runs a row the panel handed back. Each case lands on an action this
@@ -887,16 +927,7 @@ struct DesktopChatWorkspace: View {
         case .newCodeSession:
             DesktopWorkbenchRegistry.shared.request(.newCodeTask(prompt: nil))
         case .page(let page):
-            if let openPage = panelHooks.openPage {
-                openPage(page)
-                return
-            }
-            // The three with a page on this base, until the router lands.
-            switch page {
-            case .designs, .newDesign: destination.wrappedValue = .design
-            case .newAgent: selection.wrappedValue = .destination(.agents)
-            case .skills, .automations, .newAutomation, .assistants, .newAssistant, .permissions: break
-            }
+            openPanelPage(page)
         case .searchEverything:
             presentSearchPanel(.search)
         case .toggleSidebar:
@@ -933,12 +964,10 @@ struct DesktopChatWorkspace: View {
         }
     }
 
-    /// ⌘K's Switch to Dark/Light Mode: writes the account's theme, as the
-    /// web's does. Seam 13 folds this and Stage A's ⇧⌘L into one helper.
+    /// ⌘K's Switch to Dark/Light Mode: the same toggle as the menu bar's
+    /// ⇧⌘L (``DesktopThemeToggle``, seam 13).
     private func toggleAccountTheme() {
-        guard let settingsModel = configuration.memorySettingsModel else { return }
-        let next: NativeThemePreference = isDarkNow ? .light : .dark
-        Task { await settingsModel.updateSettings(NativeSettingsPatch(theme: next)) }
+        DesktopThemeToggle.action(settingsModel: configuration.memorySettingsModel, drawn: colorScheme)?.perform()
     }
 
     private func openWebPath(_ path: String) {
@@ -1133,10 +1162,10 @@ struct DesktopChatWorkspace: View {
             openSearch: openSearch,
             switchProduct: { product = $0 },
             currentProduct: product,
-            // ⌘K: the command panel is Stage B's; until it lands, Search is
-            // what ⌘K opens here (seam 1).
-            openCommandMenu: openSearch,
-            findInConversation: findInConversation
+            // ⌘K: the command panel in Commands (Phase 3 seam 1).
+            openCommandMenu: { presentSearchPanel(.commands) },
+            findInConversation: findInConversation,
+            openPage: { page in performPanelAction(.destination(page)) }
         )
     }
 
@@ -2526,9 +2555,11 @@ struct DesktopConversationView: View {
             editLastMessage: canEditLastMessage ? { editLastRequest = UUID() } : nil,
             manageConnections: configuration.connectorModel == nil
                 ? nil : { openDestination(.connections) },
-            // Settings › Plan & billing until the Upgrade sheet lands
-            // (Phase 3): the one place in the app that can change a plan.
-            openUpgrade: { DesktopSettingsRouter.open(.billing, using: openSettings) },
+            // Use a Skill and a typed `/slug` (Phase 4 B's library).
+            skillLibrary: configuration.skillLibraryModel,
+            manageSkills: configuration.skillLibraryModel == nil ? nil : { openDestination(.skills) },
+            // The Upgrade sheet over this window (Phase 3 seam 12).
+            openUpgrade: { DesktopUpgradePresenter.shared.present(in: .chat) },
             draftIsEmptyChanged: { draftIsEmpty = $0 }
         )
         // The call is drawn inside the composer's own shell (§5.8): announced

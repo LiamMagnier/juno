@@ -22,8 +22,9 @@ struct DesktopNotificationsRow: View {
     let model: NativeNotificationsModel
     /// Where a row's link goes: main's route, handed to this window.
     var follow: (JunoNotificationRoute) -> Void = { DesktopWorkbenchRegistry.shared.requestRoute($0) }
-
-    @State private var isOpen = false
+    /// Whether the popover is up. The window holds it, so ⌘K's "Open
+    /// notifications" opens the same popover from the same row.
+    @Binding var isOpen: Bool
 
     var body: some View {
         Button {

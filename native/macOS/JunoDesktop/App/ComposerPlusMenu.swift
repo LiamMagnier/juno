@@ -1,6 +1,7 @@
 import AppKit
 import JunoChatKit
 import JunoDesignSystem
+import JunoWorkKit
 import SwiftUI
 
 /// Everything the composer's `+` menu shows and changes, handed down in one
@@ -41,6 +42,14 @@ struct ComposerPlusMenuModel {
     var manageConnections: (() -> Void)?
 
     // Group 3 — armed for this message.
+    /// The skills a message may be sent under (Phase 4 B's library), or nil
+    /// to leave "Use a Skill" out: private mode, a call, no library.
+    var skills: [NativeSkillChoice]? = nil
+    var skillsLoading = false
+    /// The armed skill's slash name; choosing the armed one again disarms it.
+    var skillSlug: Binding<String?> = .constant(nil)
+    /// "Manage Skills…": the Skills page. Nil leaves the row out.
+    var manageSkills: (() -> Void)? = nil
     /// Nil hides Research (private mode). One feature, no levels (Tool calls
     /// & research SPEC §9.9).
     var deepResearch: Binding<Bool>?
@@ -193,6 +202,40 @@ struct ComposerPlusMenu: View {
             // ── Group 3: armed for this message ─────────────────────────────
             Divider()
 
+            // Use a Skill ▸ (§5.4): the skills by name, the description on a
+            // second line, the armed one checked; the message is sent under
+            // it as `skillSlug`. First in the group, as the skill's mark is
+            // first among the marks.
+            if let skills = menu.skills {
+                Menu {
+                    if skills.isEmpty {
+                        Button(menu.skillsLoading ? "Loading…" : "No Skills Yet") {}
+                            .disabled(true)
+                    }
+                    ForEach(skills) { skill in
+                        Toggle(isOn: skillBinding(skill.slug)) {
+                            Text(skill.name)
+                            if !skill.description.isEmpty {
+                                Text(skill.description)
+                            }
+                        }
+                    }
+                    if let manageSkills = menu.manageSkills {
+                        Divider()
+                        Button("Manage Skills…", action: manageSkills)
+                    }
+                } label: {
+                    Label {
+                        Text("Use a Skill")
+                        if let armed = skills.first(where: { $0.slug == menu.skillSlug.wrappedValue }) {
+                            Text(armed.name)
+                        }
+                    } icon: {
+                        Image(JunoIcon.skills.assetName)
+                    }
+                }
+            }
+
             if let deepResearch = menu.deepResearch {
                 Toggle(isOn: deepResearch) {
                     Label {
@@ -274,6 +317,14 @@ struct ComposerPlusMenu: View {
         )
     }
 
+    private func skillBinding(_ slug: String) -> Binding<Bool> {
+        let selection = menu.skillSlug
+        return Binding(
+            get: { selection.wrappedValue == slug },
+            set: { isOn in selection.wrappedValue = isOn ? slug : nil }
+        )
+    }
+
     private func connectorBinding(_ id: String) -> Binding<Bool> {
         let selection = menu.selectedConnectors
         return Binding(
@@ -322,6 +373,7 @@ struct ChatComposerMark: Identifiable, Equatable {
     /// window's sentence a third of its own line.
     static let labelMinimumWidth: CGFloat = 480
 
+    static let skillID = "skill"
     static let researchID = "research"
     static let webSearchID = "web"
     static let documentsID = "documents"
@@ -335,12 +387,27 @@ struct ChatComposerMark: Identifiable, Equatable {
     /// to stop reading the row. Research has no levels and so no detail
     /// (SPEC §9.9).
     static func marks(
+        skill: (slug: String, name: String?, description: String?)? = nil,
         research: Bool,
         webSearch: Bool,
         connectors: [(id: String, label: String)],
         documentCount: Int?
     ) -> [ChatComposerMark] {
         var marks: [ChatComposerMark] = []
+        // The skill, first: it decides how the message is answered. The web's
+        // mark (`composer.tsx`): the skill's name, its description as the
+        // tooltip, "Sent under /slug." without one.
+        if let skill {
+            let description = skill.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            marks.append(ChatComposerMark(
+                id: skillID,
+                glyph: .icon(.skills),
+                label: skill.name ?? "/\(skill.slug)",
+                detail: nil,
+                help: description.isEmpty ? "Sent under /\(skill.slug)." : description,
+                removeLabel: "Don\u{2019}t use this skill for this message"
+            ))
+        }
         if research {
             marks.append(ChatComposerMark(
                 id: researchID,
