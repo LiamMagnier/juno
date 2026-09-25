@@ -70,6 +70,20 @@ export const SIGNED_URL_ASSUMED_LIFETIME_MS = 5 * 60_000;
 
 const GITHUB_API = "https://api.github.com";
 
+/**
+ * The longest any one GitHub request behind the feed may take.
+ *
+ * Without a bound, one request that never answers holds the whole feed, and an
+ * installed app asking "is there an update?" waits with it. Ten seconds is far
+ * beyond a healthy answer (well under a second from the VM) and short enough
+ * that a stalled one fails closed as "not published" instead of hanging.
+ */
+export const GITHUB_REQUEST_TIMEOUT_MS = 10_000;
+
+function timeout(): { signal: AbortSignal } {
+  return { signal: AbortSignal.timeout(GITHUB_REQUEST_TIMEOUT_MS) };
+}
+
 interface GitHubRelease {
   tag_name?: string;
   name?: string;
@@ -120,7 +134,7 @@ async function latestRelease(
     // version that actually has this platform's asset.
     const endpoint = `${GITHUB_API}/repos/${repo}/releases?per_page=100&juno_feed=semver-v2`;
     const read = (credential: string | null) =>
-      fetch(endpoint, { headers: githubHeaders(credential), ...fetchCache(forceRefresh) });
+      fetch(endpoint, { headers: githubHeaders(credential), ...fetchCache(forceRefresh), ...timeout() });
     let credential = token;
     let response = await read(credential);
     // A revoked or expired token is refused with 401 even by a public
@@ -165,6 +179,7 @@ async function assetsArePublic(repo: string, token: string | null, forceRefresh:
     const response = await fetch(`${GITHUB_API}/repos/${repo}`, {
       headers: githubHeaders(token),
       ...fetchCache(forceRefresh),
+      ...timeout(),
     });
     if (!response.ok) return false;
     const body = (await response.json()) as { private?: unknown } | null;
@@ -235,8 +250,15 @@ async function signedAssetLink(
         // And never through Next's data cache, for the reason on
         // SIGNED_URL_REUSE_MS.
         cache: "no-store",
+        ...timeout(),
       });
-      await response.body?.cancel().catch(() => undefined);
+      // Read the redirect's few bytes rather than cancelling the body. Next's
+      // server fetch keeps a clone of every response, and a body that has been
+      // cloned only finishes cancelling once the clone is cancelled too — which
+      // Next never does — so `await response.body.cancel()` here never resolved,
+      // and every request for the feed waited on it forever once the token made
+      // this branch reachable. Reading to the end completes on both branches.
+      await response.arrayBuffer().catch(() => undefined);
       const location = response.status >= 300 && response.status < 400 ? response.headers.get("location") : null;
       if (!location || !isUpdaterDownloadUrl(location)) return null;
       const resolvedAt = now();
@@ -281,6 +303,7 @@ async function macosNotarized(source: RepositoryRelease, forceRefresh: boolean):
       response = await fetch(manifest.browser_download_url, {
         headers: { accept: "application/json", "user-agent": "juno-downloads" },
         ...fetchCache(forceRefresh),
+        ...timeout(),
       });
     } else {
       // A private manifest is read through the API, which redirects to a
@@ -293,6 +316,7 @@ async function macosNotarized(source: RepositoryRelease, forceRefresh: boolean):
       response = await fetch(endpoint, {
         headers: githubHeaders(source.token, "application/octet-stream"),
         ...fetchCache(forceRefresh),
+        ...timeout(),
       });
     }
     if (!response.ok) return false;

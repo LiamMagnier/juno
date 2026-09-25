@@ -237,6 +237,44 @@ test("a private release is listed with the token and handed out as its signed UR
   assert.equal(signing.init.next, undefined);
 });
 
+test("the feed answers when the fetch it runs under keeps a clone of every response, as Next's does", async () => {
+  // Next's server fetch hands the caller a response it has already cloned and
+  // keeps the clone. Cancelling the caller's body then only settles once the
+  // clone is cancelled too, which never happens — so a feed that awaited
+  // `body.cancel()` on the signing redirect hung for every visitor in
+  // production while it passed here, where fetch was never wrapped.
+  installGitHub({ isPrivate: true });
+  const github = globalThis.fetch;
+  const kept: Response[] = [];
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    let response = await github(input, init);
+    // GitHub's real 302 carries a short body; an empty one would hide the bug.
+    if (response.status === 302 && response.body === null) {
+      response = new Response("Found. Redirecting to the signed URL.", { status: 302, headers: response.headers });
+    }
+    kept.push(response.clone());
+    return response;
+  }) as typeof fetch;
+
+  const settled = await Promise.race([
+    buildDownloadFeed({ token: TOKEN, now }).then(mac),
+    new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2_000)),
+  ]);
+  assert.notEqual(settled, "hung", "the feed must not wait on a body a wrapping fetch has cloned");
+  assert.equal((settled as AppDownload).available, true);
+  assert.equal((settled as AppDownload).url, signedUrl(String(DMG_ID), T0, 1_800));
+  assert.ok(kept.length > 0);
+});
+
+test("every GitHub request behind the feed carries a timeout", async () => {
+  const github = installGitHub({ isPrivate: true });
+  await buildDownloadFeed({ token: TOKEN, now });
+  assert.ok(github.calls.length > 0);
+  for (const call of github.calls) {
+    assert.ok(call.init.signal instanceof AbortSignal, `${call.url} has no timeout signal`);
+  }
+});
+
 test("a private manifest is read through the API, and still fails closed", async () => {
   let github = installGitHub({ isPrivate: true });
   assert.equal(mac(await buildDownloadFeed({ token: TOKEN, now })).notarized, true);
