@@ -163,6 +163,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     case smartphone, tablet
     case bell, arrowUp, arrowLeft, arrowRight, minus, box, key, link
     case sun, moon, monitor, home2
+    case keyboard
 
     /// Status and state marks — the web's `StatusIcons` under their old
     /// names, and the glyphs its lists draw beside a row's state. Added so the
@@ -216,6 +217,9 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// GitHub on the Skills page, which wears Phosphor's own GitHub mark
     /// where the web draws the brand's filled one (register #75).
     case fingerprint, target, graduationCap, braces, users, layers, folderLock, github
+
+    /// The menu bar's Command Menu… (Phase 3 Stage A): the ⌘ key itself.
+    case command
 
     /// The generated symbol this case wears, without a cut suffix: `ph.<name>`
     /// for Phosphor's drawings, `juno.<name>` for Juno's own.
@@ -361,6 +365,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .monitor: "ph.monitor"
         case .smartphone: "ph.devicemobile"
         case .tablet: "ph.devicetablet"
+        case .keyboard: "ph.keyboard"
         case .knowledge: "ph.bookopen"
         case .tools: "ph.wrench"
         case .circleCheck: "ph.checkcircle"
@@ -441,6 +446,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .layers: "ph.stacksimple"
         case .folderLock: "ph.folderlock"
         case .github: "ph.githublogo"
+        case .command: "ph.command"
         }
     }
 

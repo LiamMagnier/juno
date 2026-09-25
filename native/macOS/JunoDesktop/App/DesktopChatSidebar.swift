@@ -809,62 +809,162 @@ private struct DesktopConversationRow: View {
 
 }
 
-/// The row menu, the hover menu and (minus Rename's ellipsis) the title menu:
-/// one list, in one order (§2.4), so the three can never disagree.
+/// The row menu, the hover menu, the title menu and the menu bar's Chat menu:
+/// one list, in one order (§2.4), so the four can never disagree.
+///
+/// Each row wears the web's glyph (`app-sidebar.tsx`) as a 16pt `Label`, in
+/// Title Case with the web's words. The rows are data (``rows(pinned:renameTitle:showsOpenProject:)``)
+/// so a test and the snapshot table can read exactly what the menu draws.
 struct DesktopConversationMenu: View {
-    let conversation: NativeConversation
+    /// The chat the rows act on. Nil in the menu bar with no saved chat on
+    /// screen: the rows stay, disabled, so the Chat menu keeps its shape.
+    let conversation: NativeConversation?
     let projects: [NativeProject]
-    let actions: DesktopConversationActions
-    /// The title menu says "Rename…"; a row's menu renames in place and says
-    /// "Rename".
+    let actions: DesktopConversationActions?
+    /// The title menu and the menu bar say "Rename…"; a row's menu renames in
+    /// place and says "Rename".
     var renameTitle = "Rename"
     var showsOpenProject = false
 
     @Environment(\.undoManager) private var undoManager
 
+    /// One row of the list: its words, its glyph, and whether it destroys.
+    struct Row: Equatable, Identifiable {
+        enum Kind: Equatable {
+            case rename, pin, addToProject, newProject, openProject, share, archive, delete
+        }
+
+        let kind: Kind
+        let title: String
+        let glyph: JunoIcon
+        var isDestructive = false
+        /// Drawn inside Add to Project ▸, after the projects.
+        var isNested = false
+
+        var id: Kind { kind }
+    }
+
+    /// The rows, in the menu's order. Delete comes last, after the one divider.
+    static func rows(pinned: Bool, renameTitle: String = "Rename", showsOpenProject: Bool = false) -> [Row] {
+        var rows = [
+            Row(kind: .rename, title: renameTitle, glyph: .pencil),
+            Row(kind: .pin, title: pinned ? "Unpin" : "Pin", glyph: pinned ? .pinOff : .pin),
+            Row(kind: .addToProject, title: "Add to Project", glyph: .projects),
+            Row(kind: .newProject, title: "New Project…", glyph: .plus, isNested: true),
+        ]
+        if showsOpenProject {
+            rows.append(Row(kind: .openProject, title: "Open Project", glyph: .folderOpen))
+        }
+        rows += [
+            Row(kind: .share, title: "Share…", glyph: .share),
+            Row(kind: .archive, title: "Archive", glyph: .archive),
+            Row(kind: .delete, title: "Delete…", glyph: .trash, isDestructive: true),
+        ]
+        return rows
+    }
+
+
+    private var rows: [Row] {
+        Self.rows(
+            pinned: conversation?.pinned ?? false,
+            renameTitle: renameTitle,
+            showsOpenProject: showsOpenProject && conversation?.projectId != nil
+        )
+    }
+
+    private func row(_ kind: Row.Kind) -> Row? {
+        rows.first { $0.kind == kind }
+    }
+
     // One `Section`, which a menu draws as nothing at all: it is what tells
-    // the targets gate these are system-drawn menu rows, not views we lay out.
+    // the targets gate these are system-drawn menu rows, not views we lay out
+    // — which is why every row is written inside it.
     var body: some View {
         Section {
-            items
+            if let rename = row(.rename) {
+                Button { act { $0.rename($1) } } label: { label(rename) }
+                    .disabled(!isAvailable)
+            }
+            if let pin = row(.pin) {
+                Button { act { $0.togglePin($1) } } label: { label(pin) }
+                    .disabled(!isAvailable)
+            }
+            if let addToProject = row(.addToProject) {
+                Menu {
+                    Toggle(
+                        "No Project",
+                        isOn: Binding(
+                            get: { conversation?.projectId == nil },
+                            set: { if $0 { act { $0.move($1, nil) } } }
+                        )
+                    )
+                    if !projects.isEmpty {
+                        Divider()
+                        ForEach(projects) { project in
+                            Toggle(
+                                project.name,
+                                isOn: Binding(
+                                    get: { conversation?.projectId == project.id },
+                                    set: { if $0 { act { $0.move($1, project.id) } } }
+                                )
+                            )
+                        }
+                    }
+                    Divider()
+                    if let newProject = row(.newProject) {
+                        Button { act { $0.newProject($1) } } label: { label(newProject) }
+                    }
+                } label: {
+                    label(addToProject)
+                }
+                .disabled(!isAvailable)
+            }
+            if let openProject = row(.openProject), let projectID = conversation?.projectId {
+                Button { actions?.openProject(projectID) } label: { label(openProject) }
+                    .disabled(!isAvailable)
+            }
+            if let share = row(.share) {
+                Button { act { $0.share($1) } } label: { label(share) }
+                    .disabled(!canShare)
+            }
+            if let archive = row(.archive) {
+                Button {
+                    // The menu bar's copy of this list has no window in its
+                    // environment; the key window's undo stack is the one the
+                    // reader would reach with ⌘Z.
+                    let undo = undoManager ?? NSApp.keyWindow?.undoManager
+                    act { $0.archive($1, undo) }
+                } label: {
+                    label(archive)
+                }
+                .disabled(!isAvailable)
+            }
+            Divider()
+            if let delete = row(.delete) {
+                Button(role: .destructive) { act { $0.delete($1) } } label: { label(delete) }
+                    .disabled(!isAvailable)
+            }
         }
     }
 
-    @ViewBuilder
-    private var items: some View {
-        Button(renameTitle) { actions.rename(conversation) }
-        Button(conversation.pinned ? "Unpin" : "Pin") { actions.togglePin(conversation) }
-        Menu("Add to Project") {
-            Toggle(
-                "No Project",
-                isOn: Binding(
-                    get: { conversation.projectId == nil },
-                    set: { if $0 { actions.move(conversation, nil) } }
-                )
-            )
-            if !projects.isEmpty {
-                Divider()
-                ForEach(projects) { project in
-                    Toggle(
-                        project.name,
-                        isOn: Binding(
-                            get: { conversation.projectId == project.id },
-                            set: { if $0 { actions.move(conversation, project.id) } }
-                        )
-                    )
-                }
-            }
-            Divider()
-            Button("New Project…") { actions.newProject(conversation) }
+    private var isAvailable: Bool { conversation != nil && actions != nil }
+
+    private var canShare: Bool {
+        guard let conversation, let actions else { return false }
+        return actions.canShare(conversation)
+    }
+
+    private func act(_ perform: (DesktopConversationActions, NativeConversation) -> Void) {
+        guard let conversation, let actions else { return }
+        perform(actions, conversation)
+    }
+
+    private func label(_ row: Row) -> some View {
+        Label {
+            Text(row.title)
+        } icon: {
+            Image(row.glyph.assetName)
         }
-        if showsOpenProject, let projectID = conversation.projectId {
-            Button("Open Project") { actions.openProject(projectID) }
-        }
-        Button("Share…") { actions.share(conversation) }
-            .disabled(!actions.canShare(conversation))
-        Button("Archive") { actions.archive(conversation, undoManager) }
-        Divider()
-        Button("Delete…", role: .destructive) { actions.delete(conversation) }
     }
 }
 

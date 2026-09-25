@@ -1,4 +1,5 @@
 import JunoAuth
+import JunoChatKit
 import JunoCodeUI
 import JunoCore
 import JunoDesignSystem
@@ -56,6 +57,8 @@ struct JunoDesktopWorkspaceView: View {
     /// Chat workspace, which is the only view that can open any of them.
     @State private var chatRoute: DesktopWorkbenchRegistry.RouteRequest?
     @State private var registry = DesktopWorkbenchRegistry.shared
+    /// The appearance on screen, which names View › Switch to Dark/Light Mode.
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         workspace
@@ -84,7 +87,8 @@ struct JunoDesktopWorkspaceView: View {
             .focusedSceneValue(
                 \.junoShellActions,
                 DesktopShellActions(
-                    newPrivateChat: { requestChat(prompt: nil, isPrivate: true) }
+                    newPrivateChat: { requestChat(prompt: nil, isPrivate: true) },
+                    toggleTheme: themeToggle
                 )
             )
             // A tapped notification. Re-read from the registry rather than
@@ -97,6 +101,19 @@ struct JunoDesktopWorkspaceView: View {
                 chatRoute = request
                 product = .chat
             }
+    }
+
+    /// ⇧⌘L, View › Switch to Dark/Light Mode: the other appearance, written
+    /// to the account's theme as the web's ⌘⇧L writes it — explicitly light
+    /// or dark, never back to System. The window follows the account's theme
+    /// (`JunoDesktopRootView`), so the scheme read here is the one on screen.
+    private var themeToggle: DesktopShellActions.ThemeToggle? {
+        guard let settingsModel = configuration.memorySettingsModel, settingsModel.settings != nil
+        else { return nil }
+        let isDark = colorScheme == .dark
+        return DesktopShellActions.ThemeToggle(isDark: isDark) {
+            Task { await settingsModel.updateSettings(NativeSettingsPatch(theme: isDark ? .light : .dark)) }
+        }
     }
 
     private func requestChat(prompt: String?, isPrivate: Bool) {

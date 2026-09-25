@@ -244,27 +244,8 @@ struct DesktopOwnerTile: View {
     }
 }
 
-/// A keycap: the Skills search's `/`.
-struct DesktopKeycap: View {
-    let key: String
-
-    var body: some View {
-        Text(key)
-            .junoType(.micro)
-            .foregroundStyle(Color.junoSecondaryInk)
-            .padding(.horizontal, JunoSpace.tight)
-            .frame(minWidth: 20, minHeight: 20)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.xs, style: .continuous)
-                    .fill(Color.junoCanvas)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.xs, style: .continuous)
-                    .strokeBorder(Color.junoBorder, lineWidth: 1)
-            )
-            .accessibilityHidden(true)
-    }
-}
+// The Skills search's `/` keycap is the Keyboard Shortcuts window's
+// `DesktopKeycap` (one keycap across the app; integration).
 
 /// A token under a row: a small capsule in the secondary fill ("Thesis",
 /// "Health"), or the warning wash for the one that changes what a row means.

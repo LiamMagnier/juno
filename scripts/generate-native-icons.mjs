@@ -207,6 +207,7 @@ const PHOSPHOR = {
   // The Artifacts page's design presets (PRESET_GLYPHS).
   DeviceMobile: "Smartphone",
   DeviceTablet: "Tablet",
+  Keyboard: "Keyboard",
   BookOpen: "BookOpen",
   Wrench: "Wrench",
   CheckCircle: "CheckCircle2",
@@ -296,6 +297,10 @@ const PHOSPHOR = {
   // mark (`GitHubMark` in connector-logos.tsx), not a Phosphor glyph, so the
   // apps wear Phosphor's own drawing of it (register #75).
   GithubLogo: null,
+
+  // Phase 3 Stage A: the menu bar's Command Menu… (⌘K), drawn as the key
+  // it is named for. The web has no row for it.
+  Command: null,
 };
 
 /** Glyphs with a `.fill` twin: the "on" drawings §8.6 asks for — a pinned row,

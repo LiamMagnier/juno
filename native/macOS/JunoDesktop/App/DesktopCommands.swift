@@ -1,3 +1,4 @@
+import AppKit
 import JunoCore
 import JunoDesignSystem
 import SwiftUI
@@ -20,11 +21,11 @@ struct DesktopWorkspaceActions {
     var openSearch: () -> Void
     var switchProduct: (DesktopProductMode) -> Void
     var currentProduct: DesktopProductMode
-    /// ⇧⌘U: a screenshot into the composer. Chat's only; the other products
-    /// leave it nil and the menu item disables.
-    var attachScreenshot: (() -> Void)? = nil
-    /// ⌘U: the composer's file picker. Nil wherever no composer is showing.
-    var attachFiles: (() -> Void)? = nil
+    /// ⌘K, View › Command Menu…: Juno's panel, in Chat. Nil wherever the
+    /// window has none; in Code the item opens Code's own palette
+    /// (``DesktopCodeActions/openPalette``) instead, until the Code session
+    /// retires it.
+    var openCommandMenu: (() -> Void)? = nil
     /// ⌘F, ⌘G and ⇧⌘G: find in the conversation on screen. Nil wherever
     /// there is none, which disables the three items.
     var findInConversation: ((DesktopFindCommand.Kind) -> Void)? = nil
@@ -39,6 +40,17 @@ struct DesktopWorkspaceActions {
 struct DesktopShellActions {
     /// Switches the window to Chat on a new private draft.
     var newPrivateChat: () -> Void
+    /// ⇧⌘L, View › Switch to Dark Mode / Switch to Light Mode: writes the
+    /// account's theme, as the web's ⌘⇧L does. Nil without the account's
+    /// settings to write to.
+    var toggleTheme: ThemeToggle? = nil
+
+    struct ThemeToggle {
+        /// Whether the window is dark now, which names the item: the web's
+        /// "Switch to {the other} mode".
+        let isDark: Bool
+        let perform: () -> Void
+    }
 }
 
 /// What the Code window adds to the menu bar while it is focused.
@@ -95,25 +107,219 @@ extension FocusedValues {
     }
 }
 
-/// Juno's menu bar.
+// MARK: - Resolving an entry
+
+/// What every menu item can do right now, resolved from what the focused
+/// window published.
 ///
-/// A Mac app is expected to be operable from the menu bar, and a menu is also the
-/// only place a user reliably discovers a keyboard shortcut. The app previously
-/// shipped one item — "New Chat" — which meant no way to switch product, reach
-/// settings, toggle the sidebar or find help without a pointer.
+/// The menus are generated from ``JunoShortcutRegistry``; this is the one
+/// place an entry's id becomes an action, a title and a glyph. A nil action
+/// disables the item — and a disabled item does not claim its chord, which is
+/// how Chat's ⌘. and Code's ⌘. share a key without ever both answering.
+struct DesktopCommandContext {
+    var workspace: DesktopWorkspaceActions?
+    var code: DesktopCodeActions?
+    var shell: DesktopShellActions?
+    var chat: DesktopChatCommandActions?
+    var composerStop: ChatComposerStopCommand?
+    /// What the app can do with no window focused.
+    var openMainWindow: () -> Void = {}
+    var newPrivateChatWithoutWindow: () -> Void = {}
+    var openShortcuts: () -> Void = {}
+    var toggleQuickEntry: () -> Void = {}
+    var openURL: (URL) -> Void = { _ in }
+
+    var product: DesktopProductMode? { workspace?.currentProduct }
+
+    /// Code's Session menu stands where the Chat menu does while the focused
+    /// window shows Code, so the menu bar never offers both.
+    var showsSessionMenu: Bool { product == .code }
+
+    static let helpURL = URL(string: "\(JunoBackend.productionURLString)/help")!
+    static let roadmapURL = URL(string: "\(JunoBackend.productionURLString)/roadmap")!
+
+    /// The item's words: the registry's, except where the moment renames it.
+    func title(for entry: JunoShortcut) -> String {
+        switch entry.id {
+        case .newChat:
+            guard let product else { return JunoDesktopWindow.newWindowMenuTitle }
+            return product == .chat ? "New Chat" : "New Task"
+        case .toggleTheme:
+            return isDark ? "Switch to Light Mode" : "Switch to Dark Mode"
+        default:
+            return entry.menuTitle ?? entry.listLabel ?? ""
+        }
+    }
+
+    /// The item's glyph: the registry's, except the theme item, which shows
+    /// where it goes (the web's Sun and Moon).
+    func glyph(for entry: JunoShortcut) -> JunoIcon? {
+        if entry.id == .toggleTheme { return isDark ? .sun : .moon }
+        return entry.glyph
+    }
+
+    private var isDark: Bool { shell?.toggleTheme?.isDark ?? false }
+
+    /// A checkmark row's state (View › Chat, Code), or nil for a plain item.
+    func isOn(_ id: JunoShortcutID) -> Bool? {
+        switch id {
+        case .productChat: product == .chat
+        case .productCode: product == .code
+        default: nil
+        }
+    }
+
+    /// What choosing the item does, or nil to disable it.
+    func action(for id: JunoShortcutID) -> (() -> Void)? {
+        switch id {
+        // Everywhere
+        case .commandMenu:
+            return product == .code ? code?.openPalette : workspace?.openCommandMenu
+        case .search:
+            return workspace?.openSearch
+        case .newChat:
+            return workspace?.newItem ?? openMainWindow
+        case .newChatAlias:
+            return workspace?.newChat
+        case .newPrivateChat:
+            // Always present (§7.8): private chat is a mode of Chat, so there
+            // is always somewhere for it to open.
+            return shell?.newPrivateChat ?? newPrivateChatWithoutWindow
+        case .askJuno:
+            return toggleQuickEntry
+        case .toggleTheme:
+            return shell?.toggleTheme?.perform
+        case .keyboardShortcuts:
+            return openShortcuts
+        case .help:
+            return { openURL(Self.helpURL) }
+        case .roadmap:
+            return { openURL(Self.roadmapURL) }
+
+        // Products
+        case .productChat:
+            return workspace.map { workspace in { workspace.switchProduct(.chat) } }
+        case .productCode:
+            return workspace.map { workspace in { workspace.switchProduct(.code) } }
+
+        // Chat
+        case .attachFiles:
+            return chatAction(chat?.attachFiles)
+        case .attachScreenshot:
+            return chatAction(chat?.attachScreenshot)
+        case .focusComposer:
+            return chatAction(chat?.focusComposer)
+        case .stopGenerating:
+            // Only where the Chat window published its commands: ⌘. must never
+            // reach a composer from Code, nor shadow Code's own Stop.
+            return chat == nil ? nil : chatAction(composerStop?.perform)
+        case .regenerate:
+            return chatAction(chat?.regenerate?.perform)
+        case .copyLastResponse:
+            return chatAction(chat?.copyLastResponse)
+        case .copyLastCodeBlock:
+            return chatAction(chat?.copyLastCodeBlock)
+
+        // Edit › Find: disabled — and so not claiming the keys — wherever no
+        // conversation is on screen (§6.14).
+        case .findInConversation:
+            return workspace?.findInConversation.map { find in { find(.open) } }
+        case .findNext:
+            return workspace?.findInConversation.map { find in { find(.next) } }
+        case .findPrevious:
+            return workspace?.findInConversation.map { find in { find(.previous) } }
+
+        // Code
+        case .codeOpenFolder:
+            return code?.openFolder
+        case .codePreviousSession:
+            return code?.previousSession
+        case .codeNextSession:
+            return code?.nextSession
+        case .codeStop:
+            // Belt and braces: Code's actions are only published by the Code
+            // workspace, but ⌘. must never stop a Code run from Chat.
+            return product == .code ? code?.stop : nil
+        case .codeChanges:
+            return sessionAction(code?.toggleReview)
+        case .codeTerminal:
+            return sessionAction(code?.toggleConsole)
+        case .codeSidePanel:
+            return sessionAction(code?.toggleInspector)
+        case .codePreview:
+            return sessionAction(code?.togglePreview)
+        case .codeOpenFile:
+            return sessionAction(code?.openFile)
+        case .codeCreatePullRequest:
+            return code?.createPullRequest
+
+        // Drawn by the system, or answered by a focused control: never a
+        // menu item of ours.
+        case .toggleSidebar, .settings, .sendMessage, .newLine, .editLastMessage, .stopWithEscape,
+            .codeSend, .codeAllow, .codeAlwaysAllow, .codeDecline, .codeSendReview,
+            .codeSlashCommands, .codeMention:
+            return nil
+        }
+    }
+
+    /// A Chat item acts only while the focused window shows Chat.
+    private func chatAction(_ action: (() -> Void)?) -> (() -> Void)? {
+        product == .code ? nil : action
+    }
+
+    /// A Session item that needs a session open.
+    private func sessionAction(_ action: (() -> Void)?) -> (() -> Void)? {
+        code?.hasSession == true ? action : nil
+    }
+}
+
+// MARK: - The menu bar
+
+/// Juno's menu bar, generated from ``JunoShortcutRegistry`` (§7.8; Phase 3
+/// brief A2).
 ///
-/// Phase 1 of the Liquid Glass redesign makes the minimum changes (§7.8): the
-/// products are Chat ⌘1 and Code ⌘2 in the View menu, with no ⌘3; New Private
-/// Chat ⇧⌘N is always present; the screenshot moves to ⇧⌘U beside ⌘U Attach,
-/// freeing ⇧⌘1; and ⇧⌘O stays as the web's New chat alias. The Window menu's
-/// door to the old Work workspace went with it in Phase 5 Stage D. The full
-/// menu bar, generated from one shortcut registry, is Phase 3.
+/// A Mac app is expected to be operable from the menu bar, and a menu is also
+/// the only place a user reliably discovers a keyboard shortcut. Every item
+/// below comes from the registry — its words, its glyph, its chord and its
+/// place — so the menu bar and the Keyboard Shortcuts window cannot drift, and
+/// no chord is typed twice. Hand-listed here are only the system's groups and
+/// the updater's status. (Window › Tasks (Legacy) went with the old Work
+/// workspace in Phase 5 Stage D.)
+///
+/// **Chat or Session.** While the focused window shows Code the menu bar
+/// carries Code's Session menu; otherwise it carries Chat. The two never stand
+/// together, so Chat's ⌘. Stop Generating and Code's ⌘. Stop cannot both be
+/// on screen.
 struct JunoDesktopCommands: Commands {
     @FocusedValue(\.junoWorkspaceActions) private var actions
     @FocusedValue(\.junoCodeActions) private var codeActions
     @FocusedValue(\.junoShellActions) private var shellActions
+    @FocusedValue(\.junoChatCommands) private var chatCommands
+    @FocusedValue(\.junoComposerStop) private var composerStop
     @Environment(\.openWindow) private var openWindow
     @State private var updater = DesktopUpdateModel.shared
+
+    private var context: DesktopCommandContext {
+        let openWindow = openWindow
+        return DesktopCommandContext(
+            workspace: actions,
+            code: codeActions,
+            shell: shellActions,
+            chat: chatCommands,
+            composerStop: composerStop,
+            openMainWindow: { openWindow(id: JunoDesktopWindow.mainID) },
+            newPrivateChatWithoutWindow: {
+                // The request goes to whichever main window exists — brought
+                // forward rather than a second one opened — and only with none
+                // at all is a window opened for it.
+                DesktopWorkbenchRegistry.shared.request(.newChat(prompt: nil, isPrivate: true))
+                JunoDesktopWindow.showMainWindow(using: openWindow)
+            },
+            openShortcuts: { openWindow(id: JunoDesktopWindow.shortcutsID) },
+            toggleQuickEntry: { DesktopQuickEntryController.shared.toggle() },
+            openURL: { NSWorkspace.shared.open($0) }
+        )
+    }
 
     var body: some Commands {
         CommandGroup(after: .appInfo) {
@@ -124,211 +330,55 @@ struct JunoDesktopCommands: Commands {
             }
         }
 
+        // File: New Chat ⌘N (New Task in Code, New Window with nothing
+        // focused) · New Private Chat ⇧⌘N, then New Chat ⇧⌘O, Open Folder…
+        // ⌘O and Ask Juno… ⌥Space.
         CommandGroup(replacing: .newItem) {
-            Section {
-                if let actions {
-                    Button(Self.newItemTitle(for: actions.currentProduct)) {
-                        actions.newItem()
-                    }
-                    .keyboardShortcut("n", modifiers: [.command])
-                } else {
-                    Button(JunoDesktopWindow.newWindowMenuTitle) {
-                        openWindow(id: JunoDesktopWindow.mainID)
-                    }
-                    .keyboardShortcut("n", modifiers: [.command])
-                }
-                // Always present, whatever is focused (§7.8): private chat is
-                // a mode of Chat now, not a window, so there is always
-                // somewhere for it to open.
-                Button("New Private Chat") { newPrivateChat() }
-                    .keyboardShortcut("n", modifiers: [.command, .shift])
-            }
+            DesktopMenuSections(menu: .file, context: context, part: .first)
         }
-
         CommandGroup(after: .newItem) {
-            Section {
-                // ⇧⌘O from every product, as the brief asks: a new conversation
-                // is one keystroke away whatever the window is showing.
-                Button("New Chat") {
-                    actions?.newChat()
-                }
-                .keyboardShortcut("o", modifiers: [.command, .shift])
-                .disabled(actions == nil)
-            }
-            Section {
-                // ⌘O in Code, where the column's help text and the New task
-                // screen's keycap both promise it.
-                Button("Open Folder…") { codeActions?.openFolder() }
-                    .keyboardShortcut("o", modifiers: [.command])
-                    .disabled(codeActions == nil)
-            }
-            Section {
-                // ⌘U, the key the composer's `+` menu teaches. Here as well so
-                // it works with that menu closed.
-                Button("Attach Files…") {
-                    actions?.attachFiles?()
-                }
-                .keyboardShortcut("u", modifiers: [.command])
-                .disabled(actions?.attachFiles == nil)
-                // ⇧⌘U, beside ⌘U Attach: the pair a reader learns together.
-                // It used to be ⇧⌘1, one key from the ⌘1 product shortcut.
-                Button("Attach Screenshot…") {
-                    actions?.attachScreenshot?()
-                }
-                .keyboardShortcut("u", modifiers: [.command, .shift])
-                .disabled(actions?.attachScreenshot == nil)
-            }
-            Section {
-                Button("Find in Juno…") {
-                    actions?.openSearch()
-                }
-                .keyboardShortcut("f", modifiers: [.command, .shift])
-                .disabled(actions == nil)
-                Button("Ask Juno…") {
-                    DesktopQuickEntryController.shared.toggle()
-                }
-                .keyboardShortcut(" ", modifiers: [.option])
-            }
+            DesktopMenuSections(menu: .file, context: context, part: .rest)
         }
 
-        // Edit › Find in Conversation ⌘F · Find Next ⌘G · Find Previous ⇧⌘G
-        // (§6.14). Disabled — and so not claiming the keys — wherever no
-        // conversation is on screen.
+        // Edit › Find in Conversation… ⌘F · Find Next ⌘G · Find Previous ⇧⌘G.
         CommandGroup(after: .pasteboard) {
-            Section {
-                Button("Find in Conversation…") {
-                    actions?.findInConversation?(.open)
-                }
-                .keyboardShortcut("f", modifiers: [.command])
-                .disabled(actions?.findInConversation == nil)
-                Button("Find Next") {
-                    actions?.findInConversation?(.next)
-                }
-                .keyboardShortcut("g", modifiers: [.command])
-                .disabled(actions?.findInConversation == nil)
-                Button("Find Previous") {
-                    actions?.findInConversation?(.previous)
-                }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
-                .disabled(actions?.findInConversation == nil)
-            }
+            DesktopMenuSections(menu: .edit, context: context)
         }
 
         SidebarCommands()
         ToolbarCommands()
 
-        // View › Chat ⌘1 · Code ⌘2, above the system's sidebar items, with a
-        // checkmark against the product the focused window shows. This is
-        // also the way to switch while the sidebar — and the switch in its
-        // toolbar segment — is hidden.
+        // View › Chat ⌘1 · Code ⌘2 (checkmarks), Command Menu… ⌘K · Search…
+        // ⇧⌘F, Switch to Dark/Light Mode ⇧⌘L — above the system's sidebar and
+        // toolbar items. Also the way to switch product while the sidebar,
+        // and the switch in its toolbar segment, is hidden.
         CommandGroup(before: .sidebar) {
-            Section {
-                productItems
-            }
+            DesktopMenuSections(menu: .view, context: context)
         }
 
-        CommandMenu("Session") {
-            Section {
-                Button("Command Palette…") { codeActions?.openPalette() }
-                    .keyboardShortcut("k", modifiers: [.command])
-                    .disabled(codeActions == nil)
+        if context.showsSessionMenu {
+            CommandMenu("Session") {
+                DesktopMenuSections(menu: .session, context: context)
             }
-            Section {
-                // ⌘. answers in one product at a time. Here it is Code's
-                // Stop, enabled only while the focused window shows Code;
-                // Chat's Stop generating is the composer's stop face
-                // (`ChatComposer`), which exists only while Chat is showing.
-                Button("Stop") { codeStop?() }
-                    .keyboardShortcut(".", modifiers: [.command])
-                    .disabled(codeStop == nil)
-            }
-            Section {
-                Button("Previous Session") { codeActions?.previousSession() }
-                    .keyboardShortcut("[", modifiers: [.command, .shift])
-                    .disabled(codeActions == nil)
-                Button("Next Session") { codeActions?.nextSession() }
-                    .keyboardShortcut("]", modifiers: [.command, .shift])
-                    .disabled(codeActions == nil)
-            }
-            Section {
-                Button("Changes") { codeActions?.toggleReview() }
-                    .keyboardShortcut("r", modifiers: [.command, .option])
-                    .disabled(codeActions?.hasSession != true)
-                // ⌥⌘C, not ⌥⌘T: ToolbarCommands above binds ⌥⌘T to Show/Hide
-                // Toolbar, and the View menu is matched first, so ⌥⌘T hid
-                // the Code window's toolbar instead of opening the terminal.
-                Button("Terminal") { codeActions?.toggleConsole() }
-                    .keyboardShortcut("c", modifiers: [.command, .option])
-                    .disabled(codeActions?.hasSession != true)
-                Button("Toggle Side Panel") { codeActions?.toggleInspector() }
-                    .keyboardShortcut("i", modifiers: [.command, .option])
-                    .disabled(codeActions?.hasSession != true)
-                Button("Toggle Preview") { codeActions?.togglePreview() }
-                    .keyboardShortcut("p", modifiers: [.command, .option])
-                    .disabled(codeActions?.hasSession != true)
-                Button("Open File…") { codeActions?.openFile() }
-                    .keyboardShortcut("o", modifiers: [.command, .shift, .option])
-                    .disabled(codeActions?.hasSession != true)
-            }
-            Section {
-                Button("Create Pull Request…") { codeActions?.createPullRequest?() }
-                    .disabled(codeActions?.createPullRequest == nil)
+        } else {
+            CommandMenu("Chat") {
+                DesktopMenuSections(menu: .chat, context: context)
+                // The conversation on screen: the same list, in the same order,
+                // as its row, its hover menu and the title menu. No shortcuts:
+                // menu shortcuts fire before the focused text field, and ⌘⌫ is
+                // delete-to-line-start in the composer.
+                DesktopConversationMenu(
+                    conversation: chatCommands?.conversation,
+                    projects: chatCommands?.projects ?? [],
+                    actions: chatCommands?.conversationActions,
+                    renameTitle: "Rename…"
+                )
             }
         }
 
         CommandGroup(replacing: .help) {
-            Section {
-                Link(
-                    "Juno Help",
-                    destination: URL(string: "\(JunoBackend.productionURLString)/help")!
-                )
-                Button("Keyboard Shortcuts") {
-                    openWindow(id: JunoDesktopWindow.shortcutsID)
-                }
-                .keyboardShortcut("/", modifiers: [.command])
-            }
+            DesktopMenuSections(menu: .help, context: context)
         }
-    }
-
-    /// One row per product, with the platform's own checkmark against the
-    /// focused window's — a `Toggle` in a menu is how AppKit draws a checked
-    /// item, so no glyph of ours is involved. Driven by
-    /// ``DesktopProductMode/switchable``, the switch's own list.
-    @ViewBuilder
-    private var productItems: some View {
-        ForEach(DesktopProductMode.switchable) { mode in
-            Toggle(
-                mode.label,
-                isOn: Binding(
-                    get: { actions?.currentProduct == mode },
-                    set: { isOn in if isOn { actions?.switchProduct(mode) } }
-                )
-            )
-            .keyboardShortcut(mode.keyboardShortcut)
-            .disabled(actions == nil)
-        }
-    }
-
-    /// Session › Stop's action: the Code run on screen, and nothing unless the
-    /// focused window is showing Code. Code's actions are only published by
-    /// the Code workspace, and a window instantiates one workspace at a time,
-    /// so this is belt and braces: ⌘. must never stop a Code run from Chat,
-    /// nor shadow Chat's own Stop while a chat is generating.
-    private var codeStop: (() -> Void)? {
-        guard actions?.currentProduct == .code else { return nil }
-        return codeActions?.stop
-    }
-
-    /// ⇧⌘N. Through the focused window when there is one; otherwise the request
-    /// goes to whichever main window exists — brought forward rather than a
-    /// second one opened — and only with none at all is a window opened for it.
-    private func newPrivateChat() {
-        if let shellActions {
-            shellActions.newPrivateChat()
-            return
-        }
-        DesktopWorkbenchRegistry.shared.request(.newChat(prompt: nil, isPrivate: true))
-        JunoDesktopWindow.showMainWindow(using: openWindow)
     }
 
     @ViewBuilder
@@ -374,12 +424,83 @@ struct JunoDesktopCommands: Commands {
             updater.checkNow()
         }
     }
+}
 
-    /// What ⌘N makes in each product.
-    private static func newItemTitle(for product: DesktopProductMode) -> String {
-        switch product {
-        case .chat: "New Chat"
-        case .code: "New Task"
+// MARK: - Generated sections
+
+/// One menu's items from the registry, a `Section` per registry section so
+/// the system draws the dividers between them.
+struct DesktopMenuSections: View {
+    enum Part {
+        case all
+        /// The first section only (File's New Chat and New Private Chat, which
+        /// replace the system's New group).
+        case first
+        /// Every section after the first.
+        case rest
+    }
+
+    let menu: JunoShortcutMenu
+    let context: DesktopCommandContext
+    var part: Part = .all
+
+    var body: some View {
+        ForEach(Array(sections.enumerated()), id: \.offset) { _, entries in
+            DesktopMenuSection(entries: entries, context: context)
+        }
+    }
+
+    private var sections: [[JunoShortcut]] {
+        let all = JunoShortcutRegistry.sections(in: menu)
+        switch part {
+        case .all: return all
+        case .first: return Array(all.prefix(1))
+        case .rest: return Array(all.dropFirst())
+        }
+    }
+}
+
+/// One registry section as menu rows: a `Label` with the entry's 16pt glyph,
+/// its chord, and a checkmark `Toggle` where the row has a state.
+///
+/// One `Section`, which a menu draws as a divider-bounded group and nothing
+/// more: it is also what tells the targets gate these are system-drawn menu
+/// rows, not views laid out here.
+struct DesktopMenuSection: View {
+    let entries: [JunoShortcut]
+    let context: DesktopCommandContext
+
+    var body: some View {
+        Section {
+            ForEach(entries) { entry in
+                let action = context.action(for: entry.id)
+                if let isOn = context.isOn(entry.id) {
+                    Toggle(isOn: Binding(get: { isOn }, set: { if $0 { action?() } })) {
+                        label(for: entry)
+                    }
+                    .keyboardShortcut(entry.keyboardShortcut)
+                    .disabled(action == nil)
+                } else {
+                    Button { action?() } label: {
+                        label(for: entry)
+                    }
+                    .keyboardShortcut(entry.keyboardShortcut)
+                    .disabled(action == nil)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func label(for entry: JunoShortcut) -> some View {
+        if let glyph = context.glyph(for: entry) {
+            Label {
+                Text(context.title(for: entry))
+            } icon: {
+                Image(glyph.assetName)
+            }
+        } else {
+            Text(context.title(for: entry))
         }
     }
 }

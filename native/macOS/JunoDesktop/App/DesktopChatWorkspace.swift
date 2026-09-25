@@ -311,6 +311,7 @@ struct DesktopChatWorkspace: View {
             detail
         }
         .focusedSceneValue(\.junoWorkspaceActions, workspaceActions)
+        .junoChatCommands(chatCommands)
         // Every part of the window posts to the one host: the sidebar's
         // archive, the transcript's failed actions, the pages.
         .junoToastNotifier(toasts)
@@ -897,18 +898,6 @@ struct DesktopChatWorkspace: View {
 
     /// What the menu bar can do to this window while it is focused.
     private var workspaceActions: DesktopWorkspaceActions {
-        var screenshot: (() -> Void)?
-        var attachFiles: (() -> Void)?
-        // Not in private mode, whose turns carry only words: a screenshot
-        // taken there would wait in the attachment tray for a chat it cannot
-        // be sent in.
-        if configuration.attachmentModel != nil, !isPrivateChat {
-            screenshot = { attachScreenshot() }
-            // Only where the composer is on screen to receive it.
-            if currentDestination == .chat {
-                attachFiles = { composerRequest = ChatComposerRequest(kind: .chooseFiles) }
-            }
-        }
         // Find in this conversation: wherever a conversation is on screen —
         // a saved one, or a private chat with turns in it.
         var findInConversation: ((DesktopFindCommand.Kind) -> Void)?
@@ -923,10 +912,59 @@ struct DesktopChatWorkspace: View {
             openSearch: openSearch,
             switchProduct: { product = $0 },
             currentProduct: product,
-            attachScreenshot: screenshot,
-            attachFiles: attachFiles,
+            // ⌘K: the command panel is Stage B's; until it lands, Search is
+            // what ⌘K opens here (seam 1).
+            openCommandMenu: openSearch,
             findInConversation: findInConversation
         )
+    }
+
+    /// The Chat menu's actions for this window (Phase 3 A2, A3). The rules
+    /// are ``ChatCommands``'; this only says what is on screen.
+    private var chatCommands: DesktopChatCommandActions {
+        var commands = DesktopChatCommandActions()
+        // Not in private mode, whose turns carry only words: a screenshot
+        // taken there would wait in the attachment tray for a chat it cannot
+        // be sent in.
+        if configuration.attachmentModel != nil, !isPrivateChat {
+            commands.attachScreenshot = { attachScreenshot() }
+            // Only where the composer is on screen to receive it.
+            if currentDestination == .chat {
+                commands.attachFiles = { composerRequest = ChatComposerRequest(kind: .chooseFiles) }
+            }
+        }
+        guard currentDestination == .chat else { return commands }
+        commands.focusComposer = { composerRequest = ChatComposerRequest(kind: .focus) }
+        // The conversation items: a saved chat, as the title menu has it.
+        if let conversation = titleMenuConversation {
+            commands.conversation = conversation
+            commands.projects = configuration.projectModel?.projects ?? []
+            commands.conversationActions = conversationActions
+        }
+        // Read when chosen, not now: the transcript moves on every token.
+        let model = model
+        let privateModel = isPrivateChat ? configuration.privateChatModel : nil
+        let toasts = toasts
+        let turns: () -> [ChatCommandTurn] = {
+            if let privateModel { return privateModel.turns.map(ChatCommandTurn.init) }
+            return model.selectedMessages.map(ChatCommandTurn.init)
+        }
+        commands.copyLastResponse = { toasts.post(ChatCommands.copyLastResponse(from: turns())) }
+        commands.copyLastCodeBlock = { toasts.post(ChatCommands.copyLastCodeBlock(from: turns())) }
+        if let conversationID = model.selectedConversationID, privateModel == nil,
+            ChatCommands.canRegenerate(
+                turns: model.selectedMessages.suffix(1).map(ChatCommandTurn.init),
+                isGenerating: model.isGenerating,
+                isPrivate: false
+            ),
+            let newest = model.selectedMessages.last
+        {
+            // The reply's own Try Again: the store's one regenerate path.
+            commands.regenerate = ChatRegenerateCommand(artifactCount: ChatCommands.artifactCount(of: newest)) {
+                model.retryLastMessage(conversationID: conversationID, modelID: nil, instruction: nil)
+            }
+        }
+        return commands
     }
 
     private var screenshotFailurePresented: Binding<Bool> {

@@ -683,7 +683,8 @@ struct ComposerPrimaryDisc: View {
         }
         .buttonStyle(ComposerDiscStyle())
         .disabled(!face.isEnabled)
-        .keyboardShortcut(face == .stop ? KeyboardShortcut(".", modifiers: .command) : nil)
+        // No chord here: ⌘. is Chat › Stop Generating in the menu bar, which
+        // keeps it while the draft has words and the face has turned to Send.
         .help(help ?? label ?? face.help)
         .accessibilityLabel(label ?? face.label)
         .accessibilityIdentifier(identifier ?? face.identifier)
@@ -1325,12 +1326,18 @@ struct ChatComposer: View {
                 prompt = question
                 submit()
             case .focus:
+                // Chat › Focus Composer (⇧⎋) and a question's Reply Below: the
+                // caret after what is there, as the web's ⇧Esc puts it.
                 focused = true
+                placeCaretAtEnd()
             }
         }
         .onChange(of: draftIsEmpty, initial: true) { _, isEmpty in
             draftIsEmptyChanged?(isEmpty)
         }
+        // Chat › Stop Generating (⌘.): the menu bar owns the chord now, and
+        // this is what it stops — published only while there is something to.
+        .focusedSceneValue(\.junoComposerStop, stopCommand)
     }
 
     // MARK: Slots
@@ -1715,10 +1722,7 @@ struct ChatComposer: View {
         ) {
             switch face {
             case .stop:
-                // In steer mode the run's own Stop, which ends whichever of
-                // the reply and the run the reader is watching; otherwise the
-                // reply.
-                if inSteerMode, let steering { steering.stop() } else { stopGeneration() }
+                stopWhatIsRunning()
             // Never waits on a resolved model: a call can start before the
             // catalog lands, on Auto.
             case .voice: startVoice()
@@ -2169,6 +2173,27 @@ struct ChatComposer: View {
         if queuedTurn?.content == turn.content { queuedTurn = nil }
         if prompt.isEmpty { prompt = turn.content }
         focused = true
+    }
+
+    /// The Stop face's action, and Chat › Stop Generating's (⌘.): one function,
+    /// so the menu stops exactly what the disc would. In steer mode the run's
+    /// own Stop, which ends whichever of the reply and the run the reader is
+    /// watching; otherwise the reply.
+    private func stopWhatIsRunning() {
+        switch ChatCommands.stopTarget(isGenerating: isGenerating, inSteerMode: inSteerMode) {
+        case .run: steering?.stop()
+        case .reply: stopGeneration()
+        case nil: break
+        }
+    }
+
+    /// ⌘. from the menu bar, while there is something to stop. The draft does
+    /// not take it away: typing a correction turns the disc to Send, and the
+    /// reader may still want the run stopped.
+    private var stopCommand: ChatComposerStopCommand? {
+        guard ChatCommands.stopTarget(isGenerating: isGenerating, inSteerMode: inSteerMode) != nil
+        else { return nil }
+        return ChatComposerStopCommand { stopWhatIsRunning() }
     }
 
     /// Stops the reply in flight — the store's, or the private chat's.
