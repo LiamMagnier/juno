@@ -154,7 +154,13 @@ public struct JunoEmptyState: View {
                     .frame(maxWidth: JunoEmptyStateMetrics.messageMeasure)
                     .padding(.top, isPage ? JunoSpace.tight : JunoSpace.hairline)
             }
-            if let actionLabel, let perform {
+            if let actions {
+                HStack(spacing: JunoSpace.snug) {
+                    actions
+                }
+                .controlSize(.regular)
+                .padding(.top, isPage ? JunoSpace.section : JunoSpace.regular)
+            } else if let actionLabel, let perform {
                 Button(actionLabel, action: perform)
                     .buttonStyle(.bordered)
                     // Neutral: the detail column's accent tint must not turn the
@@ -163,13 +169,6 @@ public struct JunoEmptyState: View {
                     .controlSize(.regular)
                     .contentShape(.rect)
                     .padding(.top, isPage ? JunoSpace.section : JunoSpace.regular)
-            }
-            if let actions {
-                HStack(spacing: JunoSpace.snug) {
-                    actions
-                }
-                .controlSize(.regular)
-                .padding(.top, isPage ? JunoSpace.section : JunoSpace.regular)
             }
         }
     }

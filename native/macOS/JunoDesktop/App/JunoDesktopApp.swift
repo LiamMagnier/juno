@@ -379,6 +379,10 @@ struct JunoDesktopApp: App {
         Settings {
             DesktopSettingsWindow(configuration: configuration)
                 .junoAccountAppearance(configuration)
+                // Settings › Memory's embedded page reads its model from
+                // here, so `DesktopMemoryScreen(model:back:)` keeps its two
+                // arguments (Phase 4 B1).
+                .environment(\.desktopMemoryContext, configuration.flatMap(DesktopMemoryContext.init(configuration:)))
                 // This scene declares no toolbar items of its own, so the
                 // accent can sit at its root: toggles, sliders and the one
                 // prominent button take it, and nothing in the chrome does.

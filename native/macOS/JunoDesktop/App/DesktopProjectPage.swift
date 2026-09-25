@@ -89,7 +89,7 @@ struct DesktopProjectPage: View {
 
     private func page(_ project: NativeProject, _ summary: DesktopProjectSummary) -> some View {
         JunoPage(measure: .wide, scrolling: .page) {
-            JunoPageHeader(project.name, lede: lede(summary), caption: "Project") {
+            JunoPageHeader(project.name, caption: "Project", lede: lede(summary)) {
                 Button {
                     editingInstructions = true
                 } label: {

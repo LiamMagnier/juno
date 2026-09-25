@@ -398,21 +398,26 @@ public final class NativeConnectorModel {
         if composioConfigured { reloadCatalogNow() }
     }
 
-    public func disconnect(_ connector: NativeConnector) async {
-        guard let accountID else { return }
+    /// Returns whether the server let go of it, so the page can say which
+    /// (Phase 4 B2: "Disconnected {label}." or "Couldn’t disconnect.").
+    @discardableResult
+    public func disconnect(_ connector: NativeConnector) async -> Bool {
+        guard let accountID else { return false }
         isMutating = true
         defer { isMutating = false }
         do {
             try await client.disconnect(connector, for: accountID)
-            guard self.accountID == accountID else { return }
+            guard self.accountID == accountID else { return false }
             // Applied locally as well as refetched: the Composio disconnect can
             // take a second, and a row that stays "Connected" until the refetch
             // lands reads as the tap having done nothing.
             apply(connected: false, to: connector.id)
             await refresh()
+            return true
         } catch {
-            guard self.accountID == accountID else { return }
+            guard self.accountID == accountID else { return false }
             lastErrorDescription = NativeFailureMessage.presentable(error)
+            return false
         }
     }
 

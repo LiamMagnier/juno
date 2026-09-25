@@ -1027,6 +1027,13 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     /// More item until ⌘K reaches it (Phase 3), after which Settings › Memory
     /// links to it.
     case memory
+    /// Instructions Juno follows for a specific job (`/skills`): the library,
+    /// a skill's page, New skill and the GitHub importer (Phase 4 B3).
+    /// Reached through ``DesktopPageRouter`` until Stage C puts it in More.
+    case skills
+    /// Reusable specialists (`/assistants`), Phase 4 B4. Reached through
+    /// ``DesktopPageRouter`` until Stage C puts it in More.
+    case assistants
 
     var id: Self { self }
 
@@ -1049,6 +1056,8 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .connections: "Connections"
         case .design: "Design"
         case .memory: "Memory"
+        case .skills: "Skills"
+        case .assistants: "Assistants"
         }
     }
 
@@ -1065,6 +1074,8 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .connections: .connections
         case .design: .design
         case .memory: .memory
+        case .skills: .skills
+        case .assistants: .assistants
         }
     }
 }

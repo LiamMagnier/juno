@@ -227,6 +227,9 @@ struct JunoDesktopRootView: View {
         configuration.libraryModel?.start(for: accountID)
         configuration.libraryPageModel?.start(for: accountID)
         configuration.documentIndexModel?.start(for: accountID)
+        // Account only: both read when their page first appears.
+        configuration.memoryPageModel?.start(for: accountID)
+        configuration.assistantsModel?.start(for: accountID)
         // Before the first turn can be sent, and last so it runs after every
         // model it reads is started. Both hooks are pure composition and neither
         // touches the network, so they are set synchronously rather than inside
@@ -283,6 +286,9 @@ struct JunoDesktopRootView: View {
             // Started at sign-in for the reason Work is: its poll is what
             // notices an agent that has stopped to ask for something.
             await configuration.agentsModel?.start(for: accountID)
+            // Read at sign-in, unlike the pages above: the composer's "/"
+            // and "Use a Skill" offer what it holds.
+            await configuration.skillLibraryModel?.start(for: accountID)
         }
         configuration.remoteCodeModel?.start(for: accountID)
         // The APNs token and the account meet here. A Mac signed with no push
@@ -423,6 +429,9 @@ struct JunoDesktopRootView: View {
         DesktopNeedsYouSignals.shared.stop()
         configuration.notificationsModel?.stop()
         configuration.notificationsModel?.onFailure = nil
+        configuration.memoryPageModel?.stop()
+        configuration.skillLibraryModel?.stop()
+        configuration.assistantsModel?.stop()
         // Forgets the account only: the server retires this device's token
         // with the device session it was registered under, the one moment the
         // bearer a DELETE would need is already gone.

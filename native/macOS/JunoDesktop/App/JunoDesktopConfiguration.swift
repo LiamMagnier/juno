@@ -98,6 +98,16 @@ struct JunoDesktopConfiguration {
     /// polled count for its dot, and the list read when the popover opens.
     /// Defaulted for the reason ``agentsModel`` is.
     var notificationsModel: NativeNotificationsModel? = nil
+    /// The memory page (`/memory`, Phase 4 B1): the rows with their Memory
+    /// v2 fields, the prompt dock's drafts, the recap and the import. The
+    /// switch stays ``memorySettingsModel``'s. Defaulted for the reason
+    /// ``agentsModel`` is.
+    var memoryPageModel: NativeMemoryPageModel? = nil
+    /// The skills library (Phase 4 B3), and what the composer's "Use a
+    /// Skill" and a typed `/slug` read: ``NativeSkillLibraryModel/chooseable``.
+    var skillLibraryModel: NativeSkillLibraryModel? = nil
+    /// The assistants gallery (Phase 4 B4).
+    var assistantsModel: NativeAssistantsModel? = nil
     let libraryModel: NativeLibraryModel?
     /// The Library page's own model (Phase 4 A4): paged, filtered on the
     /// server, with delete and Undo. The composer's picker keeps
@@ -384,6 +394,9 @@ struct JunoDesktopConfiguration {
                 notificationsModel: NativeNotificationsModel(
                     client: NativeNotificationsClient(sender: runtime)
                 ),
+                memoryPageModel: NativeMemoryPageModel(client: NativeMemoryClient(sender: runtime)),
+                skillLibraryModel: NativeSkillLibraryModel(client: NativeSkillsClient(sender: runtime)),
+                assistantsModel: NativeAssistantsModel(client: NativeAssistantsClient(sender: runtime)),
                 libraryModel: NativeLibraryModel(
                     client: NativeLibraryClient(sender: runtime),
                     // The picker draws the file, which means resolving its

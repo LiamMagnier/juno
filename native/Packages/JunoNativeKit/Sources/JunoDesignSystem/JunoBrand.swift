@@ -210,6 +210,13 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// The research report window's Print… (the web's `Printer`).
     case printer
 
+    /// The memory page's topics (`memory-icons.tsx`) — each the drawing the
+    /// web files that category under — the never-remember list's project
+    /// token (`FolderLock`), the empty topic list (`Layers`), and Import from
+    /// GitHub on the Skills page, which wears Phosphor's own GitHub mark
+    /// where the web draws the brand's filled one (register #75).
+    case fingerprint, target, graduationCap, braces, users, layers, folderLock, github
+
     /// The generated symbol this case wears, without a cut suffix: `ph.<name>`
     /// for Phosphor's drawings, `juno.<name>` for Juno's own.
     ///
@@ -426,6 +433,14 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .coins: "ph.coins"
         case .sigma: "ph.sigma"
         case .printer: "ph.printer"
+        case .fingerprint: "ph.fingerprint"
+        case .target: "ph.target"
+        case .graduationCap: "ph.graduationcap"
+        case .braces: "ph.bracketscurly"
+        case .users: "ph.users"
+        case .layers: "ph.stacksimple"
+        case .folderLock: "ph.folderlock"
+        case .github: "ph.githublogo"
         }
     }
 

@@ -470,3 +470,27 @@ Commits on `mac/liquid-glass-pages` (not pushed): the `origin/main` merge (`ec43
 **Not checked at the screen** (screen control is off): pushes and pops with the system back button; a popover open during a push; ⌘R and ⇧⌘I from the Library; dropping files on the Library or a project's Sources; Quick Look; Undo after a delete; a design made from New ▾ opening in the editor; Open in Conversation sliding in the dock; posters revalidating against the live server; the unnamed-project route.
 
 **Follow-ups:** the iPhone should adopt `ChatArtifactResolver` (it matches artifacts by identifier across every conversation); a project's Code tab; the document inspector once the server sends `knowledge.documentId`; new copy into `Localizable.xcstrings`.
+
+## Phase 4 Stage B, 2026-09-25 (Memory, Connections, Skills, Assistants; branch `mac/lg-p4b`)
+
+Built from `1876f3ac` (Stage A1 to A3) in parallel with Stages A and C; spec "Phase 4 errata: Stage B" and register #56–60, #65–66, #74–85.
+
+**What landed:**
+- **Memory** (`App/DesktopMemoryScreen.swift`, `DesktopMemoryParts.swift`, `DesktopMemoryList.swift`, `DesktopMemorySheets.swift`; `JunoChatKit/NativeMemoryClient.swift`, `NativeMemoryPresentation.swift`, `NativeMemoryPageModel.swift`): the web's one calm column with the summary and its prompt dock, the list by topic or date, Activity and Import sheets, Reset. The old `DesktopMemoryScreen` (Table, stat tiles, privacy strip) is removed from `DesktopAccountScreens.swift`; `DesktopMemoryScreen(model:back:)` keeps its signature.
+- **Connections** parity in `App/DesktopConnectionsScreen.swift` (no header count, the settle into Connected, the web's sections, toasts and empties, neutral tile buttons).
+- **Skills** (`JunoWorkKit/Skills/*`; `App/DesktopSkillsScreen.swift`, `DesktopSkillPage.swift`, `DesktopSkillSheets.swift`): the library, a skill's page (with Edit for yours), New skill, Import from GitHub, the update sheet, Move to a project.
+- **Assistants** (`JunoChatKit/NativeAssistantsClient.swift`; `App/DesktopAssistantsScreen.swift`): the grid and the editor sheet with its live preview.
+- Shared page parts in `App/DesktopAccountPageParts.swift`; `JunoPageHeader(caption:)` and `JunoEmptyState(actions:)` (additive); eight Phosphor glyphs; preview fixtures in `JunoPreviewSupport/PreviewAccountPageFixtures.swift`; the OpenAPI contract documents the new routes.
+
+**For integration (the lanes touch the same files):**
+- `DesktopDestination` gains `.skills` and `.assistants`; Stage C's `moreCases` should list them (`[.assistants, .skills, .automations]`). Until then the pages are reachable through `DesktopPageRouter.shared.open(.skills)` / `.open(.assistants)`.
+- `JunoPageHeader`'s `caption:` and `JunoEmptyState`'s `actions:` initializer are what the brief §2.1 asks for; Stage A may add the same. Keep one of each.
+- Snapshots are their own suite, `Tests/Snapshots/PageSnapshotTestsStageB.swift` (`StageBPageSnapshotTests`, fixtures `StageBPageFixtures`), writing `pages/`, so Stage A's `PageSnapshotTests.swift` is untouched.
+- Register numbers follow the brief's list (#56–#73) and continue at #74 for new entries; renumber if Stage A or C took any.
+- `DesktopMemoryPage` takes `initialScope:` for the web's `/memory?project=`: the project page's "Manage memory" (Stage A) can open it once the router carries a memory scope.
+- Targets gate: every laid-out control on these pages carries `.contentShape(.rect)`; overflow-menu items go to `DesktopRowMenuButton` inside one `Section`, which the gate reads as system-drawn. The count fell 291 → 274; the baseline file is left alone so the three lanes do not collide on it — lock it once, after the merge.
+- Mixed-style sentences are `Text` interpolation (`desktopLeadSentence`, `desktopSlugText`), not `Text + Text`, which macOS 26 deprecates.
+
+**For Track A (composer):** `configuration.skillLibraryModel` (read at sign-in) exposes `chooseable: [NativeSkillChoice]`, `refresh()` and `invocation(in:)`; send the chosen slug as `skillSlug` on `/api/chat` (`src/lib/chat/request.ts:147`). The Settings scene sets `\.desktopMemoryContext`, so Settings › Memory's embedded page is the new one with no change on Track A's side.
+
+**Not done (runtime, screen control is off):** the prompt dock applying a change against the live server, reading past chats, Import, the Connections browser round trip and its settle, importing and updating skills from GitHub, `/` focusing the Skills search, pushes and pops with the system back button on the skill pages.
