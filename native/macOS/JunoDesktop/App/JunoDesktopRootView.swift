@@ -379,6 +379,7 @@ struct JunoDesktopRootView: View {
         configuration.codeHostModel?.stop()
         configuration.workModel?.stop()
         configuration.workAutomationModel?.stop()
+        configuration.workHostsModel?.stop()
         configuration.agentsModel?.stop()
         configuration.agentsModel?.onNeedsYouRise = nil
         // Forgets the account only: the server retires this device's token

@@ -131,9 +131,17 @@ struct NativeAgentFieldLabel: View {
     let title: String
 
     var body: some View {
+        #if os(macOS)
+        // A field's name in SF at the controls' rung, above its field: the
+        // pages set no mono or uppercase labels (Phase 4 §2.10).
+        Text(title)
+            .junoType(JunoType.ui.weight(.medium))
+            .foregroundStyle(Color.junoForeground)
+        #else
         Text(title)
             .junoCodeSmall()
             .junoSecondaryInk()
+        #endif
     }
 }
 
@@ -185,6 +193,45 @@ struct NativeAgentsProblem: View {
 }
 
 // MARK: - Tiles
+
+extension View {
+    /// A single-line field on the Mac's pages: the web's `Input` — 32pt at
+    /// the field radius, the `--input` hairline, on the raised fill. The
+    /// iPhone keeps its rounded-border field.
+    @ViewBuilder
+    func nativeAgentField() -> some View {
+        #if os(macOS)
+        self
+            .textFieldStyle(.plain)
+            .junoType(.ui)
+            .padding(.horizontal, JunoSpace.cozy)
+            .frame(height: 32)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                    .fill(Color.junoRaised)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                    .strokeBorder(Color.junoInput, lineWidth: 1)
+            )
+        #else
+        self.textFieldStyle(.roundedBorder)
+        #endif
+    }
+
+    /// A bordered button's outline and label in the neutral ink on the Mac,
+    /// where the detail column's accent tint would otherwise draw it coral
+    /// (Phase 4 C3: coral is the send disc, switches, links, the live dot and
+    /// one prominent button). The iPhone keeps its tint.
+    @ViewBuilder
+    func nativeAgentNeutralTint() -> some View {
+        #if os(macOS)
+        self.tint(nil)
+        #else
+        self
+        #endif
+    }
+}
 
 extension View {
     /// A flat tile: the surface fill and a hairline, with the chosen state

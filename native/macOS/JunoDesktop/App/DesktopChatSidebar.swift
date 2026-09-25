@@ -51,6 +51,9 @@ struct DesktopChatSidebar: View {
     var agentsModel: NativeAgentsModel? = nil
     /// Opens an agent's thread by the agent's id, creating it if it has none.
     var messageAgent: ((String) -> Void)? = nil
+    /// Opens the Archived chats sheet (Track A). The More menu's "Archived
+    /// Chats" item is drawn only while this is set.
+    var openArchivedChats: (() -> Void)? = nil
 
     @AppStorage("juno.sidebar.projects.expanded") private var pinnedProjectsOpen = true
     @AppStorage("juno.sidebar.pinned.expanded") private var pinnedChatsOpen = true
@@ -278,9 +281,9 @@ struct DesktopChatSidebar: View {
     /// the list cannot select it — so it borrows the selected recipe itself
     /// while one of its pages is open.
     ///
-    /// Items appear as their pages land (§2.3): Phase 1 has Connections and a
-    /// temporary Memory, which leaves when ⌘K can reach it. An unbuilt item is
-    /// absent, not disabled.
+    /// The web's order (`app-sidebar.tsx`): Assistants, Skills, Automations,
+    /// then a separator and Archived Chats, which is drawn only while its
+    /// sheet can be opened (Phase 4 C4).
     private var moreRow: some View {
         let isOpen = DesktopDestination.moreCases.contains(destination)
             && selection == .destination(destination)
@@ -292,6 +295,12 @@ struct DesktopChatSidebar: View {
                     selection = .destination(item)
                 } label: {
                     Label(item.label, image: item.junoIcon.assetName)
+                }
+            }
+            if let openArchivedChats {
+                Divider()
+                Button(action: openArchivedChats) {
+                    Label("Archived Chats", image: JunoIcon.archive.assetName)
                 }
             }
         } label: {
@@ -937,10 +946,22 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     /// the Designs filter. The case stays so stored window state and the
     /// legacy tasks window's footer (`leaveForChat(.design)`) keep decoding.
     case design
-    /// What Juno remembers about the reader, as a page of its own. A temporary
-    /// More item until ⌘K reaches it (Phase 3), after which Settings › Memory
-    /// links to it.
+    /// What Juno remembers about the reader, as a page of its own. Reached
+    /// from Settings › Memory and ⌘K through ``DesktopPageRouter``; the web
+    /// moved it out of More (Phase 4 C4).
     case memory
+    /// Reusable specialists (Phase 4 Stage B builds the page). A More item.
+    case assistants
+    /// Instructions Juno follows for a specific job (Phase 4 Stage B). A More
+    /// item.
+    case skills
+    /// Everything that starts without a fresh prompt (Phase 4 C1). A More
+    /// item.
+    case automations
+    /// What Juno may do, what it always asks first, and the Macs it can reach
+    /// (Phase 4 C2). Not in More: reached through ``DesktopPageRouter`` —
+    /// ⌘K and Settings › Devices.
+    case permissions
 
     var id: Self { self }
 
@@ -949,8 +970,10 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     /// row: a design is an artifact (Phase 4 A2).
     static let sidebarCases: [Self] = [.library, .projects, .artifacts, .agents]
 
-    /// The More menu's items, as their pages exist (§2.3).
-    static let moreCases: [Self] = [.connections, .memory]
+    /// The More menu's items, in the web's order (`app-sidebar.tsx`):
+    /// Assistants, Skills, Automations. Connections, Memory and Permissions
+    /// left More for Settings and ⌘K, as they did on the web.
+    static let moreCases: [Self] = [.assistants, .skills, .automations]
 
     var label: String {
         switch self {
@@ -963,6 +986,10 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .connections: "Connections"
         case .design: "Design"
         case .memory: "Memory"
+        case .assistants: "Assistants"
+        case .skills: "Skills"
+        case .automations: "Automations"
+        case .permissions: "Permissions"
         }
     }
 
@@ -979,6 +1006,10 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .connections: .connections
         case .design: .design
         case .memory: .memory
+        case .assistants: .assistants
+        case .skills: .skills
+        case .automations: .automations
+        case .permissions: .permissions
         }
     }
 }

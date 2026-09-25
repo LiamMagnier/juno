@@ -84,7 +84,7 @@ struct DesktopDesignLauncherTests {
     @Test
     func designIsNoLongerANavigationRow() {
         #expect(DesktopDestination.sidebarCases == [.library, .projects, .artifacts, .agents])
-        #expect(DesktopDestination.moreCases == [.connections, .memory])
+        #expect(DesktopDestination.moreCases == [.assistants, .skills, .automations])
         #expect(DesktopDestination(rawValue: "settings") == nil)
         #expect(DesktopDestination(rawValue: "usage") == nil)
         #expect(DesktopDestination(rawValue: "tasks") == nil)

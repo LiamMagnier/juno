@@ -94,6 +94,13 @@ struct JunoDesktopConfiguration {
     /// ``workGrantStore`` is: the preview harness and a failed launch have no
     /// transport to read agents over and should not have to name one.
     var agentsModel: NativeAgentsModel? = nil
+    /// The account's Macs for the Permissions pages (Phase 4 C2): the list,
+    /// one Mac's detail, its switches and revoking it. Its own model rather
+    /// than `workModel`'s host list, which swallows a failed read.
+    ///
+    /// Defaulted, and therefore a `var` among lets, for the reason
+    /// ``agentsModel`` is.
+    var workHostsModel: NativeWorkHostsModel? = nil
     let libraryModel: NativeLibraryModel?
     /// This Mac's local document index: files read into chunks by
     /// ``DocumentIngestionPipeline`` and ranked by `JunoSearch`.
@@ -372,6 +379,9 @@ struct JunoDesktopConfiguration {
                 agentsModel: NativeAgentsModel(
                     client: NativeAgentsClient(sender: runtime),
                     workClient: NativeWorkClient(sender: runtime, streamer: runtime)
+                ),
+                workHostsModel: NativeWorkHostsModel(
+                    client: NativeWorkClient(sender: runtime, streamer: runtime)
                 ),
                 libraryModel: NativeLibraryModel(
                     client: NativeLibraryClient(sender: runtime),

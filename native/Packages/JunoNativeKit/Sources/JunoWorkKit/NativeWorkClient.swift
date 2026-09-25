@@ -357,6 +357,66 @@ public struct NativeWorkClient: Sendable {
         return try items.map(decodeHost)
     }
 
+    /// One Mac and what has been shared with it (`GET /api/work/hosts/{id}`),
+    /// as the web's `fetchWorkHost` reads it: tolerant of an older server that
+    /// sends neither the pending count nor the routable capabilities.
+    public func host(id: String, for accountID: AccountID) async throws -> NativeWorkHostDetail {
+        try validate(id)
+        let response = try await get("/api/work/hosts/\(id)", for: accountID)
+        guard let root = try decodeObject(response), let hostValue = root["host"] else {
+            throw WorkRemoteError.malformedResponse
+        }
+        var grants: [NativeWorkHostGrant]?
+        if case .array(let items)? = root["grants"] {
+            grants = items.compactMap(decodeGrant)
+        } else if root["grants"] == nil {
+            grants = []
+        }
+        var routable: [String] = []
+        if case .array(let keys)? = root["routableCapabilities"] {
+            routable = keys.compactMap(\.stringValue)
+        }
+        return NativeWorkHostDetail(
+            host: try decodeHost(hostValue),
+            grants: grants,
+            pendingCommands: integer(root["pendingCommands"]),
+            routableCapabilities: routable
+        )
+    }
+
+    /// Changes a Mac's switches or ceiling, or restores its access
+    /// (`PATCH /api/work/hosts/{id}`, the web's `patchWorkHost`).
+    public func updateHost(
+        id: String,
+        _ patch: NativeWorkHostPatch,
+        for accountID: AccountID
+    ) async throws -> NativeWorkHostPatchResult {
+        try validate(id)
+        let response = try await send(.patch, "/api/work/hosts/\(id)", body: patch.body, for: accountID)
+        guard let root = try decodeObject(response), let hostValue = root["host"] else {
+            throw WorkRemoteError.malformedResponse
+        }
+        var refused: [NativeWorkHostToggle] = []
+        if case .array(let keys)? = root["refused"] {
+            refused = keys.compactMap { $0.stringValue.flatMap(NativeWorkHostToggle.init(rawValue:)) }
+        }
+        return NativeWorkHostPatchResult(host: try decodeHost(hostValue), refused: refused)
+    }
+
+    /// Revokes a Mac's access (`DELETE /api/work/hosts/{id}`): it can claim
+    /// nothing from now on, and what was queued for it is cancelled.
+    public func revokeHost(id: String, for accountID: AccountID) async throws -> NativeWorkHostRevocation {
+        try validate(id)
+        let response = try await send(.delete, "/api/work/hosts/\(id)", body: nil, for: accountID)
+        guard let root = try decodeObject(response), let hostValue = root["host"] else {
+            throw WorkRemoteError.malformedResponse
+        }
+        return NativeWorkHostRevocation(
+            host: try decodeHost(hostValue),
+            cancelledCommands: integer(root["cancelledCommands"])
+        )
+    }
+
     // MARK: - Sessions
 
     public func sessions(
@@ -1098,10 +1158,32 @@ public struct NativeWorkClient: Sendable {
             case .string(let state)? = object["state"],
             let lastSeenAt = object["lastSeenAt"]?.date
         else { throw WorkRemoteError.malformedResponse }
+        // The stored advertisement is either the legacy bare list of keys or
+        // the manifest `{ toggles, capabilities, approvalPolicy }`
+        // (`parseAdvertisement`); both carry the list.
         var capabilities: [String] = []
-        if case .array(let raw)? = object["capabilities"] {
+        var advertisedToggles: Set<NativeWorkHostToggle> = []
+        var advertisedPolicy: JunoWorkPermissionPolicy?
+        switch object["capabilities"] {
+        case .array(let raw)?:
             capabilities = raw.compactMap(\.stringValue)
+        case .object(let manifest)?:
+            if case .array(let raw)? = manifest["capabilities"] {
+                capabilities = raw.compactMap(\.stringValue)
+            }
+            if case .object(let toggles)? = manifest["toggles"] {
+                advertisedToggles = Set(
+                    NativeWorkHostToggle.allCases.filter { toggles[$0.rawValue]?.boolValue == true }
+                )
+            }
+            advertisedPolicy = manifest["approvalPolicy"]?.stringValue
+                .flatMap(JunoWorkPermissionPolicy.init(rawValue:))
+        default:
+            break
         }
+        let toggles = Set(
+            NativeWorkHostToggle.allCases.filter { $0 != .enabled && object[$0.rawValue]?.boolValue == true }
+        )
         return WorkHostSummary(
             hostID: hostID,
             deviceID: deviceID,
@@ -1116,7 +1198,41 @@ public struct NativeWorkClient: Sendable {
             activeRunCount: integer(object["activeRunCount"]),
             queuedRunCount: integer(object["queuedRunCount"]),
             lastSeenAt: lastSeenAt,
-            revokedAt: object["revokedAt"]?.date
+            revokedAt: object["revokedAt"]?.date,
+            platform: object["platform"]?.stringValue ?? "macos",
+            appVersion: object["appVersion"]?.stringValue ?? "",
+            toggles: toggles,
+            advertisedToggles: advertisedToggles,
+            // An unreadable ceiling reads as the strictest, as the relay reads
+            // an unreadable advertisement: never wider than was granted.
+            approvalPolicy: object["approvalPolicy"]?.stringValue
+                .flatMap(JunoWorkPermissionPolicy.init(rawValue:)) ?? .conservative,
+            advertisedPolicy: advertisedPolicy,
+            allowedApps: names(object["allowedApps"]),
+            blockedApps: names(object["blockedApps"]),
+            allowedDomains: names(object["allowedDomains"])
+        )
+    }
+
+    /// `hostNameList`: the strings of a JSON list the Mac wrote, dropping
+    /// whatever it cannot render.
+    private func names(_ value: JunoJSONValue?) -> [String] {
+        guard case .array(let raw)? = value else { return [] }
+        return raw.compactMap(\.stringValue).filter { !$0.isEmpty }
+    }
+
+    private func decodeGrant(_ value: JunoJSONValue) -> NativeWorkHostGrant? {
+        guard case .object(let object) = value,
+            let id = object["id"]?.stringValue,
+            let displayName = object["displayName"]?.stringValue
+        else { return nil }
+        return NativeWorkHostGrant(
+            id: id,
+            kind: object["kind"]?.stringValue ?? "local_folder",
+            displayName: displayName,
+            accessMode: object["accessMode"]?.stringValue ?? "read",
+            revokedAt: object["revokedAt"]?.date,
+            lastUsedAt: object["lastUsedAt"]?.date
         )
     }
 

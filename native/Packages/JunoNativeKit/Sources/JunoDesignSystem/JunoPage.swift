@@ -189,15 +189,26 @@ public extension JunoPage where Controls == EmptyView {
 ///   Juno accent (``SwiftUI/PrimitiveButtonStyle/junoProminent``). They drop
 ///   under the title when the row cannot hold both.
 /// - Then 20pt, a 1pt `--border` rule, and 24pt before what follows.
+/// - A detail page's `caption` — the web's eyebrow ("Automations",
+///   "Permissions", "Agents") — sits above the title as an SF 13 medium line
+///   in the secondary ink, sentence case (Phase 4 register #57). Never the
+///   web's mono label; the back control is the system's.
 public struct JunoPageHeader<Actions: View>: View {
     private let title: String
+    private let caption: String?
     private let lede: String?
     private let actions: Actions
 
     @Environment(\.junoPageLayout) private var layout
 
-    public init(_ title: String, lede: String? = nil, @ViewBuilder actions: () -> Actions) {
+    public init(
+        _ title: String,
+        caption: String? = nil,
+        lede: String? = nil,
+        @ViewBuilder actions: () -> Actions
+    ) {
         self.title = title
+        self.caption = caption
         self.lede = lede
         self.actions = actions()
     }
@@ -226,6 +237,12 @@ public struct JunoPageHeader<Actions: View>: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            if let caption {
+                Text(caption)
+                    .junoType(JunoType.ui.weight(.medium))
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text(title)
                 .junoPageTitle(columnWidth: layout?.columnWidth)
                 .foregroundStyle(Color.junoForeground)
@@ -250,8 +267,8 @@ public struct JunoPageHeader<Actions: View>: View {
 }
 
 public extension JunoPageHeader where Actions == EmptyView {
-    init(_ title: String, lede: String? = nil) {
-        self.init(title, lede: lede) { EmptyView() }
+    init(_ title: String, caption: String? = nil, lede: String? = nil) {
+        self.init(title, caption: caption, lede: lede) { EmptyView() }
     }
 }
 

@@ -50,6 +50,10 @@ public struct JunoEmptyState: View {
     private let perform: (() -> Void)?
     private let size: Size
     private let tone: Tone
+    /// The page's own actions, in place of the one neutral button: the web's
+    /// two-action states, or a page-size state carrying the page's one
+    /// prominent button while the header's copy of it is withheld.
+    private let actions: AnyView?
 
     @State private var hasArrived = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -73,6 +77,27 @@ public struct JunoEmptyState: View {
         self.perform = action
         self.size = size
         self.tone = tone ?? Self.tone(for: icon)
+        self.actions = nil
+    }
+
+    /// A state whose actions are the page's own: Upload files and Go to chat,
+    /// New automation as the page's one `.junoProminent`, and so on.
+    public init<Actions: View>(
+        title: String,
+        message: String? = nil,
+        icon: JunoIcon,
+        size: Size = .page,
+        tone: Tone? = nil,
+        @ViewBuilder actions: () -> Actions
+    ) {
+        self.title = title
+        self.message = message
+        self.icon = icon
+        self.actionLabel = nil
+        self.perform = nil
+        self.size = size
+        self.tone = tone ?? Self.tone(for: icon)
+        self.actions = AnyView(actions())
     }
 
     /// The marks that mean something went wrong.
@@ -129,7 +154,13 @@ public struct JunoEmptyState: View {
                     .frame(maxWidth: JunoEmptyStateMetrics.messageMeasure)
                     .padding(.top, isPage ? JunoSpace.tight : JunoSpace.hairline)
             }
-            if let actionLabel, let perform {
+            if let actions {
+                HStack(spacing: JunoSpace.snug) {
+                    actions
+                }
+                .controlSize(.regular)
+                .padding(.top, isPage ? JunoSpace.section : JunoSpace.regular)
+            } else if let actionLabel, let perform {
                 Button(actionLabel, action: perform)
                     .buttonStyle(.bordered)
                     // Neutral: the detail column's accent tint must not turn the

@@ -81,6 +81,8 @@ struct DesktopWorkWorkspace: View {
         DesktopDestination.chat.rawValue
 
     @State private var columnVisibility = NavigationSplitViewVisibility.all
+    /// The Automations pages' own router in this window (see ``detail``).
+    @State private var automationsRouter = DesktopPageRouter()
     @State private var query = ""
     /// The errand being typed on the home page. Held here rather than in the
     /// composer so opening a task and coming back does not throw away a
@@ -348,11 +350,31 @@ struct DesktopWorkWorkspace: View {
     private var detail: some View {
         if case .automations = selection.wrappedValue,
             let automationModel = configuration.workAutomationModel {
-            DesktopWorkAutomationsView(
-                model: automationModel,
-                workModel: model,
-                modelOptions: workModelOptions
-            )
+            // The Chat window's Automations pages, in a stack of their own
+            // with a router of their own, so a request meant for the Chat
+            // window is never taken here. Kept until Phase 5 retires this
+            // window.
+            DesktopPageStack(destination: .automations, router: automationsRouter) {
+                DesktopAutomationsScreen(
+                    model: automationModel,
+                    conversationForSession: { sessionID in
+                        model.sessions.first { $0.id == sessionID }?.conversationID
+                    }
+                )
+            } page: { route in
+                DesktopAutomationRoutePage(
+                    route: route,
+                    context: DesktopAutomationContext(
+                        model: automationModel,
+                        hostsModel: configuration.workHostsModel,
+                        fallbackHosts: model.hosts,
+                        modelOptions: workModelOptions,
+                        conversationForSession: { sessionID in
+                            model.sessions.first { $0.id == sessionID }?.conversationID
+                        }
+                    )
+                )
+            }
         } else if case .schedules = selection.wrappedValue,
             let automationModel = configuration.workAutomationModel {
             DesktopWorkSchedulesPage(model: automationModel)

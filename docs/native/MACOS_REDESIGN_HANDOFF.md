@@ -368,3 +368,30 @@ Runtime checks not done (screen control is off): a toast over a live composer (a
 - the dead "Use in chats" on Connections
 - editing only in the canvas
 - the document inspector's entry point
+
+## Phase 4 Stage C, 2026-09-25 (`mac/lg-p4c`: Automations, Permissions, Agents, More)
+
+Built in `../juno-glass-p4c` from `1876f3ac` (Stage A1–A3), in parallel with Stages A4–A7 and B. Spec: "Phase 4 errata, Stage C" and register #57, #66–68, #71, #74–85 (the new numbers are renumbered at integration if A or B took them).
+
+**What landed:**
+- **Automations** — `App/DesktopAutomationsScreen.swift`, `App/DesktopAutomationPage.swift`, `App/DesktopAutomationEditor.swift`, `App/DesktopWorkPageParts.swift` (the shared row list, deal, More button, tag, run status pill, heading, note, skeleton rows). `DesktopWorkAutomations.swift` deleted; the legacy Work window shows the new list in its own `DesktopPageStack` and router.
+- **Permissions and host pages** — `App/DesktopPermissionsScreen.swift` (+ `DesktopWorkHostRow`, `DesktopHostState`) and `App/DesktopHostPage.swift` (+ `DesktopHostSettings`, the chips). `DesktopWorkHostTile(layout: .onThisMac)` draws the tile's local sections for this Mac's page; Settings › Code is unchanged.
+- **Agents** — the shared views on the template behind `#if os(macOS)` (`NativeAgentsScreen`, `NativeAgentPage`, `NativeAgentHire`, `NativeAgentsShared`), public `NativeAgentRoutePage` / `NativeAgentHirePage`; `App/DesktopAgentRoutes.swift` wires `.agent(id)` and `.newAgent(template:)`; the window's `selectedAgentID` follows the Agents stack both ways, and choosing the Agents row returns to the roster.
+- **More** — `.assistants`, `.skills`, `.automations`, `.permissions` destinations; More is Assistants · Skills · Automations, then Archived Chats behind the `openArchivedChats` hook.
+- **Packages** — `JunoWorkKit`: schedule fields, history, fire tokens, the `…Reporting` model API, `NativeWorkServerSentence`, `NativeWorkScheduleCopy` / `NativeWorkPermissionsCopy`, host detail / update / revoke on `NativeWorkClient`, `NativeWorkHostsModel`. `JunoDesignSystem`: `JunoPageHeader(caption:)`, `JunoEmptyState(…actions:)`. OpenAPI documents the new calls (`/work/hosts/{hostId}` GET/PATCH/DELETE, `/work/schedules/{scheduleId}` GET, `/work/schedules/{scheduleId}/token` POST/DELETE, `codeRuns`, the schedule's `runKind`/`codeConfig`/fire-token fields); contract regenerated.
+- **Deleted** — `DesktopWorkAutomations.swift`, `DesktopTasksScreen.swift` (dead).
+
+**Integration notes (shared files this lane touched):** `DesktopAccountScreens.swift` (`routePage`, the page switch, the agents plumbing), `DesktopChatSidebar.swift` (enum, More), `DesktopPageRoute.swift` (`desktopReplace`, `pathChanged`), `JunoDesktopConfiguration.swift` / `JunoDesktopRootView.swift` (`workHostsModel`), `JunoPage.swift` / `JunoEmptyState.swift` (additive; A and B may add the same — keep one), `DesktopDesignLauncherTests.swift` (More's expectation), the spec and this file. The snapshot suite is `PageSnapshotTestsC` / `PageFixturesC` with its own stub server (`StageCPreviewServer`) so it does not collide with A's or B's suites or with `PreviewSender`. The targets gate fell 291 → 284 (deleted files); the baseline was not re-locked here — integration re-locks.
+
+**What Track A wires (additions to the brief's §0.4):** Settings › Devices lists `DesktopWorkHostRow`s and opens `DesktopPageRouter.shared.open(.permissions, route: .host(id))`; ⌘K opens Automations (`open(.automations)`), New automation (`open(.automations, route: .newAutomation)`) and Permissions (`open(.permissions)`); the sidebar's `openArchivedChats`; then deleting Settings › Code's "Juno Work" tile.
+
+**Snapshots:** `/tmp/juno-glass-snapshots/phase4-c/pages/` — 18 fixtures × light/dark (automations list / empty / error / detail / paused detail / new / narrow list, permissions / empty, host this Mac / other Mac / revoked, agents roster / first hire / agent page / hire, window-automations, window-agents; the windows are also written under `$JUNO_FINAL_SNAPSHOT_DIR/pages/` when set).
+
+**Not done / deferred (explicit):**
+- Runtime checks at the screen (screen control is off): pushes and pops with the system back button, Run now, pause/resume, delete, token issue/revoke, a host switch, Revoke and Restore, hiring an agent, the Agents row resetting an open agent, More's menu, hover reveals.
+- Offscreen artefacts, not bugs: switches draw their "on" track untinted in an offscreen (non-key) window; the window snapshots' sidebar is fixed on Chat, so More does not show its selected fill there.
+- Skills and Assistants pages (Stage B) — More leads to a placeholder until the merge.
+- Code automations are edited on the web (register #67); the "Code" segment of New automation is shown disabled.
+- The spend hint does not name the usage window (register #77): no spend-window read on the Mac yet.
+- History rows for sessions this Mac has not synced are inert (register #80).
+- Phase 5: the Needs-you link on Permissions, deleting the legacy Work window and its host tile.

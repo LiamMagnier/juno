@@ -36,6 +36,16 @@ struct DesktopDestinationView: View {
     /// Fork Privately, which the window answers by starting a private chat.
     var forkPrivately: (([NativePrivateChatModel.Turn]) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// What the Agents destination's stack holds, as it last said: how the
+    /// window's open agent (its sidebar row) follows a back button, and how a
+    /// sidebar row knows whether its agent is already showing.
+    @State private var agentsPath: [DesktopPageRoute] = []
+    /// Bumped to give the Agents stack a fresh identity — back to the roster —
+    /// when the Agents row is chosen while an agent's page is up (the web's
+    /// `/agents`, never the last agent visited).
+    @State private var agentsStackGeneration = 0
+    /// The agent just hired, whose page opens with a word of welcome, once.
+    @State private var welcomedAgentID: String?
 
     var body: some View {
         // One identity per destination, so a change of page is a real
@@ -47,6 +57,20 @@ struct DesktopDestinationView: View {
             .id(destination)
             .transition(.junoPage)
             .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: destination)
+            // The window's open agent — a sidebar row, a notification, an
+            // agent's thread header — is `.agent(id)` pushed on the Agents
+            // stack (Phase 4 §2.5), once, unless it is already showing.
+            .onChange(of: selectedAgentID, initial: true) { _, agentID in
+                if let agentID {
+                    guard agentsPath.last != .agent(agentID) else { return }
+                    DesktopPageRouter.shared.open(.agents, route: .agent(agentID))
+                } else if destination == .agents, agentsPath.contains(where: Self.isAgentPage) {
+                    agentsPath = []
+                    agentsStackGeneration &+= 1
+                }
+            }
+            // A destination's stack starts empty; so does what it last said.
+            .onChange(of: destination) { _, _ in agentsPath = [] }
     }
 
     /// The chat route as it is; every page inside a `NavigationStack` of its
@@ -63,6 +87,15 @@ struct DesktopDestinationView: View {
     private var routed: some View {
         if destination == .chat {
             page
+        } else if destination == .agents {
+            DesktopPageStack(
+                destination: destination,
+                router: .shared,
+                root: { page },
+                page: { route in routePage(route) },
+                pathChanged: agentsPathChanged
+            )
+            .id(agentsStackGeneration)
         } else {
             DesktopPageStack(destination: destination, router: .shared) {
                 page
@@ -70,6 +103,21 @@ struct DesktopDestinationView: View {
                 routePage(route)
             }
         }
+    }
+
+    private static func isAgentPage(_ route: DesktopPageRoute) -> Bool {
+        if case .agent = route { return true }
+        return false
+    }
+
+    /// The Agents stack moved: the open agent is the last one pushed, or none.
+    private func agentsPathChanged(_ path: [DesktopPageRoute]) {
+        agentsPath = path
+        let open = path.reversed().lazy.compactMap { route -> String? in
+            if case .agent(let id) = route { return id }
+            return nil
+        }.first
+        if selectedAgentID != open { selectedAgentID = open }
     }
 
     /// The page a route pushes. One `navigationDestination` for all of them,
@@ -81,10 +129,68 @@ struct DesktopDestinationView: View {
             projectPage(id)
         case .artifact(let id, let version):
             artifactPage(id, version: version)
-        case .document, .skill, .newSkill, .automation, .newAutomation, .host, .agent, .newAgent:
-            // Built by later stages (B and C); nothing pushes these yet.
+        case .automation, .newAutomation:
+            if let context = automationContext {
+                DesktopAutomationRoutePage(route: route, context: context)
+            } else {
+                unavailable("Automations", "Automations are unavailable.")
+            }
+        case .host(let id):
+            if let model = configuration.workHostsModel {
+                DesktopHostPage(
+                    hostID: id,
+                    model: model,
+                    accountID: session.profile.id,
+                    thisMac: configuration.workHostModel?.pairedHostID,
+                    localHost: configuration.workHostModel
+                )
+            } else {
+                unavailable("Permissions", "Juno Work is unavailable.")
+            }
+        case .agent(let id):
+            if let model = configuration.agentsModel {
+                DesktopAgentRoute(
+                    model: model,
+                    agentID: id,
+                    apps: agentApps,
+                    localApprovals: localApprovals,
+                    decideLocally: decideLocally,
+                    openConversation: openAgentThread,
+                    welcomedAgentID: $welcomedAgentID
+                )
+            } else {
+                unavailable("Agents", "The agents service is unavailable.")
+            }
+        case .newAgent(let template):
+            if let model = configuration.agentsModel {
+                DesktopAgentHireRoute(
+                    model: model,
+                    apps: agentApps,
+                    templateID: template,
+                    welcomedAgentID: $welcomedAgentID
+                )
+            } else {
+                unavailable("Agents", "The agents service is unavailable.")
+            }
+        case .document, .skill, .newSkill:
+            // Built by the other Phase 4 stages; nothing pushes these here.
             unavailable("Not available", "This page is not on the Mac yet.")
         }
+    }
+
+    /// What the automation pages need, when this window has Work.
+    private var automationContext: DesktopAutomationContext? {
+        guard let model = configuration.workAutomationModel else { return nil }
+        return DesktopAutomationContext(
+            model: model,
+            hostsModel: configuration.workHostsModel,
+            fallbackHosts: configuration.workModel?.hosts,
+            modelOptions: (conversationModel.selectableModels).filter { $0.isChatCapable && $0.supportsTools },
+            conversationForSession: { sessionID in
+                configuration.workModel?.sessions.first { $0.id == sessionID }?.conversationID
+            },
+            openConversation: openAgentThread
+        )
     }
 
     @ViewBuilder
@@ -166,17 +272,38 @@ struct DesktopDestinationView: View {
             artifactsPage
         case .agents:
             if let model = configuration.agentsModel {
-                NativeAgentsScreen(
+                DesktopAgentsRoster(
                     model: model,
                     apps: agentApps,
-                    selectedAgentID: $selectedAgentID,
-                    localApprovals: localApprovals,
-                    decideLocally: decideLocally,
                     openConversation: openAgentThread
                 )
             } else {
                 unavailable("Agents", "The agents service is unavailable.")
             }
+        case .automations:
+            if let context = automationContext {
+                DesktopAutomationsScreen(
+                    model: context.model,
+                    conversationForSession: context.conversationForSession,
+                    openConversation: context.openConversation
+                )
+            } else {
+                unavailable("Automations", "Automations are unavailable.")
+            }
+        case .permissions:
+            if let model = configuration.workHostsModel {
+                DesktopPermissionsScreen(
+                    model: model,
+                    accountID: session.profile.id,
+                    thisMac: configuration.workHostModel?.pairedHostID
+                )
+            } else {
+                unavailable("Permissions", "Juno Work is unavailable.")
+            }
+        case .skills, .assistants:
+            // Phase 4 Stage B builds these pages; until it lands, More leads
+            // here.
+            unavailable(destination.label, "This page is not on the Mac yet.")
         case .connections:
             if let model = configuration.connectorModel {
                 DesktopConnectionsScreen(model: model)
