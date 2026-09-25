@@ -32,10 +32,16 @@ requireText("native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift", [
   "sessionID: controller?.sessionID",
   "openPreviewWindow(previewTarget)",
 ]);
-// ⌥⌘P moved from the workspace toolbar into the app's menu bar commands so it
-// is discoverable in the View menu and the ⌘/ shortcuts sheet.
+// ⌥⌘P lives in the app's menu bar so it is discoverable in the menus and the
+// ⌘/ shortcuts window. Both are generated from one shortcut registry, so the
+// check follows the registry entry and the command that routes it to Code.
+requireText("native/macOS/JunoDesktop/App/JunoShortcutRegistry.swift", [
+  ".codePreview, menu: \"Toggle Preview\"",
+  "key: \"p\", [.command, .option]",
+]);
 requireText("native/macOS/JunoDesktop/App/DesktopCommands.swift", [
-  "keyboardShortcut(\"p\", modifiers: [.command, .option])",
+  "case .codePreview:",
+  "code?.togglePreview",
 ]);
 requireText("native/macOS/JunoDesktop/App/DesktopCodePreviewDock.swift", [
   "CodePreviewDock(",
