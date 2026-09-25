@@ -98,12 +98,14 @@
          only ever used at display sizes here — greetings, page headings, card
          titles — never for body copy or controls, which stay on the system
          font. Real named weights are shipped rather than one variable face so
-         SwiftUI never synthesises a faux-bold. -->
+         SwiftUI never synthesises a faux-bold. The italic is the one variable
+         file, Newsreader Italic [opsz,wght], which JunoSerif pins at opsz 24
+         and wght 400 so it is the exact italic of the 24pt Regular. -->
     <key>UIAppFonts</key>
     <array>
         <string>Newsreader24pt-Regular.ttf</string>
         <string>Newsreader24pt-Medium.ttf</string>
-        <string>Newsreader24pt-MediumItalic.ttf</string>
+        <string>Newsreader-Italic-Variable.ttf</string>
         <string>Newsreader24pt-SemiBold.ttf</string>
     </array>
     <key>LSRequiresIPhoneOS</key>

@@ -28,16 +28,31 @@ final class SnapshotStillCache {
     /// mat top and bottom.
     static let sheet = CGSize(width: 752, height: 344)
 
-    func prepare(document: String, size: CGSize = SnapshotStillCache.sheet) async throws {
+    func prepare(
+        document: String,
+        size: CGSize = SnapshotStillCache.sheet,
+        afterStatus: Duration = .milliseconds(150)
+    ) async throws {
         guard images[document] == nil else { return }
-        let captured = try await SnapshotStills.capture(html: document, size: size)
+        let captured = try await SnapshotStills.capture(html: document, size: size, afterStatus: afterStatus)
         images[document] = captured.image
         messages[document] = captured.messages
     }
 
     /// An artifact as the transcript card and the canvas run it.
+    ///
+    /// A React page says "done" as soon as it has asked React to render; the
+    /// commit, Tailwind Play's stylesheet and the height the card fits itself
+    /// to follow. An offscreen web view runs no animation frames, so the height
+    /// reporter's `ResizeObserver` path is silent here and its 250ms re-measure
+    /// is what reports the mounted page — the picture waits past it.
     func prepareArtifact(kind: NativeArtifactKind, content: String, language: String? = nil) async throws {
-        try await prepare(document: NativeArtifactRuntimeDocument.build(kind: kind, content: content, language: language))
+        let runtime = NativeArtifactRuntimeInfo.resolve(kind: kind, language: language)
+        let isReact = runtime.lang == "tsx" || runtime.lang == "jsx"
+        try await prepare(
+            document: NativeArtifactRuntimeDocument.build(kind: kind, content: content, language: language),
+            afterStatus: .milliseconds(isReact ? 600 : 150)
+        )
     }
 
     /// A design's exported SVG, on the inert thumbnail sheet.

@@ -409,10 +409,12 @@ private final class ArtifactRuntimeMessageProxy: NSObject, WKScriptMessageHandle
 public enum ArtifactRuntimeNetwork {
     /// Whether the sandbox reaches the web. **Closed**, per the Phase 2
     /// brief's addendum of 2026-09-23: the Mac runs a page's own scripts in a
-    /// sandbox with no network, rather than copy the web's CDN-dependent
-    /// previews. Opening it — the web's reach, with React, Babel, Tailwind and
-    /// Pyodide from their CDNs — needs the owner's sign-off, and is this one
-    /// switch: the rule list and the page policy both follow it.
+    /// sandbox with no network, and the runtimes the web fetches from CDNs —
+    /// React, ReactDOM, Babel, Tailwind Play, Mermaid — are bundled and served
+    /// over `juno-runtime:` instead. Opening it — the web's reach, with remote
+    /// fonts, pictures and libraries and Pyodide — needs the owner's sign-off,
+    /// and is this one switch: the rule list and the page policy both follow
+    /// it.
     public static let isOpen = false
 
     /// Blocks every hierarchical scheme, then lets the app's own
@@ -479,12 +481,20 @@ final class ArtifactRuntimeContentRules {
 // MARK: - Bundled runtime files
 
 /// Serves `juno-runtime://<file>` from the app's `ArtifactRuntime` folder:
-/// the Mermaid engine today.
+/// Mermaid, React and ReactDOM, Babel standalone and Tailwind Play (the
+/// folder's README lists versions and checksums).
 ///
 /// A flat namespace of plain file names — no directories, no dot files, no
 /// traversal — so the scheme can hand out exactly what the app bundled and
 /// nothing beside it. A build that bundles nothing answers 404, and the page
 /// says it could not load the engine.
+///
+/// Every answer carries `Access-Control-Allow-Origin: *`. A page's document
+/// has an opaque origin, so each bundled script is cross-origin to it, and a
+/// `<script crossorigin>` — which is how pages copied from React's docs load
+/// it — is a CORS request that WebKit refuses without the header (the script
+/// never runs). The files are public builds, and `connect-src 'none'` keeps
+/// a page from reading them any other way.
 public final class ArtifactRuntimeSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sendable {
     public static let shared = ArtifactRuntimeSchemeHandler(
         root: Bundle.main.url(forResource: "ArtifactRuntime", withExtension: nil)
@@ -515,8 +525,13 @@ public final class ArtifactRuntimeSchemeHandler: NSObject, WKURLSchemeHandler, @
 
     public func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
         let url = urlSchemeTask.request.url ?? URL(string: "juno-runtime://missing")!
-        guard let file = fileURL(for: url), let data = try? Data(contentsOf: file) else {
-            let response = HTTPURLResponse(url: url, statusCode: 404, httpVersion: "HTTP/1.1", headerFields: nil)!
+        guard let file = fileURL(for: url), let data = try? Data(contentsOf: file, options: .mappedIfSafe) else {
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 404,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Access-Control-Allow-Origin": "*"]
+            )!
             urlSchemeTask.didReceive(response)
             urlSchemeTask.didFinish()
             return
@@ -532,7 +547,11 @@ public final class ArtifactRuntimeSchemeHandler: NSObject, WKURLSchemeHandler, @
             url: url,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": type, "Content-Length": String(data.count)]
+            headerFields: [
+                "Content-Type": type,
+                "Content-Length": String(data.count),
+                "Access-Control-Allow-Origin": "*",
+            ]
         )!
         urlSchemeTask.didReceive(response)
         urlSchemeTask.didReceive(data)

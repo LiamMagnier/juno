@@ -242,6 +242,18 @@ enum TranscriptSnapshotFixtures {
             }, prepare: {
                 try await SnapshotStillCache.shared.prepareArtifact(kind: .html, content: pricingCard)
             }),
+            // A live React component: compiled by the bundled Babel, mounted
+            // on the bundled React 18, styled by the bundled Tailwind Play.
+            TranscriptFixture(name: "artifact-react", stage: 3, view: {
+                AnyView(column { row(reactArtifactReply, newest: true) })
+            }, prepare: {
+                try await SnapshotStillCache.shared.prepareArtifact(kind: .react, content: reactChecklist)
+            }),
+            TranscriptFixture(name: "artifact-react-code", stage: 3, view: {
+                AnyView(column(artifactView: .code) { row(reactArtifactReply, newest: true) })
+            }, prepare: {
+                try await SnapshotStillCache.shared.prepareArtifact(kind: .react, content: reactChecklist)
+            }),
             TranscriptFixture(name: "artifact-source-unavailable", stage: 3) {
                 AnyView(column {
                     // A reply that stopped right after opening the tag: the
@@ -877,6 +889,50 @@ enum TranscriptSnapshotFixtures {
             model: "anthropic:claude-sonnet-4-6"
         ).with { $0.isPending = streaming }
     }
+
+    /// A React component with a hook and Tailwind classes — the shape a
+    /// model writes — for the live React card.
+    static let reactChecklist = """
+    import { useState } from "react";
+
+    const steps = ["Draft the brief", "Review with design", "Ship to beta"];
+
+    export default function LaunchChecklist() {
+      const [done, setDone] = useState<string[]>(["Draft the brief"]);
+      const toggle = (step: string) =>
+        setDone((current) => current.includes(step) ? current.filter((s) => s !== step) : [...current, step]);
+      return (
+        <div className="bg-stone-50 p-6">
+          <div className="mx-auto max-w-sm rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-base font-semibold text-stone-900">Launch checklist</h2>
+              <span className="text-xs font-medium text-emerald-700">{done.length} of {steps.length} done</span>
+            </div>
+            <div className="mt-3 h-1.5 rounded-full bg-stone-100">
+              <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${(done.length / steps.length) * 100}%` }} />
+            </div>
+            <ul className="mt-4 space-y-2">
+              {steps.map((step) => (
+                <li key={step}>
+                  <button onClick={() => toggle(step)} className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left text-sm text-stone-700 hover:bg-stone-50">
+                    <span className={done.includes(step) ? "h-4 w-4 rounded-full bg-emerald-500" : "h-4 w-4 rounded-full border border-stone-300"} />
+                    <span className={done.includes(step) ? "text-stone-400 line-through" : ""}>{step}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      );
+    }
+    """
+
+    static let reactArtifactReply = message(
+        "a-artifact-react",
+        .assistant,
+        "Here's a checklist you can tick through.\n\n<juno:artifact identifier=\"launch-checklist\" type=\"react\" title=\"Launch checklist\">\(reactChecklist)</juno:artifact>",
+        model: "anthropic:claude-sonnet-4-6"
+    )
 
     /// The pricing card's stored row: version 2, written by this message.
     static let pricingArtifact = NativeArtifact(

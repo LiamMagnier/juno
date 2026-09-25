@@ -88,7 +88,9 @@ final class NativeArtifactRuntimeDocumentTests: XCTestCase {
 
     func testAnHTMLFragmentGetsTailwindAndThePolicyFirst() {
         let document = NativeArtifactRuntimeDocument.build(kind: .html, content: "<div class=\"p-4\">Hi</div>", language: nil)
-        XCTAssertTrue(document.contains(#"<script src="https://cdn.tailwindcss.com"></script>"#))
+        // The web's rule — a fragment gets Tailwind Play — with the bundled copy.
+        XCTAssertTrue(document.contains(#"<script src="juno-runtime://tailwind.play.js"></script>"#))
+        XCTAssertFalse(document.contains("cdn.tailwindcss.com"))
         let charset = try? XCTUnwrap(document.range(of: #"<meta charset="utf-8"/>"#))
         let policy = try? XCTUnwrap(document.range(of: "Content-Security-Policy"))
         XCTAssertNotNil(charset)
@@ -111,7 +113,7 @@ final class NativeArtifactRuntimeDocumentTests: XCTestCase {
     func testAFullDocumentKeepsItsOwnHeadWithThePolicyAheadOfIt() {
         let source = #"<!doctype html><html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter"></head><body>x</body></html>"#
         let document = NativeArtifactRuntimeDocument.build(kind: .html, content: source, language: nil)
-        XCTAssertFalse(document.contains("cdn.tailwindcss.com"), "a full document is the author's own")
+        XCTAssertFalse(document.contains("tailwind"), "a full document is the author's own")
         let policy = document.range(of: "Content-Security-Policy")!.lowerBound
         let stylesheet = document.range(of: "fonts.googleapis.com")!.lowerBound
         XCTAssertLessThan(policy, stylesheet)
@@ -141,9 +143,114 @@ final class NativeArtifactRuntimeDocumentTests: XCTestCase {
         XCTAssertFalse(document.contains("export const"))
         XCTAssertTrue(document.contains(#"const Check = __JunoLucideIconFactory("Check");"#))
         XCTAssertTrue(document.contains(#"const CopyIcon = __JunoLucideIconFactory("Copy");"#))
-        XCTAssertTrue(document.contains(NativeArtifactRuntimeDocument.reactCDN))
-        XCTAssertTrue(document.contains(NativeArtifactRuntimeDocument.babelCDN))
         XCTAssertTrue(document.contains(#"typeof window["App"] === 'function'"#))
+    }
+
+    /// The web's `reactDoc`, with its four runtimes from the bundle in the
+    /// web's order — Tailwind, React, ReactDOM, Babel — and compiled with the
+    /// web's presets.
+    func testAReactDocumentLoadsTheBundledRuntimesWithTheWebsPresets() throws {
+        let document = NativeArtifactRuntimeDocument.build(kind: .react, content: "export default function App() { return <p/> }", language: nil)
+        let order = try [
+            NativeArtifactRuntimeDocument.tailwindScript,
+            NativeArtifactRuntimeDocument.reactScript,
+            NativeArtifactRuntimeDocument.reactDOMScript,
+            NativeArtifactRuntimeDocument.babelScript,
+        ].map { try XCTUnwrap(document.range(of: #"<script src="\#($0)"></script>"#), $0).lowerBound }
+        XCTAssertEqual(order, order.sorted())
+        XCTAssertEqual(NativeArtifactRuntimeDocument.reactScript, "juno-runtime://react.development.js")
+        XCTAssertEqual(NativeArtifactRuntimeDocument.reactDOMScript, "juno-runtime://react-dom.development.js")
+        XCTAssertEqual(NativeArtifactRuntimeDocument.babelScript, "juno-runtime://babel.min.js")
+        XCTAssertEqual(NativeArtifactRuntimeDocument.tailwindScript, "juno-runtime://tailwind.play.js")
+        XCTAssertTrue(document.contains("filename: 'artifact.tsx'"))
+        XCTAssertTrue(document.contains("[Babel.availablePresets['react'], { runtime: 'classic' }]"))
+        XCTAssertTrue(document.contains("[Babel.availablePresets['typescript'], { onlyRemoveTypeImports: true }]"))
+        XCTAssertTrue(document.contains("ReactDOM.createRoot(root).render(React.createElement(ErrorBoundary"))
+        // The chrome — shim, console bridge, height reporter — follows the
+        // runtimes, as the web's `withChrome` puts it before `</head>`.
+        let babel = try XCTUnwrap(document.range(of: NativeArtifactRuntimeDocument.babelScript))
+        let bridge = try XCTUnwrap(document.range(of: "juno:console"))
+        XCTAssertLessThan(babel.lowerBound, bridge.lowerBound)
+        XCTAssertTrue(document.contains("juno:size"))
+    }
+
+    /// No document the Mac builds names the network: every URL in it is the
+    /// bundle's. The artifacts carry no URLs of their own here — an author's
+    /// own `https:` link is the rule list's to refuse — except the CDN builds
+    /// a full page loads itself, which are pointed at the bundle.
+    func testEveryDocumentReferencesOnlyTheBundle() throws {
+        let fullPage = """
+            <!doctype html><html><head><meta charset="utf-8">
+            <script src="https://cdn.tailwindcss.com"></script>
+            <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+            <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+            <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+            </head><body><div id="root" class="p-4"></div>
+            <script type="text/babel">ReactDOM.createRoot(document.getElementById('root')).render(<b>Hi</b>);</script>
+            </body></html>
+            """
+        let cases: [(NativeArtifactKind, String?, String)] = [
+            (.html, nil, #"<div class="p-4 text-red-600">Hi</div>"#),
+            (.html, nil, fullPage),
+            (.react, nil, "export default function App() { const [n] = useState(1); return <p className=\"p-4\">{n}</p> }"),
+            (.code, "jsx", "function App() { return <p>Hi</p> }"),
+            (.code, "tsx", "type P = { n: number }; export default function App({ n = 1 }: P) { return <p>{n}</p> }"),
+            (.code, "typescript", "const x: number = 1; console.log(x)"),
+            (.code, "javascript", "console.log(1)"),
+            (.code, "python", "print(1)"),
+            (.code, "go", "package main"),
+            (.svg, nil, #"<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>"#),
+            (.code, "css", ".card{color:red}"),
+            (.mermaid, nil, "graph TD; A-->B"),
+        ]
+        let url = try NSRegularExpression(pattern: #"[A-Za-z][A-Za-z0-9+.-]*://[^\s"'<>)]*"#)
+        for (kind, language, content) in cases {
+            let document = NativeArtifactRuntimeDocument.build(kind: kind, content: content, language: language)
+            let text = document as NSString
+            let urls = url.matches(in: document, range: NSRange(location: 0, length: text.length)).map { text.substring(with: $0.range) }
+            for found in urls {
+                XCTAssertTrue(found.hasPrefix("juno-runtime://"), "\(kind) \(language ?? "-") names \(found)")
+            }
+            XCTAssertFalse(document.contains("//unpkg.com") || document.contains("//cdn."), "\(kind) \(language ?? "-") names a CDN")
+            XCTAssertTrue(document.contains("connect-src 'none'"), "\(kind) \(language ?? "-") keeps the network closed")
+        }
+    }
+
+    /// A full page that loads the web's runtimes itself gets the bundled
+    /// builds; its SRI hash (which names the CDN's bytes) goes, `crossorigin`
+    /// stays, and anything the Mac does not bundle is left for the rules to
+    /// refuse.
+    func testAFullPagesOwnCDNRuntimesPointAtTheBundle() {
+        let page = """
+            <!doctype html><html><head>
+            <script src='https://cdn.tailwindcss.com/3.4.17?plugins=forms'></script>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" integrity="sha512-abc" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+            <script SRC=https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js></script>
+            <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
+            <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+            <script data-src="https://cdn.tailwindcss.com"></script>
+            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+            </head><body></body></html>
+            """
+        let out = NativeArtifactRuntimeDocument.pointingAtBundledRuntimes(page)
+        XCTAssertTrue(out.contains("<script src='juno-runtime://tailwind.play.js'></script>"))
+        XCTAssertTrue(out.contains(#"<script src="juno-runtime://react.development.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>"#))
+        XCTAssertTrue(out.contains("<script SRC=juno-runtime://react-dom.development.js></script>"))
+        XCTAssertTrue(out.contains(#"<script src="juno-runtime://babel.min.js"></script>"#))
+        XCTAssertFalse(out.contains("integrity"))
+        // Not bundled: React 17, Tailwind 4's browser build, Chart.js, and an
+        // attribute that only looks like a source.
+        XCTAssertTrue(out.contains("https://unpkg.com/react@17/umd/react.development.js"))
+        XCTAssertTrue(out.contains("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"))
+        XCTAssertTrue(out.contains("https://cdn.jsdelivr.net/npm/chart.js"))
+        XCTAssertTrue(out.contains(#"<script data-src="https://cdn.tailwindcss.com"></script>"#))
+
+        XCTAssertEqual(NativeArtifactRuntimeDocument.bundledScript(forCDN: "https://unpkg.com/@babel/standalone"), NativeArtifactRuntimeDocument.babelScript)
+        XCTAssertEqual(NativeArtifactRuntimeDocument.bundledScript(forCDN: "//cdn.tailwindcss.com"), NativeArtifactRuntimeDocument.tailwindScript)
+        XCTAssertNil(NativeArtifactRuntimeDocument.bundledScript(forCDN: "https://cdn.tailwindcss.com.evil.example/x.js"))
+        XCTAssertNil(NativeArtifactRuntimeDocument.bundledScript(forCDN: "https://unpkg.com/babel-standalone@6/babel.min.js"))
+        XCTAssertNil(NativeArtifactRuntimeDocument.bundledScript(forCDN: "https://unpkg.com/react@18/index.js"))
     }
 
     func testAComponentWithNoExportIsStillFound() {
@@ -167,15 +274,21 @@ final class NativeArtifactRuntimeDocumentTests: XCTestCase {
     }
 
     func testConsoleRuntimes() {
+        // Pyodide is not bundled: the page says so rather than reach jsdelivr.
         let python = NativeArtifactRuntimeDocument.build(kind: .code, content: "print(1)", language: "python")
-        XCTAssertTrue(python.contains(NativeArtifactRuntimeDocument.pyodideIndex + "pyodide.js"))
-        XCTAssertTrue(python.contains(#""docx":"python-docx""#))
+        XCTAssertFalse(python.contains(NativeArtifactRuntimeDocument.pyodideIndex))
+        XCTAssertTrue(python.contains("Python does not run on this Mac yet"))
+        XCTAssertTrue(python.contains(#"<span id="label">Python</span>"#))
         let go = NativeArtifactRuntimeDocument.build(kind: .code, content: "package main", language: "go")
         XCTAssertTrue(go.contains("Browser execution is not available for "))
         XCTAssertTrue(go.contains(#"<span id="label">Go</span>"#))
+        // TypeScript compiles with the bundled Babel and the web's preset.
         let typescript = NativeArtifactRuntimeDocument.build(kind: .code, content: "export const x: number = 1", language: "ts")
-        XCTAssertTrue(typescript.contains(NativeArtifactRuntimeDocument.babelCDN))
+        XCTAssertTrue(typescript.contains(#"<script src="juno-runtime://babel.min.js"></script>"#))
+        XCTAssertTrue(typescript.contains("filename:'a.ts',presets:[[Babel.availablePresets['typescript'],{onlyRemoveTypeImports:true}]]"))
         XCTAssertFalse(typescript.contains("export const"))
+        let javascript = NativeArtifactRuntimeDocument.build(kind: .code, content: "console.log(1)", language: "js")
+        XCTAssertFalse(javascript.contains("babel"), "plain JavaScript needs no compiler")
     }
 
     func testCSSGetsASampleToStyle() {
@@ -542,12 +655,15 @@ final class ChatArtifactResolverTests: XCTestCase {
         XCTAssertFalse(resolver.card(for: writing, messageID: "m2", messageCreatedAt: nil, messageIsPending: true).drawsDesign)
     }
 
-    /// React, TypeScript and Python load their engines from CDNs the closed
-    /// sandbox cannot reach, so they show Code; the rest run.
+    /// React, JSX, TSX and TypeScript run on the bundled Babel and React;
+    /// Python's engine is not bundled, so it alone shows Code.
     func testOnlyReachableRuntimesRun() {
-        XCTAssertFalse(NativeArtifactRuntimeInfo.resolve(kind: .react, language: nil).runsOnThisMac)
+        XCTAssertTrue(NativeArtifactRuntimeInfo.resolve(kind: .react, language: nil).runsOnThisMac)
+        XCTAssertTrue(NativeArtifactRuntimeInfo.resolve(kind: .code, language: "jsx").runsOnThisMac)
+        XCTAssertTrue(NativeArtifactRuntimeInfo.resolve(kind: .code, language: "tsx").runsOnThisMac)
+        XCTAssertTrue(NativeArtifactRuntimeInfo.resolve(kind: .code, language: "ts").runsOnThisMac)
         XCTAssertFalse(NativeArtifactRuntimeInfo.resolve(kind: .code, language: "python").runsOnThisMac)
-        XCTAssertFalse(NativeArtifactRuntimeInfo.resolve(kind: .code, language: "ts").runsOnThisMac)
+        XCTAssertFalse(NativeArtifactRuntimeDocument.bundlesPython)
         XCTAssertTrue(NativeArtifactRuntimeInfo.resolve(kind: .html, language: nil).runsOnThisMac)
         XCTAssertTrue(NativeArtifactRuntimeInfo.resolve(kind: .mermaid, language: nil).runsOnThisMac)
         XCTAssertTrue(NativeArtifactRuntimeInfo.resolve(kind: .code, language: "js").runsOnThisMac)

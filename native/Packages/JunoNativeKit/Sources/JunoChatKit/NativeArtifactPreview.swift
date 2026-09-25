@@ -17,10 +17,11 @@ public enum NativeArtifactDisplayMode: String, CaseIterable, Identifiable, Senda
 /// How much executable behaviour an artifact preview is allowed to retain.
 ///
 /// * `.inline` is the web's sandbox, ported (``NativeArtifactRuntimeDocument``):
-///   the same builders, the same CDNs and the same policy, so a Tailwind page,
-///   a React component, a Mermaid chart or a Python script runs on the Mac as
-///   it runs on the website. The Mac's transcript card, canvas dock and
-///   library preview use it.
+///   the same builders and the same runtimes — bundled rather than fetched,
+///   with the network closed — so a Tailwind page, a React component, a
+///   TypeScript program or a Mermaid chart runs on the Mac as it runs on the
+///   website (Python shows its source: Pyodide is not bundled). The Mac's
+///   transcript card, canvas dock and library preview use it.
 /// * `.document` runs inline HTML scripts but stays network-isolated — the
 ///   posture the phone and the library's Canvas mode keep.
 /// * `.thumbnail` is inert: JavaScript is disabled and motion is frozen so

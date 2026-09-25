@@ -44,16 +44,16 @@ public struct NativeArtifactRuntimeInfo: Equatable, Sendable {
         self.engine = engine
     }
 
-    /// Whether this runtime loads its engine from the network: React and
-    /// TypeScript need Babel (and React) from unpkg, Python needs Pyodide from
-    /// jsdelivr. With the Mac's sandbox closed to the network
-    /// (``ArtifactRuntimeNetwork/isOpen``) these have no Preview; everything
-    /// else — pages, graphics, CSS, Mermaid (bundled), plain JavaScript — runs.
+    /// Whether this runtime needs an engine the Mac does not bundle: Python,
+    /// which the web runs on Pyodide from jsdelivr. Everything else runs from
+    /// the app bundle (`Resources/ArtifactRuntime`): React, JSX and TSX
+    /// compile with the bundled Babel and mount on the bundled React 18,
+    /// TypeScript compiles with the same Babel, Tailwind classes style through
+    /// the bundled Tailwind Play and Mermaid draws with the bundled engine. With
+    /// the Mac's sandbox closed to the network (``ArtifactRuntimeNetwork/isOpen``)
+    /// Python alone has no Preview and shows its source.
     public var needsRemoteRuntime: Bool {
-        switch lang {
-        case "tsx", "jsx", "typescript", "python": true
-        default: false
-        }
+        lang == "python" && !NativeArtifactRuntimeDocument.bundlesPython
     }
 
     /// Whether the Mac can show this artifact running: it has a runtime, and
@@ -151,14 +151,17 @@ public struct NativeArtifactRuntimeInfo: Equatable, Sendable {
 ///
 /// **Same builders, a closed network.** The documents are the web's, builder
 /// for builder, so an artifact is laid out and run the same way. What differs
-/// is what the page may reach. The web's policy lets a preview pull https
-/// scripts, styles, fonts and images (Tailwind, React, Babel and Pyodide from
-/// CDNs) — and in production that policy is moot, because the app's own
-/// enforcing CSP is inherited into the `srcdoc` frame and no script runs at all
-/// (Artifacts & Design audit, X-01). The Mac does not copy that: its preview
-/// runs scripts, in a sandbox of its own with **no network** (Phase 2 brief,
-/// addendum of 2026-09-23). ``contentSecurityPolicyDirectives`` is the web's
-/// list with every `https:` source taken out and `connect-src` and `frame-src`
+/// is what the page may reach. The web's policy lets a preview pull scripts,
+/// styles, fonts and images from CDNs (Tailwind, React, Babel and Pyodide
+/// among them). The Mac's preview runs in a sandbox of its own with **no
+/// network** (Phase 2 brief, addendum of 2026-09-23), and the engines the web
+/// fetches are bundled instead and served over `juno-runtime:`
+/// (`Resources/ArtifactRuntime`): the same React 18.3.1 and ReactDOM UMD
+/// development builds, `@babel/standalone` 7 with the web's presets, Tailwind
+/// Play 3.4.17 and Mermaid 11. So a React component compiles, mounts and
+/// styles as it does on the website; only Python (Pyodide) is not bundled
+/// (``bundlesPython``). ``contentSecurityPolicyDirectives`` is the web's list
+/// with every `https:` source taken out and `connect-src` and `frame-src`
 /// closed; the rule list blocks every scheme but the app's `juno-runtime:`.
 /// Opening the network is one switch (``ArtifactRuntimeNetwork/isOpen``), and
 /// the web's list comes back with it (``webContentSecurityPolicyDirectives``).
@@ -176,14 +179,32 @@ public struct NativeArtifactRuntimeInfo: Equatable, Sendable {
 /// crosses: the web's link bridge is left out (a clicked link is the
 /// navigation policy's to open), and so is its inspector.
 public enum NativeArtifactRuntimeDocument {
+    // The web's CDN builds (`sandbox-frame.tsx`). The Mac loads none of them:
+    // each has a bundled copy below, and they are kept to say what that copy
+    // stands in for.
     public static let tailwindCDN = "https://cdn.tailwindcss.com"
     public static let reactCDN = "https://unpkg.com/react@18.3.1/umd/react.development.js"
     public static let reactDOMCDN = "https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
     public static let babelCDN = "https://unpkg.com/@babel/standalone/babel.min.js"
     public static let pyodideIndex = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/"
-    /// Served by the app, not a CDN: the web imports Mermaid 11 from jsdelivr;
-    /// the Mac bundles the same major version (`Resources/ArtifactRuntime`).
+
+    // The same builds, served by the app from `Resources/ArtifactRuntime`
+    // (checksums and licences in its README).
+    /// Tailwind CSS Play 3.4.17 — the build `cdn.tailwindcss.com` serves.
+    public static let tailwindScript = "juno-runtime://tailwind.play.js"
+    /// React 18.3.1, the UMD development build.
+    public static let reactScript = "juno-runtime://react.development.js"
+    /// ReactDOM 18.3.1, the UMD development build.
+    public static let reactDOMScript = "juno-runtime://react-dom.development.js"
+    /// `@babel/standalone` 7.29.9.
+    public static let babelScript = "juno-runtime://babel.min.js"
+    /// The web imports Mermaid 11 from jsdelivr; the Mac bundles the same
+    /// major version.
     public static let mermaidScript = "juno-runtime://mermaid.min.js"
+    /// Whether Pyodide is bundled. It is not: a Python artifact shows its
+    /// source on the Mac, and its document says it cannot run rather than
+    /// reach for jsdelivr.
+    public static let bundlesPython = false
     /// The scheme ``mermaidScript`` and anything else bundled is served from.
     public static let runtimeScheme = "juno-runtime"
     /// The message handler the bridge posts to.
@@ -264,7 +285,7 @@ public enum NativeArtifactRuntimeDocument {
         case "tsx", "jsx":
             return withChrome(reactDocument(content))
         case "html":
-            return withChrome(htmlDocument(content), statusLite: true)
+            return withChrome(pointingAtBundledRuntimes(htmlDocument(content)), statusLite: true)
         case "svg":
             return withChrome(svgDocument(content), statusLite: true)
         case "css":
@@ -406,12 +427,87 @@ public enum NativeArtifactRuntimeDocument {
 
     // MARK: Builders
 
+    /// The web's `htmlDoc`, and its rule for Tailwind: a fragment gets
+    /// Tailwind Play in its head (the bundled copy here); a full document —
+    /// anything with an `<html>` element — is the author's own and gets
+    /// nothing added but the policy and the chrome.
     static func htmlDocument(_ code: String) -> String {
         if code.range(of: #"<html[\s>]"#, options: [.regularExpression, .caseInsensitive]) != nil {
             return code
         }
-        return #"<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><script src="\#(tailwindCDN)"></script>\#(baseStyle)</head><body>\#(code)</body></html>"#
+        return #"<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><script src="\#(tailwindScript)"></script>\#(baseStyle)</head><body>\#(code)</body></html>"#
     }
+
+    /// A page that loads the web's runtimes itself, pointed at the bundled
+    /// copies.
+    ///
+    /// On the web a full document that says
+    /// `<script src="https://cdn.tailwindcss.com">` — or React 18, ReactDOM 18
+    /// or `@babel/standalone` from unpkg, jsdelivr or cdnjs — gets that build
+    /// from the CDN. The Mac's sandbox has no network, so the same tag would
+    /// leave the page unstyled or unmounted; each such `src` is rewritten to
+    /// the bundled build instead (``bundledScript(forCDN:)``), and an
+    /// `integrity` hash on that tag is dropped, since it names the CDN's bytes
+    /// (a `.production.min` React is served as the bundled development build).
+    /// `crossorigin` stays: the scheme answers CORS. Any other `src` is left
+    /// alone, for the network rules to refuse.
+    static func pointingAtBundledRuntimes(_ document: String) -> String {
+        guard let tags = try? NSRegularExpression(pattern: #"<script\b[^>]*>"#, options: [.caseInsensitive]),
+            let source = try? NSRegularExpression(
+                pattern: #"((?<![\w-])src\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))"#,
+                options: [.caseInsensitive]
+            )
+        else { return document }
+        let text = document as NSString
+        var out = document as NSString
+        // Back to front, so earlier ranges stay valid as later tags change length.
+        for match in tags.matches(in: document, range: NSRange(location: 0, length: text.length)).reversed() {
+            let tag = text.substring(with: match.range)
+            let tagText = tag as NSString
+            guard let src = source.firstMatch(in: tag, range: NSRange(location: 0, length: tagText.length)) else { continue }
+            let valueRange = [2, 3, 4].map { src.range(at: $0) }.first { $0.location != NSNotFound }
+            guard let valueRange,
+                let bundled = bundledScript(forCDN: tagText.substring(with: valueRange).trimmingCharacters(in: .whitespaces))
+            else { continue }
+            var rewritten = tagText.replacingCharacters(in: valueRange, with: bundled)
+            rewritten = replacing(
+                #"\s+integrity\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+)"#,
+                in: rewritten,
+                with: "",
+                options: [.caseInsensitive]
+            )
+            out = out.replacingCharacters(in: match.range, with: rewritten) as NSString
+        }
+        return out as String
+    }
+
+    /// The bundled build a CDN script URL names, or nil when the Mac bundles
+    /// nothing for it. Versions are held to what is bundled: Tailwind Play
+    /// (v3; its `?plugins=` are not bundled, so their classes stay unstyled),
+    /// React and ReactDOM 18, and Babel standalone 7.
+    static func bundledScript(forCDN url: String) -> String? {
+        for (pattern, script) in bundledCDNBuilds
+        where url.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil {
+            return script
+        }
+        return nil
+    }
+
+    private static let npmCDN = #"^(?:https?:)?//(?:unpkg\.com/|cdn\.jsdelivr\.net/npm/)"#
+    private static let cdnjs = #"^(?:https?:)?//cdnjs\.cloudflare\.com/ajax/libs/"#
+    private static let v18 = #"18(?:\.\d+){0,2}"#
+    private static let umdFlavour = #"\.(?:development|production\.min|profiling\.min)\.js"#
+    private static let tail = #"(?:[?#].*)?$"#
+
+    static let bundledCDNBuilds: [(pattern: String, script: String)] = [
+        (#"^(?:https?:)?//cdn\.tailwindcss\.com(?:[/?#].*)?$"#, tailwindScript),
+        (npmCDN + "react@" + v18 + "/umd/react" + umdFlavour + tail, reactScript),
+        (cdnjs + "react/" + v18 + "/umd/react" + umdFlavour + tail, reactScript),
+        (npmCDN + "react-dom@" + v18 + "/umd/react-dom" + umdFlavour + tail, reactDOMScript),
+        (cdnjs + "react-dom/" + v18 + "/umd/react-dom" + umdFlavour + tail, reactDOMScript),
+        (npmCDN + #"@babel/standalone(?:@(?:7(?:\.\d+){0,2}|latest))?(?:/babel(?:\.min)?\.js)?"# + tail, babelScript),
+        (cdnjs + #"babel-standalone/7(?:\.\d+){0,2}/babel(?:\.min)?\.js"# + tail, babelScript),
+    ]
 
     static func svgDocument(_ code: String) -> String {
         #"<!doctype html><html><head><meta charset="utf-8"/>\#(baseStyle)<style>body{display:grid;place-items:center;min-height:100vh;background:#fff}svg{max-width:100%;height:auto}</style></head><body>\#(code)</body></html>"#
@@ -449,6 +545,13 @@ public enum NativeArtifactRuntimeDocument {
         """
     }
 
+    /// The web's `reactDoc`: module syntax turned into globals, the source
+    /// compiled by Babel standalone with the web's presets (`react` on the
+    /// classic runtime, so JSX becomes `React.createElement` against the UMD
+    /// global; `typescript` with `onlyRemoveTypeImports`, parsed as
+    /// `artifact.tsx`), and the component mounted with React 18's
+    /// `createRoot` inside an error boundary. Tailwind, React, ReactDOM and
+    /// Babel come from the bundle rather than unpkg.
     static func reactDocument(_ code: String) -> String {
         let inferred = firstComponentName(code)
         let cleaned = replacing(
@@ -475,10 +578,10 @@ public enum NativeArtifactRuntimeDocument {
         return """
         <!doctype html><html><head><meta charset="utf-8"/>
         <meta name="viewport" content="width=device-width,initial-scale=1"/>
-        <script src="\(tailwindCDN)"></script>
-        <script src="\(reactCDN)"></script>
-        <script src="\(reactDOMCDN)"></script>
-        <script src="\(babelCDN)"></script>
+        <script src="\(tailwindScript)"></script>
+        <script src="\(reactScript)"></script>
+        <script src="\(reactDOMScript)"></script>
+        <script src="\(babelScript)"></script>
         \(baseStyle)</head>
         <body><div id="root"></div>
         <script type="text/plain" id="__src">\(escapeScriptClose(preamble + cleaned + inferredAssignment))</script>
@@ -495,8 +598,8 @@ public enum NativeArtifactRuntimeDocument {
           function fail(msg){ root.innerHTML = '<pre data-juno-error style="margin:0;padding:16px;color:#b91c1c;white-space:pre-wrap;font:13px/1.6 ui-monospace,SFMono-Regular,monospace">'+String(msg).replace(/[&<]/g,function(c){return c==='&'?'&amp;':'&lt;';})+'</pre>'; }
           function failError(e){var msg=text(e); console.error(msg); fail(msg); status('error','Error');}
           status('loading','Loading');
-          if (!window.React || !window.ReactDOM) { fail('Couldn’t load React (offline?).'); status('error','Error'); return; }
-          if (!window.Babel) { fail('Couldn’t load the Babel compiler (offline?).'); status('error','Error'); return; }
+          if (!window.React || !window.ReactDOM) { fail('Couldn’t load React from the app.'); status('error','Error'); return; }
+          if (!window.Babel) { fail('Couldn’t load the Babel compiler from the app.'); status('error','Error'); return; }
           var raw = document.getElementById('__src').textContent;
           var before = {};
           Object.keys(window).forEach(function(k){ before[k] = true; });
@@ -561,7 +664,9 @@ public enum NativeArtifactRuntimeDocument {
     """
 
     /// A self-contained dark terminal that runs JavaScript, TypeScript or
-    /// Python and streams what it prints — the web's `consoleDoc`.
+    /// Python and streams what it prints — the web's `consoleDoc`. TypeScript
+    /// compiles with the bundled Babel (the web's `typescript` preset, as
+    /// `a.ts`); Python only once Pyodide is bundled (``bundlesPython``).
     static func consoleDocument(
         _ rawCode: String,
         engine: NativeArtifactRuntimeInfo.Engine,
@@ -574,6 +679,14 @@ public enum NativeArtifactRuntimeDocument {
         let runtimeLabel = jsonLiteral(label ?? lang)
         let boot: String
         switch engine {
+        case .python where !bundlesPython:
+            // The web fetches Pyodide from jsdelivr; the Mac bundles no Python
+            // and reaches no CDN, so the page says so instead of trying.
+            boot = """
+              line('Python does not run on this Mac yet: its engine (Pyodide) is not bundled.','warn');
+              line('The Code tab has the source, to copy or download.','muted');
+              status('done','Ready');
+            """
         case .unsupported:
             boot = """
               line('Browser execution is not available for '+\(runtimeLabel)+' artifacts yet.','warn');
@@ -624,7 +737,7 @@ public enum NativeArtifactRuntimeDocument {
         case .js:
             let run = lang == "typescript"
                 ? """
-                  if(!window.Babel){printErr('Couldn’t load the TypeScript compiler (offline?).');status('error','Error');}
+                  if(!window.Babel){printErr('Couldn’t load the TypeScript compiler from the app.');status('error','Error');}
                      else{try{body=Babel.transform(body,{filename:'a.ts',presets:[[Babel.availablePresets['typescript'],{onlyRemoveTypeImports:true}]]}).code;}catch(e){printErr(e);status('error','Error');body=null;}}
                      if(body!==null) run(body);
                   """
@@ -643,7 +756,7 @@ public enum NativeArtifactRuntimeDocument {
             """
         }
 
-        let babel = lang == "typescript" ? #"<script src="\#(babelCDN)"></script>"# : ""
+        let babel = lang == "typescript" ? #"<script src="\#(babelScript)"></script>"# : ""
         return """
         <!doctype html><html><head><meta charset="utf-8"/>\(cspMeta)\(sandboxShim)\(terminalStyle)\(babel)</head>
         <body><div id="wrap"><div id="bar"><span id="dot"></span><span id="label">\(escapeHTML(label ?? lang))</span><span id="st" style="margin-left:auto"></span></div><div id="term"></div></div>

@@ -1,3 +1,4 @@
+import CoreText
 import SwiftUI
 
 #if canImport(UIKit)
@@ -25,13 +26,23 @@ import SwiftUI
 /// ``greetingName(compact:)``) live here for source compatibility only; none of
 /// them sets Newsreader except the Mac greeting.
 ///
-/// **Why named faces rather than the variable font.** The variable file reports
-/// its legacy family as `Newsreader 16pt`, so looking it up as "Newsreader"
-/// silently fails; and asking SwiftUI for `.weight(.medium)` on a single
-/// registered face makes it synthesise a faux-bold. Shipping the real 24pt
-/// faces and addressing each by its **PostScript** name avoids both traps. The
-/// 24pt optical size is right because the serif is only ever set at display
-/// sizes.
+/// **Named upright faces, one pinned variable italic.** The upright variable
+/// file reports its legacy family as `Newsreader 16pt`, so looking it up as
+/// "Newsreader" silently fails; and asking SwiftUI for `.weight(.medium)` on a
+/// single registered face makes it synthesise a faux-bold. Shipping the real
+/// 24pt upright faces and addressing each by its **PostScript** name avoids
+/// both traps. The 24pt optical size is right because the serif is only ever
+/// set at display sizes.
+///
+/// The italic is the other way round, because Google Fonts ships no static
+/// 24pt Regular Italic: it is Newsreader Italic's variable file
+/// (`Newsreader-Italic-Variable.ttf`, axes `opsz` 6–72 and `wght` 200–800),
+/// pinned through a font descriptor at **`opsz` 24 and `wght` 400**
+/// (``italicAxes``) — the same optical size and weight as ``Face/regular``, so
+/// the greeting's name is the exact italic of the words around it, and the
+/// web's `font-normal italic`. The pin matters: left to itself CoreText sets
+/// `opsz` to the point size, and a 40pt name would take the 40pt cut, finer
+/// and tighter than the 24pt upright beside it.
 ///
 /// The faces ship in `native/iOS/JunoMobile/Resources/Fonts`, registered by
 /// `UIAppFonts` on the phone and by `ATSApplicationFontsPath` on the Mac, whose
@@ -43,33 +54,76 @@ public enum JunoSerif {
   public enum Face: String, CaseIterable, Sendable {
     case regular = "Newsreader24pt-Regular"
     case medium = "Newsreader24pt-Medium"
-    /// The only italic bundled. The web's greeting name is Newsreader's
-    /// *regular* italic; `Newsreader24pt-Italic.ttf` is not in the bundle yet,
-    /// so the name is a half-weight heavier than the web's until it is.
-    case mediumItalic = "Newsreader24pt-MediumItalic"
+    /// The italic: the variable file's default instance, which names itself
+    /// `Newsreader16pt-Italic` whatever its axes, drawn at ``JunoSerif/italicAxes``.
+    case italic = "Newsreader16pt-Italic"
     case semibold = "Newsreader24pt-SemiBold"
+
+    /// The file in `Resources/Fonts` that carries the face.
+    public var fileName: String {
+      switch self {
+      case .italic: "Newsreader-Italic-Variable.ttf"
+      default: "\(rawValue).ttf"
+      }
+    }
 
     /// The system-serif equivalent, used when the face is not bundled.
     var systemWeight: Font.Weight {
       switch self {
-      case .regular: .regular
-      case .medium, .mediumItalic: .medium
+      case .regular, .italic: .regular
+      case .medium: .medium
       case .semibold: .semibold
       }
     }
 
-    var isItalic: Bool { self == .mediumItalic }
+    var isItalic: Bool { self == .italic }
 
     /// The bundled face nearest a weight, upright or italic. Italic has one
-    /// face, so every italic request lands on it.
+    /// face, pinned at the greeting's weight, so every italic request lands
+    /// on it.
     static func nearest(to weight: Font.Weight, italic: Bool) -> Face {
-      if italic { return .mediumItalic }
+      if italic { return .italic }
       switch weight {
       case .medium: return .medium
       case .semibold, .bold, .heavy, .black: return .semibold
       default: return .regular
       }
     }
+  }
+
+  /// The italic's pinned variation axes, by OpenType tag: the 24pt optical
+  /// size of the upright faces, at weight 400.
+  public static let italicAxes: [String: Double] = ["opsz": 24, "wght": 400]
+
+  /// ``italicAxes`` keyed as CoreText wants them: each tag's four bytes as a
+  /// number (`'opsz'` is 0x6F70737A).
+  static var italicVariation: [NSNumber: NSNumber] {
+    Dictionary(uniqueKeysWithValues: italicAxes.map { tag, value in
+      (NSNumber(value: axisIdentifier(tag)), NSNumber(value: value))
+    })
+  }
+
+  /// An OpenType axis tag as CoreText's numeric identifier.
+  static func axisIdentifier(_ tag: String) -> UInt32 {
+    tag.unicodeScalars.reduce(UInt32(0)) { ($0 << 8) | ($1.value & 0xFF) }
+  }
+
+  /// The italic at `size` points with its axes pinned.
+  ///
+  /// A `CTFont` rather than `Font.custom`, which has no way to carry a
+  /// variation. Nil when the variable file is not registered: CoreText
+  /// answers an unknown name with a default face, which is caught by its
+  /// PostScript name (a pinned instance keeps the default's name as a prefix,
+  /// `Newsreader16pt-Italic_wght_opsz…`).
+  public static func pinnedItalic(size: CGFloat) -> CTFont? {
+    let base = CTFontDescriptorCreateWithNameAndSize(Face.italic.rawValue as CFString, size)
+    let pinned = CTFontDescriptorCreateCopyWithAttributes(
+      base,
+      [kCTFontVariationAttribute: italicVariation] as CFDictionary
+    )
+    let font = CTFontCreateWithFontDescriptor(pinned, size, nil)
+    guard (CTFontCopyPostScriptName(font) as String).hasPrefix(Face.italic.rawValue) else { return nil }
+    return font
   }
 
   /// Whether the real Newsreader faces are installed in this process.
@@ -79,15 +133,22 @@ public enum JunoSerif {
   /// returns the system serif (New York), which is metrically well-behaved and
   /// close in colour — a deliberate, *observable* fallback rather than a
   /// silent change of brand.
-  public static let isBundled: Bool = {
+  public static let isBundled: Bool = isRegistered(.regular)
+
+  /// Whether the variable italic is installed in this process. Checked on its
+  /// own: an app could ship the upright faces without it, and the italic then
+  /// falls back to New York's italic while the upright stays Newsreader.
+  public static let isItalicBundled: Bool = isRegistered(.italic)
+
+  static func isRegistered(_ face: Face) -> Bool {
     #if canImport(UIKit)
-      return UIFont(name: Face.regular.rawValue, size: 12) != nil
+      return UIFont(name: face.rawValue, size: 12) != nil
     #elseif canImport(AppKit)
-      return NSFont(name: Face.regular.rawValue, size: 12) != nil
+      return NSFont(name: face.rawValue, size: 12) != nil
     #else
       return false
     #endif
-  }()
+  }
 
   /// Newsreader at `size`, scaling with Dynamic Type relative to `textStyle`.
   ///
@@ -104,7 +165,7 @@ public enum JunoSerif {
     relativeTo textStyle: Font.TextStyle,
     face: Face = .regular
   ) -> Font {
-    font(size: size, relativeTo: textStyle, face: face, bundled: isBundled)
+    font(size: size, relativeTo: textStyle, face: face, bundled: face.isItalic ? isItalicBundled : isBundled)
   }
 
   /// The resolution itself, with the bundle check passed in so a test can
@@ -118,7 +179,12 @@ public enum JunoSerif {
     if bundled {
       // A registered face already carries its slant: no `.italic()` on top,
       // which would ask for an oblique of an italic.
-      return .custom(face.rawValue, size: size, relativeTo: textStyle)
+      if face.isItalic, let italic = pinnedItalic(size: dynamicTypeSize(size, relativeTo: textStyle)) {
+        return Font(italic)
+      }
+      if !face.isItalic {
+        return .custom(face.rawValue, size: size, relativeTo: textStyle)
+      }
     }
     // New York, at the same size and scaling the same way.
     let fallback = JunoType.systemFont(
@@ -126,6 +192,37 @@ public enum JunoSerif {
     )
     return face.isItalic ? fallback.italic() : fallback
   }
+
+  /// `size` after Dynamic Type on the phone, for the italic, whose `CTFont`
+  /// cannot scale itself the way `Font.custom(_:size:relativeTo:)` does. The
+  /// Mac has no Dynamic Type; ``SwiftUI/EnvironmentValues/junoTextScale`` has
+  /// already scaled `size` there.
+  static func dynamicTypeSize(_ size: CGFloat, relativeTo textStyle: Font.TextStyle) -> CGFloat {
+    #if canImport(UIKit) && !os(watchOS)
+      return UIFontMetrics(forTextStyle: uiTextStyle(textStyle)).scaledValue(for: size)
+    #else
+      return size
+    #endif
+  }
+
+  #if canImport(UIKit) && !os(watchOS)
+    static func uiTextStyle(_ style: Font.TextStyle) -> UIFont.TextStyle {
+      switch style {
+      case .largeTitle: .largeTitle
+      case .title: .title1
+      case .title2: .title2
+      case .title3: .title3
+      case .headline: .headline
+      case .subheadline: .subheadline
+      case .body: .body
+      case .callout: .callout
+      case .footnote: .footnote
+      case .caption: .caption1
+      case .caption2: .caption2
+      @unknown default: .body
+      }
+    }
+  #endif
 
   /// The display rung's font: the nearest bundled face to `weight`.
   static func displayFont(

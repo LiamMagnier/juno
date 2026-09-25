@@ -57,11 +57,12 @@ enum SnapshotStills {
         timeout: TimeInterval = 6,
         messageHandler: String = NativeArtifactRuntimeDocument.messageHandlerName,
         settle: Duration = .milliseconds(400),
+        afterStatus: Duration = .milliseconds(150),
         transparent: Bool = false
     ) async throws -> (image: NSImage, messages: [ArtifactRuntimeMessage]) {
         SnapshotProbe.pending += 1
         defer { SnapshotProbe.pending -= 1 }
-        let loader = StillLoader(settle: settle)
+        let loader = StillLoader(settle: settle, afterStatus: afterStatus)
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.setURLSchemeHandler(
@@ -116,9 +117,14 @@ enum SnapshotStills {
         private(set) var isReady = false
         private(set) var messages: [ArtifactRuntimeMessage] = []
         private let settle: Duration
+        /// How long after the page says it is done before the picture: one
+        /// beat for the console line an error posts after it, longer where
+        /// the page keeps drawing (``SnapshotStillCache/prepareArtifact(kind:content:language:)``).
+        private let afterStatus: Duration
 
-        init(settle: Duration) {
+        init(settle: Duration, afterStatus: Duration) {
             self.settle = settle
+            self.afterStatus = afterStatus
         }
 
         func webView(_: WKWebView, didFinish _: WKNavigation!) {
@@ -154,8 +160,7 @@ enum SnapshotStills {
                 status == "done" || status == "error"
             else { return }
             Task { @MainActor in
-                // One more beat, for the console line an error posts after it.
-                try? await Task.sleep(for: .milliseconds(150))
+                try? await Task.sleep(for: self.afterStatus)
                 self.isReady = true
             }
         }

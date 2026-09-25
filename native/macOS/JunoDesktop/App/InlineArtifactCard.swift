@@ -68,10 +68,11 @@ struct DesktopInlineArtifactCard: View {
     private var isMarkdown: Bool { card.kind == .markdown }
     private var isDesign: Bool { card.kind.isDesignDocument }
     /// Whether this artifact has a Preview at all: everything the Mac's closed
-    /// sandbox can run (React, TypeScript and Python need engines from the
-    /// network and show Code), and a design once it has a stored row to draw
-    /// from — never its tag body, which is the compact authoring form (the
-    /// Mac draws designs; the web prints their JSON — §0.8 register, 14).
+    /// sandbox can run (React and TypeScript on the bundled Babel and React;
+    /// Python, whose engine is not bundled, shows Code), and a design once it
+    /// has a stored row to draw from — never its tag body, which is the
+    /// compact authoring form (the Mac draws designs; the web prints their
+    /// JSON — §0.8 register, 14).
     private var hasPreview: Bool {
         guard hasContent else { return false }
         if isDesign { return card.drawsDesign }

@@ -65,7 +65,8 @@ final class JunoTypeLadderTests: XCTestCase {
         let italic = JunoType.displayItalic(size: 40)
         XCTAssertTrue(italic.isItalic)
         XCTAssertEqual(italic.face, .serif)
-        XCTAssertEqual(JunoSerif.Face.nearest(to: italic.weight, italic: true), .mediumItalic)
+        XCTAssertEqual(italic.weight, .regular, "the web's greeting is font-normal, its name too")
+        XCTAssertEqual(JunoSerif.Face.nearest(to: italic.weight, italic: true), .italic)
         XCTAssertEqual(JunoSerif.Face.nearest(to: JunoType.display(size: 40).weight, italic: false), .regular)
     }
 
@@ -146,8 +147,8 @@ final class JunoTypeLadderTests: XCTestCase {
             .deletingLastPathComponent() // → native
             .appendingPathComponent("iOS/JunoMobile/Resources/Fonts")
         for face in JunoSerif.Face.allCases {
-            let url = fonts.appendingPathComponent("\(face.rawValue).ttf")
-            XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "\(face.rawValue).ttf is bundled")
+            let url = fonts.appendingPathComponent(face.fileName)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "\(face.fileName) is bundled")
             var error: Unmanaged<CFError>?
             if !CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error) {
                 // Already registered by an earlier test in this process is fine.
@@ -168,9 +169,57 @@ final class JunoTypeLadderTests: XCTestCase {
         for face in JunoSerif.Face.allCases {
             let font = JunoSerif.font(size: 37, relativeTo: .largeTitle, face: face, bundled: true)
             let resolved = font.resolve(in: context)
-            XCTAssertEqual(CTFontCopyPostScriptName(resolved.ctFont) as String, face.rawValue)
+            let name = CTFontCopyPostScriptName(resolved.ctFont) as String
+            if face.isItalic {
+                // A pinned instance is named after the default one.
+                XCTAssertTrue(name.hasPrefix(face.rawValue), "the italic resolved to \(name)")
+            } else {
+                XCTAssertEqual(name, face.rawValue)
+            }
             XCTAssertEqual(resolved.pointSize, 37, accuracy: 0.01)
         }
+    }
+
+    /// The greeting's italic is the variable file pinned at the upright
+    /// faces' 24pt optical size and weight 400 — at every greeting size, so
+    /// the name is the exact italic of the 24pt Regular beside it. Unpinned,
+    /// CoreText would set the optical size to the point size.
+    func testTheItalicIsTheVariableFilePinnedAtTheUprightsAxes() throws {
+        try registerNewsreader()
+        XCTAssertEqual(JunoSerif.italicAxes, ["opsz": 24, "wght": 400])
+        XCTAssertEqual(JunoSerif.axisIdentifier("opsz"), 0x6F70_737A)
+        XCTAssertEqual(JunoSerif.axisIdentifier("wght"), 0x7767_6874)
+        let opsz = NSNumber(value: JunoSerif.axisIdentifier("opsz"))
+        let wght = NSNumber(value: JunoSerif.axisIdentifier("wght"))
+        let context = EnvironmentValues().fontResolutionContext
+
+        for size in [JunoType.displaySize(forColumnWidth: 640), 40, JunoType.displaySize(forColumnWidth: 1024)] {
+            // Through the ladder, as the greeting sets it.
+            let resolved = JunoType.displayItalic(size: size).font().resolve(in: context)
+            XCTAssertTrue(resolved.isItalic, "\(size)pt")
+            XCTAssertEqual(resolved.pointSize, size, accuracy: 0.01)
+            let font = resolved.ctFont
+            XCTAssertTrue(CTFontGetSymbolicTraits(font).contains(.traitItalic), "\(size)pt")
+            XCTAssertTrue((CTFontCopyPostScriptName(font) as String).hasPrefix(JunoSerif.Face.italic.rawValue))
+            XCTAssertEqual(CTFontCopyFamilyName(font) as String, "Newsreader")
+            // The axes in force: opsz 24 at every size; wght 400, which is the
+            // axis default and so may be left out of the reported variation.
+            let variation = try XCTUnwrap(CTFontCopyVariation(font) as? [NSNumber: NSNumber], "\(size)pt")
+            XCTAssertEqual(variation[opsz]?.doubleValue, 24, "\(size)pt optical size")
+            XCTAssertEqual(variation[wght]?.doubleValue ?? 400, 400, "\(size)pt weight")
+            // The descriptor carries both pins.
+            let pinned = try XCTUnwrap(
+                CTFontDescriptorCopyAttribute(CTFontCopyFontDescriptor(font), kCTFontVariationAttribute) as? [NSNumber: NSNumber]
+            )
+            XCTAssertEqual(pinned[opsz]?.doubleValue, 24)
+            XCTAssertEqual(pinned[wght]?.doubleValue, 400)
+        }
+
+        // Without the pin the same file follows the point size: the pin is
+        // what holds it to the upright's cut.
+        let unpinned = CTFontCreateWithName(JunoSerif.Face.italic.rawValue as CFString, 40, nil)
+        let automatic = CTFontCopyVariation(unpinned) as? [NSNumber: NSNumber]
+        XCTAssertEqual(automatic?[opsz]?.doubleValue, 40)
     }
 
     /// Without the faces, the fallback is New York at the same size — a serif,
@@ -184,7 +233,7 @@ final class JunoTypeLadderTests: XCTestCase {
         // / `.NewYork-Regular`); the PostScript name is the stable tell.
         let name = CTFontCopyPostScriptName(resolved.ctFont) as String
         XCTAssertTrue(name.contains("NewYork"), "fallback face was \(name)")
-        let italic = JunoSerif.font(size: 37, relativeTo: .largeTitle, face: .mediumItalic, bundled: false)
+        let italic = JunoSerif.font(size: 37, relativeTo: .largeTitle, face: .italic, bundled: false)
             .resolve(in: context)
         XCTAssertTrue(italic.isItalic)
     }

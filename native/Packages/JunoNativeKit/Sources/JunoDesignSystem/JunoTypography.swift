@@ -142,15 +142,15 @@ public struct JunoType: Equatable, Sendable {
 
     /// The greeting's first name: the italic of ``display(size:)``.
     ///
-    /// Set in **Newsreader 24pt Medium Italic**, the only italic the apps
-    /// bundle. The web sets the name in Newsreader's *regular* italic, so this
-    /// is a half-weight heavier than the web; bundling `Newsreader24pt-Italic`
-    /// would match it exactly and needs no code change here beyond the face.
+    /// Set in **Newsreader Italic** at weight 400 on the 24pt optical size —
+    /// the variable italic pinned by ``JunoSerif/italicAxes`` — so it is the
+    /// exact italic of the 24pt Regular around it, and the web's
+    /// `<span className="italic">` inside a `font-normal` greeting.
     public static func displayItalic(size: CGFloat) -> JunoType {
         JunoType(
             JunoGeneratedType.display,
             size: size,
-            weight: .medium,
+            weight: .regular,
             face: .serif,
             isItalic: true,
             textStyle: .largeTitle

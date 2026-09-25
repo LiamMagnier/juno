@@ -177,16 +177,20 @@ final class JunoBrandTests: XCTestCase {
     /// and the app falls back to the system serif without anyone noticing.
     func testSerifFacesAreAddressedByPostScriptName() {
         XCTAssertEqual(JunoSerif.Face.regular.rawValue, "Newsreader24pt-Regular")
-        XCTAssertEqual(JunoSerif.Face.mediumItalic.rawValue, "Newsreader24pt-MediumItalic")
-        for face in JunoSerif.Face.allCases {
+        // The variable italic's default instance names itself after the 16pt
+        // cut; the 24pt axes are pinned when it is drawn.
+        XCTAssertEqual(JunoSerif.Face.italic.rawValue, "Newsreader16pt-Italic")
+        XCTAssertEqual(JunoSerif.Face.italic.fileName, "Newsreader-Italic-Variable.ttf")
+        for face in JunoSerif.Face.allCases where !face.isItalic {
             XCTAssertTrue(face.rawValue.hasPrefix("Newsreader24pt-"))
+            XCTAssertEqual(face.fileName, "\(face.rawValue).ttf")
         }
     }
 
-    /// Exactly one face is italic — the greeting's first name, mirroring the
-    /// web's `font-medium italic`.
-    func testOnlyTheMediumItalicFaceIsItalic() {
-        XCTAssertEqual(JunoSerif.Face.allCases.filter(\.isItalic), [.mediumItalic])
+    /// Exactly one face is italic — the greeting's first name, the web's
+    /// regular-weight `italic` inside a `font-normal` greeting.
+    func testOnlyTheItalicFaceIsItalic() {
+        XCTAssertEqual(JunoSerif.Face.allCases.filter(\.isItalic), [.italic])
     }
 
     /// The fallback must be *observable*. If Newsreader is ever dropped from the

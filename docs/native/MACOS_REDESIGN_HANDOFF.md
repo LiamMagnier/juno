@@ -34,6 +34,23 @@ The owner paused the work. This page gives the exact state and the steps to resu
 - The web's `--destructive` and `--primary` are near twins at 6pt; the Mac draws a failed run as a cross (#173) and the hue question goes to web design.
 - Runtime checks for a person at the screen (screen control is off here): the starter chips' Esc and focus return, the find bar's Esc from a focused button, Full Keyboard Access on page cards (Return opens, Space is Quick Look in the Library), Quick Entry's trust line after granting Accessibility, the inline rename's select-all, the Share sheet's Done, the announcement's close X, plus each lane's list in the sections below.
 
+**Added after the final review (2026-09-25, owner-approved).** Two additions, on the same branch, still not pushed or deployed:
+
+1. **Live React, TypeScript and Tailwind previews** (register #183, #21 amended). The web's CDN builds are bundled in `native/macOS/JunoDesktop/Resources/ArtifactRuntime/` and served over the sandbox's own `juno-runtime:` scheme, so the network stays closed: React and ReactDOM 18.3.1 (UMD development), `@babel/standalone` 7.29.9 and Tailwind Play 3.4.17, copied from `juno-release-tools/runtime-assets` after checking each file against its `SHA256SUMS.txt` (hashes, sources and licences — `LICENSE-react`, `LICENSE-babel`, `LICENSE-tailwind`, `SOURCES.md` — in the folder's README). `NativeArtifactRuntimeDocument` builds the web's documents against them: React, JSX and TSX compile with the web's presets (`react` classic, `typescript` with `onlyRemoveTypeImports`, as `artifact.tsx`) and mount with `createRoot` inside the error boundary; TypeScript runs in the console runtime through the same Babel; an HTML fragment gets Tailwind Play as on the web, and a full page that loads Tailwind, React 18, ReactDOM 18 or Babel 7 from a CDN itself is pointed at the bundled copy (`pointingAtBundledRuntimes`). The scheme answers `Access-Control-Allow-Origin: *`, without which WebKit refuses a `<script crossorigin>` (measured: React never loaded). Python still shows Code: Pyodide is not bundled (`bundlesPython`), and its document no longer names jsdelivr. The console, error and height channels, the Preview / Code / Console card, the canvas dock and the inert thumbnail policy are unchanged. One visible consequence of parity: an HTML fragment now gets Tailwind's preflight as it does on the web, so the pricing fixture's list loses its bullets and its card measures `border-box`.
+2. **The exact italic** (register #184). `native/iOS/JunoMobile/Resources/Fonts/Newsreader-Italic-Variable.ttf` (Google Fonts' `Newsreader-Italic[opsz,wght].ttf`, sha256 `796668611f80b64d5adf182fde3b6f29ed83b4e7cbec7b96937e84ac01364792`, OFL like the rest of the folder), in the phone's `UIAppFonts` and the Mac's `ATSApplicationFontsPath`. `JunoSerif.Face.italic` draws it through a font descriptor pinned at `opsz` 24 and `wght` 400 (`JunoSerif.italicAxes`), so the greeting's name and the agent thread's "Hi, I'm *name*" are the exact italic of the bundled Newsreader 24pt Regular at every greeting size; `JunoType.displayItalic` is weight 400. `Newsreader24pt-MediumItalic.ttf` was used by nothing else and is removed.
+
+| Check (derived data `/tmp/jgRT-*`) | Result |
+|---|---|
+| Mac Debug build (`build-for-testing`) | TEST BUILD SUCCEEDED |
+| Mac Stable build (ad-hoc signing) | BUILD SUCCEEDED (the bundle carries the four runtimes, their licences and the italic) |
+| Mac unit tests (`-only-testing:JunoDesktopTests`) | TEST SUCCEEDED, 425 tests in 64 suites (five new in `ArtifactRuntimeSandboxTests`: a React component with a hook and Tailwind classes read back from the DOM and computed style, a TSX component, a throwing component's real error, a TypeScript program's console, a full page's own CDN tags running from the bundle) |
+| Snapshots | transcript, final and signals suites in `/tmp/juno-glass-snapshots/runtime-italic/`: `transcript/artifact-react-{light,dark}.png` (the live React card) and `artifact-react-code-*`, `final/window-empty-chat-*` and `agent-thread-empty-*` (the greeting's italic); looked at |
+| iOS build (generic simulator) | BUILD SUCCEEDED (`UIAppFonts` lists `Newsreader-Italic-Variable.ttf`) |
+| JunoNativeKit package tests (`-warnings-as-errors`) | ok, 1,638 XCTests, 0 failures (new: every document names only `juno-runtime:` URLs, the React document's runtimes and presets, a full page's CDN tags rewritten, the italic's pinned axes through SwiftUI's resolution) |
+| Gates | `design:tokens:check`, `native:icons:check`, `native:contract:check`, `native:design:check` (6 gates), `native:sync:check` (13 gates) all hold; register 184 entries |
+
+Still for a person at the screen: a React artifact's click handlers in the transcript and the canvas (the offscreen tests drive state through effects, not clicks), and the greeting's italic on a Retina display beside the web's.
+
 ## Where the work lives
 
 | Thing | Location |
@@ -162,7 +179,7 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
 
 ## Open items carried forward
 
-- **Newsreader italic.** Regular Italic is not bundled, so the greeting's name uses Medium Italic. Adding `Newsreader24pt-Italic.ttf` would match the web; downloading it needs the owner's permission.
+- *(Done 2026-09-25, register #184.)* **Newsreader italic.** The greeting's name is Newsreader Italic's variable file pinned at `opsz` 24, `wght` 400 — the exact italic of the 24pt Regular; the Medium Italic stand-in is gone.
 - **Composer line height.** The composer field draws 19pt lines instead of 24pt. Fixing it needs a text-view-backed field.
 - **Localization.** New copy is not yet in `Localizable.xcstrings`.
 - **Page toolbars.** *(Resolved by the foundations stage: Library, Connections and Search moved their controls into `JunoPage`'s controls row; no Chat-window page declares `.toolbar` or `.searchable`.)*
@@ -173,7 +190,7 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
 - **Stage 2 runtime checks not done** (screen control is off): Quick Look opening from a click and from Space, Save As… writing the file, a picture dragging out to the Finder, a real `/api/generate` reply going from placeholder to picture with no blank frame, the edit sheet streaming its result into the same chat, and a generated clip playing once downloaded. A clip is fetched whole (51 MB ceiling); an `AVAssetResourceLoaderDelegate` over `/api/files` Range requests is the follow-up.
 - **Stage 3 runtime checks not done** (screen control is off): a link in a preview opening the browser, `alert()` as a sheet, a page's download through the save panel, the canvas Save producing v2 through `POST /api/artifacts/{id}`, a design editing in the dock, the regenerate confirmation, and a real `/api/design/{id}/export?format=svg` answer. `ArtifactRuntimeSandboxTests` does run scripted pages in the real sandbox (offscreen), and the snapshots draw it from offscreen stills.
 - **Stage 3 follow-ups:**
-  - **React, TypeScript and Python previews need bundled runtimes.** The sandbox has no network (brief addendum), and React 18 UMD, `@babel/standalone` and Pyodide are not in the repo or on this machine; downloading them needs the owner's permission. Serve them over `juno-runtime:` with a sha256 manifest, then let `runsOnThisMac` pass them. A bundled Tailwind would restore Tailwind-class pages the same way. Opening the network instead (`ArtifactRuntimeNetwork.isOpen`) is the web's posture and needs sign-off.
+  - *(Done 2026-09-25, register #183, except Python.)* **React, TypeScript and Python previews need bundled runtimes.** React 18.3.1 and ReactDOM UMD, `@babel/standalone` 7.29.9 and Tailwind Play 3.4.17 are bundled and served over `juno-runtime:` (sha256s in `Resources/ArtifactRuntime/README.md`), and `runsOnThisMac` passes React, JSX, TSX and TypeScript. Pyodide is still not bundled, so Python shows Code. Opening the network instead (`ArtifactRuntimeNetwork.isOpen`) is the web's posture and needs sign-off.
   - An uncaught error in an HTML artifact reaches the Console as "Script error.": WebKit sanitises it for a document with an opaque (nil-base) origin. Loading with a `juno-runtime://artifact/` base URL gives the real message (tested), at the cost of the opaque origin the brief asked for — for sign-off.
   - The library's Canvas mode (`ArtifactCanvasView`) still runs in the isolated sandbox; the library itself (list/grid, unsaved-edit guard, delete landing in another artifact) is the audit's, not this stage's.
   - The hosted design editor's own problems from the audit are untouched: the stale bundle, the missing primitive CSS, the indigo host tokens, the embedded layout, Export and the Image tool (mac-design-4 to -8, -11 to -13).
@@ -186,7 +203,7 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
   - **Offscreen stroke artifact** — fixed in the harness (Phase 2 review): `CALayer.render(in:)` drew continuous-corner capsules with a tick at each end; the renderer draws those layers with circular corners before photographing.
   - **New copy** is not in `Localizable.xcstrings`.
 - **Phase 2 review, still open:**
-  - React, TypeScript and Python previews and Tailwind-styled pages (brief §5.6) — the runtimes must be bundled (downloading needs the owner's permission) or the network opened (needs sign-off).
+  - *(Done 2026-09-25, register #183, except Python.)* React, TypeScript and Python previews and Tailwind-styled pages (brief §5.6) — React, Babel and Tailwind are bundled; Python (Pyodide) still shows Code.
   - The version pager is unit-tested (client, decoding, the page's view) and drawn at rest (`reply-actions-versions`); stepping back through it against the live server is a runtime check still to do.
   - The sidebar's glass, the toolbar and the composer's glass are not in any offscreen picture; the final set says what stands in for each.
   - *(built in stage 4b)* the brief's "tools SPEC is final" update.
@@ -249,8 +266,8 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
 4. Merge `main` again, then ship as 1.7.0 (build 88).
 
 **Waiting on the owner:**
-1. Permission to download and bundle the browser runtimes that React, TypeScript and Tailwind artifact previews need: React 18 UMD, @babel/standalone and the Tailwind browser build, from jsDelivr. Until then those previews show code only.
-2. Permission to download `Newsreader24pt-Italic.ttf` from Google Fonts, so the greeting's italic matches the web.
+1. *(Done 2026-09-25: downloaded with the owner's approval into `juno-release-tools/runtime-assets`, checked against its SHA256SUMS and bundled — register #183.)* Permission to download and bundle the browser runtimes that React, TypeScript and Tailwind artifact previews need.
+2. *(Done 2026-09-25: approved and bundled as the variable italic, pinned — register #184.)* Permission to download Newsreader's italic from Google Fonts, so the greeting's italic matches the web.
 3. Whether the server should stop hard-deleting a reply's artifacts on regenerate (`src/app/api/chat/route.ts:2566-2574`); the web is affected too.
 
 **Peer work to re-read on resume:**

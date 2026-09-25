@@ -67,6 +67,7 @@
 		3CA21580F10EDFFF699B3526 /* IntegrationSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57A8483FD9228A3628542F6A /* IntegrationSnapshotTests.swift */; };
 		3D3A747DC9126AF546C04916 /* InlineDesignPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C2DEC27706EA690DDCA97E5 /* InlineDesignPreview.swift */; };
 		3EF3572F29A9311B41969080 /* ChatDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1AD940C0E250215613B41FC /* ChatDetail.swift */; };
+		3F8A44877ED628A220D326B5 /* Newsreader-Italic-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = DCF3FEE67CC7BF3C5B70192D /* Newsreader-Italic-Variable.ttf */; };
 		40DC421EE2BBF10E74F5B273 /* DesktopCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADA36220F51C8AF1A7636D73 /* DesktopCommands.swift */; };
 		41EC9D370B2856FDE84BCED7 /* DesktopCodeModelMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3B8EFA669098DBC556746C /* DesktopCodeModelMappingTests.swift */; };
 		429B5E63C30C634E97F2515A /* DesktopSettingsLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01F65CE898AC9411BB1B9F5E /* DesktopSettingsLinks.swift */; };
@@ -213,7 +214,6 @@
 		E768A34B4CFED7C10A5D9FBF /* JunoDesktopPreviewRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1494E7FFF5D8759026B73974 /* JunoDesktopPreviewRoot.swift */; };
 		E9A0FE9C7FC697E66F368AF4 /* ComposerModelChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3E16891F7E491EB85E9FE8D /* ComposerModelChip.swift */; };
 		EB8621B27559C85125EF55F2 /* DesktopSearchPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5B553BFA9DE401FD05F2D98 /* DesktopSearchPanel.swift */; };
-		EC0331AAF291C463F51FD118 /* Newsreader24pt-MediumItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 4709C37AEBA1C5BAEC8D25A3 /* Newsreader24pt-MediumItalic.ttf */; };
 		EECA061ECF7B53BDB8266F4D /* DesktopHostPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EFB8984FA997DDF53805FB8 /* DesktopHostPage.swift */; };
 		EF6B0AA71D4C8A18AECCBF04 /* DesktopCodeAccountFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83368A128D410411E190E1E4 /* DesktopCodeAccountFooter.swift */; };
 		EFA69F6076E6748752E50D81 /* DesktopScreenshotCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1993A9494C8380785278132D /* DesktopScreenshotCapture.swift */; };
@@ -314,7 +314,6 @@
 		42BA94CA2D66FA985D4EE0D7 /* DesktopWorkSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkSettings.swift; sourceTree = "<group>"; };
 		433996A932C48A9FAC61E9DB /* DesktopShellContract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopShellContract.swift; sourceTree = "<group>"; };
 		46C29E6F975AE6B19C0F05EB /* ChatComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposer.swift; sourceTree = "<group>"; };
-		4709C37AEBA1C5BAEC8D25A3 /* Newsreader24pt-MediumItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader24pt-MediumItalic.ttf"; sourceTree = "<group>"; };
 		4AE1C5CC35CCBED724E4B5EB /* DesktopFirstRunPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopFirstRunPresenter.swift; sourceTree = "<group>"; };
 		4C61EDFFB61392831EDE140B /* Newsreader24pt-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader24pt-Regular.ttf"; sourceTree = "<group>"; };
 		4ED2FBB798AB98CCA730E5D0 /* PageSnapshotTestsStageB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageSnapshotTestsStageB.swift; sourceTree = "<group>"; };
@@ -440,6 +439,7 @@
 		D4B42E2760C84585101A59D2 /* DesktopPageRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopPageRoute.swift; sourceTree = "<group>"; };
 		D4EE09E260A978CAC5D0F4BC /* DesktopWorkGrants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkGrants.swift; sourceTree = "<group>"; };
 		D9EB13875731628203A4F315 /* editor.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = editor.css; sourceTree = "<group>"; };
+		DCF3FEE67CC7BF3C5B70192D /* Newsreader-Italic-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader-Italic-Variable.ttf"; sourceTree = "<group>"; };
 		DD0B803FB0850EC63AF15304 /* ChatCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCommands.swift; sourceTree = "<group>"; };
 		DD76CA813A4B6BCD531D86B2 /* DesktopIntegrationLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopIntegrationLinks.swift; sourceTree = "<group>"; };
 		DE619BBB86F751F5B29D2D1C /* DesktopUpgradeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopUpgradeSheet.swift; sourceTree = "<group>"; };
@@ -528,8 +528,8 @@
 		334F1043CC4B138EEAC56A12 /* Fonts */ = {
 			isa = PBXGroup;
 			children = (
+				DCF3FEE67CC7BF3C5B70192D /* Newsreader-Italic-Variable.ttf */,
 				808EF0C3D75DC5359F776E19 /* Newsreader24pt-Medium.ttf */,
-				4709C37AEBA1C5BAEC8D25A3 /* Newsreader24pt-MediumItalic.ttf */,
 				4C61EDFFB61392831EDE140B /* Newsreader24pt-Regular.ttf */,
 				173680B695930DC0611EDE9B /* Newsreader24pt-SemiBold.ttf */,
 				9DB86AE5BD906CBD665AA5B2 /* OFL.txt */,
@@ -975,8 +975,8 @@
 				4CD88EA3645E23668326B681 /* DesignEditor in Resources */,
 				B1113DA3F18E59B2D1D5E96D /* Icons.xcassets in Resources */,
 				C69D96B4507F27AED10CD3E7 /* Localizable.xcstrings in Resources */,
+				3F8A44877ED628A220D326B5 /* Newsreader-Italic-Variable.ttf in Resources */,
 				FA5F0BCBFA358AB2CAE56273 /* Newsreader24pt-Medium.ttf in Resources */,
-				EC0331AAF291C463F51FD118 /* Newsreader24pt-MediumItalic.ttf in Resources */,
 				55B00F0E648F53F760605A2A /* Newsreader24pt-Regular.ttf in Resources */,
 				55466220EEF30B70294F6955 /* Newsreader24pt-SemiBold.ttf in Resources */,
 				F40DDADC53615BD5A497147D /* OFL.txt in Resources */,
