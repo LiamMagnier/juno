@@ -7,7 +7,8 @@ import process from "node:process";
  * chain would stop at the first red and hide the rest).
  *
  * These are the Linux half of the mechanism, and each is also its own named
- * step in .github/workflows/native.yml (`contract` job) or native-parity.yml.
+ * step in .github/workflows/native.yml (the `contract` and `parity` jobs) or
+ * native-parity.yml.
  * The Swift half — that the apps *read* what these gates keep fresh — is
  * `npm run native:consumption:test` (JunoTokenConsumptionTests and friends),
  * which needs a Mac.
@@ -29,6 +30,19 @@ const GATES = [
   "design:contract:check",
   // The Design editor bundle the Mac hosts is stamped with its sources' hash.
   "design:editor:check",
+  // The web's shell (sidebars, + menu, primary action, Settings rail) matches
+  // contracts/product/juno-shell-v1.json, and the Mac's generated enums match it.
+  "shell:contract:test",
+  "shell:contract:check",
+  // Every chat wire field is native, planned or web-only, and "native" is what
+  // the Swift encodes and decodes.
+  "native:wire:check",
+  // Every API route and app page is in contracts/parity/features.json, and the
+  // generated PARITY_MATRIX.md is current.
+  "native:parity:check",
+  // The register of deliberate differences is numbered whole, and every
+  // citation of it resolves.
+  "native:register:check",
   // A change to a web file the apps mirror carries "native: done" / "native: n/a".
   "native:parity:label",
 ];

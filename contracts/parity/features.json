@@ -1,0 +1,962 @@
+{
+  "$comment": "Every src/app/api/**/route.ts and src/app/(app)/**/page.tsx, classified for the Swift apps. `npm run native:parity:check` fails on a route or page missing here, on an entry whose file is gone, and on a route status the Swift contradicts (native routes must be named by a Swift string literal or carry `swift`; a route the Swift calls must be native or carry `ignoreSwift`). Route statuses: native, planned, web-only, internal. Page statuses per app (mac, ios): native, partial, planned, web-only. planned, web-only and partial need a note. `npm run native:parity` writes docs/native/PARITY_MATRIX.md from this file.",
+  "features": [
+    {
+      "id": "auth",
+      "title": "Sign-in and account security",
+      "note": "Browser sign-in hands the apps a PKCE code; everything after that is `/api/v1/auth/*` and the account routes Settings › Account calls.",
+      "routes": {
+        "/api/account": {
+          "status": "web-only",
+          "note": "Legacy: no client calls it; the web and the apps delete an account with POST /api/account/delete."
+        },
+        "/api/account/delete": "native",
+        "/api/account/email": "native",
+        "/api/account/export": "native",
+        "/api/account/mfa": "native",
+        "/api/account/mfa/confirm": "native",
+        "/api/account/mfa/disable": "native",
+        "/api/account/mfa/start": "native",
+        "/api/account/password": "native",
+        "/api/account/sessions/revoke": "native",
+        "/api/account/verification": {
+          "status": "planned",
+          "note": "The web's check-your-inbox banner for an unverified email; the apps do not show it yet."
+        },
+        "/api/auth/[...nextauth]": {
+          "status": "web-only",
+          "note": "The web's session (Auth.js). The apps sign in through the browser and hold /api/v1/auth tokens."
+        },
+        "/api/auth/forgot-password": "native",
+        "/api/auth/mfa/challenge": {
+          "status": "web-only",
+          "note": "The web sign-in's second factor, which the apps' browser sign-in passes through."
+        },
+        "/api/auth/register": {
+          "status": "web-only",
+          "note": "Accounts are created on the web; the apps sign in through the browser."
+        },
+        "/api/auth/reset-password": {
+          "status": "web-only",
+          "note": "The emailed reset link opens on the web; the apps ask for the email with /api/auth/forgot-password."
+        },
+        "/api/auth/verify-email": {
+          "status": "web-only",
+          "note": "The emailed verification link opens on the web."
+        },
+        "/api/v1/auth/devices": {
+          "status": "planned",
+          "note": "Signed-in devices and their revocation. Settings › Devices lists Macs for Work, not signed-in devices."
+        },
+        "/api/v1/auth/devices/[id]": {
+          "status": "planned",
+          "note": "As /api/v1/auth/devices."
+        },
+        "/api/v1/auth/logout": "native",
+        "/api/v1/auth/password": "native",
+        "/api/v1/auth/refresh": "native",
+        "/api/v1/auth/session": "native",
+        "/api/v1/auth/token": "native"
+      }
+    },
+    {
+      "id": "sync",
+      "title": "Sync and bootstrap",
+      "note": "The apps render from their local store and reconcile through the `/api/v1` sync contract (`contracts/openapi/juno-native-v1.yaml`).",
+      "routes": {
+        "/api/sync/changes": {
+          "status": "web-only",
+          "note": "The web's own change feed; the apps sync through /api/v1/changes."
+        },
+        "/api/sync/stream": {
+          "status": "web-only",
+          "note": "The web's own wake-up stream; the apps listen on /api/v1/changes/stream."
+        },
+        "/api/v1/bootstrap": "native",
+        "/api/v1/changes": "native",
+        "/api/v1/changes/stream": "native",
+        "/api/v1/entities": "native",
+        "/api/v1/entities/index": "native",
+        "/api/v1/mutations": "native"
+      }
+    },
+    {
+      "id": "chat",
+      "title": "Chat and streaming",
+      "note": "POST /api/chat's body and frames are classified field by field in the chat wire contract (`npm run native:wire:check`).",
+      "pages": {
+        "/chat": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "ChatDetail, DesktopEmptyChat"
+        },
+        "/chat/[id]": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "ChatDetail, ChatTranscript"
+        }
+      },
+      "routes": {
+        "/api/approvals": "native",
+        "/api/approvals/[id]": "native",
+        "/api/chat": "native",
+        "/api/chat/cancel": "native",
+        "/api/chat/clarify": {
+          "status": "planned",
+          "note": "Whether to ask a clarifying question before a turn runs; the Mac's composer has no pre-flight questions yet (request.preflightClarification in the chat wire)."
+        },
+        "/api/chat/follow-ups": "native",
+        "/api/chat/receipt": {
+          "status": "planned",
+          "note": "Receipt refresh for a durable first submission, built for native recovery; the Swift apps append the turn first and have not adopted the durable pair (request.clientRequestId in the chat wire)."
+        },
+        "/api/chat/stream/[generationId]": "native",
+        "/api/chat/stream/active": "native",
+        "/api/generate": "native",
+        "/api/models": {
+          "status": "web-only",
+          "note": "The web's model list. The apps read /api/v1/models; the Electron client (native/desktop-electron) still reads this one."
+        },
+        "/api/v1/models": "native"
+      }
+    },
+    {
+      "id": "conversations",
+      "title": "Conversations, messages and sharing",
+      "routes": {
+        "/api/conversations": "native",
+        "/api/conversations/[id]": "native",
+        "/api/conversations/[id]/fork": "native",
+        "/api/conversations/[id]/messages": "native",
+        "/api/conversations/[id]/title": "native",
+        "/api/folders": {
+          "status": "web-only",
+          "note": "The apps create and rename folders through sync (/api/v1/mutations)."
+        },
+        "/api/folders/[id]": {
+          "status": "web-only",
+          "note": "As /api/folders."
+        },
+        "/api/messages/[id]": {
+          "status": "planned",
+          "note": "Edit-and-resend of a sent question, keeping the old text as a version; the Mac's question editor does not call it."
+        },
+        "/api/messages/[id]/feedback": "native",
+        "/api/messages/[id]/versions": "native",
+        "/api/share": "native",
+        "/api/share/[id]": "native",
+        "/api/share/report": {
+          "status": "web-only",
+          "note": "Reporting a shared link happens on the shared page, which only the web draws."
+        }
+      }
+    },
+    {
+      "id": "search",
+      "title": "Search and recents",
+      "note": "The Mac's ⌘K panel searches chats, messages, projects, files and artifacts on this Mac and asks the server for memory, knowledge and tasks (register #131).",
+      "routes": {
+        "/api/recents": "native",
+        "/api/search": "native"
+      }
+    },
+    {
+      "id": "projects",
+      "title": "Projects",
+      "pages": {
+        "/projects": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopProjectsScreen"
+        },
+        "/projects/[id]": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopProjectPage"
+        }
+      },
+      "routes": {
+        "/api/projects": "native",
+        "/api/projects/[id]": {
+          "status": "web-only",
+          "note": "The apps change projects through sync (/api/v1/mutations); only a blank-name create goes to POST /api/projects (register #89)."
+        },
+        "/api/projects/[id]/members": {
+          "status": "planned",
+          "note": "Project members (sharing a project); not in the apps yet."
+        }
+      }
+    },
+    {
+      "id": "library",
+      "title": "Library, files and knowledge",
+      "pages": {
+        "/library": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopLibraryScreen"
+        },
+        "/knowledge/documents/[id]": {
+          "mac": "planned",
+          "ios": "planned",
+          "note": "The document inspector, as a Library detail (fact-check errata, Web)."
+        }
+      },
+      "routes": {
+        "/api/attachments/[id]": "native",
+        "/api/attachments/[id]/document": {
+          "status": "web-only",
+          "note": "The web's document viewer beside the chat; the Mac opens files in Quick Look (register #19)."
+        },
+        "/api/attachments/[id]/preview": "native",
+        "/api/attachments/[id]/restore": "native",
+        "/api/attachments/[id]/thumbnail": "native",
+        "/api/attachments/[id]/versions": "native",
+        "/api/attachments/[id]/versions/[version]/restore": "native",
+        "/api/files/[...key]": "native",
+        "/api/files/sandbox/[...key]": {
+          "status": "web-only",
+          "note": "Files the web's in-browser Python sandbox writes."
+        },
+        "/api/knowledge/documents": {
+          "status": "planned",
+          "note": "Which documents became citable, and the document inspector; a Library detail on the Mac (fact-check errata, Web)."
+        },
+        "/api/knowledge/documents/[id]": {
+          "status": "planned",
+          "note": "As /api/knowledge/documents."
+        },
+        "/api/library": "native",
+        "/api/library/[id]": "native",
+        "/api/library/attach": "native",
+        "/api/prompts": {
+          "status": "planned",
+          "note": "The saved-prompt library (insert, use counts); the apps read saved prompts through sync but have no library dialog."
+        },
+        "/api/prompts/[id]": {
+          "status": "planned",
+          "note": "As /api/prompts."
+        },
+        "/api/upload": "native",
+        "/api/v1/attachments": "native"
+      }
+    },
+    {
+      "id": "artifacts",
+      "title": "Artifacts and Design",
+      "note": "Design is a type of artifact (register #73).",
+      "pages": {
+        "/artifacts": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopArtifactsScreen"
+        },
+        "/a/[id]": {
+          "mac": "native",
+          "ios": "partial",
+          "screen": "ArtifactPage",
+          "note": "The phone opens an artifact inline or in the design editor; it has no artifact page of its own."
+        },
+        "/design": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopArtifactsScreen (Designs)",
+          "note": "A redirect to Artifacts filtered to designs (register #73)."
+        },
+        "/design/[artifactId]": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopDesignEditorHost",
+          "note": "A redirect to /a/{id}, the design editor."
+        }
+      },
+      "routes": {
+        "/api/artifacts": {
+          "status": "web-only",
+          "note": "The apps list artifacts from sync; the web's grid asks for previews here."
+        },
+        "/api/artifacts/[id]": "native",
+        "/api/artifacts/[id]/export": "native",
+        "/api/artifacts/[id]/poster": "native",
+        "/api/design": "native",
+        "/api/design/[artifactId]": {
+          "status": "web-only",
+          "note": "The Mac reads a design's document from its artifact and hands it to the hosted editor."
+        },
+        "/api/design/[artifactId]/edit": {
+          "status": "planned",
+          "note": "Ask Juno to change the selected layers of a design; the Mac's hosted editor has no Ask Juno yet."
+        },
+        "/api/design/[artifactId]/export": "native",
+        "/api/design/[artifactId]/transactions": {
+          "status": "planned",
+          "note": "The web's editor commits each edit here as it goes; the Mac's host saves edits its own way and does not call it."
+        }
+      }
+    },
+    {
+      "id": "memory",
+      "title": "Memory",
+      "pages": {
+        "/memory": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopMemoryScreen"
+        }
+      },
+      "routes": {
+        "/api/memory": "native",
+        "/api/memory/[id]": "native",
+        "/api/memory/backfill": "native",
+        "/api/memory/consolidate": "native",
+        "/api/memory/edit": "native",
+        "/api/memory/edit/apply": "native",
+        "/api/memory/edits": "native",
+        "/api/memory/edits/[id]": "native",
+        "/api/memory/import": "native",
+        "/api/memory/import/preview": "native",
+        "/api/memory/recap": "native",
+        "/api/projects/[id]/memory": "native"
+      }
+    },
+    {
+      "id": "connections",
+      "title": "Connections",
+      "pages": {
+        "/connections": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopConnectionsScreen"
+        }
+      },
+      "routes": {
+        "/api/connectors": "native",
+        "/api/connectors/[id]": "native",
+        "/api/connectors/[id]/callback": {
+          "status": "web-only",
+          "note": "The provider redirects the browser here; the apps start the flow at /api/connectors/{id}/connect in the browser."
+        },
+        "/api/connectors/[id]/connect": "native",
+        "/api/connectors/[id]/credentials": {
+          "status": "planned",
+          "note": "Key and token connectors (Apple Music and others) are connected on the web; the apps have no credential form yet."
+        },
+        "/api/connectors/apple-music/dev-token": {
+          "status": "web-only",
+          "note": "MusicKit JS in the browser needs it; there is no MusicKit JS in the apps."
+        },
+        "/api/connectors/composio/[slug]": "native",
+        "/api/connectors/composio/[slug]/callback": {
+          "status": "web-only",
+          "note": "As /api/connectors/{id}/callback."
+        },
+        "/api/connectors/composio/[slug]/connect": "native",
+        "/api/connectors/composio/catalog": "native",
+        "/api/mcp/[connector]": {
+          "status": "internal",
+          "note": "MCP servers Juno hosts for its own model runs."
+        },
+        "/api/mcp/composio/[slug]": {
+          "status": "internal",
+          "note": "As /api/mcp/{connector}."
+        }
+      }
+    },
+    {
+      "id": "skills",
+      "title": "Skills",
+      "pages": {
+        "/skills": {
+          "mac": "native",
+          "ios": "planned",
+          "screen": "DesktopSkillsScreen",
+          "note": "No Skills pages on the phone yet."
+        },
+        "/skills/[id]": {
+          "mac": "native",
+          "ios": "planned",
+          "screen": "DesktopSkillPage",
+          "note": "As /skills."
+        },
+        "/skills/new": {
+          "mac": "native",
+          "ios": "planned",
+          "screen": "DesktopSkillPage (new)",
+          "note": "As /skills."
+        },
+        "/skills/import": {
+          "mac": "native",
+          "ios": "planned",
+          "screen": "DesktopSkillSheets (Import from GitHub)",
+          "note": "A sheet on the Mac; no Skills pages on the phone yet."
+        }
+      },
+      "routes": {
+        "/api/skills": "native",
+        "/api/skills/import/github": "native",
+        "/api/skills/sources/[id]": "native",
+        "/api/skills/sources/[id]/check": "native",
+        "/api/skills/sources/[id]/update": "native",
+        "/api/work/skills": "native",
+        "/api/work/skills/[id]": "native",
+        "/api/work/skills/[id]/versions": "native",
+        "/api/work/skills/[id]/versions/[version]/consent": "native"
+      }
+    },
+    {
+      "id": "assistants",
+      "title": "Assistants",
+      "pages": {
+        "/assistants": {
+          "mac": "native",
+          "ios": "planned",
+          "screen": "DesktopAssistantsScreen",
+          "note": "No Assistants page on the phone yet (a project's assistant is edited in the project)."
+        }
+      },
+      "routes": {
+        "/api/assistants": "native",
+        "/api/assistants/[id]": "native"
+      }
+    },
+    {
+      "id": "tasks",
+      "title": "Tasks in chat",
+      "note": "The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks` is the older scheduled-task store the apps still read.",
+      "pages": {
+        "/work/[[...segments]]": {
+          "mac": "native",
+          "ios": "partial",
+          "screen": "ChatWorkRunCard, ChatWorkPanel, DesktopTaskRecordSheet",
+          "note": "Redirects into the task's chat. The phone keeps its older Work tab."
+        },
+        "/tasks": {
+          "mac": "native",
+          "ios": "partial",
+          "screen": "DesktopAutomationsScreen",
+          "note": "A redirect to Automations. The phone keeps its scheduled Tasks list."
+        }
+      },
+      "routes": {
+        "/api/tasks": "native",
+        "/api/tasks/[id]": "native",
+        "/api/work/approvals/[id]/decision": "native",
+        "/api/work/artifacts": "native",
+        "/api/work/artifacts/[id]": "native",
+        "/api/work/artifacts/[id]/download": "native",
+        "/api/work/artifacts/[id]/preview": {
+          "status": "web-only",
+          "note": "A spreadsheet deliverable as a grid for the browser; the Mac opens deliverables in Quick Look (register #58)."
+        },
+        "/api/work/runs/[id]/control": "native",
+        "/api/work/sessions": "native",
+        "/api/work/sessions/[id]": "native",
+        "/api/work/sessions/[id]/answer": "native",
+        "/api/work/sessions/[id]/context": "native",
+        "/api/work/sessions/[id]/events": "native",
+        "/api/work/sessions/[id]/runs": "native",
+        "/api/work/sessions/counts": {
+          "status": "web-only",
+          "note": "The web's sidebar counts; the Mac counts the chats its column can show (register #69)."
+        }
+      }
+    },
+    {
+      "id": "automations",
+      "title": "Automations",
+      "pages": {
+        "/automations": {
+          "mac": "native",
+          "ios": "planned",
+          "screen": "DesktopAutomationsScreen",
+          "note": "No Automations on the phone yet."
+        },
+        "/automations/new": {
+          "mac": "native",
+          "ios": "planned",
+          "screen": "DesktopAutomationEditor",
+          "note": "As /automations."
+        },
+        "/automations/[id]": {
+          "mac": "native",
+          "ios": "planned",
+          "screen": "DesktopAutomationPage",
+          "note": "As /automations."
+        }
+      },
+      "routes": {
+        "/api/work/schedules": "native",
+        "/api/work/schedules/[id]": "native",
+        "/api/work/schedules/[id]/run-now": "native",
+        "/api/work/schedules/[id]/runs": "native",
+        "/api/work/schedules/[id]/token": "native"
+      }
+    },
+    {
+      "id": "permissions",
+      "title": "Permissions and this Mac as a host",
+      "pages": {
+        "/permissions": {
+          "mac": "native",
+          "ios": "planned",
+          "screen": "DesktopPermissionsScreen",
+          "note": "No Permissions page on the phone yet."
+        },
+        "/permissions/[hostId]": {
+          "mac": "native",
+          "ios": "planned",
+          "screen": "DesktopHostPage",
+          "note": "As /permissions."
+        }
+      },
+      "routes": {
+        "/api/work/hosts": "native",
+        "/api/work/hosts/[id]": "native",
+        "/api/work/hosts/[id]/commands": "native",
+        "/api/work/hosts/[id]/commands/[commandId]": "native",
+        "/api/work/hosts/[id]/events": "native",
+        "/api/work/hosts/register": "native"
+      }
+    },
+    {
+      "id": "agents",
+      "title": "Agents",
+      "pages": {
+        "/agents": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "Agents (shared with the iPhone)"
+        },
+        "/agents/new": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "NativeAgentHireView"
+        },
+        "/agents/[id]": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "The agent page, DesktopAgentThread"
+        }
+      },
+      "routes": {
+        "/api/agents": "native",
+        "/api/agents/[id]": "native",
+        "/api/agents/[id]/activity": "native",
+        "/api/agents/[id]/goals": "native",
+        "/api/agents/[id]/goals/[goalId]": "native",
+        "/api/agents/[id]/ideas/[ideaId]": "native",
+        "/api/agents/[id]/notes": "native",
+        "/api/agents/[id]/notes/[noteId]": "native",
+        "/api/agents/[id]/reflect": "native",
+        "/api/agents/[id]/routines": "native",
+        "/api/agents/[id]/tasks": "native",
+        "/api/agents/[id]/thread": "native"
+      }
+    },
+    {
+      "id": "research",
+      "title": "Research",
+      "pages": {
+        "/research": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "ChatComposer (Research)",
+          "note": "A redirect to a new chat with Research armed."
+        },
+        "/research/[id]": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "ResearchViews, ResearchReportWindow",
+          "note": "A redirect to the run's chat."
+        }
+      },
+      "routes": {
+        "/api/research": "native",
+        "/api/research/[id]": "native",
+        "/api/research/[id]/clarify": "native",
+        "/api/research/[id]/control": "native",
+        "/api/research/[id]/plan": "native",
+        "/api/research/[id]/steer": "native",
+        "/api/research/citations": "native"
+      }
+    },
+    {
+      "id": "voice",
+      "title": "Voice",
+      "routes": {
+        "/api/voice/context": "native",
+        "/api/voice/memory": {
+          "status": "web-only",
+          "note": "The web's voice call reads memory here; the apps' calls get their context from /api/voice/context."
+        },
+        "/api/voice/persona": {
+          "status": "web-only",
+          "note": "As /api/voice/memory."
+        },
+        "/api/voice/relay-token": "native",
+        "/api/voice/stt": {
+          "status": "web-only",
+          "note": "The web's dictation; the apps dictate on the device."
+        },
+        "/api/voice/transcript": "native",
+        "/api/voice/tts": "native"
+      }
+    },
+    {
+      "id": "code",
+      "title": "Juno Code",
+      "note": "Owned by the Code rework (`docs/native/code-rework/`), which audits Code's parity; the statuses here are the Swift's calls as found, with the web-only verbs named.",
+      "pages": {
+        "/code": {
+          "mac": "native",
+          "ios": "partial",
+          "screen": "DesktopCodeWorkspace",
+          "note": "The phone supervises remote and cloud runs."
+        },
+        "/code/new": {
+          "mac": "native",
+          "ios": "partial",
+          "screen": "DesktopCodeWorkspace (New task)",
+          "note": "As /code."
+        },
+        "/code/pulls": {
+          "mac": "partial",
+          "ios": "partial",
+          "screen": "DesktopCodeWorkspace",
+          "note": "Pull requests are listed through /api/code/github/pulls; the page itself is Code's."
+        },
+        "/code/customize": {
+          "mac": "partial",
+          "ios": "planned",
+          "screen": "Code settings",
+          "note": "Code's settings cover permissions, model, MCP, hooks, skills and agents; cloud environments are missing."
+        }
+      },
+      "routes": {
+        "/api/agent/[...path]": "native",
+        "/api/agent/usage": {
+          "status": "planned",
+          "note": "Usage accounting for Juno Code's engine against the plan; the Swift engine does not report its turns here yet."
+        },
+        "/api/code/cloud-runner": {
+          "status": "planned",
+          "note": "Whether a cloud run could start, asked when the Cloud target is chosen."
+        },
+        "/api/code/devices": "native",
+        "/api/code/devices/[deviceId]/commands": "native",
+        "/api/code/devices/[deviceId]/sessions": "native",
+        "/api/code/devices/[deviceId]/sessions/[sessionId]": {
+          "status": "planned",
+          "note": "The host's detail snapshot of one session; native Code uploads the session list only."
+        },
+        "/api/code/devices/[deviceId]/sessions/[sessionId]/approvals/[requestId]": {
+          "status": "web-only",
+          "note": "The web's per-verb form; native Code sends the same verbs as commands (POST /api/code/devices/{deviceId}/commands)."
+        },
+        "/api/code/devices/[deviceId]/sessions/[sessionId]/events": "native",
+        "/api/code/devices/[deviceId]/sessions/[sessionId]/messages": {
+          "status": "web-only",
+          "note": "As the approvals verb."
+        },
+        "/api/code/devices/[deviceId]/sessions/[sessionId]/stop": {
+          "status": "web-only",
+          "note": "As the approvals verb."
+        },
+        "/api/code/environments": {
+          "status": "planned",
+          "note": "Cloud environments (/code/customize)."
+        },
+        "/api/code/environments/[id]": {
+          "status": "planned",
+          "note": "As /api/code/environments."
+        },
+        "/api/code/github/branches": {
+          "status": "planned",
+          "note": "The base-branch list for a cloud run."
+        },
+        "/api/code/github/pulls": "native",
+        "/api/code/github/repos": "native",
+        "/api/code/queue": "native",
+        "/api/code/search": "native",
+        "/api/code/tasks": "native",
+        "/api/code/tasks/[id]": {
+          "status": "planned",
+          "note": "One cloud task's detail."
+        },
+        "/api/code/tasks/[id]/auto-fix": {
+          "status": "planned",
+          "note": "A pull request's auto-fix switch."
+        },
+        "/api/code/tasks/[id]/cancel": "native",
+        "/api/code/tasks/[id]/checks": {
+          "status": "planned",
+          "note": "CI checks on the pushed branch."
+        },
+        "/api/code/tasks/[id]/claim": "native",
+        "/api/code/tasks/[id]/events": "native",
+        "/api/code/tasks/[id]/pull-request": {
+          "status": "planned",
+          "note": "Open a pull request for a cloud run."
+        },
+        "/api/code/tasks/[id]/respond": "native",
+        "/api/code/tasks/[id]/rollback": {
+          "status": "planned",
+          "note": "Revert a cloud run's change."
+        },
+        "/api/code/tasks/[id]/steer": {
+          "status": "planned",
+          "note": "Steer a running cloud task."
+        },
+        "/api/code/workspaces": {
+          "status": "planned",
+          "note": "The app is meant to mirror its Code workspaces here so the web's Code tab lists them; native Code does not yet."
+        },
+        "/api/v1/code/devices/[deviceId]": "native"
+      }
+    },
+    {
+      "id": "settings",
+      "title": "Settings, notifications and announcements",
+      "pages": {
+        "/settings": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "DesktopSettingsWindow"
+        },
+        "/profile": {
+          "mac": "native",
+          "ios": "native",
+          "screen": "Settings › Account",
+          "note": "A redirect to Settings › Account."
+        }
+      },
+      "routes": {
+        "/api/announcements": "native",
+        "/api/announcements/[id]/dismiss": "native",
+        "/api/i18n/translations": {
+          "status": "web-only",
+          "note": "The web's automatic interface translation; the Mac has no interface language yet (register #124)."
+        },
+        "/api/import": "native",
+        "/api/notifications": "native",
+        "/api/notifications/[id]": "native",
+        "/api/notifications/count": "native",
+        "/api/profile/avatar": "native",
+        "/api/profile/stats": {
+          "status": "planned",
+          "note": "The activity heatmap and lifetime totals in Settings › Account; the Mac shows usage from /api/profile/usage (owner question: the Mac-only usage cards)."
+        },
+        "/api/profile/usage": "native",
+        "/api/profile/usage/breakdown": "native",
+        "/api/push/subscriptions": {
+          "status": "web-only",
+          "note": "Browser push; the apps register through /api/v1/devices/apns."
+        },
+        "/api/settings": "native",
+        "/api/v1/devices/apns": "native"
+      }
+    },
+    {
+      "id": "billing",
+      "title": "Plans and billing",
+      "pages": {
+        "/upgrade": {
+          "mac": "native",
+          "ios": "planned",
+          "screen": "DesktopUpgradeSheet",
+          "note": "A sheet on the Mac, monthly only (register #127). The phone has no plan purchase yet (JunoStoreKit is in the shared package)."
+        }
+      },
+      "routes": {
+        "/api/billing/app-store": {
+          "status": "internal",
+          "note": "The unversioned alias of /api/v1/billing/app-store; the apps call the v1 path."
+        },
+        "/api/stripe/checkout": "native",
+        "/api/stripe/portal": "native",
+        "/api/v1/billing/app-store": "native"
+      }
+    },
+    {
+      "id": "community",
+      "title": "Roadmap and Compare",
+      "pages": {
+        "/compare": {
+          "mac": "planned",
+          "ios": "planned",
+          "note": "Deferred (fact-check errata, Web); ⌘K leaves it out (register #132)."
+        },
+        "/roadmap": {
+          "mac": "web-only",
+          "ios": "web-only",
+          "note": "Roadmap & feature requests opens on the web (register #132)."
+        },
+        "/roadmap/[id]": {
+          "mac": "web-only",
+          "ios": "web-only",
+          "note": "As /roadmap."
+        }
+      },
+      "routes": {
+        "/api/roadmap": {
+          "status": "web-only",
+          "note": "Roadmap & feature requests opens on the web (register #132)."
+        },
+        "/api/roadmap/[id]": {
+          "status": "web-only",
+          "note": "Roadmap & feature requests opens on the web (register #132)."
+        },
+        "/api/roadmap/[id]/comments": {
+          "status": "web-only",
+          "note": "Roadmap & feature requests opens on the web (register #132)."
+        },
+        "/api/roadmap/[id]/vote": {
+          "status": "web-only",
+          "note": "Roadmap & feature requests opens on the web (register #132)."
+        }
+      }
+    },
+    {
+      "id": "admin",
+      "title": "Owner tools",
+      "note": "The owner's moderation and account tools stay on the web.",
+      "pages": {
+        "/admin": {
+          "mac": "web-only",
+          "ios": "web-only",
+          "note": "Owner tools."
+        },
+        "/admin/announcements": {
+          "mac": "web-only",
+          "ios": "web-only",
+          "note": "Owner tools."
+        },
+        "/admin/links": {
+          "mac": "web-only",
+          "ios": "web-only",
+          "note": "Owner tools."
+        },
+        "/admin/moderation": {
+          "mac": "web-only",
+          "ios": "web-only",
+          "note": "Owner tools."
+        },
+        "/admin/users": {
+          "mac": "web-only",
+          "ios": "web-only",
+          "note": "Owner tools."
+        }
+      },
+      "routes": {
+        "/api/admin/announcements": {
+          "status": "web-only",
+          "note": "Owner tools."
+        },
+        "/api/admin/announcements/[id]": {
+          "status": "web-only",
+          "note": "Owner tools."
+        },
+        "/api/admin/announcements/upload": {
+          "status": "web-only",
+          "note": "Owner tools."
+        },
+        "/api/admin/models/probe": {
+          "status": "web-only",
+          "note": "Owner tools."
+        },
+        "/api/admin/moderation": {
+          "status": "web-only",
+          "note": "Owner tools."
+        },
+        "/api/admin/moderation/[id]": {
+          "status": "web-only",
+          "note": "Owner tools."
+        },
+        "/api/admin/shares": {
+          "status": "web-only",
+          "note": "Owner tools."
+        },
+        "/api/admin/shares/[id]/restore": {
+          "status": "web-only",
+          "note": "Owner tools."
+        },
+        "/api/admin/shares/[id]/takedown": {
+          "status": "web-only",
+          "note": "Owner tools."
+        },
+        "/api/admin/shares/reports": {
+          "status": "web-only",
+          "note": "Owner tools."
+        },
+        "/api/admin/shares/reports/[id]": {
+          "status": "web-only",
+          "note": "Owner tools."
+        },
+        "/api/admin/users": {
+          "status": "web-only",
+          "note": "Owner tools."
+        },
+        "/api/admin/users/[id]": {
+          "status": "web-only",
+          "note": "Owner tools."
+        },
+        "/api/admin/users/[id]/ban": {
+          "status": "web-only",
+          "note": "Owner tools."
+        },
+        "/api/admin/users/[id]/unban": {
+          "status": "web-only",
+          "note": "Owner tools."
+        }
+      }
+    },
+    {
+      "id": "platform",
+      "title": "Platform endpoints",
+      "note": "Health, reports, webhooks and runner endpoints no client screen calls, and the download feed the Mac's updater reads.",
+      "routes": {
+        "/api/billing/app-store/webhook": {
+          "status": "internal",
+          "note": "App Store Server Notifications."
+        },
+        "/api/code/tasks/[id]/controls": {
+          "status": "internal",
+          "note": "Control events for the host or cloud runner, not a client screen."
+        },
+        "/api/code/tasks/[id]/runner-context": {
+          "status": "internal",
+          "note": "Served once to the GitHub Actions runner (OIDC only)."
+        },
+        "/api/csp-report": {
+          "status": "internal",
+          "note": "Where the browser's CSP sends violation reports."
+        },
+        "/api/downloads": "native",
+        "/api/github/webhook": {
+          "status": "internal",
+          "note": "The GitHub App's webhook."
+        },
+        "/api/health": {
+          "status": "internal",
+          "note": "Liveness for the uptime monitor."
+        },
+        "/api/stripe/webhook": {
+          "status": "internal",
+          "note": "Stripe's signed events."
+        },
+        "/api/v1/billing/app-store/webhook": {
+          "status": "internal",
+          "note": "App Store Server Notifications (the v1 alias)."
+        },
+        "/api/voice/spend": {
+          "status": "internal",
+          "note": "The voice relay reports what a live call has cost."
+        },
+        "/api/work/schedules/[id]/fire": {
+          "status": "internal",
+          "note": "Fired from outside Juno with the automation's own token."
+        }
+      }
+    }
+  ]
+}

@@ -78,10 +78,14 @@ jobs:
           # The generators count as native: a change to how tokens or icons are
           # projected is exactly what the Swift consumption tests
           # (JunoTokenConsumptionTests, JunoBrandTests) exist to judge.
-          pattern='^(native/|contracts/|scripts/native|scripts/generate-(native-icons|design-tokens)|scripts/icon-sources/|\.github/workflows/native\.yml$)'
-          if printf '%s\n' "$files" | grep -qE "$pattern"; then
+          # contracts/parity and contracts/chat are ledgers a web change updates
+          # (a new route, a new chat field); no Swift is generated from them, so
+          # they alone never wake the macOS jobs. The `parity` job checks them.
+          pattern='^(native/|contracts/|scripts/native|scripts/generate-(native-icons|design-tokens|shell-contract)|scripts/icon-sources/|\.github/workflows/native\.yml$)'
+          swift_inputs="$(printf '%s\n' "$files" | grep -vE '^contracts/(parity|chat)/' || true)"
+          if printf '%s\n' "$swift_inputs" | grep -qE "$pattern"; then
             echo "native=true" >> "$GITHUB_OUTPUT"
-            printf '%s\n' "$files" | grep -E "$pattern" | head -20
+            printf '%s\n' "$swift_inputs" | grep -E "$pattern" | head -20
           else
             echo "native=false" >> "$GITHUB_OUTPUT"
             echo "No native, contract or native-workflow changes — skipping the macOS jobs."
@@ -186,6 +190,43 @@ jobs:
       # install would be the entire runtime of the job.
       - name: Glass, motion, type and targets have not regressed
         run: npm run native:design:check
+
+  # ---------------------------------------------------------------------------
+  # What the web changed that nobody weighed for native
+  # (MACOS_LIQUID_GLASS_REDESIGN.md §A4.4, §A4.5 and §A4.9).
+  #
+  # The chat wire: every field of POST /api/chat's body and of its stream's
+  # frames is native, planned or web-only, and the native ones are the keys the
+  # Swift actually encodes and decodes. The parity ledger: every API route and
+  # every app page is classified, and a route's status agrees with the Swift's
+  # calls. The register: the numbered list of deliberate differences the ledger
+  # cites. A web change that adds a field, a route or a page fails here until
+  # someone decides what it means for the apps.
+  #
+  # Linux and Node only. It runs on every push, because a web-only change is
+  # exactly what it exists to catch.
+  # ---------------------------------------------------------------------------
+  parity:
+    name: Web parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      # The wire check projects zod and the TypeScript types, so it needs the
+      # install; the other two import nothing outside `node:*`.
+      - run: npm ci
+      - name: Every chat wire field is classified
+        run: npm run native:wire:check
+      - name: Every route and page is in the parity ledger
+        run: npm run native:parity:check
+      - name: The register of deliberate differences is whole
+        run: npm run native:register:check
 
   # ---------------------------------------------------------------------------
   # The shared packages, under the same strict-concurrency, warnings-as-errors

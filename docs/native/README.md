@@ -15,7 +15,7 @@ Every file here is current. Anything that was a point-in-time snapshot has moved
 | [`SECURITY.md`](SECURITY.md) | Native threat model — trust boundaries, Keychain, entitlements | Touching auth, the Keychain, or Code-agent permissions |
 | [`TESTING.md`](TESTING.md) | Testing record and the release gates. **Referenced by `native/Scripts/capture-desktop.sh` and `.github/workflows/native.yml`** | Before a release; when CI is green but you do not trust it |
 | [`RELEASE.md`](RELEASE.md) | Release and distribution plan (signing, notarization, the update feed). **Referenced from `DesktopUpdater.swift` and `JunoUpdateFeed.swift`** | Cutting a build |
-| [`PARITY_MATRIX.md`](PARITY_MATRIX.md) | Web ↔ macOS ↔ iOS feature parity | Planning what to build next on a client |
+| [`PARITY_MATRIX.md`](PARITY_MATRIX.md) | Web ↔ macOS ↔ iOS feature parity, generated from `contracts/parity/features.json` (`npm run native:parity`); the hand-written history is in `archive/` | Planning what to build next on a client |
 | [`RESEARCH.md`](RESEARCH.md) | Platform/product research with primary-source links | Designing against an Apple API or a competitor behaviour |
 | [`CODE_SLASH_COMMANDS.md`](CODE_SLASH_COMMANDS.md) | The `/name` saved prompts in the Code composer | Adding or changing a slash command |
 | [`ROADMAP.md`](ROADMAP.md) | Execution roadmap | Sequencing work |

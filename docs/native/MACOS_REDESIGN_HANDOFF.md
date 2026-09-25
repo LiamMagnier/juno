@@ -563,3 +563,18 @@ The spec's "Phase 6 B" section has the detail. In short:
 - **The Mac reads it** through `App/DesktopShellContract.swift` (exhaustive mappings onto `DesktopProductMode`, `DesktopDestination`, `DesktopSettingsSection`, `ChatComposerFace`): the switch's products, Chat's rows, More, headings and empty lines, the `+` menu's titles and marks, the Settings rail's names, marks and aliases. `Tests/DesktopShellContractTests.swift`; the sheet `ShellContractSnapshotTests` (`$JUNO_SNAPSHOT_DIR/shell/`).
 - **When the web's shell changes:** edit the contract until the test passes, run `npm run shell:contract:generate`, then give any new case its place in `DesktopShellContract.swift` (the build fails until you do).
 - **Left:** the call's "Add Photos…" vs the web's files row, the primary action's words, Code's column on `JunoShellCodeSidebar`, and the rest of Phase 6.
+
+## Phase 6 Stage C, 2026-09-25 (`mac/lg-p6c`: the chat wire, the parity ledger, the register)
+
+Tooling and documents only; no Swift, app or web source changed. The spec's "Phase 6 errata, Stage C" has the detail.
+
+- **Chat wire:** `contracts/chat/juno-chat-wire-v1.schema.json` (generated: `npm run native:wire`) from `chatBodySchema` and the `StreamChunk` type, every field `native`, `planned` or `web-only` from `contracts/chat/juno-chat-wire-v1.status.json`. `npm run native:wire:check` fails on an unclassified field and on a native claim the Swift wire structs contradict; keys the Mac is ahead on (the rework's `clientFeatures`, `handoff`, the typed timeline) are `nativeOnly`.
+- **Parity ledger:** `contracts/parity/features.json` classifies all 255 API routes and 44 app pages; `npm run native:parity` writes `docs/native/PARITY_MATRIX.md`; `npm run native:parity:check` fails on anything unclassified, gone, or contradicted by the Swift's own calls. The hand-written matrix is `docs/native/archive/PARITY_MATRIX_2026-09-08.md`.
+- **Register:** `docs/native/WEB_TO_NATIVE_DESIGN.md` › "Register of deliberate differences", #1–#167 in final numbers (5 retired), checked by `npm run native:register:check`. When a lane adds a difference, it adds the next number there.
+- **CI:** a `parity` job in `native.yml` runs the three checks on every push; a diff that touches only `contracts/parity/` or `contracts/chat/` (with web files) does not wake the macOS jobs.
+- **When a web change fails these:** classify the new field or route (native, planned or web-only, with a note) in the status file or the ledger, regenerate (`npm run native:wire`, `npm run native:parity`) and commit both.
+- **Deferred:** generated Swift request/response types from the wire schema; reconciling the OpenAPI chat schemas; per-app route statuses; the iOS and Code page statuses are a first pass.
+
+## Phase 6 integration, 2026-09-25
+
+A, B and C merged into `mac/liquid-glass-chat` (in that order). `npm run native:sync:check` runs all thirteen Linux sync gates (A's eight plus B's shell contract test and check and C's wire, parity and register checks). The register is #1–#171: A's P6A-1 … P6A-4 are #168–#171. Every generator re-ran on the merged tree with no diff. The three lane worktrees are removed; the branches `mac/lg-p6a`, `mac/lg-p6b`, `mac/lg-p6c` stay. Detail: the spec's "Phase 6 integration".
