@@ -352,6 +352,8 @@ struct JunoDesktopRootView: View {
         // page tiles are one person's documents: they go with the session.
         Task.detached(priority: .utility) {
             NativeChatMediaLoader.purgeCachedFiles()
+            // A task's deliverables, likewise (Phase 5 B1).
+            ChatWorkFiles.purgeCachedFiles()
             NativeDesignPreviewLoader.purgeCachedPreviews()
         }
         configuration.syncModel?.stop()

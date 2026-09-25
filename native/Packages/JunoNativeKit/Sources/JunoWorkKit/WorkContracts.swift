@@ -523,6 +523,12 @@ public struct WorkRunSummary: Equatable, Sendable, Identifiable {
     /// for the run's meter. Zero when the server sent none.
     public let inputTokens: Int
     public let outputTokens: Int
+    /// Why it ended, in the executor's own words (`terminalDetail`), when it
+    /// left any — the sentence a finished card leads with.
+    public let terminalDetail: String?
+    /// Which of the three approval modes this attempt enforced, when the run
+    /// carries one this build can read (`approvalMode`).
+    public let approvalMode: JunoWorkPermissionPolicy?
 
     public var id: String { runID }
 
@@ -535,10 +541,13 @@ public struct WorkRunSummary: Equatable, Sendable, Identifiable {
         hostID: String?, effectiveModel: String?, degradation: [WorkDegradation],
         costMicroUsd: Int, maxCostMicroUsd: Int, lastSeq: Int,
         startedAt: Date?, finishedAt: Date?,
-        inputTokens: Int = 0, outputTokens: Int = 0
+        inputTokens: Int = 0, outputTokens: Int = 0,
+        terminalDetail: String? = nil, approvalMode: JunoWorkPermissionPolicy? = nil
     ) {
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
+        self.terminalDetail = terminalDetail
+        self.approvalMode = approvalMode
         self.runID = runID
         self.sessionID = sessionID
         self.attempt = attempt
@@ -603,6 +612,11 @@ public struct WorkApprovalRequest: Equatable, Sendable, Identifiable {
     public let actionDigest: String
     public let expiresAt: Date
     public let decision: String
+    /// When it was asked, for the card's "5m ago". Nil from an executor that
+    /// did not say (a run on this Mac raises its own).
+    public let createdAt: Date?
+    /// When it was answered, for a settled card's "Allowed 2m ago".
+    public let decidedAt: Date?
 
     public var id: String { approvalID }
 
@@ -626,8 +640,10 @@ public struct WorkApprovalRequest: Equatable, Sendable, Identifiable {
     public init(
         approvalID: String, runID: String, action: String, risk: String,
         summary: String, detail: [String: JunoJSONValue], actionDigest: String,
-        expiresAt: Date, decision: String
+        expiresAt: Date, decision: String, createdAt: Date? = nil, decidedAt: Date? = nil
     ) {
+        self.createdAt = createdAt
+        self.decidedAt = decidedAt
         self.approvalID = approvalID
         self.runID = runID
         self.action = action

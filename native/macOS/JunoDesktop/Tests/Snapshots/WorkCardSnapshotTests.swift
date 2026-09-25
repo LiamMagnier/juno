@@ -188,7 +188,7 @@ enum WorkCardFixtures {
         }
     }
 
-    private static var liveTurns: [WorkEvent] {
+    static var liveTurns: [WorkEvent] {
         [
             event(20, .assistantMessage, ["text": .string("Found all three quotes in the Vendors folder.")]),
             event(21, .assistantMessage, ["text": .string("Brightline and Corvid include delivery; Hale does not.")]),
@@ -200,7 +200,7 @@ enum WorkCardFixtures {
         ]
     }
 
-    private static let stepTitles = [
+    static let stepTitles = [
         "Find the three quotes",
         "Read each quote",
         "Normalise prices to a year",
@@ -210,7 +210,7 @@ enum WorkCardFixtures {
         "Write the recommendation",
     ]
 
-    private static func planEvents(done: Int) -> [WorkEvent] {
+    static func planEvents(done: Int) -> [WorkEvent] {
         var events = [
             event(4, .planCreated, [
                 "steps": .array(stepTitles.enumerated().map { index, title in
@@ -227,11 +227,11 @@ enum WorkCardFixtures {
 
     static func session(
         id: String = "wsi_current", title: String = "Compare the three vendor quotes",
-        status: String, created: TimeInterval = 0
+        status: String, created: TimeInterval = 0, goal: String? = nil
     ) -> WorkSessionSummary {
         WorkSessionSummary(
             sessionID: id, title: title,
-            goal: title, status: status, needsAttention: status.hasPrefix("waiting"),
+            goal: goal ?? title, status: status, needsAttention: status.hasPrefix("waiting"),
             requestedTarget: "automatic", effectiveTarget: "cloud", hostID: nil,
             hostDisplayName: nil, pinned: false, archived: false,
             lastActivityAt: start.addingTimeInterval(created),
@@ -240,18 +240,23 @@ enum WorkCardFixtures {
         )
     }
 
-    private static func run(status: String, finished: TimeInterval? = nil) -> WorkRunSummary {
+    static func run(
+        status: String, finished: TimeInterval? = nil, reason: String? = nil, detail: String? = nil,
+        degradation: [WorkDegradation] = [], cost: Int? = nil, hostID: String? = nil, target: String = "cloud"
+    ) -> WorkRunSummary {
         WorkRunSummary(
             runID: "run_1", sessionID: "wsi_current", attempt: 1, status: status,
-            terminalReason: finished == nil ? nil : "completed", requestedTarget: "automatic",
-            effectiveTarget: "cloud", hostID: nil, effectiveModel: nil, degradation: [],
-            costMicroUsd: finished == nil ? 187_400 : 412_900, maxCostMicroUsd: 2_000_000,
+            terminalReason: reason ?? (finished == nil ? nil : "completed"), requestedTarget: "automatic",
+            effectiveTarget: target, hostID: hostID, effectiveModel: "anthropic:claude-sonnet-4-6",
+            degradation: degradation,
+            costMicroUsd: cost ?? (finished == nil ? 187_400 : 412_900), maxCostMicroUsd: 2_000_000,
             lastSeq: 41, startedAt: start, finishedAt: finished.map { start.addingTimeInterval($0) },
-            inputTokens: finished == nil ? 38_912 : 81_406, outputTokens: finished == nil ? 4_207 : 9_388
+            inputTokens: finished == nil ? 38_912 : 81_406, outputTokens: finished == nil ? 4_207 : 9_388,
+            terminalDetail: detail, approvalMode: .balanced
         )
     }
 
-    private static func event(
+    static func event(
         _ seq: Int, _ kind: JunoWorkEventKind, _ payload: [String: JunoJSONValue]
     ) -> WorkEvent {
         WorkEvent(
@@ -406,6 +411,8 @@ enum WorkCardFixtures {
     // MARK: The Task panel
 
     static var panelSnapshot: ChatWorkPanelSnapshot {
+        // An hour ago, over a few minutes: the times in the log differ.
+        let minutes: [Int: TimeInterval] = [1: 0, 2: 8, 3: 71, 4: 94, 5: 131, 6: 219, 7: 246, 8: 251]
         let events: [WorkEvent] = [
             event(1, .runStarted, [:]),
             event(2, .toolStarted, ["summary": .string("Reading the invoice sheet"), "tool": .string("read_file")]),
@@ -414,8 +421,13 @@ enum WorkCardFixtures {
             event(5, .toolStarted, ["summary": .string("Searching for vendor reviews"), "tool": .string("web_search")]),
             event(6, .toolFinished, ["summary": .string("Searched for vendor reviews"), "tool": .string("web_search")]),
             event(7, .error, ["message": .string("The review site refused the request.")]),
-            event(8, .runFinished, ["status": .string("failed")]),
-        ]
+            event(8, .runFinished, ["status": .string("failed"), "reason": .string("failed")]),
+        ].map { event in
+            WorkEvent(
+                seq: event.seq, kind: event.kind, payload: event.payload, agentID: nil,
+                createdAt: start.addingTimeInterval(-3_595 + (minutes[event.seq] ?? 0))
+            )
+        }
         return ChatWorkPanelSnapshot(
             update: WorkStreamUpdate(
                 session: session(id: "wsi_b", title: "Draft the vendor shortlist", status: "failed", created: -3_595),
