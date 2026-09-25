@@ -541,3 +541,14 @@ Merged in order, each merge built and committed: `mac/lg-p5c`, `mac/liquid-glass
 - **Lane worktrees removed** (`juno-glass-pages`, `-p5c`, `-p4b`, `-p4c`, `-p3`, `-p3b`, `-p3c`; each was clean at its branch tip). The branches are kept: `mac/lg-p5c`, `mac/liquid-glass-pages`, `mac/lg-p4b`, `mac/lg-p4c`, `mac/lg-p3`, `mac/lg-p3b`, `mac/lg-p3c`, `fix/download-feed-cancel`. `origin/main` was re-fetched and is still `fe0a501d`, already merged.
 - **Runtime checks left for a person at the screen** (screen control is off): each lane's list, plus ⌘K's page rows and Open notifications, Settings' links from Settings and from a window on Code, the View menu's pages, Share… on an artifact, Use a Skill and `/slug` reaching the server, Archived Chats from More.
 - **Then ship**, per the owner's standing instruction (the release steps in the paused update above): merge into `main`, gate, push, deploy, 1.7.0 / 88, `release-macos.sh 1.7.0 --publish-dev`.
+
+## Phase 6 B, 2026-09-25: the shell contract (`mac/lg-p6b`)
+
+The spec's "Phase 6 B" section has the detail. In short:
+
+- **`contracts/product/juno-shell-v1.json`**: the web's shell as data (plans, products, each product's sidebar with More and its plan gates, section headings, the `+` menu's rows and groups, the primary action's faces, the Settings rail and aliases), each item with its mark.
+- **`npm run shell:contract:test`** (`tests/shell-contract.test.ts`, also in `npm test`): holds `app-sidebar.tsx`, `composer.tsx`, `composer-plus-menu.tsx`, `composer-shell.tsx` and `settings-sections.ts` to the contract.
+- **`npm run shell:contract:generate` / `shell:contract:check`** (`scripts/generate-shell-contract.mjs`): writes and checks `native/macOS/JunoDesktop/App/Generated/JunoShellContract.swift`. Both run in `native.yml`'s contract job.
+- **The Mac reads it** through `App/DesktopShellContract.swift` (exhaustive mappings onto `DesktopProductMode`, `DesktopDestination`, `DesktopSettingsSection`, `ChatComposerFace`): the switch's products, Chat's rows, More, headings and empty lines, the `+` menu's titles and marks, the Settings rail's names, marks and aliases. `Tests/DesktopShellContractTests.swift`; the sheet `ShellContractSnapshotTests` (`$JUNO_SNAPSHOT_DIR/shell/`).
+- **When the web's shell changes:** edit the contract until the test passes, run `npm run shell:contract:generate`, then give any new case its place in `DesktopShellContract.swift` (the build fails until you do).
+- **Left:** the call's "Add Photos…" vs the web's files row, the primary action's words, Code's column on `JunoShellCodeSidebar`, and the rest of Phase 6.

@@ -27,7 +27,7 @@ struct DesktopNeedsYouHeader: View {
     var body: some View {
         Button(action: toggle) {
             HStack(spacing: 0) {
-                Text("Needs you")
+                Text(JunoShellChatSidebar.Heading.needsYou.label)
                     .lineLimit(1)
                 Text(" · \(count)")
                     .monospacedDigit()
@@ -47,7 +47,7 @@ struct DesktopNeedsYouHeader: View {
             }
         }
         .help(isFiltering ? "Show everything" : "Show only these")
-        .accessibilityLabel("Needs you")
+        .accessibilityLabel(JunoShellChatSidebar.Heading.needsYou.label)
         .accessibilityValue("\(count)")
         .accessibilityHint(isFiltering ? "Shows every chat again" : "Shows only the chats waiting on you")
         .accessibilityAddTraits(isFiltering ? [.isSelected, .isButton] : .isButton)

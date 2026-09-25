@@ -19,6 +19,9 @@ import SwiftUI
 /// only news, nothing when all is read. The number rides the accessibility
 /// value and the help, where a dot cannot say it.
 struct DesktopNotificationsRow: View {
+    /// The row's name: the web's action row (the shell contract).
+    private static let label = JunoShellChatSidebar.Action.notifications.label
+
     let model: NativeNotificationsModel
     /// Where a row's link goes: main's route, handed to this window.
     var follow: (JunoNotificationRoute) -> Void = { DesktopWorkbenchRegistry.shared.requestRoute($0) }
@@ -32,14 +35,14 @@ struct DesktopNotificationsRow: View {
         } label: {
             Label {
                 HStack(spacing: JunoSpace.tight) {
-                    Text("Notifications")
+                    Text(Self.label)
                     Spacer(minLength: JunoSpace.hairline)
                     if let tone = model.dotTone {
                         DesktopUnreadDot(pressing: tone == .accent)
                     }
                 }
             } icon: {
-                JunoSymbol(.notifications)
+                JunoSymbol(JunoShellChatSidebar.Action.notifications.icon)
                     .foregroundStyle(Color.junoSidebarInk)
             }
             .foregroundStyle(Color.junoSidebarInk)
@@ -47,8 +50,8 @@ struct DesktopNotificationsRow: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .help(model.unreadDetail.map { "Notifications · \($0)" } ?? "Notifications")
-        .accessibilityLabel("Notifications")
+        .help(model.unreadDetail.map { "\(Self.label) · \($0)" } ?? Self.label)
+        .accessibilityLabel(Self.label)
         .accessibilityValue(model.unreadDetail ?? "")
         .accessibilityIdentifier("juno.desktop.sidebar.notifications")
         .popover(isPresented: $isOpen, arrowEdge: .trailing) {

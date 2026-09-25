@@ -23,6 +23,7 @@
 		0D944F3258469A7EA6BA06A7 /* DesktopSidebarSignals.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A59EBBF40D4F2A67FF7C5D7 /* DesktopSidebarSignals.swift */; };
 		0DC18B6F023E4144EA8043DC /* DesktopWorkbenchRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDC996B507BE1F231C690796 /* DesktopWorkbenchRegistry.swift */; };
 		0FC692CC83DC15C69EF9F1E3 /* DesktopAgentThread.swift in Sources */ = {isa = PBXBuildFile; fileRef = 022FE0A66F702403EEF46FD2 /* DesktopAgentThread.swift */; };
+		112EE1D24C20A9AE9FCB3F77 /* DesktopShellContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 890FFD917AF5EB01BB618D83 /* DesktopShellContractTests.swift */; };
 		1301EB8C9C30D43423D1B2C6 /* ChatWorkPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10C11FBACF6699002E8F6ADD /* ChatWorkPanel.swift */; };
 		14FAC38ECDA530B9616906DB /* ResearchReportWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 964918A9ED8CB3D5915A6C65 /* ResearchReportWindow.swift */; };
 		156EE666048F050D4CA9EC60 /* DesktopNotificationsPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70505E2FA8E8E6A50849A99E /* DesktopNotificationsPopover.swift */; };
@@ -78,6 +79,7 @@
 		4649819A128D3DAFFB703F91 /* ChatWorkPlacementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A26E707EDA6E2B33A30AF2B /* ChatWorkPlacementTests.swift */; };
 		47D96B5E0848A0BF5C8E121D /* editor.js in Resources */ = {isa = PBXBuildFile; fileRef = 6210C6C1160169228FB44B4F /* editor.js */; };
 		47DF0131EACF190E4A9D473B /* DesktopUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3860896B80760B16162D025A /* DesktopUpdater.swift */; };
+		487A829A0D26844739B442B6 /* DesktopShellContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = 433996A932C48A9FAC61E9DB /* DesktopShellContract.swift */; };
 		4C3C218723E4BC294E43678A /* DesktopWorkRegistrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73A8E5419B9997BCF678F158 /* DesktopWorkRegistrationTests.swift */; };
 		4CD88EA3645E23668326B681 /* DesignEditor in Resources */ = {isa = PBXBuildFile; fileRef = C9B7E47195BE33A3D52A312A /* DesignEditor */; };
 		4F5FB51D5AEF70C2FD00346C /* DesktopProjectPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68C55C0479F2DC0189CECC38 /* DesktopProjectPage.swift */; };
@@ -111,6 +113,7 @@
 		6C5FD3E41B08E1098C21DEFB /* DesktopSettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5B8BB4BEB0D113319C846F6 /* DesktopSettingsScreen.swift */; };
 		6CA750AF3D2756CBECD5C0A1 /* ChatComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46C29E6F975AE6B19C0F05EB /* ChatComposer.swift */; };
 		6CD2A1498D6F4C9218EED6F0 /* DesktopMemorySheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0244BE632BF6764F082D0292 /* DesktopMemorySheets.swift */; };
+		6DE147764DF45B9ACCC8149C /* JunoShellContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5922F6FC677E2343428A3EE6 /* JunoShellContract.swift */; };
 		6F07C5D8768DD18B6F52618D /* JunoShortcutRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 856BEA1C563BFB12201A1FDA /* JunoShortcutRegistryTests.swift */; };
 		70C7D6F21F795F1A92984D27 /* DesktopChatWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 254B3DC49106D54CC41DE6B9 /* DesktopChatWorkspace.swift */; };
 		71E1D2E0B32D1D267ADEBBBA /* JunoDesktopCodeScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC3B7E700031F502F86F90D6 /* JunoDesktopCodeScreenshotUITests.swift */; };
@@ -122,6 +125,7 @@
 		78853E1CC3EE35CB44F05DDD /* PageSnapshotTestsC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5508A3BE9A5A4779ACEF0329 /* PageSnapshotTestsC.swift */; };
 		79B232CCF1311D4C40B8C24C /* DesktopProjectsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECACB2996FDFAD5AC00D7C58 /* DesktopProjectsScreen.swift */; };
 		7AD4B3F31F9A07670F8C14A1 /* DesktopSettingsDevicesPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F447690B7EF5EAB8AD4CD22 /* DesktopSettingsDevicesPane.swift */; };
+		7B2FE52535A832A875DC2F64 /* ShellContractSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0615CC1648DFEC050CEB3012 /* ShellContractSnapshotTests.swift */; };
 		7B50A4DA215D4A4FF2BDDF4E /* JunoCodeUI in Frameworks */ = {isa = PBXBuildFile; productRef = 344C68219BB8A74BBFEB2F9A /* JunoCodeUI */; };
 		7C82A2990D5EC0A04055C206 /* DesktopWorkSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42BA94CA2D66FA985D4EE0D7 /* DesktopWorkSettings.swift */; };
 		7EDDC887F1D224D078A61F35 /* PageSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 174DB040C281452E1895D66E /* PageSnapshotTests.swift */; };
@@ -253,6 +257,7 @@
 		022FE0A66F702403EEF46FD2 /* DesktopAgentThread.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopAgentThread.swift; sourceTree = "<group>"; };
 		0244BE632BF6764F082D0292 /* DesktopMemorySheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopMemorySheets.swift; sourceTree = "<group>"; };
 		038709F8E14ED2BC2D3821B8 /* DesktopPermissionsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopPermissionsScreen.swift; sourceTree = "<group>"; };
+		0615CC1648DFEC050CEB3012 /* ShellContractSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellContractSnapshotTests.swift; sourceTree = "<group>"; };
 		07D60B417E58BE70E432E20F /* JunoDesktopRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoDesktopRootView.swift; sourceTree = "<group>"; };
 		0A59EBBF40D4F2A67FF7C5D7 /* DesktopSidebarSignals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSidebarSignals.swift; sourceTree = "<group>"; };
 		0AE553639B716F86EEF81F0B /* JunoDesktopUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = JunoDesktopUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -307,6 +312,7 @@
 		41C418867E612C2D52050E4C /* DesktopTextSize.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopTextSize.swift; sourceTree = "<group>"; };
 		42528E92FFAD4E5724D441E9 /* DesktopSkillSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSkillSheets.swift; sourceTree = "<group>"; };
 		42BA94CA2D66FA985D4EE0D7 /* DesktopWorkSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkSettings.swift; sourceTree = "<group>"; };
+		433996A932C48A9FAC61E9DB /* DesktopShellContract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopShellContract.swift; sourceTree = "<group>"; };
 		46C29E6F975AE6B19C0F05EB /* ChatComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposer.swift; sourceTree = "<group>"; };
 		4709C37AEBA1C5BAEC8D25A3 /* Newsreader24pt-MediumItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader24pt-MediumItalic.ttf"; sourceTree = "<group>"; };
 		4AE1C5CC35CCBED724E4B5EB /* DesktopFirstRunPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopFirstRunPresenter.swift; sourceTree = "<group>"; };
@@ -322,6 +328,7 @@
 		57A8483FD9228A3628542F6A /* IntegrationSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationSnapshotTests.swift; sourceTree = "<group>"; };
 		58DB0AEA26152BA4A960CDD3 /* SnapshotStills.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotStills.swift; sourceTree = "<group>"; };
 		591BF61D53AD4545911C6157 /* DesktopWindowLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWindowLaunchTests.swift; sourceTree = "<group>"; };
+		5922F6FC677E2343428A3EE6 /* JunoShellContract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoShellContract.swift; sourceTree = "<group>"; };
 		59E50A4A1C871748E2CB2675 /* DesktopNeedsYouSignalsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNeedsYouSignalsTests.swift; sourceTree = "<group>"; };
 		5F1AD59AF5368F1B3A84D0F2 /* JunoDesktop-Next.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoDesktop-Next.xcconfig"; sourceTree = "<group>"; };
 		5F61A1B77F46EDBD78017C2D /* DesktopWorkExecutorAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkExecutorAdapterTests.swift; sourceTree = "<group>"; };
@@ -373,6 +380,7 @@
 		87DB401D922C0C8DCAB04164 /* ComposerAttachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerAttachments.swift; sourceTree = "<group>"; };
 		87DDC6F2406B896D29731CCE /* DesktopNavigationStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNavigationStateTests.swift; sourceTree = "<group>"; };
 		88507E1D875658E5393307BD /* DesktopSettingsWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSettingsWindow.swift; sourceTree = "<group>"; };
+		890FFD917AF5EB01BB618D83 /* DesktopShellContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopShellContractTests.swift; sourceTree = "<group>"; };
 		89C3C5FD8B51DE84AE17300B /* DesktopSettingsGeneralPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSettingsGeneralPane.swift; sourceTree = "<group>"; };
 		8A54CD2AEEE462BD81D096CB /* DesktopPreviewOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopPreviewOverlay.swift; sourceTree = "<group>"; };
 		902F9BAEFB8A937F86CE9DAC /* DesktopChatSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopChatSidebar.swift; sourceTree = "<group>"; };
@@ -542,6 +550,7 @@
 				0EE1E0953DB557168BCCD800 /* ResearchStageBSnapshotTests.swift */,
 				EFF3752CD70FDA49FAE186AD /* RunSnapshotFixtures.swift */,
 				F2F1F4AC2F0B0FC11F7D70FB /* SettingsSnapshotTests.swift */,
+				0615CC1648DFEC050CEB3012 /* ShellContractSnapshotTests.swift */,
 				8721A270E6994B084CF5F0BB /* ShortcutsSnapshotTests.swift */,
 				7C411856CD86125FC919315E /* SignalsSnapshotTests.swift */,
 				B3B62D06AFB41600C134CA94 /* SnapshotArtifactStills.swift */,
@@ -647,6 +656,7 @@
 				DFB1A9E876C47E26F3A3736D /* DesktopSettingsVoicePane.swift */,
 				88507E1D875658E5393307BD /* DesktopSettingsWindow.swift */,
 				514888A92C91D1675F47CC04 /* DesktopSharePopover.swift */,
+				433996A932C48A9FAC61E9DB /* DesktopShellContract.swift */,
 				0BCD0C57F737A1BCE0B8D622 /* DesktopShortcutsWindow.swift */,
 				0A59EBBF40D4F2A67FF7C5D7 /* DesktopSidebarSignals.swift */,
 				7BAC4F4FD70D084FA11CD9B6 /* DesktopSimulatorDock.swift */,
@@ -687,6 +697,7 @@
 				74F3C55369BEC27C2B04F5B2 /* SourcesPill.swift */,
 				80D39602F40988BFE1716914 /* TranscriptAttachments.swift */,
 				FE596BBD2A1CAB56B9B12250 /* TranscriptFind.swift */,
+				8D0EA82CF3FE4A2CF1A925FB /* Generated */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -758,6 +769,7 @@
 				6400E63E4081AB6DCB4BB1DF /* DesktopOverlaysTests.swift */,
 				9B0ECC77883B14192B1AE77E /* DesktopPagesStageATests.swift */,
 				E5AD20DE1876D97569C7D309 /* DesktopSettingsParityTests.swift */,
+				890FFD917AF5EB01BB618D83 /* DesktopShellContractTests.swift */,
 				A75FD9C41C68F886B6FC99BE /* DesktopStageCPagesTests.swift */,
 				B942BEF11CD0E6F7AEF3F224 /* DesktopTestHostTests.swift */,
 				6BE662C8AAB794BA99D7E03F /* DesktopUsageModelTests.swift */,
@@ -778,6 +790,14 @@
 				3362DC0BC4D4C74C010FF57B /* Snapshots */,
 			);
 			path = Tests;
+			sourceTree = "<group>";
+		};
+		8D0EA82CF3FE4A2CF1A925FB /* Generated */ = {
+			isa = PBXGroup;
+			children = (
+				5922F6FC677E2343428A3EE6 /* JunoShellContract.swift */,
+			);
+			path = Generated;
 			sourceTree = "<group>";
 		};
 		A318EEAD6283B43279F16D02 /* JunoMobile */ = {
@@ -1062,6 +1082,7 @@
 				B6CF586251E5792A9FB34B05 /* DesktopSettingsVoicePane.swift in Sources */,
 				586A45504366EAA8EA359258 /* DesktopSettingsWindow.swift in Sources */,
 				07AAE6C74007BCF36323C695 /* DesktopSharePopover.swift in Sources */,
+				487A829A0D26844739B442B6 /* DesktopShellContract.swift in Sources */,
 				8E2435051941860781351E14 /* DesktopShortcutsWindow.swift in Sources */,
 				0D944F3258469A7EA6BA06A7 /* DesktopSidebarSignals.swift in Sources */,
 				5D359FC7643D014651342734 /* DesktopSimulatorDock.swift in Sources */,
@@ -1092,6 +1113,7 @@
 				06ECC43C4ACC61C22CFB9A95 /* JunoDesktopRootView.swift in Sources */,
 				E7123B1DC6096690E0373BDD /* JunoDesktopWebAuthenticationClient.swift in Sources */,
 				8239C7DC96C76FD2E6A7D4FD /* JunoDesktopWorkspaceView.swift in Sources */,
+				6DE147764DF45B9ACCC8149C /* JunoShellContract.swift in Sources */,
 				0431404A8A63D8BD08509FC6 /* JunoShortcutRegistry.swift in Sources */,
 				6A3FC9F131043767C21D7093 /* MessageActions.swift in Sources */,
 				34CAB75EB3606A3EEE29CF75 /* MessageRow.swift in Sources */,
@@ -1137,6 +1159,7 @@
 				72129798E50562C9759167CD /* DesktopOverlaysTests.swift in Sources */,
 				2FFB809CE9BDCF7AF2183954 /* DesktopPagesStageATests.swift in Sources */,
 				399D13D7F5A2095F1C105BD4 /* DesktopSettingsParityTests.swift in Sources */,
+				112EE1D24C20A9AE9FCB3F77 /* DesktopShellContractTests.swift in Sources */,
 				E1756D0A4778BA64BCEBBAF2 /* DesktopStageCPagesTests.swift in Sources */,
 				7371031DBE27624D3647315F /* DesktopTestHostTests.swift in Sources */,
 				92B937323764063EA9C4214E /* DesktopUsageModelTests.swift in Sources */,
@@ -1162,6 +1185,7 @@
 				BA63DFDBBB3DD89C5D4231AF /* RunBlockTests.swift in Sources */,
 				64EEE537B2040CF2FBAC3F70 /* RunSnapshotFixtures.swift in Sources */,
 				8C466ADB5CF3FA3B75416210 /* SettingsSnapshotTests.swift in Sources */,
+				7B2FE52535A832A875DC2F64 /* ShellContractSnapshotTests.swift in Sources */,
 				BE14CB2BA9B7CE39D8F667B5 /* ShortcutsSnapshotTests.swift in Sources */,
 				157048FF0B255724916238CF /* SignalsSnapshotTests.swift in Sources */,
 				FA64D6737502054D9D679E8C /* SnapshotArtifactStills.swift in Sources */,

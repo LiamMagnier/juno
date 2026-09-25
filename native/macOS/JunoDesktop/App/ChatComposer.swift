@@ -85,12 +85,11 @@ enum ChatComposerFace: Equatable {
     }
 
     /// Coral for the three faces that act or are acting; the resting glass
-    /// fill for the two that do not (§0.4).
+    /// fill for the two that do not (§0.4). The web's fills, through the shell
+    /// contract; the Mac's disabled face is the quiet disc, as the web's
+    /// disabled Send is.
     var isAccented: Bool {
-        switch self {
-        case .send, .stop, .busy: true
-        case .voice, .disabled: false
-        }
+        shell?.isAccented ?? false
     }
 
     var isEnabled: Bool {
@@ -1638,7 +1637,9 @@ struct ChatComposer: View {
     private var plusMenuModel: ComposerPlusMenuModel {
         let isDraft = fixedProjectID != nil || model.selectedConversationID == nil
         return ComposerPlusMenuModel(
-            attachTitle: voiceActive ? "Add Photos…" : "Add Files or Photos…",
+            // During a call the Mac takes photos only; the web's call offers
+            // files as well (its `voice-files` row). The ellipsis is the Mac's.
+            attachTitle: voiceActive ? "Add Photos…" : "\(JunoShellPlusRow.files.title)…",
             canAttach: canAttach,
             attachUnavailableReason: isPrivate ? "Incognito" : nil,
             addFiles: { showingFileImporter = true },
@@ -1696,7 +1697,7 @@ struct ChatComposer: View {
         .fixedSize()
         .disabled(quota != nil)
         .help("Add files, tools and more")
-        .accessibilityLabel("Add")
+        .accessibilityLabel(JunoShellPlusMenu.label)
         .accessibilityValue(marks.map(\.label).joined(separator: ", "))
         .accessibilityIdentifier("juno.desktop.chat.add")
     }
