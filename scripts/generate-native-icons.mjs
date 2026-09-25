@@ -301,6 +301,9 @@ const PHOSPHOR = {
   // Phase 3 Stage A: the menu bar's Command Menu… (⌘K), drawn as the key
   // it is named for. The web has no row for it.
   Command: null,
+
+  // Phase 3 Stage B: the ⌘K panel's "Roadmap & feature requests" row.
+  MapTrifold: "Map",
 };
 
 /** Glyphs with a `.fill` twin: the "on" drawings §8.6 asks for — a pinned row,

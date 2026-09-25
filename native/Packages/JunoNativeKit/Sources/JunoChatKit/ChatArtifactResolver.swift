@@ -96,6 +96,13 @@ public struct ChatArtifactResolver: Equatable, Sendable {
         byIdentifier.values.first { $0.id == id }
     }
 
+    /// The stored row whose **own** identifier this is — a reference made
+    /// from a row (the toolbar's Outputs, the ⌘K panel), which names that row
+    /// and no other, so no retired-identifier rule applies.
+    public func artifact(identifier: String) -> NativeArtifact? {
+        byIdentifier[identifier]
+    }
+
     /// Everything an inline card draws, resolved the way the web resolves it.
     public func card(
         for reference: NativeMessageContent.ArtifactReference,

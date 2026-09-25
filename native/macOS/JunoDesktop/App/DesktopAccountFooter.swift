@@ -40,6 +40,8 @@ struct DesktopAccountFooter: View {
     /// row re-evaluates when the updater's phase changes.
     @State private var updater = DesktopUpdateModel.shared
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openURL) private var openURL
+    @Environment(\.openWindow) private var openWindow
 
     /// Re-reading the plan more often than this adds requests and no
     /// information: the budget moves when turns finish, not by the second.
@@ -121,12 +123,29 @@ struct DesktopAccountFooter: View {
         .onDisappear { isAccountOpen = false }
         .popover(isPresented: $isAccountOpen, arrowEdge: .top) {
             DesktopAccountPopover(
-                session: session,
+                name: name,
+                email: session.profile.email,
                 avatarData: configuration.avatarModel?.imageData,
-                plan: plan,
-                openSettings: { section in
+                imageURL: session.profile.imageURL,
+                planName: plan?.planName,
+                usage: DesktopAccountUsage(plan: plan),
+                isOwner: plan?.planID.uppercased() == "OWNER",
+                openSettings: {
                     isAccountOpen = false
-                    DesktopSettingsRouter.open(section, using: openSettings)
+                    DesktopSettingsRouter.open(.general, using: openSettings)
+                },
+                // Seam 4: Stage C's Upgrade presenter, wired at integration.
+                // Until then the row is absent, never a dead end.
+                openUpgrade: nil,
+                openAdmin: {
+                    isAccountOpen = false
+                    if let url = URL(string: "\(JunoBackend.productionURLString)/admin") {
+                        openURL(url)
+                    }
+                },
+                openShortcuts: {
+                    isAccountOpen = false
+                    openWindow(id: JunoDesktopWindow.shortcutsID)
                 },
                 signOut: {
                     isAccountOpen = false
@@ -338,125 +357,68 @@ private struct DesktopFooterUpdateRow: View {
 
 // MARK: - Account popover
 
-/// Who, how much, and where to go (§2.7): the web's `UserMenu`, on the
-/// system's popover glass with no background of Juno's own.
+/// The usage block's words and meter, from the plan route (seam 9).
 ///
-/// **An explicit frame** (crash rule 2): a popover that negotiates its own size
-/// against the window underneath it has put this shell in a constraint loop
-/// before. Owners get the extra Admin Panel row and 32 more points.
-private struct DesktopAccountPopover: View {
-    let session: NativeAuthenticatedSession
-    let avatarData: Data?
-    let plan: DesktopUsagePlan?
-    let openSettings: (DesktopSettingsSection) -> Void
-    let signOut: () -> Void
+/// The web's block reads "Messages {used} / {limit}" from the account's
+/// quota. The native plan route does not carry that count yet, so a plan with
+/// a weekly budget says what it does today — this week's share, as a
+/// percentage — until Stage C's `NativeUsagePlan.quota` lands and the
+/// integration switches the block to the web's words. With no cap it is the
+/// web's "No cap" and its sentence.
+struct DesktopAccountUsage: Equatable {
+    /// The block's left-hand word: "Messages", or "This week".
+    let caption: String
+    /// The right-hand figure, tabular.
+    let readout: String
+    /// How full the 18-dot bar is; nil draws no bar.
+    let fraction: Double?
+    /// The line under an uncapped plan's readout.
+    let sentence: String?
+    let tone: DesktopFooterPlanWord.Tone
 
-    @Environment(\.openURL) private var openURL
-
-    /// The plan route names the owner's plan; the profile carries no role.
-    private var isOwner: Bool { plan?.planID.uppercased() == "OWNER" }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            header
-            usage
-            Divider()
-            VStack(spacing: 0) {
-                DesktopPopoverRow(title: "Profile…", icon: .user) { openSettings(.account) }
-                DesktopPopoverRow(title: "Settings…", icon: .settings, shortcut: "⌘,") {
-                    openSettings(.general)
-                }
-                if isOwner {
-                    DesktopPopoverRow(title: "Admin Panel", icon: .permissions, trailing: .external) {
-                        if let url = URL(string: "\(JunoBackend.productionURLString)/admin") {
-                            openURL(url)
-                        }
-                    }
-                }
-            }
-            Divider()
-            DesktopPopoverRow(title: "Sign Out", icon: .logOut, ink: Color.junoDestructiveInk, action: signOut)
-                .accessibilityIdentifier("juno.desktop.account-menu.sign-out")
-        }
-        .padding(12)
-        .frame(width: 288, height: isOwner ? 316 : 284, alignment: .top)
-        .accessibilityIdentifier("juno.desktop.account-menu")
+    init(caption: String, readout: String, fraction: Double?, sentence: String?, tone: DesktopFooterPlanWord.Tone) {
+        self.caption = caption
+        self.readout = readout
+        self.fraction = fraction
+        self.sentence = sentence
+        self.tone = tone
     }
 
-    private var header: some View {
-        HStack(spacing: JunoSpace.cozy) {
-            JunoAvatar(
-                imageData: avatarData,
-                imageURL: session.profile.imageURL,
-                name: session.profile.name ?? session.profile.email,
-                size: 32
+    init(plan: DesktopUsagePlan?) {
+        guard let plan else {
+            self.init(caption: "This week", readout: "Unavailable", fraction: nil, sentence: nil, tone: .quiet)
+            return
+        }
+        if plan.isUnlimited {
+            self.init(
+                caption: "Messages",
+                readout: "No cap",
+                fraction: nil,
+                sentence: Self.uncappedSentence(isOwner: plan.planID.uppercased() == "OWNER"),
+                tone: .quiet
             )
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: JunoSpace.snug) {
-                    Text(session.profile.name ?? session.profile.email)
-                        .junoFont(size: 13, relativeTo: .callout, weight: .semibold)
-                        .junoInk()
-                        .lineLimit(1)
-                    if let plan {
-                        // Neutral, not the accent: a plan is a fact about the
-                        // account, not an action.
-                        Text(plan.planName)
-                            .junoFont(size: 11, relativeTo: .caption2, weight: .medium, design: .monospaced)
-                            .junoSecondaryInk()
-                            .padding(.horizontal, JunoSpace.snug)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.junoGlassFill))
-                            .fixedSize()
-                    }
-                }
-                Text(session.profile.email)
-                    .junoFont(size: 12, relativeTo: .footnote)
-                    .junoSecondaryInk()
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
+        } else if plan.isBrowseOnly {
+            self.init(caption: "This week", readout: "Browse only", fraction: nil, sentence: nil, tone: .quiet)
+        } else {
+            self.init(
+                caption: "This week",
+                readout: "\(DesktopFooterPlanWord.percentUsed(plan))% used",
+                fraction: plan.weekly.fraction,
+                sentence: nil,
+                tone: DesktopFooterPlanWord(plan: plan).tone
+            )
         }
     }
 
-    /// The one place the quota is drawn: this week's share of the budget, as
-    /// the web's 18-dot matrix, or "No cap".
-    private var usage: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("This week")
-                Spacer(minLength: JunoSpace.snug)
-                Text(readout)
-                    .monospacedDigit()
-                    .junoInk()
-                    .contentTransition(.numericText())
-            }
-            .junoFont(size: 11, relativeTo: .caption2)
-            .junoSecondaryInk()
-
-            if let plan, !plan.isUnlimited, !plan.isBrowseOnly {
-                DesktopSidebarDotFillBar(fraction: plan.weekly.fraction, tint: meterTint(plan))
-            }
-        }
-        .padding(JunoSpace.close)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
-                .fill(Color.junoGlassFill)
-        )
-        .accessibilityElement(children: .combine)
-    }
-
-    private var readout: String {
-        guard let plan else { return "Unavailable" }
-        if plan.isBrowseOnly { return "Browse only" }
-        if plan.isUnlimited { return "No cap" }
-        return "\(DesktopFooterPlanWord.percentUsed(plan))% used"
+    /// The web's two sentences for a plan with no cap (`user-menu.tsx`).
+    static func uncappedSentence(isOwner: Bool) -> String {
+        isOwner ? "Everything unlocked, with no usage cap." : "All models, with a monthly token limit."
     }
 
     /// Progress is one of the accent's sanctioned uses; near the limit the
-    /// matrix takes the same warning and destructive tones the footer word does.
-    private func meterTint(_ plan: DesktopUsagePlan) -> Color {
-        switch DesktopFooterPlanWord(plan: plan).tone {
+    /// bar takes the footer word's warning and destructive tones.
+    var meterTint: Color {
+        switch tone {
         case .quiet: Color.junoAccent
         case .warning: Color.junoWarning
         case .destructive: Color.junoDestructive
@@ -464,8 +426,173 @@ private struct DesktopAccountPopover: View {
     }
 }
 
+/// Which rows the account popover draws, and so how tall it is.
+struct DesktopAccountPopoverRows: Equatable {
+    var showsUpgrade: Bool
+    var showsAdmin: Bool
+    /// An uncapped plan's sentence stands a little taller than the dots.
+    var usageHasSentence = false
+
+    /// Plans below the top one that is for sale today (FREE, PRO, MAX) may
+    /// upgrade; the row also needs the Upgrade presenter (seam 4).
+    static func canUpgrade(planID: String?) -> Bool {
+        guard let planID else { return false }
+        return ["FREE", "PRO", "MAX"].contains(planID.uppercased())
+    }
+
+    /// The popover's height: a constant per row set, never measured at run
+    /// time (crash rule 2).
+    var height: CGFloat {
+        Self.baseHeight
+            + (usageHasSentence ? Self.sentenceExtra : 0)
+            + (showsUpgrade ? Self.rowHeight : 0)
+            + (showsAdmin ? Self.rowHeight : 0)
+    }
+
+    static let rowHeight: CGFloat = 28
+    /// Padding, identity, usage block with its dots, three dividers,
+    /// Settings, Keyboard Shortcuts and Sign Out.
+    static let baseHeight: CGFloat = 246
+    static let sentenceExtra: CGFloat = 10
+}
+
+/// Who, how much, and where to go (§0.5 of the Phase 3 brief): the web's
+/// account menu, on the system's popover glass with no background of Juno's
+/// own.
+///
+/// Settings…, Upgrade Plan (while a higher plan is for sale and the Upgrade
+/// sheet is wired), Admin Panel for owners; Keyboard Shortcuts; Sign Out.
+/// There is no Profile… (the web dropped it: it was one click from Settings)
+/// and no "Get the apps" (P3-15: this app is the download).
+///
+/// **The signature detail** is the 18-dot bar — the web's own mark for how
+/// much is left, drawn in the accent until the week runs short.
+struct DesktopAccountPopover: View {
+    let name: String
+    let email: String
+    let avatarData: Data?
+    let imageURL: URL?
+    let planName: String?
+    let usage: DesktopAccountUsage
+    let isOwner: Bool
+    let openSettings: () -> Void
+    /// Seam 4: nil hides Upgrade Plan.
+    let openUpgrade: (() -> Void)?
+    let openAdmin: () -> Void
+    let openShortcuts: () -> Void
+    let signOut: () -> Void
+
+    static let width: CGFloat = 288
+
+    private var rows: DesktopAccountPopoverRows {
+        DesktopAccountPopoverRows(
+            showsUpgrade: openUpgrade != nil,
+            showsAdmin: isOwner,
+            usageHasSentence: usage.fraction == nil && usage.sentence != nil
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            usageBlock
+                .padding(.top, JunoSpace.cozy)
+            divider
+            DesktopPopoverRow(title: "Settings…", icon: .settings, shortcut: "⌘,", action: openSettings)
+            if let openUpgrade {
+                DesktopPopoverRow(title: "Upgrade Plan", icon: .sparkles, action: openUpgrade)
+            }
+            if isOwner {
+                DesktopPopoverRow(title: "Admin Panel", icon: .shieldCheck, trailing: .external, action: openAdmin)
+            }
+            divider
+            DesktopPopoverRow(title: "Keyboard Shortcuts", icon: .keyboard, shortcut: "⌘/", action: openShortcuts)
+            divider
+            DesktopPopoverRow(title: "Sign Out", icon: .logOut, ink: Color.junoDestructiveInk, action: signOut)
+                .accessibilityIdentifier("juno.desktop.account-menu.sign-out")
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(width: Self.width, height: rows.height, alignment: .top)
+        .accessibilityIdentifier("juno.desktop.account-menu")
+    }
+
+    private var divider: some View {
+        Divider()
+            .padding(.vertical, JunoSpace.snug)
+    }
+
+    private var header: some View {
+        HStack(spacing: JunoSpace.cozy) {
+            JunoAvatar(imageData: avatarData, imageURL: imageURL, name: name, size: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: JunoSpace.snug) {
+                    Text(name)
+                        .junoFont(size: 13, relativeTo: .callout, weight: .medium)
+                        .foregroundStyle(Color.junoForeground)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let planName {
+                        // Neutral, not the accent: a plan is a fact about the
+                        // account. SF, like the rest of the menu's metadata.
+                        Text(planName)
+                            .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
+                            .foregroundStyle(Color.junoSecondaryInk)
+                            .padding(.horizontal, JunoSpace.snug)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.junoGlassFill))
+                            .fixedSize()
+                    }
+                }
+                Text(email)
+                    .junoFont(size: 12, relativeTo: .footnote)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The one place the quota is drawn.
+    private var usageBlock: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(usage.caption)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                Spacer(minLength: JunoSpace.snug)
+                Text(usage.readout)
+                    .fontWeight(.medium)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.junoForeground)
+                    .contentTransition(.numericText())
+                    .lineLimit(1)
+            }
+            .junoFont(size: 11, relativeTo: .caption2)
+
+            if let fraction = usage.fraction {
+                DesktopSidebarDotFillBar(fraction: fraction, tint: usage.meterTint)
+            } else if let sentence = usage.sentence {
+                Text(sentence)
+                    .junoFont(size: 11, relativeTo: .caption2)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, JunoSpace.close)
+        .padding(.vertical, JunoSpace.snug)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                .fill(Color.junoGlassFill)
+        )
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// A 28pt row inside a popover: glyph, title, an optional shortcut or trailing
-/// mark, and the glass hover fill.
+/// mark, and the glass hover fill at radius 8.
 private struct DesktopPopoverRow: View {
     let title: String
     let icon: JunoIcon
@@ -480,17 +607,19 @@ private struct DesktopPopoverRow: View {
         Button(action: action) {
             HStack(spacing: JunoSpace.snug) {
                 JunoIconView(icon, size: 16)
+                    .foregroundStyle(ink == Color.junoForeground ? Color.junoSecondaryInk : ink)
                 Text(title)
                     .junoFont(size: 13, relativeTo: .callout)
                 Spacer(minLength: JunoSpace.snug)
                 if let shortcut {
                     Text(shortcut)
                         .junoFont(size: 12, relativeTo: .footnote)
-                        .junoSecondaryInk()
+                        .monospacedDigit()
+                        .foregroundStyle(Color.junoSecondaryInk)
                 }
                 if let trailing {
                     JunoIconView(trailing, size: 12)
-                        .junoSecondaryInk()
+                        .foregroundStyle(Color.junoSecondaryInk)
                 }
             }
             .foregroundStyle(ink)
@@ -504,5 +633,6 @@ private struct DesktopPopoverRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .accessibilityLabel(title)
     }
 }

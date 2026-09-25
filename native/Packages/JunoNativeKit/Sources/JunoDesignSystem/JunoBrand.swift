@@ -221,6 +221,10 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// The menu bar's Command Menu… (Phase 3 Stage A): the ⌘ key itself.
     case command
 
+    /// Phase 3 Stage B: the ⌘K panel's "Roadmap & feature requests" row
+    /// (the web's `Map`).
+    case mapTrifold
+
     /// The generated symbol this case wears, without a cut suffix: `ph.<name>`
     /// for Phosphor's drawings, `juno.<name>` for Juno's own.
     ///
@@ -447,6 +451,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .folderLock: "ph.folderlock"
         case .github: "ph.githublogo"
         case .command: "ph.command"
+        case .mapTrifold: "ph.maptrifold"
         }
     }
 
