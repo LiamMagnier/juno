@@ -139,10 +139,16 @@ export interface AgentFaceProps {
   size?: AgentFaceSize | number;
   /** The agent's name, for the accessible label. Omit when the name is printed beside the face. */
   name?: string;
+  /**
+   * The state the label names, when it is not the one drawn. The hire arrival
+   * draws `done` then `idle` as a greeting (AGENTS.md §5.1); a screen reader is
+   * told the agent's real state, not the choreography.
+   */
+  labelState?: AgentState;
   className?: string;
 }
 
-export function AgentFace({ avatar, state = "idle", size = "md", name, className }: AgentFaceProps) {
+export function AgentFace({ avatar, state = "idle", size = "md", name, labelState, className }: AgentFaceProps) {
   const px = typeof size === "number" ? size : PX[size];
   const spec = SHAPES[avatar.shape];
   const cut = EYES[avatar.eyes];
@@ -151,7 +157,7 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, className
   const r = cut.r * spec.scale;
   // The mark and the prop are dropped below 28px; the eyes never are.
   const detailed = px >= 28;
-  const label = name ? `${name}, ${AGENT_STATE_LABEL[state].toLowerCase()}` : undefined;
+  const label = name ? `${name}, ${AGENT_STATE_LABEL[labelState ?? state].toLowerCase()}` : undefined;
 
   return (
     <svg

@@ -1,6 +1,9 @@
 import http2 from "node:http2";
 import { SignJWT, importPKCS8 } from "jose";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
+import { safeAppPath } from "@/lib/notify/paths";
+import { clampPushText, pushRouteIds, pushSwitchFilter, type NotifyPush } from "@/lib/notify/push";
+import type { NotifyChannel } from "@/lib/notify/types";
 
 export interface ApnsPayload {
   aps: {
@@ -46,8 +49,48 @@ export interface RegisterDevicePushTokenParams {
   userId: string;
   token: string;
   platform?: "ios" | "macos" | string;
-  bundleId?: string;
+  /** The app's own bundle id. Absent means "the platform's app" at send time. */
+  bundleId?: string | null;
   environment?: "production" | "sandbox";
+  /** The native sign-in that registered it, so revoking that sign-in stops its pushes. */
+  deviceSessionId?: string | null;
+  /** Omitted keeps what the device already chose (a re-registration is not a reset). */
+  notifyNeedsYou?: boolean;
+  notifyUpdates?: boolean;
+}
+
+/**
+ * The apps' bundle ids, which are the APNs topics. The Debug and Next builds
+ * append `.debug` / `.next` and always say so at registration; these are the
+ * fallback for a row that never did.
+ */
+export const APNS_IOS_BUNDLE_ID = "com.liammagnier.JunoMobile";
+export const APNS_MACOS_BUNDLE_ID = "com.liammagnier.JunoDesktop";
+
+type ApnsEnvironment = "production" | "sandbox";
+
+/**
+ * The topic a device is pushed on: its own bundle id, else what the caller
+ * named, else the deployment's `APNS_BUNDLE_ID`, else its platform's app.
+ * Read lazily — the tsx workers pick `.env` up when Prisma is constructed,
+ * which can be after this module is evaluated.
+ */
+export function apnsTopicFor(device: { platform: string; bundleId: string | null }, fallback?: string | null): string {
+  return (
+    device.bundleId?.trim() ||
+    fallback?.trim() ||
+    process.env.APNS_BUNDLE_ID?.trim() ||
+    (device.platform === "macos" ? APNS_MACOS_BUNDLE_ID : APNS_IOS_BUNDLE_ID)
+  );
+}
+
+/** A token as the apps print it (`<abcd 1234>`) or as it is stored (`abcd1234`). */
+export function cleanDeviceToken(token: string): string {
+  return token.trim().replace(/[<\s>]/g, "").toLowerCase();
+}
+
+function isApnsEnvironment(value: unknown): value is ApnsEnvironment {
+  return value === "production" || value === "sandbox";
 }
 
 let cachedAuthToken: { token: string; expiresAt: number } | null = null;
@@ -96,25 +139,41 @@ export async function getApnsJwt(): Promise<string | null> {
 
 /**
  * Registers or updates an APNs device token for a user.
+ *
+ * Upserted by token, which is globally unique: a phone signed into a second
+ * account moves to it, and its switches start over rather than carrying the
+ * last account's choices across.
  */
 export async function registerDevicePushToken({
   userId,
   token,
   platform = "ios",
-  bundleId = "com.liammagnier.juno",
+  bundleId = null,
   environment = "production",
+  deviceSessionId = null,
+  notifyNeedsYou,
+  notifyUpdates,
 }: RegisterDevicePushTokenParams) {
-  const cleanToken = token.trim().replace(/[<\s>]/g, "");
+  const cleanToken = cleanDeviceToken(token);
+  // Cross-account on purpose: the token is the key, whoever held it before.
+  const existing = await prismaUnguarded.devicePushToken.findUnique({
+    where: { token: cleanToken },
+    select: { userId: true },
+  });
+  const sameOwner = existing?.userId === userId;
 
-  return await prisma.devicePushToken.upsert({
+  return await prismaUnguarded.devicePushToken.upsert({
     where: { token: cleanToken },
     update: {
       userId,
       platform,
       bundleId,
       environment,
+      deviceSessionId,
       active: true,
       lastUsedAt: new Date(),
+      notifyNeedsYou: notifyNeedsYou ?? (sameOwner ? undefined : true),
+      notifyUpdates: notifyUpdates ?? (sameOwner ? undefined : true),
     },
     create: {
       userId,
@@ -122,7 +181,10 @@ export async function registerDevicePushToken({
       platform,
       bundleId,
       environment,
+      deviceSessionId,
       active: true,
+      notifyNeedsYou: notifyNeedsYou ?? true,
+      notifyUpdates: notifyUpdates ?? true,
     },
   });
 }
@@ -199,7 +261,7 @@ function sendApnsHttp2Request(
  * If userId is provided, ensures only the authenticated user's token is deactivated.
  */
 export async function deactivateDevicePushToken(token: string, userId?: string) {
-  const cleanToken = token.trim().replace(/[<\s>]/g, "");
+  const cleanToken = cleanDeviceToken(token);
   return await prismaUnguarded.devicePushToken.updateMany({
     where: {
       token: cleanToken,
@@ -210,14 +272,53 @@ export async function deactivateDevicePushToken(token: string, userId?: string) 
 }
 
 /**
+ * One POST to one APNs host: whether Apple took it, the status, Apple's id for
+ * it and its refusal reason. `ok` is the status alone — a refusal whose body
+ * is empty or not Apple's JSON (a proxy's 502) has no reason to read, and must
+ * still count as a refusal.
+ */
+async function postToApns(
+  environment: ApnsEnvironment,
+  token: string,
+  headers: Record<string, string>,
+  body: string
+): Promise<{ ok: boolean; statusCode: number; apnsId: string | undefined; reason: string | undefined }> {
+  const host = environment === "production" ? "api.push.apple.com" : "api.sandbox.push.apple.com";
+  const res = await sendApnsHttp2Request(host, `/3/device/${token}`, headers, body);
+  const apnsId = typeof res.headers["apns-id"] === "string" ? res.headers["apns-id"] : undefined;
+  if (res.statusCode >= 200 && res.statusCode < 300) {
+    return { ok: true, statusCode: res.statusCode, apnsId, reason: undefined };
+  }
+  let reason: string | undefined;
+  try {
+    reason = (JSON.parse(res.body) as { reason?: string }).reason;
+  } catch {
+    reason = res.body || undefined;
+  }
+  return { ok: false, statusCode: res.statusCode, apnsId, reason };
+}
+
+/** Apple's answer for a token that will never take a push again. */
+function isDeadToken(statusCode: number, reason: string | undefined): boolean {
+  return statusCode === 410 || reason === "BadDeviceToken" || reason === "Unregistered";
+}
+
+/**
  * Dispatches an APNs push notification over HTTP/2.
  * Falls back to simulation mode if APNs credentials are not configured.
+ *
+ * A `BadDeviceToken` is tried once more against the other environment before
+ * the token is given up on. A development-signed build of the app gets a
+ * sandbox token whatever channel it thinks it is, and says "production" at
+ * registration often enough that deactivating on the first refusal silently
+ * switched pushes off for exactly the builds they were being tested on. When
+ * the other side takes it, the row learns its real environment.
  */
 export async function sendApnsNotification(options: SendApnsOptions): Promise<SendApnsResult> {
-  const cleanToken = options.token.trim().replace(/[<\s>]/g, "");
-  const defaultBundleId = process.env.APNS_BUNDLE_ID || "com.liammagnier.juno";
-  const topic = options.topic || defaultBundleId;
-  const environment = options.environment || (process.env.NODE_ENV === "production" ? "production" : "sandbox");
+  const cleanToken = cleanDeviceToken(options.token);
+  const topic = options.topic || process.env.APNS_BUNDLE_ID || APNS_IOS_BUNDLE_ID;
+  const environment: ApnsEnvironment =
+    options.environment || (process.env.NODE_ENV === "production" ? "production" : "sandbox");
 
   const jwt = await getApnsJwt();
 
@@ -229,9 +330,6 @@ export async function sendApnsNotification(options: SendApnsOptions): Promise<Se
       apnsId: `sim_${Date.now()}_${cleanToken.slice(0, 8)}`,
     };
   }
-
-  const host = environment === "production" ? "api.push.apple.com" : "api.sandbox.push.apple.com";
-  const path = `/3/device/${cleanToken}`;
 
   const headers: Record<string, string> = {
     authorization: `bearer ${jwt}`,
@@ -247,37 +345,42 @@ export async function sendApnsNotification(options: SendApnsOptions): Promise<Se
     headers["apns-collapse-id"] = options.collapseId;
   }
 
+  const body = JSON.stringify(options.payload);
   try {
-    const res = await sendApnsHttp2Request(host, path, headers, JSON.stringify(options.payload));
-    const apnsId = typeof res.headers["apns-id"] === "string" ? res.headers["apns-id"] : undefined;
+    let res = await postToApns(environment, cleanToken, headers, body);
 
-    if (res.statusCode >= 200 && res.statusCode < 300) {
+    if (res.reason === "BadDeviceToken") {
+      const other: ApnsEnvironment = environment === "production" ? "sandbox" : "production";
+      const retried = await postToApns(other, cleanToken, headers, body);
+      if (retried.ok) {
+        await prismaUnguarded.devicePushToken
+          .updateMany({ where: { token: cleanToken }, data: { environment: other } })
+          .catch((error: unknown) => {
+            console.warn("[apns] could not record a token's environment", error instanceof Error ? error.message : String(error));
+          });
+      }
+      res = retried;
+    }
+
+    if (res.ok) {
       return {
         success: true,
-        apnsId,
+        apnsId: res.apnsId,
         statusCode: res.statusCode,
       };
     }
 
-    let reason: string | undefined;
-    try {
-      const errJson = JSON.parse(res.body) as { reason?: string };
-      reason = errJson.reason;
-    } catch {
-      reason = res.body;
-    }
-
-    // Token is unregistered or invalid: deactivate it
-    if (res.statusCode === 410 || reason === "BadDeviceToken" || reason === "Unregistered") {
+    // Token is unregistered or invalid in both environments: deactivate it
+    if (isDeadToken(res.statusCode, res.reason)) {
       await deactivateDevicePushToken(cleanToken);
     }
 
     return {
       success: false,
       statusCode: res.statusCode,
-      apnsId,
-      reason,
-      error: `APNs returned HTTP ${res.statusCode}: ${reason || "Unknown error"}`,
+      apnsId: res.apnsId,
+      reason: res.reason,
+      error: `APNs returned HTTP ${res.statusCode}: ${res.reason || "Unknown error"}`,
     };
   } catch (err) {
     return {
@@ -289,15 +392,22 @@ export async function sendApnsNotification(options: SendApnsOptions): Promise<Se
 
 /**
  * Sends an APNs push notification to all active devices registered to a user.
+ *
+ * Each device's own topic and environment win over `options`: they are facts
+ * about that install, and one caller's default must not redirect every phone
+ * on the account to the wrong app or the wrong APNs host. With a `channel`,
+ * only devices whose switch for it is on are sent to.
  */
 export async function sendPushToUser(
   userId: string,
   payload: ApnsPayload,
-  options?: Partial<Omit<SendApnsOptions, "token" | "payload">>
+  options?: Partial<Omit<SendApnsOptions, "token" | "payload">>,
+  filter?: { channel?: NotifyChannel }
 ): Promise<SendApnsResult[]> {
   try {
-    const devices = await prismaUnguarded.devicePushToken.findMany({
-      where: { userId, active: true },
+    const devices = await prisma.devicePushToken.findMany({
+      where: { userId, active: true, ...(filter?.channel ? pushSwitchFilter(filter.channel) : {}) },
+      select: { id: true, token: true, platform: true, bundleId: true, environment: true },
     });
 
     if (!devices || devices.length === 0) return [];
@@ -305,12 +415,17 @@ export async function sendPushToUser(
     const results: SendApnsResult[] = [];
     for (const device of devices) {
       const res = await sendApnsNotification({
+        ...options,
         token: device.token,
         payload,
-        topic: device.bundleId || options?.topic,
-        environment: (device.environment as "production" | "sandbox") || options?.environment,
-        ...options,
+        topic: apnsTopicFor(device, options?.topic),
+        environment: isApnsEnvironment(device.environment) ? device.environment : options?.environment,
       });
+      if (res.success && !res.simulated) {
+        await prisma.devicePushToken
+          .updateMany({ where: { id: device.id, userId }, data: { lastUsedAt: new Date() } })
+          .catch(() => undefined);
+      }
       results.push(res);
     }
 
@@ -319,6 +434,89 @@ export async function sendPushToUser(
     console.warn("[apns] unable to query registered devices for user:", userId, err instanceof Error ? err.message : String(err));
     return [];
   }
+}
+
+// ---------------------------------------------------------------------------
+// Notifications (docs/design/AGENTS.md §8)
+// ---------------------------------------------------------------------------
+
+/** `aps.category` per channel. The apps register both, with their actions. */
+export const APNS_CATEGORY_NEEDS_YOU = "JUNO_NEEDS_YOU";
+export const APNS_CATEGORY_UPDATE = "JUNO_UPDATE";
+
+export interface NotifyApnsInput {
+  /** The in-app row, so opening the push can mark it read. */
+  notificationId: string | null;
+  /** Relative in-app path; revalidated here and dropped when it is not one. */
+  path: string | null;
+  channel: NotifyChannel;
+  /** The agent it is about, when there is one. */
+  agentId?: string | null;
+  push: NotifyPush;
+}
+
+/**
+ * The payload for one `notifyUser` push, as the apps read it: `aps` for the
+ * system, and beside it flat string keys to route on — `notificationId`,
+ * `path`, `kind` ("agent" when an agent is speaking, else "work"), and the ids
+ * that are known of `agentId`, `conversationId`, `sessionId`, `runId`.
+ *
+ * No badge. The apps keep no badge state of their own, so a number set from
+ * here would stay on the icon after the inbox was read.
+ */
+export function buildNotifyApnsPayload(input: NotifyApnsInput): ApnsPayload {
+  const { push } = input;
+  // The named agent goes through the same id check as the rest, so every
+  // routing key the apps read has passed it.
+  const ids = pushRouteIds(input.agentId ? { ...push.data, agentId: input.agentId } : push.data);
+  const agentId = ids.agentId ?? null;
+  const path = safeAppPath(input.path);
+  const subtitle = push.subtitle?.trim() ? clampPushText(push.subtitle, 120) : undefined;
+
+  const payload: ApnsPayload = {
+    aps: {
+      alert: {
+        title: clampPushText(push.title, 120),
+        ...(subtitle ? { subtitle } : {}),
+        body: clampPushText(push.body, 300),
+      },
+      // A passive notification arrives in the list without a sound; that is
+      // what passive means.
+      ...(push.interruption === "passive" ? {} : { sound: "default" }),
+      category: input.channel === "needs_you" ? APNS_CATEGORY_NEEDS_YOU : APNS_CATEGORY_UPDATE,
+      "thread-id": push.threadId,
+      "interruption-level": push.interruption,
+    },
+    kind: agentId ? "agent" : "work",
+  };
+  if (input.notificationId) payload.notificationId = input.notificationId;
+  if (path) payload.path = path;
+  if (agentId) payload.agentId = agentId;
+  if (ids.conversationId) payload.conversationId = ids.conversationId;
+  if (ids.sessionId) payload.sessionId = ids.sessionId;
+  if (ids.runId) payload.runId = ids.runId;
+  return payload;
+}
+
+const MAX_COLLAPSE_ID_BYTES = 64;
+
+/**
+ * The request headers a `notifyUser` push goes out with: priority 5 for a
+ * passive one (Apple may batch it for battery) and 10 otherwise, the collapse
+ * id when it fits APNs's 64 bytes, and the expiry in epoch seconds.
+ */
+export function notifyApnsOptions(
+  push: Pick<NotifyPush, "collapseId" | "expiresAt" | "interruption">
+): Pick<SendApnsOptions, "priority" | "collapseId" | "expiration"> {
+  const options: Pick<SendApnsOptions, "priority" | "collapseId" | "expiration"> = {
+    priority: push.interruption === "passive" ? 5 : 10,
+  };
+  const collapseId = push.collapseId?.trim();
+  if (collapseId && new TextEncoder().encode(collapseId).length <= MAX_COLLAPSE_ID_BYTES) {
+    options.collapseId = collapseId;
+  }
+  if (push.expiresAt) options.expiration = Math.max(0, Math.floor(push.expiresAt.getTime() / 1000));
+  return options;
 }
 
 /**
@@ -393,7 +591,8 @@ export function buildTaskCompletionPayload({
 }
 
 /**
- * Push notification helper for Juno Code tool approval requests.
+ * Push notification helper for Juno Code tool approval requests. Blocking, so
+ * it follows each device's "needs you" switch like every other ask.
  */
 export async function sendCodeApprovalPushNotification(params: {
   userId: string;
@@ -404,11 +603,12 @@ export async function sendCodeApprovalPushNotification(params: {
   workspace?: string;
 }): Promise<SendApnsResult[]> {
   const payload = buildCodeApprovalPayload(params);
-  return await sendPushToUser(params.userId, payload);
+  return await sendPushToUser(params.userId, payload, undefined, { channel: "needs_you" });
 }
 
 /**
- * Push notification helper for background research or work task completions.
+ * Push notification helper for background research or work task completions,
+ * on each device's "updates" switch.
  */
 export async function sendTaskCompletionPushNotification(params: {
   userId: string;
@@ -418,5 +618,5 @@ export async function sendTaskCompletionPushNotification(params: {
   summary?: string;
 }): Promise<SendApnsResult[]> {
   const payload = buildTaskCompletionPayload(params);
-  return await sendPushToUser(params.userId, payload);
+  return await sendPushToUser(params.userId, payload, undefined, { channel: "updates" });
 }

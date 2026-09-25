@@ -1,4 +1,5 @@
 import Foundation
+import JunoCore
 import JunoDesignSystem
 import SwiftUI
 
@@ -19,26 +20,54 @@ import SwiftUI
 ///
 /// "Message" hands the agent's thread to `openConversation`, which each app
 /// wires to its own chat: the thread is an ordinary conversation.
+///
+/// **Which agent is open** can be owned outside: the Mac's sidebar opens an
+/// agent by its row and highlights the row of the one open, and a
+/// notification opens the agent it is about. Given no binding, the screen
+/// keeps the choice itself.
 public struct NativeAgentsScreen: View {
     private let model: NativeAgentsModel
     private let apps: [NativeAgentAppChoice]
+    private let externalSelection: Binding<String?>?
+    private let localApprovals: (@MainActor (String) -> [WorkApprovalRequest])?
+    private let decideLocally: (@MainActor (WorkApprovalRequest, JunoWorkApprovalDecision) -> Void)?
     private let openConversation: (String) -> Void
 
-    @State private var selectedAgentID: String?
+    @State private var ownSelection: String?
     @State private var hiringFrom: NativeAgentTemplate?
+    /// The agent just hired, whose page opens with a word of welcome.
+    @State private var welcomedAgentID: String?
 
     /// - Parameters:
     ///   - apps: the apps this account has connected, offered to an agent by
     ///     name. Empty hides the choice rather than offering nothing.
+    ///   - selectedAgentID: the open agent's id, owned by the caller. Nil
+    ///     keeps it inside the screen.
+    ///   - localApprovals: the approvals a run executing on this Mac has
+    ///     raised, by run id — they have no server row, so the Now tab cannot
+    ///     read them any other way.
+    ///   - decideLocally: answers one of those, through the coordinator
+    ///     holding the run. Both nil anywhere but the Mac.
     ///   - openConversation: opens a conversation by id in the app's chat.
     public init(
         model: NativeAgentsModel,
         apps: [NativeAgentAppChoice] = [],
+        selectedAgentID: Binding<String?>? = nil,
+        localApprovals: (@MainActor (String) -> [WorkApprovalRequest])? = nil,
+        decideLocally: (@MainActor (WorkApprovalRequest, JunoWorkApprovalDecision) -> Void)? = nil,
         openConversation: @escaping (String) -> Void
     ) {
         self.model = model
         self.apps = apps
+        self.externalSelection = selectedAgentID
+        self.localApprovals = localApprovals
+        self.decideLocally = decideLocally
         self.openConversation = openConversation
+    }
+
+    /// The caller's binding when there is one, the screen's own otherwise.
+    private var selection: Binding<String?> {
+        externalSelection ?? $ownSelection
     }
 
     public var body: some View {
@@ -51,7 +80,8 @@ public struct NativeAgentsScreen: View {
                     onCancel: { hiringFrom = nil },
                     onHired: { agent in
                         hiringFrom = nil
-                        selectedAgentID = agent.id
+                        welcomedAgentID = agent.id
+                        selection.wrappedValue = agent.id
                     }
                 )
             }
@@ -61,31 +91,43 @@ public struct NativeAgentsScreen: View {
     private var content: some View {
         #if os(macOS)
         roster
-            .navigationDestination(item: $selectedAgentID) { agentID in
-                NativeAgentPage(
-                    model: model,
-                    agentID: agentID,
-                    apps: apps,
-                    openConversation: openConversation,
-                    back: nil
-                )
-                .navigationTitle(model.agents.first { $0.id == agentID }?.name ?? "Agent")
+            .navigationDestination(item: selection) { agentID in
+                // One page per agent: opening another from the sidebar starts
+                // on its Now tab rather than on whichever tab the last one was
+                // left. Pushed, so the system's back button returns.
+                page(agentID, back: nil)
+                    .id(agentID)
+                    .navigationTitle(model.agents.first { $0.id == agentID }?.name ?? "Agent")
             }
         #else
         roster
             .navigationTitle("Agents")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(item: $selectedAgentID) { agentID in
-                NativeAgentPage(
-                    model: model,
-                    agentID: agentID,
-                    apps: apps,
-                    openConversation: openConversation,
-                    back: nil
-                )
+            .navigationDestination(item: selection) { agentID in
+                page(agentID, back: nil)
             }
             .refreshable { await model.refresh() }
         #endif
+    }
+
+    private func page(_ agentID: String, back: (() -> Void)?) -> NativeAgentPage {
+        NativeAgentPage(
+            model: model,
+            agentID: agentID,
+            apps: apps,
+            openConversation: openConversation,
+            back: back,
+            localApprovals: localApprovals,
+            decideLocally: decideLocally,
+            welcome: welcomedAgentID == agentID,
+            dismissWelcome: { dismissWelcome(agentID) }
+        )
+    }
+
+    private func dismissWelcome(_ agentID: String) {
+        if welcomedAgentID == agentID {
+            welcomedAgentID = nil
+        }
     }
 
     @ViewBuilder
@@ -114,7 +156,7 @@ public struct NativeAgentsScreen: View {
     }
 
     private func open(_ agentID: String) {
-        selectedAgentID = agentID
+        selection.wrappedValue = agentID
     }
 
     private func hire(_ template: NativeAgentTemplate) {

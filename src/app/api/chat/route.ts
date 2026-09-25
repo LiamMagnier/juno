@@ -23,7 +23,7 @@ import {
   wasGenerationAbortedForShutdown,
   wasGenerationStopped,
 } from "@/lib/generation-cancel";
-import { streamChat, providerErrorMessage } from "@/lib/llm";
+import { streamChat, providerErrorMessage, type NativeChatTool } from "@/lib/llm";
 import {
   getMemoryProfile,
   saveAutoMemories,
@@ -188,9 +188,16 @@ import {
   taskActivityTitle,
   taskTitleFromArgs,
 } from "@/lib/chat/task-tool";
+import {
+  HAND_OFF_TOOL_ID,
+  createHandoffTool,
+  handoffActivityTitle,
+  handoffDetailFromArgs,
+  isHandoffApproval,
+} from "@/lib/chat/handoff-tool";
 import { cheapestWorkModel } from "@/lib/work/models";
 import { agentChatContext } from "@/lib/agents/store";
-import { agentApprovalMode } from "@/lib/agents/domain";
+import { agentApprovalMode, agentTurnModel } from "@/lib/agents/domain";
 import { appendAgentBlock } from "@/lib/agents/prompt";
 import { providerAdapterFor } from "@/lib/provider-routing";
 import { isGemini3OrLater } from "@/lib/gemini-core";
@@ -377,10 +384,11 @@ function cacheTokenFields(acc: GenerationAccumulator): {
  * the call STARTED, and that is the only instant about this row that anything
  * measures from.
  *
- * `start_task` is the one tool that says what it did rather than "Using Juno":
- * the row opens as "Starting a task", is retitled on completion to whether it
- * started, and names the task, because that row is the only place in the reply
- * that says a task exists.
+ * `start_task` and `hand_off_to_teammate` are the tools that say what they did
+ * rather than "Using Juno": the row opens as "Starting a task" (or "Handing off
+ * to a teammate"), is retitled on completion to whether it happened, and names
+ * the task, because that row is the only place in the reply that says a task
+ * exists.
  *
  * A `result` whose `callId` has no open row is DROPPED, not turned into an
  * orphan row. An unpaired result is a bug in an adapter, and inventing a row
@@ -400,10 +408,12 @@ function createToolActivity(
     open(effect) {
       const opened = enabled ? openToolDetail(effect, budget) : undefined;
       const task = effect.name === START_TASK_TOOL_ID;
+      const handoff = effect.name === HAND_OFF_TOOL_ID;
       const entry = sender.sendActivity({
         kind: "tool",
-        title: task ? taskActivityTitle("call") : `Using ${effect.server}`,
-        detail: (task && taskTitleFromArgs(effect.args)) || effect.name,
+        title: task ? taskActivityTitle("call") : handoff ? handoffActivityTitle("call") : `Using ${effect.server}`,
+        detail:
+          (task && taskTitleFromArgs(effect.args)) || (handoff && handoffDetailFromArgs(effect.args)) || effect.name,
         ...(opened ? { tool: opened } : {}),
       });
       // Tracked even when detail is disabled, so a later `result` is still
@@ -418,12 +428,16 @@ function createToolActivity(
       // not detail is enabled. Anthropic reports the arguments only here, which
       // is why the title is read again.
       const task = effect.name === START_TASK_TOOL_ID;
+      const handoff = effect.name === HAND_OFF_TOOL_ID;
       if (task) {
         row.entry.title = taskActivityTitle("result", effect.ok);
         row.entry.detail = taskTitleFromArgs(effect.args) ?? row.entry.detail;
+      } else if (handoff) {
+        row.entry.title = handoffActivityTitle("result", effect.ok);
+        row.entry.detail = handoffDetailFromArgs(effect.args) ?? row.entry.detail;
       }
       if (!enabled) {
-        if (task) sender.send({ type: "activity", event: row.entry });
+        if (task || handoff) sender.send({ type: "activity", event: row.entry });
         return;
       }
       row.entry.tool = closeToolDetail(row.opened, effect, budget);
@@ -697,14 +711,16 @@ async function handleChat(req: Request) {
   // already hide denied controls, but the server is the trust boundary and the
   // web/iOS clients must receive identical enforcement even on an older build.
   let workspaceProjectID: string | null = null;
+  /** The agent whose thread this is, when it is one: read now because its model is a candidate below. */
+  let threadAgentId: string | null = null;
   if (!input.privateMode) {
     if (input.conversationId) {
-      workspaceProjectID = (
-        await prisma.conversation.findFirst({
-          where: { id: input.conversationId, userId: user.id },
-          select: { projectId: true },
-        })
-      )?.projectId ?? null;
+      const thread = await prisma.conversation.findFirst({
+        where: { id: input.conversationId, userId: user.id },
+        select: { projectId: true, agentId: true },
+      });
+      workspaceProjectID = thread?.projectId ?? null;
+      threadAgentId = thread?.agentId ?? null;
     } else if (input.projectId) {
       workspaceProjectID = (
         await prisma.project.findFirst({
@@ -743,18 +759,54 @@ async function handleChat(req: Request) {
    */
   const toolDetailEnabled = !settings?.lockdownMode;
 
+  /*
+   * An agent's thread answers on the agent's model and effort unless this
+   * message names another model (`agentTurnModel` has the rule). An agent's
+   * model this account cannot use right now is dropped quietly, and the turn
+   * resolves as if no model had been named, rather than refusing to answer in
+   * a thread whose setup the person may not remember.
+   */
+  const threadAgent = threadAgentId
+    ? await prisma.agent
+        .findFirst({
+          where: { id: threadAgentId, userId: user.id, deletedAt: null },
+          select: { model: true, reasoningEffort: true },
+        })
+        .catch(() => null)
+    : null;
+  const agentModel = agentTurnModel({
+    agent: threadAgent,
+    requestedModel: input.model,
+    usable: (id) => {
+      if (isAutoModelId(id)) return true;
+      const model = getModel(id);
+      return (
+        !!model &&
+        model.modality === "chat" &&
+        !model.comingSoon &&
+        isProviderConfigured(model.provider) &&
+        canUseModel(plan, model.id)
+      );
+    },
+  });
+  const namedModel = agentModel.kind === "fallback" ? undefined : input.model;
   const workspacePreferredModel =
-    !input.model && workspaceConfig.preferredModelId && isModelId(workspaceConfig.preferredModelId)
+    !namedModel && workspaceConfig.preferredModelId && isModelId(workspaceConfig.preferredModelId)
       ? workspaceConfig.preferredModelId
       : null;
   const requestedId =
-    input.model && isModelId(input.model)
-      ? input.model
-      : workspacePreferredModel
-        ? workspacePreferredModel
-      : settings?.defaultModel && isModelId(settings.defaultModel)
-        ? settings.defaultModel
-        : DEFAULT_MODEL;
+    agentModel.kind === "agent"
+      ? agentModel.model
+      : namedModel && isModelId(namedModel)
+        ? namedModel
+        : workspacePreferredModel
+          ? workspacePreferredModel
+        : settings?.defaultModel && isModelId(settings.defaultModel)
+          ? settings.defaultModel
+          : DEFAULT_MODEL;
+  /** The thinking effort asked for: the agent's with its model, otherwise the composer's. */
+  const requestedEffort =
+    agentModel.kind === "agent" && agentModel.reasoningEffort ? agentModel.reasoningEffort : input.reasoningEffort;
 
   let modelInfo: ModelInfo | undefined;
   /** When Auto routes, override the client's thinking slider with the pick. */
@@ -1110,7 +1162,7 @@ async function handleChat(req: Request) {
           }
           const reasoningEffort = effectiveReasoningEffort(
             modelInfo,
-            autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : input.reasoningEffort
+            autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : requestedEffort
           );
           if (reasoningEffort) {
             sendActivity({
@@ -2236,7 +2288,7 @@ async function handleChat(req: Request) {
    * section without the tool is an instruction to call something absent, and
    * the tool without the section is a tool with no rules for when to use it.
    */
-  const taskToolOn = chatTaskToolEnabled({
+  const taskGate = {
     workHandoff: input.workHandoff,
     privateMode: !!input.privateMode,
     voiceMode: !!input.voiceMode,
@@ -2251,9 +2303,23 @@ async function handleChat(req: Request) {
       providerAdapterFor(modelInfo, useProMode) === "gemini-native" &&
       !isGemini3OrLater(modelInfo)
     ),
-    skillPermits: narrowRuntimeToolsForSkill([START_TASK_TOOL_ID], appliedSkill).length > 0,
     lockdown: !!settings?.lockdownMode,
     planHasWorkModel: cheapestWorkModel(MODEL_LIST, plan) !== null,
+  };
+  const taskToolOn = chatTaskToolEnabled({
+    ...taskGate,
+    skillPermits: narrowRuntimeToolsForSkill([START_TASK_TOOL_ID], appliedSkill).length > 0,
+  });
+  /*
+   * Whether an agent may hand this request to a teammate
+   * (src/lib/chat/handoff-tool.ts). The same gate as a task, because a handoff
+   * IS a task, on another agent; a skill that lists its tools can leave this
+   * one out on its own. The agent context below adds the last condition, a
+   * teammate to hand to, and says whether the turn carries it.
+   */
+  const handoffGateOpen = chatTaskToolEnabled({
+    ...taskGate,
+    skillPermits: narrowRuntimeToolsForSkill([HAND_OFF_TOOL_ID], appliedSkill).length > 0,
   });
   /*
    * An agent's thread (docs/design/AGENTS.md): the reply is the agent's, with
@@ -2265,7 +2331,10 @@ async function handleChat(req: Request) {
    */
   const agentContext =
     conversation.agentId && !input.privateMode
-      ? await agentChatContext(user, conversation.agentId, { taskHandoff: taskToolOn }).catch((err) => {
+      ? await agentChatContext(user, conversation.agentId, {
+          taskHandoff: taskToolOn,
+          handoff: handoffGateOpen,
+        }).catch((err) => {
           console.error("[chat] could not read the thread's agent", {
             conversationId: conversation.id,
             error: err instanceof Error ? err.message : String(err),
@@ -2778,7 +2847,7 @@ async function handleChat(req: Request) {
       }
       const reasoningEffort = effectiveReasoningEffort(
         modelInfo,
-        autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : input.reasoningEffort
+        autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : requestedEffort
       );
       if (reasoningEffort) {
         sendActivity({
@@ -2932,11 +3001,16 @@ async function handleChat(req: Request) {
         // stop the idle clock until the result event re-arms it.
         stallWatchdog.pause();
         const task = isTaskApproval(approval);
+        const handoff = isHandoffApproval(approval);
         sendActivity({
           kind: "tool",
-          title: task ? "Starting a task needs your approval" : `${approval.connectorLabel} needs approval`,
+          title: task
+            ? "Starting a task needs your approval"
+            : handoff
+              ? "Handing off needs your approval"
+              : `${approval.connectorLabel} needs approval`,
           detail:
-            task && typeof approval.detail.title === "string" ? approval.detail.title : approval.preview,
+            (task || handoff) && typeof approval.detail.title === "string" ? approval.detail.title : approval.preview,
         });
         send({ type: "approval", approval });
       };
@@ -2950,7 +3024,7 @@ async function handleChat(req: Request) {
               userRequest: clarificationVisibleContent ?? preflightVisibleContent ?? input.message?.trim() ?? "",
               skillSlug: appliedSkill?.candidate.slug ?? null,
               model: conversationModelId,
-              reasoningEffort: input.reasoningEffort,
+              reasoningEffort: requestedEffort,
               attachmentIds: input.attachmentIds ?? [],
               connectorIds: activeConnectors.map((connector) => connector.id),
               // Wider than the memory rule's flag: any file in the window
@@ -2973,6 +3047,23 @@ async function handleChat(req: Request) {
               },
             })
           : null;
+      // No `onStarted` here, on purpose: the task a handoff starts lives in the
+      // teammate's thread, and announcing it would pull it into this one's panel.
+      const handoffTool =
+        agentContext?.handoff && userMessageId
+          ? createHandoffTool({
+              user,
+              conversation: { id: conversationId, projectId: conversation.projectId },
+              fromAgent: { id: agentContext.agent.id, name: agentContext.agent.name },
+              userMessageId,
+              userRequest: clarificationVisibleContent ?? preflightVisibleContent ?? input.message?.trim() ?? "",
+              // The same reading as the task's: any file in the window counts.
+              untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
+              generationId,
+              onApprovalRequest: requestApproval,
+            })
+          : null;
+      const nativeTools = [taskTool, handoffTool].filter((tool): tool is NativeChatTool => tool !== null);
 
       try {
         const modelStream = researchNotice
@@ -3033,8 +3124,9 @@ async function handleChat(req: Request) {
             projectId: conversation.projectId,
             onApprovalRequest: requestApproval,
           },
-          // `start_task`, when this turn may carry it (`taskToolOn` above).
-          nativeTools: taskTool ? [taskTool] : undefined,
+          // `start_task` and `hand_off_to_teammate`, when this turn may carry
+          // them (`taskToolOn` and the agent context's `handoff` above).
+          nativeTools: nativeTools.length > 0 ? nativeTools : undefined,
         });
         for await (const ev of modelStream) {
           stallWatchdog.touch();

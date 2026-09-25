@@ -9,12 +9,20 @@ import {
   VOICE_HISTORY_MAX_TURNS,
 } from "./protocol.js";
 import { mintRelayCallbackToken } from "./auth.js";
-import { PROVIDERS } from "./providers/registry.js";
+import { PROVIDERS, agentVoice } from "./providers/registry.js";
 import type { ProviderEvents, TranscriptEntry, VoiceProviderSession } from "./providers/types.js";
 import { effectiveRelaySessionLimitSec } from "./session-limit.js";
 import { providerText, VOICE_CONTEXT_MAX_CHARS } from "./voice-context.js";
 
-const VOICE_INSTRUCTIONS = `You are Juno, a warm, quick-witted voice assistant. You are having a spoken conversation: keep replies short and conversational (one to three sentences unless asked for more), never use markdown, lists, or symbols that sound wrong aloud, and match the user's language. It is fine to be interrupted mid-sentence — just pick up naturally.`;
+/*
+ * Who is speaking, and how. Split so an agent's persona can replace the first
+ * without touching the second: a call in an agent's thread is that agent, but
+ * it is still a spoken conversation with every rule a spoken conversation has.
+ * Joined, the two are byte for byte the instructions every call had before.
+ */
+const VOICE_IDENTITY = "You are Juno, a warm, quick-witted voice assistant.";
+const VOICE_SPEECH_RULES = `You are having a spoken conversation: keep replies short and conversational (one to three sentences unless asked for more), never use markdown, lists, or symbols that sound wrong aloud, and match the user's language. It is fine to be interrupted mid-sentence — just pick up naturally.`;
+const VOICE_INSTRUCTIONS = `${VOICE_IDENTITY} ${VOICE_SPEECH_RULES}`;
 const VOICE_INPUT_MAX_CHARS = 4_000;
 
 /**
@@ -23,6 +31,8 @@ const VOICE_INPUT_MAX_CHARS = 4_000;
  * trusting that to hold.
  */
 export const VOICE_MEMORY_MAX_CHARS = 4_000;
+/** The same distrust for an agent's persona (the app caps it in src/lib/voice-persona.ts). */
+export const VOICE_PERSONA_MAX_CHARS = 4_000;
 /** A call must not wait long on memory: past this it starts without it. */
 const MEMORY_FETCH_TIMEOUT_MS = 2_500;
 
@@ -59,9 +69,57 @@ export async function fetchVoiceMemory(
   }
 }
 
-/** The relay's own instructions, with what Juno remembers after them. */
-export function voiceInstructions(memory: string | null): string {
-  return memory ? `${VOICE_INSTRUCTIONS}\n\n${memory}` : VOICE_INSTRUCTIONS;
+/**
+ * Who a call in an agent's thread is: its persona, and which of the provider's
+ * voices it speaks in (`voiceSlot`, a stable number the app derives from the
+ * agent's id — the relay owns the names, because only it knows the provider).
+ */
+export interface VoicePersona {
+  instructions: string;
+  voiceSlot: number | null;
+}
+
+/**
+ * Ask Juno who this call is, when it is in an agent's thread. The same shape
+ * as the memory fetch, under its own audience, with the agent signed in — the
+ * app checked the agent was this person's before it put the id in the call's
+ * token, and checks again when asked. Any failure is "no persona": the call
+ * goes ahead as Juno rather than not at all.
+ */
+export async function fetchVoicePersona(
+  userId: string,
+  agentId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<VoicePersona | null> {
+  const appUrl = process.env.JUNO_APP_URL;
+  if (!appUrl) return null;
+  try {
+    const res = await fetchImpl(`${appUrl.replace(/\/$/, "")}/api/voice/persona`, {
+      headers: {
+        Authorization: `Bearer ${mintRelayCallbackToken(userId, 60, "juno.voice.persona", { aid: agentId })}`,
+      },
+      signal: AbortSignal.timeout(MEMORY_FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as { instructions?: unknown; voiceSlot?: unknown } | null;
+    if (typeof body?.instructions !== "string") return null;
+    const instructions = body.instructions.replace(/\u0000/g, "").trim().slice(0, VOICE_PERSONA_MAX_CHARS);
+    if (!instructions) return null;
+    const slot = body.voiceSlot;
+    return { instructions, voiceSlot: typeof slot === "number" && Number.isSafeInteger(slot) && slot >= 0 ? slot : null };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The relay's own instructions, with what Juno remembers after them. In an
+ * agent's thread the agent's persona stands where Juno's identity stood, and
+ * the speech rules follow it unchanged.
+ */
+export function voiceInstructions(memory: string | null, persona: string | null = null): string {
+  const head = persona ? `${persona}\n\n${VOICE_SPEECH_RULES}` : VOICE_INSTRUCTIONS;
+  return memory ? `${head}\n\n${memory}` : head;
 }
 
 /** One connected client = one RelaySession. Owns at most one provider session
@@ -134,6 +192,8 @@ export class RelaySession {
    * memory it re-seeds with the same transcript. `undefined` until asked.
    */
   private memory: string | null | undefined;
+  /** The agent this call is, fetched once like memory. `undefined` until asked. */
+  private persona: VoicePersona | null | undefined;
 
   constructor(
     private ws: WebSocket,
@@ -143,6 +203,10 @@ export class RelaySession {
       memory?: { projectId: string | null } | null;
       /** Test seam: how memory is fetched. */
       fetchMemory?: (userId: string, grant: { projectId: string | null }) => Promise<string | null>;
+      /** Set when the call is in an agent's thread — see RelayGrant. */
+      agentId?: string | null;
+      /** Test seam: how the persona is fetched. */
+      fetchPersona?: (userId: string, agentId: string) => Promise<VoicePersona | null>;
     } = {}
   ) {
     this.usageTimer = setInterval(() => {
@@ -168,7 +232,9 @@ export class RelaySession {
           this.userTurnAnchor = -1;
           this.historySeeded = true;
         }
-        await this.loadMemory();
+        // Side by side: a call in an agent's thread waits for the slower of
+        // the two, not for both in turn.
+        await Promise.all([this.loadMemory(), this.loadPersona()]);
         await this.startProvider(msg.provider, msg.thinking === true);
         return;
       case "session.switch":
@@ -214,6 +280,18 @@ export class RelaySession {
     this.memory = await fetchMemory(this.userId, grant).catch(() => null);
   }
 
+  /** Once per call, and only when the call's token names an agent. */
+  private async loadPersona(): Promise<void> {
+    if (this.persona !== undefined) return;
+    const agentId = this.opts.agentId;
+    if (!agentId) {
+      this.persona = null;
+      return;
+    }
+    const fetchPersona = this.opts.fetchPersona ?? ((userId, id) => fetchVoicePersona(userId, id));
+    this.persona = await fetchPersona(this.userId, agentId).catch(() => null);
+  }
+
   handleAudio(pcm16k: Buffer): void {
     this.provider?.sendAudio(pcm16k);
   }
@@ -249,8 +327,14 @@ export class RelaySession {
       const effectiveThinking = thinking && factory.capabilities.thinkingChoice;
       const session = factory.create({ thinking: effectiveThinking });
       const events = this.makeEvents(id, session);
+      // The voice is chosen per connect, not per call: its names belong to a
+      // provider, and a switch lands on a provider with different ones.
       await session.connect(
-        { instructions: voiceInstructions(this.memory ?? null), transcript: this.transcript.slice(-30) },
+        {
+          instructions: voiceInstructions(this.memory ?? null, this.persona?.instructions ?? null),
+          transcript: this.transcript.slice(-30),
+          voice: agentVoice(id, this.persona?.voiceSlot ?? null),
+        },
         events
       );
       this.provider = session;
@@ -276,6 +360,9 @@ export class RelaySession {
         // Whether this call knows what Juno remembers — so the client can say
         // so, rather than the caller finding out by being remembered.
         memory: !!this.memory,
+        // Whether the call is the agent whose thread it is in, or fell back to
+        // Juno — so the client names who is speaking only once that is true.
+        ...(this.opts.agentId ? { persona: !!this.persona } : {}),
         ...(established.model ? { model: established.model } : {}),
         ...(established.notice ? { notice: established.notice } : {}),
       });

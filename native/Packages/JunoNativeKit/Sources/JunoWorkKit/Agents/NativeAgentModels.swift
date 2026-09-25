@@ -447,6 +447,48 @@ public struct NativeAgentActivity: Identifiable, Equatable, Sendable {
     }
 }
 
+public extension NativeAgentActivity {
+    /// The lines about one run besides its task's own: an approval one of its
+    /// tasks was given, and work handed to a teammate or taken from one. The
+    /// web's `RUN_KINDS`.
+    static let runKinds: Set<String> = ["approval", "handed_off", "handoff_received"]
+
+    /// Whether this line is about one run, and so can open it. `kind` is an
+    /// open vocabulary on the server, so an unknown kind is simply a line.
+    var isAboutARun: Bool {
+        guard sessionID != nil else { return false }
+        return kind.hasPrefix("task_") || Self.runKinds.contains(kind)
+    }
+
+    /// What a line says when it arrived without a title: the kind in general
+    /// words, sentence case, never the wire token.
+    static func fallbackTitle(for kind: String) -> String {
+        switch kind {
+        case "hired": return "Joined"
+        case "updated": return "Its profile changed"
+        case "paused": return "Paused"
+        case "resumed": return "Resumed"
+        case "goal_set": return "Took on a goal"
+        case "goal_updated": return "A goal changed"
+        case "goal_checked_in": return "Checked in on a goal"
+        case "idea_raised": return "Had an idea"
+        case "idea_started": return "Started an idea"
+        case "idea_dismissed": return "Set an idea aside"
+        case "routine_created": return "Got a new routine"
+        case "note_added": return "You told it something"
+        case "note_learned": return "Learned something"
+        case "task_started": return "Started a task"
+        case "reflected": return "Thought it over"
+        case "handed_off": return "Handed a task to a teammate"
+        case "handoff_received": return "Took on a task from a teammate"
+        case "approval": return "An approval was answered"
+        default:
+            if kind.hasPrefix("task_") { return "Worked on a task" }
+            return JunoWorkVocabulary.sentenceCased(kind)
+        }
+    }
+}
+
 /// Everything the agent's page draws. `ClientAgentDetail`.
 ///
 /// Mutable, unlike the rows inside it, because the store edits a page in place

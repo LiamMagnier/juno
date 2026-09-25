@@ -368,7 +368,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .usage: "ph.chartbar"
         case .appearance: "ph.palette"
         case .writing: "ph.textalignleft"
-        case .notifications, .bell: "ph.bell"
+        case .notifications, .bell: "ph.bellsimple"
         case .folderPlus: "ph.folderplus"
         case .shield: "ph.shield"
         case .compass: "ph.compass"

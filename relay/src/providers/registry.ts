@@ -64,6 +64,33 @@ const qwenDialect: RealtimeDialect = {
   }),
 };
 
+/**
+ * The voices an agent may speak in, per provider.
+ *
+ * Only names the provider is known to accept: Gemini Live fails setup on a
+ * voice it does not know (tests/gemini-setup-failure.test.ts), and a call that
+ * does not start is a worse persona than the default voice. The OpenAI list is
+ * the Realtime API's; GPT-Live keeps its own default (gpt-live.ts), since
+ * its session config refuses what it does not recognise and its names are not
+ * vetted here. Qwen and MiniMax are left out until theirs are — an agent there
+ * speaks in the provider's default, as every call did before.
+ */
+export const AGENT_VOICES: Partial<Record<VoiceProviderId, readonly string[]>> = {
+  openai: ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar"],
+  gemini: ["Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr"],
+};
+
+/**
+ * The voice an agent speaks in on this provider, from its slot. The same agent
+ * always lands on the same voice, and a provider with no vetted list, or a call
+ * with no agent, gets `undefined` — the provider's default.
+ */
+export function agentVoice(provider: VoiceProviderId, slot: number | null): string | undefined {
+  const voices = AGENT_VOICES[provider];
+  if (!voices?.length || slot === null || !Number.isSafeInteger(slot) || slot < 0) return undefined;
+  return voices[slot % voices.length];
+}
+
 /** True while RELAY_OPENAI_MODEL pins the provider back to the Realtime API. */
 function openaiUsesLegacyRealtime(): boolean {
   return (process.env.RELAY_OPENAI_MODEL || "").startsWith("gpt-realtime");

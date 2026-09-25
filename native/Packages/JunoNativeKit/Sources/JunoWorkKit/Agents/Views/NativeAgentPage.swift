@@ -1,4 +1,5 @@
 import Foundation
+import JunoCore
 import JunoDesignSystem
 import SwiftUI
 
@@ -36,10 +37,11 @@ struct NativeAgentCostQuestion: Identifiable {
 /// and the state sentence; **Message** as the one primary action with Pause or
 /// Resume beside it; then Now, Goals, Routines, Activity and Profile.
 ///
-/// The page answers "what is it doing, and does it need me?" first. Anything
-/// that needs the person is answered in the agent's thread, where the question
-/// and its approval card already live — the Work cards are the gate, never a
-/// second copy of them here.
+/// The page answers "what is it doing, and does it need me?" first. What
+/// needs the person is answered on the Now tab, on the same approval and
+/// question its thread shows — read from the task's run and sent through the
+/// same routes, digest and all — so there is one gate, drawn in two places.
+/// Without a Work client the tab says where to answer instead.
 struct NativeAgentPage: View {
     let model: NativeAgentsModel
     let agentID: String
@@ -48,6 +50,14 @@ struct NativeAgentPage: View {
     /// The page's own way back, on the Mac where it replaces the roster in
     /// place. Nil in a navigation stack, whose back button already says it.
     var back: (() -> Void)?
+    /// Approvals raised by a run executing on this Mac, by run id. They have
+    /// no server row, so only the Mac holding the run can show them.
+    var localApprovals: (@MainActor (String) -> [WorkApprovalRequest])?
+    /// Answers one of those, through the coordinator holding the run.
+    var decideLocally: (@MainActor (WorkApprovalRequest, JunoWorkApprovalDecision) -> Void)?
+    /// Just hired: the page opens with a word of welcome, once.
+    var welcome = false
+    var dismissWelcome: (() -> Void)?
 
     @State private var tab: NativeAgentTab = .now
     @State private var costQuestion: NativeAgentCostQuestion?
@@ -90,6 +100,8 @@ struct NativeAgentPage: View {
             await reload()
             await model.reflect(agentID: agentID, force: false)
         }
+        // Seen once: leaving the page is enough of an answer to the welcome.
+        .onDisappear { dismissWelcome?() }
         .confirmationDialog(
             "Start it?",
             isPresented: Binding(
@@ -140,6 +152,17 @@ struct NativeAgentPage: View {
                         .junoCaption()
                         .transition(.opacity)
                 }
+                if welcome {
+                    NativeAgentWelcome(
+                        agent: agent,
+                        message: {
+                            dismissWelcome?()
+                            message(agent)
+                        },
+                        later: { dismissWelcome?() }
+                    )
+                    .transition(.opacity)
+                }
                 Picker("Section", selection: $tab) {
                     ForEach(NativeAgentTab.allCases) { option in
                         Text(option.label).tag(option)
@@ -152,6 +175,10 @@ struct NativeAgentPage: View {
             .animation(
                 JunoMotion.reduced(JunoMotion.standard, when: reduceMotion, tier: .tint),
                 value: model.lastMutationExplanation
+            )
+            .animation(
+                JunoMotion.reduced(JunoMotion.standard, when: reduceMotion, tier: .tint),
+                value: welcome
             )
         }
         .onChange(of: tab) { _, _ in model.clearMutationMessage() }
@@ -166,6 +193,8 @@ struct NativeAgentPage: View {
                 model: model,
                 agent: agent,
                 detail: detail,
+                localApprovals: localApprovals,
+                decideLocally: decideLocally,
                 openTask: openTask,
                 startIdea: { idea in startIdea(idea, confirm: false) },
                 dismissIdea: dismissIdea
@@ -187,7 +216,9 @@ struct NativeAgentPage: View {
             NativeAgentActivityTab(
                 model: model,
                 agentID: agent.id,
-                entries: model.activity[agent.id] ?? []
+                entries: model.activity[agent.id] ?? [],
+                tasks: model.tasks(for: agent.id),
+                openTask: openTask
             )
         case .profile:
             NativeAgentProfileTab(
@@ -430,13 +461,15 @@ struct NativeAgentHeader: View {
 
 // MARK: - Now
 
-/// Now: the block that needs you first, then the task it is doing, then its
-/// ideas, then what is coming up. The native page is simpler than the web's —
-/// a question is answered in the thread, where its card lives.
+/// Now: the block that needs you first — each waiting task with the approvals
+/// and the question it is stopped at, answerable here — then the task it is
+/// doing, what its computer did, its ideas, and what is coming up.
 struct NativeAgentNowTab: View {
     let model: NativeAgentsModel
     let agent: NativeAgent
     let detail: NativeAgentDetail?
+    let localApprovals: (@MainActor (String) -> [WorkApprovalRequest])?
+    let decideLocally: (@MainActor (WorkApprovalRequest, JunoWorkApprovalDecision) -> Void)?
     let openTask: (NativeAgentTask) -> Void
     let startIdea: (NativeAgentIdea) -> Void
     let dismissIdea: (NativeAgentIdea) -> Void
@@ -447,7 +480,26 @@ struct NativeAgentNowTab: View {
     }
 
     private var waiting: [NativeAgentTask] {
-        tasks.filter { $0.needsAttention || $0.status == "waiting_input" || $0.status == "waiting_approval" }
+        tasks.filter(NativeAgentGate.isWaiting)
+    }
+
+    /// Whether what this tab shows can change faster than the roster's minute:
+    /// something is waiting on the person, or its newest task is still going
+    /// and may stop to ask at any moment.
+    private var follows: Bool {
+        guard model.canAnswerInPlace else { return false }
+        if !waiting.isEmpty || agent.needsYou > 0 { return true }
+        guard let status = tasks.first?.status, let known = JunoWorkStatus(rawValue: status) else {
+            return false
+        }
+        return !known.isTerminal && known != .draft
+    }
+
+    /// What the reading loop depends on. A change restarts it at once, so a
+    /// task that has just started waiting is read now rather than a tick later.
+    private var readKey: String {
+        let waitingIDs = waiting.map(\.sessionID).joined(separator: ",")
+        return "\(agent.id)|\(follows)|\(tasks.first?.sessionID ?? "")|\(waitingIDs)"
     }
 
     var body: some View {
@@ -456,22 +508,79 @@ struct NativeAgentNowTab: View {
                 needsYou
             }
             latestTask
+            computer
             ideas
             upcoming
         }
+        .task(id: readKey) { await follow() }
+    }
+
+    /// Reads on arrival, then every ten seconds for as long as the tab is on
+    /// screen and something here can move. Leaving the tab cancels it.
+    private func follow() async {
+        await readGates()
+        guard follows else { return }
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled else { return }
+            await readGates()
+        }
+    }
+
+    /// Reads the gates, first catching the page up when the roster says the
+    /// agent needs the person and the page's tasks do not say which: a task
+    /// that started waiting after the page opened is not in its list yet.
+    private func readGates() async {
+        let agentID = agent.id
+        let knowsWhich = model.tasks(for: agentID).contains(where: NativeAgentGate.isWaiting)
+        let needsYou = model.agent(id: agentID)?.needsYou ?? 0
+        if !knowsWhich, needsYou > 0 {
+            await model.loadDetail(id: agentID)
+        }
+        await model.loadGates(agentID: agentID)
+    }
+
+    private func gate(for task: NativeAgentTask) -> NativeAgentGate? {
+        model.gates[agent.id]?.first { $0.id == task.sessionID }
+    }
+
+    /// The approvals this task's run raised on this Mac. They win over the
+    /// server's copy: the coordinator holding the run is the one waiting.
+    private func approvalsOnThisMac(for task: NativeAgentTask) -> [WorkApprovalRequest] {
+        guard let localApprovals, decideLocally != nil, let runID = gate(for: task)?.runID else {
+            return []
+        }
+        return localApprovals(runID)
+    }
+
+    private func answersHere(_ task: NativeAgentTask) -> Bool {
+        if !approvalsOnThisMac(for: task).isEmpty { return true }
+        guard let gate = gate(for: task) else { return false }
+        return !gate.isEmpty
     }
 
     private var needsYou: some View {
         let count = max(agent.needsYou, waiting.count)
+        let answerable = waiting.contains { answersHere($0) }
         return VStack(alignment: .leading, spacing: JunoSpace.snug) {
             HStack(spacing: JunoSpace.snug) {
                 NativeAgentNeedsYouDot()
                 NativeAgentHeading(title: count == 1 ? "Needs you on one task" : "Needs you on \(count) tasks")
             }
             ForEach(waiting) { task in
-                NativeAgentTaskLine(task: task, open: { openTask(task) })
+                NativeAgentGateStack(
+                    model: model,
+                    agentID: agent.id,
+                    task: task,
+                    gate: gate(for: task),
+                    approvalsOnThisMac: approvalsOnThisMac(for: task),
+                    decideLocally: decideLocally,
+                    open: { openTask(task) }
+                )
             }
-            Text("Answer it in the thread, where the question and its approval card are. Deny is always first.")
+            Text(answerable
+                ? "Answering here answers it in its thread too."
+                : "Answer it in its thread, where the question and its approval card are.")
                 .junoCaption()
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -487,6 +596,31 @@ struct NativeAgentNowTab: View {
                 Text("Nothing yet. Message it, or give it a goal to work on.")
                     .font(.callout)
                     .junoSecondaryInk()
+            }
+        }
+    }
+
+    /// Its computer: the calls its newest run made, in words (AGENTS.md
+    /// §5.2). Shown only for the run the page is about, and only once it has
+    /// done something.
+    @ViewBuilder
+    private var computer: some View {
+        if let feed = model.computers[agent.id],
+            feed.sessionID == tasks.first?.sessionID,
+            !feed.lines.isEmpty
+        {
+            VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                    NativeAgentHeading(title: "Its computer")
+                    Text(feed.isLive ? "Live" : "Last run")
+                        .junoCodeSmall()
+                        .junoSecondaryInk()
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(feed.lines) { line in
+                        NativeAgentComputerLineView(line: line)
+                    }
+                }
             }
         }
     }
@@ -601,6 +735,140 @@ struct NativeAgentTaskLine: View {
             .buttonStyle(.borderless)
         }
         .nativeAgentTile()
+    }
+}
+
+/// One waiting task and what it is stopped at: its line, then its approvals,
+/// oldest first, then its question. A task with nothing answerable here is
+/// its line alone, and Open in chat is the way to the gate.
+struct NativeAgentGateStack: View {
+    let model: NativeAgentsModel
+    let agentID: String
+    let task: NativeAgentTask
+    let gate: NativeAgentGate?
+    /// Approvals raised by this task's run on this Mac. When there are any
+    /// they are the ones shown, answered through `decideLocally`.
+    let approvalsOnThisMac: [WorkApprovalRequest]
+    let decideLocally: (@MainActor (WorkApprovalRequest, JunoWorkApprovalDecision) -> Void)?
+    let open: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            NativeAgentTaskLine(task: task, open: open)
+            if !approvalsOnThisMac.isEmpty {
+                ForEach(approvalsOnThisMac) { approval in
+                    NativeWorkApprovalCard(approval: approval) { decision in
+                        decideLocally?(approval, decision)
+                    }
+                }
+            } else if let gate {
+                ForEach(gate.approvals) { approval in
+                    NativeWorkApprovalCard(
+                        approval: approval,
+                        busy: model.isAnswering(approval.approvalID)
+                    ) { decision in
+                        decide(approval, decision)
+                    }
+                }
+            }
+            if let question = gate?.question {
+                NativeWorkQuestionCard(
+                    question: question,
+                    busy: model.isAnswering(question.questionID)
+                ) { reply in
+                    await model.answer(
+                        agentID: agentID,
+                        sessionID: task.sessionID,
+                        question: question,
+                        text: reply
+                    )
+                }
+                // A new question is a new card, with an empty box.
+                .id(question.questionID)
+            }
+        }
+    }
+
+    private func decide(_ approval: WorkApprovalRequest, _ decision: JunoWorkApprovalDecision) {
+        Task { await model.decide(agentID: agentID, approval, decision) }
+    }
+}
+
+/// One call its run made: a toned dot, what it did in words, and one trailing
+/// signal — when it happened, or the word for a call that did not simply
+/// finish.
+struct NativeAgentComputerLineView: View {
+    let line: NativeAgentComputerLine
+
+    private var tone: Color {
+        switch line.state {
+        case .running: Color.junoAccent
+        case .done: Color.junoMutedForeground
+        case .failed: Color.junoDanger
+        case .refused, .unreported: Color.junoCaution
+        }
+    }
+
+    private var trailing: String {
+        switch line.state {
+        case .running: "Now"
+        case .done: NativeAgentFormat.ago(line.at)
+        case .failed: "Didn’t work"
+        case .refused: "Refused"
+        case .unreported: "No answer"
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
+            Circle()
+                .fill(tone)
+                .frame(width: 6, height: 6)
+                .accessibilityHidden(true)
+            Text(line.title)
+                .font(.callout)
+                .foregroundStyle(line.state == .done ? Color.junoMutedForeground : Color.junoForeground)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: JunoSpace.snug)
+            Text(trailing)
+                .junoCaption()
+        }
+        .padding(.vertical, JunoSpace.tight)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The word of welcome a page opens with just after hiring: who arrived, the
+/// promise it works under, and the one thing to do next. The web's "is here"
+/// card; shown once, from the hire.
+struct NativeAgentWelcome: View {
+    let agent: NativeAgent
+    let message: () -> Void
+    let later: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Text("\(agent.name) is here.")
+                .font(.callout.weight(.medium))
+                .junoInk()
+            Text("Tell it what to take on first. It works under “\(agent.approvalMode.agentAutonomyLabel)”, and always asks before anything it cannot take back.")
+                .font(.callout)
+                .junoSecondaryInk()
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: JunoSpace.snug) {
+                Button("Message \(agent.name)", action: message)
+                    .buttonStyle(.bordered)
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+                Button("Later", action: later)
+                    .buttonStyle(.borderless)
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+            }
+        }
+        .nativeAgentTile(padding: JunoSpace.regular)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -1023,11 +1291,16 @@ struct NativeAgentRoutineEditor: View {
 // MARK: - Activity
 
 /// One log for everything the agent did: tasks started and finished, stops to
-/// ask, approvals, goals, ideas, routines, and what it learned.
+/// ask, approvals, work handed to a teammate or taken from one, goals, ideas,
+/// routines, and what it learned. The server words every line; a line about
+/// one of its runs opens that run's thread, as the web's does.
 struct NativeAgentActivityTab: View {
     let model: NativeAgentsModel
     let agentID: String
     let entries: [NativeAgentActivity]
+    /// The agent's tasks, for a line about one of them to open it.
+    let tasks: [NativeAgentTask]
+    let openTask: (NativeAgentTask) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1037,7 +1310,7 @@ struct NativeAgentActivityTab: View {
                     .junoSecondaryInk()
             } else {
                 ForEach(entries) { entry in
-                    NativeAgentActivityLine(entry: entry)
+                    line(entry)
                     if entry.id != entries.last?.id {
                         Divider()
                     }
@@ -1045,6 +1318,30 @@ struct NativeAgentActivityTab: View {
             }
         }
         .task(id: agentID) { await model.loadActivity(id: agentID) }
+    }
+
+    /// A run this page does not list — work handed to a teammate runs in the
+    /// teammate's thread — is a line and nothing more.
+    @ViewBuilder
+    private func line(_ entry: NativeAgentActivity) -> some View {
+        if let task = openableTask(for: entry) {
+            Button {
+                openTask(task)
+            } label: {
+                NativeAgentActivityLine(entry: entry)
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens its thread")
+        } else {
+            NativeAgentActivityLine(entry: entry)
+        }
+    }
+
+    private func openableTask(for entry: NativeAgentActivity) -> NativeAgentTask? {
+        guard entry.isAboutARun, let sessionID = entry.sessionID else { return nil }
+        return tasks.first { $0.sessionID == sessionID }
     }
 }
 

@@ -143,6 +143,18 @@ const nextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         ],
       },
+      {
+        // The push-only service worker (public/sw.js). Revalidated on every
+        // update check so a fix to it reaches browsers on their next visit
+        // rather than whenever a cached copy expires; allowed to control the
+        // whole origin, which is the scope the page registers it with.
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache" },
+          { key: "Service-Worker-Allowed", value: "/" },
+          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+        ],
+      },
     ];
   },
   async rewrites() {

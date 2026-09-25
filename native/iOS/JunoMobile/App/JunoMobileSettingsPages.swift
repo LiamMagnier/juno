@@ -2,6 +2,7 @@ import JunoChatKit
 import JunoCodeKit
 import JunoCore
 import JunoDesignSystem
+import JunoSync
 import JunoVoiceKit
 import SwiftUI
 import UIKit
@@ -198,6 +199,9 @@ struct JunoMobileNotificationSettingsView: View {
 
   @AppStorage(JunoMobilePreferences.codeApprovalNotifications) private var notifyApprovals = true
   @AppStorage(JunoMobilePreferences.codeCompletionNotifications) private var notifyCompletions = true
+  /// This phone's push switches. The registrar keeps them on the device and
+  /// tells the server when one changes, so a switch here is the whole story.
+  @State private var pushes = NativePushRegistrar.shared
   @State private var authorization: UNAuthorizationStatus?
   @Environment(\.openURL) private var openURL
   @Environment(\.scenePhase) private var scenePhase
@@ -213,7 +217,9 @@ struct JunoMobileNotificationSettingsView: View {
           }
           Spacer(minLength: JunoSpace.tight)
           switch authorization {
-          case .notDetermined?:
+          // Quiet delivery is where sign-in leaves a phone that was never
+          // asked, so it offers the real question too.
+          case .notDetermined?, .provisional?:
             Button("Allow") { Task { await requestPermission() } }
               .buttonStyle(.borderedProminent)
               .tint(Color.junoAccent)
@@ -224,7 +230,7 @@ struct JunoMobileNotificationSettingsView: View {
               openURL(url)
             }
             .buttonStyle(.bordered)
-          case .authorized?, .provisional?, .ephemeral?:
+          case .authorized?, .ephemeral?:
             JunoIconView(.check, size: 15)
               .foregroundStyle(Color.junoSuccess)
           default:
@@ -234,6 +240,33 @@ struct JunoMobileNotificationSettingsView: View {
         .frame(minHeight: 44)
       } footer: {
         Text("Juno only notifies you about things you asked it to do.")
+      }
+
+      Section {
+        Toggle(isOn: $pushes.preferences.needsYou) {
+          VStack(alignment: .leading, spacing: 2) {
+            Text("When something needs you")
+            Text("An approval or a question a task is waiting on.")
+              .junoCaption()
+          }
+        }
+        .tint(Color.junoAccent)
+        .disabled(!isAuthorized)
+        .accessibilityIdentifier("juno.mobile.notifications-needs-you")
+        Toggle(isOn: $pushes.preferences.updates) {
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Updates")
+            Text("A task finished, an agent has ideas, or one agent handed work to another.")
+              .junoCaption()
+          }
+        }
+        .tint(Color.junoAccent)
+        .disabled(!isAuthorized)
+        .accessibilityIdentifier("juno.mobile.notifications-updates")
+      } header: {
+        Text("Agents and Work")
+      } footer: {
+        Text(pushes.lastError ?? "Sent to this iPhone even when Juno is closed. These switches are for this iPhone only.")
       }
 
       Section("Juno Code") {
@@ -321,7 +354,7 @@ struct JunoMobileNotificationSettingsView: View {
   }
 
   private func requestPermission() async {
-    _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+    await pushes.requestFullAuthorization()
     await refreshAuthorization()
   }
 

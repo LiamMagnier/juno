@@ -112,6 +112,18 @@ test("the handshake is session.start on gpt-live-1, with reasoning off by defaul
   });
 });
 
+test("an agent's voice is not sent to GPT-Live, which keeps its own default", async () => {
+  // Agent voices are Realtime and Gemini names (relay/src/providers/registry.ts).
+  // One GPT-Live refused would drop the call onto the Realtime fallback.
+  await withFakeLive(async ({ sent }) => {
+    const session = new GptLiveSession();
+    await session.connect({ ...seed, voice: "coral" }, recorder().events);
+    const start = sent.find((m) => m.type === "session.start") as { session: { audio: unknown } };
+    assert.deepEqual(start.session.audio, { format: { type: "audio/pcm", rate: 24000 }, output: { voice: "marin" } });
+    await session.close();
+  });
+});
+
 test("thinking on asks the backend model to reason", async () => {
   await withFakeLive(async ({ sent }) => {
     const session = new GptLiveSession({ thinking: true });

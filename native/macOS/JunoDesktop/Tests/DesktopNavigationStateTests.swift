@@ -18,7 +18,8 @@ struct DesktopNavigationStateTests {
         #expect(
             DesktopNavigationState.selection(
                 destination: .chat,
-                selectedConversationID: "conv-1"
+                selectedConversationID: "conv-1",
+                selectedAgentID: nil
             ) == .conversation("conv-1")
         )
     }
@@ -34,7 +35,8 @@ struct DesktopNavigationStateTests {
         #expect(
             DesktopNavigationState.selection(
                 destination: .chat,
-                selectedConversationID: nil
+                selectedConversationID: nil,
+                selectedAgentID: nil
             ) == nil
         )
     }
@@ -74,7 +76,7 @@ struct DesktopNavigationStateTests {
     func selectingAPinnedProjectOpensProjectsAndKeepsTheConversation() {
         let resolved = DesktopNavigationState.resolve(
             selection: .project("proj-2"),
-            current: (.chat, "conv-5")
+            current: (.chat, "conv-5", nil)
         )
         #expect(resolved.destination == .projects)
         #expect(resolved.conversationID == "conv-5")
@@ -89,7 +91,8 @@ struct DesktopNavigationStateTests {
         #expect(
             DesktopNavigationState.selection(
                 destination: .library,
-                selectedConversationID: "conv-1"
+                selectedConversationID: "conv-1",
+                selectedAgentID: nil
             ) == .destination(.library)
         )
     }
@@ -100,7 +103,7 @@ struct DesktopNavigationStateTests {
     func selectingAConversationSwitchesToChatAndStopsDrafting() {
         let resolved = DesktopNavigationState.resolve(
             selection: .conversation("conv-9"),
-            current: (.library, nil)
+            current: (.library, nil, nil)
         )
         #expect(resolved.destination == .chat)
         #expect(resolved.conversationID == "conv-9")
@@ -111,7 +114,7 @@ struct DesktopNavigationStateTests {
     func selectingChatItselfStartsADraft() {
         let resolved = DesktopNavigationState.resolve(
             selection: .destination(.chat),
-            current: (.chat, "conv-3")
+            current: (.chat, "conv-3", nil)
         )
         #expect(resolved.destination == .chat)
         #expect(resolved.conversationID == nil)
@@ -125,7 +128,7 @@ struct DesktopNavigationStateTests {
     func leavingChatKeepsTheOpenConversation() {
         let resolved = DesktopNavigationState.resolve(
             selection: .destination(.library),
-            current: (.chat, "conv-7")
+            current: (.chat, "conv-7", nil)
         )
         #expect(resolved.destination == .library)
         #expect(resolved.conversationID == "conv-7")
@@ -138,11 +141,88 @@ struct DesktopNavigationStateTests {
     func aClearedSelectionChangesNothing() {
         let resolved = DesktopNavigationState.resolve(
             selection: nil,
-            current: (.library, "conv-2")
+            current: (.library, "conv-2", nil)
         )
         #expect(resolved.destination == .library)
         #expect(resolved.conversationID == "conv-2")
         #expect(resolved.isDrafting == false)
+    }
+
+    // MARK: - Agents
+
+    @Test
+    func anOpenAgentIsTheAgentsPagesSelection() {
+        #expect(
+            DesktopNavigationState.selection(
+                destination: .agents,
+                selectedConversationID: "conv-1",
+                selectedAgentID: "agent-1"
+            ) == .agent("agent-1")
+        )
+        #expect(
+            DesktopNavigationState.selection(
+                destination: .agents,
+                selectedConversationID: nil,
+                selectedAgentID: nil
+            ) == .destination(.agents)
+        )
+    }
+
+    /// The id can outlive the page — opening an agent's thread from its page
+    /// leaves it set — and an agent row lit under a conversation or Library
+    /// would be the column pointing at something that is not on screen.
+    @Test
+    func anOpenAgentIsNotTheSelectionAnywhereElse() {
+        #expect(
+            DesktopNavigationState.selection(
+                destination: .chat,
+                selectedConversationID: "conv-1",
+                selectedAgentID: "agent-1"
+            ) == .conversation("conv-1")
+        )
+        #expect(
+            DesktopNavigationState.selection(
+                destination: .library,
+                selectedConversationID: nil,
+                selectedAgentID: "agent-1"
+            ) == .destination(.library)
+        )
+    }
+
+    /// An agent's row opens its page and, like every page but Chat, keeps the
+    /// conversation to come back to.
+    @Test
+    func selectingAnAgentOpensItsPageAndKeepsTheConversation() {
+        let resolved = DesktopNavigationState.resolve(
+            selection: .agent("agent-4"),
+            current: (.chat, "conv-4", nil)
+        )
+        #expect(resolved.destination == .agents)
+        #expect(resolved.agentID == "agent-4")
+        #expect(resolved.conversationID == "conv-4")
+        #expect(resolved.isDrafting == false)
+    }
+
+    /// The Agents row is the roster, as `/agents` is on the web — not the last
+    /// agent visited.
+    @Test
+    func theAgentsRowIsTheRoster() {
+        let resolved = DesktopNavigationState.resolve(
+            selection: .destination(.agents),
+            current: (.agents, nil, "agent-2")
+        )
+        #expect(resolved.destination == .agents)
+        #expect(resolved.agentID == nil)
+    }
+
+    @Test
+    func aClearedSelectionKeepsTheOpenAgent() {
+        let resolved = DesktopNavigationState.resolve(
+            selection: nil,
+            current: (.agents, nil, "agent-3")
+        )
+        #expect(resolved.destination == .agents)
+        #expect(resolved.agentID == "agent-3")
     }
 
     // MARK: - Restoration

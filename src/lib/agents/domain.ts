@@ -16,6 +16,9 @@ import {
   type WorkPermissionPolicy,
 } from "@/lib/work/domain";
 import { AGENT_EYES, AGENT_MARKS, AGENT_SHAPES, AGENT_TONES } from "@/lib/agents/avatar";
+import { resolveModel } from "@/lib/models";
+import { REASONING_TIERS } from "@/lib/model-metrics";
+import type { ReasoningEffort } from "@/types/chat";
 
 // ---------------------------------------------------------------------------
 // Vocabulary
@@ -121,6 +124,10 @@ export const AGENT_EVENT_KINDS = [
   "note_learned",
   "task_started",
   "reflected",
+  // A handoff (src/lib/chat/handoff-tool.ts), written on both agents: the one
+  // that gave the work away and the teammate whose thread it now runs in.
+  "handed_off",
+  "handoff_received",
 ] as const;
 export type AgentEventKind = (typeof AGENT_EVENT_KINDS)[number];
 
@@ -299,6 +306,72 @@ export function reflectionDue(input: {
   return input.now.getTime() - input.lastReflectedAt.getTime() >= AGENT_REFLECT_INTERVAL_MS;
 }
 
+/**
+ * The idempotency keys of a task started as an agent, from the caller's own
+ * key. Namespaced by the agent, so the same key (one chat message, one idea)
+ * can never replay a task onto a different agent than the one it started.
+ */
+export function agentTaskKeys(agentId: string, key: string): { session: string; run: string } {
+  return { session: `agent-task:${agentId}:${key}`, run: `agent-run:${agentId}:${key}` };
+}
+
+// ---------------------------------------------------------------------------
+// The model it answers with
+// ---------------------------------------------------------------------------
+
+/**
+ * The model an agent may be set to, as its canonical id, or null when the id
+ * is not one: a chat model the catalogue resolves (a live provider id
+ * resolves too, as it does in the chat picker) or Auto. Never a model that is
+ * announced but not out, and never an image or voice model, because the thread
+ * is a chat and its tasks start on the same id.
+ */
+export function agentModelChoice(id: string): string | null {
+  const model = resolveModel(id.trim());
+  if (!model || (model.modality ?? "chat") !== "chat" || model.comingSoon) return null;
+  return model.id;
+}
+
+/** A stored effort, or null for anything that is not one. */
+export function agentReasoningEffort(value: string | null | undefined): ReasoningEffort | null {
+  return value && (REASONING_TIERS as readonly string[]).includes(value) ? (value as ReasoningEffort) : null;
+}
+
+/**
+ * What a turn in an agent's thread answers with.
+ *
+ * The agent's model is its thread's model (the schema: "the model its thread
+ * and its tasks use when set"), so a request that names no model, or names the
+ * agent's own, is the agent's to answer, at the agent's effort when one is set.
+ * A request naming any other model is the person choosing one for this
+ * message, and their choice wins: every client sends the model its picker
+ * shows, and the thread's picker starts on the agent's because the thread
+ * follows its agent (`updateAgentForUser`), so a different id is a decision.
+ *
+ * An agent's model the turn cannot use (gone from the catalogue, off the plan,
+ * its provider not configured) is dropped without a word, and the turn resolves
+ * as if no model were named. The person set the agent up once, perhaps on
+ * another plan; a thread that refuses to answer until they find the setting
+ * that broke it is worse than one that answers on their default.
+ */
+export type AgentTurnModel =
+  | { kind: "request" }
+  | { kind: "agent"; model: string; reasoningEffort: ReasoningEffort | null }
+  | { kind: "fallback" };
+
+export function agentTurnModel(input: {
+  agent: { model: string | null; reasoningEffort: string | null } | null;
+  requestedModel: string | null | undefined;
+  usable: (modelId: string) => boolean;
+}): AgentTurnModel {
+  const own = input.agent?.model ? agentModelChoice(input.agent.model) : null;
+  if (!own) return { kind: "request" };
+  const requested = input.requestedModel?.trim() ? agentModelChoice(input.requestedModel) : null;
+  if (requested && requested !== own) return { kind: "request" };
+  if (!input.usable(own)) return { kind: "fallback" };
+  return { kind: "agent", model: own, reasoningEffort: agentReasoningEffort(input.agent?.reasoningEffort) };
+}
+
 // ---------------------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------------------
@@ -311,6 +384,19 @@ const avatarSchema = z.object({
 });
 
 const nameSchema = z.string().trim().min(1).max(MAX_AGENT_NAME_CHARS);
+/** Stored by its canonical id, so the thread and the task read the same spelling. */
+const modelSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120)
+  .transform((id, ctx) => {
+    const model = agentModelChoice(id);
+    if (model) return model;
+    ctx.addIssue({ code: "custom", message: "That is not a chat model Juno offers." });
+    return z.NEVER;
+  });
+const effortSchema = z.enum(REASONING_TIERS);
 const connectorListSchema = z
   .array(z.string().trim().min(1).max(120))
   .max(MAX_AGENT_CONNECTORS)
@@ -322,8 +408,8 @@ export const createAgentSchema = z.object({
   avatar: avatarSchema.optional(),
   style: z.enum(AGENT_STYLES).default("warm"),
   instructions: z.string().trim().max(MAX_AGENT_INSTRUCTIONS_CHARS).default(""),
-  model: z.string().trim().min(1).max(120).nullable().optional(),
-  reasoningEffort: z.string().trim().min(1).max(40).nullable().optional(),
+  model: modelSchema.nullable().optional(),
+  reasoningEffort: effortSchema.nullable().optional(),
   approvalMode: z.enum(WORK_PERMISSION_POLICIES).default("balanced"),
   connectorIds: connectorListSchema.default([]),
   projectId: z.string().trim().min(1).max(200).nullable().optional(),
@@ -340,8 +426,8 @@ export const patchAgentSchema = z
     avatar: avatarSchema.optional(),
     style: z.enum(AGENT_STYLES).optional(),
     instructions: z.string().trim().max(MAX_AGENT_INSTRUCTIONS_CHARS).optional(),
-    model: z.string().trim().min(1).max(120).nullable().optional(),
-    reasoningEffort: z.string().trim().min(1).max(40).nullable().optional(),
+    model: modelSchema.nullable().optional(),
+    reasoningEffort: effortSchema.nullable().optional(),
     approvalMode: z.enum(WORK_PERMISSION_POLICIES).optional(),
     connectorIds: connectorListSchema.optional(),
     projectId: z.string().trim().min(1).max(200).nullable().optional(),

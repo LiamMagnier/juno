@@ -1,5 +1,6 @@
 import JunoAuth
 import JunoCodeUI
+import JunoCore
 import JunoDesignSystem
 import JunoWorkKit
 import SwiftUI
@@ -51,6 +52,17 @@ struct JunoDesktopWorkspaceView: View {
     @State private var unscopedChatPrompt: String?
     /// Whether the request is for a private draft (⇧⌘N). Consumed with it.
     @State private var unscopedChatIsPrivate = false
+    /// A tapped notification's destination in Chat — an agent's page or a
+    /// thread, or a task's thread — consumed once by the Chat workspace,
+    /// which is the only view that can select either.
+    @State private var chatRoute: DesktopWorkbenchRegistry.RouteRequest?
+    /// The legacy Tasks window's own keys for its column, written before a
+    /// task with no conversation opens there, so the workspace this switch
+    /// builds reads the task on its first evaluation instead of opening on
+    /// the last one and then jumping. Stage D replaces that window with the
+    /// task sheet and these go with it.
+    @SceneStorage("juno.desktop.work.selection") private var storedWorkSessionID = ""
+    @SceneStorage("juno.desktop.work.page") private var storedWorkPage = ""
     @State private var registry = DesktopWorkbenchRegistry.shared
 
     var body: some View {
@@ -86,6 +98,46 @@ struct JunoDesktopWorkspaceView: View {
                     isShowingLegacyTasks: product == .legacyWork
                 )
             )
+            // A tapped notification. Re-read from the registry rather than
+            // trusted from the change: every open window hears the change, and
+            // only the first to reach it may act on it.
+            .onChange(of: registry.pendingRoute, initial: true) { _, request in
+                guard let request, registry.pendingRoute == request else { return }
+                registry.consume(request)
+                switch request.route {
+                case .agent, .conversation:
+                    chatRoute = request
+                    product = .chat
+                case .workSession(let id):
+                    openWorkSession(id)
+                }
+            }
+    }
+
+    /// A task's notification opens the task's chat, as the web redirects
+    /// `/work/{id}` to `/chat/{conversationId}`.
+    ///
+    /// A task newer than the model's last poll is not in its list yet, so the
+    /// list is refreshed once when the id is missing. A task with no
+    /// conversation — one started in the old Tasks window — opens there until
+    /// Stage D replaces it with the task sheet.
+    private func openWorkSession(_ id: String) {
+        guard let workModel = configuration.workModel else { return }
+        Task {
+            if !workModel.sessions.contains(where: { $0.sessionID == id }) {
+                await workModel.refresh()
+            }
+            let session = workModel.sessions.first { $0.sessionID == id }
+            if let conversationID = session?.conversationID {
+                chatRoute = DesktopWorkbenchRegistry.RouteRequest(route: .conversation(id: conversationID))
+                product = .chat
+                return
+            }
+            storedWorkPage = ""
+            storedWorkSessionID = id
+            product = .legacyWork
+            if let session { workModel.open(session) }
+        }
     }
 
     private func requestChat(prompt: String?, isPrivate: Bool) {
@@ -114,7 +166,9 @@ struct JunoDesktopWorkspaceView: View {
                         unscopedChatRequestID = nil
                         unscopedChatPrompt = nil
                         unscopedChatIsPrivate = false
-                    }
+                    },
+                    route: chatRoute,
+                    consumeRoute: { chatRoute = nil }
                 )
             } else {
                 JunoEmptyState(

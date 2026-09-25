@@ -21,6 +21,7 @@ import {
   AlertCircle,
   ArrowUpRight,
   BadgeCheck,
+  Bell,
   Bot,
   CalendarClock,
   Check,
@@ -188,6 +189,13 @@ export const AppIcons = {
   conversation: JunoChat,
   new: Plus,
   search: Search,
+  /** Notifications — the inbox the sidebar opens in a popover. A bell, the
+   *  mark every platform already reads as "things that happened while you
+   *  were away", and the one the native apps' generator already names
+   *  (`notifications: "bell"`), so the two agree without a new asset. Not
+   *  `Inbox`'s tray: that was the Work inbox, the destination this replaced
+   *  with a fold, and wearing its mark would say the old page came back. */
+  notifications: Bell,
   /** The web reaches Settings from the user menu rather than the rail, and draws
    *  it with this same mark (`user-menu.tsx`) — a six-toothed gear that turns
    *  a little under the pointer. It lives here because the native apps *do*

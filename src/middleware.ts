@@ -140,7 +140,11 @@ export const config = {
   // Everything except Next's own static output and the files served straight
   // from /public — those need neither the origin check nor a CSP, and running
   // middleware on them is pure overhead on every asset.
+  //
+  // sw.js especially: a worker script runs under the CSP of its own response,
+  // and the document policy (a per-request nonce, 'strict-dynamic') is written
+  // for pages. The worker is push-only and self-contained (public/sw.js).
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|manifest.webmanifest|robots.txt|sitemap.xml).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|manifest.webmanifest|robots.txt|sitemap.xml|sw.js).*)",
   ],
 };

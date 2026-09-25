@@ -4,7 +4,10 @@ import {
   decideNotification,
   describeNeedsYouRise,
   describeNotification,
+  effectiveNotifyStatus,
+  isAttendedOrigin,
   notificationKey,
+  runNotifyPolicy,
   WORK_NOTIFY_POLICIES,
 } from "@/lib/work/notifications";
 import { WORK_STATUSES, statusNeedsAttention, type WorkStatus } from "@/lib/work/domain";
@@ -233,4 +236,91 @@ test("a failed reading is not a change in either direction", () => {
   // lie with a sound.
   assert.equal(describeNeedsYouRise(3, null), null);
   assert.equal(describeNeedsYouRise(null, null), null);
+});
+
+// ---------------------------------------------------------------------------
+// A parked run is still waiting
+// ---------------------------------------------------------------------------
+
+/*
+ * The cloud runner parks a run nobody answered inside the attended wait, and
+ * the notify call at the end of its drive then read `paused` — which needs
+ * nobody — so under the default policy no approval and no question ever
+ * reached anyone. The rows still say what it is waiting on.
+ */
+test("a paused run with a pending approval is waiting on that approval", () => {
+  const status = effectiveNotifyStatus({
+    status: "paused",
+    pendingApprovalAt: new Date("2026-09-24T10:00:00Z"),
+    openQuestionAt: null,
+  });
+  assert.equal(status, "waiting_approval");
+  const decision = decide({ status, policy: "on_attention" });
+  assert.equal(decision.notify && decision.urgency, "blocking", "the default policy must now speak");
+});
+
+test("a paused run with an unanswered question is waiting on the question", () => {
+  assert.equal(
+    effectiveNotifyStatus({ status: "paused", pendingApprovalAt: null, openQuestionAt: new Date("2026-09-24T10:00:00Z") }),
+    "waiting_input"
+  );
+});
+
+test("when both are open, the newer one is what the run stopped on", () => {
+  const older = new Date("2026-09-24T09:00:00Z");
+  const newer = new Date("2026-09-24T10:00:00Z");
+  assert.equal(effectiveNotifyStatus({ status: "paused", pendingApprovalAt: older, openQuestionAt: newer }), "waiting_input");
+  assert.equal(effectiveNotifyStatus({ status: "paused", pendingApprovalAt: newer, openQuestionAt: older }), "waiting_approval");
+});
+
+test("a run paused by hand stays paused, and nothing else is reinterpreted", () => {
+  assert.equal(effectiveNotifyStatus({ status: "paused", pendingApprovalAt: null, openQuestionAt: null }), "paused");
+  const at = new Date();
+  for (const status of WORK_STATUSES) {
+    if (status === "paused") continue;
+    assert.equal(effectiveNotifyStatus({ status, pendingApprovalAt: at, openQuestionAt: at }), status);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Whose policy
+// ---------------------------------------------------------------------------
+
+test("a routine's own policy wins, and an unreadable one is the default", () => {
+  for (const policy of WORK_NOTIFY_POLICIES) {
+    assert.equal(runNotifyPolicy({ schedulePolicy: policy, agentOwned: true }), policy);
+  }
+  assert.equal(runNotifyPolicy({ schedulePolicy: "loudly", agentOwned: false }), "on_attention");
+});
+
+test("an agent's task speaks when it is done; any other run only when it needs you", () => {
+  // docs/design/AGENTS.md §8: an agent speaks when it has done something or needs something.
+  assert.equal(runNotifyPolicy({ schedulePolicy: null, agentOwned: true }), "on_finish");
+  assert.equal(runNotifyPolicy({ schedulePolicy: undefined, agentOwned: false }), "on_attention");
+  const finished = decide({ status: "completed", policy: runNotifyPolicy({ schedulePolicy: null, agentOwned: true }) });
+  assert.equal(finished.notify, true);
+});
+
+test("only a person starting a run makes it attended", () => {
+  assert.equal(isAttendedOrigin("manual"), true);
+  assert.equal(isAttendedOrigin("chat"), true);
+  assert.equal(isAttendedOrigin("schedule"), false);
+  assert.equal(isAttendedOrigin("trigger"), false);
+});
+
+// ---------------------------------------------------------------------------
+// An agent's task speaks as the agent
+// ---------------------------------------------------------------------------
+
+test("an agent's name replaces Juno in every sentence, and Juno stays the default", () => {
+  for (const status of WORK_STATUSES) {
+    const asAgent = describeNotification({ title: "Organise Downloads", status, actorName: "Quill" });
+    assert.doesNotMatch(asAgent.summary, /\bJuno\b/, `${status} still says Juno for an agent's task`);
+    const asJuno = describeNotification({ title: "Organise Downloads", status });
+    assert.doesNotMatch(asJuno.summary, /Quill/);
+  }
+  const waiting = describeNotification({ title: "Organise Downloads", status: "waiting_input", actorName: "Quill" });
+  assert.equal(waiting.summary, "Quill needs an answer before it can carry on.");
+  const blank = describeNotification({ title: "Organise Downloads", status: "completed", actorName: "  " });
+  assert.match(blank.summary, /^Juno finished/);
 });

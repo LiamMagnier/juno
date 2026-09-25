@@ -141,6 +141,12 @@ export interface AppBootstrap {
     deepResearch: boolean;
     /** Email delivery is configured (RESEND_API_KEY present). */
     email: boolean;
+    /** Browser Web Push can be offered: the server holds a VAPID key pair
+     *  (from VAPID_* or provisioned on first use). Absent means off. */
+    webPush?: boolean;
+    /** The VAPID public key a browser subscribes with, delivered at runtime —
+     *  never baked into the bundle, so a key change needs no rebuild. */
+    webPushPublicKey?: string | null;
     providers: Provider[];
     isOwner: boolean;
   };

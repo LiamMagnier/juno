@@ -115,6 +115,11 @@ const JunoRules: Readonly<Record<string, ActionRiskClass>> = {
   // the class that asks under every policy short of `block` and is never
   // offered as a standing approval.
   "juno_work:start_task": "external_write",
+  // One agent handing work to another (src/lib/chat/handoff-tool.ts). It
+  // always reaches the broker, because a person approves every handoff, and it
+  // takes the same class as a task for the same reasons: it asks under every
+  // policy short of `block`, and it is never a standing approval.
+  "juno_work:hand_off_to_teammate": "external_write",
   // Juno's own readers of files the person attached to this conversation
   // (src/lib/agent/document.ts, image.ts). They reach nothing outside the
   // turn, so they never ask. Without an exact rule they classified as
@@ -409,6 +414,14 @@ export function actionPreview(input: {
     const estimate = typeof input.args.estimate === "string" ? input.args.estimate.trim() : "";
     const task = title ? `Start a background task: ${title}.` : "Start a background task.";
     return estimate ? `${task} Estimated cost ${estimate}.` : task;
+  }
+  if (input.connectorId === "juno_work" && input.toolName === "hand_off_to_teammate") {
+    const teammate = typeof input.args.teammate === "string" ? input.args.teammate.trim() : "";
+    const title = typeof input.args.title === "string" ? input.args.title.trim().replace(/[.!?]+$/, "") : "";
+    const estimate = typeof input.args.estimate === "string" ? input.args.estimate.trim() : "";
+    const to = `Hand off to ${teammate || "a teammate"}`;
+    const handoff = title ? `${to}: ${title}.` : `${to}.`;
+    return estimate ? `${handoff} Estimated cost ${estimate}.` : handoff;
   }
   const verb = input.toolName.replace(/[_-]+/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2");
   const suffix =

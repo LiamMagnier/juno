@@ -326,6 +326,11 @@ export async function rotateNativeRefreshToken(rawToken: string) {
         where: { deviceSessionId: current.deviceSessionId, familyId: current.familyId, revokedAt: null },
         data: { revokedAt: new Date() },
       });
+      // The revoked sign-in's pushes stop with it; a fresh sign-in registers again.
+      await tx.devicePushToken.updateMany({
+        where: { userId: current.deviceSession.userId, deviceSessionId: current.deviceSessionId, active: true },
+        data: { active: false },
+      });
       return { kind: "reuse" as const };
     }
     if (!stillUsable) return { kind: "invalid" as const };
@@ -415,5 +420,13 @@ export async function revokeNativeDevice(userId: string, deviceSessionId: string
   if (result.count) {
     await prisma.nativeRefreshToken.updateMany({ where: { deviceSessionId, revokedAt: null }, data: { revokedAt: new Date() } });
   }
+  // A signed-out device stops receiving this account's notifications. The
+  // app's own unregister cannot do it: its bearer is already revoked by the
+  // time it would ask. Unconditional, so a session revoked before tokens were
+  // linked to it is still cleaned up when it is revoked again.
+  await prisma.devicePushToken.updateMany({
+    where: { userId, deviceSessionId, active: true },
+    data: { active: false },
+  });
   return result.count === 1;
 }

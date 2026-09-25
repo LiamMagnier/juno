@@ -3,6 +3,7 @@ import JunoCore
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
+import JunoWorkKit
 import SwiftUI
 import UIKit
 
@@ -60,6 +61,11 @@ struct JunoMobileChatDetailScreen: View {
   var pendingPrompt: Binding<String?> = .constant(nil)
   /// One-shot request from the Dictate App Intent / widget shortcut.
   var startDictation: Binding<Bool> = .constant(false)
+  /// The account's agents, to recognise an agent's own thread and put its
+  /// face at the top of it. Nil where agents have not been built.
+  var agentsModel: NativeAgentsModel?
+  /// Opens an agent's page by id: the thread header's way back to it.
+  var openAgent: ((String) -> Void)?
 
   /// Fetches and caches the transcript's pictures for the life of the screen.
   @State private var imageLoader: NativeChatImageLoader?
@@ -92,6 +98,13 @@ struct JunoMobileChatDetailScreen: View {
     return model.conversations.first { $0.id == id }
   }
 
+  /// The agent whose thread is open, if it is one. The thread is an ordinary
+  /// conversation; what makes it the agent's is the agent pointing at it.
+  private var threadAgent: NativeAgent? {
+    guard let id = model.selectedConversationID, let agentsModel else { return nil }
+    return agentsModel.agents.first { $0.conversationID == id }
+  }
+
   var body: some View {
     Group {
       if let selected {
@@ -119,7 +132,9 @@ struct JunoMobileChatDetailScreen: View {
           shareClient: shareClient,
           accountID: accountID,
           imageLoader: imageLoader,
-          pendingPrompt: pendingPrompt
+          pendingPrompt: pendingPrompt,
+          threadAgent: threadAgent,
+          openAgent: openAgent
         )
       } else {
         JunoMobileDraftChat(
@@ -400,6 +415,9 @@ private struct JunoMobileConversationDetail: View {
   var accountID: AccountID?
   var imageLoader: NativeChatImageLoader?
   var pendingPrompt: Binding<String?> = .constant(nil)
+  /// The agent this thread belongs to, drawn as the row above it.
+  var threadAgent: NativeAgent? = nil
+  var openAgent: ((String) -> Void)? = nil
   /// The artifact the reader tapped in the transcript, presented over it.
   @State private var openArtifact: NativeArtifact?
   /// A message's text on its way to the system share sheet.
@@ -1090,6 +1108,11 @@ private struct JunoMobileConversationDetail: View {
       }
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { conversationToolbar }
+      // An agent's thread gains one row above the transcript: its face, what
+      // it is doing, and the way to its page (docs/design/AGENTS.md §5.3).
+      // Always applied, empty for an ordinary chat, so a roster that loads
+      // after the thread opened does not remount the transcript under it.
+      .safeAreaBar(edge: .top, spacing: 0) { agentHeader }
       .alert("Rename conversation", isPresented: $showingRename) {
         TextField("Title", text: $editValue)
         Button("Cancel", role: .cancel) {}
@@ -1189,6 +1212,27 @@ private struct JunoMobileConversationDetail: View {
       .onChange(of: streamingMessageID) { previous, current in
         trackRun(from: previous, to: current)
       }
+  }
+
+  @ViewBuilder
+  private var agentHeader: some View {
+    if let threadAgent, let openAgent {
+      NativeAgentThreadHeader(
+        agent: threadAgent,
+        state: threadAgentState,
+        openAgent: { openAgent(threadAgent.id) }
+      )
+      .padding(.horizontal, JunoSpace.regular)
+    }
+  }
+
+  /// What the face shows while this thread knows better than the roster:
+  /// listening through a call, thinking while a reply streams. Nil is the
+  /// agent's own state.
+  private var threadAgentState: JunoAgentState? {
+    if voiceSession != nil { return .listening }
+    if streamingMessageID != nil { return .thinking }
+    return nil
   }
 
   /// Starts the run clock when an answer begins and freezes it when that answer

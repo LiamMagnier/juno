@@ -32,6 +32,7 @@ import {
   ConnectorPicker,
   FaceBuilder,
   FacePreview,
+  ModelPicker,
   StylePicker,
   useLinkedConnectors,
 } from "@/components/agents/agent-profile-fields";
@@ -42,6 +43,7 @@ import {
   retireAgent,
   updateAgent,
   updateNote,
+  type AgentPatch,
 } from "@/components/agents/agents-transport";
 import { formatAgo } from "@/components/agents/agent-bits";
 import { SectionTitle } from "@/components/agents/agent-now";
@@ -76,8 +78,10 @@ function ProfileForm({ detail, onChanged }: { detail: ClientAgentDetail; onChang
   const [approvalMode, setApprovalMode] = React.useState<WorkPermissionPolicy>(agent.approvalMode);
   const [connectorIds, setConnectorIds] = React.useState<string[]>(agent.connectorIds);
   const [proactive, setProactive] = React.useState(agent.proactive);
+  const [thinking, setThinking] = React.useState({ model: agent.model, reasoningEffort: agent.reasoningEffort });
   const [saving, setSaving] = React.useState(false);
 
+  const modelChanged = thinking.model !== agent.model || thinking.reasoningEffort !== agent.reasoningEffort;
   const dirty =
     name !== agent.name ||
     role !== agent.role ||
@@ -86,13 +90,17 @@ function ProfileForm({ detail, onChanged }: { detail: ClientAgentDetail; onChang
     instructions !== agent.instructions ||
     approvalMode !== agent.approvalMode ||
     proactive !== agent.proactive ||
+    modelChanged ||
     [...connectorIds].sort().join(",") !== [...agent.connectorIds].sort().join(",");
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!dirty || !name.trim() || saving) return;
     setSaving(true);
-    const outcome = await updateAgent(agent.id, {
+    // The model travels only when it changed: the server checks it against the
+    // plan, and a plan that has since changed must not stop a rename.
+    // `AgentPatch` does not name the effort yet, so the patch widens it here.
+    const patch: AgentPatch & { reasoningEffort?: string | null } = {
       name: name.trim(),
       role: role.trim(),
       avatar,
@@ -101,7 +109,9 @@ function ProfileForm({ detail, onChanged }: { detail: ClientAgentDetail; onChang
       approvalMode,
       connectorIds,
       proactive,
-    });
+      ...(modelChanged ? thinking : {}),
+    };
+    const outcome = await updateAgent(agent.id, patch);
     setSaving(false);
     if (outcome.kind !== "ok") {
       toast.error(outcome.kind === "failed" ? outcome.message : "That did not save.");
@@ -147,6 +157,13 @@ function ProfileForm({ detail, onChanged }: { detail: ClientAgentDetail; onChang
           <div>
             <p className="mb-2 font-mono text-label text-muted-foreground">Connected apps it may use</p>
             <ConnectorPicker options={connectors} value={connectorIds} onChange={setConnectorIds} />
+          </div>
+          <div className="@container">
+            <p className="mb-2 font-mono text-label text-muted-foreground">Model</p>
+            <ModelPicker model={thinking.model} reasoningEffort={thinking.reasoningEffort} onChange={setThinking} />
+            <p className="mt-2 text-ui text-muted-foreground">
+              Its thread and its tasks use this. You can still pick another model for any one message.
+            </p>
           </div>
           <label className="flex items-start justify-between gap-4 rounded-card border border-border p-3">
             <span>

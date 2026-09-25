@@ -55,6 +55,8 @@ enum DesktopSidebarItem: Hashable {
     case conversation(String)
     /// A pinned project's own row, which opens that project's page.
     case project(String)
+    /// One agent's page — a row in the column's Agents fold.
+    case agent(String)
 }
 
 /// The Chat product's window: the one live `NavigationSplitView` while Chat is
@@ -93,8 +95,18 @@ struct DesktopChatWorkspace: View {
     /// workspace, or with no window focused.
     var unscopedChatIsPrivate = false
     let consumeUnscopedChatRequest: () -> Void
+    /// Where a tapped notification asked Chat to go — an agent's page or a
+    /// thread. Consumed once, the way the unscoped request above is.
+    var route: DesktopWorkbenchRegistry.RouteRequest? = nil
+    var consumeRoute: (() -> Void)? = nil
     @SceneStorage("juno.desktop.destination") private var storedDestination =
         DesktopDestination.chat.rawValue
+    /// The agent whose page is open on the Agents destination; empty for the
+    /// roster. The window's rather than the screen's, because the column
+    /// selects it — an agent's row, and the notification that names one — and
+    /// highlights the row of whichever is open. Scene storage for the reason
+    /// the destination is: coming back from Code returns to the same page.
+    @SceneStorage("juno.desktop.agent") private var storedAgentID = ""
     /// Holds the launch override until the reader navigates somewhere themselves.
     ///
     /// Writing `storedDestination` from `onAppear` was not enough: scene storage
@@ -188,7 +200,8 @@ struct DesktopChatWorkspace: View {
                 DesktopNavigationState.selection(
                     destination: currentDestination,
                     selectedConversationID: model.selectedConversationID,
-                    openProjectID: openPinnedProjectID
+                    openProjectID: openPinnedProjectID,
+                    selectedAgentID: selectedAgentID
                 )
             },
             set: { item in
@@ -201,16 +214,31 @@ struct DesktopChatWorkspace: View {
                 }
                 let resolved = DesktopNavigationState.resolve(
                     selection: item,
-                    current: (currentDestination, model.selectedConversationID)
+                    current: (currentDestination, model.selectedConversationID, selectedAgentID)
                 )
                 overrideDestination = nil
                 storedDestination = resolved.destination.rawValue
+                storedAgentID = resolved.agentID ?? ""
                 model.selectedConversationID = resolved.conversationID
                 model.isDraftingNewConversation = resolved.isDrafting
                 // Choosing anything in the column leaves a private chat — and
                 // leaving it is what erases it.
                 if item != nil { isPrivateChat = false }
             }
+        )
+    }
+
+    private var selectedAgentID: String? {
+        storedAgentID.isEmpty ? nil : storedAgentID
+    }
+
+    /// The open agent, as the Agents screen reads and writes it. The page's
+    /// back control writes nil, which hands the highlight back to the Agents
+    /// row.
+    private var agentSelection: Binding<String?> {
+        Binding(
+            get: { selectedAgentID },
+            set: { storedAgentID = $0 ?? "" }
         )
     }
 
@@ -229,7 +257,9 @@ struct DesktopChatWorkspace: View {
                 actions: conversationActions,
                 newChat: beginDraft,
                 newChatInProject: startConversation(in:),
-                openSearch: openSearch
+                openSearch: openSearch,
+                agentsModel: configuration.agentsModel,
+                messageAgent: messageAgent
             )
             .junoSidebarColumn()
         } detail: {
@@ -286,9 +316,16 @@ struct DesktopChatWorkspace: View {
                 consumeInitialDestination?()
             }
             consumePendingUnscopedChatRequest()
+            // After the launch seed above, which clears the conversation: a
+            // notification that launched the app is followed rather than
+            // overwritten by the launch surface.
+            followPendingRoute()
         }
         .onChange(of: unscopedChatRequestID) { _, _ in
             consumePendingUnscopedChatRequest()
+        }
+        .onChange(of: route) { _, _ in
+            followPendingRoute()
         }
         .onChange(of: columnVisibility) { _, visibility in
             storedColumnVisibility = visibility == .detailOnly ? "detailOnly" : "all"
@@ -366,6 +403,7 @@ struct DesktopChatWorkspace: View {
             draftProjectID: $draftProjectID,
             draftPrompt: $draftPrompt,
             requestedProjectID: $requestedProjectID,
+            selectedAgentID: agentSelection,
             composerRequest: $composerRequest,
             findCommand: $findCommand,
             isPrivateChat: isPrivateChat,
@@ -684,6 +722,44 @@ struct DesktopChatWorkspace: View {
         draftProjectID = projectID
     }
 
+    /// Opens a thread this Mac may not have synced yet — an agent's, created on
+    /// the server the first time it is asked for, or one a notification names.
+    /// `NativeConversationModel.reload()` drops a selection its store does not
+    /// contain, so the store is brought up to date before the thread is
+    /// selected, as the agent page's Message does.
+    private func openThread(_ id: String) async {
+        if !model.conversations.contains(where: { $0.id == id }) {
+            await configuration.syncModel?.refresh()
+            await model.reload()
+        }
+        openConversation(id)
+    }
+
+    /// The Agents fold's Message: the agent's thread, created if it has none.
+    private func messageAgent(_ agentID: String) {
+        guard let agentsModel = configuration.agentsModel else { return }
+        Task {
+            guard let id = await agentsModel.threadConversationID(for: agentID) else { return }
+            await openThread(id)
+        }
+    }
+
+    /// A notification's destination, once. A task's route arrives here
+    /// already turned into its conversation by the root
+    /// (`JunoDesktopWorkspaceView`), which is where the session is looked up.
+    private func followPendingRoute() {
+        guard let route else { return }
+        consumeRoute?()
+        switch route.route {
+        case .agent(let id):
+            selection.wrappedValue = .agent(id)
+        case .conversation(let id):
+            Task { await openThread(id) }
+        case .workSession:
+            break
+        }
+    }
+
     /// What the menu bar can do to this window while it is focused.
     private var workspaceActions: DesktopWorkspaceActions {
         var screenshot: (() -> Void)?
@@ -909,6 +985,8 @@ struct DesktopConversationView: View {
     /// Fork Privately: the window starts a private chat from these turns.
     /// Nil where there is no private chat to start.
     var forkPrivately: (([NativePrivateChatModel.Turn]) -> Void)? = nil
+    /// Opens an agent's page by id, from the header its thread carries.
+    var openAgent: ((String) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openSettings) private var openSettings
     @State private var voiceSession: DesktopVoiceSession?
@@ -1479,41 +1557,15 @@ struct DesktopConversationView: View {
     ///
     /// No in-content title strip: the conversation's title is the window's.
     private var chatColumn: some View {
-        Group {
-            if isDraft {
-                Color.clear
-            } else {
-                DesktopTranscript(
-                    model: model,
-                    localMessages: localMessages,
-                    localTurnsArePrivate: privateChat != nil,
-                    localError: privateChat?.lastErrorDescription,
-                    // Not while a first turn is on its way: with nothing selected
-                    // yet, the store's errors and approvals describe some other
-                    // chat, and a refusal is reported by the composer.
-                    showsStoreState: privateChat == nil && model.selectedConversationID != nil,
-                    voiceMessages: voiceMessages,
-                    messageActions: configuration.messageActionsClient,
-                    accountID: session.profile.id,
-                    syncModel: configuration.syncModel,
-                    openArtifact: open(artifact:),
-                    share: shareConversation,
-                    // Not from inside a private chat: its turns are already
-                    // private, and the web offers no fork there either.
-                    forkPrivately: privateChat == nil ? forkPrivately : nil,
-                    quote: { text in composerRequest = ChatComposerRequest(kind: .quote(text)) },
-                    editLastRequest: editLastRequest,
-                    find: find,
-                    openActivity: { messageID, callID in openActivityPanel(messageID: messageID, callID: callID) },
-                    openResearch: { runID in openResearchPanel(runID) },
-                    researchThis: privateChat == nil
-                        ? { question in composerRequest = ChatComposerRequest(kind: .research(question)) }
-                        : nil,
-                    workRun: privateChat == nil ? workRunState : nil,
-                    workActions: workActions
-                )
-                .environment(\.junoTranscriptMediaActions, mediaActions)
+        VStack(spacing: 0) {
+            // An agent's thread gains one row above the transcript (AGENTS.md
+            // §5.3): the agent, what it is doing, and its page. Above rather
+            // than an inset over it, so the composer's bar stays the
+            // transcript's alone.
+            if privateChat == nil, let agent = threadAgent {
+                threadHeader(agent)
             }
+            transcriptGroup
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // ⌘F: a glass capsule over the top of the column (§6.14).
@@ -1583,6 +1635,88 @@ struct DesktopConversationView: View {
             return true
         } isTargeted: { targeted in
             isDropTargeted = targeted && attachmentModel != nil && privateChat == nil
+        }
+    }
+
+    /// The agent whose thread is open, if it is one.
+    private var threadAgent: NativeAgent? {
+        guard let conversationID = model.selectedConversationID else { return nil }
+        return configuration.agentsModel?.agents.first { $0.conversationID == conversationID }
+    }
+
+    /// What the face in the header shows when the thread knows better than the
+    /// roster: listening while a call is open in this thread, thinking while a
+    /// reply streams. Nil leaves the roster's state, which is what the agent's
+    /// tasks are doing. The web's `threadAgentState`, in that precedence.
+    private var threadAgentState: JunoAgentState? {
+        if let voiceSession, voiceSession.conversationID == model.selectedConversationID {
+            switch voiceSession.controller.phase {
+            case .connecting, .live, .reconnecting:
+                return .listening
+            case .idle, .ended, .error:
+                break
+            }
+        }
+        let streaming = model.isGenerating
+            && model.activeChatConversationID == model.selectedConversationID
+        return streaming ? .thinking : nil
+    }
+
+    /// Chrome, so it carries the hairline; the transcript under it stays flat.
+    private func threadHeader(_ agent: NativeAgent) -> some View {
+        VStack(spacing: 0) {
+            NativeAgentThreadHeader(
+                agent: agent,
+                state: threadAgentState,
+                openAgent: { openAgent?(agent.id) }
+            )
+            .frame(maxWidth: DesktopChatMeasure.reading)
+            .padding(.horizontal, DesktopChatMeasure.gutter(forColumnWidth: columnWidth))
+            .padding(.vertical, JunoSpace.hairline)
+            .frame(maxWidth: .infinity)
+            Rectangle()
+                .fill(Color.junoHairline)
+                .frame(height: 1)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var transcriptGroup: some View {
+        Group {
+            if isDraft {
+                Color.clear
+            } else {
+                DesktopTranscript(
+                    model: model,
+                    localMessages: localMessages,
+                    localTurnsArePrivate: privateChat != nil,
+                    localError: privateChat?.lastErrorDescription,
+                    // Not while a first turn is on its way: with nothing selected
+                    // yet, the store's errors and approvals describe some other
+                    // chat, and a refusal is reported by the composer.
+                    showsStoreState: privateChat == nil && model.selectedConversationID != nil,
+                    voiceMessages: voiceMessages,
+                    messageActions: configuration.messageActionsClient,
+                    accountID: session.profile.id,
+                    syncModel: configuration.syncModel,
+                    openArtifact: open(artifact:),
+                    share: shareConversation,
+                    // Not from inside a private chat: its turns are already
+                    // private, and the web offers no fork there either.
+                    forkPrivately: privateChat == nil ? forkPrivately : nil,
+                    quote: { text in composerRequest = ChatComposerRequest(kind: .quote(text)) },
+                    editLastRequest: editLastRequest,
+                    find: find,
+                    openActivity: { messageID, callID in openActivityPanel(messageID: messageID, callID: callID) },
+                    openResearch: { runID in openResearchPanel(runID) },
+                    researchThis: privateChat == nil
+                        ? { question in composerRequest = ChatComposerRequest(kind: .research(question)) }
+                        : nil,
+                    workRun: privateChat == nil ? workRunState : nil,
+                    workActions: workActions
+                )
+                .environment(\.junoTranscriptMediaActions, mediaActions)
+            }
         }
     }
 
@@ -1736,7 +1870,8 @@ struct DesktopConversationView: View {
             controller: JunoRealtimeVoiceController(
                 authorization: JunoDesktopVoiceAuthorization(
                     sender: sender,
-                    accountID: session.profile.id
+                    accountID: session.profile.id,
+                    conversationID: model.selectedConversationID
                 ),
                 provider: initialProvider
             ),

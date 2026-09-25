@@ -65,7 +65,7 @@ server.on("upgrade", (req, socket, head) => {
 
 wss.on("connection", (ws: WebSocket, grant: RelayGrant) => {
   const { userId } = grant;
-  const session = new RelaySession(ws, userId, { memory: grant.memory });
+  const session = new RelaySession(ws, userId, { memory: grant.memory, agentId: grant.agentId ?? null });
   console.info("[relay] client connected", { userId });
 
   ws.on("message", (data, isBinary) => {

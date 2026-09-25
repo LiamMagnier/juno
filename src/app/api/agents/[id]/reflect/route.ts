@@ -11,7 +11,8 @@ export const runtime = "nodejs";
  * Without `force` this is the lazy trigger the agent's page fires on open, and
  * it is a no-op until the six-hour interval has passed. With `force` it is the
  * person pressing "Think it over", paced by the rate limit rather than the
- * interval.
+ * interval. Either way the person is on the page, so the ideas it raises are
+ * shown there and never sent as a notification (only the sweep does that).
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { user, error } = await requireUser();
@@ -28,7 +29,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       );
     }
   }
-  const outcome = await reflectAgent(user, id, { force });
+  const outcome = await reflectAgent(user, id, { force, origin: force ? "button" : "page" });
   if (outcome.kind === "skipped" && outcome.reason === "not_found") {
     return NextResponse.json({ error: "not_found", message: "That agent no longer exists." }, { status: 404 });
   }

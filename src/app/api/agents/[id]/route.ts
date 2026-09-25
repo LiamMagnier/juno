@@ -17,7 +17,7 @@ export async function GET(_req: Request, { params }: Params) {
   return NextResponse.json(detail);
 }
 
-/** Edits the profile, the autonomy and the apps, or pauses and resumes it. */
+/** Edits the profile, the autonomy, the apps and the model, or pauses and resumes it. A model outside the catalogue is refused here. */
 export async function PATCH(req: Request, { params }: Params) {
   const { user, error } = await requireUser();
   if (!user) return error;

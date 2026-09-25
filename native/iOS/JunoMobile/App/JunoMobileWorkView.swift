@@ -109,7 +109,13 @@ struct JunoMobileWorkView: View {
         // The model opens the task it has just created. Copying that into the
         // route is what turns the composer's Start into a push; without it the
         // reader is left on the list watching a row appear.
-        .onChange(of: model.openSession?.sessionID) { _, sessionID in
+        //
+        // `initial` because a notification or a recent item can open a task
+        // before this screen exists: the value is already set when it
+        // appears, and without it the list would show and the thread would not.
+        // The thread clears the model's open task when it closes, so this
+        // never pushes a task the reader has already left.
+        .onChange(of: model.openSession?.sessionID, initial: true) { _, sessionID in
             guard let sessionID else { return }
             openSessionID = sessionID
         }

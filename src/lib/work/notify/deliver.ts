@@ -4,7 +4,7 @@
  * `notifications.ts` decides WHETHER and WHAT and deliberately holds no
  * database and no transport, so the decision table can be pinned by a test that
  * opens neither. This file is the other half: it reads the run, asks that
- * decision, and hands the answer to the one delivery channel Juno already has.
+ * decision, and hands the answer to the channels.
  *
  * **It is self-contained on purpose.** The cloud runner calls it with the two
  * identifiers it is already holding at the terminal path and nothing else — no
@@ -19,27 +19,22 @@
  * second failure on the first without un-finishing the run. Errors go to the
  * operator console.
  *
- * **The only channel this function drives is email.** Juno has one delivery
- * layer (`sendEmail`, Resend, flag-gated on RESEND_API_KEY) and one wake-up
- * channel for native clients (the AccountChange feed). Building a second sender
- * here to reach the second channel would be a fourth mechanism to keep correct,
- * and it is not needed: the feed is fed by Postgres triggers, not by
- * application code, so a run that changes status wakes every signed-in device
- * without this function knowing anything about it.
+ * **Two channels, each deduplicated on its own.** First `notifyUser`: the
+ * inbox row and a push to every phone, Mac and browser whose switch is on —
+ * written whether or not this deployment can send email, because the inbox
+ * used to exist only where Resend was configured. Then email, as before, when
+ * it is configured and the account has an address. Each keeps its own record
+ * of what it sent, so a deployment without email never blocks the inbox and a
+ * push that went out never stops the email that follows it.
  *
- * Those triggers are written and are deliberately NOT applied yet. They sit in
- * `prisma/migrations-pending/20260815141000_work_change_capture_triggers`, held
- * back because `NativeSyncAPIClient.requireEntityType` throws on an entity type
- * it has not learned and that aborts the whole `/changes` page rather than
- * skipping one row — so arming them before the build carrying the twelve Work
- * strings is the OLDEST client in the field would stop those accounts syncing
- * entirely, for every entity type, until they updated. Both allowlists carry
- * the strings; what remains is adoption. The precondition, and the instruction
- * not to move the file merely because the strings are in `main`, are in that
+ * Native clients also wake on the AccountChange feed, which is fed by Postgres
+ * triggers rather than by this file. Those triggers are written and are
+ * deliberately NOT applied yet: they sit in
+ * `prisma/migrations-pending/20260815141000_work_change_capture_triggers`,
+ * held back until the build that understands the Work entity types is the
+ * oldest client in the field. The precondition, and the instruction not to
+ * move the file merely because the strings are in `main`, are in that
  * directory's README.
- *
- * So the gap here is a release schedule and not a missing mechanism, and the
- * thing NOT to do is build one.
  */
 
 import "server-only";
@@ -47,8 +42,12 @@ import { Prisma } from "@prisma/client";
 import { prismaUnguarded } from "@/lib/db";
 import { isEmailEnabled, sendEmail } from "@/lib/email";
 import { env } from "@/lib/env";
+import { markRunNotificationsRead, notifyUser } from "@/lib/notifications";
+import { planWorkRunNotification } from "@/lib/notify/work-run";
+import { answeredQuestionWhere } from "@/lib/work/answer-lookup";
 import {
   WORK_SENSITIVITIES,
+  isTerminalStatus,
   isWorkStatus,
   maxSensitivity,
   type WorkSensitivity,
@@ -56,11 +55,13 @@ import {
   type WorkTerminalReason,
 } from "@/lib/work/domain";
 import {
-  WORK_NOTIFY_POLICIES,
   decideNotification,
   describeNotification,
+  effectiveNotifyStatus,
+  isAttendedOrigin,
   notificationKey,
-  type WorkNotifyPolicy,
+  runNotifyPolicy,
+  type WorkNotifyMessage,
   type WorkNotifyUrgency,
 } from "@/lib/work/notifications";
 import { workNotificationEmail } from "@/lib/work/notify/email";
@@ -76,18 +77,6 @@ import { workNotificationEmail } from "@/lib/work/notify/email";
  */
 const DELIVERY_RECORD_TTL_SEC = 90 * 24 * 60 * 60;
 
-/**
- * What a run with no schedule behind it asks for.
- *
- * Matches `WorkSchedule.notifyPolicy`'s own default rather than inventing a
- * quieter one, because the two cases should behave the same way for the same
- * reason: tell me when you need me, and otherwise leave me alone. A manually
- * started run is also the case where the person is most likely still looking at
- * the tab, and "only when it needs me" is the policy that does not email
- * somebody about a task finishing on the screen in front of them.
- */
-const DEFAULT_NOTIFY_POLICY: WorkNotifyPolicy = "on_attention";
-
 export interface DeliverRunNotificationInput {
   /** The run that just changed state. */
   runId: string;
@@ -99,11 +88,25 @@ export interface DeliverRunNotificationInput {
   userId?: string;
   /** Injected rather than read from the clock, so expiry boundaries are testable. */
   now?: Date;
+  /**
+   * How long a waiting run may take to show what it waits on. The runner
+   * queues its event writes behind one another, so its own call the moment a
+   * run asks can arrive before the `question_asked` it has just emitted; this
+   * looks again for up to that long instead of leaving the notice to the park
+   * four minutes later. Zero (the default) looks once.
+   */
+  settleMs?: number;
 }
+
+/** Between looks while a waiting run's question lands. */
+const SETTLE_POLL_MS = 400;
+
+/** Where a notification went: the inbox row, a push service, the mail provider. */
+export type RunNotifyChannel = "in_app" | "push" | "email";
 
 export type DeliverRunNotificationResult =
   | { delivered: false; reason: string }
-  | { delivered: true; channel: "email"; urgency: WorkNotifyUrgency; reason: string };
+  | { delivered: true; channels: RunNotifyChannel[]; urgency: WorkNotifyUrgency; reason: string };
 
 /**
  * Notify the owner about one run, at most once per thing worth saying.
@@ -153,7 +156,7 @@ async function deliver(
       origin: true,
       inputSensitivity: true,
       outputSensitivity: true,
-      session: { select: { title: true, conversationId: true } },
+      session: { select: { title: true, conversationId: true, agentId: true } },
       schedule: { select: { notifyPolicy: true } },
       host: { select: { displayName: true } },
     },
@@ -173,99 +176,153 @@ async function deliver(
     return { delivered: false, reason: "This run is in a state Juno cannot describe." };
   }
 
-  const status: WorkStatus = run.status;
   const terminalReason = asTerminalReason(run.terminalReason);
-  const policy = asNotifyPolicy(run.schedule?.notifyPolicy);
+
+  // A run that has ended is asking nobody anything, whatever this call goes on
+  // to decide: its "needs you" rows are answered or moot, and an inbox that
+  // kept them unread would hold the dot up for a question nobody can answer.
+  if (isTerminalStatus(run.status)) {
+    await markRunNotificationsRead(run.userId, run.id, now);
+  }
+
+  // A parked run is still waiting on whatever it parked for, and that is what
+  // the notification is about. See `effectiveNotifyStatus`.
+  const status: WorkStatus =
+    run.status === "paused" ? await parkedStatus(run.id, run.userId, now) : run.status;
 
   // What "this exact thing" is, for both the decision and the deduplication.
   // Keyed on the approval or the question rather than the status, because a run
   // legitimately blocks several times and a status-keyed notification would fire
   // once and then go quiet for the rest of the task.
-  const occasion = await resolveOccasion(run.id, run.userId, status, terminalReason, now);
+  let occasion = await resolveOccasion(run.id, run.userId, status, terminalReason, now);
+  const settleUntil = Date.now() + Math.max(0, input.settleMs ?? 0);
+  while (occasion === null && Date.now() < settleUntil) {
+    await new Promise((resolve) => setTimeout(resolve, SETTLE_POLL_MS));
+    occasion = await resolveOccasion(run.id, run.userId, status, terminalReason, new Date());
+  }
+  if (occasion === null) {
+    // Waiting, with nothing open to show for it: the approval expired, the
+    // question was answered, or — the case worth naming — the runner's event
+    // write has not landed inside `settleMs`. The run's next stop (the park
+    // after the attended wait) asks again, and keying this one on the status
+    // instead would send it twice.
+    return { delivered: false, reason: "The run has no open approval or question to tell anyone about." };
+  }
   const key = notificationKey(run.id, occasion.subject);
 
   const decision = decideNotification({
     status,
     terminalReason,
-    policy,
-    // Who started it, which is all that can honestly be known. There is no
-    // presence signal in this schema — `WorkSession.lastActivityAt` is bumped by
-    // the run itself, so reading it as "the user is here" would call every long
-    // task attended — so this says "a person kicked this off", not "a person is
-    // watching right now". The decision only consults it for non-terminal
-    // transitions under the `all` policy, where over-reading it costs a
-    // suppressed notification rather than a duplicate one.
-    attended: run.origin !== "schedule" && run.origin !== "trigger",
-    alreadyNotified: await alreadyDelivered(key),
+    policy: runNotifyPolicy({
+      schedulePolicy: run.schedule?.notifyPolicy ?? null,
+      agentOwned: run.session.agentId !== null,
+    }),
+    // The decision only consults this for non-terminal transitions under the
+    // `all` policy, where over-reading it costs a suppressed notification
+    // rather than a duplicate one.
+    attended: isAttendedOrigin(run.origin),
+    // Each channel keeps its own record below; this call is about whether the
+    // transition is worth saying at all.
+    alreadyNotified: false,
   });
 
   if (!decision.notify) return { delivered: false, reason: decision.reason };
 
-  if (!isEmailEnabled()) {
-    // Nothing is claimed in this branch. Email being unconfigured is an operator
-    // state, not a delivery, and burning the key here would silence the run for
-    // good the moment the key was added.
-    return { delivered: false, reason: "No delivery channel is configured on this deployment." };
-  }
-
-  const user = await prismaUnguarded.user.findUnique({
-    where: { id: run.userId },
-    select: { email: true },
-  });
-  if (!user?.email) {
-    return { delivered: false, reason: "This account has no email address to write to." };
-  }
+  // The agent whose task this is speaks for it: named in the copy, drawn in
+  // the inbox, and the thread its pushes group under. A deleted agent is not
+  // found and the task speaks as Juno.
+  const agent = run.session.agentId
+    ? await prismaUnguarded.agent.findFirst({
+        where: { id: run.session.agentId, userId: run.userId, deletedAt: null },
+        select: { id: true, name: true, avatar: true },
+      })
+    : null;
 
   const mayQuote = mayIncludeRunDetail(run.inputSensitivity, run.outputSensitivity);
+  const quoted = {
+    question: mayQuote ? occasion.question : null,
+    approvalSummary: mayQuote ? occasion.approvalSummary : null,
+  };
   const message = describeNotification({
     title: run.session.title,
     status,
     terminalReason,
     hostName: run.host?.displayName ?? null,
-    question: mayQuote ? occasion.question : null,
-    approvalSummary: mayQuote ? occasion.approvalSummary : null,
+    actorName: agent?.name ?? null,
+    ...quoted,
   });
 
-  // The claim is the last thing before the send and the first thing that is
-  // irreversible. Two runners racing — the executor's own terminal path and a
+  const channels: RunNotifyChannel[] = [];
+
+  // The inbox and the pushes first, and not behind any email gate. The claim
+  // is the last thing before the send and the first thing that is
+  // irreversible: two runners racing — the executor's own terminal path and a
   // lease sweeper that decided the run was abandoned — both reach here, and
   // exactly one of them wins the row.
-  if (!(await claimDelivery(key, now))) {
-    return { delivered: false, reason: "Another worker is already sending this one." };
+  if (!(await alreadyDelivered("app", key)) && (await claimDelivery("app", key, now))) {
+    // A run waits on one thing at a time, so whatever it asked before this is
+    // answered: that row stops asking before this one starts.
+    await markRunNotificationsRead(run.userId, run.id, now);
+    const sent = await notifyUser({
+      userId: run.userId,
+      ...planWorkRunNotification({
+        runId: run.id,
+        sessionId: run.sessionId,
+        conversationId: run.session.conversationId,
+        status,
+        urgency: decision.urgency,
+        message,
+        agent,
+        approval: occasion.approval,
+        questionId: occasion.questionId,
+        quoted,
+      }),
+    });
+    if (sent.notificationId) channels.push("in_app");
+    if (sent.pushed > 0) channels.push("push");
+    if (!sent.notificationId && sent.pushed === 0) {
+      // Nothing left the building — the row write failed and no device took a
+      // push — so the claim goes back and the run's next call tries again.
+      await releaseDelivery("app", key);
+    }
   }
 
-  // Persist durable in-app notification
-  try {
-    const notifType = status === "waiting_approval" ? "work_approval"
-      : status === "waiting_input" ? "work_approval"
-      : status === "completed" ? "work_completed"
-      : "work_failed";
-    await prismaUnguarded.notification.create({
-      data: {
-        userId: run.userId,
-        type: notifType,
-        title: message.subject,
-        body: message.summary,
-        priority: decision.urgency === "blocking" ? "urgent" : "normal",
-        sourceType: "work_session",
-        sourceId: run.sessionId,
-        actionable: status === "waiting_approval" || status === "waiting_input",
-        actionData: {
-          runId: run.id,
-          sessionId: run.sessionId,
-          taskUrl: taskUrl(run.sessionId, run.session.conversationId),
-          question: occasion.question ?? null,
-          approvalSummary: occasion.approvalSummary ?? null,
-        },
-      },
-    });
-  } catch (notifErr) {
-    console.warn("[work-notify] could not write in-app notification", notifErr);
+  if (await sendRunEmail(run, key, decision.urgency, message, now)) channels.push("email");
+
+  if (channels.length === 0) {
+    return { delivered: false, reason: "Everything worth saying about this was already sent." };
   }
+  return { delivered: true, channels, urgency: decision.urgency, reason: decision.reason };
+}
+
+/**
+ * The email, when this deployment can send one and the account has an
+ * address. Unchanged in what it says and when; it only no longer stands in
+ * front of the inbox.
+ */
+async function sendRunEmail(
+  run: { id: string; userId: string; sessionId: string; session: { conversationId: string | null } },
+  key: string,
+  urgency: WorkNotifyUrgency,
+  message: WorkNotifyMessage,
+  now: Date
+): Promise<boolean> {
+  // Nothing is claimed while email is unconfigured. That is an operator state,
+  // not a delivery, and burning the key here would silence the run for good
+  // the moment the key was added.
+  if (!isEmailEnabled()) return false;
+
+  const user = await prismaUnguarded.user.findUnique({
+    where: { id: run.userId },
+    select: { email: true },
+  });
+  if (!user?.email) return false;
+
+  if ((await alreadyDelivered("email", key)) || !(await claimDelivery("email", key, now))) return false;
 
   const template = workNotificationEmail({
     message,
-    urgency: decision.urgency,
+    urgency,
     taskUrl: taskUrl(run.sessionId, run.session.conversationId),
   });
   const result = await sendEmail({
@@ -280,29 +337,23 @@ async function deliver(
     // and this call. This is the one outcome where "did anything go out?" has an
     // unambiguous answer — `sendEmail` returns this before it opens a socket —
     // so the claim is released rather than held. Holding it would spend the run's
-    // only notification on a moment of misconfiguration and stay quiet for ever
+    // only email on a moment of misconfiguration and stay quiet for ever
     // afterwards, which is the failure this whole file exists to prevent.
-    await releaseDelivery(key);
-    return { delivered: false, reason: "No delivery channel is configured on this deployment." };
+    await releaseDelivery("email", key);
+    return false;
   }
 
   if (!result.ok) {
     // Here the claim is deliberately NOT released. A send that failed and a send
     // whose acknowledgement was lost look identical from here, and Resend
     // accepting a message it never told us about is the exact case that turns a
-    // retry into a second email. Under-notifying is recoverable — the run's own
-    // row still says what happened, and the task list still shows it; notifying
-    // twice trains the reader to ignore the channel.
-    console.error("[work-notify] the channel refused the message", { runId: run.id, key });
-    return { delivered: false, reason: "The message could not be handed to the mail provider." };
+    // retry into a second email. Under-notifying is recoverable — the inbox row
+    // still says what happened; notifying twice trains the reader to ignore the
+    // channel.
+    console.error("[work-notify] the mail provider refused the message", { runId: run.id, key });
+    return false;
   }
-
-  return {
-    delivered: true,
-    channel: "email",
-    urgency: decision.urgency,
-    reason: decision.reason,
-  };
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -314,6 +365,9 @@ interface NotifyOccasion {
   subject: string;
   question: string | null;
   approvalSummary: string | null;
+  /** The approval being waited on; its expiry is the push's. */
+  approval: { id: string; expiresAt: Date } | null;
+  questionId: string | null;
 }
 
 /**
@@ -323,6 +377,11 @@ interface NotifyOccasion {
  * 14 files from Downloads to Archive" tells the reader whether it is worth
  * getting out of bed for, and "Juno is waiting for you to approve one action"
  * does not — so it is fetched when there is one.
+ *
+ * Null when the run is waiting and the thing it waits on is not there: an
+ * approval that has expired, a question already answered, or one whose event
+ * the runner has not finished writing. There is nothing to say about those
+ * that would still be true when it arrived.
  */
 async function resolveOccasion(
   runId: string,
@@ -330,39 +389,29 @@ async function resolveOccasion(
   status: WorkStatus,
   terminalReason: WorkTerminalReason | null,
   now: Date
-): Promise<NotifyOccasion> {
+): Promise<NotifyOccasion | null> {
   if (status === "waiting_approval") {
-    const approval = await prismaUnguarded.workApproval.findFirst({
-      where: { runId, userId, decision: "pending", expiresAt: { gt: now } },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, summary: true },
-    });
-    if (approval !== null) {
-      return {
-        subject: `approval:${approval.id}`,
-        question: null,
-        approvalSummary: approval.summary,
-      };
-    }
+    const approval = await pendingApproval(runId, userId, now);
+    if (approval === null) return null;
+    return {
+      subject: `approval:${approval.id}`,
+      question: null,
+      approvalSummary: approval.summary,
+      approval: { id: approval.id, expiresAt: approval.expiresAt },
+      questionId: null,
+    };
   }
 
   if (status === "waiting_input") {
-    // The latest `question_asked` is the open one, because this branch only runs
-    // for a run parked in `waiting_input` — a run whose question was answered
-    // has left that status.
-    const asked = await prismaUnguarded.workEvent.findFirst({
-      where: { runId, userId, kind: "question_asked" },
-      orderBy: { seq: "desc" },
-      select: { id: true, payload: true },
-    });
-    if (asked !== null) {
-      const question = readQuestion(asked.payload);
-      return {
-        subject: `question:${question.id ?? asked.id}`,
-        question: question.text,
-        approvalSummary: null,
-      };
-    }
+    const asked = await openQuestion(runId, userId);
+    if (asked === null) return null;
+    return {
+      subject: `question:${asked.questionId ?? asked.eventId}`,
+      question: asked.text,
+      approvalSummary: null,
+      approval: null,
+      questionId: asked.questionId,
+    };
   }
 
   // Everything else happens once per run: `terminalReason` is a write-once
@@ -372,7 +421,58 @@ async function resolveOccasion(
     subject: `terminal:${terminalReason ?? status}`,
     question: null,
     approvalSummary: null,
+    approval: null,
+    questionId: null,
   };
+}
+
+/** The run's newest approval that can still be answered. */
+async function pendingApproval(runId: string, userId: string, now: Date) {
+  return prismaUnguarded.workApproval.findFirst({
+    where: { runId, userId, decision: "pending", expiresAt: { gt: now } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, summary: true, expiresAt: true, createdAt: true },
+  });
+}
+
+/**
+ * The run's newest question, when nobody has answered it. The newest is the
+ * only candidate: a run asks one thing at a time and cannot ask the next until
+ * the last is answered.
+ */
+async function openQuestion(
+  runId: string,
+  userId: string
+): Promise<{ eventId: string; questionId: string | null; text: string | null; askedAt: Date } | null> {
+  const asked = await prismaUnguarded.workEvent.findFirst({
+    where: { runId, userId, kind: "question_asked" },
+    orderBy: { seq: "desc" },
+    select: { id: true, payload: true, createdAt: true },
+  });
+  if (asked === null) return null;
+  const question = readQuestion(asked.payload);
+  if (question.id !== null) {
+    const answered = await prismaUnguarded.workEvent.findFirst({
+      where: { ...answeredQuestionWhere(runId, question.id), userId },
+      select: { id: true },
+    });
+    if (answered !== null) return null;
+  }
+  return { eventId: asked.id, questionId: question.id, text: question.text, askedAt: asked.createdAt };
+}
+
+/**
+ * What a `paused` run is paused on, from the rows. A question counts only
+ * when it carries an id, because only then can "unanswered" be checked — a
+ * run paused by hand must not be announced as asking something.
+ */
+async function parkedStatus(runId: string, userId: string, now: Date): Promise<WorkStatus> {
+  const [approval, question] = await Promise.all([pendingApproval(runId, userId, now), openQuestion(runId, userId)]);
+  return effectiveNotifyStatus({
+    status: "paused",
+    pendingApprovalAt: approval?.createdAt ?? null,
+    openQuestionAt: question?.questionId ? question.askedAt : null,
+  });
 }
 
 /** `{ question: { id, question, why, options } }`, as the runner emits it. */
@@ -395,6 +495,9 @@ function readQuestion(payload: Prisma.JsonValue): { id: string | null; text: str
 // Sending it only once
 // ---------------------------------------------------------------------------
 
+/** The two things that are sent at most once per occasion, each on its own record. */
+type DeliveryChannel = "app" | "email";
+
 /**
  * The row that records a delivery.
  *
@@ -410,13 +513,15 @@ function readQuestion(payload: Prisma.JsonValue): { id: string | null; text: str
  * Prefixed so the key cannot collide with a real rate-limit bucket, and cannot
  * be produced by any other caller.
  */
-function deliveryRecordKey(key: string): string {
-  return `work:notify:${key}`;
+function deliveryRecordKey(channel: DeliveryChannel, key: string): string {
+  // Email keeps the key it has always used, so a run emailed before the inbox
+  // had a record of its own is not emailed a second time.
+  return channel === "email" ? `work:notify:${key}` : `work:notify:${channel}:${key}`;
 }
 
-async function alreadyDelivered(key: string): Promise<boolean> {
+async function alreadyDelivered(channel: DeliveryChannel, key: string): Promise<boolean> {
   const row = await prismaUnguarded.rateLimit.findUnique({
-    where: { key: deliveryRecordKey(key) },
+    where: { key: deliveryRecordKey(channel, key) },
     select: { key: true },
   });
   return row !== null;
@@ -430,11 +535,11 @@ async function alreadyDelivered(key: string): Promise<boolean> {
  * finished" would be worse than never mentioning it. Expiry is only there so
  * the row is sweepable.
  */
-async function claimDelivery(key: string, now: Date): Promise<boolean> {
+async function claimDelivery(channel: DeliveryChannel, key: string, now: Date): Promise<boolean> {
   try {
     await prismaUnguarded.rateLimit.create({
       data: {
-        key: deliveryRecordKey(key),
+        key: deliveryRecordKey(channel, key),
         count: 1,
         expiresAt: new Date(now.getTime() + DELIVERY_RECORD_TTL_SEC * 1000),
       },
@@ -457,19 +562,13 @@ async function claimDelivery(key: string, now: Date): Promise<boolean> {
  * could achieve is turning a released claim into a logged exception on a path
  * that has already decided not to notify anybody.
  */
-async function releaseDelivery(key: string): Promise<void> {
-  await prismaUnguarded.rateLimit.deleteMany({ where: { key: deliveryRecordKey(key) } });
+async function releaseDelivery(channel: DeliveryChannel, key: string): Promise<void> {
+  await prismaUnguarded.rateLimit.deleteMany({ where: { key: deliveryRecordKey(channel, key) } });
 }
 
 // ---------------------------------------------------------------------------
 // Reading columns that are strings in the database
 // ---------------------------------------------------------------------------
-
-function asNotifyPolicy(value: string | null | undefined): WorkNotifyPolicy {
-  return (WORK_NOTIFY_POLICIES as readonly string[]).includes(value ?? "")
-    ? (value as WorkNotifyPolicy)
-    : DEFAULT_NOTIFY_POLICY;
-}
 
 function asTerminalReason(value: string | null): WorkTerminalReason | null {
   // Read through `statusForTerminalReason`'s vocabulary rather than trusted, so
@@ -498,6 +597,11 @@ function asTerminalReason(value: string | null): WorkTerminalReason | null {
  * `restricted` the detail is dropped and `describeNotification` falls back to
  * its generic sentence, so the reader still learns that the task is blocked and
  * still gets a link; they just have to open Juno to see what it is blocked on.
+ *
+ * One answer for every channel. The message it shapes is the email, the inbox
+ * row and the lock-screen text all at once, and the row's `actionData` keeps
+ * the run's words only when this allows it — the push is built from the same
+ * row, and a sentence stored there is one refactor away from a lock screen.
  */
 function mayIncludeRunDetail(inputSensitivity: string, outputSensitivity: string): boolean {
   const sensitivity = maxSensitivity(
@@ -516,8 +620,9 @@ function asSensitivity(value: string): WorkSensitivity {
 }
 
 /**
- * Where a notification points — in an email, and in the in-app row's
- * `actionData.taskUrl`.
+ * Where the email points. The inbox and the pushes carry a relative path
+ * instead (`workRunPath`), which is this without the origin — or the agent,
+ * for an agent's task.
  *
  * `/work/<sessionId>` used to be a page. It is not one any more: a run is read
  * in the conversation that asked for it (docs/design/TWO_PRODUCTS.md §2), so

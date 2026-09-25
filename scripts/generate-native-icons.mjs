@@ -223,7 +223,7 @@ const PHOSPHOR = {
   ChartBar: null,
   Palette: null,
   TextAlignLeft: null,
-  Bell: null,
+  BellSimple: "Bell",
   FolderPlus: null,
   Shield: null,
   Compass: null,

@@ -474,18 +474,21 @@ Web and native share one surface, bearer- and cookie-authenticated through
 - **No watch-me skill capture.** Screen-recording a person's browser into
   instructions is a privacy surface of its own; skills already come from a run
   (*save as skill*) and from repositories.
-- **No agent-to-agent group rooms yet.** `delegate` already hands a piece of
-  work to a child agent on the same budget; rooms where named agents assign each
-  other work need a claim model the executor does not have. The data model
-  leaves room for it (`AgentEvent.kind` is open).
-- **No push yet.** An agent that needs you reaches you the way any Work run
-  does today — the sidebar's Needs you fold, the toned dot on its face, the
-  roster sorted waiting-first, and email under the routine's notify policy.
-  Push and in-app notifications need the APNs registration the apps do not yet
-  perform; that is its own piece of work, and it serves every run, not only
-  an agent's.
-- **No per-agent fold in the Mac sidebar yet.** The web draws each agent as a
-  live face in the sidebar; the Mac has the destination row and the roster.
+- **No agent-to-agent group rooms.** An agent can hand one task to a named
+  teammate (`hand_off_to_teammate`, behind the approval card; it runs as the
+  teammate, in its thread, and reports back there). Rooms where agents assign
+  each other work still need a claim model the executor does not have.
+
+**Shipped since the first cut** (September 2026): push end to end — every Work
+run and agent task writes an in-app notification (the sidebar's Notifications
+inbox) and pushes to iPhone/iPad (APNs), browsers (Web Push, opt-in per
+browser) and the Mac (local notifications while the app runs; APNs on the Mac
+waits for a Developer ID push profile), each device with its own "needs you"
+and "updates" switches; a background reflection sweep (`juno-agent-reflector`)
+that respects goal cadence and usage windows; approvals and questions answered
+on the native agent page; the Mac sidebar's per-agent fold; the native Agents
+glyph; voice calls in an agent's thread speak as that agent, and its face
+listens.
 - **No companion mode.** No affection meters, no idle chatter. An agent speaks
   when it has done something or needs something.
 - **No new `Conversation.kind`** and **no second runtime** (§3).

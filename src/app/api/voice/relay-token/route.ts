@@ -4,6 +4,8 @@ import { signState } from "@/lib/crypto";
 import { evaluateVoiceAccess } from "@/lib/voice-access-policy";
 import { checkProjectAccess } from "@/lib/project-collaboration";
 import { parseVoiceMemoryRequest } from "@/lib/voice-memory";
+import { parseVoiceConversationRequest } from "@/lib/voice-persona";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
@@ -48,6 +50,14 @@ function resolveVoiceRelayURL(): string | null {
  * what it says, is decided when the relay asks for it
  * (src/app/api/voice/memory/route.ts), so memory paused after the token was
  * minted is still honoured.
+ *
+ * THE AGENT IS RESOLVED HERE, never named by the caller. `?conversationId=`
+ * (from any chat that is not incognito, web or native — native knows only the
+ * conversation) is looked up among this person's own conversations, and only
+ * an agent's thread whose agent is still here puts {"aid"} in the token. The
+ * relay asks for that agent's persona with it (src/app/api/voice/persona). A
+ * lookup that fails signs no claim rather than failing the call: the call is
+ * then Juno, as it was before the claim existed.
  */
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -64,17 +74,20 @@ export async function GET(req: Request) {
   const url = resolveVoiceRelayURL();
   if (!url) return NextResponse.json({ error: "Realtime voice is not configured." }, { status: 503 });
 
-  let memory = parseVoiceMemoryRequest(new URL(req.url).searchParams);
+  const params = new URL(req.url).searchParams;
+  let memory = parseVoiceMemoryRequest(params);
   if (memory?.projectId && !(await checkProjectAccess(user.id, memory.projectId, "VIEWER")).allowed) {
     // Not a project they can use: no memory at all, rather than the account's
     // — a project chat reading account memory is the leak isolation prevents.
     memory = null;
   }
+  const agentId = await threadAgent(user.id, parseVoiceConversationRequest(params));
   const token = signState(
     JSON.stringify({
       uid: user.id,
       exp: Math.floor(Date.now() / 1000) + 60,
       ...(memory ? { mem: 1, ...(memory.projectId ? { pid: memory.projectId } : {}) } : {}),
+      ...(agentId ? { aid: agentId } : {}),
     })
   );
 
@@ -95,4 +108,23 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json(providers ? { token, url, providers } : { token, url });
+}
+
+/** The agent whose thread this conversation is, if it is this person's and the agent is not retired. */
+async function threadAgent(userId: string, conversationId: string | null): Promise<string | null> {
+  if (!conversationId) return null;
+  try {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, userId },
+      select: { agentId: true },
+    });
+    if (!conversation?.agentId) return null;
+    const agent = await prisma.agent.findFirst({
+      where: { id: conversation.agentId, userId, deletedAt: null },
+      select: { id: true },
+    });
+    return agent?.id ?? null;
+  } catch {
+    return null;
+  }
 }
