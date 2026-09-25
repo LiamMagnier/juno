@@ -191,13 +191,25 @@ public extension JunoPage where Controls == EmptyView {
 /// - Then 20pt, a 1pt `--border` rule, and 24pt before what follows.
 public struct JunoPageHeader<Actions: View>: View {
     private let title: String
+    private let caption: String?
     private let lede: String?
     private let actions: Actions
 
     @Environment(\.junoPageLayout) private var layout
 
-    public init(_ title: String, lede: String? = nil, @ViewBuilder actions: () -> Actions) {
+    /// - Parameter caption: the web's eyebrow ("Assistants", "Skills",
+    ///   "Project"), drawn as an SF 13 medium caption in the secondary ink,
+    ///   sentence case, above the title — never the web's mono label
+    ///   (register #57). Detail pages take their back control from the
+    ///   system, not from a row of their own.
+    public init(
+        _ title: String,
+        caption: String? = nil,
+        lede: String? = nil,
+        @ViewBuilder actions: () -> Actions
+    ) {
         self.title = title
+        self.caption = caption
         self.lede = lede
         self.actions = actions()
     }
@@ -226,6 +238,12 @@ public struct JunoPageHeader<Actions: View>: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            if let caption {
+                Text(caption)
+                    .junoType(JunoType.ui.weight(.medium))
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text(title)
                 .junoPageTitle(columnWidth: layout?.columnWidth)
                 .foregroundStyle(Color.junoForeground)
@@ -250,8 +268,8 @@ public struct JunoPageHeader<Actions: View>: View {
 }
 
 public extension JunoPageHeader where Actions == EmptyView {
-    init(_ title: String, lede: String? = nil) {
-        self.init(title, lede: lede) { EmptyView() }
+    init(_ title: String, caption: String? = nil, lede: String? = nil) {
+        self.init(title, caption: caption, lede: lede) { EmptyView() }
     }
 }
 

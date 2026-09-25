@@ -42,6 +42,12 @@ struct DesktopConnectionsScreen: View {
     /// returning to the app re-reads the state only when a flow was actually
     /// started — window focus alone is not evidence that anything changed.
     @State private var awaitingAuthorization: String?
+    /// The connector that came back connected from the browser, held in
+    /// "Finishing connection…" for a beat before it settles into Connected —
+    /// the web's `connectingId` hold after the OAuth redirect (the page's
+    /// signature, Phase 4 B2).
+    @State private var settlingID: String?
+    @Environment(\.junoToast) private var toast
 
     private let backend = URL(string: JunoBackend.productionURLString)
 
@@ -58,22 +64,25 @@ struct DesktopConnectionsScreen: View {
             ) { target in
                 Button("Disconnect", role: .destructive) {
                     disconnectTarget = nil
-                    Task { await model.disconnect(target) }
+                    Task {
+                        if await model.disconnect(target) {
+                            toast(.success("Disconnected \(target.label)."))
+                        } else {
+                            toast(.error("Couldn’t disconnect. Please try again."))
+                        }
+                    }
                 }
                 Button("Cancel", role: .cancel) { disconnectTarget = nil }
             } message: { target in
-                Text(
-                    "Juno will lose access to your \(target.label) account and chats will stop offering its tools. You can reconnect at any time."
-                )
+                Text("Juno will lose access to your \(target.label) account. You can reconnect anytime.")
             }
             // The authorisation round trip happens in the browser and ends on
             // Juno's own web page, so nothing reports back into this process. The
             // only honest move on return is to re-read the state rather than
             // assume the reader completed it.
             .onChange(of: scenePhase) { _, phase in
-                guard phase == .active, awaitingAuthorization != nil else { return }
-                awaitingAuthorization = nil
-                Task { await model.connectFlowFinished() }
+                guard phase == .active, let awaited = awaitingAuthorization else { return }
+                Task { await settle(awaited) }
             }
             .accessibilityIdentifier("juno.desktop.connections")
     }
@@ -88,48 +97,47 @@ struct DesktopConnectionsScreen: View {
     /// eighty cards scrolls rather than pushing the sidebar off-screen.
     private var page: some View {
         JunoPage(measure: .wide) {
+            // No count in the header: the Connected segment carries it, and
+            // it is the control that filters to them (the web removed its
+            // badge for that reason).
             JunoPageHeader(
                 "Connections",
                 lede: "Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
             ) {
-                if model.connectedCount > 0 {
-                    Text("\(model.connectedCount) connected")
-                        .junoCaption()
-                        .monospacedDigit()
-                        .fixedSize()
-                        .accessibilityLabel("\(model.connectedCount) apps connected")
-                }
-                Button {
-                    // Also the way out of a stuck wait: if the browser never
-                    // hands focus back to this app, a card must not sit on
-                    // "waiting" for the rest of the session.
+                // A Mac extra: the browser hand-off reports nothing back, so
+                // re-reading is the reader's to ask for. Also the way out of a
+                // stuck wait.
+                DesktopQuietIconButton(icon: .refresh, label: "Refresh connections", help: "Re-read this account’s connections (⌘R)") {
                     awaitingAuthorization = nil
+                    settlingID = nil
                     Task { await model.refresh() }
-                } label: {
-                    Label("Refresh", icon: .refresh)
                 }
-                .buttonStyle(.bordered)
-                .tint(nil)
                 .keyboardShortcut("r", modifiers: .command)
-                .contentShape(.rect)
-                .help("Re-read this account's connections (⌘R)")
-                .accessibilityLabel("Refresh connections")
                 .accessibilityIdentifier("connections.refresh")
             }
         } controls: {
             if model.phase == .ready {
                 JunoPageControls {
-                    searchField
                     JunoSegmented(
                         options: [
                             JunoSegmented<Bool>.Option(false, "All apps"),
-                            JunoSegmented<Bool>.Option(true, "Connected", count: model.connectedCount),
+                            JunoSegmented<Bool>.Option(
+                                true, "Connected", count: model.connectedCount > 0 ? model.connectedCount : nil
+                            ),
                         ],
                         selection: $model.showsConnectedOnly,
                         accessibilityLabel: "Filter apps"
                     )
+                    .fixedSize()
                     .help("Show every app, or only the ones this account has connected")
                     .accessibilityIdentifier("connections.filter")
+                    searchField
+                } trailing: {
+                    let count = model.visibleConnectors.count
+                    Text("\(count) \(count == 1 ? "app" : "apps")")
+                        .junoType(.ui)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.junoSecondaryInk)
                 }
             }
         } content: {
@@ -141,22 +149,20 @@ struct DesktopConnectionsScreen: View {
     private var content: some View {
         switch model.phase {
         case .idle, .loading:
-            ProgressView()
-                .controlSize(.small)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, JunoSpace.vast)
-                .accessibilityLabel("Loading connections")
+            LazyVGrid(columns: DesktopConnectorGrid.columns, alignment: .leading, spacing: JunoSpace.regular) {
+                ForEach(0..<6, id: \.self) { _ in DesktopConnectorTileSkeleton() }
+            }
+            .accessibilityElement()
+            .accessibilityLabel("Loading connections")
         case .failed:
             JunoEmptyState(
-                title: "Connections unavailable",
-                message: DesktopStatusCopy(subject: "connections", singular: "connection")
-                    .humanized(
-                        model.lastErrorDescription,
-                        fallback: "Juno could not read this account's connections."
-                    ),
-                icon: .triangleAlert,
+                title: "Couldn’t load your connections",
+                message: "The server may still be starting up, or the database isn’t reachable yet.",
+                icon: .error,
                 actionLabel: "Try again",
-                action: { Task { await model.refresh() } }
+                action: { Task { await model.refresh() } },
+                size: .panel,
+                tone: .error
             )
         case .ready:
             directory
@@ -295,25 +301,29 @@ struct DesktopConnectionsScreen: View {
         } else {
             VStack(alignment: .leading, spacing: JunoSpace.section) {
                 if !connectedConnectors.isEmpty {
-                    section("Connected · \(connectedConnectors.count)", connectedConnectors)
+                    section("Connected", "Linked and available to your chats.", connectedConnectors)
                 }
-                if !availableConnectors.isEmpty {
+                if !availableConnectors.isEmpty, !model.showsConnectedOnly {
                     // No count on this band: it holds one page of a catalog with
                     // hundreds more behind the cursor, so a number here would be a
                     // lie about how many apps exist.
-                    section(
-                        connectedConnectors.isEmpty ? "All apps" : "Available",
-                        availableConnectors
-                    )
+                    section("Available", "Connect an app to let Juno work inside it.", availableConnectors)
                 }
             }
         }
     }
 
-    private func section(_ title: String, _ connectors: [NativeConnector]) -> some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            Text(title)
-                .junoSidebarSection()
+    private func section(_ title: String, _ lede: String, _ connectors: [NativeConnector]) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            VStack(alignment: .leading, spacing: JunoSpace.micro) {
+                Text(title)
+                    .junoType(.heading)
+                    .foregroundStyle(Color.junoForeground)
+                    .accessibilityAddTraits(.isHeader)
+                Text(lede)
+                    .junoType(.ui)
+                    .foregroundStyle(Color.junoSecondaryInk)
+            }
             LazyVGrid(columns: DesktopConnectorGrid.columns, alignment: .leading, spacing: JunoSpace.regular) {
                 ForEach(connectors) { card($0) }
             }
@@ -439,6 +449,9 @@ struct DesktopConnectionsScreen: View {
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
+        // Neutral, as the web's secondary tile buttons are: the column's
+        // accent tint would turn Connect and Disconnect coral (§0.4).
+        .tint(nil)
         .controlSize(.large)
     }
 
@@ -471,7 +484,7 @@ struct DesktopConnectionsScreen: View {
     /// which is where the website puts it.
     private var footnote: some View {
         Text(
-            "A connected app is offered to the model only when you pick it in a chat's composer. Each provider shows the exact permissions on its own consent screen before you approve."
+            "Connected tools are available to the model when you enable them in a chat. Each provider shows the exact permissions during its consent flow."
         )
         .junoCaption()
         .fixedSize(horizontal: false, vertical: true)
@@ -485,37 +498,39 @@ struct DesktopConnectionsScreen: View {
     /// than borrowing a mark that names something else.
     @ViewBuilder
     private var emptyState: some View {
+        let category = model.categories.first { $0.id == model.selectedCategory }?.label.lowercased()
         if model.showsConnectedOnly {
             JunoEmptyState(
-                title: "No connected apps",
-                message: "Connect an app and Juno can work with it from a chat.",
+                title: "No connected apps yet",
+                message: "Connect one from All apps and it will show up here.",
                 icon: .connections,
-                actionLabel: "Show all apps",
+                actionLabel: "Browse all apps",
                 action: { model.showsConnectedOnly = false }
             )
         } else if !trimmedQuery.isEmpty {
             JunoEmptyState(
-                title: "No matching apps",
-                message: "Nothing matches “\(trimmedQuery)”.",
-                icon: .search,
-                actionLabel: "Clear search",
-                action: { model.query = "" }
+                title: "Nothing here",
+                message: "No apps match “\(trimmedQuery)”" + (category.map { " in \($0)" } ?? "") + ".",
+                icon: .connections,
+                actionLabel: "Clear filters",
+                action: {
+                    model.query = ""
+                    model.selectedCategory = nil
+                }
             )
-        } else if model.selectedCategory != nil {
+        } else if let category {
             JunoEmptyState(
-                title: "No apps in this category",
-                message: "The managed catalog returned nothing for this category.",
-                icon: .grid,
-                actionLabel: "All categories",
+                title: "Nothing here",
+                message: "No apps in \(category).",
+                icon: .connections,
+                actionLabel: "Clear filters",
                 action: { model.selectedCategory = nil }
             )
         } else {
             JunoEmptyState(
                 title: "No apps available",
-                message: "This account has no connectors to show.",
-                icon: .connections,
-                actionLabel: "Refresh",
-                action: { Task { await model.refresh() } }
+                message: "The catalog came back empty.",
+                icon: .connections
             )
         }
     }
@@ -557,14 +572,15 @@ struct DesktopConnectionsScreen: View {
                     )
                 }
                 if let catalogError = model.catalogErrorDescription {
-                    DesktopConnectionsNotice(
-                        message: "The managed app directory could not be read: \(catalogError)",
-                        icon: .triangleAlert,
-                        tint: Color.junoCaution,
-                        actionLabel: "Try again"
-                    ) {
-                        Task { await model.refresh() }
-                    }
+                    JunoEmptyState(
+                        title: "The app directory couldn’t be loaded",
+                        message: catalogError,
+                        icon: .error,
+                        actionLabel: "Try again",
+                        action: { Task { await model.refresh() } },
+                        size: .panel,
+                        tone: .error
+                    )
                 }
             }
         }
@@ -604,10 +620,11 @@ struct DesktopConnectionsScreen: View {
     }
 
     private func isAwaiting(_ connector: NativeConnector) -> Bool {
-        awaitingAuthorization == connector.id
+        awaitingAuthorization == connector.id || settlingID == connector.id
     }
 
     private func state(_ connector: NativeConnector) -> DesktopConnectorState {
+        if settlingID == connector.id { return .connecting }
         if connector.connected { return .connected }
         if isAwaiting(connector) { return .connecting }
         // The two halves of `NativeConnector.canConnect`, told apart because they
@@ -639,7 +656,7 @@ struct DesktopConnectionsScreen: View {
             }
             return "Connected and ready"
         case .connecting:
-            return "Finishing in your browser…"
+            return "Finishing connection…"
         case .unavailable:
             return "Not set up on this Juno server"
         case .setup:
@@ -662,6 +679,27 @@ struct DesktopConnectionsScreen: View {
     }
 
     // MARK: Actions
+
+    /// The reader is back from the browser. The state is re-read rather
+    /// than assumed; a connector that came back connected holds "Finishing
+    /// connection…" for the web's 1.4s, then settles into Connected with the
+    /// web's sentence. One that did not simply returns to Connect.
+    private func settle(_ id: String) async {
+        settlingID = id
+        await model.connectFlowFinished()
+        awaitingAuthorization = nil
+        guard let connector = model.linked.first(where: { $0.id == id }) ?? model.catalog.first(where: { $0.id == id }),
+            connector.connected
+        else {
+            settlingID = nil
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(1400))
+        withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+            settlingID = nil
+        }
+        toast(.success("\(connector.label) is connected and ready to use."))
+    }
 
     /// Opens the connector's authorisation page in the reader's own browser.
     ///
@@ -894,5 +932,27 @@ private struct DesktopConnectionsNotice: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .junoCard()
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// A tile's shape while the directory loads: the mark well, two lines, the
+/// footer — so nothing moves when the cards land.
+private struct DesktopConnectorTileSkeleton: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            HStack(alignment: .top, spacing: JunoSpace.cozy) {
+                JunoSkeleton(height: DesktopConnectorGrid.markSize, width: DesktopConnectorGrid.markSize, cornerRadius: JunoRadius.field)
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    JunoSkeleton(height: 12, width: 110)
+                    JunoSkeleton(height: 10)
+                }
+            }
+            Spacer(minLength: 0)
+            JunoSkeleton(height: 28, cornerRadius: JunoRadius.control)
+        }
+        .padding(JunoSpace.regular)
+        .frame(minHeight: DesktopConnectorGrid.cardMinimumHeight, alignment: .top)
+        .junoCard(cornerRadius: JunoRadius.card)
+        .accessibilityHidden(true)
     }
 }

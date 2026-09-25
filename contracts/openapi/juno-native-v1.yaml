@@ -360,6 +360,31 @@ paths:
           description: All saved memory entries and the consolidated summary, newest entries first.
           content: { application/json: { schema: { $ref: '#/components/schemas/MemoryResponse' } } }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: addNativeMemoryEntry
+      description: >-
+        Saves a fact by hand, account-wide or (with `projectId`) in one
+        project. The memory page's "New memory"; the Settings pane's entry CRUD
+        stays on /api/v1/mutations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string, minLength: 1, maxLength: 500 }
+                projectId: { type: string }
+      responses:
+        '201':
+          description: The saved row.
+          content: { application/json: { schema: { type: object, additionalProperties: true, required: [memory], properties: { memory: { $ref: '#/components/schemas/MemoryEntryItem' } } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
     delete:
       servers: [{ url: /api }]
       operationId: eraseNativeMemory
@@ -1850,6 +1875,541 @@ paths:
         '400': { $ref: '#/components/responses/GeneralRouteError' }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /memory/{memoryId}:
+    parameters:
+      - in: path
+        name: memoryId
+        required: true
+        schema: { type: string }
+    patch:
+      servers: [{ url: /api }]
+      operationId: updateNativeMemoryEntry
+      description: >-
+        One body shape per verb, as the memory page sends it: `{ content }`
+        rewrites a fact (reclassified and re-dated server-side), `{ forget: true }`
+        retires it and adds a never-remember entry, `{ projectId }` files it in a
+        project or, with null, back under the whole account. Refusals answer
+        `{ error, code? }` with a sentence written for the reader.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MemoryEntryPatch' } } }
+      responses:
+        '200': { description: Changed., content: { application/json: { schema: { $ref: '#/components/schemas/MemoryOkResponse' } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: deleteNativeMemoryEntry
+      description: Deletes one row. A 404 is the outcome asked for (already gone), and clients treat it as success.
+      responses:
+        '200': { description: Deleted., content: { application/json: { schema: { $ref: '#/components/schemas/MemoryOkResponse' } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /memory/edit:
+    post:
+      servers: [{ url: /api }]
+      operationId: draftNativeMemoryEdit
+      description: >-
+        Drafts a natural-language instruction into a reviewable change and
+        writes nothing: `{ proposal: { summary, operations } }`, or
+        `{ refusal }` when the model declines. 409 with `code:
+        background_policy_denied` when the account's provider policy refuses
+        background work.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [instruction]
+              properties: { instruction: { type: string, minLength: 1, maxLength: 600 } }
+      responses:
+        '200': { description: A proposal or a refusal., content: { application/json: { schema: { $ref: '#/components/schemas/MemoryDraftResponse' } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '502': { $ref: '#/components/responses/GeneralRouteError' }
+        '503': { $ref: '#/components/responses/GeneralRouteError' }
+  /memory/edit/apply:
+    post:
+      servers: [{ url: /api }]
+      operationId: applyNativeMemoryEdit
+      description: Commits operations and answers with the whole fresh list and the inverse an Undo applies.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [operations]
+              properties: { operations: { type: array, items: { $ref: '#/components/schemas/MemoryOperation' } } }
+      responses:
+        '200': { description: Applied., content: { application/json: { schema: { $ref: '#/components/schemas/MemoryApplyResponse' } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+  /memory/edits:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeMemoryEdits
+      description: The server-synced edit ledger, newest first, capped at 20.
+      responses:
+        '200': { description: The ledger., content: { application/json: { schema: { $ref: '#/components/schemas/MemoryEditsResponse' } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: createNativeMemoryEdits
+      description: Records drafted, refused or imported edits; `clientId` is the idempotency key. Answers with the whole ledger.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [edits]
+              properties: { edits: { type: array, items: { $ref: '#/components/schemas/MemoryEditDraft' } } }
+      responses:
+        '201': { description: The ledger., content: { application/json: { schema: { $ref: '#/components/schemas/MemoryEditsResponse' } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /memory/edits/{editId}:
+    parameters:
+      - in: path
+        name: editId
+        required: true
+        schema: { type: string }
+    patch:
+      servers: [{ url: /api }]
+      operationId: updateNativeMemoryEdit
+      description: Marks an edit applied (with the server's inverse), rejected (with a note) or pending again after an Undo (inverse null).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [pending, applied, rejected] }
+                note: { type: string }
+                inverse: { type: [array, 'null'], items: { $ref: '#/components/schemas/MemoryOperation' } }
+      responses:
+        '200': { description: The ledger., content: { application/json: { schema: { $ref: '#/components/schemas/MemoryEditsResponse' } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: deleteNativeMemoryEdit
+      description: Discards a waiting edit or removes one from the history. Answers with the ledger.
+      responses:
+        '200': { description: The ledger., content: { application/json: { schema: { $ref: '#/components/schemas/MemoryEditsResponse' } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /memory/recap:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeMemoryRecap
+      description: The recap's server half — chat themes and the chat count over a period. The rest is computed client-side from GET /memory.
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, enum: [7, 30, 90] }
+      responses:
+        '200':
+          description: Themes and a count.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  days: { type: integer }
+                  themes: { type: array, items: { type: string } }
+                  conversations: { type: integer, minimum: 0 }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /memory/backfill:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeMemoryBackfill
+      description: How many past chats Juno has not learned from yet.
+      responses:
+        '200':
+          description: The queue length.
+          content: { application/json: { schema: { type: object, additionalProperties: true, properties: { remaining: { type: integer, minimum: 0 } } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: runNativeMemoryBackfill
+      description: Reads two past chats per call; clients loop until `remaining` is 0 or nothing was processed.
+      responses:
+        '200':
+          description: One batch.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  processedConversations: { type: integer, minimum: 0 }
+                  created: { type: integer, minimum: 0 }
+                  remaining: { type: integer, minimum: 0 }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '503': { $ref: '#/components/responses/GeneralRouteError' }
+  /memory/import/preview:
+    post:
+      servers: [{ url: /api }]
+      operationId: previewNativeMemoryImport
+      description: Parses another assistant's pasted answer deterministically (never shown to a model) and annotates each candidate against what the account already has. Writes nothing.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string, maxLength: 60000 } } } } }
+      responses:
+        '200':
+          description: Candidates to review.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  candidates:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                      required: [content, status, selected]
+                      properties:
+                        content: { type: string }
+                        category: { type: [string, 'null'] }
+                        sensitive: { type: [string, 'null'] }
+                        status: { type: string, enum: [new, known, forgotten, secret] }
+                        selected: { type: boolean }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /memory/import:
+    post:
+      servers: [{ url: /api }]
+      operationId: commitNativeMemoryImport
+      description: Saves the facts the reader kept ticked.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [facts], properties: { facts: { type: array, items: { type: string } } } } } }
+      responses:
+        '200':
+          description: What landed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  created: { type: integer }
+                  refreshed: { type: integer }
+                  superseded: { type: integer }
+                  rejected: { type: integer }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /memory/consolidate:
+    post:
+      servers: [{ url: /api }]
+      operationId: consolidateNativeMemory
+      description: Rebuilds the account's summary. 409 with `code background_policy_denied` when the provider policy refuses.
+      responses:
+        '200': { description: The new summary, or null when there is nothing to write it from., content: { application/json: { schema: { type: object, additionalProperties: true, properties: { summary: { oneOf: [{ $ref: '#/components/schemas/MemorySummary' }, { type: 'null' }] } } } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '502': { $ref: '#/components/responses/GeneralRouteError' }
+        '503': { $ref: '#/components/responses/GeneralRouteError' }
+  /projects/{projectId}/memory:
+    post:
+      servers: [{ url: /api }]
+      operationId: consolidateNativeProjectMemory
+      description: Rebuilds one project's summary; the same contract as /memory/consolidate.
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: The project's new summary., content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+  /skills:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeSkillLibrary
+      description: >-
+        The skills library: `yours` (written here or captured from a run) and
+        one entry per installed source with its skills, plus `total` and
+        `truncated` so a capped answer can say so. Read at sign-in on the Mac:
+        the composer's "Use a Skill" and a typed `/slug` offer what it lists.
+      responses:
+        '200': { description: The library., content: { application/json: { schema: { $ref: '#/components/schemas/SkillLibraryResponse' } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /skills/sources/{sourceId}:
+    parameters:
+      - in: path
+        name: sourceId
+        required: true
+        schema: { type: string }
+    patch:
+      servers: [{ url: /api }]
+      operationId: updateNativeSkillSource
+      description: A source's own switch. Its skills keep theirs.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [enabled], properties: { enabled: { type: boolean } } } } }
+      responses:
+        '200': { description: The source., content: { application/json: { schema: { type: object, additionalProperties: true, properties: { source: { $ref: '#/components/schemas/SkillSource' } } } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: removeNativeSkillSource
+      description: Removes the source and the skills it brought; chats that used them keep their history.
+      responses:
+        '200': { description: How many went., content: { application/json: { schema: { type: object, additionalProperties: true, properties: { removed: { type: integer } } } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /skills/sources/{sourceId}/check:
+    post:
+      servers: [{ url: /api }]
+      operationId: checkNativeSkillSource
+      description: What changed upstream since the installed commit — changed, added and removed skills. Records `latestCommit` on the source.
+      parameters:
+        - in: path
+          name: sourceId
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: The check., content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /skills/sources/{sourceId}/update:
+    post:
+      servers: [{ url: /api }]
+      operationId: updateNativeSkillSourceSkills
+      description: Applies an update the reader reviewed, at the commit the check saw. 409 `source_moved` when the repository changed since.
+      parameters:
+        - in: path
+          name: sourceId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [commit, update, install]
+              properties:
+                commit: { type: string }
+                update: { type: array, items: { type: string } }
+                install: { type: array, items: { type: string } }
+      responses:
+        '200': { description: What was updated, installed and skipped., content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+  /skills/import/github:
+    post:
+      servers: [{ url: /api }]
+      operationId: importNativeSkillsFromGitHub
+      description: >-
+        With `{ source }` only, walks a repository and previews its skills
+        (writes nothing). With `{ source, commit, paths, renames? }`, installs
+        the chosen paths at that commit; `renames` is omitted when empty.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source]
+              properties:
+                source: { type: string }
+                commit: { type: string }
+                paths: { type: array, items: { type: string } }
+                renames: { type: object, additionalProperties: { type: string } }
+      responses:
+        '200': { description: A preview., content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '201': { description: The install., content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/skills:
+    post:
+      servers: [{ url: /api }]
+      operationId: createNativeWorkSkill
+      description: Writes a skill (`origin authored`, `autoSelect false`). 409 `slug_taken` when the derived slash name exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description, instructions, origin]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                instructions: { type: string }
+                origin: { type: string, enum: [authored, imported] }
+                projectId: { type: string }
+                autoSelect: { type: boolean }
+      responses:
+        '201': { description: The skill., content: { application/json: { schema: { type: object, additionalProperties: true, properties: { skill: { $ref: '#/components/schemas/WorkSkill' } } } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/skills/{skillId}:
+    parameters:
+      - in: path
+        name: skillId
+        required: true
+        schema: { type: string }
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeWorkSkill
+      description: One skill, its current version, the files it brings, its project's name and the source it was installed from.
+      responses:
+        '200': { description: The skill., content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    patch:
+      servers: [{ url: /api }]
+      operationId: updateNativeWorkSkill
+      description: Name, description, switch, usage (trust and autoSelect together) or project (null moves it back to the account).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: string }
+                enabled: { type: boolean }
+                autoSelect: { type: boolean }
+                trust: { type: string, enum: [untrusted, user_authored] }
+                projectId: { type: [string, 'null'] }
+      responses:
+        '200': { description: The skill., content: { application/json: { schema: { type: object, additionalProperties: true, properties: { skill: { $ref: '#/components/schemas/WorkSkill' } } } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: deleteNativeWorkSkill
+      description: Deletes the skill; chats and tasks that used it keep their history.
+      responses:
+        '200': { description: Deleted., content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/skills/{skillId}/versions:
+    parameters:
+      - in: path
+        name: skillId
+        required: true
+        schema: { type: string }
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeWorkSkillVersions
+      description: The skill's immutable versions, newest first.
+      responses:
+        '200': { description: The history., content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: mintNativeWorkSkillVersion
+      description: >-
+        Either `{ instructions, contract?, requestedTools? }` — a complete
+        snapshot, the rest of the declaration sent back whole — or
+        `{ restoreVersion }`. 409 when another save landed first.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, additionalProperties: true } } }
+      responses:
+        '201': { description: The new version., content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/skills/{skillId}/versions/{version}/consent:
+    post:
+      servers: [{ url: /api }]
+      operationId: consentNativeWorkSkillVersion
+      description: Approves the permission expansion recorded on one version.
+      parameters:
+        - in: path
+          name: skillId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: version
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200': { description: The approved version., content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+  /assistants:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeAssistants
+      description: The account's reusable assistants (WorkSkill rows of kind assistant), most recently updated first.
+      responses:
+        '200': { description: The gallery., content: { application/json: { schema: { type: object, additionalProperties: true, properties: { assistants: { type: array, items: { $ref: '#/components/schemas/Assistant' } } } } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '500': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: createNativeAssistant
+      description: Creates an assistant. Auto is sent as an absent `preferredModelId`.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AssistantWrite' } } }
+      responses:
+        '201': { description: The assistant., content: { application/json: { schema: { type: object, additionalProperties: true, properties: { assistant: { $ref: '#/components/schemas/Assistant' } } } } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '500': { $ref: '#/components/responses/GeneralRouteError' }
+  /assistants/{assistantId}:
+    parameters:
+      - in: path
+        name: assistantId
+        required: true
+        schema: { type: string }
+    patch:
+      servers: [{ url: /api }]
+      operationId: updateNativeAssistant
+      description: Saves an edit, or `{ isPinned }` alone to pin or unpin.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, additionalProperties: true } } }
+      responses:
+        '200': { description: The assistant., content: { application/json: { schema: { type: object, additionalProperties: true, properties: { assistant: { $ref: '#/components/schemas/Assistant' } } } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: deleteNativeAssistant
+      description: Removes it from the library; existing chats are not deleted.
+      responses:
+        '200': { description: Deleted., content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
 components:
   securitySchemes:
     nativeBearer: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -2404,7 +2964,11 @@ components:
         - properties: { mode: { const: deleted }, keptIn: { const: null } }
     MemoryEntryItem:
       type: object
-      additionalProperties: false
+      description: >-
+        Memory v2's fields ride along (the memory page reads all of them);
+        `category` and `status` are open strings, so a value a client does not
+        know renders as unknown rather than failing the read.
+      additionalProperties: true
       required: [id, content, source, kind, sourceRef, createdAt]
       properties:
         id: { type: string }
@@ -2413,6 +2977,18 @@ components:
         kind: { type: string, enum: [FACT, SUPPRESSION] }
         sourceRef: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
+        category: { type: [string, 'null'] }
+        projectId: { type: [string, 'null'] }
+        projectName: { type: [string, 'null'] }
+        sourceMessageId: { type: [string, 'null'] }
+        confidence: { type: number }
+        status: { type: string }
+        reason: { type: [string, 'null'] }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+        lastVerifiedAt: { type: [string, 'null'], format: date-time }
+        supersededById: { type: [string, 'null'] }
+        sensitive: { type: [string, 'null'] }
     MemorySummary:
       type: object
       additionalProperties: false
@@ -2431,6 +3007,160 @@ components:
           oneOf:
             - { $ref: '#/components/schemas/MemorySummary' }
             - { type: 'null' }
+        projectSummaries:
+          description: Each project's own summary, which that project's chats read instead of `summary`.
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            required: [projectId, projectName, content, updatedAt, entryCount]
+            properties:
+              projectId: { type: string }
+              projectName: { type: string }
+              content: { type: string }
+              updatedAt: { type: string, format: date-time }
+              entryCount: { type: integer, minimum: 0 }
+    MemoryEntryPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        content: { type: string, minLength: 1, maxLength: 500 }
+        forget: { const: true }
+        projectId: { type: [string, 'null'] }
+    MemoryOkResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        ok: { type: boolean }
+        status: { type: string }
+    MemoryOperation:
+      type: object
+      additionalProperties: true
+      required: [op]
+      properties:
+        op: { type: string, enum: [add, update, remove] }
+        id: { type: string }
+        before: { type: string }
+        content: { type: string }
+        suppress: { type: boolean }
+        projectId: { type: [string, 'null'] }
+    MemoryDraftResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        refusal: { type: string }
+        proposal:
+          type: object
+          additionalProperties: true
+          properties:
+            summary: { type: string }
+            operations: { type: array, items: { $ref: '#/components/schemas/MemoryOperation' } }
+    MemoryApplyResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        memories: { type: array, items: { $ref: '#/components/schemas/MemoryEntryItem' } }
+        summary: { oneOf: [{ $ref: '#/components/schemas/MemorySummary' }, { type: 'null' }] }
+        inverse: { type: array, items: { $ref: '#/components/schemas/MemoryOperation' } }
+    MemoryEditDraft:
+      type: object
+      additionalProperties: true
+      required: [clientId, instruction, status, operations]
+      properties:
+        clientId: { type: string }
+        instruction: { type: string }
+        summary: { type: string }
+        note: { type: string }
+        status: { type: string, enum: [pending, applied, rejected] }
+        operations: { type: array, items: { $ref: '#/components/schemas/MemoryOperation' } }
+    MemoryEditsResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        edits:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            required: [id, instruction, status, operations]
+            properties:
+              id: { type: string }
+              instruction: { type: string }
+              summary: { type: string }
+              note: { type: string }
+              status: { type: string }
+              operations: { type: array, items: { $ref: '#/components/schemas/MemoryOperation' } }
+              inverse: { type: [array, 'null'], items: { $ref: '#/components/schemas/MemoryOperation' } }
+              createdAt: { type: string, format: date-time }
+    WorkSkill:
+      type: object
+      additionalProperties: true
+      required: [id, slug, name]
+      properties:
+        id: { type: string }
+        projectId: { type: [string, 'null'] }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        currentVersion: { type: integer }
+        enabled: { type: boolean }
+        trust: { type: string }
+        autoSelect: { type: boolean }
+        securityStatus: { type: string }
+        sourceId: { type: [string, 'null'] }
+        sourcePath: { type: [string, 'null'] }
+        requiresConsent: { type: boolean }
+    SkillSource:
+      type: object
+      additionalProperties: true
+      required: [id, owner, repo]
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        owner: { type: string }
+        repo: { type: string }
+        key: { type: string }
+        ref: { type: string }
+        path: { type: string }
+        commit: { type: string }
+        latestCommit: { type: [string, 'null'] }
+        enabled: { type: boolean }
+        url: { type: string }
+        skills: { type: array, items: { $ref: '#/components/schemas/WorkSkill' } }
+    SkillLibraryResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        yours: { type: array, items: { $ref: '#/components/schemas/WorkSkill' } }
+        sources: { type: array, items: { $ref: '#/components/schemas/SkillSource' } }
+        total: { type: integer }
+        truncated: { type: boolean }
+    Assistant:
+      type: object
+      additionalProperties: true
+      required: [id, name]
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        avatarIcon: { type: string }
+        systemPrompt: { type: string }
+        starterPrompts: { type: array, items: { type: string } }
+        preferredModelId: { type: [string, 'null'] }
+        isPinned: { type: boolean }
+        version: { type: integer }
+    AssistantWrite:
+      type: object
+      additionalProperties: true
+      required: [name, systemPrompt]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        avatarIcon: { type: string }
+        systemPrompt: { type: string }
+        starterPrompts: { type: array, items: { type: string } }
+        preferredModelId: { type: string }
     CodeDevice:
       type: object
       additionalProperties: true

@@ -94,6 +94,16 @@ struct JunoDesktopConfiguration {
     /// ``workGrantStore`` is: the preview harness and a failed launch have no
     /// transport to read agents over and should not have to name one.
     var agentsModel: NativeAgentsModel? = nil
+    /// The memory page (`/memory`, Phase 4 B1): the rows with their Memory
+    /// v2 fields, the prompt dock's drafts, the recap and the import. The
+    /// switch stays ``memorySettingsModel``'s. Defaulted for the reason
+    /// ``agentsModel`` is.
+    var memoryPageModel: NativeMemoryPageModel? = nil
+    /// The skills library (Phase 4 B3), and what the composer's "Use a
+    /// Skill" and a typed `/slug` read: ``NativeSkillLibraryModel/chooseable``.
+    var skillLibraryModel: NativeSkillLibraryModel? = nil
+    /// The assistants gallery (Phase 4 B4).
+    var assistantsModel: NativeAssistantsModel? = nil
     let libraryModel: NativeLibraryModel?
     /// This Mac's local document index: files read into chunks by
     /// ``DocumentIngestionPipeline`` and ranked by `JunoSearch`.
@@ -373,6 +383,9 @@ struct JunoDesktopConfiguration {
                     client: NativeAgentsClient(sender: runtime),
                     workClient: NativeWorkClient(sender: runtime, streamer: runtime)
                 ),
+                memoryPageModel: NativeMemoryPageModel(client: NativeMemoryClient(sender: runtime)),
+                skillLibraryModel: NativeSkillLibraryModel(client: NativeSkillsClient(sender: runtime)),
+                assistantsModel: NativeAssistantsModel(client: NativeAssistantsClient(sender: runtime)),
                 libraryModel: NativeLibraryModel(
                     client: NativeLibraryClient(sender: runtime),
                     // The picker draws the file, which means resolving its

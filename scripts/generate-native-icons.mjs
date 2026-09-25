@@ -273,6 +273,20 @@ const PHOSPHOR = {
   // drawings for those concepts.
   Calculator: null,
   Chats: null,
+
+  // The memory page (Phase 4 B1): its topic marks (`memory-icons.tsx`), a
+  // project-scoped fact's token, and the empty topic list.
+  Fingerprint: "Fingerprint",
+  Target: "Target",
+  GraduationCap: "GraduationCap",
+  BracketsCurly: "Braces",
+  Users: "Users",
+  StackSimple: "Layers",
+  FolderLock: "FolderLock",
+  // Skills' Import from GitHub (Phase 4 B3). The web draws the brand's filled
+  // mark (`GitHubMark` in connector-logos.tsx), not a Phosphor glyph, so the
+  // apps wear Phosphor's own drawing of it (register #75).
+  GithubLogo: null,
 };
 
 /** Glyphs with a `.fill` twin: the "on" drawings §8.6 asks for — a pinned row,

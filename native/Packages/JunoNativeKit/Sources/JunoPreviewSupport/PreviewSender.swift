@@ -164,6 +164,11 @@ public actor PreviewSender: NativeChatRequestSending {
         ) {
             return body
         }
+        // Memory, Skills and Assistants (Phase 4 Stage B): the pages' own
+        // wire shapes, ahead of the generic memory answer below.
+        if let body = PreviewAccountPageFixtures.body(path: path, method: request.method, empty: empty) {
+            return body
+        }
         if path == "/api/voice/relay-token" {
             // A deliberately closed local port: enough to exercise the real
             // Voice authorization and typed relay-recovery UI, with no network
