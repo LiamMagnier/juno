@@ -346,3 +346,25 @@ How the two tracks split from here:
 - **Track B (pages, `../juno-glass-pages`, branch `mac/liquid-glass-pages`):** move Projects, Artifacts, Design, Memory, Agents' roster and the Phase 4 pages onto `JunoPage`; detail pages push; list rows rename with `JunoInlineRenameField`; the Artifacts view switch and the shared packages' segmented pickers move to `JunoSegmented` as their screens are rebuilt.
 
 Runtime checks not done (screen control is off): a toast over a live composer (and its glass), hover holding it, Undo restoring an archived chat, a push and pop on the Agents page with the system back button (and the §0.5 crash repro with a popover open while pushing), ⌘R / ⇧⌘I from the new header buttons, focus landing in Search's field on ⇧⌘F, the controls row wrapping as the window narrows.
+
+## Phase 4 brief, 2026-09-25 (track B)
+
+`docs/native/MACOS_PHASE4_PAGES_BRIEF.md` is the plan for the pages track, written against the live web on `origin/main` at `fe0a501d`. Its §0 overrides spec §9 where they disagree.
+
+**Stages:**
+- **A:**
+  - merge `origin/main` (push notifications, the Agents sidebar fold)
+  - `ChatArtifactResolver` on the web's `resolveArtifactTag` rule
+  - the Design row gone, with `.design` routed to Artifacts › Designs
+  - server posters with an SVG-export fallback
+  - Library, Projects, Artifacts and the design editor page
+- **B:** Memory, Connections parity, Skills and Assistants.
+- **C:** Automations (then `DesktopWorkAutomations.swift` is deleted), Permissions and host pages, Agents on the template, and the More menu in the web's order.
+
+**What Track A has to wire** is in the brief's §0.4: the page router, the Skills model for the composer, the Devices rows, the share hook and the Archived Chats hook.
+
+**Four questions for the owner** are in the brief's §8:
+- the dead "Start chat" on Assistants
+- the dead "Use in chats" on Connections
+- editing only in the canvas
+- the document inspector's entry point
