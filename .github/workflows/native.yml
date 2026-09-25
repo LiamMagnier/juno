@@ -141,6 +141,18 @@ jobs:
       - name: Design editor bundle is current
         run: npm run design:editor:check
 
+      # The shell contract (contracts/product/juno-shell-v1.json) is the web's
+      # information architecture as data: products, each sidebar, the
+      # composer's + menu and primary action, the Settings rail. The test holds
+      # app-sidebar.tsx, composer.tsx, composer-plus-menu.tsx and
+      # settings-sections.ts to it, and the check holds the Mac's generated
+      # enums to it — so a row added or moved on the web fails here, on Linux,
+      # instead of drifting until somebody notices the Mac by eye.
+      - name: Shell contract holds the web
+        run: npm run shell:contract:test
+      - name: Swift shell contract has not drifted
+        run: npm run shell:contract:check
+
   # ---------------------------------------------------------------------------
   # The four design rules from docs/native/REWORK_PLAN.md, as build failures.
   #

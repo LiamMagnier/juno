@@ -185,7 +185,7 @@ struct DesktopChatSidebar: View {
                     Section(isExpanded: $pinnedChatsOpen) {
                         ForEach(pinned) { conversationRow($0) }
                     } header: {
-                        Text("Pinned chats").textCase(nil)
+                        Text(JunoShellChatSidebar.Heading.pinned.label).textCase(nil)
                     }
                 }
 
@@ -196,7 +196,7 @@ struct DesktopChatSidebar: View {
                                 .onAppear { loadMoreIfLast(conversation, in: recent) }
                         }
                     } header: {
-                        Text("Recent").textCase(nil)
+                        Text(JunoShellChatSidebar.Heading.recent.label).textCase(nil)
                     }
                 } else if isBootstrapping {
                     DesktopSidebarLoadingRows()
@@ -256,9 +256,9 @@ struct DesktopChatSidebar: View {
         // conversation, so the draft it starts selects nothing (§2.3).
         Button(action: newChat) {
             Label {
-                Text("New chat")
+                Text(JunoShellChatSidebar.Action.new.label)
             } icon: {
-                JunoSymbol(.new)
+                JunoSymbol(JunoShellChatSidebar.Action.new.icon)
                     .foregroundStyle(Color.junoSidebarInk)
             }
             .foregroundStyle(Color.junoSidebarInk)
@@ -266,7 +266,7 @@ struct DesktopChatSidebar: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .help("New chat  ⌘N")
+        .help("\(JunoShellChatSidebar.Action.new.label)  ⌘N")
         .accessibilityIdentifier("juno.desktop.sidebar.new-chat")
 
         // The inbox, right after New chat (Phase 5 C1, register #62).
@@ -328,14 +328,17 @@ struct DesktopChatSidebar: View {
             if let openArchivedChats {
                 Divider()
                 Button(action: openArchivedChats) {
-                    Label("Archived Chats", image: JunoIcon.archive.assetName)
+                    Label(
+                        JunoShellChatSidebar.More.archivedTitle,
+                        image: JunoShellChatSidebar.More.archivedIcon.assetName
+                    )
                 }
             }
         } label: {
             Label {
-                Text("More")
+                Text(JunoShellChatSidebar.More.label)
             } icon: {
-                JunoSymbol(.more)
+                JunoSymbol(JunoShellChatSidebar.More.icon)
                     .foregroundStyle(ink)
             }
             .foregroundStyle(ink)
@@ -346,7 +349,7 @@ struct DesktopChatSidebar: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .junoSidebarRowSelection(isOpen)
-        .accessibilityLabel("More")
+        .accessibilityLabel(JunoShellChatSidebar.More.label)
         .accessibilityIdentifier("juno.desktop.sidebar.more")
     }
 
@@ -367,7 +370,7 @@ struct DesktopChatSidebar: View {
     /// `SectionAction always`: the fold's one standing affordance.
     private var agentsHeader: some View {
         HStack(spacing: JunoSpace.tight) {
-            Text("Agents").textCase(nil)
+            Text(JunoShellChatSidebar.Heading.agents.label).textCase(nil)
             Spacer(minLength: 0)
             if let hireAgent {
                 Button(action: hireAgent) {
@@ -430,7 +433,7 @@ struct DesktopChatSidebar: View {
 
     private var pinnedProjectsHeader: some View {
         HStack(spacing: JunoSpace.tight) {
-            Text("Pinned projects").textCase(nil)
+            Text(JunoShellChatSidebar.Heading.pinnedProjects.label).textCase(nil)
             Spacer(minLength: 0)
             Button {
                 actions.newProject(nil)
@@ -458,12 +461,12 @@ struct DesktopChatSidebar: View {
     /// words (`app-sidebar.tsx`), on the column's own text edge.
     private var emptyRecent: some View {
         VStack(alignment: .leading, spacing: JunoSpace.micro) {
-            Text("No conversations yet.")
+            Text(JunoShellChatSidebar.emptyLines[0])
                 .junoFont(size: 13, relativeTo: .callout)
                 .junoSecondaryInk()
             // Secondary, not tertiary: tertiary ink is 2.89:1 on the light
             // canvas and may only carry non-essential text of 13pt and up.
-            Text("Start one above.")
+            Text(JunoShellChatSidebar.emptyLines[1])
                 .junoFont(size: 12, relativeTo: .footnote)
                 .junoSecondaryInk()
         }
@@ -692,8 +695,8 @@ struct DesktopSidebarSearchButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: JunoSpace.snug) {
-                JunoIconView(.search, size: 14)
-                Text("Search")
+                JunoIconView(JunoShellChatSidebar.Action.search.icon, size: 14)
+                Text(JunoShellChatSidebar.Action.search.label)
                     .junoFont(size: 13, relativeTo: .callout)
                 Spacer(minLength: 0)
                 // Keycaps take secondary ink, never tertiary: they have to be
@@ -712,8 +715,8 @@ struct DesktopSidebarSearchButton: View {
             .contentShape(RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
         }
         .buttonStyle(.plain)
-        .help("Search  ⇧⌘F")
-        .accessibilityLabel("Search")
+        .help("\(JunoShellChatSidebar.Action.search.label)  ⇧⌘F")
+        .accessibilityLabel(JunoShellChatSidebar.Action.search.label)
         .accessibilityIdentifier("juno.desktop.sidebar.search")
     }
 }
@@ -1159,51 +1162,43 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
 
     var id: Self { self }
 
-    /// The navigation rows under New chat, in the web's order
-    /// (`app-sidebar.tsx`): Library, Projects, Artifacts, Agents. No Design
-    /// row: a design is an artifact (Phase 4 A2).
-    static let sidebarCases: [Self] = [.library, .projects, .artifacts, .agents]
+    /// The navigation rows under New chat, in the web's order: Chat's
+    /// destinations in the shell contract (`app-sidebar.tsx`), today Library,
+    /// Projects, Artifacts, Agents. No Design row: a design is an artifact
+    /// (Phase 4 A2).
+    static let sidebarCases: [Self] = JunoShellChatSidebar.destinations.compactMap(Self.init)
 
-    /// The More menu's items, in the web's order (`app-sidebar.tsx`):
-    /// Assistants, Skills, Automations. Connections, Memory and Permissions
-    /// left More for Settings and ⌘K, as they did on the web.
-    static let moreCases: [Self] = [.assistants, .skills, .automations]
+    /// The More menu's items, in the web's order: Chat's More in the shell
+    /// contract, today Assistants, Skills, Automations. Connections, Memory
+    /// and Permissions left More for Settings and ⌘K, as they did on the web.
+    static let moreCases: [Self] = JunoShellChatSidebar.More.items.compactMap { Self($0.destination) }
 
+    /// The web's name for a destination it has (the shell contract), and the
+    /// Mac's own for the values it does not.
     var label: String {
         switch self {
         case .chat: "Chat"
         case .search: "Search"
-        case .projects: "Projects"
-        case .library: "Library"
-        case .artifacts: "Artifacts"
-        case .agents: "Agents"
-        case .connections: "Connections"
         case .design: "Design"
         case .memory: "Memory"
-        case .assistants: "Assistants"
-        case .skills: "Skills"
-        case .automations: "Automations"
         case .permissions: "Permissions"
+        case .projects, .library, .artifacts, .agents, .connections, .assistants, .skills, .automations:
+            shell?.label ?? rawValue
         }
     }
 
     /// The website's mark for this destination — `src/lib/app-icons.ts`, via
-    /// the generated catalog.
+    /// the generated catalog, and through the shell contract where the web
+    /// has the destination.
     var junoIcon: JunoIcon {
         switch self {
         case .chat: .home
         case .search: .search
-        case .projects: .projects
-        case .library: .library
-        case .artifacts: .artifacts
-        case .agents: .agents
-        case .connections: .connections
         case .design: .design
         case .memory: .memory
-        case .assistants: .assistants
-        case .skills: .skills
-        case .automations: .automations
         case .permissions: .permissions
+        case .projects, .library, .artifacts, .agents, .connections, .assistants, .skills, .automations:
+            shell?.icon ?? .home
         }
     }
 }

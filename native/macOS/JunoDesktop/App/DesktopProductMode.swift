@@ -14,8 +14,9 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
 
     var id: Self { self }
 
-    /// The products the Chat/Code switch offers, in its order — ⌘1 and ⌘2.
-    static let switchable: [Self] = [.chat, .code]
+    /// The products the Chat/Code switch offers, in its order — ⌘1 and ⌘2:
+    /// the web's `PRODUCTS`, read from the shell contract.
+    static let switchable: [Self] = JunoShellProduct.allCases.map(Self.init)
 
     /// ⌘1 · ⌘2, in the switch's own order.
     var keyboardDigit: Character? {
@@ -30,23 +31,15 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
         keyboardDigit.map { KeyboardShortcut(KeyEquivalent($0), modifiers: .command) }
     }
 
-    var label: String {
-        switch self {
-        case .chat: "Chat"
-        case .code: "Code"
-        }
-    }
+    /// The web's name for the product (the shell contract).
+    var label: String { shell.label }
 
-    /// The product's own mark from the generated symbol set: Juno's bubble for
-    /// Chat and the spark between chevrons for Code. Both have a solid cut,
-    /// which the switch draws for the selected product — the web's "fill means
-    /// on" rule — so selection never needs a colour.
-    var icon: JunoIcon {
-        switch self {
-        case .chat: .home
-        case .code: .code
-        }
-    }
+    /// The product's own mark from the generated symbol set, as the shell
+    /// contract names it: Juno's bubble for Chat and the spark between
+    /// chevrons for Code. Both have a solid cut, which the switch draws for
+    /// the selected product — the web's "fill means on" rule — so selection
+    /// never needs a colour.
+    var icon: JunoIcon { shell.icon }
 
     /// The segment's tooltip: its name and its shortcut, two spaces apart, the
     /// way every other `.help` in the shell states a key.

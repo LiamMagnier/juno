@@ -9,10 +9,12 @@ import JunoSync
 import JunoWorkKit
 import SwiftUI
 
-/// The sections of Settings, in the web's order (`settings-sections.ts`):
-/// General · Personalization · Memory · Models · Connectors · Devices · Voice ·
-/// Data & privacy · Account · Plan & usage, then the Mac-only Code section
-/// last until Code's redesign (P3-3).
+/// The sections of Settings, in the web's order (`settings-sections.ts`, held
+/// by the shell contract): General · Personalization · Memory · Models ·
+/// Connectors · Devices · Voice · Data & privacy · Account · Plan & usage,
+/// then the Mac-only Code section last until Code's redesign (P3-3). The
+/// names, marks and aliases are the contract's (`JunoShellSettingsSection`);
+/// a test holds the order to it.
 ///
 /// Raw values are stored (`storageKey`) and routed by, so they never change:
 /// Plan & usage is still `billing`.
@@ -38,67 +40,31 @@ enum DesktopSettingsSection: String, CaseIterable, Identifiable {
     static var usage: DesktopSettingsSection { .billing }
     static var connections: DesktopSettingsSection { .connectors }
 
-    /// The web's aliases (`ALIASES` in `settings-sections.ts`), plus the Mac's
-    /// own `usage` and `connections`.
-    static let aliases: [String: DesktopSettingsSection] = [
-        "profile": .account,
-        "security": .account,
-        "permissions": .devices,
-        "macs": .devices,
-        "hosts": .devices,
-        "connected-apps": .connectors,
-        "connector-permissions": .connectors,
-        "connections": .connectors,
-        "usage": .billing,
-        "plan": .billing,
-        "plan-usage": .billing,
-        "appearance": .general,
-        "theme": .general,
-        "language": .general,
-        "chat": .personalization,
-        "style": .personalization,
-        "instructions": .personalization,
-        "danger": .account,
-        "privacy": .data,
-    ]
+    /// The web's aliases (`ALIASES` in `settings-sections.ts`, through the
+    /// shell contract), plus the Mac's own `connections`. The web's win a
+    /// clash, so a name the web starts routing elsewhere follows the web.
+    static let aliases: [String: DesktopSettingsSection] = JunoShellSettingsSection.aliases
+        .mapValues { DesktopSettingsSection($0) }
+        .merging(["connections": .connectors]) { web, _ in web }
 
-    /// A section id or one of the web's aliases, else General.
+    /// A section id or one of the web's aliases, else the web's default
+    /// (General).
     static func resolve(_ name: String?) -> DesktopSettingsSection {
         let key = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return DesktopSettingsSection(rawValue: key) ?? aliases[key] ?? .general
+        return DesktopSettingsSection(rawValue: key) ?? aliases[key]
+            ?? DesktopSettingsSection(JunoShellSettingsSection.defaultSection)
     }
 
+    /// The web's name for the section (the shell contract); Code's is the
+    /// Mac's own.
     var label: String {
-        switch self {
-        case .general: "General"
-        case .personalization: "Personalization"
-        case .memory: "Memory"
-        case .models: "Models"
-        case .connectors: "Connectors"
-        case .devices: "Devices"
-        case .voice: "Voice"
-        case .data: "Data & privacy"
-        case .account: "Account"
-        case .billing: "Plan & usage"
-        case .code: "Code"
-        }
+        shell?.label ?? "Code"
     }
 
-    /// The web's `SettingsIcons` (and `CodeIcons.device` for Devices).
+    /// The web's `SettingsIcons` (and `CodeIcons.device` for Devices), as the
+    /// shell contract names them; Code wears the Code mark.
     var icon: JunoIcon {
-        switch self {
-        case .general: .general
-        case .personalization: .personalization
-        case .memory: .memory
-        case .models: .models
-        case .connectors: .connectors
-        case .devices: .device
-        case .voice: .voice
-        case .data: .data
-        case .account: .account
-        case .billing: .billing
-        case .code: .code
-        }
+        shell?.icon ?? .code
     }
 
     /// The labels of the rows each pane holds, for the sidebar's search field.

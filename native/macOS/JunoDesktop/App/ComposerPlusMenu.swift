@@ -66,7 +66,10 @@ struct ComposerPlusMenuModel {
 }
 
 /// The composer's `+` menu (§5.4): a native `Menu`, three groups separated by
-/// dividers, no headings, Title Case in the web's words.
+/// dividers, no headings, Title Case in the web's words. The rows' words and
+/// marks are the shell contract's (`JunoShellPlusRow`, from `composer.tsx`),
+/// in the order of `JunoShellPlusMenu.chat`; My Documents is the Mac's own
+/// (A5).
 ///
 /// It is a real menu on purpose. The version before the one this replaces was a
 /// custom popover that had to own hover fills, submenus, checkmarks, disabled
@@ -96,7 +99,7 @@ struct ComposerPlusMenu: View {
                     Text(menu.attachTitle)
                     if let reason = menu.attachUnavailableReason { Text(reason) }
                 } icon: {
-                    Image(JunoIcon.paperclip.assetName)
+                    Image(JunoShellPlusRow.files.icon.assetName)
                 }
             }
             .disabled(!menu.canAttach)
@@ -104,10 +107,10 @@ struct ComposerPlusMenu: View {
             if let takeScreenshot = menu.takeScreenshot {
                 Button(action: takeScreenshot) {
                     Label {
-                        Text("Take a Screenshot")
+                        Text(JunoShellPlusRow.screenshot.title)
                         if let reason = menu.attachUnavailableReason { Text(reason) }
                     } icon: {
-                        Image(JunoIcon.scan.assetName)
+                        Image(JunoShellPlusRow.screenshot.icon.assetName)
                     }
                 }
                 .disabled(!menu.canAttach)
@@ -116,10 +119,11 @@ struct ComposerPlusMenu: View {
             if let addFromLibrary = menu.addFromLibrary {
                 Button(action: addFromLibrary) {
                     Label {
-                        Text("Add from Library…")
+                        // The ellipsis is the Mac's: the row opens a sheet.
+                        Text(JunoShellPlusRow.library.title + "…")
                         if let reason = menu.attachUnavailableReason { Text(reason) }
                     } icon: {
-                        Image(JunoIcon.library.assetName)
+                        Image(JunoShellPlusRow.library.icon.assetName)
                     }
                 }
                 .disabled(!menu.canAddFromLibrary)
@@ -151,12 +155,12 @@ struct ComposerPlusMenu: View {
                     }
                 } label: {
                     Label {
-                        Text("Add to Project")
+                        Text(JunoShellPlusRow.project.title)
                         if let name = projects.first(where: { $0.id == menu.currentProjectID })?.name {
                             Text(name)
                         }
                     } icon: {
-                        Image(JunoIcon.projects.assetName)
+                        Image(JunoShellPlusRow.project.icon.assetName)
                     }
                 }
             }
@@ -189,12 +193,12 @@ struct ComposerPlusMenu: View {
                     }
                 } label: {
                     Label {
-                        Text("Connectors")
+                        Text(JunoShellPlusRow.connectors.title)
                         if !selectedConnectors.isEmpty {
                             Text("\(selectedConnectors.count) on")
                         }
                     } icon: {
-                        Image(JunoIcon.connections.assetName)
+                        Image(JunoShellPlusRow.connectors.icon.assetName)
                     }
                 }
             }
@@ -226,12 +230,12 @@ struct ComposerPlusMenu: View {
                     }
                 } label: {
                     Label {
-                        Text("Use a Skill")
+                        Text(JunoShellPlusRow.skill.title)
                         if let armed = skills.first(where: { $0.slug == menu.skillSlug.wrappedValue }) {
                             Text(armed.name)
                         }
                     } icon: {
-                        Image(JunoIcon.skills.assetName)
+                        Image(JunoShellPlusRow.skill.icon.assetName)
                     }
                 }
             }
@@ -239,9 +243,9 @@ struct ComposerPlusMenu: View {
             if let deepResearch = menu.deepResearch {
                 Toggle(isOn: deepResearch) {
                     Label {
-                        Text("Research")
+                        Text(JunoShellPlusRow.research.title)
                     } icon: {
-                        Image(JunoIcon.research.assetName)
+                        Image(JunoShellPlusRow.research.icon.assetName)
                     }
                 }
             }
@@ -249,12 +253,12 @@ struct ComposerPlusMenu: View {
             if let webSearch = menu.webSearch {
                 Toggle(isOn: webSearch) {
                     Label {
-                        Text("Web Search")
+                        Text(JunoShellPlusRow.search.title)
                         if !menu.webSearchAvailable {
                             Text("Not on this model")
                         }
                     } icon: {
-                        Image(JunoIcon.web.assetName)
+                        Image(JunoShellPlusRow.search.icon.assetName)
                     }
                 }
                 .disabled(!menu.webSearchAvailable)
@@ -265,12 +269,12 @@ struct ComposerPlusMenu: View {
                 // as Settings › Memory. Never a mark: it is true of every message.
                 Toggle(isOn: memory) {
                     Label {
-                        Text("Memory")
+                        Text(JunoShellPlusRow.memory.title)
                         if let reason = menu.memoryUnavailableReason {
                             Text(reason)
                         }
                     } icon: {
-                        Image(JunoIcon.memory.assetName)
+                        Image(JunoShellPlusRow.memory.icon.assetName)
                     }
                 }
                 .disabled(menu.memoryUnavailableReason != nil)

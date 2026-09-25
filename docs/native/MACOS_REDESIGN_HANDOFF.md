@@ -552,3 +552,14 @@ Sync tooling, spec §A4.1 / §A4.3 / §A4.6. Full notes: the spec's "Phase 6 not
 - **npm:** `native:sync:check`, `native:parity:label`, `native:consumption:test`.
 - **For the owner in GitHub:** create the two labels and make "Native parity label" required.
 - **Not in this part:** the shell contract, the wire schema, the parity ledger, server-driven lists, paired screenshots (Phase 6 items 1b, 3, 4, 6, 7); the legacy status ramp's migration; the iOS token pass.
+
+## Phase 6 B, 2026-09-25: the shell contract (`mac/lg-p6b`)
+
+The spec's "Phase 6 B" section has the detail. In short:
+
+- **`contracts/product/juno-shell-v1.json`**: the web's shell as data (plans, products, each product's sidebar with More and its plan gates, section headings, the `+` menu's rows and groups, the primary action's faces, the Settings rail and aliases), each item with its mark.
+- **`npm run shell:contract:test`** (`tests/shell-contract.test.ts`, also in `npm test`): holds `app-sidebar.tsx`, `composer.tsx`, `composer-plus-menu.tsx`, `composer-shell.tsx` and `settings-sections.ts` to the contract.
+- **`npm run shell:contract:generate` / `shell:contract:check`** (`scripts/generate-shell-contract.mjs`): writes and checks `native/macOS/JunoDesktop/App/Generated/JunoShellContract.swift`. Both run in `native.yml`'s contract job.
+- **The Mac reads it** through `App/DesktopShellContract.swift` (exhaustive mappings onto `DesktopProductMode`, `DesktopDestination`, `DesktopSettingsSection`, `ChatComposerFace`): the switch's products, Chat's rows, More, headings and empty lines, the `+` menu's titles and marks, the Settings rail's names, marks and aliases. `Tests/DesktopShellContractTests.swift`; the sheet `ShellContractSnapshotTests` (`$JUNO_SNAPSHOT_DIR/shell/`).
+- **When the web's shell changes:** edit the contract until the test passes, run `npm run shell:contract:generate`, then give any new case its place in `DesktopShellContract.swift` (the build fails until you do).
+- **Left:** the call's "Add Photos…" vs the web's files row, the primary action's words, Code's column on `JunoShellCodeSidebar`, and the rest of Phase 6.
