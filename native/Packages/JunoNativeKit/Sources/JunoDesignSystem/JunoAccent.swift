@@ -123,15 +123,120 @@ public final class JunoAccentSelection {
 
     public var current: JunoAccent = .coral
 
+    /// A colour the account chose outside the six (`#rrggbb`, Phase 3), or
+    /// nil. While it is set, ``current`` is coral — the fallback for the few
+    /// readers that need a preset — and the resolved colours below are the
+    /// custom one's.
+    public private(set) var custom: JunoCustomAccent?
+
     private init() {}
 
     /// Applies the account's stored preference. A no-op when it has not changed,
     /// so this is safe to call from an `onChange` that fires on every settings sync.
     public func apply(setting: String?) {
+        if let custom = JunoCustomAccent(hex: setting ?? "") {
+            if self.custom != custom { self.custom = custom }
+            if current != .coral { current = .coral }
+            return
+        }
+        if custom != nil { custom = nil }
         let resolved = JunoAccent(setting: setting)
         guard resolved != current else { return }
         current = resolved
     }
+
+    /// `--primary` in force: the custom colour's, or the preset's.
+    public var color: Color { custom?.color ?? current.color }
+    /// `--primary-ink` in force.
+    public var ink: Color { custom?.ink ?? current.ink }
+    /// `--primary-foreground` in force.
+    public var onAccent: Color { custom?.onAccent ?? current.onAccent }
+    /// The focus ring: graphite in every accent, the custom one included (P3-7).
+    public var ring: Color { current.ring }
+
+    /// The HSL triplet in force, per appearance.
+    public func hsl(dark isDark: Bool) -> (h: Double, s: Double, l: Double) {
+        custom?.hsl(dark: isDark) ?? current.hsl(dark: isDark)
+    }
+}
+
+/// An accent outside the six presets, as the web derives it from a stored
+/// `#rrggbb` (`app-provider.tsx`): hex to HSL, the lightness clamped to at
+/// least 55% in dark and at most 55% in light, and the text on it white below
+/// 60% lightness and the warm near-black at or above it. The web also moves
+/// the focus ring to the custom colour; the Mac keeps it graphite (P3-7).
+public struct JunoCustomAccent: Equatable, Sendable {
+    /// The stored value, lower-cased: `#ea580c`.
+    public let hex: String
+    /// Hue in degrees, saturation and lightness as 0…1, before any clamp.
+    public let hue: Double
+    public let saturation: Double
+    public let lightness: Double
+
+    public init?(hex: String) {
+        let trimmed = hex.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard trimmed.count == 7, trimmed.hasPrefix("#"),
+            let value = UInt32(trimmed.dropFirst(), radix: 16)
+        else { return nil }
+        let r = Double((value >> 16) & 0xFF) / 255
+        let g = Double((value >> 8) & 0xFF) / 255
+        let b = Double(value & 0xFF) / 255
+        let maxC = max(r, g, b)
+        let minC = min(r, g, b)
+        let l = (maxC + minC) / 2
+        var h = 0.0
+        var s = 0.0
+        if maxC != minC {
+            let d = maxC - minC
+            s = l > 0.5 ? d / (2 - maxC - minC) : d / (maxC + minC)
+            switch maxC {
+            case r: h = (g - b) / d + (g < b ? 6 : 0)
+            case g: h = (b - r) / d + 2
+            default: h = (r - g) / d + 4
+            }
+            h *= 60
+        }
+        self.hex = trimmed
+        // The web rounds each component to a whole number before use.
+        hue = h.rounded()
+        saturation = (s * 100).rounded() / 100
+        lightness = (l * 100).rounded() / 100
+    }
+
+    /// The triplet in force for an appearance: lightness clamped to ≥ 0.55 in
+    /// dark and ≤ 0.55 in light.
+    public func hsl(dark isDark: Bool) -> (h: Double, s: Double, l: Double) {
+        let l = isDark ? max(lightness, 0.55) : min(lightness, 0.55)
+        return (hue, saturation, l)
+    }
+
+    /// Whether the text on the accent is the dark ink rather than white — at
+    /// or above 60% lightness, which only a clamped-up dark accent reaches.
+    public func takesDarkInk(dark isDark: Bool) -> Bool {
+        hsl(dark: isDark).l >= 0.60
+    }
+
+    public var color: Color {
+        Color.junoAdaptive(
+            light: JunoColorToken(hsl: hsl(dark: false)),
+            dark: JunoColorToken(hsl: hsl(dark: true))
+        )
+    }
+
+    /// Accent text: the clamped colour itself, which reads on both canvases.
+    public var ink: Color { color }
+
+    public var onAccent: Color {
+        Color.junoAdaptive(
+            light: takesDarkInk(dark: false) ? Self.inkLight : Self.white,
+            dark: takesDarkInk(dark: true) ? Self.inkDark : Self.white
+        )
+    }
+
+    /// `hsl(30 3% 12%)` and `hsl(40 6% 10%)`: the web's near-black on a pale accent.
+    static let inkLight = JunoColorToken(hsl: (30, 0.03, 0.12))
+    static let inkDark = JunoColorToken(hsl: (40, 0.06, 0.10))
+    static let white = JunoColorToken(unchecked: 1, 1, 1)
 }
 
 public extension JunoColorToken {

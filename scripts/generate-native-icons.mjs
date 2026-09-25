@@ -274,11 +274,16 @@ const PHOSPHOR = {
   // drawings for those concepts.
   Calculator: null,
   Chats: null,
+
+  // Phase 3 Stage C: the Account photo's camera badge and the Models pane's
+  // pinned-model star (drawn filled, as the web's is).
+  Camera: "Camera",
+  Star: "Star",
 };
 
 /** Glyphs with a `.fill` twin: the "on" drawings §8.6 asks for — a pinned row,
  *  the stop face, a rated reply. Must match `JunoIcon.filledSymbols`. */
-const FILLED = new Set(["PushPin", "Square", "ThumbsUp", "ThumbsDown"]);
+const FILLED = new Set(["PushPin", "Square", "ThumbsUp", "ThumbsDown", "Star"]);
 
 /** Glyphs the web draws mirrored (`glyph(…, { mirrored: true })`), shipped as a
  *  mirrored copy so every native path — `Image`, `NSImage(named:)`, a menu —

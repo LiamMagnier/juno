@@ -239,7 +239,7 @@ public extension Color {
     /// or decoration. Apply it with ``SwiftUI/View/junoAccentTint()``.
     static var junoAccent: Color {
         guard Thread.isMainThread else { return JunoAccent.coral.color }
-        return MainActor.assumeIsolated { JunoAccentSelection.shared.current.color }
+        return MainActor.assumeIsolated { JunoAccentSelection.shared.color }
     }
 
     /// `--primary-ink`, by accent: links, accent text, code keywords. A
@@ -247,7 +247,7 @@ public extension Color {
     /// accent — dark coral text on the charcoal needs a lighter coral.
     static var junoAccentInk: Color {
         guard Thread.isMainThread else { return JunoAccent.coral.ink }
-        return MainActor.assumeIsolated { JunoAccentSelection.shared.current.ink }
+        return MainActor.assumeIsolated { JunoAccentSelection.shared.ink }
     }
 
     /// `--primary-foreground`, by accent: glyphs and text drawn *on* the
@@ -255,7 +255,7 @@ public extension Color {
     /// dark teal/violet/sage, where white fails contrast.
     static var junoOnAccent: Color {
         guard Thread.isMainThread else { return JunoAccent.coral.onAccent }
-        return MainActor.assumeIsolated { JunoAccentSelection.shared.current.onAccent }
+        return MainActor.assumeIsolated { JunoAccentSelection.shared.onAccent }
     }
 
     /// The accent block's `--ring`: #5F5C54 / #D1CFC7, neutral in every accent,

@@ -122,6 +122,7 @@ final class DesktopQuickEntryController {
                 isAccessibilityTrusted: isAccessibilityTrusted,
                 dismiss: { [weak self] in self?.hide() }
             )
+            .desktopTextScale()
         )
         return panel
     }

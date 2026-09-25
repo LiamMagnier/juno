@@ -1,40 +1,72 @@
 import AppKit
 import JunoAuth
+import JunoCore
 import JunoChatKit
 import JunoCodeUI
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
+import JunoWorkKit
 import SwiftUI
 
-/// The sections of Settings — the website's rail, one for one.
+/// The sections of Settings, in the web's order (`settings-sections.ts`):
+/// General · Personalization · Memory · Models · Connectors · Devices · Voice ·
+/// Data & privacy · Account · Plan & usage, then the Mac-only Code section
+/// last until Code's redesign (P3-3).
 ///
-/// `src/components/settings/settings-sections.ts` is the registry this mirrors:
-/// how Juno looks, how it talks, what it remembers, which models it uses, what
-/// it may reach, how it sounds — then the account and the money. Code is the
-/// one addition, because only the Mac has a Code runtime with standing
-/// preferences of its own. Irreversible operations live at the bottom of
-/// Account and Data & privacy rather than in a "danger zone" of their own.
+/// Raw values are stored (`storageKey`) and routed by, so they never change:
+/// Plan & usage is still `billing`.
 enum DesktopSettingsSection: String, CaseIterable, Identifiable {
     case general
     case personalization
     case memory
     case models
     case connectors
+    case devices
     case voice
-    case code
     case data
     case account
     case billing
+    case code
 
     var id: String { rawValue }
 
     static let storageKey = "juno.desktop.settings.section"
 
-    /// The names older call sites route by. `usage` is the plan's own page now
-    /// and `connections` is what the web calls connectors.
+    /// The names older call sites route by. `usage` is Plan & usage and
+    /// `connections` is what the web calls connectors.
     static var usage: DesktopSettingsSection { .billing }
     static var connections: DesktopSettingsSection { .connectors }
+
+    /// The web's aliases (`ALIASES` in `settings-sections.ts`), plus the Mac's
+    /// own `usage` and `connections`.
+    static let aliases: [String: DesktopSettingsSection] = [
+        "profile": .account,
+        "security": .account,
+        "permissions": .devices,
+        "macs": .devices,
+        "hosts": .devices,
+        "connected-apps": .connectors,
+        "connector-permissions": .connectors,
+        "connections": .connectors,
+        "usage": .billing,
+        "plan": .billing,
+        "plan-usage": .billing,
+        "appearance": .general,
+        "theme": .general,
+        "language": .general,
+        "chat": .personalization,
+        "style": .personalization,
+        "instructions": .personalization,
+        "danger": .account,
+        "privacy": .data,
+    ]
+
+    /// A section id or one of the web's aliases, else General.
+    static func resolve(_ name: String?) -> DesktopSettingsSection {
+        let key = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return DesktopSettingsSection(rawValue: key) ?? aliases[key] ?? .general
+    }
 
     var label: String {
         switch self {
@@ -43,82 +75,70 @@ enum DesktopSettingsSection: String, CaseIterable, Identifiable {
         case .memory: "Memory"
         case .models: "Models"
         case .connectors: "Connectors"
+        case .devices: "Devices"
         case .voice: "Voice"
-        case .code: "Code"
         case .data: "Data & privacy"
         case .account: "Account"
-        case .billing: "Plan & billing"
+        case .billing: "Plan & usage"
+        case .code: "Code"
         }
     }
 
-    /// The web's one-line description, read out as the rail row's hint.
-    var summary: String {
-        switch self {
-        case .general: "Theme, accent and language."
-        case .personalization: "How Juno writes and what it keeps in mind."
-        case .memory: "What Juno may remember between conversations."
-        case .models: "Which model answers by default, and your favorites."
-        case .connectors: "The apps Juno can read from and act on."
-        case .voice: "How Juno sounds when it reads aloud."
-        case .code: "Permissions, model, environment and hosting for Juno Code."
-        case .data: "Export, shared links and diagnostics."
-        case .account: "Who you are to Juno, and how you sign in."
-        case .billing: "Your plan, what you have used, and the ceiling."
-        }
-    }
-
+    /// The web's `SettingsIcons` (and `CodeIcons.device` for Devices).
     var icon: JunoIcon {
         switch self {
-        case .general: .sliders
-        case .personalization: .writing
+        case .general: .general
+        case .personalization: .personalization
         case .memory: .memory
         case .models: .models
-        case .connectors: .connections
-        case .voice: .mic
+        case .connectors: .connectors
+        case .devices: .device
+        case .voice: .voice
+        case .data: .data
+        case .account: .account
+        case .billing: .billing
         case .code: .code
-        case .data: .shield
-        case .account: .user
-        case .billing: .usage
         }
     }
 
-    /// The labels of the rows the section's form holds, for the sidebar's
-    /// search field. A static table rather than a walk of the live form: the
-    /// rows are known at build time, and a search that reads the view tree
-    /// would have to build every section to answer one keystroke.
+    /// The labels of the rows each pane holds, for the sidebar's search field.
+    /// A static table rather than a walk of the live form: the rows are known
+    /// at build time.
     var searchTerms: [String] {
         switch self {
         case .general:
-            ["Appearance", "Theme", "Light", "Dark", "Accent color", "Interface language", "Updates", "Version", "Diagnostics", "About"]
+            ["Appearance", "Theme", "Light", "Dark", "System", "Accent color", "Custom accent color", "Text size", "About", "Version", "Updates", "Diagnostics"]
         case .personalization:
-            ["Response style", "Response language", "Custom instructions", "Personality"]
+            ["What Juno calls you", "Name", "Custom instructions", "Responses", "Personality", "Response language"]
         case .memory:
-            ["Saved memories", "Memory manager", "What Juno noticed", "Background processing", "Provider"]
+            ["Reference saved memories", "Learn from past chats in the background", "Memories", "Sensitive subjects", "Health", "Politics", "Money", "Background work", "Who may read your chats for it", "What Juno noticed"]
         case .models:
-            ["Default model", "Favorites", "Catalog"]
+            ["Default model", "On this device", "Fast mode", "Favorites", "Pinned models"]
         case .connectors:
-            ["Connections", "Integrations", "Apps", "OAuth"]
+            ["Connected apps", "Browse apps", "Permissions", "When Juno acts in an app", "Lockdown"]
+        case .devices:
+            ["This Mac", "Your Macs", "Work", "Hosts", "Permissions"]
         case .voice:
-            ["Read aloud", "Dictation", "Speech"]
-        case .code:
-            ["Permissions", "Environment", "MCP", "Hooks", "Skills", "Agents", "Remote", "Juno Work", "Hosting", "Pair"]
+            ["Read aloud", "Voice", "Preview", "Dictation"]
         case .data:
-            ["Export", "JSON", "CSV", "Shared links", "Diagnostics", "Sync"]
+            ["Export your data", "JSON", "Juno package", "CSV", "Import chat history", "ChatGPT", "Claude", "Gemini", "Shared links", "Delete all conversations"]
         case .account:
-            ["Profile", "Email", "Sign out", "Budget alerts", "Weekly digest", "Notifications", "Delete account"]
+            ["Profile picture", "Change name", "Sign-in and security", "Two-step verification", "Password", "Email address", "This session", "Sign out", "Sign out everywhere", "Notifications", "Budget alerts", "Weekly digest", "When something needs you", "Updates", "Delete account"]
         case .billing:
-            ["Plan", "Usage", "Budget", "Spend", "Limit", "Upgrade"]
+            ["Plan", "Upgrade", "Change plan", "Manage billing", "Usage", "This month", "Current session", "This week", "Spend ceiling", "Monthly ceiling", "History"]
+        case .code:
+            ["Juno Code", "Permissions", "Environment", "MCP", "Remote", "Pair"]
         }
     }
 
     /// The sections a search string leaves visible — all of them for an empty
-    /// string. Matched against the name, the summary and the row labels, case-
-    /// and diacritic-insensitively, so "colour" still finds "Accent color".
+    /// string. Matched against the name and the row labels, case- and
+    /// diacritic-insensitively.
     static func matching(_ query: String) -> [DesktopSettingsSection] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return allCases }
         return allCases.filter { section in
-            ([section.label, section.summary] + section.searchTerms).contains { term in
+            ([section.label] + section.searchTerms).contains { term in
                 term.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
             }
         }
@@ -128,51 +148,41 @@ enum DesktopSettingsSection: String, CaseIterable, Identifiable {
 /// Opens the Settings window on a section, from anywhere in the app.
 ///
 /// The `Settings` scene has no `openWindow(value:)`, so the section crosses
-/// through `UserDefaults` — written here, read by the window's rail on the
-/// next frame. `@AppStorage` on both sides makes the window follow a write
-/// made while it is already open.
+/// through `UserDefaults` — written here, read by the window's source list.
+/// `@AppStorage` on both sides makes the window follow a write made while it
+/// is already open.
 @MainActor
 enum DesktopSettingsRouter {
     static func select(_ section: DesktopSettingsSection) {
         UserDefaults.standard.set(section.rawValue, forKey: DesktopSettingsSection.storageKey)
     }
 
-    /// Selects the section and brings the Settings window up.
-    ///
-    /// `showSettingsWindow:` is the responder-chain action the `Settings` scene
-    /// installs behind ⌘, — the same one the application menu's item sends —
-    /// so this is reachable from a closure with no view environment, which is
-    /// where the sidebar footer and the menu bar item call it from.
+    /// Selects the section and brings the Settings window up, through the
+    /// responder-chain action the `Settings` scene installs behind ⌘,.
     static func open(_ section: DesktopSettingsSection) {
         select(section)
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
     }
 
     /// Selects the section and opens Settings through SwiftUI's own action.
-    ///
-    /// The route for any view that can read `\.openSettings` — the footer's
-    /// gear, the account popover. It is the supported path to the `Settings`
-    /// scene, where the selector above is the one a closure with no view
-    /// environment has to fall back on.
     static func open(_ section: DesktopSettingsSection, using openSettings: OpenSettingsAction) {
         select(section)
         openSettings()
     }
+
+    /// Opens a section by its id or one of the web's aliases (`usage`,
+    /// `permissions`, `profile`…).
+    static func open(named name: String) {
+        open(DesktopSettingsSection.resolve(name))
+    }
 }
 
-/// The ⌘, window: a source list of sections beside the section's form.
+/// The ⌘, window: a source list of sections beside the section's pane.
+///
+/// It applies the account's theme, the accent and this Mac's text size
+/// itself (§C1), and hosts its own toasts and the Upgrade sheet.
 struct DesktopSettingsWindow: View {
     let configuration: JunoDesktopConfiguration?
-
-    @AppStorage(DesktopSettingsSection.storageKey) private var storedSection =
-        DesktopSettingsSection.general.rawValue
-
-    private var section: Binding<DesktopSettingsSection> {
-        Binding(
-            get: { DesktopSettingsSection(rawValue: storedSection) ?? .general },
-            set: { storedSection = $0.rawValue }
-        )
-    }
 
     var body: some View {
         Group {
@@ -180,21 +190,18 @@ struct DesktopSettingsWindow: View {
                let settingsModel = configuration.memorySettingsModel,
                case .signedIn(let session) = configuration.authModel.phase
             {
-                DesktopSettingsShell(section: section) { section in
-                    DesktopSettingsScreen(
-                        section: section,
-                        configuration: configuration,
-                        settingsModel: settingsModel,
-                        session: session
-                    )
-                }
+                DesktopSettingsSignedInWindow(
+                    configuration: configuration,
+                    settingsModel: settingsModel,
+                    session: session
+                )
+                .id(session.profile.id)
             } else {
                 JunoEmptyState(
                     title: "Sign in to change settings",
                     message: "Juno's settings belong to your account and sync across your devices.",
                     icon: .user
                 )
-                .junoReadingCanvas()
             }
         }
         .frame(
@@ -203,62 +210,112 @@ struct DesktopSettingsWindow: View {
             minHeight: DesktopSettingsMetrics.windowMinimum.height,
             idealHeight: DesktopSettingsMetrics.windowIdeal.height
         )
+        .containerBackground(Color.junoCanvas, for: .window)
+        .preferredColorScheme(Self.colorScheme(configuration?.memorySettingsModel?.settings?.theme))
+        .junoAccentTint()
+        .desktopTextScale()
         .accessibilityIdentifier("juno.desktop.settings.window")
+    }
+
+    static func colorScheme(_ theme: NativeThemePreference?) -> ColorScheme? {
+        switch theme {
+        case .light: .light
+        case .dark: .dark
+        case .system, .none: nil
+        }
     }
 }
 
-/// The shape of Settings — System Settings' shape — in the ⌘, window, which is
-/// the only place Settings lives (§7.2). The in-window sheet that shared this
-/// shell was deleted in Phase 1: two surfaces for one set of preferences meant
-/// a sheet over the product the reader was using, and a second Done button.
+/// The window for a signed-in account: one ``DesktopSettingsContext`` for the
+/// window's life.
+private struct DesktopSettingsSignedInWindow: View {
+    @State private var context: DesktopSettingsContext
+    @AppStorage(DesktopSettingsSection.storageKey) private var storedSection =
+        DesktopSettingsSection.general.rawValue
+
+    init(
+        configuration: JunoDesktopConfiguration,
+        settingsModel: DesktopSettingsContext.SettingsModel,
+        session: NativeAuthenticatedSession
+    ) {
+        let workbench = DesktopWorkbenchRegistry.shared.workbench
+        let authModel = configuration.authModel
+        var hostsLoader: (@Sendable (AccountID) async throws -> [WorkHostSummary])?
+        if let runtime = configuration.runtime {
+            hostsLoader = { accountID in
+                try await NativeWorkClient(sender: runtime, streamer: runtime).hosts(for: accountID)
+            }
+        }
+        var services = DesktopSettingsContext.Services()
+        services.sender = configuration.requestSender
+        services.accountData = configuration.accountDataClient
+        services.shareClient = configuration.shareClient
+        services.messageActions = configuration.messageActionsClient
+        services.connectorModel = configuration.connectorModel
+        services.workHostModel = configuration.workHostModel
+        services.hostsLoader = hostsLoader
+        services.syncModel = configuration.syncModel
+        services.outbox = configuration.outbox
+        services.learningModel = configuration.memoryLearningModel
+        services.avatarModel = configuration.avatarModel
+        services.codeWorkbench = workbench
+        services.codeModels = workbench?.availableModels ?? []
+        services.codeHostModel = configuration.codeHostModel
+        let signOut: @MainActor () async -> Void = { await authModel.signOut() }
+        let context = DesktopSettingsContext(
+            profile: session.profile,
+            settingsModel: settingsModel,
+            services: services,
+            modelCatalog: configuration.conversationModel?.selectableModels ?? [],
+            signOut: signOut
+        )
+        _context = State(initialValue: context)
+    }
+
+    private var section: Binding<DesktopSettingsSection> {
+        Binding(
+            get: { DesktopSettingsSection.resolve(storedSection) },
+            set: { storedSection = $0.rawValue }
+        )
+    }
+
+    var body: some View {
+        DesktopSettingsShell(section: section, context: context)
+            .task { await context.loadServerSettings() }
+            .desktopUpgradeSheet(host: .settings, sender: context.services.sender, accountID: context.accountID)
+    }
+}
+
+/// The shape of Settings: System Settings' shape, in the ⌘, window.
 ///
-/// A `NavigationSplitView`: the sections are a real source list on the left,
-/// so arrow keys, type-select, the focus ring and Increase Contrast are the
-/// platform's, and the selected section's name and one-line summary are the
-/// window's own title and subtitle rather than a heading painted into the
-/// page. The sidebar column is vibrant, as every Mac source list is; only the
-/// detail paints the reading canvas, and it paints it once here so no page
-/// has to. The sidebar toggle is removed because a settings window with its
-/// sections hidden is a window nobody can use.
-///
-/// `detail` builds the page for a section.
-struct DesktopSettingsShell<Detail: View>: View {
+/// A `NavigationSplitView` (the window's one): the sections are a real source
+/// list on the left, so arrow keys, type-select, the focus ring and Increase
+/// Contrast are the platform's, and the selected section's name is the
+/// window's title rather than a heading painted into the pane (decision 17:
+/// no subtitle). The sidebar toggle is removed because a settings window with
+/// its sections hidden is a window nobody can use.
+struct DesktopSettingsShell: View {
     @Binding var section: DesktopSettingsSection
-    @ViewBuilder let detail: (DesktopSettingsSection) -> Detail
+    let context: DesktopSettingsContext
 
     @State private var query = ""
     @State private var columns = NavigationSplitViewVisibility.all
-    /// This window's toasts (§7.7): a conflict or a failed sync, said once,
-    /// over the pane — the Settings window is a window of its own, so it has
-    /// its own host.
-    @State private var toasts = JunoToastCenter()
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             DesktopSettingsSidebar(selection: $section, query: $query)
         } detail: {
-            detail(section)
-                .junoToastHost(toasts)
+            DesktopSettingsScreen(section: section, context: context)
+                .junoToastHost(context.toasts)
                 .navigationTitle(section.label)
-                .navigationSubtitle(section.summary)
-                .junoReadingCanvas()
         }
         .toolbar(removing: .sidebarToggle)
     }
 }
 
-/// The sections, as the platform's own source list.
-///
-/// Once hand-drawn, because a `List(selection:)` painted the platform's
-/// full-bleed accent selection — a coral slab. The main sidebar has since
-/// solved that with the pair in `JunoDesktopChrome`: the tint on the list for
-/// the states it reaches, and the row's own fill for the emphasized state
-/// macOS 26 paints in the system accent regardless. With that solved, there
-/// is no reason left to draw a list by hand.
-///
-/// The search field filters the sections by their name, their summary and
-/// the labels of the rows each form holds, so "accent" finds General and
-/// "digest" finds Account without either word being in the section's name.
+/// The sections, as the platform's own source list, with the web's glyphs and
+/// a search field that also finds a section by the rows it holds ("accent"
+/// finds General, "digest" finds Account) — P3-1.
 struct DesktopSettingsSidebar: View {
     @Binding var selection: DesktopSettingsSection
     @Binding var query: String
@@ -268,8 +325,8 @@ struct DesktopSettingsSidebar: View {
         DesktopSettingsSection.matching(query)
     }
 
-    /// `List(selection:)` wants an optional. Deselecting — ⌘-click on the
-    /// selected row — is not a state Settings has, so nil keeps what was there.
+    /// `List(selection:)` wants an optional. Deselecting is not a state
+    /// Settings has, so nil keeps what was there.
     private var listSelection: Binding<DesktopSettingsSection?> {
         Binding(
             get: { selection },
@@ -284,7 +341,6 @@ struct DesktopSettingsSidebar: View {
             }
         }
         .listStyle(.sidebar)
-        // The selection is still the platform's — only its colour is Juno's.
         .junoSidebarSelectionTint()
         .searchable(text: $query, placement: .sidebar, prompt: "Search settings")
         .overlay {
@@ -303,10 +359,7 @@ struct DesktopSettingsSidebar: View {
 
     private func row(_ section: DesktopSettingsSection) -> some View {
         // The ink is stated on the mark as well as on the label: a `Label` in a
-        // `.sidebar` list resolves its icon slot against the system accent, and
-        // an inherited `foregroundStyle` does not reach it. The rail is
-        // greyscale, as the web's is — the mark rests on the sidebar ink and
-        // lifts with its label when selected.
+        // `.sidebar` list resolves its icon slot against the system accent.
         let selected = selection == section
         let ink = selected ? Color.junoForeground : Color.junoSidebarForeground
 
@@ -317,85 +370,38 @@ struct DesktopSettingsSidebar: View {
                 .foregroundStyle(ink)
         }
         .foregroundStyle(ink)
-        // A colour crossfade in place — tint-tier motion, which Reduce Motion
-        // leaves alone, so it is deliberately not gated behind the preference.
         .animation(
             JunoMotion.reduced(JunoMotion.standard, when: reduceMotion, tier: .tint),
             value: selected
         )
         .junoSidebarRowSelection(selected)
         .tag(section)
-        .help(section.summary)
         .accessibilityIdentifier("juno.desktop.settings.section.\(section.rawValue)")
     }
 }
 
-extension DesktopSettingsScreen {
-    /// The page for a section, with everything it reads taken from the window's
-    /// configuration.
-    init(
-        section: DesktopSettingsSection,
-        configuration: JunoDesktopConfiguration,
-        settingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>,
-        session: NativeAuthenticatedSession
-    ) {
-        let workbench = DesktopWorkbenchRegistry.shared.workbench
-        self.init(
-            section: section,
-            model: settingsModel,
-            authModel: configuration.authModel,
-            session: session,
-            accountDataClient: configuration.accountDataClient,
-            shareClient: configuration.shareClient,
-            modelCatalog: configuration.conversationModel?.selectableModels ?? [],
-            avatarData: configuration.avatarModel?.imageData,
-            syncModel: configuration.syncModel,
-            outbox: configuration.outbox,
-            connectorModel: configuration.connectorModel,
-            requestSender: configuration.requestSender,
-            codeWorkbench: workbench,
-            codeModels: workbench?.availableModels ?? [],
-            codeHostModel: configuration.codeHostModel,
-            workHostModel: configuration.workHostModel,
-            learningModel: configuration.memoryLearningModel
-        )
-    }
-}
-
-/// The Code section of the account's Settings: a way into Juno Code's own
-/// settings window, and Juno Work's hosting switch, which is about this Mac
-/// rather than about Code.
+/// The Code section of Settings: a way into Juno Code's own settings window.
+/// This Mac's Work switch moved to Devices (§C2).
 struct DesktopCodeSettingsScreen: View {
     let workbench: WorkbenchModel?
     let availableModels: [ModelOption]
     let codeHostModel: DesktopCodeHostModel?
-    var workHostModel: DesktopWorkHostModel? = nil
 
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Form {
+        DesktopSettingsForm {
             Section {
-                HStack {
-                    VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                        Text("Juno Code has its own settings")
-                        Text("Permissions and rules, environment, instructions, the agent, Git, tools and MCP, appearance and notifications.")
-                            .font(Studio.Font.meta)
-                            .foregroundStyle(Studio.Ink.tertiary)
-                    }
-                    Spacer()
-                    Button("Open Code Settings") {
+                DesktopSettingRow(
+                    title: "Juno Code has its own settings",
+                    description: "Permissions and rules, environment, instructions, the agent, Git, tools and MCP, appearance and notifications."
+                ) {
+                    DesktopOutlineButton(title: "Open Code Settings") {
                         openWindow(id: JunoDesktopWindow.codeSettingsID)
                     }
                 }
             }
-            if let workHostModel {
-                Section("Juno Work") {
-                    DesktopWorkHostTile(host: workHostModel)
-                }
-            }
         }
-        .formStyle(.grouped)
     }
 }
 

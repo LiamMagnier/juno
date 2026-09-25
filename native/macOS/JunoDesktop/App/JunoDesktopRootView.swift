@@ -57,6 +57,10 @@ struct JunoDesktopRootView: View {
     var body: some View {
         phaseContent
             .preferredColorScheme(preferredColorScheme)
+            // This Mac's text size (Phase 3, C5) and the first-run and Upgrade
+            // sheets (C4, C6).
+            .desktopTextScale()
+            .desktopFirstRunSheets(configuration)
             // Quick Entry is an AppKit panel outside every scene, so the
             // theme is handed to it rather than inherited.
             .onChange(of: preferredColorScheme, initial: true) { _, scheme in

@@ -188,11 +188,14 @@ public struct NativeUsageDay: Equatable, Sendable {
     public let dayMs: Double
     public let requests: Int
     public let totalTokens: Int
+    /// The day's model spend (Phase 3, Plan & usage's History).
+    public let costMicroUsd: Int
 
-    public init(dayMs: Double, requests: Int, totalTokens: Int) {
+    public init(dayMs: Double, requests: Int, totalTokens: Int, costMicroUsd: Int = 0) {
         self.dayMs = dayMs
         self.requests = requests
         self.totalTokens = totalTokens
+        self.costMicroUsd = costMicroUsd
     }
 }
 
@@ -212,6 +215,11 @@ public struct NativeUsageBreakdown: Equatable, Sendable {
     public let currentStreakDays: Int
     public let longestStreakDays: Int
     public let pace: NativeUsagePace
+
+    /// Decodes the body of `GET /api/profile/usage/breakdown` (Phase 3).
+    public static func decode(_ data: Data) throws -> NativeUsageBreakdown {
+        NativeUsageBreakdown(try JSONDecoder().decode(NativeUsageBreakdownWire.self, from: data))
+    }
 
     init(_ wire: NativeUsageBreakdownWire) {
         startMs = wire.range.startMs
@@ -240,7 +248,12 @@ public struct NativeUsageBreakdown: Equatable, Sendable {
             )
         }
         daily = wire.daily.map {
-            NativeUsageDay(dayMs: $0.dayMs, requests: $0.requests, totalTokens: $0.totalTokens)
+            NativeUsageDay(
+                dayMs: $0.dayMs,
+                requests: $0.requests,
+                totalTokens: $0.totalTokens,
+                costMicroUsd: $0.costMicroUsd
+            )
         }
         activeDays = wire.activeDays
         currentStreakDays = wire.currentStreakDays
@@ -478,6 +491,10 @@ public enum NativeUsageFormat {
 struct NativeUsagePlanWire: Decodable {
     struct Quota: Decodable {
         let plan: String
+        // Phase 3: the month's message count and the plan's cap (nil on a
+        // plan with no cap). Optional so an older server still decodes.
+        let used: Int?
+        let limit: Int?
     }
 
     struct Window: Decodable {
@@ -500,6 +517,12 @@ struct NativeUsagePlanWire: Decodable {
         let budgetMicroUsd: Double?
         let windows: Windows
         let billing: Billing
+        // Phase 3: what Plan & usage draws the month's meter and the ceiling
+        // from. Optional so an older server still decodes.
+        let reservedMicroUsd: Double?
+        let eurPerUsd: Double?
+        let capSource: String?
+        let capDisabled: Bool?
     }
 
     let quota: Quota
@@ -519,6 +542,53 @@ public struct NativeUsagePlan: Equatable, Sendable {
     public let budgetMicroUsd: Double?
     public let renewsAt: Date?
     public let cancelAtPeriodEnd: Bool
+    /// The month's messages against the plan's cap (Phase 3).
+    public let quota: Quota
+    /// The month's spend, as Plan & usage reads it (Phase 3).
+    public let spend: Spend
+
+    /// `quota` from `GET /api/profile/usage`: `used` is nil from a server that
+    /// predates it, `limit` is nil on a plan with no cap.
+    public struct Quota: Equatable, Sendable {
+        public let plan: String
+        public let used: Int?
+        public let limit: Int?
+
+        public init(plan: String, used: Int?, limit: Int?) {
+            self.plan = plan
+            self.used = used
+            self.limit = limit
+        }
+    }
+
+    /// `spend` from `GET /api/profile/usage`. Every field the older route did
+    /// not send is optional, and a reader treats nil as "not said".
+    public struct Spend: Equatable, Sendable {
+        public let spentMicroUsd: Double
+        public let reservedMicroUsd: Double?
+        public let budgetMicroUsd: Double?
+        /// How many euros one dollar of model spend costs; nil from an older server.
+        public let eurPerUsd: Double?
+        /// `plan` · `user` · `personal-default` · `disabled`.
+        public let capSource: String?
+        public let capDisabled: Bool?
+
+        public init(
+            spentMicroUsd: Double,
+            reservedMicroUsd: Double?,
+            budgetMicroUsd: Double?,
+            eurPerUsd: Double?,
+            capSource: String?,
+            capDisabled: Bool?
+        ) {
+            self.spentMicroUsd = spentMicroUsd
+            self.reservedMicroUsd = reservedMicroUsd
+            self.budgetMicroUsd = budgetMicroUsd
+            self.eurPerUsd = eurPerUsd
+            self.capSource = capSource
+            self.capDisabled = capDisabled
+        }
+    }
 
     public var isUnlimited: Bool { budgetMicroUsd == nil }
 
@@ -555,6 +625,21 @@ public struct NativeUsagePlan: Equatable, Sendable {
         budgetMicroUsd = wire.spend.budgetMicroUsd
         renewsAt = Self.date(wire.spend.billing.renewsAtMs)
         cancelAtPeriodEnd = wire.spend.billing.cancelAtPeriodEnd
+        quota = Quota(plan: wire.quota.plan, used: wire.quota.used, limit: wire.quota.limit)
+        spend = Spend(
+            spentMicroUsd: wire.spend.spentMicroUsd,
+            reservedMicroUsd: wire.spend.reservedMicroUsd,
+            budgetMicroUsd: wire.spend.budgetMicroUsd,
+            eurPerUsd: wire.spend.eurPerUsd,
+            capSource: wire.spend.capSource,
+            capDisabled: wire.spend.capDisabled
+        )
+    }
+
+    /// Decodes the body of `GET /api/profile/usage`. Public so a fixture or a
+    /// caller holding the JSON already does not need the client.
+    public static func decode(_ data: Data) throws -> NativeUsagePlan {
+        NativeUsagePlan(try JSONDecoder().decode(NativeUsagePlanWire.self, from: data))
     }
 
     private static func date(_ value: Double?) -> Date? {
