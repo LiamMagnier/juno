@@ -79,8 +79,9 @@ struct ComposerPlusMenu: View {
     var body: some View {
         Section {
             // ── Group 1: bring something in ─────────────────────────────────
-            // ⌘U shows here, where it is learned; the File menu carries the
-            // same command for when this menu is closed.
+            // No chords in here: ⌘U and ⇧⌘U belong to Chat › Attach Files… and
+            // Attach Screenshot… in the menu bar, which is where a Mac shows a
+            // key and where it works with this menu closed (P3-19).
             Button(action: menu.addFiles) {
                 Label {
                     Text(menu.attachTitle)
@@ -89,7 +90,6 @@ struct ComposerPlusMenu: View {
                     Image(JunoIcon.paperclip.assetName)
                 }
             }
-            .keyboardShortcut("u", modifiers: [.command])
             .disabled(!menu.canAttach)
 
             if let takeScreenshot = menu.takeScreenshot {
@@ -101,7 +101,6 @@ struct ComposerPlusMenu: View {
                         Image(JunoIcon.scan.assetName)
                     }
                 }
-                .keyboardShortcut("u", modifiers: [.command, .shift])
                 .disabled(!menu.canAttach)
             }
 
@@ -133,7 +132,13 @@ struct ComposerPlusMenu: View {
                     }
                     if let newProject = menu.newProject {
                         Divider()
-                        Button("New Project…", action: newProject)
+                        Button(action: newProject) {
+                            Label {
+                                Text("New Project…")
+                            } icon: {
+                                Image(JunoIcon.plus.assetName)
+                            }
+                        }
                     }
                 } label: {
                     Label {

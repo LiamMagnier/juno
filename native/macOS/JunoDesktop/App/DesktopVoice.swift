@@ -893,37 +893,37 @@ struct DesktopVoiceDock: View {
         }
     }
 
+    /// Options (the menu recipe, §7.1): the voice model as an inline choice,
+    /// so the system draws the checkmark, then Share Screen where the model
+    /// can see. Title Case, glyphs on the actions.
     private var optionsMenu: some View {
         Menu {
-            Section("Voice model") {
-                ForEach(JunoVoiceProvider.allCases) { provider in
-                    Button {
-                        controller.switchProvider(provider)
-                    } label: {
-                        if provider == controller.provider {
-                            Label(verbatim: provider.displayName, icon: .check)
-                        } else {
-                            Text(provider.displayName)
-                        }
+            Section("Voice Model") {
+                Picker("Voice Model", selection: providerBinding) {
+                    ForEach(JunoVoiceProvider.allCases) { provider in
+                        Text(provider.displayName).tag(provider)
                     }
-                    .disabled(provider == controller.provider)
                 }
+                .pickerStyle(.inline)
+                .labelsHidden()
             }
             if controller.capabilities?.screenInput == true || controller.capabilities?.videoInput == true {
-                Divider()
-                Button {
-                    if controller.screenSharing {
-                        controller.stopScreenShare()
-                    } else {
-                        controller.startScreenShare()
+                Section {
+                    Button {
+                        if controller.screenSharing {
+                            controller.stopScreenShare()
+                        } else {
+                            controller.startScreenShare()
+                        }
+                    } label: {
+                        Label {
+                            Text(controller.screenSharing ? "Stop Sharing Screen" : "Share Screen")
+                        } icon: {
+                            Image((controller.screenSharing ? JunoIcon.monitorOff : JunoIcon.monitor).assetName)
+                        }
                     }
-                } label: {
-                    Label(
-                        verbatim: controller.screenSharing ? "Stop sharing screen" : "Share screen",
-                        icon: controller.screenSharing ? .monitorOff : .monitor
-                    )
+                    .accessibilityIdentifier("juno.desktop.voice-share-screen")
                 }
-                .accessibilityIdentifier("juno.desktop.voice-share-screen")
             }
         } label: {
             JunoIconView(.chevronDown, size: 14)
@@ -936,11 +936,24 @@ struct DesktopVoiceDock: View {
                 )
                 .contentShape(Circle())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .frame(width: Metric.control, height: Metric.control)
+        .contentShape(Circle())
+        .help("Voice options")
         .accessibilityLabel("Voice options")
         .accessibilityIdentifier("juno.desktop.voice-options")
+    }
+
+    private var providerBinding: Binding<JunoVoiceProvider> {
+        Binding(
+            get: { controller.provider },
+            set: { provider in
+                guard provider != controller.provider else { return }
+                controller.switchProvider(provider)
+            }
+        )
     }
 
     private var hangUpButton: some View {

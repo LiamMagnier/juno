@@ -26,6 +26,25 @@
       "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift": 3
     }
   },
+  "menus": {
+    "total": 21,
+    "modules": {
+      "JunoCode (shared)": 3,
+      "JunoDesktop (macOS)": 18
+    },
+    "files": {
+      "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Preview/CodePreviewWindow.swift": 2,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Simulator/SimulatorPane.swift": 1,
+      "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift": 2,
+      "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift": 1,
+      "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift": 2,
+      "native/macOS/JunoDesktop/App/DesktopLibraryScreen.swift": 1,
+      "native/macOS/JunoDesktop/App/DesktopProjectsScreen.swift": 4,
+      "native/macOS/JunoDesktop/App/DesktopWorkSettings.swift": 2,
+      "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift": 5,
+      "native/macOS/JunoDesktop/App/ResearchViews.swift": 1
+    }
+  },
   "motion": {
     "total": 0,
     "modules": {},

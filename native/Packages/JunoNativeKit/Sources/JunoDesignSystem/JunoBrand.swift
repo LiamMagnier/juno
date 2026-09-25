@@ -160,6 +160,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     case circleDot, loader, agents, archive, download, filter, eye, message
     case bell, arrowUp, arrowLeft, arrowRight, minus, box, key, link
     case sun, moon, monitor, home2
+    case keyboard
 
     /// Status and state marks — the web's `StatusIcons` under their old
     /// names, and the glyphs its lists draw beside a row's state. Added so the
@@ -204,6 +205,9 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// A task's meter (Phase 5): Elapsed, Cost and Tokens — the web's
     /// `WorkLiveMeter` glyphs.
     case timer, coins, sigma
+
+    /// The menu bar's Command Menu… (Phase 3 Stage A): the ⌘ key itself.
+    case command
 
     /// The generated symbol this case wears, without a cut suffix: `ph.<name>`
     /// for Phosphor's drawings, `juno.<name>` for Juno's own.
@@ -347,6 +351,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .sun: "ph.sun"
         case .moon: "ph.moon"
         case .monitor: "ph.monitor"
+        case .keyboard: "ph.keyboard"
         case .knowledge: "ph.bookopen"
         case .tools: "ph.wrench"
         case .circleCheck: "ph.checkcircle"
@@ -417,6 +422,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .timer: "ph.timer"
         case .coins: "ph.coins"
         case .sigma: "ph.sigma"
+        case .command: "ph.command"
         }
     }
 
