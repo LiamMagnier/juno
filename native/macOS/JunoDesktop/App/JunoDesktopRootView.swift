@@ -105,6 +105,28 @@ struct JunoDesktopRootView: View {
                 guard hasAgents else { return }
                 Task { await NativePushRegistrar.shared.requestFullAuthorization() }
             }
+            // Coming back to Juno re-reads what may have changed while it was
+            // behind: the task list (the Needs-you fold, the dots, the Dock)
+            // and the inbox's count.
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                guard case .signedIn = configuration.authModel.phase else { return }
+                if let workModel = configuration.workModel {
+                    Task { await workModel.refresh() }
+                }
+                configuration.notificationsModel?.refreshCount()
+            }
+            // The inbox's poll runs while any of Juno's windows is on screen.
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeOcclusionStateNotification)) { _ in
+                configuration.notificationsModel?.isVisible = NSApp.occlusionState.contains(.visible)
+            }
+            // The inbox's dot is asked again whenever a task or an agent
+            // changes: either may have just written a notification.
+            .onChange(of: configuration.workModel?.sessions) { _, _ in
+                configuration.notificationsModel?.refreshCount()
+            }
+            .onChange(of: configuration.agentsModel?.agents) { _, _ in
+                configuration.notificationsModel?.refreshCount()
+            }
             .onChange(of: workbenchModel?.workspaces) { _, workspaces in
                 // The workbench is built at the end of `updateLifecycle` and
                 // loads its grants asynchronously in `bootstrap()`, so there is
@@ -218,6 +240,22 @@ struct JunoDesktopRootView: View {
         configuration.agentsModel?.onNeedsYouRise = { agent in
             DesktopAgentAlerts.announceNeedsYou(agent)
         }
+        // Beside the agents' hook, and before the task list's first read,
+        // which is the baseline and says nothing (Phase 5 C2).
+        var conversations: (@MainActor () -> [NativeConversation])?
+        if let conversationModel = configuration.conversationModel {
+            conversations = { conversationModel.conversations }
+        }
+        DesktopNeedsYouSignals.shared.start(
+            workModel: configuration.workModel,
+            agentsModel: configuration.agentsModel,
+            hostModel: configuration.workHostModel,
+            conversations: conversations
+        )
+        configuration.notificationsModel?.onFailure = { title, detail in
+            DesktopNeedsYouSignals.shared.toast(.error(title, detail: detail))
+        }
+        configuration.notificationsModel?.start(for: accountID)
         Task {
             await configuration.conversationModel?.start(for: accountID)
             await configuration.projectModel?.start(for: accountID)
@@ -381,6 +419,10 @@ struct JunoDesktopRootView: View {
         configuration.workAutomationModel?.stop()
         configuration.agentsModel?.stop()
         configuration.agentsModel?.onNeedsYouRise = nil
+        // Clears the Dock badge and the menu-bar extra's list with the account.
+        DesktopNeedsYouSignals.shared.stop()
+        configuration.notificationsModel?.stop()
+        configuration.notificationsModel?.onFailure = nil
         // Forgets the account only: the server retires this device's token
         // with the device session it was registered under, the one moment the
         // bearer a DELETE would need is already gone.

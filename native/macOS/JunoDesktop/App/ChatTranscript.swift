@@ -595,10 +595,18 @@ struct DesktopTranscript: View {
             isBusy: model.chatApprovalInFlightID == approval.id,
             errorMessage: model.chatApprovalError(for: approval.id),
             canAllowScope: model.canAllowChatApprovalScope(approval),
-            decide: { decision in
-                Task { await model.decideChatApproval(approval, decision: decision) }
-            }
+            decide: { decision in decideChatApproval(approval, decision) }
         )
+    }
+
+    /// Answers a chat approval. "Start task" on the task card is also the
+    /// first moment a task starts in this Mac's chat, when Juno asks whether
+    /// it may notify (Phase 5 C2).
+    private func decideChatApproval(_ approval: NativeChatApproval, _ decision: NativeChatApprovalDecision) {
+        if decision == .allowOnce, approval.connectorID == "juno_work", approval.toolName == "start_task" {
+            DesktopNeedsYouSignals.shared.noteTaskStarted()
+        }
+        Task { await model.decideChatApproval(approval, decision: decision) }
     }
 
     /// The approvals a reply is blocked on: every pending one, and those
@@ -617,9 +625,7 @@ struct DesktopTranscript: View {
             inFlightID: model.chatApprovalInFlightID,
             error: { model.chatApprovalError(for: $0) },
             canAllowScope: { model.canAllowChatApprovalScope($0) },
-            decide: { approval, decision in
-                Task { await model.decideChatApproval(approval, decision: decision) }
-            }
+            decide: { approval, decision in decideChatApproval(approval, decision) }
         )
     }
 

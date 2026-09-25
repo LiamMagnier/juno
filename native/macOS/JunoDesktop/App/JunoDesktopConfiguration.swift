@@ -94,6 +94,10 @@ struct JunoDesktopConfiguration {
     /// ``workGrantStore`` is: the preview harness and a failed launch have no
     /// transport to read agents over and should not have to name one.
     var agentsModel: NativeAgentsModel? = nil
+    /// The inbox behind the sidebar's Notifications row (Phase 5 C1): a
+    /// polled count for its dot, and the list read when the popover opens.
+    /// Defaulted for the reason ``agentsModel`` is.
+    var notificationsModel: NativeNotificationsModel? = nil
     let libraryModel: NativeLibraryModel?
     /// This Mac's local document index: files read into chunks by
     /// ``DocumentIngestionPipeline`` and ranked by `JunoSearch`.
@@ -373,6 +377,9 @@ struct JunoDesktopConfiguration {
                     client: NativeAgentsClient(sender: runtime),
                     workClient: NativeWorkClient(sender: runtime, streamer: runtime)
                 ),
+                notificationsModel: NativeNotificationsModel(
+                    client: NativeNotificationsClient(sender: runtime)
+                ),
                 libraryModel: NativeLibraryModel(
                     client: NativeLibraryClient(sender: runtime),
                     // The picker draws the file, which means resolving its
@@ -426,6 +433,9 @@ struct JunoDesktopConfiguration {
         // saved chat's request says so (`workHandoff`). Only with the Work
         // transport composed: without it there is no card to draw.
         conversationModel.claimsWorkHandoff = workModel != nil
+        // The sidebar joins every chat's newest task from the account's list,
+        // so it reads what the web's sidebar reads: a hundred.
+        workModel?.sessionListLimit = 100
 
         // Vetoes only. `permitting` cannot grant a capability the composer did
         // not request, so a project with no local configuration — the overwhelming

@@ -1,4 +1,5 @@
 import JunoDesignSystem
+import JunoWorkKit
 import SwiftUI
 
 // MARK: - Choreography
@@ -95,17 +96,22 @@ struct ChatGreeting: View {
     /// Whether the column is a draft. Off, the greeting leaves and stays
     /// mounted but invisible, so it can rise again for the next draft.
     let isShown: Bool
+    /// The agent whose empty thread this is: it greets in its own voice
+    /// (``DesktopAgentGreeting``) instead of Juno's.
+    var agent: NativeAgent? = nil
 
     var body: some View {
-        // A fresh identity for each mode, so turning a draft private (or back)
-        // is a new greeting arriving rather than the old one changing words.
+        // A fresh identity for each mode, so turning a draft private (or back),
+        // or opening an agent's thread, is a new greeting arriving rather than
+        // the old one changing words.
         ChatGreetingBody(
             profileName: profileName,
             isPrivate: isPrivate,
             columnWidth: columnWidth,
-            isShown: isShown
+            isShown: isShown,
+            agent: agent
         )
-        .id(isPrivate)
+        .id("\(isPrivate):\(agent?.id ?? "")")
     }
 
     /// The first name the greeting addresses: the first word of the account's
@@ -131,6 +137,7 @@ private struct ChatGreetingBody: View {
     let isPrivate: Bool
     let columnWidth: CGFloat
     let isShown: Bool
+    let agent: NativeAgent?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.junoTextScale) private var textScale
@@ -147,6 +154,8 @@ private struct ChatGreetingBody: View {
         Group {
             if isPrivate {
                 privateHeader
+            } else if let agent {
+                DesktopAgentGreeting(agent: agent, columnWidth: columnWidth)
             } else {
                 greeting
             }

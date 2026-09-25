@@ -2025,3 +2025,19 @@ The brief re-read the live web at `origin/main` `fe0a501d` (2026-09-24). Where t
 - **The question card** is the web's `WorkQuestionCard`: "Waiting on you · asked {time}", the question, its why, one-press replies, and "Reply below" (sentence case, the web's button copy); a second open question says "Answer the question above it first; this one is next.".
 - **Plan steps** gain the web's derived `unreported` state (a step still open when the run finished, failed or paused), drawn as a dashed ring with "never finished". The legacy window reads the same derivation, so its stranded spinner goes too.
 - **The server does not yet let a native turn start a task.** `chatTaskToolEnabled` refuses a `regenerate` turn and needs the persisted user message id, and every native turn is sent as `regenerate: true` after its message is synced (so the route has no `userMessageId`). The Mac sends `workHandoff: true` and draws the frame as specified; a model-started task will reach it once the server's gate keys on "an answer is being replaced" rather than on the `regenerate` flag. Recorded as deferred; the web is unaffected.
+
+
+**Stage C notes (2026-09-25), where today's web was followed over the brief's text.**
+
+- **Status dot tones** are `STATUS_META`'s (`work-vocabulary.tsx`): running and preparing live; waiting, interrupted, Mac unreachable, out of budget and timed out attention; done good; failed bad; the rest neutral. The brief pointed at `DesktopWorkBucket.of`, which sorts tasks into buckets and has no tones. The tone lives beside the dot (`JunoStatusTone(_:)`).
+- **"New agent"** on the Agents fold's heading is shown at rest, as the web's `SectionAction always` is, not only on hover.
+- **The agent thread's header** is the web's `AgentThreadHeader`: the face (a link to the page), the name at 13pt medium, the sentence at 11pt (the thread's own state wins: "Thinking" while a reply streams, "Listening" in a call; otherwise the roster's sentence), and "Agent page" as the web's quiet text button in the secondary ink with a hover fill, not an accent link. It carries no needs-you dot (the web's has none; the sidebar and the card say it).
+- **An agent's empty thread** is laid out as a draft: the web's `hasMessages` is false there (no message, call, research run or task), so the composer is centred under the agent's greeting ("Hi, I’m *{name}*." in the greeting's serif, then "{role}. What should I take on?" or the paused line) with the starter chips below, rather than an empty transcript under the header.
+- **Hiring from the fold** opens the hire sheet on the first job, as `/agents/new` with no template starts from `AGENT_TEMPLATES[0]`; a new hire's page opens.
+- **The fold's live region** speaks the web's sentences when the count rises and when it reaches zero; a fall that leaves chats waiting is the reader answering and says nothing.
+
+**§0.8 register, Stage C additions.** (Numbered after Stage A's; Stage B's lane may also add entries, so integration renumbers if two collide.)
+
+69. The Dock badge, the menu-bar extra's count and the rise sentence count the chats the column can show: every chat whose newest task needs the reader, less those the store knows are archived or Code's (a chat not yet synced still counts). The web's toast counts every conversation id its list returns.
+70. The menu-bar extra's number adds the Code sessions waiting on an approval to the chats in Needs You, since the menu lists both; the Dock badge is the fold's count alone.
+71. An empty or failed Notifications popover closes up to 272pt under its header; the list and its loading rows take 480pt. The web sizes the popover to its content under a 36rem ceiling.
