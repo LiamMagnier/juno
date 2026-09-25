@@ -41,8 +41,8 @@ struct DesktopNavigationStateTests {
         )
     }
 
-    /// Search has no row until the ⌘K panel replaces it; the column must not
-    /// claim some other row is open while the Search page is.
+    /// `.search` is the retired Search page's stored value and has no row;
+    /// the column must not claim some other row is open for it.
     @Test
     func theSearchPageSelectsNothing() {
         #expect(

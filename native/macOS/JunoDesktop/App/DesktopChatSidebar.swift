@@ -43,8 +43,8 @@ struct DesktopChatSidebar: View {
     let actions: DesktopConversationActions
     let newChat: () -> Void
     let newChatInProject: (String) -> Void
-    /// Opens search. The ⌘K / Search panel is Phase 3 (§7.4); until it lands
-    /// this is the existing Search page.
+    /// Opens the ⌘K / Search panel in Search (§7.4); the sidebar's Search
+    /// button and ⇧⌘F both land here.
     let openSearch: () -> Void
     /// The account's agents, for the fold under Needs you. Nil or an empty
     /// roster draws no fold at all.
@@ -1120,8 +1120,9 @@ private struct DesktopSidebarLoadingRows: View {
 enum DesktopDestination: String, CaseIterable, Identifiable {
     /// The conversation route: a chat, a draft, or a private chat.
     case chat
-    /// The Search page. Reached from the column's Search button and ⇧⌘F; it
-    /// has no row of its own and is replaced by the ⌘K panel in Phase 3.
+    /// The retired Search page, as a stored value only: the ⌘K / Search panel
+    /// replaced it at integration, and ``DesktopNavigationState/normalized(_:)``
+    /// turns a restored `.search` into Chat.
     case search
     case projects
     case library
