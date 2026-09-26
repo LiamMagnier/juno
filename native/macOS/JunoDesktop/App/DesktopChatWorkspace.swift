@@ -2133,15 +2133,9 @@ struct DesktopConversationView: View {
                     composer
                 }
             } footer: {
-                // Not in a private chat: incognito carries its own two-line
-                // header, and a row of suggestions under it would be asking
-                // for the one thing private mode does not keep.
-                if privateChat == nil {
-                    ChatStarterChips(isShown: isLanding, hasDraft: !draftIsEmpty) { prompt in
-                        composerRequest = ChatComposerRequest(kind: .seed(prompt))
-                    }
-                    .padding(.top, JunoSpace.regular)
-                }
+                // Nothing under the composer: the empty chat is the greeting
+                // and the composer (premium voice pass). No starting points.
+                EmptyView()
             }
             // The toast host sits 12pt above a docked composer (§7.7). A
             // draft's composer is lifted to the middle of the column, so a

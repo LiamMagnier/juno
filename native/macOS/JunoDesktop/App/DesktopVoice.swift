@@ -148,27 +148,24 @@ extension View {
     /// Tells the composer under this view that it is inside `column`'s call.
     ///
     /// That is all Chat and the project overview need: the call is drawn
-    /// **inside** the composer's shell (§5.8, Voice call) — its controls row
-    /// becomes ``DesktopVoiceCallBar`` — so there is no dock above it and no
-    /// field behind it. The pill and the light that used to frame a call were a
-    /// second surface and an aura, and the redesign keeps neither.
+    /// **inside** the composer's shell (§5.8, Voice call). Its bottom row
+    /// becomes ``DesktopVoiceCallBar`` and its bottom edge carries the voice
+    /// glow, so there is no dock above it and no field behind it.
     func junoVoiceCall(_ column: DesktopVoiceColumn?) -> some View {
         environment(\.junoVoiceCall, column)
     }
 
-    /// The dock above this composer and the voice field behind the pair.
-    ///
-    /// **Code's, not Chat's.** Chat drew a dock and a field around its composer
-    /// until the Liquid Glass redesign moved the call into the composer (§5.8:
-    /// "No aura"). Juno Code's landing and session surfaces still wrap their
-    /// composer in both, until the Code rework decides their voice UI; this is
-    /// kept working for them, unchanged.
+    /// The call for a surface whose composer is not Chat's: Juno Code's
+    /// landing and session. The same parts as Chat's call row
+    /// (``DesktopVoiceCallControls``, ``DesktopVoiceCallEnd`` and the glow as
+    /// the status) in one quiet bar directly above the content, the web's
+    /// `RealtimeVoice`. No field behind it.
     func junoVoiceColumn(_ column: DesktopVoiceColumn?) -> some View {
-        modifier(DesktopVoiceComposerLayer(column: column))
+        modifier(DesktopVoiceDockLayer(column: column))
     }
 }
 
-/// The dock, directly above the composer, announcing the call to the composer
+/// The bar, directly above the composer, announcing the call to the composer
 /// beneath it from the same modifier, so a surface can never end up with the
 /// controls of a call the composer knows nothing about.
 private struct DesktopVoiceDockLayer: ViewModifier {
@@ -188,117 +185,130 @@ private struct DesktopVoiceDockLayer: ViewModifier {
     }
 }
 
-/// Code's composer-scoped arrangement: the dock above, the field behind the pair.
-///
-/// The field's height is fixed here rather than taken from the host, because the
-/// host is a composer — a couple of hundred points tall at most, and 46% of that
-/// is not a field, it is a hairline.
-private struct DesktopVoiceComposerLayer: ViewModifier {
-    let column: DesktopVoiceColumn?
-
-    private static let fieldHeight: CGFloat = 460
-
-    func body(content: Content) -> some View {
-        content
-            .modifier(DesktopVoiceDockLayer(column: column))
-            // Behind the dock *and* the composer, so the light passes under the
-            // pill as well as under the composer.
-            .background(alignment: .bottom) {
-                if let column {
-                    DesktopVoiceField(controller: column.controller)
-                        .frame(height: Self.fieldHeight)
-                        // The band's brightest edge belongs just past the
-                        // composer, so the light looks like it is coming from
-                        // under it rather than stopping at a seam.
-                        .offset(y: JunoSpace.roomy)
-                }
-            }
-    }
-}
-
-/// The field, in a view of its own.
-///
-/// It is a leaf so that `level` — which the controller republishes about thirty
-/// times a second — invalidates one `Canvas` and nothing else.
-private struct DesktopVoiceField: View {
-    let controller: JunoRealtimeVoiceController
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var lit = false
-
-    var body: some View {
-        JunoVoiceAura(
-            level: controller.level,
-            speaking: controller.assistantSpeaking,
-            active: controller.phase == .live || controller.phase == .reconnecting
-        )
-        .opacity(lit ? 1 : 0)
-        .onAppear {
-            // Ambient tier: under Reduce Motion the field is at full strength
-            // on the first frame, because a live microphone has to stay visible.
-            withAnimation(JunoMotion.ambient(JunoMotion.outSoft(), when: reduceMotion)) {
-                lit = true
-            }
-        }
-    }
-}
-
 // MARK: - What a call says about itself
 
-/// The words a call uses to describe itself, and the rules behind them — one
-/// copy, read by Chat's call bar and Code's dock alike, so the two products
+/// Where a call is, in the words a person uses for it: the web's `VoicePhase`
+/// (`src/lib/voice-phase.ts`), derived from the controller.
+///
+/// `thinking` is the one the controller does not name: the caller has finished
+/// a sentence and no answer has started. The native controller has no
+/// `awaitingResponse`, so it is read from the transcript: the newest line is
+/// the caller's, and it is final.
+enum DesktopVoiceCallPhase: Equatable {
+    case connecting
+    case reconnecting
+    case listening
+    case thinking
+    case speaking
+    case interrupting
+    case muted
+    case ended
+    case failed
+
+    /// Holds the glow still: there is no live audio to follow.
+    var pausesGlow: Bool {
+        switch self {
+        case .connecting, .reconnecting, .ended, .failed: true
+        default: false
+        }
+    }
+
+    /// Whose light the glow shows: the glow is the call's status (there is
+    /// no meter and no phase label). Warm while the floor is yours, cool while
+    /// Juno speaks, the whole palette gathered into a beam while it thinks,
+    /// grey when the microphone is off, held low otherwise.
+    var glowTone: JunoVoiceGlowTone {
+        switch self {
+        case .listening, .interrupting: .caller
+        case .speaking: .juno
+        case .muted: .muted
+        case .thinking, .connecting, .reconnecting, .ended, .failed: .mixed
+        }
+    }
+
+    /// Muted is still and low, like a call with no live audio.
+    var holdsGlowStill: Bool { pausesGlow || self == .muted }
+}
+
+/// The words a call uses to describe itself, and the rules behind them: one
+/// copy, read by Chat's call row and Code's bar alike, so the two products
 /// describe the same call in the same words.
 @MainActor
 enum DesktopVoiceCallText {
-    /// The web's ladder, verbatim.
-    static func statusTitle(_ controller: JunoRealtimeVoiceController) -> String {
+    static func phase(_ controller: JunoRealtimeVoiceController) -> DesktopVoiceCallPhase {
         switch controller.phase {
-        case .idle, .connecting: "Connecting"
-        case .reconnecting: "Reconnecting…"
-        case .error: "Voice unavailable"
-        case .ended: "Session ended"
-        case .live: liveStatusTitle(controller)
+        case .idle, .connecting: return .connecting
+        case .reconnecting: return .reconnecting
+        case .error: return .failed
+        case .ended: return .ended
+        case .live:
+            if controller.sessionPhase == .interrupting { return .interrupting }
+            if controller.assistantSpeaking { return .speaking }
+            if controller.muted { return .muted }
+            if controller.sessionPhase == .responding { return .thinking }
+            if let last = controller.transcript.last, last.role == .user, last.final,
+                !last.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                return .thinking
+            }
+            return .listening
         }
     }
 
-    /// The three states a live call is actually in, which the controller's
-    /// phase collapses into one.
-    ///
-    /// `interrupting` earns its own line: it is the round trip between the
-    /// interrupt going out and the relay confirming it dropped the turn, and for
-    /// that stretch the speakers are already silent. Left saying "Juno is
-    /// speaking" it reads as an interruption that was ignored.
-    private static func liveStatusTitle(_ controller: JunoRealtimeVoiceController) -> String {
-        if controller.sessionPhase == .interrupting { return "Interrupting…" }
-        if controller.assistantSpeaking { return "Juno is speaking" }
-        return controller.muted ? "Microphone off" : "Listening"
+    /// The label, the web's `PHASE_LABEL`. `wide` names who is talking
+    /// ("Juno is speaking"); a narrow composer keeps the verb, so the controls
+    /// never lose their place in the row.
+    static func label(_ phase: DesktopVoiceCallPhase, wide: Bool = true) -> String {
+        switch phase {
+        case .connecting: "Connecting"
+        case .reconnecting: "Reconnecting"
+        case .listening: "Listening"
+        case .thinking: "Thinking"
+        case .speaking: wide ? "Juno is speaking" : "Speaking"
+        case .interrupting: "Interrupting"
+        case .muted: "Muted"
+        case .ended: "Call ended"
+        case .failed: "Voice unavailable"
+        }
     }
 
-    /// The tooltip on the status, which is where the barge-in *mode* is stated:
-    /// without echo cancellation the microphone hears the speakers, and a
-    /// session that acted on that would interrupt itself on its own first
-    /// syllable.
+    /// What VoiceOver hears when the phase changes: the web's
+    /// `PHASE_ANNOUNCEMENT`, with its rule that the caller's own speech is
+    /// not announced over itself.
+    static func announcement(_ phase: DesktopVoiceCallPhase, previous: DesktopVoiceCallPhase?) -> String? {
+        guard phase != previous else { return nil }
+        return switch phase {
+        case .connecting: "Connecting the call."
+        case .reconnecting: "Reconnecting the call."
+        case .listening: previous == nil || previous == .connecting ? "Connected. Listening." : "Listening."
+        case .thinking: "Thinking about your answer."
+        case .speaking: "Juno is speaking. Talk any time to interrupt."
+        case .interrupting: nil
+        case .muted: "Your microphone is muted."
+        case .ended: "The call has ended."
+        case .failed: "There is a problem with the call."
+        }
+    }
+
+    /// The status's tooltip: the detail that would crowd the row. The provider
+    /// carrying the call, how interrupting works on this audio route, and the
+    /// running cost at list prices.
     static func statusHelp(_ controller: JunoRealtimeVoiceController) -> String {
-        let title = statusTitle(controller)
+        let title = label(phase(controller))
         guard controller.phase == .live else { return title }
-        return switch controller.bargeIn {
-        case .automatic: "\(title) — talk over Juno to interrupt it"
-        case .manualOnly: "\(title) — talk-over interruption needs an echo-cancelled audio route"
+        var parts = [controller.provider.displayName]
+        switch controller.bargeIn {
+        case .automatic: parts.append("talk over Juno to interrupt")
+        case .manualOnly: parts.append("press Stop to interrupt")
         }
+        if let cost = costLabel(controller) { parts.append("\(cost) so far") }
+        return parts.joined(separator: ", ")
     }
 
-    /// Relay list prices, not billing — hence the tilde.
+    /// Relay list prices, not billing: hence the tilde.
     static func costLabel(_ controller: JunoRealtimeVoiceController) -> String? {
         guard let usage = controller.usage, usage.estCostUsd > 0 else { return nil }
         return "~" + usd(usage.estCostUsd)
-    }
-
-    static func costDetail(_ controller: JunoRealtimeVoiceController) -> String {
-        guard let usage = controller.usage,
-            let input = usage.estCostInUsd,
-            let output = usage.estCostOutUsd
-        else { return "Estimated session cost" }
-        return "Estimated session cost · you ~\(usd(input)) · Juno ~\(usd(output))"
     }
 
     /// `formatUsd` from `src/lib/utils.ts`, digit for digit.
@@ -328,13 +338,31 @@ enum DesktopVoiceCallText {
         }
     }
 
-    /// Restart is offered from a finished or failed session — except after a
+    /// Restart is offered from a finished or failed session, except after a
     /// refusal, where the failure line offers Settings instead.
     static func isRestartable(_ controller: JunoRealtimeVoiceController) -> Bool {
         switch controller.phase {
         case .ended: true
         case .error(let error): !error.isPermissionDenial
         default: false
+        }
+    }
+
+    /// Only Gemini and Qwen accept a screen. Gated on what the relay said in
+    /// `session.ready`, rather than on a list kept here to drift.
+    static func canShareScreen(_ controller: JunoRealtimeVoiceController) -> Bool {
+        controller.phase == .live
+            && (controller.capabilities?.screenInput == true || controller.capabilities?.videoInput == true)
+    }
+
+    /// One line per provider, describing the trade it makes: the web's
+    /// `PROVIDER_BLURB`, kept to what the relay's registry says each can do.
+    static func providerBlurb(_ provider: JunoVoiceProvider) -> String {
+        switch provider {
+        case .openai: "Full duplex, reasoning runs on a backend model"
+        case .gemini: "Lowest latency, screen sharing, reasoning mode"
+        case .qwen: "Long calls, sees images and your screen"
+        case .minimax: "Speech pipeline, no vision, no screen"
         }
     }
 
@@ -353,7 +381,7 @@ enum DesktopVoiceCallText {
     }
 
     /// The Privacy pane a refused permission is fixed in. The system will not
-    /// re-prompt, so this — not a retry — is the way forward.
+    /// re-prompt, so this, not a retry, is the way forward.
     static func openPrivacySettings(for error: JunoRealtimeVoiceError) {
         let pane = error == .micPermissionDenied ? "Privacy_Microphone" : "Privacy_SpeechRecognition"
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
@@ -418,102 +446,128 @@ final class DesktopVoiceHangUp {
     }
 }
 
-// MARK: - Chat: the call inside the composer
+// MARK: - The call's parts
 
-/// The call, as the composer's controls row (§5.8, Voice call).
+/// The call, as the composer's bottom row (§5.8, Voice call): the web's
+/// `voiceCallParts` in the composer's slots.
 ///
-/// `[+] · meter · status · Stop Speaking · mute · share screen · options ·
-/// [send] · hang up`. The composer's field stays above it, because a call can
-/// be typed into — a sentence, a picture — and that turn goes over the socket
-/// rather than to the chat route. The `+` and the send disc are the
-/// composer's own, handed in, so the row's two ends are exactly where they are
-/// when no call is running.
+/// `[+] ······ Stop · Mute · Share · Settings · [End | Send]`. No meter and no
+/// phase label: the glow along the shell's bottom edge is the status
+/// (``DesktopVoiceComposerGlow``), and the phase is announced in words.
+/// The composer's field stays above it, because a call can be typed into (a
+/// sentence, a picture) and that turn goes over the socket rather than to the
+/// chat route. `+` is the composer's own, handed in. The primary slot ends the
+/// call, the same size and place as Send; once something is typed it is Send
+/// (`trailing`), exactly as on the web.
 ///
-/// **What this replaced.** A glass pill floating above the composer, lifted by
-/// two warm shadows, over a light spread behind the whole column. The pill was
-/// a second surface for one control row and the light was an aura; the call is
-/// now drawn in the shell that is already there, and says what it is doing in
-/// words and a five-bar meter.
+/// **What this replaced.** A row of mixed controls with the words "Stop
+/// Speaking", a meter, a phase label, a cost in mono and a kebab for the
+/// provider. Now the right holds round icon controls with their names in
+/// tooltips, and the call's detail is in Call settings' tooltip.
 ///
 /// Closing the column ends the call: the alternative is a microphone that is
-/// open with nothing on screen saying so. It deliberately does not start one —
+/// open with nothing on screen saying so. It deliberately does not start one;
 /// starting is the screen's job, at the moment the disc is pressed.
-struct DesktopVoiceCallBar<Leading: View, Trailing: View>: View {
+struct DesktopVoiceCallBar<Leading: View, Primary: View>: View {
     let column: DesktopVoiceColumn
     let hangUp: DesktopVoiceHangUp
+    /// Whether something is typed, which turns the primary slot into Send.
+    var hasDraft = false
     @ViewBuilder let leading: () -> Leading
-    @ViewBuilder let trailing: () -> Trailing
-
-    private var controller: JunoRealtimeVoiceController { column.controller }
+    /// The composer's own Send, shown instead of End while there is a draft.
+    @ViewBuilder let primary: () -> Primary
 
     var body: some View {
         HStack(spacing: JunoComposerMetrics.controlSpacing) {
             leading()
-
-            HStack(spacing: JunoSpace.snug) {
-                DesktopVoiceCallMeter(controller: controller)
-                Text(DesktopVoiceCallText.statusTitle(controller))
-                    .junoType(.ui)
-                    .foregroundStyle(Color.junoForeground)
-                    .lineLimit(1)
-                    .help(DesktopVoiceCallText.statusHelp(controller))
-                if let cost = DesktopVoiceCallText.costLabel(controller) {
-                    // Mono because it is a cost (§10.2 #6), secondary because it
-                    // is the quiet half of the status; it reprices every few
-                    // seconds, so it is never announced.
-                    Text(cost)
-                        .junoType(.monoSmall)
-                        .foregroundStyle(Color.junoSecondaryInk)
-                        .lineLimit(1)
-                        .help(DesktopVoiceCallText.costDetail(controller))
-                        .accessibilityHidden(true)
-                }
-            }
-            .padding(.leading, JunoSpace.tight)
-            .fixedSize()
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.updatesFrequently)
-
             Spacer(minLength: JunoSpace.snug)
-
-            if controller.phase == .live, controller.assistantSpeaking {
-                Button {
-                    controller.interrupt()
-                } label: {
-                    Text("Stop Speaking")
-                        .junoType(JunoType.ui.weight(.medium))
-                        .foregroundStyle(Color.junoForeground)
-                        .padding(.horizontal, JunoSpace.snug)
-                        .frame(height: JunoComposerMetrics.controlHeight)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(ComposerControlStyle())
-                .help("Stop Juno speaking")
-                .accessibilityIdentifier("juno.desktop.voice-interrupt")
-                .transition(.opacity)
+            DesktopVoiceCallControls(column: column, hangUp: hangUp)
+            if hasDraft {
+                primary()
+            } else {
+                DesktopVoiceCallEnd(column: column, hangUp: hangUp)
             }
+        }
+        .onDisappear { column.controller.end() }
+        .junoVoiceCallAnnouncements(column.controller)
+        .accessibilityIdentifier("juno.desktop.voice")
+    }
+}
 
+/// Says each phase change out loud: with no label on screen (the glow is the
+/// status), VoiceOver is told in words, the web's `PHASE_ANNOUNCEMENT`, and
+/// the call's container carries the phase as its value.
+private struct DesktopVoiceCallAnnouncer: ViewModifier {
+    let controller: JunoRealtimeVoiceController
+
+    @State private var announced: DesktopVoiceCallPhase?
+
+    func body(content: Content) -> some View {
+        let phase = DesktopVoiceCallText.phase(controller)
+        content
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Voice call")
+            .accessibilityValue(DesktopVoiceCallText.label(phase))
+            .accessibilityHint(DesktopVoiceCallText.statusHelp(controller))
+            .onChange(of: phase, initial: true) { _, next in
+                let before = announced
+                announced = next
+                guard let message = DesktopVoiceCallText.announcement(next, previous: before) else { return }
+                AccessibilityNotification.Announcement(message).post()
+            }
+    }
+}
+
+extension View {
+    /// The call's phase, for assistive technology only.
+    func junoVoiceCallAnnouncements(_ controller: JunoRealtimeVoiceController) -> some View {
+        modifier(DesktopVoiceCallAnnouncer(controller: controller))
+    }
+}
+
+/// The verbs of a call, as round icon controls: the web's `VoiceCallControls`.
+///
+/// Stop exists exactly while there is speech to stop. Mute and Share are
+/// toggles: pressed, they take the ink fill, so their state reads without
+/// their names. Settings holds what you set rather than press.
+struct DesktopVoiceCallControls: View {
+    let column: DesktopVoiceColumn
+    let hangUp: DesktopVoiceHangUp
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var controller: JunoRealtimeVoiceController { column.controller }
+
+    var body: some View {
+        HStack(spacing: JunoSpace.hairline) {
             if DesktopVoiceCallText.isRestartable(controller) {
-                callControl(.refresh, label: "Restart voice", isOn: false) {
+                DesktopVoiceCallButton(icon: .refresh, label: "Try the call again") {
                     hangUp.restart(column)
                 }
                 .accessibilityIdentifier("juno.desktop.voice-restart")
             } else {
-                callControl(
-                    .micOff,
-                    label: controller.muted ? "Turn microphone on" : "Turn microphone off",
-                    isOn: controller.muted
+                if controller.phase == .live, controller.assistantSpeaking {
+                    DesktopVoiceCallButton(icon: .stop, weight: .fill, glyphSize: 12, label: "Stop Juno speaking") {
+                        controller.interrupt()
+                    }
+                    .transition(.opacity)
+                    .accessibilityIdentifier("juno.desktop.voice-interrupt")
+                }
+                DesktopVoiceCallButton(
+                    icon: controller.muted ? .micOff : .mic,
+                    label: controller.muted ? "Turn your microphone back on" : "Mute your microphone",
+                    isPressed: controller.muted
                 ) {
                     controller.toggleMute()
                 }
                 .disabled(controller.phase != .live)
                 .accessibilityIdentifier("juno.desktop.voice-mute")
 
-                if canShareScreen {
-                    callControl(
-                        .monitorUp,
-                        label: controller.screenSharing ? "Stop sharing screen" : "Share screen",
-                        isOn: controller.screenSharing
+                if DesktopVoiceCallText.canShareScreen(controller) {
+                    DesktopVoiceCallButton(
+                        icon: controller.screenSharing ? .monitorOff : .monitorUp,
+                        label: controller.screenSharing ? "Stop sharing your screen" : "Share your screen",
+                        isPressed: controller.screenSharing
                     ) {
                         if controller.screenSharing {
                             controller.stopScreenShare()
@@ -524,88 +578,158 @@ struct DesktopVoiceCallBar<Leading: View, Trailing: View>: View {
                     .accessibilityIdentifier("juno.desktop.voice-share-screen")
                 }
             }
-
-            optionsMenu
-            trailing()
-            hangUpDisc
+            DesktopVoiceCallSettings(controller: controller)
         }
-        .onDisappear { controller.end() }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("juno.desktop.voice")
+        .animation(
+            JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+            value: controller.assistantSpeaking
+        )
     }
+}
 
-    /// Only Gemini and Qwen accept a screen. Gated on what the relay said in
-    /// `session.ready`, rather than on a list kept here to drift.
-    private var canShareScreen: Bool {
-        controller.phase == .live
-            && (controller.capabilities?.screenInput == true || controller.capabilities?.videoInput == true)
-    }
+/// One control in a call: a round icon button the size of the composer's own
+/// controls, its name in the tooltip and the accessible label. Pressed (muted,
+/// sharing) takes the ink fill; at rest it is secondary ink with the glass
+/// hover the composer's other controls use.
+struct DesktopVoiceCallButton: View {
+    let icon: JunoIcon
+    var weight: JunoIcon.Weight? = nil
+    var glyphSize: CGFloat = 16
+    let label: String
+    /// The tooltip, when it says more than the label.
+    var help: String? = nil
+    var isPressed = false
+    let action: () -> Void
 
-    /// A 28pt borderless control in the composer's own style. `isOn` is a
-    /// switch that is on — muted, sharing — drawn as the resting glass fill,
-    /// never the accent (§0.4).
-    private func callControl(
-        _ icon: JunoIcon,
-        label: String,
-        isOn: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
+    var body: some View {
         Button(action: action) {
-            JunoIconView(icon, size: 16)
-                .foregroundStyle(isOn ? Color.junoForeground : Color.junoSecondaryInk)
+            JunoIconView(icon, size: glyphSize, weight: weight)
+                .foregroundStyle(isPressed ? Color.junoCanvas : Color.junoSecondaryInk)
                 .frame(width: JunoComposerMetrics.controlHeight, height: JunoComposerMetrics.controlHeight)
                 .background {
-                    if isOn {
-                        JunoRadius.concentric().fill(Color.junoGlassFill)
+                    if isPressed {
+                        Circle().fill(Color.junoForeground)
                     }
                 }
-                .contentShape(.rect)
+                .contentShape(Circle())
         }
-        .buttonStyle(ComposerControlStyle())
-        .help(label)
+        .buttonStyle(DesktopVoiceCallButtonStyle())
+        .help(help ?? label)
         .accessibilityLabel(label)
-        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityAddTraits(isPressed ? .isSelected : [])
+    }
+}
+
+/// The round hover and press of a call control: the composer's control style,
+/// in a circle.
+struct DesktopVoiceCallButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Control(configuration: configuration)
     }
 
-    /// Options: which provider carries the call. A native menu with the choice
-    /// as a picker, so the system draws the checkmark.
-    private var optionsMenu: some View {
-        Menu {
-            Picker("Provider", selection: providerBinding) {
+    private struct Control: View {
+        let configuration: ButtonStyleConfiguration
+        @State private var hovered = false
+        @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        var body: some View {
+            configuration.label
+                .opacity(isEnabled ? 1 : 0.4)
+                .background {
+                    Circle()
+                        .fill(Color.junoGlassHover)
+                        .opacity(hovered && isEnabled ? 1 : 0)
+                }
+                .scaleEffect(configuration.isPressed ? JunoMotion.scaleFrom(0.97, reduceMotion: reduceMotion) : 1)
+                .onHover { hovered = $0 }
+                .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: hovered)
+                .animation(JunoMotion.reduced(JunoMotion.press, when: reduceMotion), value: configuration.isPressed)
+        }
+    }
+}
+
+/// Everything you set, as opposed to everything you press: the web's call
+/// settings popover. Which provider carries the call, each with the trade it
+/// makes. (The web's reasoning switch has no counterpart on the native
+/// controller yet, so it is not offered here.)
+struct DesktopVoiceCallSettings: View {
+    let controller: JunoRealtimeVoiceController
+
+    @State private var isOpen = false
+
+    var body: some View {
+        DesktopVoiceCallButton(
+            icon: .sliders,
+            label: "Call settings",
+            help: "Call settings: \(DesktopVoiceCallText.statusHelp(controller))"
+        ) {
+            isOpen.toggle()
+        }
+        .popover(isPresented: $isOpen, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                Text("Voice")
+                    .junoType(.caption)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .padding(.horizontal, JunoSpace.snug)
+                    .padding(.bottom, JunoSpace.hairline)
+                    .accessibilityAddTraits(.isHeader)
                 ForEach(JunoVoiceProvider.allCases) { provider in
-                    Text(provider.displayName).tag(provider)
+                    providerRow(provider)
                 }
             }
-        } label: {
-            JunoIconView(.more, size: 16)
-                .foregroundStyle(Color.junoSecondaryInk)
-                .frame(width: JunoComposerMetrics.controlHeight, height: JunoComposerMetrics.controlHeight)
-                .contentShape(.rect)
+            .padding(JunoSpace.snug)
+            .frame(width: 280)
         }
-        .menuStyle(.button)
-        .buttonStyle(ComposerControlStyle())
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Voice options")
-        .accessibilityLabel("Voice options")
         .accessibilityIdentifier("juno.desktop.voice-options")
     }
 
-    private var providerBinding: Binding<JunoVoiceProvider> {
-        Binding(
-            get: { controller.provider },
-            set: { provider in
-                guard provider != controller.provider else { return }
-                controller.switchProvider(provider)
+    private func providerRow(_ provider: JunoVoiceProvider) -> some View {
+        let active = provider == controller.provider
+        return Button {
+            guard !active else { return }
+            controller.switchProvider(provider)
+        } label: {
+            HStack(spacing: JunoSpace.snug) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(provider.displayName)
+                        .junoType(JunoType.ui.weight(.medium))
+                        .foregroundStyle(Color.junoForeground)
+                    Text(DesktopVoiceCallText.providerBlurb(provider))
+                        .junoType(.caption)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if active {
+                    JunoIconView(.success, size: 14)
+                        .foregroundStyle(Color.junoAccentInk)
+                }
             }
-        )
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, 6)
+            .frame(minHeight: 28)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                    .fill(active ? Color.junoSelectedFill : Color.clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(active ? .isSelected : [])
+        .accessibilityIdentifier("juno.desktop.voice-provider.\(provider.rawValue)")
     }
+}
 
-    /// The end of the call: a destructive disc the size and place of the
-    /// composer's own. Destructive, not coral — this is the one control on the
-    /// row that loses something if pressed by mistake, and coral is the
-    /// action colour.
-    private var hangUpDisc: some View {
+/// End, in the composer's primary slot: a round red disc the size and place
+/// of Send, so the hand already knows where it is, and the only coloured
+/// control in a call. Destructive, not the accent: it is the one control that
+/// loses something if pressed by mistake.
+struct DesktopVoiceCallEnd: View {
+    let column: DesktopVoiceColumn
+    let hangUp: DesktopVoiceHangUp
+
+    var body: some View {
         Button {
             hangUp.hangUp(column)
         } label: {
@@ -625,35 +749,36 @@ struct DesktopVoiceCallBar<Leading: View, Trailing: View>: View {
         }
         .buttonStyle(ComposerDiscStyle())
         .disabled(hangUp.isSaving)
-        .help("End and save")
-        .accessibilityLabel("End voice conversation")
+        .help("End call")
+        .accessibilityLabel("End the call")
         .accessibilityIdentifier("juno.desktop.voice-end")
     }
 }
 
-/// The call's level, as the shared five-bar meter.
+/// The voice glow on the composer's bottom edge during a call, and the call's
+/// only visible status: the shared ``JunoVoiceGlow``, fed by this call and
+/// toned by its phase (``DesktopVoiceCallPhase/glowTone``), clipped to the
+/// shell by the host.
 ///
-/// A leaf, so the level the controller republishes about thirty times a
-/// second invalidates five capsules and not the whole controls row.
-private struct DesktopVoiceCallMeter: View {
+/// A leaf, so the phase it reads (and the level the glow samples per frame)
+/// invalidate this view and nothing else.
+struct DesktopVoiceComposerGlow: View {
     let controller: JunoRealtimeVoiceController
 
     var body: some View {
-        ComposerLevelMeter(
-            level: controller.level,
-            active: controller.phase == .live && !controller.muted
+        let phase = DesktopVoiceCallText.phase(controller)
+        JunoVoiceGlow(
+            level: { [controller] in controller.muted ? 0 : controller.level },
+            processing: phase == .thinking,
+            paused: phase.holdsGlowStill,
+            tone: phase.glowTone
         )
     }
 }
 
-/// What the call has to say above the composer: why it is not running, why it
-/// could not be filed, or an aside from the relay (§5.1, the caption above the
-/// shell).
-///
-/// Plain caption rows on the canvas — no fill, no rim, no shadow. The strips
-/// this replaced were tinted plates with a warm drop shadow, floating over the
-/// transcript; a caption beside the shell says the same thing in the place the
-/// quota line and the upload errors already use.
+/// A call's error or notice, as one plain line above the composer: the web's
+/// `VoiceCallNotices`. A warning glyph and the destructive ink where it needs
+/// acting on, muted where it does not. No fill, no rim, no capsule.
 struct DesktopVoiceCallNotices: View {
     let column: DesktopVoiceColumn
     let hangUp: DesktopVoiceHangUp
@@ -663,7 +788,7 @@ struct DesktopVoiceCallNotices: View {
     var body: some View {
         if let failure = DesktopVoiceCallText.failureMessage(controller, saveError: hangUp.saveError) {
             HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
-                JunoIconView(.error, size: 12)
+                JunoIconView(.warning, size: 12)
                     .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
                 Text(failure)
                     .fixedSize(horizontal: false, vertical: true)
@@ -673,6 +798,7 @@ struct DesktopVoiceCallNotices: View {
                     } label: {
                         Text("Open Privacy Settings")
                             .foregroundStyle(Color.junoAccentInk)
+                            .frame(minHeight: 28)
                             .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
@@ -682,337 +808,76 @@ struct DesktopVoiceCallNotices: View {
             .foregroundStyle(Color.junoDestructiveInk)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isStaticText)
             .accessibilityIdentifier("juno.desktop.voice-failure")
-        }
-        if let notice = controller.notice {
-            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
-                JunoIconView(.warning, size: 12)
-                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
-                Text(verbatim: notice)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .junoFont(size: 12, relativeTo: .footnote)
-            .foregroundStyle(Color.junoSecondaryInk)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if let notice = controller.notice {
+            Text(verbatim: notice)
+                .fixedSize(horizontal: false, vertical: true)
+                .junoFont(size: 12, relativeTo: .footnote)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("juno.desktop.voice-notice")
         }
     }
 }
 
-// MARK: - Code: the voice dock
+// MARK: - Code: the call bar
 
-/// **The voice dock** — a pill directly above the composer, over the chat the
-/// call is about. **Code's.**
+/// **The call for Juno Code**: the same parts as Chat's call row, in one quiet
+/// bar directly above Code's content (the web's `RealtimeVoice`, for surfaces
+/// without a composer of their own to become the call).
 ///
-/// Chat and the project overview draw the call inside the composer's shell
-/// now (``DesktopVoiceCallBar``); Code's composer is its own and keeps this
-/// dock until the Code rework decides its voice UI. It reads the same words
-/// and the same hang-up as the call bar, so the two products cannot describe
-/// one call differently.
+/// Code's composer is its own (``StudioComposer``), so the call cannot move
+/// into it the way Chat's does; the bar says and does exactly what Chat's row
+/// does, so the two products cannot describe one call differently. The notice
+/// line sits above it, plain text, as in Chat.
 ///
-/// What this replaced was a 700×560 sheet, and removing it fixed a crash as
-/// well as a design mistake: the sheet declared an ideal size and
-/// `.interactiveDismissDisabled()`, so when AppKit animated the window's frame
-/// SwiftUI had to re-solve a sheet size it could not satisfy, and trapped. A
-/// dock sized to its own content has no such solve to fail.
-///
-/// **No shadows.** It used to lift itself off the page with two warm drop
-/// shadows, and its message strips with a third. Glass supplies its own depth,
-/// and a shadow on glass is a second rim (§10.2 #2).
+/// **No field.** The voice field that used to spread behind Code's composer
+/// during a call was an aura. The glow is drawn inside the bar's own capsule,
+/// as it is inside Chat's shell, and is the bar's status.
 struct DesktopVoiceDock: View {
     let column: DesktopVoiceColumn
 
     @State private var hangUp = DesktopVoiceHangUp()
     /// `motion-safe:animate-rise-in`. Self-driven rather than a `.transition`,
-    /// because a transition only plays if whichever screen mounted the dock
+    /// because a transition only plays if whichever screen mounted the bar
     /// wrapped the change in `withAnimation`.
     @State private var risen = false
-
-    /// One read for the rise (Reduce Motion) and the hand-drawn control fills
-    /// (Reduce Transparency) — the system swaps the pill's glass for an opaque
-    /// backer on its own, but it cannot see a custom `opacity(…)` fill on top.
-    @Environment(\.junoAccessibility) private var accessibility
-
-    private var controller: JunoRealtimeVoiceController { column.controller }
-
-    /// `realtime-voice.tsx`'s metrics, in points.
-    private enum Metric {
-        /// `size-9`.
-        static let control: CGFloat = 36
-        /// `gap-0.5`.
-        static let controlGap: CGFloat = 2
-        /// `sm:w-[7.5rem]`: fixed, so "Listening" to "Juno is speaking" does
-        /// not slide every control sideways mid-sentence.
-        static let statusWidth: CGFloat = 120
-        /// `max-w-md`, the cap on anything that carries a sentence.
-        static let messageWidth: CGFloat = 448
-    }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: JunoSpace.tight) {
-            if let message = DesktopVoiceCallText.failureMessage(controller, saveError: hangUp.saveError) {
-                failureBanner(message)
+            DesktopVoiceCallNotices(column: column, hangUp: hangUp)
+                .frame(maxWidth: 448)
+            JunoDesktopGlass(spacing: JunoSpace.hairline) {
+                HStack(spacing: JunoComposerMetrics.controlSpacing) {
+                    Spacer(minLength: JunoSpace.cozy)
+                    DesktopVoiceCallControls(column: column, hangUp: hangUp)
+                    DesktopVoiceCallEnd(column: column, hangUp: hangUp)
+                }
+                .padding(JunoSpace.tight)
+                .frame(width: 320)
+                .junoGlass(in: Capsule(style: .continuous))
+                // The glow is the status here too, inside the bar's shape.
+                .overlay {
+                    DesktopVoiceComposerGlow(controller: column.controller)
+                        .clipShape(Capsule(style: .continuous))
+                }
             }
-            if let notice = controller.notice {
-                noticeBanner(notice)
-            }
-            pill
         }
         .frame(maxWidth: JunoReadingMeasure.reading)
         .opacity(risen ? 1 : 0)
-        .offset(y: risen || accessibility.reduceMotion ? 0 : 8)
+        .offset(y: risen || reduceMotion ? 0 : 8)
         .onAppear {
-            withAnimation(JunoMotion.reduced(JunoMotion.riseIn, when: accessibility.reduceMotion)) {
+            withAnimation(JunoMotion.reduced(JunoMotion.riseIn, when: reduceMotion)) {
                 risen = true
             }
         }
         // Ends the call when the column goes, and deliberately does not start
-        // one: `start()` is legal from `ended`, so a dock that restarted on
+        // one: `start()` is legal from `ended`, so a bar that restarted on
         // appearance would silently redial.
-        .onDisappear { controller.end() }
+        .onDisappear { column.controller.end() }
+        .junoVoiceCallAnnouncements(column.controller)
         .accessibilityIdentifier("juno.desktop.voice")
-    }
-
-    private var pill: some View {
-        JunoDesktopGlass(spacing: Metric.controlGap) {
-            HStack(spacing: Metric.controlGap) {
-                status
-                controls
-                optionsMenu
-                hangUpButton
-            }
-            .padding(JunoSpace.hairline)
-            .junoGlass(in: Capsule(style: .continuous))
-        }
-    }
-
-    // MARK: - Words
-
-    private var status: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(DesktopVoiceCallText.statusTitle(controller))
-                .junoFont(size: 14, relativeTo: .body, weight: .semibold)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .help(
-                    DesktopVoiceCallText.failureMessage(controller, saveError: hangUp.saveError)
-                        ?? DesktopVoiceCallText.statusHelp(controller)
-                )
-            if let costLabel = DesktopVoiceCallText.costLabel(controller) {
-                Text(costLabel)
-                    .junoFont(size: 11, relativeTo: .caption2, design: .monospaced)
-                    .junoSecondaryInk()
-                    .lineLimit(1)
-                    .help(DesktopVoiceCallText.costDetail(controller))
-            }
-        }
-        .frame(width: Metric.statusWidth, height: Metric.control, alignment: .leading)
-        .padding(.leading, JunoSpace.cozy)
-        .padding(.trailing, JunoSpace.tight)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.updatesFrequently)
-    }
-
-    private func failureBanner(_ message: String) -> some View {
-        messageStrip(tint: Color.junoDanger) {
-            Text(message)
-                .junoFont(size: 12, relativeTo: .callout)
-                .lineSpacing(2)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            if case .error(let error) = controller.phase, error.isPermissionDenial {
-                Button("Open Privacy Settings") {
-                    DesktopVoiceCallText.openPrivacySettings(for: error)
-                }
-                .buttonStyle(.link)
-                .junoFont(size: 12, relativeTo: .callout, weight: .medium)
-            }
-        }
-        .accessibilityIdentifier("juno.desktop.voice-failure")
-    }
-
-    private func noticeBanner(_ notice: String) -> some View {
-        messageStrip(tint: Color.junoCaution) {
-            Label(verbatim: notice, icon: .error)
-                .junoFont(size: 12, relativeTo: .callout)
-                .lineSpacing(2)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    /// The shared shape of both strips: a semantic wash and a coloured rim at
-    /// 7% and 30%, which is what the web does. No shadow.
-    private func messageStrip(
-        tint: Color,
-        @ViewBuilder content: () -> some View
-    ) -> some View {
-        let shape = RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-        return VStack(spacing: JunoSpace.hairline, content: content)
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.tight)
-            .background(tint.opacity(0.07), in: shape)
-            .background(Color.junoSurface, in: shape)
-            .overlay(shape.strokeBorder(tint.opacity(0.3), lineWidth: 1))
-            .frame(maxWidth: Metric.messageWidth)
-    }
-
-    // MARK: - Controls
-
-    @ViewBuilder
-    private var controls: some View {
-        if DesktopVoiceCallText.isRestartable(controller) {
-            control(.refresh, label: "Restart voice", tone: .prominent) {
-                hangUp.restart(column)
-            }
-            .accessibilityIdentifier("juno.desktop.voice-restart")
-        } else {
-            if (controller.capabilities?.screenInput == true || controller.capabilities?.videoInput == true), controller.phase == .live {
-                control(
-                    controller.screenSharing ? .monitorOff : .monitor,
-                    label: controller.screenSharing ? "Stop sharing screen" : "Share screen",
-                    tone: controller.screenSharing ? .prominent : .quiet
-                ) {
-                    if controller.screenSharing {
-                        controller.stopScreenShare()
-                    } else {
-                        controller.startScreenShare()
-                    }
-                }
-                .disabled(controller.phase != .live)
-                .accessibilityIdentifier("juno.desktop.voice-share-screen-dock")
-            }
-            control(
-                controller.muted ? .micOff : .mic,
-                label: controller.muted ? "Turn microphone on" : "Turn microphone off",
-                tone: controller.muted ? .prominent : .quiet
-            ) {
-                controller.toggleMute()
-            }
-            .disabled(controller.phase != .live)
-            .accessibilityIdentifier("juno.desktop.voice-mute")
-        }
-    }
-
-    /// Options (the menu recipe, §7.1): the voice model as an inline choice,
-    /// so the system draws the checkmark, then Share Screen where the model
-    /// can see. Title Case, glyphs on the actions.
-    private var optionsMenu: some View {
-        Menu {
-            Section("Voice Model") {
-                Picker("Voice Model", selection: providerBinding) {
-                    ForEach(JunoVoiceProvider.allCases) { provider in
-                        Text(provider.displayName).tag(provider)
-                    }
-                }
-                .pickerStyle(.inline)
-                .labelsHidden()
-            }
-            if controller.capabilities?.screenInput == true || controller.capabilities?.videoInput == true {
-                Section {
-                    Button {
-                        if controller.screenSharing {
-                            controller.stopScreenShare()
-                        } else {
-                            controller.startScreenShare()
-                        }
-                    } label: {
-                        Label {
-                            Text(controller.screenSharing ? "Stop Sharing Screen" : "Share Screen")
-                        } icon: {
-                            Image((controller.screenSharing ? JunoIcon.monitorOff : JunoIcon.monitor).assetName)
-                        }
-                    }
-                    .accessibilityIdentifier("juno.desktop.voice-share-screen")
-                }
-            }
-        } label: {
-            JunoIconView(.chevronDown, size: 14)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(
-                    Color.junoMuted.opacity(
-                        accessibility.usesOpaqueTransientSurfaces ? 1 : 0.45
-                    ),
-                    in: Circle()
-                )
-                .contentShape(Circle())
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .frame(width: Metric.control, height: Metric.control)
-        .contentShape(Circle())
-        .help("Voice options")
-        .accessibilityLabel("Voice options")
-        .accessibilityIdentifier("juno.desktop.voice-options")
-    }
-
-    private var providerBinding: Binding<JunoVoiceProvider> {
-        Binding(
-            get: { controller.provider },
-            set: { provider in
-                guard provider != controller.provider else { return }
-                controller.switchProvider(provider)
-            }
-        )
-    }
-
-    private var hangUpButton: some View {
-        Button {
-            hangUp.hangUp(column)
-        } label: {
-            Group {
-                if hangUp.isSaving {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.white)
-                } else {
-                    JunoIconView(.phoneOff, size: 15)
-                        .foregroundStyle(.white)
-                }
-            }
-            .frame(width: Metric.control, height: Metric.control)
-            .background(Color.junoDanger, in: Circle())
-            .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .disabled(hangUp.isSaving)
-        .help("End and save")
-        .accessibilityLabel("End voice conversation")
-        .accessibilityIdentifier("juno.desktop.voice-end")
-    }
-
-    private enum ControlTone {
-        /// `bg-foreground text-background` — the obvious next move.
-        case prominent
-        /// `bg-muted/65` — present, and not asking for anything.
-        case quiet
-    }
-
-    private func control(
-        _ icon: JunoIcon,
-        label: String,
-        tone: ControlTone,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            JunoIconView(icon, size: 15)
-                // `Color.junoCanvas`, never the `.background` shape style: on
-                // glass that resolves translucent, and the one enabled control
-                // in an errored session read as disabled.
-                .foregroundStyle(tone == .prominent ? Color.junoCanvas : Color.junoForeground)
-                .frame(width: Metric.control, height: Metric.control)
-                .background(
-                    tone == .prominent
-                        ? Color.primary
-                        : Color.junoMuted.opacity(
-                            accessibility.usesOpaqueTransientSurfaces ? 1 : 0.65
-                        ),
-                    in: Circle()
-                )
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .help(label)
-        .accessibilityLabel(label)
     }
 }
