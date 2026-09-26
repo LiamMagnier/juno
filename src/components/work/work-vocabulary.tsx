@@ -14,6 +14,7 @@ import { describeCapability, type WorkCapability, type WorkDegradation, type Wor
 import type { StatusTone } from "@/lib/conversation-status";
 import { humanize } from "@/components/work/work-payload";
 import { cn } from "@/lib/utils";
+import { PhaseOrb } from "@/components/effects/phase-orb";
 
 /*
  * How Work says things.
@@ -199,43 +200,47 @@ export function statusTone(status: WorkStatus): StatusTone {
  */
 export const WORK_QUIET_AFTER_MS = 10 * 60 * 1000;
 
-const DOT_CLASS: Record<StatusTone, string> = {
-  // Full muted-foreground, not /50. The dot is the only mark on WorkStatusDot, so
-  // it is a meaningful graphical indicator and has to clear 3:1 — at 50% alpha on
-  // a pure-black ground it lands near 2.6:1 and the neutral statuses lose their mark.
-  neutral: "bg-muted-foreground",
-  live: "bg-primary motion-safe:animate-pulse",
-  attention: "bg-warning",
-  good: "bg-success",
-  bad: "bg-destructive",
-};
-
-// `neutral` is `bg-secondary`, not `bg-background/50`. With --background at 0 0% 0%
-// a half-alpha background fill is black over whatever it sits on, so the neutral
-// pill punched a hole in its card instead of lifting off it. Secondary is the first
-// rung above the ground on both themes, which is what a chip should read as.
-const PILL_CLASS: Record<StatusTone, string> = {
-  neutral: "border-border/70 bg-secondary text-muted-foreground",
-  live: "border-primary/25 bg-primary/10 text-primary",
-  attention: "border-warning/35 bg-warning/10 text-warning-foreground",
-  good: "border-success/30 bg-success/10 text-success-ink",
-  bad: "border-destructive/35 bg-destructive/10 text-destructive",
+/*
+ * STATUS AS WORDS (owner directive, 2026-09-26).
+ *
+ * Every Work status used to be a tinted, bordered pill with a leading dot, the
+ * live one pulsing coral. On a status that is simply normal or under way that
+ * is decoration shouting "look here", and the owner called it what it reads
+ * as. So:
+ *
+ *  - neutral, live, good: muted words. A live status adds a Thinking orb on
+ *    the text line, which says "under way" without a pinging pip.
+ *  - attention, bad: the status's ink and a small mark, still no container.
+ *
+ * The mono voice stays, so a status still reads as a machine fact.
+ */
+const TEXT_CLASS: Record<StatusTone, string> = {
+  neutral: "text-muted-foreground",
+  live: "text-muted-foreground",
+  attention: "font-medium text-warning-foreground",
+  good: "text-muted-foreground",
+  bad: "font-medium text-destructive",
 };
 
 /**
- * The chip geometry every Work pill shares.
+ * The shape every Work status and tag shares: a run of words, no box.
  *
- * Hoisted because it was written out six times — the status pill, the risk pill,
- * the capability chip, the host state pill, and the three inline "Paused" / "Off"
- * / "Work off" spans in the schedule, skill and host rows — with no two of them
- * able to drift without somebody noticing, and one of them already had (the
- * capability chip's `gap-1.5` was absent, so its struck-through variant sat a
- * pixel and a half tighter than its neighbour on the same row).
+ * Hoisted because it was written out six times (the status, the risk, the
+ * capability, the host state, and the inline "Paused" / "Off" / "Work off"
+ * facts in the schedule, skill and host rows), and a row that sets two of
+ * them side by side must not have them drift apart.
  */
-const PILL_SHAPE =
-  "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-micro leading-none";
+const PILL_SHAPE = "inline-flex shrink-0 items-center gap-1.5 font-mono text-micro leading-none";
 
-/** The status as a chip. Mono + colour, never a coloured rectangle alone. */
+/** The mark in front of a status's words, or nothing for a quiet state. */
+function StatusMark({ tone }: { tone: StatusTone }) {
+  if (tone === "attention") return <StatusIcons.warning className="size-3 shrink-0" aria-hidden="true" />;
+  if (tone === "bad") return <StatusIcons.error className="size-3 shrink-0" aria-hidden="true" />;
+  if (tone === "live") return <PhaseOrb state="working" className="-my-1.5 -ml-1" />;
+  return null;
+}
+
+/** The status as words. Mono and, only when it needs the reader, colour. */
 export function WorkStatusPill({
   status,
   describe = true,
@@ -243,19 +248,19 @@ export function WorkStatusPill({
 }: {
   status: WorkStatus;
   /**
-   * Whether the status sentence rides along as the pill's tooltip. On by
-   * default, because in a list row the pill is the only word about the state
-   * and the sentence is worth a hover. The task header prints that same
-   * sentence immediately after the pill, so there the tooltip was a third
-   * copy that covered the text it repeated — that call site turns it off.
+   * Whether the status sentence rides along as the tooltip. On by default,
+   * because in a list row these words are the only word about the state and
+   * the sentence is worth a hover. The task header prints that same sentence
+   * immediately after, so there the tooltip would cover the text it repeated,
+   * and that call site turns it off.
    */
   describe?: boolean;
   className?: string;
 }) {
   const meta = STATUS_META[status];
   return (
-    <span className={cn(PILL_SHAPE, PILL_CLASS[meta.tone], className)} title={describe ? meta.sentence : undefined}>
-      <span className={cn("size-1.5 rounded-full", DOT_CLASS[meta.tone])} aria-hidden="true" />
+    <span className={cn(PILL_SHAPE, TEXT_CLASS[meta.tone], className)} title={describe ? meta.sentence : undefined}>
+      <StatusMark tone={meta.tone} />
       {meta.label}
     </span>
   );
@@ -281,7 +286,7 @@ export function WorkTag({
   children: React.ReactNode;
 }) {
   return (
-    <span className={cn(PILL_SHAPE, PILL_CLASS.neutral, className)}>
+    <span className={cn(PILL_SHAPE, TEXT_CLASS.neutral, className)}>
       {/* `size-3`, the bottom rung of the ladder and the size `RiskPill` beside
           it already uses; at 12px the set draws its bold cut on its own.
           `motion="none"`: a tag's glyph is a label, and a tag often sits inside
@@ -294,19 +299,22 @@ export function WorkTag({
 }
 
 /**
- * A toned 6px dot with its meaning available to a screen reader, and nothing
- * else. The row-density mark.
+ * A row's state for a screen reader, and nothing visible (it was a toned 6px
+ * dot). The row-density mark.
  *
  * Exported by tone rather than by `WorkStatus` because the sidebar draws it for
  * a Code run too, and Code's states are not Work's. The tones, the classes and
  * the 3:1 argument above them are the same for both — which is the whole reason
  * the sidebar can be one component with a `product` prop rather than two.
  */
-export function StatusDot({ tone, label, title }: { tone: StatusTone; label: string; title?: string }) {
+export function StatusDot({ tone: _tone, label, title }: { tone: StatusTone; label: string; title?: string }) {
+  // NO VISIBLE PIP any more (owner directive, 2026-09-26): coloured dots
+  // beside row titles read as decoration. A row that needs the reader is set
+  // in full ink at medium weight by its caller; this keeps the one thing the
+  // dot did that a title cannot, the words for a screen reader.
   return (
-    <span className="flex shrink-0 items-center" title={title}>
-      <span className={cn("size-1.5 rounded-full", DOT_CLASS[tone])} aria-hidden="true" />
-      <span className="sr-only">{label}</span>
+    <span className="sr-only" title={title}>
+      {label}
     </span>
   );
 }
@@ -379,8 +387,8 @@ export function CapabilityChip({
       className={cn(
         PILL_SHAPE,
         available
-          ? PILL_CLASS.neutral
-          : "border-warning/35 bg-warning/10 text-warning-foreground line-through decoration-warning/60"
+          ? TEXT_CLASS.neutral
+          : "text-warning-foreground line-through decoration-warning/60"
       )}
       title={available ? undefined : `${describeCapability(capability)} is not available on this run.`}
     >
@@ -482,7 +490,7 @@ export function riskLabel(risk: WorkRiskLevel): string {
 export function RiskPill({ risk }: { risk: WorkRiskLevel }) {
   const severe = risk === "irreversible" || risk === "sensitive";
   return (
-    <span className={cn(PILL_SHAPE, severe ? PILL_CLASS.bad : PILL_CLASS.neutral)}>
+    <span className={cn(PILL_SHAPE, severe ? TEXT_CLASS.bad : TEXT_CLASS.neutral)}>
       {severe && <StatusIcons.security className="size-3" aria-hidden="true" />}
       {RISK_LABEL[risk]}
     </span>

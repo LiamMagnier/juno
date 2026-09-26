@@ -80,7 +80,6 @@ export function AgentCard({ agent, index = 0 }: { agent: ClientAgent; index?: nu
       <div className="min-w-0 flex-1 pt-0.5">
         <div className="flex items-center gap-2">
           <p className="truncate text-body font-medium text-foreground">{agent.name}</p>
-          {waiting ? <NeedsYouDot /> : null}
         </div>
         {agent.role ? <p className="truncate text-ui text-muted-foreground">{agent.role}</p> : null}
         <p

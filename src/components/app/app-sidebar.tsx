@@ -2458,7 +2458,12 @@ function ConversationRow({
   const rowLabel = conversation.title || (isCodeSession ? "Untitled session" : "New chat");
   /* A pin is not drawn under a project, where the row's place already says it
      was filed on purpose. */
-  const trailingMark = !!signal || (conversation.pinned && !nested);
+  /* A run's state is no longer a coloured pip in the trailing slot (owner
+     directive, 2026-09-26). A row that needs the reader is set in full ink at
+     medium weight instead; every other state says nothing here, and the
+     StatusDot left in the slot only carries the words for a screen reader. */
+  const needsReader = signal?.tone === "attention" || signal?.tone === "bad";
+  const trailingMark = conversation.pinned && !nested;
 
   const patch = async (data: Partial<Pick<ClientConversation, "title" | "titleSource" | "pinned" | "projectId">>) => {
     const optimistic = data.title != null ? { ...data, titleSource: "manual" as const } : data;
@@ -2564,8 +2569,9 @@ function ConversationRow({
         <AnimatedTitle
           title={rowLabel}
           animate={conversation.titleSource === "ai"}
-          className={cn("min-w-0 flex-1", !trailingMark && KEBAB_ROOM)}
+          className={cn("min-w-0 flex-1", !trailingMark && KEBAB_ROOM, needsReader && "font-medium text-foreground")}
         />
+        {signal && <StatusDot tone={signal.tone} label={signal.label} />}
         {/* One trailing mark, in this order: a run that needs you outranks the
             fact that the row is pinned, because the pin is something you set
             and the dot is something that happened. Rule 6 still holds (a row
@@ -2573,9 +2579,7 @@ function ConversationRow({
             while the row is under the pointer. */}
         {trailingMark && (
           <span className={cn("flex size-4 shrink-0 items-center justify-center", TRAILING_MARK_YIELDS)}>
-            {signal ? (
-              <StatusDot tone={signal.tone} label={signal.label} />
-            ) : (
+            {(
               /* `weight="fill"` because a pin you set is ON (ICONS_AND_MOTION.md
                  §1.2), and `motion="none"` because here it reports a state
                  rather than offering an action: a status mark that tilted when
@@ -2705,8 +2709,12 @@ function AgentRow({ agent, active, onNavigate }: { agent: ClientAgent; active: b
         <span className="flex size-5 shrink-0 items-center justify-center">
           <AgentFace avatar={agent.avatar} state={agent.state} size="xs" />
         </span>
-        <span className="min-w-0 flex-1 truncate">{agent.name}</span>
-        {agent.state === "waiting" ? <NeedsYouDot /> : null}
+        {/* An agent waiting on you is set in full ink at medium weight, not
+            marked with a coloured dot (owner directive, 2026-09-26); its
+            face's eyes and the row's name say the rest. */}
+        <span className={cn("min-w-0 flex-1 truncate", agent.state === "waiting" && "font-medium text-foreground")}>
+          {agent.name}
+        </span>
       </Link>
     </div>
   );
@@ -2885,14 +2893,16 @@ function ProjectRow({
                     The signal is trailing, as it is on every other
                     conversation row. The `nav` rung is on the title, outside
                     the cn() that holds the row's colours. */}
-                <span dir="auto" className="min-w-0 flex-1 truncate text-nav">
+                <span
+                  dir="auto"
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-nav",
+                    (signal?.tone === "attention" || signal?.tone === "bad") && "font-medium text-foreground",
+                  )}
+                >
                   {label}
                 </span>
-                {signal && (
-                  <span className="flex size-4 shrink-0 items-center justify-center">
-                    <StatusDot tone={signal.tone} label={signal.label} />
-                  </span>
-                )}
+                {signal && <StatusDot tone={signal.tone} label={signal.label} />}
               </Link>
               );
             })}

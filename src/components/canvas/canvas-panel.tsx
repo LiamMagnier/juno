@@ -749,15 +749,16 @@ export function CanvasPanel({
   }, [fullscreen, onToggleFullscreen]);
 
   // One quiet status word in the header — real state only.
-  const status: { label: string; tone: string; live?: boolean } | null = saving
-    ? { label: "Saving", tone: "text-source", live: true }
+  // Plain words, no dot; nothing once it is simply running fine (the green
+  // "Live" / "Done" chip is gone, owner directive 2026-09-26). An error keeps
+  // its colour, the one state here that asks for the reader.
+  const status: { label: string; tone: string } | null = saving
+    ? { label: "Saving", tone: "text-muted-foreground" }
     : runStatus === "error"
       ? { label: "Error", tone: "text-destructive" }
       : runStatus === "running" || runStatus === "loading"
-        ? { label: runStatus === "running" ? "Running" : "Loading", tone: "text-source", live: true }
-        : runStatus === "done"
-          ? { label: rt.mode === "console" ? "Done" : "Live", tone: "text-success" }
-          : null;
+        ? { label: runStatus === "running" ? "Running" : "Loading", tone: "text-muted-foreground" }
+        : null;
 
   const previewFailed = runStatus === "error" && isLatest && !historyOpen;
   // Prefer the last version we actually saw render; on a fresh open of a broken
@@ -822,11 +823,7 @@ export function CanvasPanel({
             {status && (
               <>
                 <span aria-hidden>·</span>
-                <span key={status.label} className={cn("inline-flex items-center gap-1 motion-safe:animate-fade-in", status.tone)}>
-                  {/* status-glow, not Tailwind's animate-pulse: the built-in runs 2s on
-                      cubic-bezier(.4,0,.6,1), neither of which is on the token ladder, so
-                      this dot breathed on a different curve to every other live indicator. */}
-                  <span aria-hidden className={cn("size-1.5 rounded-full bg-current", status.live && "motion-safe:animate-status-glow")} />
+                <span key={status.label} role="status" className={cn("motion-safe:animate-fade-in", status.tone)}>
                   {status.label}
                 </span>
               </>

@@ -145,22 +145,29 @@ function AppLogo({ item }: { item: DirectoryItem }) {
 type TileState = "connected" | "connecting" | "available" | "setup" | "unavailable";
 
 /**
- * A status pip with its mono label — the same vocabulary the rest of the
- * product uses for "is this thing on": one dot, one word.
+ * A connector's state AS WORDS (owner directive, 2026-09-26: this was a pip
+ * and a word, the connected one green). Connected, connecting, available and
+ * unavailable are muted words; setup needed is the one state that asks for
+ * the reader, so it alone keeps the warning ink and a small mark.
  */
 function TileStatus({ state }: { state: TileState }) {
-  const meta: Record<TileState, { label: string; pip: string; ink?: string }> = {
-    connected: { label: "Connected", pip: "bg-success", ink: "text-success-ink" },
-    connecting: { label: "Connecting", pip: "bg-warning", ink: "text-warning-foreground" },
-    available: { label: "Available", pip: "border border-muted-foreground/60" },
-    setup: { label: "Setup needed", pip: "bg-warning" },
-    unavailable: { label: "Unavailable", pip: "bg-muted-foreground/40" },
+  const label: Record<TileState, string> = {
+    connected: "Connected",
+    connecting: "Connecting",
+    available: "Available",
+    setup: "Setup needed",
+    unavailable: "Unavailable",
   };
-  const m = meta[state];
+  const attention = state === "setup";
   return (
-    <span className={cn("inline-flex shrink-0 items-center gap-1.5 font-mono text-caption text-muted-foreground", m.ink)}>
-      <span className={cn("inline-flex size-2 shrink-0 rounded-full", m.pip)} />
-      {m.label}
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 font-mono text-caption",
+        attention ? "font-medium text-warning-foreground" : "text-muted-foreground"
+      )}
+    >
+      {attention && <StatusIcons.warning className="size-3.5 shrink-0" aria-hidden="true" />}
+      {label[state]}
     </span>
   );
 }

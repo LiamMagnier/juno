@@ -332,9 +332,7 @@ export function ActivityTimeline({
                 three hundred pixels apart is two indicators for one state, and
                 the eye reads them as two things happening. */}
             {open ? (
-              <span aria-hidden="true" className="flex size-4.5 shrink-0 items-center justify-center">
-                <span className="size-1.5 rounded-full bg-primary/70 ring-2 ring-primary/20" />
-              </span>
+              <span aria-hidden="true" className="size-5 shrink-0" />
             ) : (
               <PhaseOrb state={liveOrb} />
             )}

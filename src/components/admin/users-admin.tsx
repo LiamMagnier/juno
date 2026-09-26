@@ -368,7 +368,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                               <div className="flex items-center gap-2">
                                 <p className="truncate font-medium">{u.name || "—"}</p>
                                 {u.bannedAt && (
-                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 font-mono text-caption font-semibold text-destructive">
+                                  <span className="inline-flex shrink-0 items-center gap-1 font-mono text-caption font-medium text-destructive">
                                     <Ban className="size-3" aria-hidden="true" />
                                     Banned
                                   </span>
