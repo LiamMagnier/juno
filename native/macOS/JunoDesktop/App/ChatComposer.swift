@@ -172,9 +172,13 @@ enum ChatComposerPlaceholder {
         isClarifying: Bool = false,
         quote: Quote? = nil,
         steering: Steering? = nil,
-        custom: String? = nil
+        custom: String? = nil,
+        inCall: Bool = false
     ) -> String {
         if let steering { return steering.placeholder }
+        // A call is typed into as well as talked to (the web's `voiceOpen`
+        // rung). Private mode keeps its own line, as on the web.
+        if inCall, !isPrivate { return "Type while you talk…" }
         if isClarifying { return "Or type your own answer…" }
         if let quote {
             return quote == .modify ? "Describe the change…" : "Ask about this selection…"
@@ -794,7 +798,8 @@ final class ChatComposerPasteMonitor {
 /// **Every state is drawn in the one shell (§5.8).** Dictating swaps the field
 /// for the words being heard and the controls row for the dictation exits
 /// (``ComposerDictationField``, ``ComposerDictationControls``). A call turns
-/// the controls row into the call bar (``DesktopVoiceCallBar``) and keeps the
+/// the controls row into the call bar (``DesktopVoiceCallBar``), lights the
+/// shell's bottom edge with the voice glow (``DesktopVoiceComposerGlow``), and keeps the
 /// field, because a call can be typed into. Private mode is this composer with
 /// a dashed edge, a footnote and its own placeholder, sending to the in-memory
 /// ``NativePrivateChatModel`` instead of the store. None of the three is a
@@ -1079,7 +1084,8 @@ struct ChatComposer: View {
             isPrivate: isPrivate,
             modality: selectedModel?.modality ?? "chat",
             steering: inSteerMode ? steering?.placeholderRung : nil,
-            custom: customPlaceholder
+            custom: customPlaceholder,
+            inCall: voiceActive
         )
     }
 
@@ -1478,15 +1484,14 @@ struct ChatComposer: View {
     private var controlsRow: some View {
         if let voiceCall {
             // The call, in the row the controls were in. `+` stays at the head
-            // (a picture can be shown to a call), and the disc sends a typed
-            // turn only when there is one — the hang-up is the row's end.
+            // (a picture can be shown to a call), and the primary slot ends
+            // the call until something is typed, when it is Send.
             DesktopVoiceCallBar(
                 column: voiceCall,
                 hangUp: voiceHangUp,
+                hasDraft: !draftIsEmpty,
                 leading: { plusMenu },
-                trailing: {
-                    if !draftIsEmpty { primaryDisc }
-                }
+                primary: { primaryDisc }
             )
             .opacity(isDropTargeted ? 0.3 : 1)
             .transition(.opacity)
@@ -1530,6 +1535,14 @@ struct ChatComposer: View {
     private var edges: some View {
         if isDropTargeted {
             JunoComposerDropEdge(label: "Drop to attach")
+        } else if let voiceCall {
+            // The voice glow (premium voice pass): a band of light along the
+            // shell's bottom edge that rises with the voice and gathers into a
+            // travelling beam while the reply is thought through. Clipped to
+            // the shell, so it follows its corners and never reaches the page.
+            DesktopVoiceComposerGlow(controller: voiceCall.controller)
+                .clipShape(ContainerRelativeShape())
+                .transition(.opacity)
         } else if isPrivate {
             JunoComposerPrivateEdge()
         } else if let beam = beamStyle {

@@ -7,6 +7,7 @@ import JunoCodeUI
 import JunoCore
 import JunoDesignSystem
 import JunoPreviewSupport
+import JunoVoiceKit
 import SwiftUI
 import Testing
 
@@ -585,5 +586,192 @@ enum PremiumRenderer {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try png.write(to: url)
         return url
+    }
+}
+
+// MARK: - Voice
+
+/// The voice pass's pictures: the Chat composer during a call, in each phase a
+/// call spends its time in, and the two empty states with nothing under their
+/// composers. Written to `docs/design/premium-pass/mac/voice/` by pointing
+/// `JUNO_PREMIUM_SNAPSHOT_DIR` there.
+///
+/// **No relay.** Each call is the controller's DEBUG preview session: live,
+/// with a transcript and a synthetic level, and nothing dialled.
+@MainActor
+@Suite(
+    .enabled(
+        if: ProcessInfo.processInfo.environment["JUNO_PREMIUM_SNAPSHOT_DIR"] != nil,
+        "Set JUNO_PREMIUM_SNAPSHOT_DIR to render the voice pass."
+    ),
+    .serialized
+)
+struct PremiumVoiceSnapshotTests {
+    private var directory: URL {
+        URL(fileURLWithPath: ProcessInfo.processInfo.environment["JUNO_PREMIUM_SNAPSHOT_DIR"]!)
+    }
+
+    nonisolated static let names = [
+        "voice-listening", "voice-speaking", "voice-thinking", "voice-muted", "voice-typing",
+        "voice-window-speaking", "voice-chat-empty", "voice-code-empty",
+    ]
+
+    @Test(arguments: names)
+    func drawsTheCall(_ name: String) async throws {
+        let world = try await SnapshotPreviewWorld.showcase()
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let isDark = appearance == .darkAqua
+            var size = CGSize(width: 880, height: 220)
+            var framed = false
+            let view: AnyView
+            switch name {
+            case "voice-listening":
+                view = AnyView(VoiceShots.composer(world: world, call: VoiceShots.call(.listening)))
+            case "voice-speaking":
+                view = AnyView(VoiceShots.composer(world: world, call: VoiceShots.call(.speaking)))
+            case "voice-thinking":
+                view = AnyView(VoiceShots.composer(world: world, call: VoiceShots.call(.thinking)))
+            case "voice-muted":
+                view = AnyView(VoiceShots.composer(world: world, call: VoiceShots.call(.muted)))
+            case "voice-typing":
+                view = AnyView(
+                    VoiceShots.composer(
+                        world: world,
+                        call: VoiceShots.call(.listening),
+                        draft: "And the photo I just added, what do you make of it?"
+                    )
+                )
+            case "voice-window-speaking":
+                world.showConversation()
+                size = PremiumFrame.size
+                framed = true
+                view = AnyView(VoiceShots.window(world: world, call: VoiceShots.call(.speaking)))
+            case "voice-chat-empty":
+                world.showDraft()
+                size = PremiumFrame.size
+                framed = true
+                view = AnyView(PremiumShots.chatEmpty(world: world))
+            case "voice-code-empty":
+                size = PremiumFrame.size
+                framed = true
+                view = AnyView(PremiumShots.codeEmpty(world: world))
+            default:
+                Issue.record("Unknown shot \(name)")
+                return
+            }
+            let url = try await PremiumRenderer.render(
+                view,
+                size: size,
+                framed: framed,
+                isDark: isDark,
+                into: directory.appendingPathComponent("\(name)-\(isDark ? "dark" : "light").png")
+            )
+            #expect(FileManager.default.fileExists(atPath: url.path))
+        }
+    }
+
+    /// The words each phase says, from the controller's own state.
+    @Test
+    func eachPreviewCallReadsAsItsPhase() {
+        #expect(DesktopVoiceCallText.phase(VoiceShots.call(.listening).controller) == .listening)
+        #expect(DesktopVoiceCallText.phase(VoiceShots.call(.speaking).controller) == .speaking)
+        #expect(DesktopVoiceCallText.phase(VoiceShots.call(.thinking).controller) == .thinking)
+        #expect(DesktopVoiceCallText.phase(VoiceShots.call(.muted).controller) == .muted)
+    }
+}
+
+@MainActor
+enum VoiceShots {
+    enum State {
+        case listening, speaking, thinking, muted
+    }
+
+    private struct NoRelay: JunoVoiceRelayAuthorizing {
+        func relayToken() async throws -> JunoVoiceRelayToken {
+            throw CancellationError()
+        }
+    }
+
+    /// A live-looking call in `state`, with no relay behind it.
+    static func call(_ state: State) -> DesktopVoiceColumn {
+        let controller = JunoRealtimeVoiceController(authorization: NoRelay(), provider: .qwen)
+        let question = "We launch on the 14th. What should I cut if the billing migration slips?"
+        let answer = "Launch on the current plans and move the pricing page a week later. Nothing else depends on it."
+        switch state {
+        case .listening:
+            controller.beginPreviewSession(lines: [(.user, question), (.assistant, answer)], assistantSpeaking: false)
+        case .speaking:
+            controller.beginPreviewSession(lines: [(.user, question), (.assistant, answer)], assistantSpeaking: true)
+        case .thinking:
+            controller.beginPreviewSession(lines: [(.user, question)], assistantSpeaking: false)
+        case .muted:
+            controller.beginPreviewSession(lines: [(.user, question), (.assistant, answer)], assistantSpeaking: false)
+            controller.setMuted(true)
+        }
+        return DesktopVoiceColumn(
+            sessionID: UUID(),
+            controller: controller,
+            saveTranscript: { _, _ in "conv-1" },
+            close: {}
+        )
+    }
+
+    /// The Chat composer, docked, inside `call`.
+    static func composer(world: SnapshotPreviewWorld, call: DesktopVoiceColumn, draft: String? = nil) -> some View {
+        ChatComposerDock(
+            lift: ChatComposerLift.resting,
+            gutter: JunoSpace.roomy
+        ) {
+            EmptyView()
+        } composer: {
+            ChatComposer(
+                model: world.world.conversationModel,
+                attachmentModel: world.world.attachmentModel,
+                libraryModel: world.world.libraryModel,
+                projectModel: world.world.projectModel,
+                workspaceModel: nil,
+                documentIndex: nil,
+                connectorModel: world.world.connectorModel,
+                memorySettings: world.world.memorySettingsModel,
+                draftProjectID: .constant(nil),
+                draftPrompt: .constant(draft),
+                openVoiceMode: { _ in }
+            )
+        } footer: {
+            EmptyView()
+        }
+        .junoVoiceCall(call)
+        .padding(.top, JunoSpace.region)
+        .frame(width: 880, height: 220, alignment: .top)
+        .background(Color.junoCanvas)
+        .environment(\.junoSnapshotOpaqueGlass, true)
+        .environment(\.locale, Locale(identifier: "en_US"))
+        .junoAccentTint()
+    }
+
+    /// A conversation window with a call running in its composer.
+    static func window(world: SnapshotPreviewWorld, call: DesktopVoiceColumn) -> some View {
+        PremiumWindow(
+            sidebar: { PremiumShots.chatSidebar(world: world, selection: .conversation("conv-1")) },
+            product: .chat,
+            title: "Launch plan for Field Notes 2.0",
+            subtitle: nil,
+            toolbar: [.icon(.share, "Share"), .icon(.privateChat, "Incognito")]
+        ) {
+            VStack(spacing: 0) {
+                Color.clear
+                    .overlay(alignment: .top) {
+                        TranscriptSnapshotFixtures.column {
+                            TranscriptSnapshotFixtures.row(PremiumShots.launchQuestion)
+                            TranscriptSnapshotFixtures.row(PremiumShots.launchReply, newest: true)
+                        }
+                    }
+                    .clipped()
+                FinalSnapshotFixtures.composer(world: world)
+                    .junoVoiceCall(call)
+                    .padding(.bottom, JunoSpace.cozy)
+            }
+            .junoAccentTint()
+        }
     }
 }

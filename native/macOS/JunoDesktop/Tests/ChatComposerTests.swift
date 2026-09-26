@@ -89,6 +89,66 @@ struct ChatComposerTests {
         #expect(ChatComposerPlaceholder.text(steering: .question) == "Answer Juno\u{2019}s question…")
         #expect(ChatComposerPlaceholder.text(steering: .task) == "Add an instruction to the running task…")
         #expect(ChatComposerPlaceholder.text(steering: .research) == "Add a constraint, or paste a source to include…")
+        #expect(ChatComposerPlaceholder.text(inCall: true) == "Type while you talk…")
+        #expect(ChatComposerPlaceholder.text(custom: "Message Ada…", inCall: true) == "Type while you talk…")
+        #expect(ChatComposerPlaceholder.text(isPrivate: true, inCall: true) == "How can I help you today?")
+    }
+
+    // MARK: - Voice
+
+    /// The glow's palette is the web's `junoVoicePalette`, hex for hex.
+    @Test
+    func theVoiceGlowPaletteIsTheWebs() {
+        #expect(JunoVoiceGlowPalette.light.colors == ["#f07f52", "#f2ad3f", "#ec6f5f", "#6fb383", "#e8839b", "#6f9fd8", "#5fb3ab"])
+        #expect(JunoVoiceGlowPalette.dark.colors == ["#ff9a6b", "#ffc15f", "#ff7f73", "#86d19a", "#f59bb0", "#86b9f2", "#79d0c8"])
+        #expect(JunoVoiceGlowPalette.light.core == "#ffd9bf")
+        #expect(JunoVoiceGlowPalette.dark.core == "#fff1e4")
+        #expect(JunoVoiceGlowPalette.light.strength == 0.8)
+        #expect(JunoVoiceGlowPalette.dark.strength == 0.95)
+    }
+
+    /// Thinking starts the beam at the centre, and it stays within the range.
+    @Test
+    func theThinkingBeamStartsCentredAndStaysInRange() {
+        #expect(abs(JunoVoiceGlowEngine.beamPosition(at: 0)) < 0.001)
+        for step in 0..<200 {
+            let x = JunoVoiceGlowEngine.beamPosition(at: Double(step) * 0.05)
+            #expect((-1...1).contains(x))
+        }
+    }
+
+    /// The call's words: the web's labels, narrow keeps the verb, and the
+    /// caller's own speech is never announced over itself.
+    @Test
+    @MainActor
+    func theCallSaysWhatItIsDoing() {
+        #expect(DesktopVoiceCallText.label(.speaking) == "Juno is speaking")
+        #expect(DesktopVoiceCallText.label(.speaking, wide: false) == "Speaking")
+        #expect(DesktopVoiceCallText.label(.thinking) == "Thinking")
+        #expect(DesktopVoiceCallText.label(.muted) == "Muted")
+        #expect(DesktopVoiceCallText.label(.connecting) == "Connecting")
+        #expect(DesktopVoiceCallText.announcement(.listening, previous: .listening) == nil)
+        #expect(DesktopVoiceCallText.announcement(.listening, previous: .connecting) == "Connected. Listening.")
+        #expect(DesktopVoiceCallPhase.connecting.pausesGlow)
+        #expect(!DesktopVoiceCallPhase.thinking.pausesGlow)
+    }
+
+    /// The glow is the status: warm for you, cool for Juno, the whole palette
+    /// gathered while it thinks, grey and still when muted.
+    @Test
+    func theGlowsToneIsThePhase() {
+        #expect(DesktopVoiceCallPhase.listening.glowTone == .caller)
+        #expect(DesktopVoiceCallPhase.speaking.glowTone == .juno)
+        #expect(DesktopVoiceCallPhase.thinking.glowTone == .mixed)
+        #expect(DesktopVoiceCallPhase.muted.glowTone == .muted)
+        #expect(DesktopVoiceCallPhase.muted.holdsGlowStill)
+        #expect(DesktopVoiceCallPhase.connecting.holdsGlowStill)
+        #expect(!DesktopVoiceCallPhase.speaking.holdsGlowStill)
+        #expect(JunoVoiceGlowPalette.palette(for: .caller, dark: false).colors.first == "#f07f52")
+        #expect(JunoVoiceGlowPalette.palette(for: .caller, dark: true).colors.first == "#ff9a6b")
+        #expect(JunoVoiceGlowPalette.palette(for: .juno, dark: false).colors.prefix(3) == ["#6f9fd8", "#5fb3ab", "#6fb383"])
+        #expect(JunoVoiceGlowPalette.palette(for: .juno, dark: true).colors.prefix(3) == ["#86b9f2", "#79d0c8", "#86d19a"])
+        #expect(JunoVoiceGlowPalette.palette(for: .mixed, dark: false) == .light)
     }
 
     // MARK: - Quota
