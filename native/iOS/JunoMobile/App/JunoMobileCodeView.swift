@@ -102,8 +102,8 @@ struct JunoMobileCodeView: View {
       }
     }
     .background(Color.junoCanvas)
-    .navigationTitle("")
-    .navigationBarTitleDisplayMode(.inline)
+    .navigationTitle("navigation.code")
+    .navigationBarTitleDisplayMode(.large)
     .refreshable { await model.refresh() }
     // A destination rather than a tab: a reader checks on pull requests
     // between sessions, not while they have one open, so it belongs beside
@@ -319,10 +319,7 @@ struct JunoMobileCodeView: View {
     VStack(spacing: 0) {
       ScrollView {
         LazyVStack(alignment: .leading, spacing: 12) {
-          JunoPageTitle(
-            title: "navigation.code",
-            subtitle: model.isTargetless ? "code.subtitle.none" : "code.subtitle"
-          )
+          JunoPageSubtitle(model.isTargetless ? "code.subtitle.none" : "code.subtitle")
           .padding(.top, 6)
 
           codeOverview

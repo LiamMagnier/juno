@@ -81,7 +81,7 @@ struct JunoMobileCodeHostsStrip: View {
       HStack(spacing: JunoSpace.snug) {
         Image(systemName: icon)
           .junoFont(size: 15, relativeTo: .body)
-          .foregroundStyle(selected ? Color.junoAccent : Color.junoMutedForeground)
+          .foregroundStyle(selected ? Color.junoForeground : Color.junoMutedForeground)
           .frame(width: 22)
         VStack(alignment: .leading, spacing: 1) {
           Text(title)
@@ -114,7 +114,7 @@ struct JunoMobileCodeHostsStrip: View {
       )
       .overlay(
         RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-          .strokeBorder(selected ? Color.junoAccent.opacity(0.5) : Color.junoHairline, lineWidth: 1)
+          .strokeBorder(selected ? Color.junoForeground.opacity(0.35) : Color.junoHairline, lineWidth: selected ? 1.25 : 1)
       )
       .contentShape(Rectangle())
     }
