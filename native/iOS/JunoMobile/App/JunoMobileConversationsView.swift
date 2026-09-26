@@ -1672,6 +1672,8 @@ private struct JunoMobileMessageRow: View {
     // stored message for a fork to branch away from.
     if !voice, editMessage != nil || branchPosition != nil {
       HStack(spacing: 2) {
+        // Tucked up under the bubble: it belongs to the words above it, and
+        // at the full 44pt row height it floated halfway to the next turn.
         branchNavigator
         if editMessage != nil, !editing {
           actionButton(
@@ -1685,6 +1687,8 @@ private struct JunoMobileMessageRow: View {
           .disabled(isGenerating)
         }
       }
+      .padding(.top, -JunoSpace.snug)
+      .padding(.bottom, -JunoSpace.snug)
       .accessibilityElement(children: .contain)
     }
   }
@@ -1724,9 +1728,10 @@ private struct JunoMobileMessageRow: View {
       .overlay(alignment: .bottom) {
         if isLongPrompt && !expanded { fade }
       }
+      // A flat, warm fill and nothing else. The hairline and the black drop
+      // shadow made the reader's words look like a text field waiting for
+      // input; a remark needs a tone, not a border.
       .background(Color.junoMuted, in: Self.bubbleShape)
-      .overlay(Self.bubbleShape.strokeBorder(Color.junoHairline, lineWidth: 1))
-      .shadow(color: .black.opacity(0.06), radius: 4, y: 1)
       .contentShape(Self.bubbleShape)
       .junoMessageContextMenu(menuActions)
       .sheet(isPresented: $showingSelectText) {

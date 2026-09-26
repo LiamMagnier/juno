@@ -192,16 +192,32 @@ struct JunoPageTitle: View {
     }
 }
 
+/// The one line under a large navigation title that says what the page is
+/// for. The title itself lives in the bar.
+struct JunoPageSubtitle: View {
+    let text: LocalizedStringKey
+    init(_ text: LocalizedStringKey) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.subheadline)
+            .foregroundStyle(Color.junoSecondaryInk)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// A quiet group label above a run of rows.
 struct JunoGroupLabel: View {
     let text: String
 
     var body: some View {
         Text(text)
-            .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold)
-            .junoSecondaryInk()
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(Color.junoTertiaryInk)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, JunoSpace.tight)
+            .padding(.top, JunoSpace.snug)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 

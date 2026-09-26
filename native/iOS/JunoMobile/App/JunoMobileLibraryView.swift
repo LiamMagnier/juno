@@ -78,7 +78,7 @@ struct JunoMobileLibraryView: View {
         }
         .background(Color.junoCanvas)
         .navigationTitle("navigation.library")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .toolbar { libraryToolbar }
         .alert("Rename file", isPresented: Binding(
             get: { renameFileID != nil },
