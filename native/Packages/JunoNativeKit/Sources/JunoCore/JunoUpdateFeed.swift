@@ -56,12 +56,18 @@ public enum JunoUpdateFeed {
         public let sizeBytes: Int?
         /// Lowercase hex SHA-256, when the release published a digest.
         public let sha256: String?
+        /// What changed, as Markdown, when the feed carries the release's
+        /// notes. Optional and display-only: nothing is decided on it, and a
+        /// feed without it (today's) is an update window that links to the
+        /// download page instead.
+        public let notes: String?
 
-        public init(version: String, downloadURL: URL, sizeBytes: Int?, sha256: String?) {
+        public init(version: String, downloadURL: URL, sizeBytes: Int?, sha256: String?, notes: String? = nil) {
             self.version = version
             self.downloadURL = downloadURL
             self.sizeBytes = sizeBytes
             self.sha256 = sha256
+            self.notes = notes
         }
     }
 
@@ -93,7 +99,8 @@ public enum JunoUpdateFeed {
             sizeBytes: row.size,
             // GitHub publishes `sha256:…`; the prefix is dropped so callers
             // compare hex to hex.
-            sha256: row.sha256.flatMap(normalizedDigest)
+            sha256: row.sha256.flatMap(normalizedDigest),
+            notes: row.notes.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         )
     }
 
@@ -303,6 +310,7 @@ public enum JunoUpdateFeed {
             let size: Int?
             let available: Bool
             let sha256: String?
+            let notes: String?
         }
         let downloads: [Row]
     }

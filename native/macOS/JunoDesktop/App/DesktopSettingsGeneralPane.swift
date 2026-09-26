@@ -16,6 +16,7 @@ struct DesktopSettingsGeneralPane: View {
 
     @State private var updater = DesktopUpdateModel.shared
     @State private var showingDiagnostics = false
+    @Environment(\.openWindow) private var openWindow
     @AppStorage(DesktopTextSize.storageKey) private var storedTextSize = DesktopTextSize.default.rawValue
 
     var body: some View {
@@ -33,12 +34,19 @@ struct DesktopSettingsGeneralPane: View {
 
             Section {
                 DesktopSettingRow(
-                    title: "Juno for Mac \(JunoBuildInfo.current.displayVersion)",
+                    title: "Juno for Mac",
                     description: updateStatus
                 ) {
-                    DesktopOutlineButton(title: updateActionTitle) { updateAction() }
-                        .disabled(!updateActionEnabled)
-                        .accessibilityIdentifier("juno.desktop.settings.check-updates")
+                    if case .ready = updater.phase {
+                        Button("Restart to Update") { updater.installAndRelaunch() }
+                            .buttonStyle(.junoProminent)
+                            .frame(minWidth: 28, minHeight: 28)
+                            .contentShape(.rect)
+                            .accessibilityIdentifier("juno.desktop.settings.check-updates")
+                    } else {
+                        DesktopOutlineButton(title: "Check for Updates…") { openUpdates() }
+                            .accessibilityIdentifier("juno.desktop.settings.check-updates")
+                    }
                 }
                 DesktopSettingRow(
                     title: "Diagnostics",
@@ -147,41 +155,35 @@ struct DesktopSettingsGeneralPane: View {
 
     // MARK: About
 
+    /// The build, then where the updater stands, in plain words: a version
+    /// in the mono, never a pill.
     private var updateStatus: String {
-        switch updater.phase {
-        case .idle: "Updates are checked every ten minutes while Juno is open."
+        let version = "Version \(JunoBuildInfo.current.displayVersion)."
+        let status: String = switch updater.phase {
+        case .idle: "Juno checks for updates every ten minutes while it is open."
         case .checking: "Checking for updates…"
         case .current: "Up to date."
         case .downloading(let version, let fraction):
             if let fraction {
-                "Downloading \(version), \(Int((fraction * 100).rounded()))%"
+                "Downloading \(version), \(Int((fraction * 100).rounded()))%."
             } else {
                 "Downloading \(version)…"
             }
-        case .ready(let version): "Juno \(version) is ready to install."
+        case .ready(let version): "Juno \(version) is downloaded and verified."
         case .failed(let message): message
         case .unsupported(let reason): reason
         }
+        return "\(version) \(status)"
     }
 
-    private var updateActionTitle: String {
-        if case .ready = updater.phase { return "Install and Relaunch" }
-        return "Check for Updates…"
-    }
-
-    private var updateActionEnabled: Bool {
+    /// Software Update, checking on the way in unless a check or a download
+    /// is already running.
+    private func openUpdates() {
         switch updater.phase {
-        case .checking, .downloading, .unsupported: false
-        default: true
+        case .checking, .downloading: break
+        default: updater.checkNow()
         }
-    }
-
-    private func updateAction() {
-        if case .ready = updater.phase {
-            updater.installAndRelaunch()
-        } else {
-            updater.checkNow()
-        }
+        openWindow(id: JunoDesktopWindow.softwareUpdateID)
     }
 }
 

@@ -25,6 +25,17 @@ import Testing
         #expect(DesktopSettingsSection.connections == .connectors)
     }
 
+    /// The rail's groups change its rhythm, never its order or its set.
+    @Test func railGroupsFlattenToTheContractOrder() {
+        #expect(DesktopSettingsSection.railGroups.flatMap { $0 } == DesktopSettingsSection.allCases)
+    }
+
+    /// Software Update's download line, and its fallback without a size.
+    @Test func updateDownloadAmount() {
+        #expect(DesktopUpdatePanel.amount(fraction: 0.5, size: nil) == "Downloading")
+        #expect(DesktopUpdatePanel.amount(fraction: 0.5, size: 100_000_000).contains(" of "))
+    }
+
     @Test func theWebsAliasesResolve() {
         let cases: [(String, DesktopSettingsSection)] = [
             ("permissions", .devices), ("macs", .devices), ("hosts", .devices),

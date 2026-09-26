@@ -54,7 +54,11 @@ struct DesktopAccountFooter: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             if case .ready(let version) = updater.phase {
-                DesktopFooterUpdateRow(version: version) { updater.installAndRelaunch() }
+                DesktopFooterUpdateRow(
+                    version: version,
+                    restart: { updater.installAndRelaunch() },
+                    details: { openWindow(id: JunoDesktopWindow.softwareUpdateID) }
+                )
             }
 
             HStack(spacing: 2) {
@@ -371,14 +375,24 @@ struct DesktopFooterSyncMark: View {
 private struct DesktopFooterUpdateRow: View {
     let version: String
     let restart: () -> Void
+    /// Opens Software Update: the versions, and what is new.
+    var details: () -> Void = {}
 
     var body: some View {
         HStack(spacing: JunoSpace.snug) {
-            JunoIconView(.download, size: 13)
+            Button(action: details) {
+                HStack(spacing: JunoSpace.snug) {
+                    JunoIconView(.download, size: 13)
+                    Text("Update ready")
+                        .junoFont(size: 12, relativeTo: .footnote)
+                }
                 .junoSecondaryInk()
-            Text("Update ready")
-                .junoFont(size: 12, relativeTo: .footnote)
-                .junoSecondaryInk()
+                .frame(minWidth: 28, minHeight: 28)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .help("See what's new in Juno \(version)")
+            .accessibilityIdentifier("juno.desktop.update-details")
             Spacer(minLength: 0)
             // Link-style accent text, stated here rather than left to the
             // borderless style: the sidebar sits outside the detail's accent

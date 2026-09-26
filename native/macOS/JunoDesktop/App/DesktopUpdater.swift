@@ -68,6 +68,13 @@ final class DesktopUpdateModel {
     private(set) var stagedBundle: URL?
     private(set) var stagedVersion: String?
 
+    /// The offered release's notes, when the feed carries them, for the
+    /// Software Update window's "What's new".
+    private(set) var releaseNotes: String?
+    /// The offered download's size in bytes, when the feed published one, so
+    /// the window can say "48 MB of 112 MB" instead of a bare percentage.
+    private(set) var downloadSize: Int?
+
     /// True once the swap script is running and waiting on this process. It
     /// must never be spawned twice — see ``launchInstaller(relaunch:)``.
     private var installerLaunched = false
@@ -243,6 +250,8 @@ final class DesktopUpdateModel {
     // MARK: - Download, verify, stage
 
     private func download(_ candidate: JunoUpdateFeed.Candidate) async throws {
+        releaseNotes = candidate.notes
+        downloadSize = candidate.sizeBytes
         phase = .downloading(version: candidate.version, fraction: nil)
 
         let progress = DownloadProgressDelegate { [weak self] fraction in

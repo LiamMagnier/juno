@@ -33,6 +33,11 @@ enum JunoDesktopWindow {
     /// A research report in its own window, keyed by its run's id: opening
     /// the same report twice brings its window forward (register #65).
     static let researchReportID = "juno.research-report"
+    /// About Juno: the app's own About window, from the application menu.
+    static let aboutID = "juno.about"
+    /// Software Update: every state of the in-app updater, opened from Check
+    /// for Updates…, Settings › General, About and the sidebar's update line.
+    static let softwareUpdateID = "juno.software-update"
     /// The File menu's item that opens another main window. Named here because
     /// ``JunoDesktopAppDelegate`` invokes it by title when a launch comes up
     /// with no window at all.
@@ -424,6 +429,31 @@ struct JunoDesktopApp: App {
         .defaultSize(width: 880, height: 720)
         .windowResizability(.contentMinSize)
         .defaultLaunchBehavior(.suppressed)
+
+        // About Juno and Software Update (premium pass): fixed-size utility
+        // windows, never restored at launch and kept out of the Window menu's
+        // generated list — each has its own item in the application menu.
+        Window("About Juno", id: JunoDesktopWindow.aboutID) {
+            DesktopAboutWindow()
+                .junoAccountAppearance(configuration)
+                .junoAccentTint()
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .windowBackgroundDragBehavior(.enabled)
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(.suppressed)
+        .commandsRemoved()
+
+        Window("Software Update", id: JunoDesktopWindow.softwareUpdateID) {
+            DesktopSoftwareUpdateWindow()
+                .junoAccountAppearance(configuration)
+                .junoAccentTint()
+        }
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(.suppressed)
+        .commandsRemoved()
 
         // The menu bar item: New Chat, the chats that need you, live Code sessions, Open Juno (§7.10).
         // Read off the shared registry, so it is right with no window open.

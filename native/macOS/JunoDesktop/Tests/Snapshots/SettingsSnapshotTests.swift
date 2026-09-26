@@ -347,7 +347,8 @@ enum SettingsSnapshotFixtures {
 
 /// The Settings source list as a plain column: the platform's list needs the
 /// split view's window to draw its selection, which an offscreen window lacks.
-private struct DesktopSettingsSnapshotRail: View {
+/// Drawn in the rail's groups with each section's tile, as the live rail is.
+struct DesktopSettingsSnapshotRail: View {
     let selection: DesktopSettingsSection
 
     var body: some View {
@@ -363,21 +364,26 @@ private struct DesktopSettingsSnapshotRail: View {
             .frame(height: 28)
             .background(Color.junoInput, in: RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
             .padding(.bottom, JunoSpace.snug)
-            ForEach(DesktopSettingsSection.allCases) { section in
-                let selected = section == selection
-                HStack(spacing: JunoSpace.snug) {
-                    JunoIconView(section.icon, size: 16)
-                    Text(section.label)
-                        .junoType(.ui)
-                    Spacer(minLength: 0)
+            ForEach(Array(DesktopSettingsSection.railGroups.enumerated()), id: \.offset) { index, group in
+                if index > 0 {
+                    Spacer().frame(height: JunoSpace.tight)
                 }
-                .foregroundStyle(selected ? Color.junoForeground : Color.junoSidebarForeground)
-                .padding(.horizontal, JunoSpace.snug)
-                .frame(height: 30)
-                .background(
-                    selected ? Color.junoSelectedFill : Color.clear,
-                    in: RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
-                )
+                ForEach(group) { section in
+                    let selected = section == selection
+                    HStack(spacing: JunoSpace.snug) {
+                        DesktopSettingsSectionTile(icon: section.icon, selected: selected)
+                        Text(section.label)
+                            .junoType(.ui)
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(selected ? Color.junoForeground : Color.junoSidebarForeground)
+                    .padding(.horizontal, JunoSpace.tight)
+                    .frame(height: 30)
+                    .background(
+                        selected ? Color.junoSelectedFill : Color.clear,
+                        in: RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                    )
+                }
             }
             Spacer(minLength: 0)
         }

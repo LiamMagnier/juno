@@ -335,6 +335,12 @@ struct JunoDesktopCommands: Commands {
     }
 
     var body: some Commands {
+        // About Juno is Juno's own window (premium pass), not the system's
+        // standard panel: the painted plate, the display name, the build.
+        CommandGroup(replacing: .appInfo) {
+            Button("About Juno") { openWindow(id: JunoDesktopWindow.aboutID) }
+                .contentShape(.rect)
+        }
         CommandGroup(after: .appInfo) {
             Section {
                 updateStatusItem
@@ -419,22 +425,26 @@ struct JunoDesktopCommands: Commands {
     }
 
     private var updateActionTitle: String {
-        if case .ready = updater.phase { return "Install Update and Relaunch" }
+        if case .ready = updater.phase { return "Restart to Update" }
         return "Check for Updates…"
     }
 
-    private var updateActionEnabled: Bool {
-        switch updater.phase {
-        case .checking, .downloading, .unsupported: false
-        default: true
-        }
-    }
+    /// Always on: while a check or a download runs, the item opens Software
+    /// Update to show it rather than going dead under the pointer.
+    private var updateActionEnabled: Bool { true }
 
+    /// A ready update restarts straight from the menu, an explicit choice;
+    /// anything else opens Software Update, and checks unless a check or a
+    /// download is already under way.
     private func updateAction() {
-        if case .ready = updater.phase {
+        switch updater.phase {
+        case .ready:
             updater.installAndRelaunch()
-        } else {
+        case .checking, .downloading:
+            openWindow(id: JunoDesktopWindow.softwareUpdateID)
+        default:
             updater.checkNow()
+            openWindow(id: JunoDesktopWindow.softwareUpdateID)
         }
     }
 }
