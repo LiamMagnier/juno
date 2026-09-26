@@ -46,7 +46,7 @@ struct PremiumSnapshotTests {
         URL(fileURLWithPath: ProcessInfo.processInfo.environment["JUNO_PREMIUM_SNAPSHOT_DIR"]!)
     }
 
-    nonisolated static let names = ["mac-chat-empty", "mac-chat-conversation", "mac-code-session", "mac-code-empty", "mac-product-switch", "mac-sign-in"]
+    nonisolated static let names = ["mac-chat-empty", "mac-chat-conversation", "mac-code-session", "mac-code-empty", "mac-sign-in"]
 
     @Test(arguments: names)
     func drawsTheWindow(_ name: String) async throws {
@@ -54,8 +54,8 @@ struct PremiumSnapshotTests {
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             let isDark = appearance == .darkAqua
             let view: AnyView
-            var size = PremiumFrame.size
-            var framed = true
+            let size = PremiumFrame.size
+            let framed = true
             switch name {
             case "mac-chat-empty":
                 world.showDraft()
@@ -79,16 +79,8 @@ struct PremiumSnapshotTests {
                     .junoAccentTint()
                 )
             default:
-                size = CGSize(width: 320, height: 64)
-                framed = false
-                view = AnyView(
-                    HStack(spacing: 24) {
-                        DesktopProductSwitch(product: .constant(.chat))
-                        DesktopProductSwitch(product: .constant(.code))
-                    }
-                    .frame(width: size.width, height: size.height)
-                    .background(Color.junoSidebar)
-                )
+                Issue.record("Unknown shot \(name)")
+                return
             }
             let url = try await PremiumRenderer.render(
                 view,
@@ -402,7 +394,7 @@ struct PremiumWindow<Sidebar: View, Detail: View, Inspector: View>: View {
                     .foregroundStyle(Color.junoSidebarInk)
                     .padding(.leading, 14)
                 Spacer(minLength: 0)
-                DesktopProductSwitch(product: .constant(product))
+                PremiumProductSwitchStandIn(product: product)
             }
             .padding(.leading, 14)
             .padding(.trailing, 10)
@@ -475,6 +467,39 @@ struct PremiumWindow<Sidebar: View, Detail: View, Inspector: View>: View {
                 Capsule().fill(isOn ? Color.junoSelectedFill : Color.clear)
             )
         }
+    }
+}
+
+/// The native toolbar picker as the window server draws it: an AppKit
+/// segmented control in the toolbar's glass capsule, which `cacheDisplay`
+/// cannot reproduce offscreen (it paints the chosen segment's words white on
+/// a white key). Drawn here for the pictures only; the app uses the system
+/// control (``DesktopProductSwitch``).
+struct PremiumProductSwitchStandIn: View {
+    let product: DesktopProductMode
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(DesktopProductMode.switchable) { mode in
+                let selected = mode == product
+                HStack(spacing: 5) {
+                    JunoSymbol(mode.icon, weight: selected ? .fill : .regular)
+                    Text(mode.label)
+                        .junoFont(size: 12, relativeTo: .callout, weight: .medium)
+                }
+                .foregroundStyle(selected ? Color.junoForeground : Color.junoSecondaryInk)
+                .padding(.horizontal, 10)
+                .frame(height: 24)
+                .background {
+                    if selected {
+                        Capsule().fill(Color.junoCard).junoRaisedShadow()
+                    }
+                }
+            }
+        }
+        .padding(3)
+        .background(Capsule().fill(Color.junoForeground.opacity(0.06)))
+        .overlay(Capsule().strokeBorder(Color.junoBorder.opacity(0.7), lineWidth: 0.5))
     }
 }
 
