@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { AgentFace } from "@/components/agents/agent-face";
 import { AgentCard } from "@/components/agents/agent-bits";
 import { useAgents } from "@/components/agents/use-agents";
+import { TeamStatus } from "@/components/agents/team-status";
 
 /**
  * The roster (docs/design/AGENTS.md §3.1): a card per agent, a New agent
@@ -53,7 +54,14 @@ export function AgentsRoster() {
       <AppPageHeader
         heading="Agents"
         lede="Teammates that take on work, keep going when you leave, and come back only when they need you."
-        actions={agents && agents.length > 0 ? hire : undefined}
+        actions={
+          agents && agents.length > 0 ? (
+            <>
+              <TeamStatus agents={agents} />
+              {hire}
+            </>
+          ) : undefined
+        }
       />
       {error && !agents ? (
         <EmptyState

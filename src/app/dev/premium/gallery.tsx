@@ -13,6 +13,8 @@ import { GenerationPlaceholder } from "@/components/chat/generation-placeholder"
 import { MessageItem } from "@/components/chat/message-item";
 import { useEffectTheme, voiceBandColors, voiceLobeColors } from "@/components/effects/use-effect-theme";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
+import { TeamStatus } from "@/components/agents/team-status";
+import type { ClientAgent } from "@/lib/agents/types";
 import { AUTO_MODEL_ID } from "@/lib/auto-model";
 import type { ModelId } from "@/lib/models";
 import type { AppBootstrap } from "@/types/app";
@@ -101,6 +103,8 @@ const PHASES: Array<{ label: string; status: GenerationStatus; m: ChatMessage }>
     m: message({ id: "p-write", role: "ASSISTANT", content: "", streaming: true }),
   },
 ];
+
+const team = (...states: string[]) => states.map((state, i) => ({ id: `a${i}`, state })) as unknown as ClientAgent[];
 
 const NO_ARTIFACTS = new Map<string, ClientArtifact>();
 const noop = () => {};
@@ -305,6 +309,17 @@ export function PremiumGallery({ only }: { only?: string }) {
               <div className="flex flex-wrap gap-8">
                 <GenerationPlaceholder progress={{ modality: "image", stage: "generating" }} />
                 <GenerationPlaceholder progress={{ modality: "image", stage: "polling" }} />
+              </div>
+            </Section>
+          )}
+
+          {show("agents") && (
+            <Section id="agents" title="Agents" note="The roster header's team line: the bot hops while any agent works, and says who needs you first.">
+              <div className="flex flex-col gap-4">
+                <TeamStatus agents={team("working", "idle", "thinking")} />
+                <TeamStatus agents={team("waiting", "working")} />
+                <TeamStatus agents={team("idle", "done")} />
+                <TeamStatus agents={team("sleeping", "sleeping")} />
               </div>
             </Section>
           )}
