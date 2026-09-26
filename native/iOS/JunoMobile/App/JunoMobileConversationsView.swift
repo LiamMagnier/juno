@@ -221,6 +221,7 @@ private struct JunoMobileDraftChat: View {
   /// most calls are started: nothing is selected, so the spoken turns have no
   /// conversation to appear in until the save route makes one on hang-up.
   @Environment(\.junoVoiceSession) private var voiceSession
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @FocusState private var composerFocused: Bool
 
   /// Whether the reader has actually chosen a model on this screen.
@@ -255,7 +256,19 @@ private struct JunoMobileDraftChat: View {
   @ViewBuilder
   private var column: some View {
     if voiceMessages.isEmpty {
-      JunoMobileGreeting(name: profileName)
+      // The home: greeting low in the column and the starting points under
+      // it, so both sit near the composer (the hero) and the thumb, not in
+      // the middle of an empty screen.
+      VStack(alignment: .leading, spacing: JunoSpace.region) {
+        Spacer(minLength: 0)
+        JunoMobileGreeting(name: profileName)
+        if prompt.isEmpty, !startingPoints.isEmpty {
+          JunoMobileStartingPoints(points: startingPoints)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+      }
+      .padding(.bottom, JunoSpace.regular)
+      .animation(JunoMobileMotion.gated(JunoMobileMotion.appear, reduceMotion), value: prompt.isEmpty)
     } else {
       ScrollView {
         // The transcript's own metrics, so a spoken turn is the same
@@ -277,6 +290,48 @@ private struct JunoMobileDraftChat: View {
     voiceSession?.liveMessages() ?? []
   }
 
+  /// Real starting points: each one opens a picker, starts a call or arms a
+  /// tool on the composer below. Only what this screen can actually do is
+  /// offered.
+  private var startingPoints: [JunoMobileStartingPoint] {
+    var points: [JunoMobileStartingPoint] = []
+    if let openVoiceMode {
+      points.append(
+        JunoMobileStartingPoint(
+          id: "voice", icon: .audioLines, title: "Talk it through",
+          detail: "Voice conversation", action: openVoiceMode
+        )
+      )
+    }
+    if attachmentModel?.hasCapacity ?? false {
+      points.append(
+        JunoMobileStartingPoint(
+          id: "photo", icon: .photos, title: "Ask about a photo",
+          detail: "Camera or library",
+          action: { attachments.present(.photos, reduceMotion: reduceMotion) }
+        )
+      )
+      points.append(
+        JunoMobileStartingPoint(
+          id: "document", icon: .fileSearch, title: "Read a document",
+          detail: "PDF, doc or text",
+          action: { attachments.present(.files, reduceMotion: reduceMotion) }
+        )
+      )
+    }
+    points.append(
+      JunoMobileStartingPoint(
+        id: "research", icon: .research, title: "Research a topic",
+        detail: "Sources, then a report",
+        action: {
+          tools.deepResearch = true
+          composerFocused = true
+        }
+      )
+    )
+    return points
+  }
+
   var body: some View {
     column
       .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -293,8 +348,13 @@ private struct JunoMobileDraftChat: View {
         chatColumnHeight = $0
       }
       .accessibilityIdentifier("juno.mobile.chat-draft")
+      // No visible title: the greeting names this screen. The title stays
+      // for VoiceOver and the back menu.
       .navigationTitle("navigation.chat")
       .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1).accessibilityHidden(true) }
+      }
       .toolbar {
         if let startIncognito {
           ToolbarItem(placement: .topBarTrailing) {
@@ -1612,6 +1672,8 @@ private struct JunoMobileMessageRow: View {
     // stored message for a fork to branch away from.
     if !voice, editMessage != nil || branchPosition != nil {
       HStack(spacing: 2) {
+        // Tucked up under the bubble: it belongs to the words above it, and
+        // at the full 44pt row height it floated halfway to the next turn.
         branchNavigator
         if editMessage != nil, !editing {
           actionButton(
@@ -1625,6 +1687,8 @@ private struct JunoMobileMessageRow: View {
           .disabled(isGenerating)
         }
       }
+      .padding(.top, -JunoSpace.snug)
+      .padding(.bottom, -JunoSpace.snug)
       .accessibilityElement(children: .contain)
     }
   }
@@ -1664,9 +1728,10 @@ private struct JunoMobileMessageRow: View {
       .overlay(alignment: .bottom) {
         if isLongPrompt && !expanded { fade }
       }
+      // A flat, warm fill and nothing else. The hairline and the black drop
+      // shadow made the reader's words look like a text field waiting for
+      // input; a remark needs a tone, not a border.
       .background(Color.junoMuted, in: Self.bubbleShape)
-      .overlay(Self.bubbleShape.strokeBorder(Color.junoHairline, lineWidth: 1))
-      .shadow(color: .black.opacity(0.06), radius: 4, y: 1)
       .contentShape(Self.bubbleShape)
       .junoMessageContextMenu(menuActions)
       .sheet(isPresented: $showingSelectText) {

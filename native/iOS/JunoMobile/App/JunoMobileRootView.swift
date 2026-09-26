@@ -233,7 +233,7 @@ struct JunoMobileRootView: View {
           if let raw = JunoPreviewEnvironment.initialDestination,
             let section = JunoMobileSection(rawValue: raw)
           {
-            selection = section
+            show(section)
           }
           if CommandLine.arguments.contains("--juno-preview-sidebar") {
             showingHistory = true
@@ -489,19 +489,33 @@ struct JunoMobileRootView: View {
       }
       .accessibilityIdentifier("juno.mobile.tab.search")
 
-      TabSection("sidebar.group.content") {
-        ForEach(JunoMobileSection.workspaceDestinations) { destination in
-          Tab(value: destination) {
-            productStack(destination)
-          } label: {
-            JunoMobileTabLabel(section: destination)
+      // The workspace surfaces are sidebar tabs on iPad only. On iPhone they
+      // push on the Chat stack (see `show(_:)`), and declaring them here as
+      // well is what put a system "More" tab and a stray "Projects" tab in the
+      // bar: `.defaultVisibility(.hidden, for: .tabBar)` is not honoured in a
+      // compact tab bar once there are more than five tabs.
+      if sizeClass != .compact {
+        TabSection("sidebar.group.content") {
+          ForEach(JunoMobileSection.workspaceDestinations) { destination in
+            Tab(value: destination) {
+              productStack(destination)
+            } label: {
+              JunoMobileTabLabel(section: destination)
+            }
           }
         }
+        .defaultVisibility(.hidden, for: .tabBar)
       }
-      .defaultVisibility(.hidden, for: .tabBar)
     }
     .tabViewStyle(.sidebarAdaptable)
     .tabBarMinimizeBehavior(.onScrollDown)
+    // A selection restored from an iPad-width session can name a workspace
+    // surface that is not a tab on iPhone; route it the compact way.
+    .task(id: sizeClass) {
+      if sizeClass == .compact, JunoMobileSection.workspaceDestinations.contains(selection) {
+        show(selection)
+      }
+    }
     .modifier(JunoMobileLiveRunAccessory(run: liveRun) { section in selection = section })
     .tint(Color.junoAccent)
     .sheet(isPresented: $showingHistory) {

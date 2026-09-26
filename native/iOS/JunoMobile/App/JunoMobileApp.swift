@@ -57,6 +57,7 @@ struct JunoMobileApp: App {
     private let shareClient: NativeShareClient?
 
     init() {
+        JunoMobileAppearance.install()
         let configuration = Self.makeConfiguration()
         _authModel = State(initialValue: configuration.authModel)
         _syncModel = State(initialValue: configuration.syncModel)

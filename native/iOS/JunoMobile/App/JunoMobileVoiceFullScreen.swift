@@ -217,8 +217,11 @@ struct JunoMobileVoiceFullScreen: View {
 
   private var status: some View {
     VStack(spacing: JunoSpace.hairline) {
+      // The call's state is the screen's one headline, so it takes the
+      // display face; the status crossfades word for word as it changes.
       Text(statusTitle)
-        .junoFont(size: 20, relativeTo: .title3, weight: .semibold)
+        .font(JunoMobileType.display(30, relativeTo: .title))
+        .tracking(-0.5)
         .contentTransition(.opacity)
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: statusKey)
       HStack(spacing: JunoSpace.tight) {

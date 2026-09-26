@@ -402,7 +402,7 @@ struct JunoMobileModelSelectorView: View {
         } header: {
             HStack(spacing: JunoSpace.tight) {
                 JunoIconView(section.icon, size: 13)
-                    .foregroundStyle(Color.junoAccent)
+                    .foregroundStyle(Color.junoTertiaryInk)
                 Text(section.title)
                     .font(.caption.weight(.semibold))
                     .textCase(nil)
@@ -478,6 +478,12 @@ struct JunoMobileModelSelectorView: View {
         }
         .padding(.vertical, JunoSpace.hairline)
         .contentShape(Rectangle())
+        .listRowBackground(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(selected ? Color.junoSelectedFill : Color.clear)
+                .padding(.horizontal, 8)
+        )
+        .listRowSeparator(.hidden)
         // The opening cascade, `min(i, 12) * 16ms` exactly as the web caps it:
         // past a dozen rows the stagger stops adding rhythm and starts adding
         // wait, so the tail of a long list arrives together.
@@ -556,10 +562,11 @@ struct JunoMobileModelSelectorView: View {
             }
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.tight)
-            .foregroundStyle(active ? Color.junoAccent : .primary)
+            .foregroundStyle(active ? JunoMobilePalette.onInk : Color.junoForeground)
             .background {
-                Capsule().fill(active ? Color.junoAccent.opacity(0.14) : Color.junoRowHover)
+                Capsule().fill(active ? Color.junoForeground : Color.junoMuted)
             }
+            .animation(JunoMobileMotion.appear, value: active)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(name)
@@ -715,42 +722,33 @@ private struct JunoMobileModelRowLabel: View {
             // not a gap.
             .padding(.top, 1)
 
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: JunoSpace.tight) {
                     Text(model.displayName)
-                        .font(.body.weight(.medium))
+                        .font(.body.weight(selected ? .semibold : .medium))
+                        .foregroundStyle(Color.junoForeground)
                         .lineLimit(2)
                     if model.choosesReasoningAutomatically {
-                        Text("SMART")
-                            .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
-                            .padding(.horizontal, JunoSpace.tight)
-                            .padding(.vertical, JunoSpace.hairline)
-                            .foregroundStyle(Color.junoAccent)
-                            .background {
-                                Capsule().fill(Color.junoAccent.opacity(0.14))
-                            }
-                    }
-                    if selected {
-                        JunoIconView(.check, size: 12)
-                            .foregroundStyle(Color.junoAccent)
+                        // Plain text, no badge container (owner directive).
+                        Text("Smart")
+                            .junoFont(size: 12, relativeTo: .caption, weight: .medium)
+                            .foregroundStyle(Color.junoTertiaryInk)
                     }
                     Spacer(minLength: 0)
-                    if let cost = NativeModelPresentation.costGlyph(model.pricing) {
-                        Text(cost)
-                            .font(.caption)
-                            .junoMetaInk()
-                    }
                 }
 
-                Text(model.providerName)
+                // One metadata line: who makes it, and what it costs.
+                Text(metaLine)
                     .font(.caption)
-                    .junoSecondaryInk()
+                    .foregroundStyle(Color.junoTertiaryInk)
+                    .lineLimit(1)
 
                 if let summary = model.summary {
                     Text(summary)
-                        .font(.caption)
-                        .junoSecondaryInk()
+                        .font(.footnote)
+                        .foregroundStyle(Color.junoSecondaryInk)
                         .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let unavailabilityReason {
@@ -760,16 +758,31 @@ private struct JunoMobileModelRowLabel: View {
                     }
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(Color.junoCaution)
-                } else {
-                    JunoCapabilityChips(model: model, compact: true)
                 }
             }
+
+            // The selection mark sits in its own trailing slot, so every row
+            // keeps the same measure whether or not it is chosen.
+            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                .font(.title3)
+                .foregroundStyle(selected ? Color.junoAccent : Color.junoBorder)
+                .contentTransition(.symbolEffect(.replace))
+                .padding(.top, 1)
+                .accessibilityHidden(true)
         }
         .opacity(unavailabilityReason == nil ? 1 : 0.55)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    private var metaLine: String {
+        var parts = [model.providerName]
+        if let cost = NativeModelPresentation.costGlyph(model.pricing) { parts.append(cost) }
+        let capabilities = NativeModelPresentation.capabilityChips(model).prefix(3).map(\.label)
+        parts.append(contentsOf: capabilities)
+        return parts.joined(separator: " · ")
     }
 
     private var accessibilityLabel: String {

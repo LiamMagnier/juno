@@ -4,11 +4,10 @@ import SwiftUI
 
 /// Signed out: a short welcome the first time, then sign-in.
 ///
-/// The old screen was a bare `ScrollView` with two fields and a system
-/// `.borderedProminent` — functional, and the least designed screen in the
-/// app, on the one occasion every new reader is guaranteed to see it. This is
-/// the front door: the mark, a headline in the editorial serif, a raised card
-/// holding the credentials, and the browser sign-in beneath it.
+/// The front door is the one screen every new reader is guaranteed to see, so
+/// it is the one public surface on the phone that carries brand imagery (brief
+/// rule 5): Juno's painted landscape, the mark, and the display face at a
+/// confident size. The product screens behind it stay clean.
 ///
 /// The welcome pages run once. `@AppStorage` rather than an account setting
 /// because they are about the *device* meeting the product — a returning
@@ -27,7 +26,7 @@ struct JunoMobileSignInView: View {
           .transition(.opacity)
       } else {
         JunoMobileWelcome {
-          withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+          withAnimation(JunoMobileMotion.gated(JunoMobileMotion.settle, reduceMotion)) {
             welcomeSeen = true
           }
         }
@@ -52,120 +51,195 @@ struct JunoMobileSignInView: View {
   }
 }
 
+// MARK: - Shared pieces
+
+/// The landscape, lifted into place on entrance and faded into the canvas at
+/// its foot so the content below sits on the ground, not on the picture.
+private struct JunoMobileFrontDoorArt: View {
+  var drift: CGFloat
+  /// Where the fade to canvas begins, as a fraction of the art's height.
+  var fadeFrom: CGFloat = 0.62
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var rise: CGFloat = 0
+
+  var body: some View {
+    JunoMobileLandscape(drift: drift, rise: rise)
+      .mask {
+        LinearGradient(
+          stops: [
+            .init(color: .black, location: 0),
+            .init(color: .black, location: fadeFrom),
+            .init(color: .clear, location: 1),
+          ],
+          startPoint: .top, endPoint: .bottom
+        )
+      }
+      .onAppear {
+        guard rise == 0 else { return }
+        if reduceMotion {
+          rise = 1
+        } else {
+          withAnimation(.spring(response: 1.3, dampingFraction: 0.92)) { rise = 1 }
+        }
+      }
+  }
+}
+
+/// The mark and the wordmark, set small at the top of the art.
+private struct JunoMobileWordmark: View {
+  var body: some View {
+    HStack(spacing: JunoSpace.snug) {
+      JunoMark(size: 24)
+      Text(verbatim: "Juno")
+        .font(JunoMobileType.display(24, relativeTo: .title3))
+        .tracking(-0.3)
+    }
+    .foregroundStyle(Color.junoForeground)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Juno")
+    .accessibilityAddTraits(.isHeader)
+  }
+}
+
 // MARK: - Welcome
 
-/// Three pages: what Juno is, what it will ask for, and the way in.
+/// Three pages: what Juno is, what it will ask for, and the Mac connection.
+///
+/// The words page; the landscape stays and drifts. Paging moves each range at
+/// its own speed, so a swipe reads as walking along a ridge rather than as
+/// three slides.
 private struct JunoMobileWelcome: View {
   let finish: () -> Void
 
   @State private var page = 0
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   private struct Page: Identifiable {
     let id: Int
-    let icon: JunoIcon
+    let eyebrow: LocalizedStringKey
     let title: LocalizedStringKey
     let body: LocalizedStringKey
   }
 
   private let pages: [Page] = [
     Page(
-      id: 0, icon: .home,
-      title: "One assistant, every model.",
-      body: "Chat, research, voice, and code — with the best model picked for each ask, or the one you choose."
+      id: 0,
+      eyebrow: "Chat, research, voice and code",
+      title: "One assistant.\nEvery model.",
+      body: "Juno picks the right model for each question, or uses the one you choose."
     ),
     Page(
-      id: 1, icon: .mic,
-      title: "It asks before it listens.",
-      body: "The microphone is only used for voice conversations and dictation, and the camera only when you show Juno something. Nothing runs in the background without telling you."
+      id: 1,
+      eyebrow: "Privacy",
+      title: "It asks before\nit listens.",
+      body: "The microphone is used only for voice and dictation, the camera only when you show Juno something. Nothing runs in the background without telling you."
     ),
     Page(
-      id: 2, icon: .code,
-      title: "Your Mac, from your pocket.",
-      body: "Pair Juno Code on your Mac and steer sessions, review diffs and approve changes from here."
+      id: 2,
+      eyebrow: "Juno Code",
+      title: "Your Mac,\nin your pocket.",
+      body: "Pair Juno Code on your Mac to steer sessions, review diffs and approve changes from here."
     ),
   ]
 
-  var body: some View {
-    VStack(spacing: 0) {
-      HStack {
-        Spacer()
-        Button("Skip", action: finish)
-          .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
-          .foregroundStyle(Color.junoMutedForeground)
-          .frame(minWidth: 44, minHeight: 44)
-          .contentShape(.rect)
-          .accessibilityIdentifier("juno.mobile.welcome-skip")
-      }
-      .padding(.horizontal, JunoSpace.regular)
+  private var isLast: Bool { page == pages.count - 1 }
 
-      TabView(selection: $page) {
-        ForEach(pages) { item in
-          VStack(spacing: JunoSpace.section) {
-            Spacer(minLength: 0)
-            ZStack {
-              Circle()
-                .fill(Color.junoAccent.opacity(0.12))
-                .frame(width: 132, height: 132)
-              Circle()
-                .fill(Color.junoSurface)
-                .frame(width: 96, height: 96)
-                .shadow(color: Color.junoCardShadow, radius: 10, y: 3)
-              JunoIconView(item.icon, size: 40)
-                .foregroundStyle(Color.junoAccent)
-            }
-            .accessibilityHidden(true)
-            VStack(spacing: JunoSpace.cozy) {
+  var body: some View {
+    ZStack(alignment: .top) {
+      JunoMobileFrontDoorArt(drift: CGFloat(page), fadeFrom: 0.55)
+        .containerRelativeFrame(.vertical) { height, _ in height * 0.7 }
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .ignoresSafeArea(edges: .top)
+        .animation(JunoMobileMotion.gated(.spring(response: 0.9, dampingFraction: 0.9), reduceMotion), value: page)
+
+      VStack(spacing: 0) {
+        HStack {
+          JunoMobileWordmark()
+          Spacer()
+          if !isLast {
+            Button("Skip", action: finish)
+              .font(.subheadline.weight(.medium))
+              .foregroundStyle(Color.junoForeground.opacity(0.7))
+              .frame(minWidth: 44, minHeight: 44)
+              .contentShape(.rect)
+              .accessibilityIdentifier("juno.mobile.welcome-skip")
+              .transition(.opacity)
+          }
+        }
+        .padding(.horizontal, JunoSpace.section)
+        .junoMobileRise(delay: 0.1)
+
+        Spacer(minLength: 0)
+
+        TabView(selection: $page) {
+          ForEach(pages) { item in
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+              Text(item.eyebrow)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Color.junoAccentInk)
               Text(item.title)
-                .junoPageHeading()
-                .multilineTextAlignment(.center)
+                .junoMobileDisplay(40)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
               Text(item.body)
-                .junoBody()
-                .junoSecondaryInk()
-                .multilineTextAlignment(.center)
+                .font(.body)
+                .foregroundStyle(Color.junoSecondaryInk)
                 .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, JunoSpace.region)
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            .padding(.horizontal, JunoSpace.section)
+            .tag(item.id)
           }
-          .tag(item.id)
         }
-      }
-      .tabViewStyle(.page(indexDisplayMode: .never))
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        // Room for the copy at every text size: the accessibility sizes get
+        // the page's height back from the painting above it.
+        .frame(maxHeight: dynamicTypeSize.isAccessibilitySize ? 520 : 300)
+        .junoMobileRise(delay: 0.35, distance: 14)
 
-      HStack(spacing: JunoSpace.snug) {
-        ForEach(pages) { item in
-          Capsule()
-            .fill(item.id == page ? Color.junoAccent : Color.junoBorder)
-            .frame(width: item.id == page ? 22 : 7, height: 7)
-        }
-      }
-      .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: page)
-      .padding(.bottom, JunoSpace.section)
-      .accessibilityHidden(true)
-
-      Button {
-        if page < pages.count - 1 {
-          withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-            page += 1
+        HStack(spacing: JunoSpace.section) {
+          HStack(spacing: 6) {
+            ForEach(pages) { item in
+              Capsule()
+                .fill(item.id == page ? Color.junoForeground : Color.junoForeground.opacity(0.18))
+                .frame(width: item.id == page ? 20 : 6, height: 6)
+            }
           }
-        } else {
-          finish()
+          .animation(JunoMobileMotion.gated(JunoMobileMotion.appear, reduceMotion), value: page)
+          .accessibilityElement(children: .ignore)
+          .accessibilityLabel("Page \(page + 1) of \(pages.count)")
+
+          Button {
+            if isLast {
+              finish()
+            } else {
+              withAnimation(JunoMobileMotion.gated(JunoMobileMotion.appear, reduceMotion)) {
+                page += 1
+              }
+            }
+          } label: {
+            HStack(spacing: JunoSpace.snug) {
+              Text(isLast ? "Get started" : "Continue")
+                .contentTransition(.opacity)
+              Image(systemName: "arrow.right")
+                .font(.subheadline.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity)
+          }
+          .junoMobileFrontDoorButton()
+          .sensoryFeedback(.selection, trigger: page)
+          .accessibilityIdentifier("juno.mobile.welcome-continue")
         }
-      } label: {
-        Text(page < pages.count - 1 ? "Continue" : "Get started")
-          .fontWeight(.semibold)
-          .frame(maxWidth: .infinity)
-          .frame(minHeight: 30)
+        .padding(.horizontal, JunoSpace.section)
+        .padding(.top, JunoSpace.region)
+        .padding(.bottom, JunoSpace.regular)
+        .junoMobileRise(delay: 0.5)
       }
-      .junoProminentAction()
-      .controlSize(.large)
-      .padding(.horizontal, JunoSpace.section)
-      .padding(.bottom, JunoSpace.section)
-      .accessibilityIdentifier("juno.mobile.welcome-continue")
-      .contentShape(.rect)
+      .frame(maxWidth: 560)
     }
-    .frame(maxWidth: 520)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .accessibilityIdentifier("juno.mobile.welcome")
   }
@@ -178,6 +252,7 @@ private struct JunoMobileSignInForm: View {
 
   @State private var email = ""
   @State private var password = ""
+  @State private var submitCount = 0
   @FocusState private var focusedField: Field?
 
   private enum Field: Hashable { case email, password }
@@ -194,77 +269,112 @@ private struct JunoMobileSignInForm: View {
     let submittedPassword = password
     // Hand the plaintext over and drop it from view state immediately.
     password = ""
+    submitCount += 1
     Task { await authModel.signIn(email: email, password: submittedPassword) }
   }
 
   var body: some View {
     ScrollView {
-      VStack(spacing: JunoSpace.section) {
-        VStack(spacing: JunoSpace.cozy) {
-          JunoMark(size: 56)
-            .padding(.top, JunoSpace.region)
-          Text("auth.welcome.title")
-            .junoPageHeading()
-            .multilineTextAlignment(.center)
-          Text("auth.welcome.description")
-            .junoBody()
-            .junoSecondaryInk()
-            .multilineTextAlignment(.center)
-        }
-
-        if let error = authModel.lastErrorDescription {
-          JunoInlineError(message: error)
-            .accessibilityIdentifier("juno.mobile.auth-error")
-        }
-
-        if authModel.phase != .unavailable {
-          card
-
-          HStack(spacing: JunoSpace.cozy) {
-            Rectangle().fill(Color.junoHairline).frame(height: 1)
-            Text("auth.divider.or")
-              .junoCaption()
-            Rectangle().fill(Color.junoHairline).frame(height: 1)
-          }
-          .accessibilityHidden(true)
-
-          Button {
-            Task { await authModel.signIn() }
-          } label: {
-            Label {
-              Text("auth.sign-in")
-            } icon: {
-              JunoIconView(.external, size: 15)
-            }
-            .fontWeight(.medium)
+      VStack(alignment: .leading, spacing: 0) {
+        ZStack(alignment: .topLeading) {
+          JunoMobileFrontDoorArt(drift: 0.4, fadeFrom: 0.5)
+            .frame(height: 340)
             .frame(maxWidth: .infinity)
-            .frame(minHeight: 30)
-          }
-          .buttonStyle(.bordered)
-          .controlSize(.large)
-          .disabled(isBusy)
-          .accessibilityIdentifier("juno.mobile.sign-in")
-          .contentShape(.rect)
-
-          Text("auth.password.disclaimer")
-            .junoCaption()
-            .multilineTextAlignment(.center)
-            .padding(.top, JunoSpace.hairline)
+            .clipped()
+          JunoMobileWordmark()
+            .padding(.horizontal, JunoSpace.section)
+            .padding(.top, 64)
+            .junoMobileRise(delay: 0.1)
         }
+        .padding(.bottom, -36)
+
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+          Text("auth.welcome.title")
+            .junoMobileDisplay(38)
+            .fixedSize(horizontal: false, vertical: true)
+          Text("auth.welcome.description")
+            .font(.body)
+            .foregroundStyle(Color.junoSecondaryInk)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, JunoSpace.section)
+        .junoMobileRise(delay: 0.25)
+
+        VStack(spacing: JunoSpace.regular) {
+          if let error = authModel.lastErrorDescription {
+            JunoInlineError(message: error)
+              .accessibilityIdentifier("juno.mobile.auth-error")
+              .transition(.opacity.combined(with: .move(edge: .top)))
+          }
+
+          if authModel.phase != .unavailable {
+            credentials
+
+            Button(action: submitPassword) {
+              ZStack {
+                Text("auth.sign-in.password").opacity(isBusy ? 0 : 1)
+                if isBusy {
+                  ProgressView().tint(JunoMobilePalette.onInk)
+                }
+              }
+              .frame(maxWidth: .infinity)
+            }
+            .junoMobileFrontDoorButton()
+            .disabled(!canSubmitPassword)
+            .sensoryFeedback(.impact(weight: .light), trigger: submitCount)
+            .accessibilityIdentifier("juno.mobile.sign-in.password")
+
+            HStack(spacing: JunoSpace.cozy) {
+              Rectangle().fill(Color.junoHairline).frame(height: 1)
+              Text("auth.divider.or")
+                .font(.footnote)
+                .foregroundStyle(Color.junoTertiaryInk)
+              Rectangle().fill(Color.junoHairline).frame(height: 1)
+            }
+            .accessibilityHidden(true)
+
+            Button {
+              Task { await authModel.signIn() }
+            } label: {
+              HStack(spacing: JunoSpace.snug) {
+                JunoIconView(.external, size: 15)
+                Text("auth.sign-in")
+              }
+              .frame(maxWidth: .infinity)
+            }
+            .junoMobileFrontDoorButton(prominent: false)
+            .disabled(isBusy)
+            .accessibilityIdentifier("juno.mobile.sign-in")
+
+            Text("auth.password.disclaimer")
+              .font(.footnote)
+              .foregroundStyle(Color.junoTertiaryInk)
+              .multilineTextAlignment(.center)
+              .frame(maxWidth: .infinity)
+              .fixedSize(horizontal: false, vertical: true)
+              .padding(.top, JunoSpace.hairline)
+          }
+        }
+        .padding(.horizontal, JunoSpace.section)
+        .padding(.top, JunoSpace.region)
+        .padding(.bottom, JunoSpace.region)
+        .junoMobileRise(delay: 0.4, distance: 14)
+        .animation(JunoMobileMotion.appear, value: authModel.lastErrorDescription)
       }
-      .padding(.horizontal, JunoSpace.section)
-      .padding(.bottom, JunoSpace.region)
-      .frame(maxWidth: 480)
+      .frame(maxWidth: 520)
       .frame(maxWidth: .infinity)
     }
+    .ignoresSafeArea(edges: .top)
     .scrollBounceBehavior(.basedOnSize)
     .scrollDismissesKeyboard(.interactively)
+    .disabled(isBusy)
   }
 
-  /// The credentials, on the language's raised card, in its inset fields.
-  private var card: some View {
-    VStack(spacing: JunoSpace.cozy) {
-      field {
+  /// Email and password as one inset group: two rows and a hairline, like the
+  /// system's own sign-in sheets, rather than two separately boxed fields.
+  private var credentials: some View {
+    VStack(spacing: 0) {
+      row(icon: "envelope") {
         TextField("auth.email.placeholder", text: $email)
           .textContentType(.username)
           .keyboardType(.emailAddress)
@@ -275,7 +385,11 @@ private struct JunoMobileSignInForm: View {
           .onSubmit { focusedField = .password }
           .accessibilityIdentifier("juno.mobile.email")
       }
-      field {
+      Rectangle()
+        .fill(Color.junoHairline)
+        .frame(height: 0.75)
+        .padding(.leading, 50)
+      row(icon: "lock") {
         SecureField("auth.password.label", text: $password)
           .textContentType(.password)
           .focused($focusedField, equals: .password)
@@ -283,44 +397,21 @@ private struct JunoMobileSignInForm: View {
           .onSubmit(submitPassword)
           .accessibilityIdentifier("juno.mobile.password")
       }
-
-      Button(action: submitPassword) {
-        Group {
-          if isBusy {
-            ProgressView()
-              .tint(Color.junoOnAccent)
-          } else {
-            Text("auth.sign-in.password")
-              .fontWeight(.semibold)
-          }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(minHeight: 30)
-      }
-      .junoProminentAction()
-      .controlSize(.large)
-      .disabled(!canSubmitPassword)
-      .accessibilityIdentifier("juno.mobile.sign-in.password")
-      .contentShape(.rect)
-      .padding(.top, JunoSpace.hairline)
     }
-    .padding(JunoSpace.regular)
-    .junoCard(cornerRadius: JunoRadius.card)
-    .disabled(isBusy)
+    .junoMobileRaised(cornerRadius: 18)
   }
 
-  private func field<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-    content()
-      .junoFont(size: 16, relativeTo: .body)
-      .padding(.horizontal, JunoSpace.cozy)
-      .frame(minHeight: 46)
-      .background(
-        RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-          .fill(Color.junoCanvas)
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-          .strokeBorder(Color.junoBorder, lineWidth: 1)
-      )
+  private func row<Content: View>(icon: String, @ViewBuilder _ content: () -> Content) -> some View {
+    HStack(spacing: JunoSpace.cozy) {
+      Image(systemName: icon)
+        .font(.body)
+        .foregroundStyle(Color.junoTertiaryInk)
+        .frame(width: 22)
+        .accessibilityHidden(true)
+      content()
+        .font(.body)
+    }
+    .padding(.horizontal, JunoSpace.regular)
+    .frame(minHeight: 54)
   }
 }

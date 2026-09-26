@@ -45,8 +45,13 @@ public struct JunoShimmerText: View {
                             )
                             .frame(width: max(40, width * 0.55))
                             .offset(x: -width * 0.55 + (width * 1.55) * phase)
-                            .mask(base)
                         }
+                        // The mask belongs to the whole overlay, laid out at
+                        // the text's own size. Applied to the narrow, offset
+                        // band it re-laid the words inside the band, so a
+                        // second, shifted and truncated copy of the line
+                        // ghosted over the first ("3 rums in progress").
+                        .mask(base)
                     }
             }
             .accessibilityLabel(text)

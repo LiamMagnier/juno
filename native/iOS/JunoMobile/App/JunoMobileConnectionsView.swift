@@ -44,8 +44,11 @@ struct JunoMobileConnectionsView: View {
         // The serif heading in the scroll view is this screen's title, exactly
         // as on the web. A second copy in the navigation bar was the same word
         // twice, 40pt apart.
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
+        // The page names itself in the navigation bar, as a large title in the
+        // display face, so the search field sits under the title rather than
+        // above it and the name collapses into the bar on scroll.
+        .navigationTitle("navigation.connections")
+        .navigationBarTitleDisplayMode(.large)
         .searchable(
             text: $model.query,
             placement: .navigationBarDrawer(displayMode: .always),
@@ -146,7 +149,7 @@ struct JunoMobileConnectionsView: View {
     }
 
     private var header: some View {
-        JunoPageTitle(title: "navigation.connections", subtitle: "connections.subtitle")
+        JunoPageSubtitle("connections.subtitle")
             .padding(.top, JunoSpace.tight)
             .padding(.bottom, JunoSpace.hairline)
     }
@@ -202,14 +205,14 @@ struct JunoMobileConnectionsView: View {
                 if let count {
                     Text("\(count)")
                         .junoFont(size: 12, relativeTo: .caption, weight: .medium)
-                        .foregroundStyle(active ? .white.opacity(0.75) : .secondary)
+                        .foregroundStyle(active ? JunoMobilePalette.onInk.opacity(0.75) : Color.junoSecondaryInk)
                 }
             }
-            .foregroundStyle(active ? Color.white : Color.primary)
+            .foregroundStyle(active ? JunoMobilePalette.onInk : Color.junoForeground)
             .padding(.horizontal, JunoSpace.cozy)
             .frame(height: 32)
             .background(
-                Capsule().fill(active ? Color.junoAccent : Color.primary.opacity(0.06))
+                Capsule().fill(active ? Color.junoForeground : Color.junoMuted)
             )
         }
         .buttonStyle(.plain)
@@ -271,12 +274,12 @@ struct JunoMobileConnectionsView: View {
             Button {
                 disconnectTarget = connector
             } label: {
+                // A status, not a call to action: plain secondary text, no
+                // container. Tapping it still offers to disconnect.
                 Text("connections.connected")
-                    .junoFont(size: 14, relativeTo: .footnote, weight: .semibold)
-                    .foregroundStyle(Color.junoAccent)
-                    .padding(.horizontal, JunoSpace.cozy)
+                    .junoFont(size: 14, relativeTo: .footnote, weight: .medium)
+                    .foregroundStyle(Color.junoSecondaryInk)
                     .frame(minHeight: 32)
-                    .background(Capsule().fill(Color.junoAccent.opacity(0.13)))
             }
             .buttonStyle(.plain)
             .disabled(model.isMutating)
@@ -289,10 +292,15 @@ struct JunoMobileConnectionsView: View {
             Button {
                 connectURL = connectURL(for: connector)
             } label: {
-                Text("connections.connect").fontWeight(.semibold)
+                Text("connections.connect")
+                    .junoFont(size: 14, relativeTo: .footnote, weight: .semibold)
+                    .foregroundStyle(Color.junoForeground)
             }
-            .junoProminentAction()
+            // Native glass rather than the accent: a list of apps would
+            // otherwise be a column of competing coral buttons, one per row.
+            .buttonStyle(.glass)
             .controlSize(.regular)
+            .frame(minHeight: 44)
             .accessibilityLabel(
                 Text(String(format: String(localized: "connections.connect.label"), connector.label))
             )

@@ -81,8 +81,11 @@ struct JunoMobileWorkView: View {
             }
         }
         .background(Color.junoCanvas)
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
+        // The page names itself in the navigation bar, as a large title in the
+        // display face, so the search field sits under the title rather than
+        // above it and the name collapses into the bar on scroll.
+        .navigationTitle("Work")
+        .navigationBarTitleDisplayMode(.large)
         .refreshable { await model.refresh() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -157,7 +160,7 @@ struct JunoMobileWorkView: View {
     private var content: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
-                JunoPageTitle(title: "Work", subtitle: "Things you have handed Juno to go and do.")
+                JunoPageSubtitle("Things you have handed Juno to go and do.")
                     .padding(.top, 6)
 
                 if let error = model.lastErrorDescription {
