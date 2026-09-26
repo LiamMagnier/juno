@@ -50,9 +50,15 @@ import { cn } from "@/lib/utils";
  * under a variable whose name ends in "Copy", which is how the example prompts
  * reach the catalog (see scripts/generate-i18n-catalog.mjs).
  */
-const STARTER_CHIP_COPY: ReadonlyArray<{ label: string; icon: IconComponent; examples: readonly string[] }> = [
+const STARTER_CHIP_COPY: ReadonlyArray<{
+  label: string;
+  hint: string;
+  icon: IconComponent;
+  examples: readonly string[];
+}> = [
   {
     label: "Research",
+    hint: "With cited sources",
     icon: AppIcons.research,
     examples: [
       "What does the latest research say about intermittent fasting? Cite the strongest studies.",
@@ -62,6 +68,7 @@ const STARTER_CHIP_COPY: ReadonlyArray<{ label: string; icon: IconComponent; exa
   },
   {
     label: "Write",
+    hint: "Emails and drafts",
     icon: ActionIcons.edit,
     examples: [
       "Draft a short, friendly follow-up email after a job interview.",
@@ -71,6 +78,7 @@ const STARTER_CHIP_COPY: ReadonlyArray<{ label: string; icon: IconComponent; exa
   },
   {
     label: "Code",
+    hint: "Scripts and fixes",
     icon: AppIcons.code,
     examples: [
       "Write a Python script that renames photos by the date they were taken.",
@@ -80,6 +88,7 @@ const STARTER_CHIP_COPY: ReadonlyArray<{ label: string; icon: IconComponent; exa
   },
   {
     label: "Plan",
+    hint: "Trips and projects",
     icon: AppIcons.work,
     examples: [
       "Plan a three-day trip to Lisbon with a mix of food, museums and walks.",
@@ -185,7 +194,20 @@ export function StarterChips({ className }: { className?: string }) {
         className
       )}
     >
-      <div className="flex flex-wrap items-center justify-center gap-2">
+      {/*
+       * STARTING POINTS, NOT PILLS (premium pass). Four equal tiles under the
+       * composer: a mark in its own small well, the verb, and one line on
+       * what it is for. The pill row said "Research / Write / Code / Plan"
+       * and left the reader to guess what pressing one would do; a tile has
+       * room to say it, which is the difference between a label and a
+       * starting point. Each still unfolds three examples below the row and
+       * seeds, never sends.
+       *
+       * Quiet at rest (ground-toned card, hairline), one rung up under the
+       * pointer (lift 1px, deeper edge), selected while open. Two columns on
+       * a phone, where the hint line drops and the tile becomes a row.
+       */}
+      <div className="mx-auto grid max-w-[calc(48rem-2*var(--page-gutter,0px))] grid-cols-2 gap-2 sm:grid-cols-4">
         {STARTER_CHIP_COPY.map((chip, i) => {
           const expanded = openLabel === chip.label;
           return (
@@ -200,26 +222,33 @@ export function StarterChips({ className }: { className?: string }) {
               aria-controls={expanded ? panelId : undefined}
               onClick={() => setOpenLabel(expanded ? null : chip.label)}
               // No `transition-colors` beside `.pressable`: that class already
-              // declares the whole transition shorthand, and a later transition-*
-              // utility would override it and un-animate the press.
-              // The glyph takes the chip's ink, so muted to foreground on hover
-              // is one cross-fade for the label and the mark together. Open is
-              // the selected tone, one step past hover, with foreground ink.
+              // declares the whole transition shorthand (colour, transform,
+              // press), and a later transition-* utility would override it.
               className={cn(
-                "pressable inline-flex h-8 items-center gap-2 rounded-full border border-border",
-                "bg-transparent pl-2.5 pr-3 text-ui text-muted-foreground",
-                "hover:border-foreground/15 hover:bg-accent hover:text-foreground active:bg-selected",
-                "aria-expanded:border-foreground/15 aria-expanded:bg-selected aria-expanded:text-foreground",
-                "coarse:h-10 coarse:px-3.5",
+                "pressable group flex min-w-0 items-center gap-2.5 rounded-card border border-border/80 bg-card/60 p-2.5 text-left",
+                "hover:-translate-y-px hover:border-foreground/15 hover:bg-card",
+                "aria-expanded:border-foreground/20 aria-expanded:bg-card",
+                "motion-reduce:hover:translate-y-0",
                 // Dealt in once, on the page's first reveal. Backwards fill so
-                // the chip is not painted for one frame before its delay; the
+                // the tile is not painted for one frame before its delay; the
                 // 120ms offset lets the greeting land first.
                 "[animation-fill-mode:backwards] motion-safe:animate-rise-in"
               )}
               style={staggerDelay(i, "tight", 120)}
             >
-              <chip.icon className="size-4" aria-hidden="true" />
-              {chip.label}
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "grid size-8 shrink-0 place-items-center rounded-control bg-accent text-muted-foreground",
+                  "transition-colors duration-fast ease-out-soft group-hover:text-foreground group-aria-expanded:bg-primary/10 group-aria-expanded:text-primary motion-reduce:transition-none"
+                )}
+              >
+                <chip.icon className="size-4" />
+              </span>
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate text-ui font-medium text-foreground">{chip.label}</span>
+                <span className="hidden truncate text-caption text-muted-foreground sm:block">{chip.hint}</span>
+              </span>
             </button>
           );
         })}
