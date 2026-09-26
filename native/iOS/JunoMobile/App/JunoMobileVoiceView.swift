@@ -212,8 +212,8 @@ enum JunoMobileVoiceCallPhase: Equatable {
     /// inks for Juno, the whole palette while it thinks, grey when muted.
     var glowTone: JunoVoiceGlowTone {
         switch self {
-        case .listening: .user
-        case .speaking, .interrupting: .assistant
+        case .listening: .caller
+        case .speaking, .interrupting: .juno
         case .muted: .muted
         case .thinking, .connecting, .reconnecting, .ended, .unavailable: .mixed
         }
