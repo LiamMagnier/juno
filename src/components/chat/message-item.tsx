@@ -29,6 +29,8 @@ import { useApp } from "@/components/app/app-provider";
 import { PROVIDERS } from "@/lib/providers";
 import { useComposerAutosize } from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Kbd } from "@/components/ui/kbd";
+import { useModifierKeyLabel } from "@/components/ui/platform";
 import { Markdown } from "@/components/chat/markdown";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { AttachmentTile, MessageAttachments } from "@/components/chat/attachment-tile";
@@ -493,8 +495,11 @@ function IconAction({
   busy,
   celebrate,
   buttonRef,
+  shortcut,
 }: {
   label: string;
+  /** The chord that does the same thing, printed in the tooltip as a keycap. */
+  shortcut?: string;
   onClick: () => void;
   children: React.ReactNode;
   active?: boolean;
@@ -543,7 +548,62 @@ function IconAction({
           )}
         </Pressable>
       </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
+      <TooltipContent className={cn(shortcut && "flex items-center gap-2 pr-1.5")}>
+        {label}
+        {shortcut && <Kbd className="h-4 min-w-4 px-1">{shortcut}</Kbd>}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * The answer's receipt: which model wrote it, how many tokens, what it cost.
+ *
+ * At the END of the action row, in the metadata voice, and only while the row
+ * is being looked at (hover or focus on the turn). It used to live one level
+ * down in the More menu, which made "which model answered this?" a two-click
+ * question after a mid-thread switch; printing it under every answer at rest
+ * would bill the reader per paragraph. Revealed with the pointer, it is there
+ * for the person who asks and absent for the one reading.
+ *
+ * No middle dots between the three: they are spaced as three facts, not
+ * punctuated as one sentence. The in/out split is the tooltip.
+ */
+function TurnMeta({
+  modelName,
+  promptTokens,
+  completionTokens,
+  costUsd,
+}: {
+  modelName: string | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  costUsd?: number | null;
+}) {
+  const hasUsage = promptTokens != null || completionTokens != null;
+  const total = (promptTokens ?? 0) + (completionTokens ?? 0);
+  const hasCost = costUsd != null && costUsd > 0;
+  if (!modelName && !hasUsage && !hasCost) return null;
+  const body = (
+    <span className="flex min-w-0 items-center gap-2.5 text-caption text-muted-foreground">
+      {modelName && <span className="min-w-0 truncate">{modelName}</span>}
+      {hasUsage && <span className="shrink-0 font-mono tabular-nums">{formatTokens(total)} tokens</span>}
+      {hasCost && <span className="shrink-0 font-mono tabular-nums">{formatUsd(costUsd ?? 0)}</span>}
+    </span>
+  );
+  if (!hasUsage) return body;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {/* Focusable so the split is reachable without a pointer; it names
+            itself, so a screen reader hears the numbers rather than a button. */}
+        <span tabIndex={0} className="min-w-0 rounded-xs outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${modelName ?? "Model"}, ${formatTokens(promptTokens ?? 0)} tokens in, ${formatTokens(completionTokens ?? 0)} out${hasCost ? `, ${formatUsd(costUsd ?? 0)}` : ""}`}>
+          {body}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="font-mono tabular-nums">
+        {formatTokens(promptTokens ?? 0)} in, {formatTokens(completionTokens ?? 0)} out
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -821,6 +881,8 @@ export const MessageItem = React.memo(function MessageItem({
   onOpenAttachment,
 }: MessageItemProps) {
   const router = useRouter();
+  // "⌘" or "Ctrl", for the shortcut keycaps in this turn's tooltips.
+  const mod = useModifierKeyLabel();
   const [copied, setCopied] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(message.content);
@@ -1166,6 +1228,9 @@ export const MessageItem = React.memo(function MessageItem({
                 // is a one-step "resend an earlier wording".
                 <IconAction
                   label="Edit"
+                  // ↑ in an empty composer edits this turn (ChatGPT's key),
+                  // so the newest one says so.
+                  shortcut={editOnRequest ? "↑" : undefined}
                   buttonRef={editButtonRef}
                   onClick={() => {
                     editOpenerRef.current = focusedOpener();
@@ -1214,7 +1279,7 @@ export const MessageItem = React.memo(function MessageItem({
   const canForkPrivate = !!onFork && !busy && !privateMode;
   const canShare = !!message.conversationId && !privateMode;
   const canCopyLink = !!message.conversationId;
-  const showMore = (!!onSpeak && hasTextContent) || canBranchSaved || canForkPrivate || canShare || hasTextContent || canCopyLink || hasMeta;
+  const showMore = canBranchSaved || canForkPrivate || canShare || hasTextContent || canCopyLink || hasMeta;
   const finishNote =
     view.finishReason === "length"
       ? "The model stopped at its token limit."
@@ -1441,12 +1506,11 @@ export const MessageItem = React.memo(function MessageItem({
           <CitationAuditPanel state={citationAudit} />
         )}
 
-        {/* Five at rest — Copy · 👍 · 👎 · Regenerate ▾ · More ▾ — which is the
-            Claude / ChatGPT count. Read aloud, Branch, Share, Quote and Copy
-            link all still exist, one level down in More, along with the
-            model · tokens · cost line that used to print under every answer:
-            no consumer chat product bills the reader per turn in the reading
-            column, and the run panel already keeps the ledger. */}
+        {/* Copy · 👍 · 👎 · Read aloud · Regenerate ▾ · More ▾, the ChatGPT
+            set. Branch, Share, Quote and Copy link live one level down in
+            More. The model · tokens · cost receipt sits at the far end of the
+            row and shows only while the turn is hovered or focused (TurnMeta);
+            on phones it stays in More. */}
         {!isVoice && !message.streaming && !message.error && (
           <div className="mt-1.5 flex items-center">
             {totalVersions > 1 && (
@@ -1465,7 +1529,9 @@ export const MessageItem = React.memo(function MessageItem({
                 // visit, and is simply absent on a trackpad-less session.
                 // Older turns stay quiet so the transcript reads as prose;
                 // hover, focus and coarse pointers still reveal them.
-                isLast
+                // A turn being read aloud keeps its row too: its Stop is the
+                // control the listener needs, and it must not hide.
+                isLast || speaking
                   ? "opacity-100"
                   : "opacity-0 group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100",
                 "motion-reduce:transition-none"
@@ -1475,7 +1541,7 @@ export const MessageItem = React.memo(function MessageItem({
                 // The copy glyph cross-fades into a check and back rather than
                 // swapping in a frame — the confirmation is the entire feedback
                 // now that copying raises no toast.
-                <IconAction label={copied ? "Copied" : "Copy"} onClick={copy}>
+                <IconAction label={copied ? "Copied" : "Copy"} onClick={copy} shortcut={isLast && !copied ? `${mod}⇧C` : undefined}>
                   <CopyGlyph copied={copied} />
                 </IconAction>
               )}
@@ -1490,6 +1556,19 @@ export const MessageItem = React.memo(function MessageItem({
                     <ThumbsDown className="size-4" weight={message.feedback === "DOWN" ? "fill" : undefined} />
                   </IconAction>
                 </>
+              )}
+              {onSpeak && hasTextContent && (
+                // On the row, not in More: listening is a way of reading the
+                // answer, and a control that starts audio should be one press
+                // away and show its own Stop while it plays.
+                <IconAction label={speaking ? "Stop reading" : "Read aloud"} onClick={() => onSpeak(message.id, view.content)} active={speaking}>
+                  <IconSwap
+                    curve="spring"
+                    swapped={!!speaking}
+                    from={<Volume2 className="size-4" />}
+                    to={<Square className="size-3.5 fill-current" />}
+                  />
+                </IconAction>
               )}
               {!isMediaOnly && onRegenerate && isLast && !busy && !privateMode && (
                 <RegenerateMenu onRegenerate={onRegenerate} currentModelId={view.model ?? currentModelId} />
@@ -1519,12 +1598,6 @@ export const MessageItem = React.memo(function MessageItem({
                     <TooltipContent>More</TooltipContent>
                   </Tooltip>
                   <DropdownMenuContent align="start" className={MENU_W}>
-                    {onSpeak && hasTextContent && (
-                      <DropdownMenuItem onSelect={() => onSpeak(message.id, view.content)}>
-                        {speaking ? <Square className="size-4 fill-current" /> : <Volume2 className="size-4" />}
-                        {speaking ? "Stop reading" : "Read aloud"}
-                      </DropdownMenuItem>
-                    )}
                     {(canBranchSaved || canForkPrivate) && (
                       // One Branch, two destinations. "Branch from here" and
                       // "Fork privately" were two near-identical glyphs on the
@@ -1556,7 +1629,7 @@ export const MessageItem = React.memo(function MessageItem({
                         <ActionIcons.share className="size-4" /> Share chat
                       </DropdownMenuItem>
                     )}
-                    {(hasTextContent || canCopyLink) && (onSpeak || canBranchSaved || canForkPrivate || canShare) && (
+                    {(hasTextContent || canCopyLink) && (canBranchSaved || canForkPrivate || canShare) && (
                       <DropdownMenuSeparator />
                     )}
                     {hasTextContent && (
@@ -1588,10 +1661,12 @@ export const MessageItem = React.memo(function MessageItem({
                     )}
                     {hasMeta && (
                       <>
-                        <DropdownMenuSeparator />
+                        {/* Phones only: from `sm` up the same receipt sits at
+                            the end of the action row (TurnMeta). */}
+                        <DropdownMenuSeparator className="sm:hidden" />
                         {/* Information, not an action: disabled so it takes no
                             focus and no hover fill, and never closes the menu. */}
-                        <DropdownMenuItem disabled className="flex-col items-start gap-0.5 data-[disabled]:opacity-100">
+                        <DropdownMenuItem disabled className="flex-col items-start gap-0.5 data-[disabled]:opacity-100 sm:hidden">
                           {modelName && <span className="text-ui text-foreground">{modelName}</span>}
                           {(hasUsage || hasCost) && (
                             <span className="font-mono text-caption text-muted-foreground">
@@ -1608,6 +1683,16 @@ export const MessageItem = React.memo(function MessageItem({
                 </DropdownMenu>
               )}
             </div>
+            {hasMeta && (
+              <div className="ml-auto hidden min-w-0 pl-4 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none sm:flex">
+                <TurnMeta
+                  modelName={modelName}
+                  promptTokens={view.promptTokens}
+                  completionTokens={view.completionTokens}
+                  costUsd={view.costUsd}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>

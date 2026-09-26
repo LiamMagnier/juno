@@ -2385,20 +2385,78 @@
     border-bottom: 1px solid hsl(var(--border));
     font-size: 12px;
   }
+  /* The language is a NAME ("TypeScript"), so it is set in the interface
+     face; the filename beside it is an identifier, so it keeps the mono
+     voice and the foreground ink: it is the thing a reader acts on (opens,
+     searches for), and the language is the gloss. The diff header's file
+     label (file-diff.tsx) still reads `.aicss-cb-lang` as mono via
+     `.aicss-diff`, which sets the whole block in the mono face. */
   .aicss-cb-lang {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     color: hsl(var(--muted-foreground));
+    font-size: 12px;
+    line-height: 1;
+  }
+  .aicss-cb-file {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    color: hsl(var(--muted-foreground));
+  }
+  .aicss-cb-filename {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    /* A long path ellipsises only when the header runs out of room; the
+       full path is on the element's title. */
+    color: hsl(var(--foreground) / .88);
     font-family: var(--font-mono), ui-monospace, monospace;
     font-size: 12px;
     line-height: 1;
   }
+  /* A separator between the file and its language, drawn as a hairline rather
+     than a middle dot: two labels, one row, no punctuation to read. */
+  .aicss-cb-file + .aicss-cb-lang {
+    padding-left: 8px;
+    border-left: 1px solid hsl(var(--border));
+  }
+  .aicss-cb-actions {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 2px;
+    margin: -7px -3px -7px auto;
+  }
+  /* The glyph-only header control (wrap). The copy button's metrics, square. */
+  .aicss-cb-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: 0;
+    border-radius: 10px;
+    background: none;
+    color: hsl(var(--muted-foreground));
+    cursor: pointer;
+    transition:
+      transform        var(--dur-press) var(--ease-out-soft),
+      color            var(--dur-fast)  var(--ease-out-soft),
+      background-color var(--dur-fast)  var(--ease-out-soft);
+  }
+  .aicss-cb-icon:hover,
+  .aicss-cb-icon:focus-visible { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
+  /* ON reads in ink and a held fill, never in the accent: the accent in this
+     column belongs to the one primary action, and "lines are wrapped" is a
+     view setting. */
+  .aicss-cb-icon[aria-pressed="true"] { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
   .aicss-cb-copy {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    margin: -7px 0 -7px auto;
+    margin: 0;
     padding: 3px 3px 3px 7px;
     border: 0;
     /* `control` — the rung for a small button. 7px was off the ladder entirely. */
@@ -2489,6 +2547,62 @@
     white-space: pre;
   }
   .aicss-cb--numbered .aicss-cb-code { padding-left: 8px; }
+  /* Soft wrap: the lines box stops taking the longest line's width and each
+     row breaks at the column instead. A wrapped row keeps ONE number, because
+     it is one line of the source; the continuation sits under the code, not
+     under the gutter. */
+  .aicss-cb--wrap .aicss-cb-lines { width: auto; }
+  .aicss-cb--wrap .aicss-cb-code { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+  /*
+   * THE CLAMP. A long block opens at its first rows with a fade and a count
+   * ("Show all 64 lines"); the expand is instant, like the user bubble's, not a
+   * height tween. The body's usual -16px bottom margin (it cancels the frame's
+   * padding so the code runs to the edge) moves onto the footer, which is the
+   * block's last row whenever it is clampable.
+   */
+  .aicss-cb--clampable .aicss-cb-body { margin-bottom: 0; }
+  .aicss-cb-foot {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    margin: 0 -16px -16px;
+    padding: 4px 12px 8px;
+  }
+  .aicss-cb-foot--clamped::before {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 100%;
+    left: 0;
+    height: 64px;
+    background: linear-gradient(to bottom, hsl(var(--secondary) / 0), hsl(var(--secondary)));
+    pointer-events: none;
+  }
+  .aicss-cb-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 10px;
+    background: none;
+    color: hsl(var(--muted-foreground));
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      transform        var(--dur-press) var(--ease-out-soft),
+      color            var(--dur-fast)  var(--ease-out-soft),
+      background-color var(--dur-fast)  var(--ease-out-soft);
+  }
+  .aicss-cb-more:hover,
+  .aicss-cb-more:focus-visible { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
+  @media (pointer: coarse) {
+    .aicss-cb-icon { width: 36px; height: 36px; }
+    .aicss-cb-more { height: 40px; }
+  }
 
   .aicss-diff { font-family: var(--font-mono), ui-monospace, monospace; }
   .aicss-diff-stat { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px; line-height: 1; }
@@ -2496,6 +2610,11 @@
   .aicss-diff-del { color: hsl(var(--destructive-ink)); }
   .dark .aicss-diff-add { color: hsl(var(--success)); }
   .dark .aicss-diff-del { color: hsl(var(--destructive)); }
+  .aicss-diff-action { display: inline-flex; margin: -7px -3px -7px 6px; font-family: var(--font-sans), system-ui, sans-serif; }
+  /* In the reading column a patch wraps rather than clipping at the frame:
+     the body is `overflow: hidden` (the sign bar and tints have to reach the
+     edge), so an unwrapped long line was simply cut off. */
+  .aicss-diff--wrap .aicss-diff-row code { white-space: pre-wrap; overflow-wrap: anywhere; }
   .aicss-diff-body {
     position: relative;
     margin: 0 -16px -16px;
@@ -2901,14 +3020,23 @@
      markers ("Juno replied") are the page's h2s and the conversation title is
      its h1. The sizes are the ones `#` / `##` / `###` always had, so nothing
      visual moved — only the outline a screen reader lists. */
+  /* Heading rhythm: more room ABOVE a heading than below it, so a heading
+     reads as the start of what follows rather than the end of what came
+     before. The sizes step down on a tighter ratio than a document's: a chat
+     answer's `#` is a section label inside a turn, and at 1.5em it outranked
+     the conversation title in the header band. */
   .prose-juno h3, .prose-juno h4, .prose-juno h5, .prose-juno h6 {
     font-weight: 600;
     line-height: 1.3;
-    margin-top: 1.3em;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
   }
-  .prose-juno h3 { font-size: 1.5em; }
-  .prose-juno h4 { font-size: 1.3em; }
-  .prose-juno h5 { font-size: 1.12em; }
+  .prose-juno.prose-juno > :is(h3, h4, h5, h6):not(:first-child) { margin-top: 1.6em; }
+  .prose-juno.prose-juno > :is(h3, h4, h5, h6) + * { margin-top: 0.45em; }
+  .prose-juno h3 { font-size: 1.375em; }
+  .prose-juno h4 { font-size: 1.2em; }
+  .prose-juno h5 { font-size: 1.0625em; }
+  .prose-juno h6 { font-size: 1em; }
   /* Kills the UA's 1em block margins so the rhythm rule above is the only
      thing spacing blocks. It must NOT be the thing that spaces them: see the
      specificity note there. */
@@ -2916,14 +3044,37 @@
   /* The ink ramp, not the fill tone: a link here sits inside a continuous run of
      body text, which is the one place the difference actually decides whether it
      can be read. */
-  .prose-juno a { color: hsl(var(--primary-ink)); text-decoration: underline; text-underline-offset: 2px; }
+  /* The underline is quieter than the word until it is pointed at: a paragraph
+     with three links in it read as three coral bars. */
+  .prose-juno a {
+    color: hsl(var(--primary-ink));
+    text-decoration: underline;
+    text-decoration-color: hsl(var(--primary-ink) / .38);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    transition: text-decoration-color var(--dur-fast) var(--ease-out-soft);
+  }
+  .prose-juno a:hover { text-decoration-color: currentColor; }
   .prose-juno ul, .prose-juno ol { padding-left: 1.4em; }
+  /* Markers in the muted ink: the bullet is structure, the item is content. */
+  .prose-juno li::marker { color: hsl(var(--muted-foreground)); }
+  .prose-juno ol > li::marker { font-variant-numeric: tabular-nums; }
+  /* GFM task lists: the checkbox IS the marker, so the bullet goes. */
+  .prose-juno .contains-task-list { padding-left: 0.2em; }
+  .prose-juno .task-list-item { list-style: none; }
+  .prose-juno .task-list-item input[type="checkbox"] {
+    margin: 0 0.5em 0 0;
+    vertical-align: -0.1em;
+    accent-color: hsl(var(--primary));
+  }
   .prose-juno ul { list-style: disc; }
   .prose-juno ol { list-style: decimal; }
   .prose-juno li { margin: 0.2em 0; }
   .prose-juno li > ul, .prose-juno li > ol { margin-top: 0.2em; }
+  /* A quote is set apart by a hairline and indent, in the muted ink: 2px of
+     neutral rule, not a coloured callout bar. */
   .prose-juno blockquote {
-    border-left: 3px solid hsl(var(--border));
+    border-left: 2px solid hsl(var(--foreground) / .16);
     padding-left: 1em;
     color: hsl(var(--muted-foreground));
   }
@@ -2956,7 +3107,11 @@
      the composer's focus edge uses) so the eye finds the column names
      without a fill behind them. */
   .prose-juno th, .prose-juno td { border-bottom: 1px solid hsl(var(--border)); padding: 0.5em 0.7em; text-align: left; vertical-align: top; }
-  .prose-juno th { border-bottom-color: hsl(var(--foreground) / .28); font-weight: 600; }
+  .prose-juno th { border-bottom-color: hsl(var(--foreground) / .28); font-weight: 600; white-space: nowrap; }
+  /* Figures line up down a column. */
+  .prose-juno td { font-variant-numeric: tabular-nums; }
+  .prose-juno :is(th, td):first-child { padding-left: 0; }
+  .prose-juno :is(th, td):last-child { padding-right: 0; }
   .prose-juno tbody tr:last-child td { border-bottom: none; }
   /* Cell content must not force break-word mid-token inside the scroll wrapper —
      the wrapper (markdown.tsx) scrolls instead, keeping columns readable. */
@@ -2964,6 +3119,7 @@
   /* Display math can be arbitrarily wide (long equations); scroll it in place. */
   .prose-juno .katex-display { overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
   .prose-juno hr { border: none; border-top: 1px solid hsl(var(--border)); }
+  .prose-juno.prose-juno > hr { margin-block: 1.75em; }
 
   /* Inline educational visuals own their internal layout; keep prose defaults
      from adding heading margins, list markers, or table spacing inside them. */
@@ -3307,6 +3463,13 @@
 .hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-name, .hljs-tag { color: hsl(var(--primary-ink)); }
 .hljs-string, .hljs-title, .hljs-section, .hljs-attribute, .hljs-literal, .hljs-template-tag, .hljs-template-variable, .hljs-type, .hljs-addition { color: hsl(var(--code-string)); }
 .hljs-number, .hljs-symbol, .hljs-bullet, .hljs-meta, .hljs-link { color: hsl(var(--code-number)); }
+/* Function and class NAMES are identifiers the reader is scanning for, not
+   literals: they were painted in the string green (`.hljs-title` above), so a
+   declaration and the string it returned were the same colour. Foreground ink
+   at a medium weight marks them without spending a fourth hue. */
+.hljs-title.function_, .hljs-title.class_, .hljs-title.class_.inherited__ { color: hsl(var(--foreground)); font-weight: 500; }
+.hljs-regexp { color: hsl(var(--code-number)); }
+.hljs-deletion { color: hsl(var(--destructive-ink)); }
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 600; }
 
