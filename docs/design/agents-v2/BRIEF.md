@@ -1018,6 +1018,10 @@ Turn on agent computers (after the deploy, once your server upgrade is done)
    cd ~/juno && ./scripts/set-env-key.sh COMPUTER_PROVIDER --reload      (enter: docker)
 Tune the caps later in ~/juno/.env (COMPUTER_MAX_RUNNING_TOTAL, COMPUTER_MEMORY_MB, …).
 
+Clean up (you want no juno-* folders left beside the checkout)
+Once you've deployed, remove this worktree:
+  git -C ~/Developer/project/juno worktree remove ~/Developer/project/juno-agents
+
 After deploy
 - JUNO_PUBLIC_UI_BASE_URL=https://chat.liams.dev node scripts/public-ui-smoke.mjs
 - Open an agent, give it a computer, ask it to open a site, watch it in the side panel,

@@ -326,7 +326,7 @@ npm run build                      # next build with the symlinked .env.local; c
   yourself.
 - Only report "gate passed" if the script prints `GATE PASSED`.
 ```bash
-bash /Users/liammagnier/Developer/project/juno-release-tools/gate-like-deploy.sh /Users/liammagnier/Developer/project/juno-agents <sha>
+bash /Users/liammagnier/Developer/project/juno/.claude/local-tools/release-tools/gate-like-deploy.sh /Users/liammagnier/Developer/project/juno-agents <sha>
 ```
 
 **Native, if you touched `native/`:**
