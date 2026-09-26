@@ -89,7 +89,16 @@ export function EmptyState({
           className={cn(
             "grid shrink-0 place-items-center",
             page ? "size-12 rounded-field" : "size-9 rounded-control",
-            isError ? "bg-destructive/10 text-destructive" : "bg-secondary text-muted-foreground"
+            // At page size the tile is RAISED (premium brief rule 3: hairline
+            // and a soft tinted throw), so the page's one object reads as an
+            // object lifted off the paper, the same rung as the composer and
+            // the starting-point tiles. In a panel it stays a flat tonal
+            // square: the panel's well is already the boundary.
+            isError
+              ? "bg-destructive/10 text-destructive"
+              : page
+                ? "surface-raised text-muted-foreground"
+                : "bg-secondary text-muted-foreground"
           )}
         >
           <Icon motion="none" className={page ? "size-6" : "size-5"} />

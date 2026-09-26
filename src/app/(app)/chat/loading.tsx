@@ -2,6 +2,7 @@ import { PrivateGreeting } from "@/components/chat/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { composerRestHeightClass } from "@/components/ui/composer-shell";
 import { cn } from "@/lib/utils";
+import { startingGridClass } from "@/components/ui/starting-tile";
 
 /**
  * The new-chat page in its own frame: the header band, the greeting, the
@@ -30,23 +31,16 @@ import { cn } from "@/lib/utils";
  *    no padding of its own. It was a hand-written 68px against a 98px
  *    composer, and then the dock frame's gutter and bottom padding, which the
  *    landing does not have.
- *  - The chip row is StarterChips at the `mt-3` chat-view gives it, `h-8`
- *    (`h-10` coarse), each bar the width of its chip, so the row wraps where
- *    the real one does: under about 390px the four chips take two lines.
+ *  - The starting points are StarterChips' tiles at the `mt-3` chat-view
+ *    gives them, on the same grid (`startingGridClass`): four across from
+ *    `sm`, two by two on a phone. A tile is 54px (the 32px mark well, 10px
+ *    padding, the hairline) and 56 from `sm`, where the hint line adds a
+ *    line under the label.
  *
  * Measured against a replica of the real frame, the composer used to arrive
  * 38px lower than its placeholder on a laptop and 19px lower, and 32px
  * wider, on a phone.
  */
-const CHIP_WIDTHS = [
-  // Research, Write, Code, Plan: the rendered chips at 13px, plus the 6px
-  // their coarse padding adds.
-  "w-[6.625rem] coarse:w-[7rem]",
-  "w-20 coarse:w-[5.375rem]",
-  "w-[5.0625rem] coarse:w-[5.4375rem]",
-  "w-[4.625rem] coarse:w-20",
-];
-
 export default function NewChatLoading() {
   return (
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
@@ -68,9 +62,9 @@ export default function NewChatLoading() {
           <div className="mx-auto max-w-[calc(48rem-2*var(--page-gutter,0px))]">
             <Skeleton className={cn(composerRestHeightClass, "w-full rounded-composer")} />
           </div>
-          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-            {CHIP_WIDTHS.map((width) => (
-              <Skeleton key={width} className={cn("h-8 rounded-full coarse:h-10", width)} />
+          <div className={cn(startingGridClass, "mt-3 max-w-[calc(48rem-2*var(--page-gutter,0px))]")}>
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-[54px] rounded-card sm:h-14" />
             ))}
           </div>
         </div>
