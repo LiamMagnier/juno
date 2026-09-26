@@ -47,16 +47,16 @@ export function Platforms() {
             </Button>
           </div>
           {mac ? (
-            <div className="relative mt-auto pl-6 sm:pl-10">
-              <div className="stage-window overflow-hidden rounded-tl-panel">
-                <ProductShot
-                  name={MAC_SHOT}
-                  alt="Juno Code on Mac: a session fixing a failing test, with the diff beside the transcript"
-                  width={2400}
-                  height={1500}
-                  sizes="(min-width: 1024px) 760px, 95vw"
-                />
-              </div>
+            // Bleeds off the cell's right and bottom edges: the window is the
+            // point of the cell, and a whole Mac window shrunk to fit is a stamp.
+            <div className="relative -mb-[4%] -mr-[8%] mt-auto pl-6 sm:pl-10">
+              <ProductShot
+                name={MAC_SHOT}
+                alt="Juno Code on Mac: a session fixing a stale cart total, the diff beside the transcript"
+                width={3072}
+                height={1992}
+                sizes="(min-width: 1024px) 820px, 110vw"
+              />
             </div>
           ) : (
             <div className="min-h-40 flex-1 lg:min-h-72" />

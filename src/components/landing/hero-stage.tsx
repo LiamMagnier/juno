@@ -45,17 +45,17 @@ export function HeroStage() {
         imageClassName="object-[30%_50%] sm:object-center"
       />
       {shot ? (
-        // The real window, bleeding off the stage's lower edge: a whole app
-        // does not fit in a hero, and pretending it does shrinks it to a stamp.
-        <div className="relative px-4 pt-10 sm:px-[7%] sm:pt-[6%]">
-          <div className="scroll-settle stage-window mx-auto max-w-[62rem] overflow-hidden rounded-t-panel">
+        // The render carries its own window, shadow and transparent margin
+        // (the Mac snapshot tests draw them), so it sits on the plate as is.
+        <div className="relative px-2 py-6 sm:px-[5%] sm:py-[4%]">
+          <div className="scroll-settle mx-auto max-w-[66rem]">
             <ProductShot
               name={SHOT}
-              alt="Juno for Mac: a conversation with Claude Fable, the reply's cost shown under it"
-              width={2400}
-              height={1500}
+              alt="Juno for Mac: a conversation that turns launch notes into a two-week plan"
+              width={3072}
+              height={1992}
               priority
-              sizes="(min-width: 1280px) 1000px, 92vw"
+              sizes="(min-width: 1280px) 1060px, 96vw"
             />
           </div>
         </div>
