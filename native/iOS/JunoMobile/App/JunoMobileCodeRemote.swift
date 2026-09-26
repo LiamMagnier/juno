@@ -540,6 +540,10 @@ struct JunoMobileCodeRemoteThreadView: View {
         .padding(.horizontal, JunoSpace.regular)
         .padding(.vertical, JunoSpace.snug)
       }
+      // A switcher, not content: no scroll-edge treatment of its own. It was
+      // the first scroll view under the bar, so the bar's hard edge effect
+      // drew an opaque band across the top of the session.
+      .scrollEdgeEffectHidden(true, for: .all)
       // On the thread's measure, so the surface switcher starts where the
       // thread does rather than at the window's edge.
       .frame(maxWidth: JunoMobileMeasure.reading)
