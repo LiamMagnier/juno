@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { cn } from "@/lib/utils";
 
 // Clockwise around the perimeter, then through the centre. The staggered

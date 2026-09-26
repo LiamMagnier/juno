@@ -21,7 +21,7 @@ import {
   workRowControlClass,
   workRowEnterClass,
 } from "@/components/work/shell/work-section";
-import { WorkTag, workTimeAgo } from "@/components/work/work-vocabulary";
+import { workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
 
@@ -52,8 +52,8 @@ import { staggerDelay } from "@/lib/motion";
 function nextFireSentence(schedule: ClientWorkSchedule): string {
   if (schedule.nextRunAt === null) {
     return schedule.enabled
-      ? "Nothing on the clock. This one waits for an event."
-      : "Paused. Nothing on the clock either way.";
+      ? "Runs when its trigger fires"
+      : "Paused";
   }
   const when = new Date(schedule.nextRunAt);
   if (Number.isNaN(when.getTime())) return "Next run unknown.";
@@ -189,18 +189,22 @@ export function WorkScheduleRow({
             <span className="min-w-0 truncate text-body font-medium leading-snug text-foreground">
               {schedule.name}
             </span>
-            {!schedule.enabled && <WorkTag>Paused</WorkTag>}
-            {/* The repository, because it is the one fact that distinguishes
+            {/* No "Paused" tag: the line under the schedule starts with the
+                word, and the row is already dimmed and filed under Paused.
+                The repository, because it is the one fact that distinguishes
                 two Code routines with similar names and the one a person
-                checks before pausing something at eight in the morning. */}
+                checks before pausing something at eight in the morning. An
+                identifier, so mono, and plain text rather than a chip. */}
             {parsedCode?.ok && (
-              <WorkTag>{`${parsedCode.config.repo.owner}/${parsedCode.config.repo.name}`}</WorkTag>
+              <span className="truncate font-mono text-caption text-muted-foreground">
+                {`${parsedCode.config.repo.owner}/${parsedCode.config.repo.name}`}
+              </span>
             )}
           </span>
           <span className="mt-1 block truncate text-ui leading-relaxed text-muted-foreground">
             {schedule.triggers.map((trigger) => describeTrigger(trigger)).join(" · ")}
           </span>
-          <span className="mt-1.5 block font-mono text-micro tabular-nums text-muted-foreground">
+          <span className="mt-1 block truncate text-caption tabular-nums text-muted-foreground">
             {nextFireSentence(schedule)}
             {schedule.lastRunAt !== null && ` · last ran ${workTimeAgo(schedule.lastRunAt)}`}
             {notify !== null && ` · ${notify}`}

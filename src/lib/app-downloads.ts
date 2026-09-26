@@ -60,6 +60,12 @@ export interface AppDownload {
    * fresh download hit the wall.
    */
   notarized: boolean | null;
+  /**
+   * The release's notes (Markdown, capped), for the Mac's Software Update
+   * window. Display-only: the updater decides nothing on it. Absent or null
+   * when the release has none.
+   */
+  notes?: string | null;
   /** Shown in place of a version when there is nothing to download yet. */
   note?: string;
 }

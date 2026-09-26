@@ -257,7 +257,10 @@ export function MessageList(props: MessageListProps) {
     if (el) prevRef.current = { scrollHeight: el.scrollHeight, scrollTop: el.scrollHeight, clientHeight: el.clientHeight };
     // Discrete and user-initiated, so it is the one scroll safe to animate:
     // nothing else is writing scrollTop at the same time.
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    // Instant under Reduce Motion: a smooth scroll across a long thread is
+    // exactly the kind of large travel that setting asks to skip.
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    bottomRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "end" });
   };
 
   return (
@@ -388,7 +391,7 @@ export function MessageList(props: MessageListProps) {
           <button
             type="button"
             onClick={jumpToLatest}
-            aria-label="Scroll to latest"
+            aria-label="Jump to latest"
             aria-hidden={atBottom || undefined}
             tabIndex={atBottom ? -1 : undefined}
             className={cn(
@@ -423,7 +426,7 @@ export function MessageList(props: MessageListProps) {
             <ArrowDown className="size-4" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="top">Scroll to latest</TooltipContent>
+        <TooltipContent side="top">Jump to latest</TooltipContent>
       </Tooltip>
     </div>
   );

@@ -70,16 +70,25 @@ struct JunoMobileLiveRunPill: View {
   var body: some View {
     Button(action: open) {
       HStack(spacing: JunoSpace.snug) {
-        JunoMobileLiveDot(active: run.running > 0, attention: run.needsYou > 0)
-        Text(headline)
-          .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
-          .foregroundStyle(Color.junoForeground)
-          .lineLimit(1)
+        // No breathing dot: in-progress work is said by the words, with a
+        // quiet shimmer on the line while something is running. Only the
+        // attention half keeps a colour, led by its own symbol.
+        JunoShimmerText(
+          headline,
+          font: .subheadline.weight(.medium),
+          active: run.running > 0 && !reduceMotion
+        )
+        .lineLimit(1)
         if run.needsYou > 0 {
-          Text(attention)
-            .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
-            .foregroundStyle(Color.junoAccent)
-            .lineLimit(1)
+          HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.circle.fill")
+              .imageScale(.small)
+              .accessibilityHidden(true)
+            Text(attention)
+          }
+          .junoFont(size: 13, relativeTo: .footnote, weight: .semibold)
+          .foregroundStyle(Color.junoCaution)
+          .lineLimit(1)
         }
         Spacer(minLength: JunoSpace.tight)
         JunoIconView(.chevronRight, size: 13)
@@ -109,30 +118,3 @@ struct JunoMobileLiveRunPill: View {
   }
 }
 
-/// The dot: accent while something is running, amber when something waits on
-/// the reader, and a slow breath only while live.
-private struct JunoMobileLiveDot: View {
-  let active: Bool
-  let attention: Bool
-
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    TimelineView(.animation(minimumInterval: 1 / 20, paused: !active || reduceMotion)) { context in
-      let phase = active && !reduceMotion ? breath(at: context.date) : 1
-      Circle()
-        .fill(attention ? Color.junoCaution : Color.junoAccent)
-        .frame(width: 8, height: 8)
-        .scaleEffect(0.85 + 0.15 * phase)
-        .opacity(0.7 + 0.3 * phase)
-    }
-    .frame(width: 12, height: 12)
-    .accessibilityHidden(true)
-  }
-
-  /// One breath every 1.6s — inside the brief's 1.2–2.0s window.
-  private func breath(at date: Date) -> Double {
-    let t = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
-    return 0.5 + 0.5 * sin(t * 2 * .pi)
-  }
-}

@@ -1059,42 +1059,13 @@ struct ChatWorkRunWords: View {
 
 // MARK: - Status pill
 
-/// A 20pt capsule: the tone at 12% with its own ink, except a live run's,
-/// which stays neutral and lets its dot be the one coral thing on the card.
+/// A task's status as text, never a pill (owner directive): the chat's words
+/// (``ChatWorkVocabulary``) through ``DesktopStatusText``.
 struct ChatWorkStatusPill: View {
     let status: JunoWorkStatus
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var breathing = false
-
-    private var isLive: Bool { status == .running || status == .preparing }
-
     var body: some View {
-        let style = DesktopWorkStatusStyle.of(status)
-        let tone = isLive ? Color.junoMutedForeground : style.tint
-        let label = ChatWorkVocabulary.label(status)
-        HStack(spacing: JunoSpace.tight) {
-            Circle()
-                .fill(isLive ? Color.junoAccent : tone)
-                .frame(width: 6, height: 6)
-                .opacity(isLive && breathing ? 0.35 : 1)
-                .animation(
-                    isLive
-                        ? JunoMotion.ambient(JunoMotion.breathe(period: JunoMotion.Loop.statusBreathe), when: reduceMotion)
-                        : nil,
-                    value: breathing
-                )
-                .onAppear { if isLive { breathing = true } }
-            Text(label)
-                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
-                .foregroundStyle(isLive ? Color.junoForeground : tone)
-        }
-        .padding(.horizontal, JunoSpace.snug)
-        .frame(height: 20)
-        .background(Capsule(style: .continuous).fill(tone.opacity(0.12)))
-        .fixedSize()
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(label)
+        DesktopStatusText(ChatWorkVocabulary.label(status), kind: DesktopStatusText.Kind(status))
     }
 }
 

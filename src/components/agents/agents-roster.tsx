@@ -3,17 +3,18 @@
 import * as React from "react";
 import Link from "next/link";
 import { Plus } from "@/components/ui/icons";
+import { LoadError } from "@/components/ui/load-error";
 import { Button } from "@/components/ui/button";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AppIcons } from "@/lib/app-icons";
+import { cardVariants } from "@/components/ui/card";
 import { AGENT_TEMPLATES } from "@/lib/agents/templates";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { AgentFace } from "@/components/agents/agent-face";
 import { AgentCard } from "@/components/agents/agent-bits";
 import { useAgents } from "@/components/agents/use-agents";
+import { TeamStatus } from "@/components/agents/team-status";
 
 /**
  * The roster (docs/design/AGENTS.md §3.1): a card per agent, a New agent
@@ -52,26 +53,23 @@ export function AgentsRoster() {
     <AppPage measure="wide">
       <AppPageHeader
         heading="Agents"
-        lede="Teammates that take on work, keep going when you leave, and come back only when they need you."
-        actions={agents && agents.length > 0 ? hire : undefined}
+        lede="Teammates that take on work and come back when they need you."
+        actions={
+          agents && agents.length > 0 ? (
+            <>
+              <TeamStatus agents={agents} />
+              {hire}
+            </>
+          ) : undefined
+        }
       />
       {error && !agents ? (
-        <EmptyState
-          tone="error"
-          icon={AppIcons.agents}
-          title="Couldn’t load your agents"
-          description={error}
-          action={
-            <Button variant="secondary" size="sm" onClick={refresh}>
-              Try again
-            </Button>
-          }
-        />
+        <LoadError title="Couldn’t load your agents" description={error} onRetry={refresh} />
       ) : ordered === null ? (
         <div className="@container" role="status" aria-label="Loading agents">
-          <div className="grid grid-cols-1 gap-3 @[36rem]:grid-cols-2 @[56rem]:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="flex items-start gap-4 rounded-card border border-border bg-card p-4">
+              <div key={i} className="surface-raised flex items-start gap-4 rounded-card p-4">
                 <Skeleton className="size-12 rounded-full" />
                 <div className="flex-1 space-y-2 pt-1">
                   <Skeleton className="h-4 w-24" />
@@ -86,7 +84,7 @@ export function AgentsRoster() {
         <FirstHire />
       ) : (
         <div className="@container">
-          <div className="grid grid-cols-1 gap-3 @[36rem]:grid-cols-2 @[56rem]:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3">
             {ordered.map((agent, index) => (
               <AgentCard key={agent.id} agent={agent} index={index} />
             ))}
@@ -115,15 +113,12 @@ function FirstHire() {
           deletes happens without you.
         </p>
       </div>
-      <ul className="grid grid-cols-1 gap-3 @[36rem]:grid-cols-2 @[56rem]:grid-cols-3">
+      <ul className="grid grid-cols-1 gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3">
         {templates.map((template, index) => (
           <li key={template.id} style={staggerDelay(index)} className="motion-safe:animate-rise-in [animation-fill-mode:backwards]">
             <Link
               href={`/agents/new?template=${template.id}`}
-              className={cn(
-                "flex h-full items-start gap-3 rounded-card border border-border bg-card p-4",
-                "transition-colors duration-fast ease-out-soft hover:bg-accent active:bg-selected"
-              )}
+              className={cn(cardVariants({ variant: "interactive" }), "flex h-full items-start gap-3 p-4")}
             >
               <AgentFace avatar={template.avatar} size="sm" />
               <span className="min-w-0">

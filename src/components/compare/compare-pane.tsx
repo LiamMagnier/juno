@@ -178,12 +178,6 @@ export function ComparePane({
         ) : (
           <div className="px-4 py-4">
             <Markdown content={run.content} streaming={streaming} className="text-body" />
-            {streaming && run.content.length > 0 && (
-              <span
-                className="ml-1 inline-block size-2 translate-y-px rounded-full bg-primary align-middle motion-safe:animate-status-glow"
-                aria-hidden="true"
-              />
-            )}
             {(finishNote || (run.status === "error" && run.content)) && (
               <div
                 // bg-secondary, not bg-muted/45: 45% of a 9.5% token over the pane's

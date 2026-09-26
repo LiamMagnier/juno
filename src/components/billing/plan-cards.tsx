@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { StatusIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
 import type { PlanConfig } from "@/lib/plans";
@@ -113,13 +112,16 @@ function PlanCard({ item, index, action }: { item: PlanCardItem; index: number; 
       <div className="flex min-h-8 items-start justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <h3 className="text-heading">{name}</h3>
+          {/* Words, not badges (owner directive, 2026-09-26): the
+              recommended card already stands forward on the raised rung
+              with the accent edge, and "your plan" is a fact. */}
           {current ? (
-            <Badge variant="outline" className="gap-1">
-              <StatusIcons.success className="size-3 shrink-0 text-primary" aria-hidden="true" />
-              Current plan
-            </Badge>
+            <span className="inline-flex items-center gap-1 text-ui text-muted-foreground">
+              <StatusIcons.success className="size-3.5 shrink-0" aria-hidden="true" />
+              Your plan
+            </span>
           ) : recommended ? (
-            <Badge variant="soft">Recommended</Badge>
+            <span className="text-ui text-muted-foreground">Recommended</span>
           ) : null}
         </div>
         {header}

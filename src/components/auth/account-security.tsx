@@ -6,7 +6,6 @@ import Image from "next/image";
 import { Loader2 } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -116,9 +115,7 @@ function TwoStepRow({
           <span className="flex items-center gap-2">
             Two-step verification
             {status?.enabled && (
-              <Badge variant="secondary" className="font-sans">
-                On
-              </Badge>
+              <span className="text-ui font-normal text-muted-foreground">On</span>
             )}
           </span>
         }

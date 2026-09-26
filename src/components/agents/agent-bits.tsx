@@ -6,6 +6,7 @@ import { AgentFace } from "@/components/agents/agent-face";
 import { agentStateSentence, type AgentState } from "@/lib/agents/domain";
 import type { ClientAgent } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
+import { cardVariants } from "@/components/ui/card";
 import { staggerDelay } from "@/lib/motion";
 
 /**
@@ -69,8 +70,10 @@ export function AgentCard({ agent, index = 0 }: { agent: ClientAgent; index?: nu
     <Link
       href={`/agents/${agent.id}`}
       className={cn(
-        "group flex min-w-0 items-start gap-4 rounded-card border border-border bg-card p-4",
-        "transition-colors duration-fast ease-out-soft hover:bg-accent active:bg-selected",
+        // The house interactive card (lifts under the pointer), like every
+        // tile in the app pages that opens something.
+        cardVariants({ variant: "interactive" }),
+        "group flex h-full min-w-0 items-start gap-4 p-4",
         "motion-safe:animate-rise-in [animation-fill-mode:backwards]"
       )}
       style={staggerDelay(index)}
@@ -80,7 +83,6 @@ export function AgentCard({ agent, index = 0 }: { agent: ClientAgent; index?: nu
       <div className="min-w-0 flex-1 pt-0.5">
         <div className="flex items-center gap-2">
           <p className="truncate text-body font-medium text-foreground">{agent.name}</p>
-          {waiting ? <NeedsYouDot /> : null}
         </div>
         {agent.role ? <p className="truncate text-ui text-muted-foreground">{agent.role}</p> : null}
         <p

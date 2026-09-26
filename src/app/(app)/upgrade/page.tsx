@@ -9,6 +9,7 @@ import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { useApp } from "@/components/app/app-provider";
 import { PlanCards, type PlanCardItem } from "@/components/billing/plan-cards";
 import { Button } from "@/components/ui/button";
+import { MetalCta } from "@/components/effects/metal-cta";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { StatusIcons } from "@/lib/app-icons";
 import { PLANS, planRank } from "@/lib/plans";
@@ -158,7 +159,7 @@ export default function UpgradePage() {
       );
     }
     if (rankDiff > 0) {
-      return (
+      const button = (
         <Button
           variant={variant}
           className="w-full"
@@ -170,6 +171,10 @@ export default function UpgradePage() {
           {loading === plan ? "Redirecting…" : `Upgrade to ${planLabel(plan)}`}
         </Button>
       );
+      // The page's one metal object: the recommended plan's upgrade (the
+      // `default` variant is only ever that card). Every other CTA stays a
+      // plain button, so two metal buttons never sit side by side.
+      return variant === "default" && features.billing ? <MetalCta>{button}</MetalCta> : button;
     }
     return (
       <Button variant="secondary" className="w-full" onClick={manage} disabled={!features.billing}>

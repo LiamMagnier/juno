@@ -55,7 +55,7 @@ function fact(
 const THESIS = { projectId: "p-thesis", projectName: "Thesis: urban heat islands" };
 const LAUNCH = { projectId: "p-launch", projectName: "Juno launch" };
 
-function richMemories(): Memory[] {
+export function richMemories(): Memory[] {
   seq = 0;
   return [
     fact("Works as a product engineer at a small design-tools startup", "identity", 0, { sourceRef: "manual", source: "MANUAL" }),
@@ -101,7 +101,7 @@ function richMemories(): Memory[] {
   ];
 }
 
-const SUMMARY: SummaryData = {
+export const SUMMARY: SummaryData = {
   updatedAt: ago(0, 2),
   entryCount: 30,
   content: `Liam is a product engineer at a small design-tools startup, living in Lisbon with his partner Inês and their dog Miso. He moved from Dublin in 2019, speaks Portuguese and English, and is learning Japanese for the JLPT N4 in December.
@@ -119,7 +119,7 @@ Alongside work he takes an evening course in urban climate at Nova and is writin
 He is in Tokyo for a conference until 2 October, so times and suggestions should account for Japan Standard Time for the next week or so.`,
 };
 
-const PROJECT_SUMMARIES: ProjectSummaryData[] = [
+export const PROJECT_SUMMARIES: ProjectSummaryData[] = [
   {
     projectId: "p-thesis",
     projectName: THESIS.projectName,

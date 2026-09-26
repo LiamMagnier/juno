@@ -56,21 +56,21 @@
     }
   },
   "targets": {
-    "total": 212,
+    "total": 208,
     "modules": {
       "JunoNativeKit (shared)": 36,
       "JunoCode (shared)": 89,
-      "JunoDesktop (macOS)": 58,
+      "JunoDesktop (macOS)": 54,
       "JunoMobile (iOS)": 29
     },
     "files": {
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/Settings/StudioSettingsView.swift": 2,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioApprovalPrompt.swift": 4,
-      "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioComposer.swift": 7,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioComposer.swift": 5,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioLanding.swift": 4,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioSessionView.swift": 2,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioSidePanel.swift": 18,
-      "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioThreadRows.swift": 11,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioThreadRows.swift": 13,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioThreadView.swift": 1,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Preview/CodePreviewWindow.swift": 20,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Remote/CodeRemoteTaskDetailView.swift": 4,
@@ -110,8 +110,7 @@
       "native/macOS/JunoDesktop/App/DesktopAutomationPage.swift": 4,
       "native/macOS/JunoDesktop/App/DesktopAutomationsScreen.swift": 4,
       "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift": 1,
-      "native/macOS/JunoDesktop/App/DesktopCodeAccountFooter.swift": 5,
-      "native/macOS/JunoDesktop/App/DesktopCodeStudio.swift": 10,
+      "native/macOS/JunoDesktop/App/DesktopCodeStudio.swift": 11,
       "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift": 6,
       "native/macOS/JunoDesktop/App/DesktopConnectionsScreen.swift": 9,
       "native/macOS/JunoDesktop/App/DesktopHostPage.swift": 3,

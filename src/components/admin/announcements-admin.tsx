@@ -782,12 +782,7 @@ export function AnnouncementsAdmin() {
                             <div className="flex items-center gap-2">
                               <p className="truncate text-ui font-medium">{item.title}</p>
                               <span
-                                className={cn(
-                                  "shrink-0 rounded-full px-2 py-0.5 font-mono text-caption font-semibold",
-                                  status.tone === "active" && "bg-primary/10 text-primary",
-                                  status.tone === "muted" && "bg-muted text-muted-foreground",
-                                  status.tone === "ended" && "bg-destructive/10 text-destructive"
-                                )}
+                                className="shrink-0 font-mono text-caption font-medium text-muted-foreground"
                               >
                                 {status.text}
                               </span>

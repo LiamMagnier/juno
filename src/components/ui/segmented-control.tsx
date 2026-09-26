@@ -63,6 +63,7 @@ export function SegmentedControl<T extends string>({
   labelHidden = false,
   className,
   optionClassName,
+  columns = "equal",
 }: {
   value: T;
   onChange: (value: T) => void;
@@ -75,6 +76,13 @@ export function SegmentedControl<T extends string>({
   className?: string;
   /** Extra classes on each segment button (sizing/typography). */
   optionClassName?: string;
+  /**
+   * `equal` (the default) gives every segment the widest one's width, which
+   * is what a two- or three-way switch wants. `content` sizes each segment to
+   * its label, for a long run of filters (Artifacts' eight kinds) where equal
+   * columns would stretch "All" to the width of "Components".
+   */
+  columns?: "equal" | "content";
 }) {
   const refs = React.useRef<Partial<Record<T, HTMLButtonElement | null>>>({});
   const reduceMotion = useReducedMotion() ?? false;
@@ -122,7 +130,7 @@ export function SegmentedControl<T extends string>({
       )}
       style={
         orientation === "horizontal"
-          ? { gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }
+          ? { gridTemplateColumns: `repeat(${options.length}, ${columns === "content" ? "auto" : "minmax(0, 1fr)"})` }
           : undefined
       }
     >

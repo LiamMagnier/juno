@@ -2150,24 +2150,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 // Same reason as the project pill: this is a floating status
                 // token wearing `shadow-glass`, so it belongs on the floating
                 // rung rather than on 80% of a fill that is itself near black.
-                "inline-flex items-center gap-2 rounded-full border border-border/60 bg-popover px-3 py-1 shadow-glass",
+                // Words only (owner directive, 2026-09-26): this was a
+                // floating pill with a pulsing coral dot for an event that
+                // has already happened. It fades in and out as plain text.
+                "inline-flex items-center",
                 memoryLeaving ? "motion-safe:animate-title-out motion-safe:[animation-fill-mode:forwards]" : "motion-safe:animate-rise-in"
               )}
             >
-              <span className="relative flex size-1.5">
-                {/* `pulse-ring`, not Tailwind's stock `ping`. Two reasons, both
-                    about the system rather than this dot: ping runs a 2× scale on
-                    `cubic-bezier(0,0,0.2,1)`, which is not on the ease ladder and
-                    is a visibly wider halo than the identical indicator elsewhere
-                    in the product; and `pulse-ring` is the named keyframe every
-                    other live dot here uses, so there is one place to tune them.
-                    Same reasoning as the note at research-run-panel.tsx. */}
-                {/* ONE ring (`pulse-ring-once`): a memory write is an event
-                    that has happened, not work in progress, and a pill that
-                    keeps pulsing after the fact says something is still going on. */}
-                <span aria-hidden className="absolute inline-flex size-full rounded-full bg-primary opacity-70 motion-safe:animate-pulse-ring-once" />
-                <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
-              </span>
               <span className="font-mono text-label text-muted-foreground">Memory updated</span>
             </span>
           </div>

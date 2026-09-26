@@ -100,8 +100,10 @@ public final class PreviewWorld {
         session = NativeAuthenticatedSession(
             profile: NativeAccountProfile(
                 id: account,
-                name: "Preview User",
-                email: "preview@juno.local",
+                // The product shots name a sample person; everything else
+                // keeps the harness's obvious placeholder.
+                name: scenario == .showcase ? "Maya Okafor" : "Preview User",
+                email: scenario == .showcase ? "maya@fieldnotes.app" : "preview@juno.local",
                 imageURL: nil
             ),
             deviceID: try DeviceID("preview-device")

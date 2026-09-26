@@ -277,8 +277,6 @@ struct JunoMobileSettingsView: View {
     List {
       Section {
         profileHeader
-          .listRowBackground(Color.clear)
-          .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 14, trailing: 16))
       }
 
       if session != nil, requestSender != nil {
@@ -332,9 +330,7 @@ struct JunoMobileSettingsView: View {
   ) -> some View {
     NavigationLink(value: route) {
       HStack(spacing: 12) {
-        JunoIconView(icon, size: 18)
-          .foregroundStyle(Color.junoAccent)
-          .frame(width: 24)
+        JunoMobileSettingsGlyph(icon: icon)
         Text(title)
           .junoRowLabel()
       }
@@ -472,7 +468,8 @@ struct JunoMobileSettingsView: View {
           )
           VStack(alignment: .leading, spacing: 3) {
             Text(session.profile.name ?? "Your account")
-              .junoFont(size: 18, relativeTo: .headline, weight: .semibold)
+              .font(JunoMobileType.display(24, relativeTo: .title2))
+              .tracking(-0.4)
               .foregroundStyle(Color.primary)
             Text(session.profile.email)
               .junoCaption()
@@ -483,12 +480,10 @@ struct JunoMobileSettingsView: View {
           }
           Spacer(minLength: 8)
         }
-        .padding(16)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
-      .background(Color.junoSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
       .accessibilityIdentifier("juno.mobile.settings-profile")
     } else {
       HStack(spacing: 12) {
@@ -497,9 +492,8 @@ struct JunoMobileSettingsView: View {
         Text("Settings")
           .junoPageHeading(compact: true)
       }
-      .padding(16)
+      .padding(.vertical, 6)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(Color.junoSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
   }
 
@@ -1305,9 +1299,7 @@ struct JunoMobileSettingsFormLabel: View {
 
   var body: some View {
     HStack(spacing: JunoSpace.cozy) {
-      JunoIconView(icon, size: 17)
-        .foregroundStyle(Color.junoAccent)
-        .frame(width: 24)
+      JunoMobileSettingsGlyph(icon: icon)
       VStack(alignment: .leading, spacing: 2) {
         Text(title).foregroundStyle(.primary)
         if let detail {
@@ -1672,9 +1664,7 @@ private struct JunoMobileSettingsRowLabel: View {
 
   var body: some View {
     HStack(spacing: JunoSpace.cozy) {
-      JunoIconView(icon, size: 16)
-        .foregroundStyle(Color.junoAccent)
-      .frame(width: 22)
+      JunoMobileSettingsGlyph(icon: icon)
       Text(title)
         .junoRowLabel()
         .fontWeight(.medium)
@@ -1722,11 +1712,10 @@ private struct JunoMobileSettingsAction: View {
           if isBusy {
             ProgressView().controlSize(.small)
           } else {
-            JunoIconView(icon, size: 16)
-              .foregroundStyle(isDestructive ? Color.junoDanger : Color.junoAccent)
+            JunoMobileSettingsGlyph(icon: icon, destructive: isDestructive)
           }
         }
-        .frame(width: 22)
+        .frame(width: 28)
         VStack(alignment: .leading, spacing: JunoSpace.hairline) {
           Text(title)
             .junoRowLabel()
@@ -1818,4 +1807,28 @@ struct JunoMobileShareSheet: UIViewControllerRepresentable {
   }
 
   func updateUIViewController(_: UIActivityViewController, context: Context) {}
+}
+
+
+/// A settings row's glyph: the app's own monochrome mark on a small quiet
+/// tile, the way the system's Settings sets its icons, but in ink rather than
+/// a rainbow. The accent stays reserved for the one primary action.
+struct JunoMobileSettingsGlyph: View {
+  let icon: JunoIcon
+  var destructive = false
+
+  var body: some View {
+    JunoIconView(icon, size: 15)
+      .foregroundStyle(destructive ? Color.junoDanger : Color.junoForeground)
+      .frame(width: 28, height: 28)
+      .background(
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .fill(destructive ? Color.junoDanger.opacity(0.1) : Color.junoMuted)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .strokeBorder(Color.junoHairline, lineWidth: 0.5)
+      )
+      .accessibilityHidden(true)
+  }
 }

@@ -173,22 +173,20 @@ struct JunoMobileAuraLayer: View {
 
 // MARK: - The greeting
 
-/// Juno's compact home greeting: the shared mark, a time-of-day phrase, then the
-/// reader's first name in the account accent. It intentionally leaves the empty
-/// screen quiet; actions and capabilities belong in the composer, not in generic
-/// prompt cards competing with it.
+/// Juno's home greeting: the mark, then a time-of-day phrase and the reader's
+/// first name, set in the display face (Newsreader) at hero size. The name is
+/// the italic, in a step of the account accent.
 ///
 /// **Two beats, one line box.** The phrase rises at 60ms and the name at 180ms,
-/// as the browser does. Doing that with two `Text`s in an `HStack` is what broke
-/// the layout before — either half growing pushed the other onto its own line,
-/// which the web's inline spans never do. So the sentence is still built once, as
-/// one `AttributedString`, and drawn *twice*: each copy hides the half it is not
-/// animating behind a clear foreground. Identical strings and identical fonts
-/// mean identical line breaking and an identical `minimumScaleFactor` resolution,
-/// so the two copies cannot drift apart — and a clear glyph casts no halo, so
-/// each copy's legibility shadow lands only around the words it actually shows.
+/// as the browser does. The sentence is built once, as one `AttributedString`,
+/// and drawn *twice*: each copy hides the half it is not animating behind a
+/// clear foreground. Identical strings and identical fonts mean identical line
+/// breaking, so the two copies cannot drift apart.
 struct JunoMobileGreeting: View {
   var name: String?
+  /// `.leading` on the phone's home, where the greeting sits above the
+  /// starting points in an editorial column; `.center` elsewhere.
+  var alignment: HorizontalAlignment = .leading
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.horizontalSizeClass) private var sizeClass
@@ -203,23 +201,23 @@ struct JunoMobileGreeting: View {
   }
 
   private var compact: Bool { sizeClass == .compact }
+  private var size: CGFloat { compact ? 40 : 48 }
+  private var textAlignment: TextAlignment { alignment == .center ? .center : .leading }
+  private var frameAlignment: Alignment { alignment == .center ? .center : .leading }
 
   var body: some View {
-    VStack(spacing: JunoSpace.snug) {
-      JunoMark(size: compact ? 30 : 34)
+    VStack(alignment: alignment, spacing: JunoSpace.cozy) {
+      JunoMark(size: 28)
+        .foregroundStyle(Color.junoForeground)
         .opacity(phraseIn ? 1 : 0)
-        .offset(y: phraseIn ? 0 : 8)
+        .scaleEffect(phraseIn ? 1 : 0.85, anchor: .bottomLeading)
       sentence
-      Text("Ask anything. Juno is here to help.")
-        .font(.subheadline)
-        .junoSecondaryInk()
-        .opacity(nameIn ? 1 : 0)
     }
+    .frame(maxWidth: .infinity, alignment: frameAlignment)
+    .padding(.horizontal, JunoSpace.section)
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel(plainGreeting + ". Ask anything. Juno is here to help.")
-    .padding(.horizontal, JunoSpace.regular)
-    .frame(maxWidth: .infinity)
-    .accessibilityElement(children: .contain)
+    .accessibilityLabel(plainGreeting)
+    .accessibilityAddTraits(.isHeader)
     .onAppear {
       if phrase.isEmpty {
         phrase = JunoGreeting.phrase(
@@ -233,22 +231,28 @@ struct JunoMobileGreeting: View {
   /// The two stacked copies of the one sentence. See the type's note for why
   /// this is not two `Text`s side by side.
   private var sentence: some View {
-    ZStack {
+    ZStack(alignment: frameAlignment) {
       layer(showsName: false)
         .opacity(phraseIn ? 1 : 0)
-        .offset(y: phraseIn ? 0 : 8)
+        .offset(y: phraseIn ? 0 : 10)
+        .blur(radius: phraseIn ? 0 : 4)
       layer(showsName: true)
         .opacity(nameIn ? 1 : 0)
-        .offset(y: nameIn ? 0 : 8)
+        .offset(y: nameIn ? 0 : 10)
+        .blur(radius: nameIn ? 0 : 4)
     }
   }
 
   private func layer(showsName: Bool) -> some View {
     Text(greetingText(showsName: showsName))
-      .font(JunoSerif.greeting(compact: compact))
-      .multilineTextAlignment(.center)
-      .minimumScaleFactor(0.7)
-      .lineLimit(2)
+      .font(JunoMobileType.display(size))
+      .tracking(-0.02 * size)
+      .lineSpacing(-4)
+      .foregroundStyle(Color.junoForeground)
+      .multilineTextAlignment(textAlignment)
+      .minimumScaleFactor(0.6)
+      .lineLimit(3)
+      .fixedSize(horizontal: false, vertical: true)
   }
 
   /// Runs the two beats. Delays rather than a single spring, because the
@@ -262,37 +266,30 @@ struct JunoMobileGreeting: View {
       nameIn = true
       return
     }
-    withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)?.delay(0.06)) {
+    withAnimation(JunoMotion.reduced(JunoMotion.emphasized.delay(0.06), when: reduceMotion)) {
       phraseIn = true
     }
-    withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)?.delay(0.18)) {
+    withAnimation(JunoMotion.reduced(JunoMotion.emphasized.delay(0.22), when: reduceMotion)) {
       nameIn = true
     }
   }
 
-  /// One sentence, with one half made invisible.
-  ///
-  /// `.clear` and not an omission: both copies must lay out the *whole* string
-  /// or they would break lines differently and the two beats would land in
-  /// different places.
+  /// One sentence, with one half made invisible. The name takes its own line
+  /// on the phone, which is what lets the display size stay large.
   private func greetingText(showsName: Bool) -> AttributedString {
-    var result = AttributedString(firstName == nil ? phrase : "\(phrase), ")
+    let separator = compact ? ",\n" : ", "
+    var result = AttributedString(firstName == nil ? phrase : "\(phrase)\(separator)")
     if showsName { result.foregroundColor = .clear }
     guard let firstName else { return result }
     var name = AttributedString(firstName)
-    name.font = JunoSerif.greetingName(compact: compact)
+    name.font = JunoMobileType.displayItalic(size)
     name.foregroundColor = showsName ? nameColour : .clear
     result.append(name)
     return result
   }
 
   /// The name's step in lightness *away* from the light behind it — up on dark
-  /// paper, down on light — so accent type and accent glow can never meet in
-  /// the middle. `globals.css`'s `.empty-greeting__name`, including its two
-  /// deliberate asymmetries: the dark step is additive and clamped rather than
-  /// proportional (multiplying moves the palest accents furthest, which is
-  /// backwards), and amber takes a deeper light-mode step of its own because
-  /// hue near 39° carries far more luminance per unit of lightness.
+  /// paper, down on light — `globals.css`'s `.empty-greeting__name`.
   private var nameColour: Color {
     let accent = JunoAccentSelection.shared.current
     let light = accent.hsl(dark: false)
@@ -311,5 +308,93 @@ struct JunoMobileGreeting: View {
 
   private var plainGreeting: String {
     firstName.map { "\(phrase), \($0)" } ?? phrase
+  }
+}
+
+// MARK: - Starting points
+
+/// One real thing to start with on an empty chat: it opens a picker, starts a
+/// call or arms a tool. Never a canned prompt.
+struct JunoMobileStartingPoint: Identifiable {
+  let id: String
+  let icon: JunoIcon
+  let title: LocalizedStringKey
+  let detail: LocalizedStringKey
+  let action: () -> Void
+}
+
+/// The starting points, as a row of small raised cards that scrolls sideways
+/// past the edge (so a fourth card is a hint, not a squeeze).
+struct JunoMobileStartingPoints: View {
+  let points: [JunoMobileStartingPoint]
+
+  @State private var tapped = 0
+  @Environment(\.horizontalSizeClass) private var sizeClass
+
+  var body: some View {
+    Group {
+      if sizeClass == .regular {
+        // On an iPad the row has the room to be a row: equal columns under
+        // the composer, each card lifting under the pointer.
+        HStack(alignment: .top, spacing: JunoSpace.snug) {
+          ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
+            card(point, index: index, expands: true)
+          }
+        }
+        // Equal heights: each card fills to the tallest, and no taller.
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, JunoSpace.regular)
+      } else {
+        ScrollView(.horizontal) {
+          HStack(spacing: JunoSpace.snug) {
+            ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
+              card(point, index: index, expands: false)
+            }
+          }
+          .padding(.vertical, JunoSpace.snug)
+        }
+        .contentMargins(.horizontal, JunoSpace.regular, for: .scrollContent)
+        .scrollIndicators(.hidden)
+        .scrollClipDisabled()
+      }
+    }
+    .sensoryFeedback(.selection, trigger: tapped)
+  }
+
+  private func card(_ point: JunoMobileStartingPoint, index: Int, expands: Bool) -> some View {
+    Button {
+      tapped += 1
+      point.action()
+    } label: {
+      VStack(alignment: .leading, spacing: JunoSpace.snug) {
+        JunoIconView(point.icon, size: 17)
+          .foregroundStyle(Color.junoForeground)
+          .frame(width: 32, height: 32)
+          .background(Circle().fill(Color.junoMuted))
+        VStack(alignment: .leading, spacing: 2) {
+          Text(point.title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Color.junoForeground)
+            .lineLimit(expands ? 2 : 1)
+            .fixedSize(horizontal: false, vertical: true)
+          Text(point.detail)
+            .font(.footnote)
+            .foregroundStyle(Color.junoSecondaryInk)
+            .lineLimit(expands ? 2 : 1)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+      .padding(JunoSpace.cozy)
+      .frame(minWidth: 150, maxWidth: expands ? .infinity : nil, alignment: .leading)
+      .frame(maxHeight: expands ? .infinity : nil, alignment: .topLeading)
+      .junoMobileRaised(cornerRadius: 18)
+      .contentShape(.hoverEffect, .rect(cornerRadius: 18))
+      .hoverEffect(.lift)
+      .contentShape(.rect(cornerRadius: 18))
+    }
+    .buttonStyle(.junoMobilePress)
+    .frame(minWidth: 44, minHeight: 44)
+    .junoMobileRise(delay: 0.3 + Double(index) * 0.06, distance: 12)
+    .accessibilityIdentifier("juno.mobile.starting-point.\(point.id)")
   }
 }

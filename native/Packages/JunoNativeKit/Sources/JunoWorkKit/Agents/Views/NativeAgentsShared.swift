@@ -166,17 +166,37 @@ struct NativeAgentFieldLabel: View {
     }
 }
 
-/// The one trailing signal a row may carry: a toned dot while the agent needs
-/// the person, nothing otherwise. State, not decoration — and hidden from
-/// assistive technology, because the row it sits in says "Needs you" in words.
+/// The one trailing signal a row may carry while the agent needs the person:
+/// a raised hand in the accent — a mark, never a dot (owner directive,
+/// premium pass). Hidden from assistive technology, because the row it sits
+/// in says "Needs you" in words. The name is kept for its call sites.
 public struct NativeAgentNeedsYouDot: View {
     public init() {}
 
     public var body: some View {
-        Circle()
-            .fill(Color.junoAccent)
-            .frame(width: 8, height: 8)
+        JunoIconView(.hand, size: 12)
+            .foregroundStyle(Color.junoAccent)
             .accessibilityHidden(true)
+    }
+}
+
+/// A line's state as a small mark in a fixed 12pt box, or an empty box when
+/// the state needs none, so the words beside it stay on one column.
+struct NativeAgentStateGlyph: View {
+    let icon: JunoIcon?
+    let tint: Color
+
+    var body: some View {
+        Group {
+            if let icon {
+                JunoIconView(icon, size: 11)
+                    .foregroundStyle(tint)
+            } else {
+                Color.clear
+            }
+        }
+        .frame(width: 12, height: 12)
+        .accessibilityHidden(true)
     }
 }
 

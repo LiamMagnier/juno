@@ -52,13 +52,14 @@ const RADIUS_TOKENS = {
   "14px": "menu",
   "16px": "card",
   "20px": "panel",
+  "28px": "stage",
   inherit: "inherit",
 };
 
 const SCALE_HELP =
   "micro 2 · sm 4 · xs 6 · md 8 · control 10 · composer-control 10 · field 12 · " +
   "composer-action 12 · menu 14 · card 16 · popover 16 · surface 16 · lg 16 · panel 20 · " +
-  "composer 20 · full · logo (24%)";
+  "composer 20 · stage 28 (marketing only) · full · logo (24%)";
 
 const ARBITRARY_RADIUS = /rounded(?:-[a-z]{1,2})?-\[([^\]]+)\]/g;
 

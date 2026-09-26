@@ -133,7 +133,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
     priceEnvKey: "STRIPE_PRICE_MAX20",
     features: [
       "Access to every model, at highest priority",
-      "The most tokens of any plan — for your heaviest days",
+      "The most tokens of any plan, for your heaviest days",
       "Voice mode & voice-to-chat",
       "Memory across conversations",
       "Canvas, artifacts & file uploads",

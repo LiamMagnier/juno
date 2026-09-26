@@ -79,7 +79,9 @@ export function AgentNow({
 
       {entries.length > 0 ? (
         <section aria-labelledby="agent-computer">
-          <SectionTitle id="agent-computer" hint={live ? "Live" : "Last run"}>
+          {/* "Last run" only once it has finished: a "Live" tag beside the
+              heading said what the moving activity under it already shows. */}
+          <SectionTitle id="agent-computer" hint={live ? undefined : "Last run"}>
             Its computer
           </SectionTitle>
           <WorkActivity entries={entries.slice(-8)} phase={live ? "live" : "settled"} />

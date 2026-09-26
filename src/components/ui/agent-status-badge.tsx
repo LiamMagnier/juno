@@ -1,18 +1,8 @@
 "use client";
 
 import * as React from "react";
-import {
-  Loader2,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-  Clock,
-  ShieldAlert,
-  Cpu,
-  Terminal,
-  Bot,
-  type IconComponent,
-} from "@/components/ui/icons";
+import { XCircle, ShieldAlert, Terminal, type IconComponent } from "@/components/ui/icons";
+import { PhaseOrb, type OrbState } from "@/components/effects/phase-orb";
 import { cn } from "@/lib/utils";
 
 export type AgentRunStatus =
@@ -31,98 +21,51 @@ interface AgentStatusBadgeProps extends React.HTMLAttributes<HTMLDivElement> {
   label?: string;
   size?: "sm" | "md" | "lg";
   subtext?: string;
+  /** Kept for callers; ignored. Nothing here pulses any more. */
   pulsing?: boolean;
 }
 
-const statusConfig: Record<
-  AgentRunStatus,
-  {
-    label: string;
-    dotClass: string;
-    bgClass: string;
-    borderClass: string;
-    textClass: string;
-    Icon: IconComponent;
-    animateDot?: boolean;
-  }
-> = {
-  idle: {
-    label: "Ready",
-    dotClass: "bg-muted-foreground/60",
-    bgClass: "bg-secondary/60",
-    borderClass: "border-border/60",
-    textClass: "text-muted-foreground",
-    Icon: Clock,
-  },
-  thinking: {
-    label: "Thinking",
-    dotClass: "bg-foreground/80",
-    bgClass: "bg-secondary/70",
-    borderClass: "border-border/60",
-    textClass: "text-foreground font-medium",
-    Icon: Cpu,
-    animateDot: true,
-  },
-  running: {
-    label: "Running",
-    dotClass: "bg-primary",
-    bgClass: "bg-primary/10",
-    borderClass: "border-primary/25",
-    textClass: "text-foreground font-medium",
-    Icon: Loader2,
-    animateDot: true,
-  },
-  waiting_for_input: {
-    label: "Needs Input",
-    dotClass: "bg-warning",
-    bgClass: "bg-warning/10",
-    borderClass: "border-warning/25",
-    textClass: "text-warning-foreground font-medium",
-    Icon: Terminal,
-    animateDot: true,
-  },
-  waiting_approval: {
-    label: "Needs Approval",
-    dotClass: "bg-warning",
-    bgClass: "bg-warning/10",
-    borderClass: "border-warning/25",
-    textClass: "text-warning-foreground font-medium",
-    Icon: ShieldAlert,
-    animateDot: true,
-  },
-  streaming: {
-    label: "Generating",
-    dotClass: "bg-foreground/80",
-    bgClass: "bg-secondary/70",
-    borderClass: "border-border/60",
-    textClass: "text-foreground font-medium",
-    Icon: Bot,
-    animateDot: true,
-  },
-  completed: {
-    label: "Done",
-    dotClass: "bg-success",
-    bgClass: "bg-success/10",
-    borderClass: "border-success/25",
-    textClass: "text-success-ink font-medium",
-    Icon: CheckCircle2,
-  },
-  failed: {
-    label: "Failed",
-    dotClass: "bg-destructive",
-    bgClass: "bg-destructive/10",
-    borderClass: "border-destructive/25",
-    textClass: "text-destructive-ink font-medium",
-    Icon: XCircle,
-  },
-  cancelled: {
-    label: "Stopped",
-    dotClass: "bg-muted-foreground/60",
-    bgClass: "bg-muted/40",
-    borderClass: "border-border/60",
-    textClass: "text-muted-foreground",
-    Icon: AlertTriangle,
-  },
+/**
+ * A run's status, AS WORDS (premium pass, owner directive 2026-09-26).
+ *
+ * This used to be a tinted, bordered pill with a pinging dot for every state,
+ * including the ones that need nothing from anybody (Ready, Running, Done). A
+ * pill says "look at me" and a ping says "something is wrong right now"; on a
+ * state that is simply normal both are noise, and the owner called them what
+ * they read as. Three kinds now:
+ *
+ *  - ATTENTION (needs input, needs approval, failed): a small icon and the
+ *    words in the state's colour. Still no container: colour and the mark say
+ *    it, and a filled capsule is what made every state look urgent.
+ *  - IN PROGRESS (thinking, running, generating): a Thinking orb sized to the
+ *    text line (the brand matrix for its first two seconds) and muted words.
+ *  - NORMAL (ready, done, stopped): muted words, nothing else.
+ *
+ * Still `role="status"` with the full sentence as its name, so a screen
+ * reader hears the change.
+ */
+const ATTENTION: Partial<Record<AgentRunStatus, { Icon: IconComponent; text: string }>> = {
+  waiting_for_input: { Icon: Terminal, text: "text-warning-foreground" },
+  waiting_approval: { Icon: ShieldAlert, text: "text-warning-foreground" },
+  failed: { Icon: XCircle, text: "text-destructive-ink" },
+};
+
+const IN_PROGRESS: Partial<Record<AgentRunStatus, OrbState>> = {
+  thinking: "breathing",
+  running: "working",
+  streaming: "composing",
+};
+
+const LABEL: Record<AgentRunStatus, string> = {
+  idle: "Ready",
+  thinking: "Thinking",
+  running: "Running",
+  waiting_for_input: "Needs input",
+  waiting_approval: "Needs approval",
+  streaming: "Generating",
+  completed: "Done",
+  failed: "Failed",
+  cancelled: "Stopped",
 };
 
 export function AgentStatusBadge({
@@ -130,47 +73,35 @@ export function AgentStatusBadge({
   label,
   size = "md",
   subtext,
-  pulsing,
+  pulsing: _pulsing,
   className,
   ...props
 }: AgentStatusBadgeProps) {
-  const config = statusConfig[status] || statusConfig.idle;
-  const displayLabel = label || config.label;
-  const isPulsing = pulsing !== undefined ? pulsing : config.animateDot;
+  const displayLabel = label || LABEL[status] || LABEL.idle;
+  const attention = ATTENTION[status];
+  const orb = IN_PROGRESS[status];
 
   return (
     <div
       role="status"
-      aria-label={`Status: ${displayLabel}${subtext ? ` — ${subtext}` : ""}`}
+      aria-label={`Status: ${displayLabel}${subtext ? `, ${subtext}` : ""}`}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 transition-[color,background-color,border-color] duration-base ease-out-soft",
-        config.bgClass,
-        config.borderClass,
-        config.textClass,
-        size === "sm" && "px-2 py-0.5 text-micro",
-        size === "md" && "px-2.5 py-0.5 text-caption",
-        size === "lg" && "px-3 py-1 text-ui font-medium",
+        "inline-flex min-w-0 items-center gap-1.5",
+        size === "sm" && "text-micro",
+        size === "md" && "text-caption",
+        size === "lg" && "text-ui",
+        attention ? cn("font-medium", attention.text) : "text-muted-foreground",
         className
       )}
       {...props}
     >
-      <span className="relative flex size-2 items-center justify-center">
-        {isPulsing && (
-          <span
-            className={cn(
-              "absolute inline-flex size-full animate-ping rounded-full opacity-75",
-              config.dotClass
-            )}
-          />
-        )}
-        <span className={cn("relative inline-flex size-1.5 rounded-full", config.dotClass)} />
-      </span>
-
-      <span className="font-mono tracking-tight">{displayLabel}</span>
-
-      {subtext && (
-        <span className="font-mono text-muted-foreground/80 opacity-90">· {subtext}</span>
-      )}
+      {attention ? (
+        <attention.Icon aria-hidden="true" className="size-3.5 shrink-0" />
+      ) : orb ? (
+        <PhaseOrb state={orb} className="-my-1" />
+      ) : null}
+      <span className="truncate">{displayLabel}</span>
+      {subtext && <span className="truncate text-muted-foreground">{subtext}</span>}
     </div>
   );
 }

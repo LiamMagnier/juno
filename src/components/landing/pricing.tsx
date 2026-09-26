@@ -23,9 +23,9 @@ import { Section } from "@/components/landing/section";
  * the top tier is named ×10 (see plans.ts). One place, one number.
  */
 const ONE_LINERS: Partial<Record<string, string>> = {
-  PRO: "Every model, voice, memory and artifacts — a real month of everyday use.",
+  PRO: "Every model, voice, memory and artifacts. A real month of everyday use.",
   MAX: "Five times Pro's monthly budget, for people who live in Juno.",
-  MAX20: "Ten times Pro's monthly budget — the most headroom we sell.",
+  MAX20: "Ten times Pro's monthly budget. The most headroom we sell.",
 };
 
 export function Pricing() {
@@ -60,7 +60,7 @@ export function Pricing() {
       id="pricing"
       eyebrow="Plans"
       heading="Simple plans, metered honestly."
-      lede="Every paid plan unlocks every model. The difference is budget — measured in real usage, not message counts."
+      lede="Every paid plan unlocks every model. The difference is budget, measured in real usage rather than message counts."
     >
       {/* One reveal for the tiers and their footnote. `amount` is low because
           four cards stacked on a phone are several screens tall, and a 30%
@@ -69,8 +69,8 @@ export function Pricing() {
         <PlanCards items={items} />
         <p className="mt-6 max-w-prose text-body text-muted-foreground">
           {checkoutOpen
-            ? "Prices are per month, before VAT. Upgrade, downgrade or cancel any time — changes apply instantly, and the full comparison is on your plan page once you have an account."
-            : "Prices are per month, before VAT. Checkout opens soon — a free account works today, and everything you bring with you carries over when you upgrade."}
+            ? "Prices are per month, before VAT. Upgrade, downgrade or cancel any time; changes apply instantly."
+            : "Prices are per month, before VAT. Checkout opens soon. A free account works today, and everything carries over when you upgrade."}
         </p>
       </Reveal>
     </Section>

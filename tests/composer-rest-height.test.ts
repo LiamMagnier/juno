@@ -106,5 +106,7 @@ test("the new-chat skeleton stands in the landing frame chat-view draws", () => 
 
   const chips = /<StarterChips className="([^"]+)" \/>/.exec(chatView);
   assert.ok(chips, "chat-view places StarterChips with a margin of its own");
-  assert.match(skeleton, new RegExp(`className="${chips![1]} flex flex-wrap`), "the chip row sits at chat-view's margin");
+  // The starting points are tiles on a shared grid now (premium pass): the
+  // skeleton draws the same grid at the same margin.
+  assert.match(skeleton, new RegExp(`startingGridClass, "${chips![1]} `), "the tile row sits at chat-view's margin");
 });

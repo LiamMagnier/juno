@@ -7,6 +7,7 @@ import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
 import { Collapse } from "@/components/ui/collapse";
 import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
+import { PhaseOrb } from "@/components/effects/phase-orb";
 import type { CodeActivityEvent } from "@/hooks/use-code-session";
 import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
 
@@ -154,14 +155,18 @@ function ToolRow({ event, live }: { event: ClientActivityEvent; live: boolean })
 
   const isCommand = label.startsWith("$ ");
   const glyph =
+    // Colour only where a step needs the reader (failed). A finished step is
+    // a muted tick, the running one a Thinking orb on the text line, and a
+    // step with no outcome yet holds the slot empty: no pulsing or grey pips
+    // (owner directive, 2026-09-26).
     outcome === "ok" ? (
-      <StatusIcons.success className="mt-0.5 size-3.5 shrink-0 text-success" aria-hidden="true" />
+      <StatusIcons.success className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
     ) : outcome === "failed" ? (
       <StatusIcons.error className="mt-0.5 size-3.5 shrink-0 text-destructive" aria-hidden="true" />
     ) : live ? (
-      <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary motion-safe:animate-pulse" aria-hidden="true" />
+      <PhaseOrb state="working" className="-my-0.5 -ml-0.5" />
     ) : (
-      <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground" aria-hidden="true" />
+      <span className="size-3.5 shrink-0" aria-hidden="true" />
     );
 
   const body = (

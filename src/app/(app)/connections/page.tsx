@@ -4,15 +4,16 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Link2Off, Loader2 } from "@/components/ui/icons";
-import { StatusIcons } from "@/lib/app-icons";
+import { LoadError } from "@/components/ui/load-error";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { EmptyState } from "@/components/ui/empty-state";
 import { type ConnectorStatus } from "@/components/connections/types";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
 import { ConnectorDirectory, type DirectoryItem } from "@/components/connections/connector-directory";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { useApp } from "@/components/app/app-provider";
 
 const ERRORS: Record<string, string> = {
   not_configured: "That connector isn’t set up on this server yet.",
@@ -53,6 +54,7 @@ function connectorResultLabel(value: string): string {
 
 export default function ConnectionsPage() {
   const router = useRouter();
+  const { features } = useApp();
   const [connectors, setConnectors] = React.useState<ConnectorStatus[] | null>(null);
   const [composioConfigured, setComposioConfigured] = React.useState(false);
   const [error, setError] = React.useState(false);
@@ -180,32 +182,34 @@ export default function ConnectionsPage() {
            a title that already means the same thing. See the note in
            app/(app)/library/page.tsx — same fix, same rule. */
         heading="Connections"
-        lede="Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
+        lede="Link your repositories, designs and docs so Juno can work with them."
       />
 
       {error ? (
-        <EmptyState
-          tone="error"
-          size="panel"
-          icon={StatusIcons.error}
+        <LoadError
           title="Couldn’t load your connections"
-          description="The server may still be starting up, or the database isn’t reachable yet."
-          action={
-            <Button variant="outline" size="sm" onClick={load}>
-              Try again
-            </Button>
-          }
+          description="Nothing was disconnected. Check your connection and try again."
+          onRetry={load}
         />
       ) : loading ? (
-        <div className="grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3" role="status" aria-label="Loading connections">
-          {[...Array(6)].map((_, i) => (
-            <ConnectorTileSkeleton key={i} index={i} />
-          ))}
+        // The toolbar's placeholder too, as loading.tsx draws it: without it
+        // the grid dropped 60px the moment the connectors arrived.
+        <div role="status" aria-label="Loading connections">
+          <div className="mb-6 flex flex-wrap items-center gap-2" aria-hidden="true">
+            <Skeleton className="h-9 w-56 rounded-menu" />
+            <Skeleton className="h-9 w-72 max-w-full rounded-field" />
+          </div>
+          <div className="grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3">
+            {[...Array(6)].map((_, i) => (
+              <ConnectorTileSkeleton key={i} index={i} />
+            ))}
+          </div>
         </div>
       ) : (
         <ConnectorDirectory
           connectors={connectors ?? []}
           composioConfigured={composioConfigured}
+          canConfigureServer={features.isOwner}
           enabled={enabled}
           onEnabledChange={setEnabledFor}
           onConnectNative={connect}

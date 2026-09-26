@@ -4,7 +4,7 @@
 // type, spacing). Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: 63e2e86ddb4bef37
+// tokens-digest: 1a143ac11e1e5e44
 //
 
 import CoreGraphics
@@ -483,6 +483,7 @@ public enum JunoGeneratedRadius {
     public static let surface: CGFloat = 16.0
     public static let panel: CGFloat = 20.0
     public static let composer: CGFloat = 20.0
+    public static let stage: CGFloat = 28.0
 }
 
 /// One rung of the web's type ladder (`tailwind.config.ts` → `fontSize`), in

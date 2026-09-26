@@ -370,15 +370,27 @@ struct JunoMobileComposer: View {
           }
           .padding(.horizontal, JunoSpace.cozy)
           .padding(.vertical, JunoSpace.snug)
+          // Native Liquid Glass, as the owner requires for floating chrome:
+          // the system material, not a rebuilt one.
           .junoGlass(
-            in: RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 26, style: .continuous)
           )
+          // Native border beam (libraries.dev `line`, rebuilt in SwiftUI):
+          // only while a reply streams, and static under Reduce Motion.
+          .overlay {
+            JunoMobileComposerBeam(active: generatingHere, cornerRadius: 26)
+          }
         }
         .transition(.opacity)
       }
     }
     .padding(.horizontal, JunoSpace.regular)
     .padding(.vertical, JunoSpace.tight)
+    // The transcript's measure, so on an iPad the capsule lines up with the
+    // column it writes into instead of spanning the window. Before the voice
+    // field, which stays as wide as the screen it lights.
+    .frame(maxWidth: JunoMobileMeasure.reading)
+    .frame(maxWidth: .infinity)
     // Voice is the one ambient field with semantic meaning. It remains mounted
     // here so it tracks the keyboard with the safe-area composer.
     .background(alignment: .bottom) { voiceFieldLayer }
@@ -1300,5 +1312,61 @@ struct JunoComposerGlassCircle: ViewModifier {
   func body(content: Content) -> some View {
     content
       .junoGlass(in: Circle(), interactive: true)
+  }
+}
+
+
+/// The composer's streaming beam: a short arc of accent light that travels
+/// the capsule's edge while a reply is being written. The native equivalent of
+/// libraries.dev's Border beam (`line`), per the premium brief. It appears
+/// only after the reply has been running for three seconds (a quick answer
+/// never lights it), and under Reduce Motion it is a still accent hairline.
+struct JunoMobileComposerBeam: View {
+  let active: Bool
+  let cornerRadius: CGFloat
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var lit = false
+
+  var body: some View {
+    let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    Group {
+      if lit {
+        if reduceMotion {
+          shape.strokeBorder(Color.junoAccent.opacity(0.55), lineWidth: 1)
+        } else {
+          TimelineView(.animation) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            let angle = Angle.degrees((t.truncatingRemainder(dividingBy: 2.6) / 2.6) * 360)
+            shape.strokeBorder(
+              AngularGradient(
+                stops: [
+                  .init(color: .clear, location: 0),
+                  .init(color: .clear, location: 0.62),
+                  .init(color: Color.junoAccent.opacity(0.9), location: 0.8),
+                  .init(color: .clear, location: 0.86),
+                  .init(color: .clear, location: 1),
+                ],
+                center: .center,
+                angle: angle
+              ),
+              lineWidth: 1.25
+            )
+          }
+        }
+      }
+    }
+    .transition(.opacity)
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+    .task(id: active) {
+      guard active else {
+        withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion)) { lit = false }
+        return
+      }
+      try? await Task.sleep(for: .seconds(3))
+      guard !Task.isCancelled else { return }
+      withAnimation(JunoMotion.reduced(JunoMotion.slow, when: reduceMotion)) { lit = true }
+    }
   }
 }

@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
  * changes never animate.
  */
 const cardVariants = cva(
-  "rounded-card text-card-foreground transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft",
+  "rounded-card text-card-foreground transition-[border-color,background-color,box-shadow,transform] duration-base ease-out-expo motion-reduce:transition-none",
   {
     variants: {
       variant: {
@@ -35,8 +35,14 @@ const cardVariants = cva(
         // (pseudo-class specificity), which is what lets the surface change
         // depth without a second material. `active:` is here because hover is
         // not an affordance on touch.
+        //
+        // It lifts again (premium pass, brief rule 3): a 2px rise onto the
+        // `raised-lg` throw, so a card that opens something reads as an
+        // object you can pick up, and one that does not (default) stays on
+        // the page. Transform only, under motion-safe, and it settles back to
+        // the page while held, which is the press.
         interactive:
-          "surface-raised hover:border-foreground/20 hover:bg-accent/40 active:bg-selected focus-within:border-foreground/25",
+          "surface-raised hover:border-foreground/20 hover:bg-accent/40 hover:shadow-raised-lg motion-safe:hover:-translate-y-0.5 active:translate-y-0 active:bg-selected active:shadow-raised focus-within:border-foreground/25",
       },
     },
     defaultVariants: { variant: "default" },

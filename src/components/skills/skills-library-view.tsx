@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Search } from "@/components/ui/icons";
+import { LoadError } from "@/components/ui/load-error";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Kbd } from "@/components/ui/kbd";
@@ -9,7 +10,6 @@ import { Pressable } from "@/components/ui/pressable";
 import { Skeleton } from "@/components/ui/skeleton";
 import { GitHubMark } from "@/components/connections/connector-logos";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
-import { WorkLoadError } from "@/components/work/shell/work-states";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import type { LibrarySkill, LibrarySource, SkillLibrary } from "@/lib/skills/library-contract";
 import { staggerDelay } from "@/lib/motion";
@@ -180,7 +180,11 @@ export function SkillsLibraryView({
       />
 
       {error !== null && library === null ? (
-        <WorkLoadError onRetry={onRetry}>{error}</WorkLoadError>
+        <LoadError
+          title="Couldn’t load your skills"
+          description="Your skills are still installed. Check your connection and try again."
+          onRetry={onRetry}
+        />
       ) : library === null ? (
         <SkillsLibrarySkeleton />
       ) : !hasAny ? (

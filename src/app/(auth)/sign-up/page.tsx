@@ -17,8 +17,8 @@ export default async function SignUpPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1.5 text-center">
-        <h1 className="text-balance font-serif text-display">Create your account</h1>
+      <div className="space-y-2">
+        <h1 className="text-balance font-serif text-display font-medium tracking-tight">Create your account</h1>
         <p className="text-body text-muted-foreground">Start chatting with Juno in seconds.</p>
       </div>
       {/* A real skeleton, not `null`: AuthForm reads useSearchParams, so it

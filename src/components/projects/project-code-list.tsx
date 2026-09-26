@@ -61,7 +61,7 @@ export function ProjectCodeList({
             className="pl-9"
           />
         </div>
-        <span className="font-mono text-caption tabular-nums text-muted-foreground">
+        <span className="text-caption tabular-nums text-muted-foreground">
           {filtered.length} of {sessions.length}
         </span>
         <Button type="button" size="sm" variant="secondary" onClick={onNewCodeSession} className="ml-auto">
@@ -121,7 +121,7 @@ export function ProjectCodeList({
                     )}
                   </div>
                 </div>
-                <div className="mt-auto flex items-center justify-between gap-3 border-t border-border/60 pt-3 font-mono text-caption tabular-nums text-muted-foreground">
+                <div className="mt-auto flex items-center justify-between gap-3 border-t border-border/60 pt-3 text-caption tabular-nums text-muted-foreground">
                   <span>Code session</span>
                   <span>Active {timeAgo(session.lastMessageAt)}</span>
                 </div>

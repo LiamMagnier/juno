@@ -78,13 +78,9 @@ public struct NativeCompareView: View {
 
     private var header: some View {
         HStack(alignment: .bottom) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("One prompt · \(model.panes.count) models")
-                    .junoFont(size: 11, relativeTo: .body, weight: .semibold, design: .monospaced)
-                    .foregroundStyle(Color.junoMutedForeground)
-                Text("Compare")
-                    .junoPageHeading()
-            }
+            // The page title alone, as on the web: the pane count is on screen.
+            Text("Compare")
+                .junoPageHeading()
             Spacer(minLength: 12)
             Text("Comparisons aren't saved")
                 .junoFont(size: 11, relativeTo: .body, design: .monospaced)

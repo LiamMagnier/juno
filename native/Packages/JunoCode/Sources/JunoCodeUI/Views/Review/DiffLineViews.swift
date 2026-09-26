@@ -47,10 +47,15 @@ enum DiffLinePresentation {
         kind == .context ? .junoMutedForeground : .junoForeground
     }
 
+    /// A changed line's wash: the status hue at low strength over the well,
+    /// so the same fill reads as a tint in both appearances. The generated
+    /// `--diff-added` / `--diff-removed` pair is sized for the web's white
+    /// code card; over the dark terminal well it drew slabs of saturated green
+    /// and red that out-shouted the code (premium pass).
     static func fill(_ kind: DiffLineKind?) -> Color {
         switch kind {
-        case .added: .junoDiffAdded
-        case .removed: .junoDiffRemoved
+        case .added: Color.junoSuccess.opacity(0.14)
+        case .removed: Color.junoDanger.opacity(0.13)
         case .context, .none: .clear
         }
     }

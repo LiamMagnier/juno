@@ -3,7 +3,7 @@
 import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { createPortal } from "react-dom";
-import { ChevronRight } from "@/components/ui/icons";
+import { Brain, ChevronRight, Globe, Wrench } from "@/components/ui/icons";
 import { ThinkingReasoning } from "@/components/aicss/thinking-reasoning";
 import { WebSearchBlock } from "@/components/aicss/web-search";
 import {
@@ -32,7 +32,7 @@ const ThoughtProcessPanel = nextDynamic(
   { ssr: false },
 );
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
-import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { PhaseOrb, type OrbState } from "@/components/effects/phase-orb";
 import { Pressable } from "@/components/ui/pressable";
 import { toReasoningLines } from "@/lib/reasoning-lines";
 import { cn, truncate } from "@/lib/utils";
@@ -225,6 +225,24 @@ export function ActivityTimeline({
   // one kind of run whose panel now carries the most. Warnings are excluded;
   // they already have their own slot in `run.note`.
   const toolCalls = run.calls.filter((c) => !c.warn).length;
+  // The connectors this run reached, by name, for the resting label. "Run" was
+  // the one word the row could say about a turn that used GitHub and Linear,
+  // and it named the mechanism rather than what happened.
+  const toolServers = [
+    ...new Set(list.filter((e) => e.kind === "tool" && e.title.startsWith("Using ")).map((e) => e.title.slice(6).trim())),
+  ].filter(Boolean);
+  const restingTitle = hasReasoning
+    ? "Thought process"
+    : toolServers.length
+      ? `Used ${toolServers.length > 2 ? `${toolServers.slice(0, 2).join(", ")} and ${toolServers.length - 2} more` : toolServers.join(" and ")}`
+      : run.searches
+        ? "Searched the web"
+        : "Run";
+  // The resting mark says what KIND of work the row holds, in the place a
+  // decorative grey dot used to sit.
+  // It follows the title: a thought process is reasoning first, whatever
+  // else the run did on the way.
+  const RestingIcon = hasReasoning ? Brain : toolCalls ? Wrench : run.searches || run.sourceCount ? Globe : Brain;
   const restingDetail = [
     run.searches ? `${run.searches} ${run.searches === 1 ? "search" : "searches"}` : null,
     run.sourceCount ? `${run.sourceCount} ${run.sourceCount === 1 ? "source" : "sources"}` : null,
@@ -240,6 +258,18 @@ export function ActivityTimeline({
   if (!streaming && !hasReasoning && !restingDetail) return null;
   // A phase change should animate once. Reasoning-token growth never changes
   // this key, so the collapsed UI stays calm during long streams.
+  // The orb names the same phase the sentence does (see PhaseOrb): a scan
+  // while the run searches or reads, a sash while it writes, orbiting
+  // particles while a tool runs, a slow ring while it reasons.
+  const liveOrb: OrbState = live.warning
+    ? "working"
+    : active?.key === "research"
+      ? "searching"
+      : latest?.kind === "tool"
+        ? "working"
+        : active?.key === "write"
+          ? "composing"
+          : "breathing";
   const copyKey = streaming ? `${active?.key ?? "think"}-${latest?.kind ?? "reasoning"}-${live.message}` : "complete";
 
   // THE ACCESSIBLE NAME IS THE WHOLE CONTROL. The elapsed number alone rewrites
@@ -320,11 +350,9 @@ export function ActivityTimeline({
                 three hundred pixels apart is two indicators for one state, and
                 the eye reads them as two things happening. */}
             {open ? (
-              <span aria-hidden="true" className="flex size-4.5 shrink-0 items-center justify-center">
-                <span className="size-1.5 rounded-full bg-primary/70 ring-2 ring-primary/20" />
-              </span>
+              <span aria-hidden="true" className="size-5 shrink-0" />
             ) : (
-              <ThinkingDots className="text-muted-foreground" />
+              <PhaseOrb state={liveOrb} />
             )}
             {/* PLAIN TEXT. This carried AIcss's `.aicss-shine` sweep, a second
                 looping thing beside the matrix, moving a valley of alpha
@@ -356,8 +384,10 @@ export function ActivityTimeline({
           </>
         ) : (
           <>
+            {/* A glyph, not a status dot: it names the kind of work (tools,
+                the web, reasoning), and inks up with the row on hover. */}
             <span aria-hidden="true" className="flex w-5 shrink-0 items-center justify-center">
-              <span className="size-1.5 rounded-full bg-muted-foreground/45 transition-colors duration-fast ease-out-soft group-hover/thought:bg-primary/70 motion-reduce:transition-none" />
+              <RestingIcon className="size-4 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/thought:text-foreground motion-reduce:transition-none" />
             </span>
             {/* One line: the label, then the nouns. "Thought process" only when
                 there WAS one — plenty of models emit no reasoning at all, and
@@ -365,7 +395,7 @@ export function ActivityTimeline({
                 open a panel that has nothing in it. `hasReasoning` is computed
                 above; a run with neither reasoning nor nouns returned early. */}
             <span aria-hidden="true" className="min-w-0 flex-1 truncate text-ui leading-5 text-muted-foreground">
-              <span className="font-medium text-foreground/80">{hasReasoning ? "Thought process" : "Run"}</span>
+              <span className="font-medium text-foreground/80">{restingTitle}</span>
               {restingDetail && <span> · {restingDetail}</span>}
               {run.note && <span className="text-warning"> · {run.note}</span>}
             </span>

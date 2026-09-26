@@ -31,7 +31,7 @@ export function ConnectorTileSkeleton({ index = 0, style }: { index?: number; st
         </div>
       </div>
       <div className="mt-auto flex min-h-8 items-center justify-between border-t border-border/60 pt-2.5">
-        <Skeleton className="h-2.5 w-20" />
+        <Skeleton className="h-2.5 w-24" />
         <Skeleton className="h-7 w-20" />
       </div>
     </div>

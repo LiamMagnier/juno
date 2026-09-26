@@ -26,12 +26,26 @@ export interface DiffRow {
   text: string;
 }
 
-export function FileDiff({ file, rows, className }: { file: string; rows: DiffRow[]; className?: string }) {
+export function FileDiff({
+  file,
+  rows,
+  className,
+  action,
+  code,
+}: {
+  file: string;
+  rows: DiffRow[];
+  className?: string;
+  /** A trailing header control (the transcript's Copy). */
+  action?: React.ReactNode;
+  /** The raw patch, stamped on `data-code` so ⌘⇧; can copy the last block. */
+  code?: string;
+}) {
   const added = rows.filter((r) => r.type === "add").length;
   const removed = rows.filter((r) => r.type === "del").length;
 
   return (
-    <div className={cn("aicss-cb aicss-diff", className)}>
+    <div className={cn("aicss-cb aicss-diff", className)} data-code={code}>
       <div className="aicss-cb-head">
         {/* `FileCode`, the mark `DiffSummary` gives a changed file. The span
             lays itself out: `.aicss-cb-file` has never had a rule, so the glyph
@@ -44,6 +58,7 @@ export function FileDiff({ file, rows, className }: { file: string; rows: DiffRo
           <span className="aicss-diff-add">+{added}</span>
           <span className="aicss-diff-del">-{removed}</span>
         </span>
+        {action ? <span className="aicss-diff-action">{action}</span> : null}
       </div>
       <div className="aicss-diff-body">
         {rows.map((row, i) => (

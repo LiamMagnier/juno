@@ -111,6 +111,9 @@ struct JunoMobileRootView: View {
     return codeNotifications
   }
   @State private var incognito = false
+  /// The iPad split's columns. Collapsing the sidebar is a reading choice the
+  /// shell respects until the reader opens it again.
+  @State private var padColumns: NavigationSplitViewVisibility = .all
   /// The live voice session, built when one is asked for and published to the
   /// chat column through the environment. Held here rather than in the chat
   /// screen so a call survives the screen re-rendering underneath it.
@@ -233,7 +236,7 @@ struct JunoMobileRootView: View {
           if let raw = JunoPreviewEnvironment.initialDestination,
             let section = JunoMobileSection(rawValue: raw)
           {
-            selection = section
+            show(section)
           }
           if CommandLine.arguments.contains("--juno-preview-sidebar") {
             showingHistory = true
@@ -460,49 +463,26 @@ struct JunoMobileRootView: View {
   private func authenticatedContent(
     session: NativeAuthenticatedSession
   ) -> some View {
-    TabView(selection: $selection) {
-      Tab(value: JunoMobileSection.chat) {
-        chatTab(session: session)
-      } label: {
-        JunoMobileTabLabel(section: .chat)
+    Group {
+      if sizeClass == .compact {
+        phoneShell(session: session)
+      } else {
+        padShell(session: session)
       }
-      .accessibilityIdentifier("juno.mobile.tab.chat")
-
-      Tab(value: JunoMobileSection.code) {
-        productStack(.code)
-      } label: {
-        JunoMobileTabLabel(section: .code)
-      }
-      .badge(codeAttentionCount)
-      .accessibilityIdentifier("juno.mobile.tab.code")
-
-      Tab(value: JunoMobileSection.work) {
-        productStack(.work)
-      } label: {
-        JunoMobileTabLabel(section: .work)
-      }
-      .badge(workAttentionCount)
-      .accessibilityIdentifier("juno.mobile.tab.work")
-
-      Tab(value: JunoMobileSection.search, role: .search) {
-        productStack(.search)
-      }
-      .accessibilityIdentifier("juno.mobile.tab.search")
-
-      TabSection("sidebar.group.content") {
-        ForEach(JunoMobileSection.workspaceDestinations) { destination in
-          Tab(value: destination) {
-            productStack(destination)
-          } label: {
-            JunoMobileTabLabel(section: destination)
-          }
-        }
-      }
-      .defaultVisibility(.hidden, for: .tabBar)
     }
-    .tabViewStyle(.sidebarAdaptable)
-    .tabBarMinimizeBehavior(.onScrollDown)
-    .modifier(JunoMobileLiveRunAccessory(run: liveRun) { section in selection = section })
+    // Moving between a compact and a regular window (Slide Over, Stage
+    // Manager, rotating a split) re-homes the destination the other shape
+    // cannot show: a workspace surface is a push on the phone's Chat stack
+    // and a sidebar row on the iPad.
+    .task(id: sizeClass) {
+      if sizeClass == .compact {
+        if JunoMobileSection.workspaceDestinations.contains(selection) { show(selection) }
+      } else if let pushed = chatPath.last {
+        chatPath = []
+        selection = pushed
+      }
+    }
+    .focusedSceneValue(\.junoShellActions, shellActions)
     .tint(Color.junoAccent)
     .sheet(isPresented: $showingHistory) {
       historySheet(session: session)
@@ -563,6 +543,132 @@ struct JunoMobileRootView: View {
         launchRequests.request(request)
       }
     }
+  }
+
+  /// The phone's shell: one tab bar carrying the three products and search.
+  ///
+  /// Chat, Code and Work are the only top-level destinations — the same three
+  /// the Mac's product switcher and the website's sidebar carry. Everything
+  /// else is reached from the history sheet and pushed on the Chat stack.
+  /// The system tab bar is Liquid Glass, minimises on scroll so a long
+  /// transcript reads edge to edge, and carries the one persistent status the
+  /// products share — a run in progress — as its bottom accessory.
+  ///
+  /// Only ever compact now: the workspace surfaces used to be declared here as
+  /// hidden sidebar tabs for the iPad, and that is what put a system "More"
+  /// tab in the phone's bar (hidden visibility is not honoured past five).
+  private func phoneShell(session: NativeAuthenticatedSession) -> some View {
+    TabView(selection: $selection) {
+      Tab(value: JunoMobileSection.chat) {
+        chatTab(session: session)
+      } label: {
+        JunoMobileTabLabel(section: .chat)
+      }
+      .accessibilityIdentifier("juno.mobile.tab.chat")
+
+      Tab(value: JunoMobileSection.code) {
+        productStack(.code)
+      } label: {
+        JunoMobileTabLabel(section: .code)
+      }
+      .badge(codeAttentionCount)
+      .accessibilityIdentifier("juno.mobile.tab.code")
+
+      Tab(value: JunoMobileSection.work) {
+        productStack(.work)
+      } label: {
+        JunoMobileTabLabel(section: .work)
+      }
+      .badge(workAttentionCount)
+      .accessibilityIdentifier("juno.mobile.tab.work")
+
+      Tab(value: JunoMobileSection.search, role: .search) {
+        productStack(.search)
+      }
+      .accessibilityIdentifier("juno.mobile.tab.search")
+    }
+    .tabBarMinimizeBehavior(.onScrollDown)
+    .modifier(JunoMobileLiveRunAccessory(run: liveRun) { section in selection = section })
+  }
+
+  /// The iPad's shell: the Mac's sidebar and one detail column.
+  ///
+  /// This replaced a sidebar-adaptable `TabView` whose Chat tab held a second
+  /// split of its own. The result was two navigation systems on one screen, a
+  /// floating tab strip over a conversation list over a transcript, and the
+  /// phone's drawer (a two-column tile grid, a coral compose disc, a card for
+  /// what needs attention) stretched into a sidebar. One `NavigationSplitView`
+  /// is what Notes, Things and the Mac build of Juno all are: the system
+  /// draws the sidebar's glass, the toggle, the drag-to-resize and the
+  /// collapse to an overlay in a narrow window.
+  private func padShell(session: NativeAuthenticatedSession) -> some View {
+    NavigationSplitView(columnVisibility: $padColumns) {
+      historyList(session: session, layout: .sidebar)
+        // The Mac's warm sidebar ground, opaque. Left to the column's glass
+        // it sampled whatever the detail drew under it: a cool grey beside
+        // the warm canvas, and a muddy one beside the incognito ink.
+        .background(Color.junoSidebar.ignoresSafeArea())
+        .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
+    } detail: {
+      NavigationStack {
+        destinationRoot(selection)
+          .junoScreenCanvas()
+          .toolbar { padDetailToolbar }
+      }
+      // A new root per destination, so a stack pushed inside Projects is not
+      // still there, half-remembered, the next time Code is opened.
+      .id(selection)
+    }
+    .navigationSplitViewStyle(.balanced)
+  }
+
+  /// With the sidebar tucked away, New chat stays one tap from anywhere,
+  /// beside the system's own sidebar button, as Notes keeps its compose.
+  @ToolbarContentBuilder
+  private var padDetailToolbar: some ToolbarContent {
+    if padColumns == .detailOnly, conversationModel != nil {
+      ToolbarItem(placement: .topBarLeading) {
+        Button(action: startNewChat) {
+          JunoIconView(.compose, size: 17)
+            .foregroundStyle(Color.primary)
+        }
+        .accessibilityLabel("chat.new")
+        .accessibilityIdentifier("juno.mobile.detail-new-chat")
+      }
+    }
+  }
+
+  /// What the keyboard and the menu bar can reach. See ``JunoMobileCommands``.
+  private var shellActions: JunoMobileShellActions {
+    JunoMobileShellActions(
+      newChat: {
+        if incognito { endIncognito() }
+        startNewChat()
+      },
+      newIncognitoChat: privateChatModel == nil
+        ? nil
+        : {
+          startNewChat()
+          setIncognito(true)
+        },
+      search: { openSidebarDestination(.search) },
+      settings: { show(.settings) },
+      show: { openSidebarDestination($0) }
+    )
+  }
+
+  /// Plain-text status for the iPad sidebar's product rows.
+  private var sidebarStatuses: [JunoMobileSection: JunoMobileSidebarStatus] {
+    let workRunning = (workModel?.sessions ?? []).filter { session in
+      !session.archived && (workModel?.isRunning(session) ?? false)
+    }.count
+    let codeRunning = (codeModel?.tasks ?? []).filter {
+      $0.status == .running || $0.status == .queued
+    }.count
+    return [
+      .code: JunoMobileSidebarStatus(running: codeRunning, needsYou: codeAttentionCount),
+      .work: JunoMobileSidebarStatus(running: workRunning, needsYou: workAttentionCount),
+    ]
   }
 
   /// Acts on one launch request once the shell can — a request that arrives
@@ -815,47 +921,30 @@ struct JunoMobileRootView: View {
 
   // MARK: Chat tab
 
-  /// The Chat tab. On iPhone it is one stack whose root is the conversation
-  /// (or the draft, or incognito) and whose pushes are the workspace surfaces;
-  /// on iPad it keeps the conversation list beside the transcript in its own
-  /// split, inside the sidebar-adaptable shell.
-  @ViewBuilder
+  /// The phone's Chat tab: one stack whose root is the conversation (or the
+  /// draft, or incognito) and whose pushes are the workspace surfaces.
   private func chatTab(session: NativeAuthenticatedSession) -> some View {
-    if sizeClass == .compact {
-      NavigationStack(path: $chatPath) {
-        chatDestination
-          .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-              Button {
-                showingHistory = true
-              } label: {
-                JunoIconView(.conversation, size: 17)
-                  .foregroundStyle(Color.primary)
-              }
-              .accessibilityLabel("Chats")
-              .accessibilityIdentifier("juno.mobile.menu")
+    NavigationStack(path: $chatPath) {
+      chatDestination
+        .toolbar {
+          ToolbarItem(placement: .topBarLeading) {
+            Button {
+              showingHistory = true
+            } label: {
+              JunoIconView(.conversation, size: 17)
+                .foregroundStyle(Color.primary)
             }
+            .accessibilityLabel("Chats")
+            .accessibilityIdentifier("juno.mobile.menu")
           }
-          .navigationDestination(for: JunoMobileSection.self) { destination in
-            destinationRoot(destination)
-              .junoScreenCanvas()
-          }
-          .junoScreenCanvas()
-      }
-      .tint(Color.junoAccent)
-    } else {
-      NavigationSplitView {
-        historyList(session: session)
-          .navigationBarTitleDisplayMode(.inline)
-      } detail: {
-        NavigationStack {
-          chatDestination
+        }
+        .navigationDestination(for: JunoMobileSection.self) { destination in
+          destinationRoot(destination)
             .junoScreenCanvas()
         }
-      }
-      .navigationSplitViewStyle(.balanced)
-      .tint(Color.junoAccent)
+        .junoScreenCanvas()
     }
+    .tint(Color.junoAccent)
   }
 
   /// Every product but Chat: one stack, its own root.
@@ -893,7 +982,10 @@ struct JunoMobileRootView: View {
     .tint(Color.junoAccent)
   }
 
-  private func historyList(session: NativeAuthenticatedSession) -> some View {
+  private func historyList(
+    session: NativeAuthenticatedSession,
+    layout: JunoMobileSidebarDrawer.Layout = .drawer
+  ) -> some View {
     JunoMobileSidebarDrawer(
       selection: $selection,
       conversationModel: conversationModel,
@@ -908,8 +1000,15 @@ struct JunoMobileRootView: View {
       openConversation: openSidebarConversation,
       openProject: openSidebarProject,
       openRecent: openRecent,
-      newChat: startNewChat,
-      shareConversation: shareAction
+      newChat: {
+        if incognito { endIncognito() }
+        startNewChat()
+      },
+      shareConversation: shareAction,
+      layout: layout,
+      isDrafting: !incognito && conversationModel?.selectedConversationID == nil,
+      statuses: sidebarStatuses,
+      incognito: incognito
     )
   }
 
@@ -954,6 +1053,12 @@ struct JunoMobileRootView: View {
     } else {
       withAnimation(JunoMotion.standard) { incognito = on }
     }
+  }
+
+  /// Leaves incognito and forgets the session, as navigating away does.
+  private func endIncognito() {
+    privateChatModel?.reset()
+    setIncognito(false)
   }
 
   /// Publishes a conversation from the list and hands the link to the
@@ -1016,6 +1121,12 @@ struct JunoMobileRootView: View {
   }
 
   private func openSidebarConversation(_ id: String) {
+    // Opening a saved chat from the iPad sidebar leaves incognito behind, as
+    // choosing any other destination does.
+    if incognito {
+      privateChatModel?.reset()
+      incognito = false
+    }
     conversationModel?.isDraftingNewConversation = false
     conversationModel?.selectedConversationID = id
     chatPath = []

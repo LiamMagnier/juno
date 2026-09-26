@@ -156,6 +156,12 @@ public enum JunoElevation {
     public static let raisedBlur: CGFloat = 1
     /// `--shadow-raised`'s fall.
     public static let raisedOffsetY: CGFloat = 1
+    /// The hero object's long throw — the premium pass's raised rung,
+    /// `0 8px 24px -12px`: a wide, low, warm shadow under the one surface a
+    /// screen is built around (an empty state's composer). SwiftUI has no
+    /// negative spread, so the blur is halved and the colour carries it.
+    public static let liftBlur: CGFloat = 12
+    public static let liftOffsetY: CGFloat = 8
 }
 
 public extension View {
@@ -172,6 +178,26 @@ public extension View {
 }
 
 public extension View {
+    /// The premium pass's raised rung for a **hero object** — the composer an
+    /// empty state is built around, a starting-point card under the pointer:
+    /// the card fill, a hairline, and two tinted throws (`0 1px 2px` and the
+    /// long `0 8px 24px -12px`). Tinted with the ground's hue through the
+    /// generated shadow tokens, never pure black.
+    ///
+    /// Opaque: this is for surfaces that are read and typed in.
+    func junoLiftedSurface(cornerRadius: CGFloat, fill: Color = .junoCard) -> some View {
+        background(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(fill)
+                .shadow(color: Color.junoRaisedShadow, radius: JunoElevation.raisedBlur, y: JunoElevation.raisedOffsetY)
+                .shadow(color: Color.junoCardShadow, radius: JunoElevation.liftBlur, y: JunoElevation.liftOffsetY)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(Color.junoBorder.opacity(0.9), lineWidth: 1)
+        )
+    }
+
     /// Raised content: a card, a table, a grid tile, a panel of rows.
     ///
     /// **This is the rule that separates the app from the website.** The web puts

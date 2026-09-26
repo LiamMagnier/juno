@@ -167,7 +167,13 @@ public struct StudioThreadView: View {
         case let .modeChange(_, text):
             StudioDividerCaption(text: text)
         case let .summary(_, run, turn):
-            StudioRunSummary(run: run, turn: turn) { openReview(nil) }
+            StudioRunSummary(
+                run: run,
+                turn: turn,
+                changes: controller.changes.filter { turn.files.contains($0.path) },
+                openReview: { openReview(nil) },
+                openFile: { openReview($0) }
+            )
         }
     }
 
@@ -208,6 +214,15 @@ struct StudioThreadTail: View {
         }
     }
 
+    /// The signature's pattern for what the run is doing.
+    private var runPhase: JunoRunGlyphPhase {
+        switch controller.executionState {
+        case .executing: .tool
+        case .verifying: .reading
+        default: .thinking
+        }
+    }
+
     private var showsWorkingLine: Bool {
         status.isActive
             && status != .waitingForApproval
@@ -233,6 +248,10 @@ struct StudioThreadTail: View {
                     .accessibilityIdentifier("juno.code.transcript.compacting")
             } else if showsWorkingLine {
                 HStack(spacing: JunoSpace.snug) {
+                    // Juno's run signature — the native thinking orb — in the
+                    // phase the run is in, owning its loop (still under
+                    // Reduce Motion). The same mark Chat's activity line wears.
+                    JunoRunSignature(phase: runPhase, loops: true, size: .small)
                     JunoShimmerText(activity, font: Studio.Font.label, active: true)
                     if let started = controller.runStartedAt {
                         TimelineView(.periodic(from: started, by: 1)) { context in

@@ -33,7 +33,7 @@ export default function CompareLoading() {
           skeleton put the heading where `<AppPage>` puts it and the real view
           put it 31px higher, so the page jumped when the data landed. One
           component on both sides is what makes them agree. */}
-      <AppPageHeaderSkeleton className="shrink-0" nav="eyebrow" headingWidth="w-40" lede={false} actions />
+      <AppPageHeaderSkeleton className="shrink-0" headingWidth="w-40" actions />
       <Skeleton className="h-28 w-full shrink-0 rounded-panel" />
       <div className="mt-4 grid min-h-0 flex-1 grid-cols-1 gap-4 md:grid-cols-2">
         {[...Array(2)].map((_, i) => (

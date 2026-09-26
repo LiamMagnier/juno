@@ -684,14 +684,13 @@ function WorkerLane({ step, live }: { step: WorkerStep & { durationMs: number | 
   return (
     <li className="flex min-w-0 items-start gap-2.5 py-1.5">
       <span className="relative mt-0.5 flex size-5 shrink-0 items-center justify-center">
-        {working && (
-          <span aria-hidden className="absolute inset-0 rounded-full border border-primary/40 motion-safe:animate-pulse-ring" />
-        )}
+        {/* No pulsing ring round a working lane (owner directive, 2026-09-26):
+            the lane's own line says it is searching. */}
         <span
           title={`${TIMELINE_COPY.round} ${step.round} · ${TIMELINE_COPY.researcher} ${index}`}
           className={cn(
             "flex size-5 items-center justify-center rounded-full font-mono text-micro tabular-nums transition-colors duration-base ease-out-soft motion-reduce:transition-none",
-            working ? "bg-primary/15 text-primary-ink" : "bg-muted text-muted-foreground"
+            working ? "bg-muted text-foreground" : "bg-muted text-muted-foreground"
           )}
         >
           {step.status === "done" ? <StatusIcons.success aria-hidden className="size-3" /> : badge}

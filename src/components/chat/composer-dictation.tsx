@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { composerFieldClass, composerIconButtonClass } from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { VoiceBeam } from "voice-glow";
+import { useEffectTheme, voiceBandColors, voiceLobeColors } from "@/components/effects/use-effect-theme";
 
 /**
  * Dictation — the composer, listening.
@@ -164,10 +166,14 @@ export function ComposerDictation({
   const [micError, setMicError] = React.useState(false);
   const [closing, setClosing] = React.useState(false);
   const [transcribing, setTranscribing] = React.useState(false);
+  /** The open microphone, for the Voice glow (the same stream the analyser
+   *  and the recorder read; the glow only analyses it, never plays it). */
+  const [micStream, setMicStream] = React.useState<MediaStream | null>(null);
   /** The recognizer stopped coming back. The preview is dead; the recording is not. */
   const [recognitionLost, setRecognitionLost] = React.useState(false);
 
   const { features } = useApp();
+  const effectTheme = useEffectTheme();
   const serverStt = features.serverStt;
 
   const phaseRef = React.useRef<Phase>("active");
@@ -254,6 +260,7 @@ export function ComposerDictation({
         stream.getTracks().forEach((t) => t.stop());
         return;
       }
+      setMicStream(stream);
 
       // Capture the raw audio alongside the analyser so the final transcript can
       // be produced by a real STT model instead of the browser's recognizer.
@@ -448,6 +455,29 @@ export function ComposerDictation({
   const canSend = !!transcript || serverStt;
 
   return (
+    /*
+     * THE VOICE GLOW (Libraries.dev Voice, premium brief). A light along the
+     * composer's bottom edge that rises with the reader's voice, driven by
+     * the real microphone stream, then gathers into one travelling beam while
+     * the recording is transcribed (`processing`). It lives INSIDE the
+     * composer's own box, which is the object being spoken into; the window
+     * frame stays voice mode's alone (see the note above).
+     *
+     * Decorative only: the status line, the meter and the buttons carry the
+     * state. Reduced motion keeps the reaction to sound (it is a meter) and
+     * drops the drift and sweep, which the package does itself. The content
+     * sits at z-index 5 over the glow's layers (1-4), as the package asks.
+     */
+    <VoiceBeam
+      stream={micStream}
+      processing={transcribing}
+      theme={effectTheme ?? "light"}
+      colorVariant="sunset"
+      bandColors={voiceBandColors(effectTheme)}
+      colors={voiceLobeColors(effectTheme)}
+      paused={closing}
+      className="w-full rounded-composer"
+    >
     <div
       role="group"
       aria-label="Dictation"
@@ -471,7 +501,7 @@ export function ComposerDictation({
       <div
         ref={previewRef}
         aria-live="off"
-        className={cn(composerFieldClass, "max-h-40 overflow-y-auto")}
+        className={cn(composerFieldClass, "voice-glow-content max-h-40 overflow-y-auto")}
       >
         {noTranscription ? (
           <p className="text-muted-foreground">
@@ -500,7 +530,7 @@ export function ComposerDictation({
           row: px-2.5 pb-2.5, 32px objects): the ✕ sits exactly where the `+`
           was and the send circle where the send circle was, so the swap moves
           nothing but what the controls say. */}
-      <div className="flex flex-nowrap items-center gap-1 px-2.5 pb-2.5 pt-0.5">
+      <div className="voice-glow-content flex flex-nowrap items-center gap-1 px-2.5 pb-2.5 pt-0.5">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -583,5 +613,6 @@ export function ComposerDictation({
         </div>
       </div>
     </div>
+    </VoiceBeam>
   );
 }

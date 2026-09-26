@@ -271,7 +271,9 @@ public enum JunoSerif {
     #if os(macOS)
       (compact ? JunoType.title : JunoType.pageTitle).font()
     #else
-      .system(compact ? .title2 : .title, design: .default, weight: .bold)
+      // The phone's premium pass: page headings are a display moment, set in
+      // Newsreader like the greeting and the navigation bar's large titles.
+      font(size: compact ? 30 : 34, relativeTo: compact ? .title : .largeTitle, face: .regular)
     #endif
   }
 
@@ -312,6 +314,7 @@ extension View {
       junoType(compact ? .title : .pageTitle)
     #else
       font(JunoSerif.pageHeading(compact: compact))
+        .tracking(compact ? -0.5 : -0.6)
     #endif
   }
 }

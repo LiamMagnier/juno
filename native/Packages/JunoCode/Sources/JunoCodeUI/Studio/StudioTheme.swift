@@ -78,7 +78,7 @@ public enum Studio {
         public static let small: CGFloat = 6
         public static let row: CGFloat = 8
         public static let card: CGFloat = 10
-        public static let composer: CGFloat = 14
+        public static let composer: CGFloat = JunoRadius.composer
     }
 
     public enum Metrics {

@@ -134,7 +134,10 @@ public struct StudioSessionView: View {
             send: { Task { await controller.send() } },
             stop: { Task { await controller.stop() } },
             rewind: openRewindPicker,
-            focus: $composerFocused
+            focus: $composerFocused,
+            // The beam travels the composer's edge while the run works — the
+            // one live effect on the surface (brief: Border beam, `line`).
+            beam: isBusy ? .line : nil
         ) {
             StudioModeChip(mode: mode, select: select, isEnabled: !isBusy)
             if isRunning {

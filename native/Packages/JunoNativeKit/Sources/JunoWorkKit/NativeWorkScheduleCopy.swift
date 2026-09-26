@@ -315,8 +315,8 @@ public enum NativeWorkScheduleCopy {
     ) -> String {
         guard let next = schedule.nextRunAt else {
             return schedule.enabled
-                ? "Nothing on the clock. This one waits for an event."
-                : "Paused. Nothing on the clock either way."
+                ? "Runs when its trigger fires"
+                : "Paused"
         }
         let formatted = formattedFire(next, locale: locale, timeZone: timeZone)
         return schedule.enabled ? "Next: \(formatted)" : "Paused. Would have run \(formatted)"

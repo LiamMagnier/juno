@@ -72,7 +72,6 @@ struct DesktopSettingsPlanPane: View {
     private func planBlock(_ plan: NativeUsagePlan) -> some View {
         let id = plan.planID.uppercased()
         let catalog = DesktopPlanCatalog.plan(id: id)
-        let generating = id != "FREE" && plan.spend.capDisabled != true
         // Title and actions on one line, then the tagline and the price at
         // the row's full width: squeezed beside the buttons, the sentence
         // wrapped and orphaned its date.
@@ -81,14 +80,6 @@ struct DesktopSettingsPlanPane: View {
                 Text(catalog?.name ?? plan.planName)
                     .junoType(JunoType.bodyLarge.weight(.semibold))
                     .foregroundStyle(Color.junoForeground)
-                if generating {
-                    Text("Active")
-                        .junoType(.label)
-                        .foregroundStyle(Color.junoSecondaryInk)
-                        .padding(.horizontal, JunoSpace.snug)
-                        .padding(.vertical, JunoSpace.micro)
-                        .overlay(Capsule().strokeBorder(Color.junoBorder))
-                }
                 Spacer(minLength: JunoSpace.section)
                 HStack(spacing: JunoSpace.snug) {
                     if id == "FREE" {
@@ -110,12 +101,16 @@ struct DesktopSettingsPlanPane: View {
                     .foregroundStyle(Color.junoSecondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text(Self.priceSentence(price: catalog?.price ?? 0, renewsAt: plan.renewsAt, cancelAtPeriodEnd: plan.cancelAtPeriodEnd))
-                .junoType(.ui)
-                .monospacedDigit()
-                .foregroundStyle(Color.junoSecondaryInk)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, JunoSpace.tight)
+            let price = Self.priceSentence(price: catalog?.price ?? 0, renewsAt: plan.renewsAt, cancelAtPeriodEnd: plan.cancelAtPeriodEnd)
+            // "Free." under a plan already named Free says nothing twice.
+            if price != "Free." {
+                Text(price)
+                    .junoType(.ui)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, JunoSpace.tight)
+            }
         }
         .padding(.vertical, JunoSpace.snug)
     }
@@ -153,7 +148,18 @@ struct DesktopSettingsPlanPane: View {
         if plan.budgetMicroUsd == nil {
             DesktopSettingsNote(text: "Nothing is metering this account. A task Juno starts on its own still stops at a small backstop ceiling, so an unattended loop can’t run all night.")
         } else if id == "FREE" {
-            DesktopSettingsNote(text: "Free includes \(DesktopPlanCatalog.free.monthlyMessages ?? 15) messages a month on the everyday models. Pro unlocks every model and a monthly budget.")
+            let allowance = plan.quota.limit ?? DesktopPlanCatalog.free.monthlyMessages ?? 15
+            if let used = plan.quota.used, allowance > 0 {
+                // The month's messages against the allowance: a meter only
+                // because it measures something real.
+                DesktopMeterRow(
+                    title: "Messages this month",
+                    description: "\(used) of \(allowance) on the everyday models. Pro unlocks every model and a monthly budget.",
+                    share: Double(used) / Double(allowance)
+                )
+            } else {
+                DesktopSettingsNote(text: "Free includes \(allowance) messages a month on the everyday models. Pro unlocks every model and a monthly budget.")
+            }
         } else {
             TimelineView(.periodic(from: .now, by: 30)) { timeline in
                 VStack(spacing: 0) {
@@ -245,7 +251,7 @@ struct DesktopMeterRow: View {
         DesktopSettingRow(title: title, description: description) {
             HStack(spacing: JunoSpace.cozy) {
                 DesktopMeterBar(fraction: Double(shown) / 100, tone: DesktopPlanMeters.tone(share))
-                    .frame(width: 176, height: 6)
+                    .frame(width: 176)
                     .accessibilityElement()
                     .accessibilityLabel(title)
                     .accessibilityValue("\(shown) percent")
@@ -261,23 +267,17 @@ struct DesktopMeterRow: View {
     }
 }
 
-/// A meter: the fill grows from the leading edge in the row's tone, over a
-/// quiet track (the web's `Progress` at `h-1.5`).
+/// A meter: the system's own linear progress bar in the row's tone. Native
+/// rather than drawn, because it measures something (premium pass): the
+/// platform's track, its Increase Contrast edge and its accessibility value.
 struct DesktopMeterBar: View {
     let fraction: Double
     let tone: Color
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                // The border tone, not the row's own fill: an unfilled track
-                // in junoSecondary all but vanished on the grouped row.
-                Capsule().fill(Color.junoBorder)
-                Capsule()
-                    .fill(tone)
-                    .frame(width: proxy.size.width * Swift.min(1, Swift.max(0, fraction)))
-            }
-        }
+        ProgressView(value: Swift.min(1, Swift.max(0, fraction)))
+            .progressViewStyle(.linear)
+            .tint(tone)
     }
 }
 

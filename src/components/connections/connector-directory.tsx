@@ -145,22 +145,35 @@ function AppLogo({ item }: { item: DirectoryItem }) {
 type TileState = "connected" | "connecting" | "available" | "setup" | "unavailable";
 
 /**
- * A status pip with its mono label — the same vocabulary the rest of the
- * product uses for "is this thing on": one dot, one word.
+ * A connector's state AS WORDS (owner directive, 2026-09-26: this was a pip
+ * and a word, the connected one green). Connecting and unavailable are muted
+ * words; setup needed is the one state that asks for the reader, so it alone
+ * keeps the warning ink and a small mark.
+ *
+ * Connected and available print nothing (premium pass): the tile already sits
+ * under a "Connected" or "Available" heading, and its footer holds the switch
+ * or the Connect button that says the same thing by what it offers. A word
+ * that repeats the section heading on every tile is a label, not information.
  */
 function TileStatus({ state }: { state: TileState }) {
-  const meta: Record<TileState, { label: string; pip: string; ink?: string }> = {
-    connected: { label: "Connected", pip: "bg-success", ink: "text-success-ink" },
-    connecting: { label: "Connecting", pip: "bg-warning", ink: "text-warning-foreground" },
-    available: { label: "Available", pip: "border border-muted-foreground/60" },
-    setup: { label: "Setup needed", pip: "bg-warning" },
-    unavailable: { label: "Unavailable", pip: "bg-muted-foreground/40" },
+  if (state === "connected" || state === "available") return null;
+  const label: Record<TileState, string> = {
+    connected: "Connected",
+    connecting: "Connecting",
+    available: "Available",
+    setup: "Setup needed",
+    unavailable: "Unavailable",
   };
-  const m = meta[state];
+  const attention = state === "setup";
   return (
-    <span className={cn("inline-flex shrink-0 items-center gap-1.5 font-mono text-caption text-muted-foreground", m.ink)}>
-      <span className={cn("inline-flex size-2 shrink-0 rounded-full", m.pip)} />
-      {m.label}
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 text-caption",
+        attention ? "font-medium text-warning-foreground" : "text-muted-foreground"
+      )}
+    >
+      {attention && <StatusIcons.warning className="size-3.5 shrink-0" aria-hidden="true" />}
+      {label[state]}
     </span>
   );
 }
@@ -217,9 +230,10 @@ function ConnectorTile({
     <Card
       variant="default"
       className={cn(
-        // Tonal, not a lift: the tile changes shade under the pointer and
-        // stays on the page (ICONS_AND_MOTION §2.2).
-        "group flex flex-col gap-3 p-3.5 hover:border-foreground/20 hover:bg-accent/40 motion-safe:animate-rise-in [animation-fill-mode:backwards]",
+        // No hover state: the tile is not itself a target (its switch and its
+        // button are), and a card that shades or lifts under the pointer
+        // promises a click that goes nowhere.
+        "group flex flex-col gap-3 p-3.5 motion-safe:animate-rise-in [animation-fill-mode:backwards]",
         unavailable && "text-muted-foreground"
       )}
       style={staggerDelay(index, "tight")}
@@ -238,12 +252,13 @@ function ConnectorTile({
         <TileStatus state={state} />
 
         {item.connected ? (
-          <div className="flex items-center gap-1.5">
+          <div className="flex w-full items-center justify-between gap-1.5">
             {/* Only a linked app can be exposed to chats. A normal Switch with
-                a plain label — the toggle is a setting, not a hero. */}
+                a plain label — the toggle is a setting, not a hero. It leads
+                the footer now that the status word it followed is gone. */}
             <label className="flex cursor-pointer items-center gap-2 pr-1">
               <Switch checked={enabled} onCheckedChange={onEnabledChange} aria-label={`Use ${item.label} in chats`} />
-              <span className="text-caption text-muted-foreground">Use in chats</span>
+              <span className="whitespace-nowrap text-caption text-muted-foreground">Use in chats</span>
             </label>
             <Button
               variant="ghost"
@@ -277,7 +292,7 @@ function ConnectorTile({
             </TooltipContent>
           </Tooltip>
         ) : (
-          <Button size="sm" variant="secondary" disabled={busy || unavailable} onClick={onConnect} className="h-7 gap-1.5 px-2.5 text-caption">
+          <Button size="sm" variant="secondary" disabled={busy || unavailable} onClick={onConnect} className="ml-auto h-7 gap-1.5 px-2.5 text-caption">
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
             Connect
           </Button>
@@ -331,9 +346,16 @@ export function ConnectorDirectory({
   onConnectNative,
   onDisconnect,
   connectingId,
+  canConfigureServer = true,
 }: {
   connectors: ConnectorStatus[];
   composioConfigured: boolean;
+  /**
+   * Whether this reader runs the server. The setup callout is instructions
+   * for an operator (an env var, a restart); shown to anyone else it is a
+   * page of steps they cannot take, above the apps they can.
+   */
+  canConfigureServer?: boolean;
   enabled: Record<string, boolean>;
   onEnabledChange: (id: string, v: boolean) => void;
   onConnectNative: (c: ConnectorStatus) => void;
@@ -527,7 +549,7 @@ export function ConnectorDirectory({
           />
         </label>
         {!loading && (
-          <span className="ml-auto font-mono text-caption tabular-nums text-muted-foreground">
+          <span className="ml-auto text-caption tabular-nums text-muted-foreground">
             {items.length} {items.length === 1 ? "app" : "apps"}
           </span>
         )}
@@ -561,7 +583,7 @@ export function ConnectorDirectory({
             >
               {c.label}
               {c.count !== undefined && (
-                <span className="font-mono text-micro tabular-nums opacity-70">{c.count}</span>
+                <span className="text-micro tabular-nums opacity-70">{c.count}</span>
               )}
             </Pressable>
           ))}
@@ -571,7 +593,7 @@ export function ConnectorDirectory({
       <div className="mt-6">
         {/* Composio powers the long tail. Without it the native connectors still
             work, so explain what's missing instead of showing an empty page. */}
-        {!composioConfigured && <ComposioSetupCallout />}
+        {!composioConfigured && canConfigureServer && <ComposioSetupCallout />}
 
         {error && (
           <EmptyState

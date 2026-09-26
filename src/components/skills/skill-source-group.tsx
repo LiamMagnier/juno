@@ -164,7 +164,6 @@ export function SkillSourceGroup({
                 onClick={onCheckUpdates}
                 className="relative z-10 inline-flex items-center gap-1.5 whitespace-nowrap rounded-xs font-medium text-primary-ink underline-offset-2 hover:underline"
               >
-                <span aria-hidden="true" className="size-1.5 rounded-full bg-primary" />
                 Update available
               </button>
             ) : null}

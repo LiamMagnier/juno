@@ -95,12 +95,8 @@ export function SubagentTree({
         <div className="flex min-w-0 items-center gap-2.5">
           <div className="relative flex size-6 shrink-0 items-center justify-center rounded-xs bg-primary/10 text-primary">
             <Bot className="size-3.5" />
-            {runningCount > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex size-2">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
-                <span className="relative inline-flex size-2 rounded-full bg-primary" />
-              </span>
-            )}
+            {/* No ping dot: the summary beside it already says how many are
+                running, and a pinging pip on a normal state reads as an alarm. */}
           </div>
           <div className="min-w-0">
             <p className="truncate font-mono text-ui font-medium text-foreground">
@@ -110,22 +106,9 @@ export function SubagentTree({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <div className="flex -space-x-1.5">
-            {subagents.slice(0, 4).map((s) => (
-              <span
-                key={s.id}
-                title={`${s.name} (${s.status})`}
-                className={cn(
-                  "size-2 rounded-full ring-2 ring-card",
-                  s.status === "running" && "bg-primary animate-pulse",
-                  s.status === "completed" && "bg-success",
-                  s.status === "waiting_for_input" && "bg-warning",
-                  s.status === "failed" && "bg-destructive",
-                  s.status === "idle" && "bg-muted-foreground/60"
-                )}
-              />
-            ))}
-          </div>
+          {/* The row of coloured pips (one per agent, the running one
+              pulsing) is gone: the summary text names the count and the
+              states that need someone, and the list below names each one. */}
           {/* One caret that turns, on the symmetric curve — a disclosure
               has both of its ends on screen. */}
           <ChevronRight

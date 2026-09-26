@@ -3,13 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { Plus } from "@/components/ui/icons";
+import { LoadError } from "@/components/ui/load-error";
 import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { WorkList } from "@/components/work/shell/work-section";
 import { WorkScheduleRow } from "@/components/work/work-schedule-row";
-import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
+import { WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { fetchWorkSchedules } from "@/components/work/work-transport";
 import { EmptyState } from "@/components/ui/empty-state";
 
@@ -73,14 +74,15 @@ export default function AutomationsPage() {
     <AppPage measure="wide">
       <AppPageHeader
         heading="Automations"
-        lede="Let a task start itself — at a time you choose or when something changes — with every run attached to the same task so context compounds."
+        lede="Tasks that start themselves, on a schedule or when something changes."
         actions={action}
       />
       {failed ? (
-        <WorkLoadError onRetry={() => void load()}>
-          Couldn’t load your automations. Existing automations keep their server-side state; this
-          page is empty because the read failed, not because they were removed.
-        </WorkLoadError>
+        <LoadError
+          title="Couldn’t load your automations"
+          description="They keep running. Check your connection and try again."
+          onRetry={() => void load()}
+        />
       ) : schedules === null ? (
         <WorkList>
           <WorkRowSkeletons />
@@ -89,7 +91,7 @@ export default function AutomationsPage() {
         <EmptyState
           icon={AppIcons.automations}
           title="No automations yet"
-          description="Run a task every weekday at eight, when an invoice arrives, before a meeting, when a topic starts moving, or when a granted folder changes. Juno can work while you are elsewhere and stops for approvals when the policy requires it."
+          description="Run a task on a schedule, or when something happens, like an invoice arriving or a meeting about to start."
           action={action}
         />
       ) : (

@@ -49,32 +49,40 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
     }
 }
 
-/// The Chat/Code switch (§1.4 of the redesign): a native `Picker`, icon-only,
-/// in the sidebar's segment of the unified toolbar.
+/// The Chat/Code switch (§1.4 of the redesign, reworked in the premium pass):
+/// a **labelled** native segmented picker in the sidebar's segment of the
+/// unified toolbar — each product's mark and its name.
 ///
-/// **A system control, not a Juno one.** The switch it replaces was a
-/// segmented control labelled "Juno product" pinned in a strip above the
-/// source list, which put a second band of chrome between the traffic lights
-/// and the rows. In the toolbar the strip reads traffic lights · the system
-/// sidebar toggle · space · the switch, and there is nothing else to draw.
+/// **Why labelled.** The icon-only picker it replaces read as two anonymous
+/// glyphs beside the traffic lights: the one control that changes what the
+/// whole window is for said nothing about it until hovered.
 ///
-/// **Selection is the fill cut and the system's own segment highlight — never
-/// an accent.** Each label names its image by the product's regular or solid
-/// drawing, so the chosen product is the one drawn solid; the control adds its
-/// neutral highlight. No tint is applied here or above it (§0.4): the toolbar
-/// owner sits above the one `.junoAccentTint()` in the window.
+/// **The system's control and the system's glass** (owner directive: native
+/// Liquid Glass on macOS). The toolbar draws the item's glass capsule and the
+/// picker's own selection; nothing here paints chrome. On macOS 27 the tabs
+/// style gives VoiceOver the right semantics; macOS 26 has only segmented.
 ///
-/// The selection is optional so a product outside ``DesktopProductMode/switchable``
-/// would read as *no segment chosen* rather than as a selection with no tag,
-/// which SwiftUI logs as an invalid state. Since Phase 5 Stage D every product
-/// is switchable, so this is a guard, not a case that happens.
+/// **Selection is the system's segment highlight and the solid cut of the
+/// mark — never an accent.** The toolbar owner sits above the one
+/// `.junoAccentTint()` in the window (§0.4).
+///
+/// The product is set **outside** any animation: a product change swaps the
+/// whole workspace, and animated, that swap would keep two split views alive
+/// for the length of the transition — crash rule 1
+/// (`MACOS_CRASH_ROOT_CAUSE.md`). The arriving workspace has its own rise
+/// (``JunoDesktopWorkspaceView``).
 struct DesktopProductSwitch: View {
     @Binding var product: DesktopProductMode
 
     private var selection: Binding<DesktopProductMode?> {
         Binding(
             get: { DesktopProductMode.switchable.contains(product) ? product : nil },
-            set: { if let value = $0 { product = value } }
+            set: { next in
+                guard let next else { return }
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { product = next }
+            }
         )
     }
 
@@ -85,6 +93,7 @@ struct DesktopProductSwitch: View {
                     mode.label,
                     image: mode.icon.assetName(product == mode ? .fill : .regular)
                 )
+                .labelStyle(.titleAndIcon)
                 .help(mode.help)
                 .tag(Optional(mode))
                 .accessibilityIdentifier("juno.product-brand.\(mode.rawValue)")
@@ -92,20 +101,15 @@ struct DesktopProductSwitch: View {
         }
         .labelsHidden()
         .junoProductPickerStyle()
+        .fixedSize()
         // The identifier the launch UI suite already finds the switch by. It
-        // is an automation handle, never shown or spoken: VoiceOver reads the
-        // picker's own label, "Product".
+        // is an automation handle, never shown or spoken.
         .accessibilityIdentifier("Juno product")
     }
 }
 
 extension View {
     /// `.tabs` where it exists, `.segmented` where it does not.
-    ///
-    /// On macOS 27 the tabs style is the right *semantic* as well as the right
-    /// look: VoiceOver announces the segments as tabs, which is what a mode
-    /// switch is. macOS 26 has no tabs style, and the segmented control is the
-    /// closest the platform offers.
     @ViewBuilder
     func junoProductPickerStyle() -> some View {
         if #available(macOS 27, *) {

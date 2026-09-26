@@ -782,8 +782,6 @@ private enum DesktopConnectorGrid {
     /// The magnifier inside it, at caption size — smaller than
     /// ``JunoIconView``'s sidebar default, which would outweigh the field's text.
     static let searchGlyphSize: CGFloat = 14
-    /// A status dot. Small enough to read as punctuation beside its label.
-    static let statusDot: CGFloat = 6
 
     static let columns: [GridItem] = [
         GridItem(
@@ -841,43 +839,21 @@ private struct DesktopConnectorMark: View {
     }
 }
 
-/// The card's state, as one small pill in its top-right corner.
-///
-/// One shape and one fill for all five states, with only the dot and the label
-/// carrying colour. The web tints the whole pill per state, which works there
-/// because it has a full alpha ramp of each hue; the design system here has one
-/// value per status, and washing it out by hand would mean inventing opacities
-/// that nothing else in the app shares.
+/// The card's state, as text in its top-right corner — never a pill or a dot
+/// (owner directive). Connecting shimmers; Setup needed is the one state
+/// that asks something of the reader.
 private struct DesktopConnectorStatusPill: View {
     let state: DesktopConnectorState
 
     var body: some View {
-        HStack(spacing: JunoSpace.hairline) {
-            dot
-            Text(label)
-                .lineLimit(1)
-        }
-        .font(.caption.weight(.medium))
-        .foregroundStyle(tint)
-        .padding(.horizontal, JunoSpace.snug)
-        .padding(.vertical, JunoSpace.hairline)
-        .background(Capsule(style: .continuous).fill(Color.junoMuted))
-        .fixedSize()
-        .accessibilityLabel(label)
+        DesktopStatusText(label, kind: kind)
     }
 
-    /// A dot only for live state, connected or connecting (register #116,
-    /// and #178 for the difference from the web's dotted pill): the other
-    /// three states are words alone, never a decorative hollow dot.
-    @ViewBuilder
-    private var dot: some View {
+    private var kind: DesktopStatusText.Kind {
         switch state {
-        case .connected, .connecting:
-            Circle()
-                .fill(tint)
-                .frame(width: DesktopConnectorGrid.statusDot, height: DesktopConnectorGrid.statusDot)
-        case .available, .setup, .unavailable:
-            EmptyView()
+        case .connecting: .working
+        case .setup: .attention
+        case .connected, .available, .unavailable: .quiet
         }
     }
 
@@ -888,14 +864,6 @@ private struct DesktopConnectorStatusPill: View {
         case .available: "Available"
         case .setup: "Setup needed"
         case .unavailable: "Unavailable"
-        }
-    }
-
-    private var tint: Color {
-        switch state {
-        case .connected: Color.junoSuccess
-        case .connecting: Color.junoCaution
-        case .available, .setup, .unavailable: Color.junoMutedForeground
         }
     }
 }

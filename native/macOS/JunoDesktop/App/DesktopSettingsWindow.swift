@@ -97,6 +97,17 @@ enum DesktopSettingsSection: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The rail's groups, in the contract's order: how Juno looks and
+    /// answers; what it knows and reaches; your data, account and plan; then
+    /// Code. Flattened, it is `allCases` exactly (a test holds it), so
+    /// grouping changes the rail's rhythm and never its order.
+    static let railGroups: [[DesktopSettingsSection]] = [
+        [.general, .personalization],
+        [.memory, .models, .connectors, .devices, .voice],
+        [.data, .account, .billing],
+        [.code],
+    ]
+
     /// The sections a search string leaves visible — all of them for an empty
     /// string. Matched against the name and the row labels, case- and
     /// diacritic-insensitively.
@@ -291,6 +302,13 @@ struct DesktopSettingsSidebar: View {
         DesktopSettingsSection.matching(query)
     }
 
+    private var visibleGroups: [[DesktopSettingsSection]] {
+        let shown = Set(visible)
+        return DesktopSettingsSection.railGroups
+            .map { $0.filter(shown.contains) }
+            .filter { !$0.isEmpty }
+    }
+
     /// `List(selection:)` wants an optional. Deselecting is not a state
     /// Settings has, so nil keeps what was there.
     private var listSelection: Binding<DesktopSettingsSection?> {
@@ -302,8 +320,15 @@ struct DesktopSettingsSidebar: View {
 
     var body: some View {
         List(selection: listSelection) {
-            ForEach(visible) { section in
-                row(section)
+            // Grouped with the system's own section gap, no headers: the
+            // rhythm says which sections belong together without a label
+            // to read.
+            ForEach(Array(visibleGroups.enumerated()), id: \.offset) { _, group in
+                Section {
+                    ForEach(group) { section in
+                        row(section)
+                    }
+                }
             }
         }
         .listStyle(.sidebar)
@@ -334,8 +359,7 @@ struct DesktopSettingsSidebar: View {
         return Label {
             Text(section.label)
         } icon: {
-            JunoIconView(section.icon, size: 16)
-                .foregroundStyle(ink)
+            DesktopSettingsSectionTile(icon: section.icon, selected: selected)
         }
         .foregroundStyle(ink)
         .animation(
@@ -345,6 +369,28 @@ struct DesktopSettingsSidebar: View {
         .junoSidebarRowSelection(selected)
         .tag(section)
         .accessibilityIdentifier("juno.desktop.settings.section.\(section.rawValue)")
+    }
+}
+
+/// A section's mark in its tile: the web's glyph at 13pt on a small rounded
+/// square, monochrome at rest. The selected section's glyph is the one
+/// accent-coloured thing in the rail (brief rule 1), on the card tone so it
+/// reads against the selection fill.
+struct DesktopSettingsSectionTile: View {
+    let icon: JunoIcon
+    let selected: Bool
+
+    static let size: CGFloat = 22
+    static let radius: CGFloat = 6
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
+        JunoIconView(icon, size: 13)
+            .foregroundStyle(selected ? Color.junoAccentInk : Color.junoSidebarForeground)
+            .frame(width: Self.size, height: Self.size)
+            .background(selected ? Color.junoCard : Color.junoSecondary, in: shape)
+            .overlay(shape.strokeBorder(Color.junoBorder.opacity(selected ? 0.9 : 0.6), lineWidth: 0.5))
+            .accessibilityHidden(true)
     }
 }
 

@@ -7,7 +7,7 @@ import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { SettingRowSkeleton } from "@/components/settings/setting-row";
+import { SettingRowSkeleton, SettingsInlineError } from "@/components/settings/setting-row";
 
 /*
  * The account's live share links, as rows in a settings group: what is
@@ -80,15 +80,7 @@ export function SharedLinksRows({
 }) {
   if (failed) {
     return (
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-2 py-4 text-ui text-destructive-ink" role="alert">
-        <span className="flex items-center gap-1.5">
-          <StatusIcons.error className="size-4 shrink-0" aria-hidden />
-          Couldn’t load your shared links.
-        </span>
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          Try again
-        </Button>
-      </p>
+      <SettingsInlineError onRetry={onRetry}>Couldn’t load your shared links.</SettingsInlineError>
     );
   }
   if (!shares) {

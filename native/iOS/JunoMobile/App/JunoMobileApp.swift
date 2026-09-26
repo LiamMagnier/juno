@@ -57,6 +57,7 @@ struct JunoMobileApp: App {
     private let shareClient: NativeShareClient?
 
     init() {
+        JunoMobileAppearance.install()
         let configuration = Self.makeConfiguration()
         _authModel = State(initialValue: configuration.authModel)
         _syncModel = State(initialValue: configuration.syncModel)
@@ -141,6 +142,9 @@ struct JunoMobileApp: App {
             rootView
             #endif
         }
+        // New chat, incognito, search and Settings from a hardware keyboard,
+        // listed in the iPad's menu bar and its hold-Command overlay.
+        .commands { JunoMobileCommands() }
         .onChange(of: scenePhase) { _, phase in
             // Ask for a background check when the app goes away, so an
             // approval that lands while the phone is in a pocket still

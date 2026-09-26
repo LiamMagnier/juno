@@ -177,21 +177,23 @@ struct DesktopSettingsAccountPane: View {
                         .junoType(JunoType.bodyLarge.weight(.semibold))
                         .foregroundStyle(Color.junoForeground)
                         .lineLimit(1)
+                }
+                // The plan in plain words beside the address, never a chip
+                // (owner directive: no status pills).
+                HStack(spacing: JunoSpace.tight) {
+                    Text(context.profile.email)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
                     if let planName {
-                        Text(planName)
-                            .junoType(.label)
-                            .foregroundStyle(Color.junoSecondaryInk)
-                            .padding(.horizontal, JunoSpace.snug)
-                            .padding(.vertical, JunoSpace.micro)
-                            .background(Color.junoSecondary, in: Capsule())
+                        Text("·").accessibilityHidden(true)
+                        Text("\(planName) plan")
+                            .lineLimit(1)
+                            .fixedSize()
                     }
                 }
-                Text(context.profile.email)
-                    .junoType(.ui)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
+                .junoType(.ui)
+                .foregroundStyle(Color.junoSecondaryInk)
             }
             Spacer(minLength: 0)
             DesktopOutlineButton(title: "Change Name") {
@@ -244,14 +246,6 @@ struct DesktopSettingsAccountPane: View {
                     Text("Two-step verification")
                         .junoType(JunoType.ui.weight(.medium))
                         .foregroundStyle(Color.junoForeground)
-                    if enabled {
-                        Text("On")
-                            .junoType(.label)
-                            .foregroundStyle(Color.junoSecondaryInk)
-                            .padding(.horizontal, JunoSpace.tight)
-                            .padding(.vertical, 1)
-                            .overlay(Capsule().strokeBorder(Color.junoBorder))
-                    }
                 }
                 Text(description)
                     .junoType(JunoType.label.weight(.regular))
@@ -386,13 +380,10 @@ struct DesktopSettingsMacNotifications: View {
         case .denied?:
             DesktopOutlineButton(title: "Open System Settings") { openNotificationSettings() }
         case .authorized?:
-            HStack(spacing: JunoSpace.tight) {
-                JunoIconView(.circleCheck, size: 14)
-                    .foregroundStyle(Color.junoSuccessInk)
-                Text(statusLine)
-                    .junoType(.ui)
-                    .foregroundStyle(Color.junoSecondaryInk)
-            }
+            // A normal state: plain secondary words, no check mark.
+            Text(statusLine)
+                .junoType(.ui)
+                .foregroundStyle(Color.junoSecondaryInk)
         default:
             ProgressView().controlSize(.small)
         }

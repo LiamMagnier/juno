@@ -426,16 +426,32 @@ enum DesktopCodeDraftReadiness {
 
 // MARK: - The column
 
-/// The Code window's navigation column.
+/// The Code window's navigation column, in **Chat's grammar** (premium pass,
+/// rule 1 of `docs/design/premium-pass/BRIEF.md`).
 ///
-/// Top to bottom: New session, search, a "Needs you" fold that exists only
-/// while something is waiting, the projects with their sessions, the sessions
-/// that belong to no project, and runs elsewhere. The footer holds Settings
-/// and the account. One status mark per row, and only when there is a status
-/// worth reading.
+/// The column used to speak a dialect of its own: a search field pinned over
+/// the list, a system-blue "New session" glyph, a blue "Open a project…" row,
+/// red and coral status dots, system section headers and a footer that was a
+/// different component from Chat's. Switching products changed the furniture
+/// as well as the contents. Now both columns are built from the same parts:
+///
+/// - a headerless block of action and destination rows (monochrome 16pt mark
+///   and label, the selected row lifting to foreground ink) — New session,
+///   Search, then the web's Code destinations (`JunoShellCodeSidebar`):
+///   Pull requests, Artifacts and Customize, and a More menu;
+/// - ``DesktopSidebarHeading`` for every section: Needs you, Projects,
+///   Without a project, Removed projects, Cloud, Other computers;
+/// - titles on the nav glyphs' column and one trailing mark per row in the
+///   shared ``DesktopSidebarTrailingSlot`` — a live spinner in sidebar ink, the
+///   needs-you dot (the one accent in the column) or a failed run's cross;
+/// - ``DesktopAccountFooter``, the same footer Chat pins, whose gear opens
+///   Code's settings while Code is on screen.
+///
+/// Search is a row, as in Chat. Pressed, it becomes the filter field in place
+/// and stays one while it holds text; emptied and left, it is a row again.
 ///
 /// The navigation model — what a selection is, how it survives a relaunch —
-/// is `DesktopCodeNavigation.swift`.
+/// is `DesktopCodeNavigationState` above.
 struct DesktopCodeSidebar: View {
     @Bindable var workbench: WorkbenchModel
     let code: NativeCodeModel
@@ -444,18 +460,18 @@ struct DesktopCodeSidebar: View {
     @Binding var remoteDeviceID: String
     @Binding var product: DesktopProductMode
     let isBootstrapping: Bool
+    let configuration: JunoDesktopConfiguration?
     let session: NativeAuthenticatedSession?
-    let avatarModel: NativeAvatarModel?
-    let syncModel: NativeSyncModel<SQLiteAccountRepository>?
-    let plan: DesktopUsagePlan?
     let openRepository: () -> Void
     let newSession: (WorkspaceID?) -> Void
     let rename: (CodeSession) -> Void
     let openSettings: () -> Void
 
+    @State private var searchOpen = false
     @State private var searchFocused = false
     @State private var collapsed: Set<WorkspaceID> = []
     @State private var projectPendingRemoval: WorkspaceRecord?
+    @State private var hoveringProjectsHeader = false
 
     private var runs: [DesktopCodeRun] {
         DesktopCodeRunBuilder.runs(
@@ -488,19 +504,13 @@ struct DesktopCodeSidebar: View {
         let elsewhere = sorted(all.filter { if case .task = $0.item { return true } else { return false } })
 
         return List(selection: $selection) {
-            Section {
-                Label {
-                    Text("New session")
-                } icon: {
-                    JunoIconView(.compose, size: 15)
-                }
-                .tag(DesktopCodeSidebarItem.draft)
-                .accessibilityIdentifier("juno.code.new-conversation")
-            }
+            Section { navigationBlock }
 
             if !waiting.isEmpty {
-                Section("Needs you") {
-                    ForEach(waiting) { row($0, showsPlace: true) }
+                Section {
+                    ForEach(waiting) { row($0) }
+                } header: {
+                    DesktopSidebarHeading(JunoShellCodeSidebar.Heading.needsYou.label)
                 }
             }
 
@@ -510,57 +520,57 @@ struct DesktopCodeSidebar: View {
                         Label {
                             Text("Open a project…")
                         } icon: {
-                            JunoIconView(.folderPlus, size: 14)
+                            JunoSymbol(.folderPlus)
+                                .foregroundStyle(Color.junoSidebarInk)
                         }
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(Studio.Ink.secondary)
+                    .help(JunoShortcutRegistry.help("Open a project", .codeOpenFolder))
                     .selectionDisabled()
                 }
                 ForEach(workbench.workspaces) { record in
                     project(record, runs: sorted(local.filter { $0.workspaceID == record.id }))
                 }
             } header: {
-                HStack {
-                    Text("Projects")
-                    Spacer()
-                    Button(action: openRepository) {
-                        JunoIconView(.plus, size: 12)
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Open a project (⌘O)")
-                    .accessibilityLabel("Open a project")
-                    .accessibilityIdentifier("juno.code.add-project")
-                }
+                projectsHeader
             }
 
             if !conversations.isEmpty {
-                Section("Conversations") {
-                    ForEach(conversations) { row($0, showsPlace: false) }
+                Section {
+                    ForEach(conversations) { row($0) }
+                } header: {
+                    DesktopSidebarHeading("Without a project")
                 }
             }
 
             if !removedProjects.isEmpty {
-                Section("Removed projects") {
-                    ForEach(removedProjects) { row($0, showsPlace: false) }
+                Section {
+                    ForEach(removedProjects) { row($0) }
+                } header: {
+                    DesktopSidebarHeading("Removed projects")
                 }
             }
 
             if !elsewhere.isEmpty {
-                Section("Cloud") {
-                    ForEach(elsewhere) { row($0, showsPlace: true) }
+                Section {
+                    ForEach(elsewhere) { row($0) }
+                } header: {
+                    DesktopSidebarHeading("Cloud")
                 }
             }
 
             if !code.devices.isEmpty, !remote.sessions.isEmpty {
                 Section {
                     ForEach(remote.sessions.filter(matchesSearch)) { summary in
-                        row(DesktopCodeRunBuilder.run(for: summary), showsPlace: true)
+                        row(DesktopCodeRunBuilder.run(for: summary))
                     }
                 } header: {
-                    HStack {
-                        Text("Other computers")
-                        Spacer()
+                    HStack(spacing: JunoSpace.tight) {
+                        DesktopSidebarHeading("Other computers")
+                        Spacer(minLength: 0)
                         Picker("Computer", selection: $remoteDeviceID) {
                             ForEach(code.devices) { device in
                                 Text(device.online ? device.name : "\(device.name) · offline").tag(device.id)
@@ -575,16 +585,7 @@ struct DesktopCodeSidebar: View {
         }
         .listStyle(.sidebar)
         .junoSidebarSelectionTint()
-        .safeAreaInset(edge: .top, spacing: 0) {
-            DesktopSidebarSearchField(
-                text: $workbench.sessionSearchText,
-                prompt: "Search sessions",
-                isFocused: $searchFocused
-            )
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.snug)
-        }
-        .junoSidebarProductHeader(product: $product)
+        .junoProductSwitch(product: $product)
         .safeAreaBar(edge: .bottom, spacing: 0) {
             footer
         }
@@ -606,21 +607,145 @@ struct DesktopCodeSidebar: View {
         } message: { _ in
             Text("The folder and its files stay on disk. Juno stops its running sessions and forgets its access; the sessions stay in your history.")
         }
+        .accessibilityIdentifier("juno.code.sidebar")
+    }
+
+    // MARK: Navigation block
+
+    /// New session, Search, the destinations and More — Chat's block, with
+    /// Code's words (`JunoShellCodeSidebar`).
+    @ViewBuilder
+    private var navigationBlock: some View {
+        // Tagged, unlike Chat's New chat: in Code the new-session screen is a
+        // destination the reader can leave and come back to with a draft in it.
+        navLabel(JunoShellCodeSidebar.Action.new.label, icon: JunoShellCodeSidebar.Action.new.icon, selected: selection == .draft)
+            .junoSidebarRowSelection(selection == .draft)
+            .tag(DesktopCodeSidebarItem.draft)
+            .help(JunoShortcutRegistry.help(JunoShellCodeSidebar.Action.new.label, .newChat))
+            .accessibilityIdentifier("juno.code.new-conversation")
+
+        if searchOpen || isSearching {
+            DesktopSidebarSearchField(
+                text: $workbench.sessionSearchText,
+                prompt: "Search sessions",
+                isFocused: $searchFocused
+            )
+            .selectionDisabled()
+            .onChange(of: searchFocused) { _, focused in
+                if !focused, !isSearching { searchOpen = false }
+            }
+        } else {
+            Button {
+                searchOpen = true
+                searchFocused = true
+            } label: {
+                navLabel(JunoShellCodeSidebar.Action.search.label, icon: JunoShellCodeSidebar.Action.search.icon, selected: false)
+            }
+            .buttonStyle(.plain)
+            .help("Search sessions")
+            .accessibilityIdentifier("juno.code.sidebar.search")
+        }
+
+        navLabel(JunoShellDestination.pulls.label, icon: JunoShellDestination.pulls.icon, selected: selection == .pulls)
+            .junoSidebarRowSelection(selection == .pulls)
+            .tag(DesktopCodeSidebarItem.pulls)
+            .accessibilityIdentifier("juno.code.sidebar.pulls")
+
+        // Artifacts live in Chat's page stack; the row opens them there, as
+        // the web's Code column does.
+        Button {
+            DesktopPageRouter.shared.open(.artifacts)
+        } label: {
+            navLabel(JunoShellDestination.artifacts.label, icon: JunoShellDestination.artifacts.icon, selected: false)
+        }
+        .buttonStyle(.plain)
+        .help("Open Artifacts in Chat")
+        .accessibilityIdentifier("juno.code.sidebar.artifacts")
+
+        Button(action: openSettings) {
+            navLabel(JunoShellDestination.customize.label, icon: JunoShellDestination.customize.icon, selected: false)
+        }
+        .buttonStyle(.plain)
+        .help("Permissions, agents, hooks and tools for Code")
+        .accessibilityIdentifier("juno.code.sidebar.customize")
+
+        Menu {
+            Button(action: openRepository) {
+                Label("Open Project…", image: JunoIcon.folderPlus.assetName)
+            }
+            ForEach(JunoShellCodeSidebar.More.items, id: \.destination) { item in
+                Button {
+                    DesktopSettingsRouter.open(.connectors)
+                } label: {
+                    Label(item.destination.title, image: item.destination.icon.assetName)
+                }
+            }
+        } label: {
+            navLabel(JunoShellCodeSidebar.More.label, icon: JunoShellCodeSidebar.More.icon, selected: false)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .accessibilityLabel(JunoShellCodeSidebar.More.label)
+        .accessibilityIdentifier("juno.code.sidebar.more")
+    }
+
+    /// One nav row's face: the mark and the words in one ink, which lifts to
+    /// the foreground on the selected row. Chat's recipe, stated on the mark
+    /// too because a `.sidebar` list resolves a `Label`'s icon against the
+    /// system accent otherwise.
+    private func navLabel(_ title: String, icon: JunoIcon, selected: Bool) -> some View {
+        let ink = selected ? Color.junoForeground : Color.junoSidebarInk
+        return Label {
+            Text(title)
+        } icon: {
+            JunoSymbol(icon, weight: selected ? .fill : .regular)
+                .foregroundStyle(ink)
+        }
+        .foregroundStyle(ink)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(.rect)
+    }
+
+    /// "Projects", with Open a project beside it, revealed on hover the way
+    /// Chat's "Pinned projects" reveals New project. Always reachable by the
+    /// keyboard and VoiceOver.
+    private var projectsHeader: some View {
+        HStack(spacing: JunoSpace.tight) {
+            DesktopSidebarHeading("Projects")
+            Spacer(minLength: 0)
+            Button(action: openRepository) {
+                JunoIconView(.plus, size: 12)
+                    .foregroundStyle(Color.junoSidebarInk)
+                    .frame(width: 28, height: 28)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.borderless)
+            .opacity(hoveringProjectsHeader || workbench.workspaces.isEmpty ? 1 : 0)
+            .help(JunoShortcutRegistry.help("Open a project", .codeOpenFolder))
+            .accessibilityLabel("Open a project")
+            .accessibilityIdentifier("juno.code.add-project")
+        }
+        .onHover { hoveringProjectsHeader = $0 }
+        .animation(JunoMotion.fast, value: hoveringProjectsHeader)
     }
 
     // MARK: Rows
 
     @ViewBuilder
     private func project(_ record: WorkspaceRecord, runs: [DesktopCodeRun]) -> some View {
+        let selected = selection == .repository(record.id)
+        let ink = selected ? Color.junoForeground : Color.junoSidebarInk
         DisclosureGroup(isExpanded: Binding(
             get: { !collapsed.contains(record.id) || isSearching },
             set: { open in if open { collapsed.remove(record.id) } else { collapsed.insert(record.id) } }
         )) {
-            ForEach(runs) { row($0, showsPlace: false) }
+            ForEach(runs) { row($0) }
             if runs.isEmpty {
                 Text(isSearching ? "No matches" : "No sessions yet")
-                    .font(Studio.Font.meta)
-                    .foregroundStyle(Studio.Ink.tertiary)
+                    .junoFont(size: 12, relativeTo: .footnote)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .padding(.leading, JunoSidebarMetrics.titleLeading)
                     .selectionDisabled()
             }
         } label: {
@@ -628,9 +753,13 @@ struct DesktopCodeSidebar: View {
                 Text(record.descriptor.displayName)
                     .lineLimit(1)
             } icon: {
-                JunoIconView(.projects, size: 14)
+                JunoSymbol(.projects, weight: selected ? .fill : .regular)
+                    .foregroundStyle(ink)
             }
+            .foregroundStyle(ink)
+            .junoSidebarRowSelection(selected)
             .tag(DesktopCodeSidebarItem.repository(record.id))
+            .help((record.descriptor.localPathHint as NSString).abbreviatingWithTildeInPath)
             .accessibilityIdentifier("juno.code.project.\(record.id.value)")
             .contextMenu {
                 Button("New Session") { newSession(record.id) }
@@ -645,8 +774,9 @@ struct DesktopCodeSidebar: View {
         }
     }
 
-    private func row(_ run: DesktopCodeRun, showsPlace: Bool) -> some View {
-        DesktopCodeSessionRow(run: run, showsPlace: showsPlace)
+    private func row(_ run: DesktopCodeRun) -> some View {
+        DesktopCodeSessionRow(run: run)
+            .junoSidebarRowSelection(selection == run.item)
             .tag(run.item)
             .contextMenu { menu(for: run) }
     }
@@ -718,89 +848,69 @@ struct DesktopCodeSidebar: View {
 
     // MARK: Footer
 
+    /// Chat's footer, verbatim, with its gear pointed at Code's settings — the
+    /// settings for the product on screen. The app's Settings stay one press
+    /// away in the account menu and on ⌘,.
+    @ViewBuilder
     private var footer: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             if let error = workbench.lastError {
                 Text(error)
-                    .font(Studio.Font.meta)
-                    .foregroundStyle(Studio.Ink.danger)
+                    .junoFont(size: 12, relativeTo: .footnote)
+                    .foregroundStyle(Color.junoDestructiveInk)
                     .lineLimit(3)
                     .padding(.horizontal, JunoSpace.cozy)
-                    .padding(.top, JunoSpace.snug)
+                    .padding(.vertical, JunoSpace.snug)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            HStack(spacing: JunoSpace.hairline) {
-                Button {
-                    selection = .pulls
-                } label: {
-                    Label {
-                        Text("Pull requests")
-                    } icon: {
-                        JunoIconView(.pulls, size: 14)
-                    }
-                    .font(Studio.Font.label)
-                }
-                .buttonStyle(StudioQuietButtonStyle())
-                Spacer()
-                Button(action: openSettings) {
-                    JunoIconView(.settings, size: 15)
-                }
-                .buttonStyle(StudioIconButtonStyle())
-                .help("Code settings")
-                .accessibilityLabel("Code settings")
-                .accessibilityIdentifier("juno.code.settings")
-            }
-            .padding(.horizontal, JunoSpace.snug)
-            .padding(.top, JunoSpace.snug)
-            if let session {
-                DesktopSidebarFooter(
+            if let configuration, let session {
+                DesktopAccountFooter(
+                    configuration: configuration,
                     session: session,
-                    avatarModel: avatarModel,
-                    syncModel: syncModel,
-                    plan: plan,
-                    openUsage: { DesktopSettingsRouter.open(.usage) },
-                    openSettings: { DesktopSettingsRouter.open(.general) }
+                    settingsAction: DesktopFooterSettingsAction(
+                        help: "Code settings",
+                        identifier: "juno.code.settings",
+                        action: openSettings
+                    )
                 )
             }
         }
-        .frame(maxWidth: .infinity)
     }
 }
 
-/// One session in the column: its title, and on the trailing edge either its
-/// status mark or how long ago it moved.
+/// One session in the column, in Chat's row grammar: its title on the nav
+/// glyphs' column and at most one trailing mark — a spinner in sidebar ink
+/// while it works, the needs-you dot (the column's one accent), a cross when
+/// it failed. Where it runs and how long ago it moved are the row's help and
+/// part of what VoiceOver reads, not a second line on every row.
 struct DesktopCodeSessionRow: View {
     let run: DesktopCodeRun
-    let showsPlace: Bool
 
     private var status: StudioStatus { StudioStatus(run.status) }
 
     var body: some View {
-        HStack(spacing: JunoSpace.snug) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(run.title)
-                    .font(Studio.Font.label)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if showsPlace, !run.workspace.isEmpty {
-                    Text(run.workspace)
-                        .font(Studio.Font.meta)
-                        .foregroundStyle(Studio.Ink.tertiary)
-                        .lineLimit(1)
-                }
-            }
+        HStack(spacing: JunoSpace.tight) {
+            Text(run.title)
+                .lineLimit(1)
+                .truncationMode(.tail)
             Spacer(minLength: JunoSpace.hairline)
-            if status == .idle {
-                TimelineView(.periodic(from: .now, by: 60)) { context in
-                    Text(StudioFormat.age(run.updatedAt, now: context.date))
-                        .font(Studio.Font.meta)
-                        .foregroundStyle(Studio.Ink.tertiary)
-                }
-            } else {
-                StudioStatusGlyph(status: status, size: 7)
-            }
+            DesktopSidebarTrailingSlot { mark }
         }
+        .padding(.leading, JunoSidebarMetrics.titleLeading)
+        .junoSidebarRowInk()
+        .help("\(run.title)\n\(run.caption)")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(run.title), \(status == .idle ? run.caption : status.label)")
+    }
+
+    private var mark: some View {
+        DesktopSidebarStatusMark(tone: {
+            switch status {
+            case .idle: .neutral
+            case .working: .live
+            case .needsYou: .attention
+            case .failed: .bad
+            }
+        }())
     }
 }
