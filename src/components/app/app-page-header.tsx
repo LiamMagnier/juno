@@ -142,7 +142,15 @@ export function AppPageHeader({
               `leading-tight`/`tracking-*`/`font-semibold` beside it would be worse
               than redundant, since Tailwind emits those groups AFTER font-size and
               they would silently keep overriding the rung this is adopting. */}
-          <h1 className="text-balance text-page-title">{heading}</h1>
+          {/* The display face (premium pass): every app page opens on its
+              name set in Newsreader, the same voice as the chat greeting and
+              the Code landing, so moving between Library, Projects and
+              Settings reads as one product with one editorial register. At
+              500, not the rung's 600: Newsreader's semibold at 32px is heavy
+              beside Inter controls, and the serif already carries the
+              contrast the weight used to. `leading-snug`-free: the rung's own
+              1.15 line box is what the skeleton below measures. */}
+          <h1 className="text-balance font-serif text-page-title font-medium">{heading}</h1>
           {/* `text-body` (15px × 1.6) is the same 24px line box the
               `text-sm leading-6` here used to build by hand, so nothing
               reflows — it is now the rung the scale names rather than
