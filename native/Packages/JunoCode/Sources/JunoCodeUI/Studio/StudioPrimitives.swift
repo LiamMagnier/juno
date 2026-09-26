@@ -55,8 +55,10 @@ public enum StudioStatus: Equatable, Sendable {
     }
 }
 
-/// A status mark sized for a list row: a turning arc while working, a coral
-/// dot when it needs you, a red dot when it failed, nothing when idle.
+/// A status mark sized for a list row — a mark, never a coloured dot (owner
+/// directive, premium pass): a thin turning arc in secondary ink while
+/// working, a raised hand in the accent when it needs you, a crossed circle
+/// in the danger ink when it failed, nothing when idle.
 public struct StudioStatusGlyph: View {
     let status: StudioStatus
     var size: CGFloat = 8
@@ -73,19 +75,24 @@ public struct StudioStatusGlyph: View {
             switch status {
             case .idle:
                 Color.clear
+                    .frame(width: size, height: size)
             case .working:
-                if reduceMotion {
-                    Circle().stroke(Studio.Ink.accent, lineWidth: 1.5)
-                } else {
-                    StudioSpinner(color: Studio.Ink.accent, lineWidth: 1.5)
+                Group {
+                    if reduceMotion {
+                        Circle().stroke(Studio.Ink.secondary, lineWidth: 1.25)
+                    } else {
+                        StudioSpinner(color: Studio.Ink.secondary, lineWidth: 1.25)
+                    }
                 }
+                .frame(width: size + 2, height: size + 2)
             case .needsYou:
-                Circle().fill(Studio.Ink.accent)
+                JunoIconView(.hand, size: size + 4)
+                    .foregroundStyle(Studio.Ink.accent)
             case .failed:
-                Circle().fill(Studio.Ink.danger)
+                JunoIconView(.circleX, size: size + 4)
+                    .foregroundStyle(Studio.Ink.danger)
             }
         }
-        .frame(width: size, height: size)
         .accessibilityLabel(status.label)
     }
 }

@@ -903,41 +903,14 @@ struct DesktopCodeSessionRow: View {
         .accessibilityLabel("\(run.title), \(status == .idle ? run.caption : status.label)")
     }
 
-    @ViewBuilder
     private var mark: some View {
-        switch status {
-        case .idle:
-            EmptyView()
-        case .working:
-            DesktopCodeWorkingMark()
-        case .needsYou:
-            Circle()
-                .fill(Color.junoAccent)
-                .frame(width: 7, height: 7)
-                .accessibilityHidden(true)
-        case .failed:
-            JunoIconView(.close, size: 10)
-                .foregroundStyle(Color.junoDestructiveInk)
-                .accessibilityHidden(true)
-        }
-    }
-}
-
-/// A working session's mark: the thin arc in sidebar ink, still under Reduce
-/// Motion (a ring). Never the accent: a column of turning coral arcs was the
-/// loudest thing in the window while nothing needed the reader.
-private struct DesktopCodeWorkingMark: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        Group {
-            if reduceMotion {
-                Circle().stroke(Color.junoSidebarInk, lineWidth: 1.25)
-            } else {
-                StudioSpinner(color: Color.junoSidebarInk, lineWidth: 1.25)
+        DesktopSidebarStatusMark(tone: {
+            switch status {
+            case .idle: .neutral
+            case .working: .live
+            case .needsYou: .attention
+            case .failed: .bad
             }
-        }
-        .frame(width: 9, height: 9)
-        .accessibilityHidden(true)
+        }())
     }
 }

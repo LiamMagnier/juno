@@ -731,6 +731,58 @@ enum JunoSidebarMetrics {
     static let trailingSlot: CGFloat = 20
 }
 
+/// A run's state in a sidebar row's trailing slot, as a **mark, never a dot**
+/// (owner directive, premium pass): a quiet spinner in sidebar ink while it
+/// works, a raised hand in the accent while it waits on the reader, a crossed
+/// circle in destructive ink when it failed, and nothing at all for a run
+/// that is simply done or idle. The row says the state in words (its value
+/// and help), so the mark is silent to VoiceOver. Shared by Chat's and
+/// Code's columns.
+struct DesktopSidebarStatusMark: View {
+    let tone: JunoStatusTone
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Group {
+            switch tone {
+            case .live:
+                Group {
+                    if reduceMotion {
+                        Circle().stroke(Color.junoSidebarInk, lineWidth: 1.25)
+                    } else {
+                        DesktopSidebarSpinner()
+                    }
+                }
+                .frame(width: 9, height: 9)
+            case .attention:
+                JunoIconView(.hand, size: 11)
+                    .foregroundStyle(Color.junoAccent)
+            case .bad:
+                JunoIconView(.circleX, size: 11)
+                    .foregroundStyle(Color.junoDestructiveInk)
+            case .good, .neutral:
+                EmptyView()
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// A thin turning arc in sidebar ink, driven by the clock so it costs nothing
+/// off screen.
+private struct DesktopSidebarSpinner: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            let turns = context.date.timeIntervalSinceReferenceDate / 0.9
+            Circle()
+                .trim(from: 0, to: 0.7)
+                .stroke(Color.junoSidebarInk, style: StrokeStyle(lineWidth: 1.25, lineCap: .round))
+                .rotationEffect(.degrees((turns - turns.rounded(.down)) * 360))
+        }
+    }
+}
+
 /// A row's trailing mark, centred in the column's one slot.
 struct DesktopSidebarTrailingSlot<Content: View>: View {
     @ViewBuilder let content: Content
@@ -830,8 +882,7 @@ private struct DesktopConversationRow: View {
         } else if let signal {
             // The row says the state in words (its value and help), so the
             // dot itself is silent.
-            JunoStatusDot(signal.tone)
-                .accessibilityHidden(true)
+            DesktopSidebarStatusMark(tone: signal.tone)
         } else if conversation.pinned {
             // Secondary rather than tertiary: a pin mark has to clear 3:1.
             JunoIconView(.pin, size: 10, isOn: true)

@@ -1612,9 +1612,7 @@ public struct CodePreviewWindowView: View {
             if indicator.isBusy {
                 ProgressView().controlSize(.mini)
             } else {
-                Circle()
-                    .fill(indicator.tint)
-                    .frame(width: 6, height: 6)
+                PreviewStateMark(tint: indicator.tint)
             }
             Text(indicator.label)
                 .junoCodeSmall()
@@ -2059,9 +2057,7 @@ public struct CodePreviewDock: View {
             if state.busy {
                 ProgressView().controlSize(.mini)
             } else {
-                Circle()
-                    .fill(state.tint)
-                    .frame(width: 6, height: 6)
+                PreviewStateMark(tint: state.tint)
             }
            Text(state.label)
                .junoCaption()
@@ -2087,9 +2083,7 @@ public struct CodePreviewDock: View {
     private var statusPill: some View {
         let state = statusState
         return HStack(spacing: JunoSpace.hairline) {
-            Circle()
-                .fill(state.tint)
-                .frame(width: 6, height: 6)
+            PreviewStateMark(tint: state.tint)
             Text(state.label)
                 .junoCodeSmall()
                 .lineLimit(1)
@@ -2310,6 +2304,21 @@ private struct CodePreviewWebView: NSViewRepresentable {
             // one that superseded it, not a failure the reader should see.
             if (error as NSError).code == NSURLErrorCancelled { return }
             model.reportLoadFailed(error.localizedDescription)
+        }
+    }
+}
+
+/// A preview state's mark beside its words: a crossed circle in the danger
+/// ink when something failed, nothing otherwise — never a coloured dot
+/// (owner directive, premium pass). The words carry every other state.
+private struct PreviewStateMark: View {
+    let tint: Color
+
+    var body: some View {
+        if tint == Color.junoDanger {
+            JunoIconView(.circleX, size: 11)
+                .foregroundStyle(Color.junoDanger)
+                .accessibilityHidden(true)
         }
     }
 }

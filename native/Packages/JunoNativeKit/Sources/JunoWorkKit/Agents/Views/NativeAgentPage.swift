@@ -1108,9 +1108,18 @@ struct NativeAgentGateStack: View {
 struct NativeAgentComputerLineView: View {
     let line: NativeAgentComputerLine
 
+    private var glyph: JunoIcon? {
+        switch line.state {
+        case .running: nil
+        case .done: .check
+        case .failed: .circleX
+        case .refused, .unreported: .circleSlash
+        }
+    }
+
     private var tone: Color {
         switch line.state {
-        case .running: Color.junoAccent
+        case .running: Color.junoMutedForeground
         case .done: Color.junoMutedForeground
         case .failed: Color.junoDanger
         case .refused, .unreported: Color.junoCaution
@@ -1129,10 +1138,9 @@ struct NativeAgentComputerLineView: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
-            Circle()
-                .fill(tone)
-                .frame(width: 6, height: 6)
-                .accessibilityHidden(true)
+            // A mark, not a dot (owner directive): only a call that went
+            // wrong wears a colour.
+            NativeAgentStateGlyph(icon: glyph, tint: tone)
             Text(line.title)
                 .font(.callout)
                 .foregroundStyle(line.state == .done ? Color.junoMutedForeground : Color.junoForeground)
@@ -1337,7 +1345,10 @@ struct NativeAgentGoalTile: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: JunoSpace.snug)
                 if goal.status != .active {
-                    JunoCapsuleTag(goal.status.label)
+                    // A word, not a pill (owner directive).
+                    Text(goal.status.label)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.junoMutedForeground)
                 }
             }
             if !goal.detail.isEmpty {
@@ -1470,7 +1481,9 @@ struct NativeAgentRoutineTile: View {
                     .lineLimit(1)
                 Spacer(minLength: JunoSpace.snug)
                 if !routine.enabled {
-                    JunoCapsuleTag("Paused")
+                    Text("Paused")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.junoMutedForeground)
                 }
             }
             if !routine.schedule.isEmpty {
@@ -1664,18 +1677,23 @@ struct NativeAgentActivityLine: View {
     private var tone: Color {
         switch entry.tone {
         case .attention: Color.junoCaution
-        case .success: Color.junoSuccess
+        case .success, .neutral: Color.junoMutedForeground
         case .danger: Color.junoDanger
-        case .neutral: Color.junoMutedForeground
+        }
+    }
+
+    private var activityGlyph: JunoIcon? {
+        switch entry.tone {
+        case .attention: .triangleAlert
+        case .success: .check
+        case .danger: .circleX
+        case .neutral: nil
         }
     }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
-            Circle()
-                .fill(tone)
-                .frame(width: 6, height: 6)
-                .accessibilityHidden(true)
+            NativeAgentStateGlyph(icon: activityGlyph, tint: tone)
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.title)
                     .font(.callout)

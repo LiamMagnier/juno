@@ -97,22 +97,88 @@ struct DesktopWorkStatusPill: View {
 
     var body: some View {
         let style = DesktopWorkStatusStyle.of(status)
-        return HStack(spacing: JunoSpace.tight) {
-            Circle()
-                .fill(style.tint)
-                .frame(width: 6, height: 6)
-            Text(style.label)
-                .junoFont(size: 10, relativeTo: .caption2, design: .monospaced)
+        DesktopStatusText(style.label, kind: DesktopStatusText.Kind(status))
+            .help(style.sentence)
+    }
+}
+
+/// A status said as **text** (owner directive, premium pass): never a pill,
+/// a badge, a capsule or a dot.
+///
+/// - Normal and finished states (Draft, Queued, Done, Connected, Paused…) are
+///   the word in secondary ink and nothing else.
+/// - In-progress states (Running, Preparing, Connecting…) are the word with the
+///   quiet shimmer the transcript's working line uses — still under Reduce
+///   Motion — and no colour.
+/// - Attention states keep a colour and a mark, as plain text: waiting on the
+///   reader in the accent with a raised hand, a failure in destructive ink
+///   with a crossed circle.
+struct DesktopStatusText: View {
+    enum Kind: Equatable {
+        case quiet
+        case working
+        case attention
+        case failure
+
+        init(_ status: JunoWorkStatus) {
+            switch status {
+            case .preparing, .running: self = .working
+            case .waitingInput, .waitingApproval: self = .attention
+            case .failed, .interrupted, .hostOffline, .budgetExceeded, .timedOut: self = .failure
+            case .draft, .queued, .paused, .completed, .cancelled: self = .quiet
+            }
         }
-        .foregroundStyle(style.tint)
-        .padding(.horizontal, JunoSpace.snug)
-        .padding(.vertical, 3)
-        .background(Capsule(style: .continuous).fill(style.tint.opacity(0.10)))
-        .overlay(Capsule(style: .continuous).strokeBorder(style.tint.opacity(0.28), lineWidth: 0.5))
+    }
+
+    let label: String
+    let kind: Kind
+
+    init(_ label: String, kind: Kind) {
+        self.label = label
+        self.kind = kind
+    }
+
+    var body: some View {
+        Group {
+            switch kind {
+            case .quiet:
+                Text(label)
+                    .foregroundStyle(Color.junoSecondaryInk)
+            case .working:
+                JunoShimmerText(label, font: JunoType.caption.weight(.medium).font(), active: true)
+            case .attention:
+                Label {
+                    Text(label)
+                } icon: {
+                    JunoIconView(.hand, size: 11)
+                }
+                .labelStyle(DesktopStatusLabelStyle())
+                .foregroundStyle(Color.junoAccent)
+            case .failure:
+                Label {
+                    Text(label)
+                } icon: {
+                    JunoIconView(.circleX, size: 11)
+                }
+                .labelStyle(DesktopStatusLabelStyle())
+                .foregroundStyle(Color.junoDestructiveInk)
+            }
+        }
+        .junoType(JunoType.caption.weight(.medium))
+        .lineLimit(1)
         .fixedSize()
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(style.label)
-        .help(style.sentence)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+    }
+}
+
+/// A mark and a word, 4pt apart, on one baseline.
+private struct DesktopStatusLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: JunoSpace.tight) {
+            configuration.icon
+            configuration.title
+        }
     }
 }
 

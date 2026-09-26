@@ -82,12 +82,10 @@ struct DesktopSettingsPlanPane: View {
                     .junoType(JunoType.bodyLarge.weight(.semibold))
                     .foregroundStyle(Color.junoForeground)
                 if generating {
+                    // A word beside the name, not a pill (owner directive).
                     Text("Active")
                         .junoType(.label)
                         .foregroundStyle(Color.junoSecondaryInk)
-                        .padding(.horizontal, JunoSpace.snug)
-                        .padding(.vertical, JunoSpace.micro)
-                        .overlay(Capsule().strokeBorder(Color.junoBorder))
                 }
                 Spacer(minLength: JunoSpace.section)
                 HStack(spacing: JunoSpace.snug) {
