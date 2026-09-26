@@ -6,7 +6,9 @@ import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { useContentPlugins } from "@/components/chat/markdown-plugins";
-import { AicssCodeBlock, splitHighlightedLines } from "@/components/aicss/code-block";
+import { AicssCodeBlock, CodeCopyButton, splitHighlightedLines } from "@/components/aicss/code-block";
+import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
+import { diffFilename, fenceFilename, hideDanglingLink } from "@/lib/markdown-fence";
 
 /**
  * The two rare fences, split out of the chat bundle.
@@ -161,7 +163,7 @@ function closeDangling(block: string): string {
   let fence: Fence | null = null;
   for (const line of block.split("\n")) fence = trackFence(fence, line);
   if (fence) return `${block}\n${fence.char.repeat(fence.length)}`;
-  let closed = block;
+  let closed = hideDanglingLink(block);
   if ((closed.match(/(?<!\\)`/g) ?? []).length % 2 === 1) closed += "`";
   // Count `**` outside code spans so `a ** b` in inline code doesn't miscount.
   const inline = closed.replace(/(?<!\\)`[^`]*`/g, "");
@@ -175,19 +177,62 @@ function closeDangling(block: string): string {
 }
 
 /**
- * A fenced block, in AIcss's numbered-gutter shell.
+ * Whether the message this markdown belongs to is still streaming.
  *
- * What that replaced: a hairline frame with the language in the header and a
- * hover-revealed copy button over a plain <pre>. The frame and the one action
- * survive; the gutter is new, and it is the reason for the change — a model that
- * says "line 14" is now pointing at something the reader can find without
- * counting. Highlighting is preserved through `splitHighlightedLines`, which cuts
- * rehype-highlight's token tree at the newlines instead of re-highlighting per
- * line (which would break every multi-line string and block comment).
+ * A context rather than a prop threaded through `components`, and that is
+ * load-bearing: react-markdown treats each entry in `components` as a
+ * component TYPE, so a `pre` built in a `useMemo` keyed on `streaming` was a
+ * new type the moment the reply finished, and every code block in it
+ * unmounted and mounted again. That threw away the block's own state (wrap,
+ * expanded, the copy receipt) at exactly the moment a reader reaches for it.
  */
-function CodeBlock({ children, streaming }: { children: React.ReactNode; streaming?: boolean }) {
+const StreamingContext = React.createContext(false);
+
+/** `ts:src/auth.ts` → lang `ts`, meta `title="src/auth.ts"`, so the highlighter
+ *  still finds the language and the header still finds the file. */
+function remarkFenceFilename() {
+  const walk = (node: MdNode & { lang?: string | null; meta?: string | null }) => {
+    if (node.type === "code" && node.lang && node.lang.includes(":")) {
+      const at = node.lang.indexOf(":");
+      const file = node.lang.slice(at + 1);
+      node.lang = node.lang.slice(0, at);
+      if (file && !fenceFilename(node.meta ?? undefined)) {
+        node.meta = `title="${file}"${node.meta ? ` ${node.meta}` : ""}`;
+      }
+    }
+    for (const child of node.children ?? []) walk(child);
+  };
+  return function transformer(tree: MdNode) {
+    walk(tree);
+  };
+}
+
+type HastCode = { type: string; tagName?: string; data?: { meta?: string | null } };
+
+/**
+ * A fenced block.
+ *
+ * Code goes into AIcss's shell: a header that names the file (when the fence
+ * declared one) and the language, Wrap when a line overflows, and Copy; a
+ * numbered gutter past eight lines; and, past 28 lines, the clamp ("Show all
+ * N lines"). Highlighting is preserved through `splitHighlightedLines`, which
+ * cuts rehype-highlight's token tree at the newlines instead of re-highlighting
+ * per line (which would break every multi-line string and block comment).
+ *
+ * A `diff` / `patch` fence is a change, not a listing, so it takes the diff
+ * shell: two number columns, the sign bar, the add/remove tints and the
+ * +N −M stat in the header. The same one Code draws a file write with.
+ */
+function CodeBlock({ children, node }: { children: React.ReactNode; node?: { children?: HastCode[] } }) {
+  const streaming = React.useContext(StreamingContext);
+  // Seeded once. A block that arrived on screen mid-stream stays open when the
+  // fence closes; one loaded from history opens clamped. Clamping a block the
+  // reader just watched stream in would snap the page up under them.
+  const [streamedIn] = React.useState(streaming);
   const lang = langOf(children);
   const raw = textOf(children).replace(/\n$/, "");
+  const meta = node?.children?.find((c) => c.tagName === "code")?.data?.meta ?? undefined;
+  const filename = fenceFilename(meta);
 
   if (isVisualLang(lang)) {
     return <InlineVisualBlock source={raw} streaming={streaming} />;
@@ -198,10 +243,24 @@ function CodeBlock({ children, streaming }: { children: React.ReactNode; streami
     return <MermaidBlock code={raw} />;
   }
 
+  const lower = lang.toLowerCase();
+  if ((lower === "diff" || lower === "patch") && raw.trim()) {
+    return (
+      <FileDiff
+        className="aicss-diff--wrap my-4"
+        file={filename ?? diffFilename(raw) ?? "Changes"}
+        rows={parseUnifiedDiff(raw)}
+        code={raw}
+        action={<CodeCopyButton code={raw} label="Copy diff" />}
+      />
+    );
+  }
+
   return (
     <AicssCodeBlock
       className="my-4"
       label={lang}
+      filename={filename}
       code={raw}
       // Highlighted mid-stream too. `closeDangling` closes the fence on every
       // delta, so rehype-highlight has already run on the fence's text by the
@@ -210,11 +269,12 @@ function CodeBlock({ children, streaming }: { children: React.ReactNode; streami
       // block sat monochrome until the closing fence landed, then recoloured
       // all at once, which read as a glitch at the end of every code answer.
       lines={splitHighlightedLines(children)}
-      maxBodyHeight={520}
+      collapsible
+      defaultExpanded={streamedIn}
       action={
         isMermaid ? (
-          <span className="ml-auto px-2 py-1 font-mono text-caption text-muted-foreground">
-            Diagram renders when complete…
+          <span className="px-2 py-1 text-caption text-muted-foreground">
+            Diagram renders when complete
           </span>
         ) : undefined
       }
@@ -328,7 +388,7 @@ function remarkCitations(sourceCount: number) {
   };
 }
 
-const REMARK_PLUGINS = [remarkGfm, remarkMath] satisfies Options["remarkPlugins"];
+const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkFenceFilename] satisfies Options["remarkPlugins"];
 /*
  * `rehypeHighlight` and `rehypeKatex` are NOT here.
  *
@@ -546,13 +606,11 @@ export function rangeFromAnchoredText(
 const MarkdownBlock = React.memo(function MarkdownBlock({
   content,
   offset,
-  streaming,
   sources,
 }: {
   content: string;
   /** Where this block starts in the message, for the source-offset attributes. */
   offset: number;
-  streaming?: boolean;
   sources?: ClientSource[];
 }) {
   // Positional [n] resolution is licensed ONLY by the numbered-corpus contract,
@@ -579,7 +637,8 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
       // `#` → h3 and downward, so no heading the model writes can outrank the
       // conversation title or sit level with the turn markers. See the module.
       ...DEMOTED_HEADINGS,
-      pre: ({ children }) => <CodeBlock streaming={streaming}>{children}</CodeBlock>,
+      // Stable across the stream's end: see StreamingContext.
+      pre: CodeBlock as Components["pre"],
       // Wide tables scroll inside their own container instead of stretching the
       // message column past the viewport on phones.
       table: ({ node: _node, ...props }) => (
@@ -610,7 +669,7 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
         );
       },
     }),
-    [streaming, sources],
+    [sources],
   );
   return (
     <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
@@ -643,16 +702,17 @@ export const Markdown = React.memo(function Markdown({
     [content],
   );
   return (
+    <StreamingContext.Provider value={!!streaming}>
     <div className={cn("prose-juno", className)} data-streaming={streaming ? "true" : undefined} data-no-auto-translate>
       {blocks.map((block, i) => (
         <MarkdownBlock
           key={i}
           content={streaming && i === blocks.length - 1 ? closeDangling(block.text) : block.text}
           offset={block.offset}
-          streaming={streaming}
           sources={sources}
         />
       ))}
     </div>
+    </StreamingContext.Provider>
   );
 });

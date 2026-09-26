@@ -61,13 +61,16 @@ import {
   ArrowSquareOutIcon,
   ArrowsInSimpleIcon,
   ArrowsOutLineHorizontalIcon,
+  ArrowsInLineVerticalIcon,
   ArrowsOutLineVerticalIcon,
   ArrowsOutSimpleIcon,
   ArrowUpIcon,
   ArrowUpRightIcon,
+  ArrowUDownLeftIcon,
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
   BellSimpleIcon,
+  BrainIcon,
   BinocularsIcon,
   BookmarkSimpleIcon,
   BookOpenIcon,
@@ -442,6 +445,12 @@ export const Repeat = glyph(RepeatIcon, "repeat", { motion: "cw" });
 export const History = glyph(ClockCounterClockwiseIcon, "history");
 export const Maximize2 = glyph(ArrowsOutSimpleIcon, "maximize");
 export const Minimize2 = glyph(ArrowsInSimpleIcon, "minimize");
+/** Expand / collapse a clamped block (a long code fence): the two-way arrow
+ *  off a rule, opening and closing along the axis the block grows on. */
+export const UnfoldVertical = glyph(ArrowsOutLineVerticalIcon, "unfold-vertical");
+export const FoldVertical = glyph(ArrowsInLineVerticalIcon, "fold-vertical");
+/** Soft-wrap long lines: the return arrow, the mark editors use for "wrap". */
+export const WrapText = glyph(ArrowUDownLeftIcon, "wrap-text");
 export const Menu = glyph(ListIcon, "menu");
 export const MoreHorizontal = glyph(DotsThreeIcon, "more");
 export const GripVertical = glyph(DotsSixVerticalIcon, "grip");
@@ -609,6 +618,8 @@ export const Settings2 = glyph(SlidersHorizontalIcon, "settings-2");
 export const SlidersHorizontal = glyph(SlidersHorizontalIcon, "sliders");
 export const Workflow = glyph(TreeStructureIcon, "workflow");
 export const Bot = glyph(RobotIcon, "bot");
+/** A model's own reasoning: the resting mark of a thought-process row. */
+export const Brain = glyph(BrainIcon, "brain");
 export const Telescope = glyph(BinocularsIcon, "research");
 export const Sparkles = glyph(SparkleIcon, "sparkles", { motion: "pop" });
 export const Zap = glyph(LightningIcon, "zap", { motion: "pop" });
