@@ -14,6 +14,8 @@ import { MessageItem } from "@/components/chat/message-item";
 import { useEffectTheme, voiceBandColors, voiceLobeColors } from "@/components/effects/use-effect-theme";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { TeamStatus } from "@/components/agents/team-status";
+import { MetalCta } from "@/components/effects/metal-cta";
+import { Button } from "@/components/ui/button";
 import type { ClientAgent } from "@/lib/agents/types";
 import { AUTO_MODEL_ID } from "@/lib/auto-model";
 import type { ModelId } from "@/lib/models";
@@ -320,6 +322,29 @@ export function PremiumGallery({ only }: { only?: string }) {
                 <TeamStatus agents={team("waiting", "working")} />
                 <TeamStatus agents={team("idle", "done")} />
                 <TeamStatus agents={team("sleeping", "sleeping")} />
+              </div>
+            </Section>
+          )}
+
+          {show("upgrade") && (
+            <Section id="upgrade" title="Upgrade" note="The page's one metal object: the recommended plan's upgrade button. Silver, still under reduced motion.">
+              <div className="grid max-w-xl grid-cols-2 gap-4">
+                <div className="surface-raised rounded-card p-5">
+                  <p className="text-heading">Plus</p>
+                  <p className="mt-1 text-ui text-muted-foreground">For everyday use</p>
+                  <div className="mt-6">
+                    <Button variant="secondary" className="w-full">Upgrade to Plus</Button>
+                  </div>
+                </div>
+                <div className="surface-raised-lg rounded-card border-primary/60 p-5">
+                  <p className="text-heading">Pro</p>
+                  <p className="mt-1 text-ui text-muted-foreground">Every model, more room</p>
+                  <div className="mt-6">
+                    <MetalCta>
+                      <Button className="w-full">Upgrade to Pro</Button>
+                    </MetalCta>
+                  </div>
+                </div>
               </div>
             </Section>
           )}
