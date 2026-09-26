@@ -7,7 +7,8 @@ import { AppProvider } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 import { MessageItem } from "@/components/chat/message-item";
-import { useEffectTheme } from "@/components/effects/use-effect-theme";
+import { useEffectTheme, voiceBandColors, voiceLobeColors } from "@/components/effects/use-effect-theme";
+import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { AUTO_MODEL_ID } from "@/lib/auto-model";
 import type { ModelId } from "@/lib/models";
 import type { AppBootstrap } from "@/types/app";
@@ -128,6 +129,54 @@ function useDemoLevel() {
   }, []);
 }
 
+/** A stand-in call controller: only what the call bar reads, with a live
+ *  demo level in `levelRef` the way the hook fills it from the mic. */
+function useFakeCall(state: { userSpeaking: boolean; awaitingResponse: boolean }) {
+  const level = useDemoLevel();
+  const levelRef = React.useRef(0);
+  React.useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      levelRef.current = state.awaitingResponse ? 0 : level();
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [level, state.awaitingResponse]);
+  return {
+    status: "live",
+    provider: "qwen",
+    model: "qwen3-omni",
+    thinking: false,
+    notice: null,
+    error: null,
+    availability: null,
+    capabilities: null,
+    assistantSpeaking: false,
+    userSpeaking: state.userSpeaking,
+    awaitingResponse: state.awaitingResponse,
+    reconnectAttempt: 0,
+    transcript: [],
+    muted: false,
+    screenSharing: false,
+    memory: false,
+    persona: false,
+    levelRef,
+    setProvider: noop,
+    toggleMute: noop,
+    interrupt: noop,
+    startScreenShare: noop,
+    stopScreenShare: noop,
+    start: noop,
+    stop: noop,
+  } as unknown as Parameters<typeof RealtimeVoice>[0]["voice"];
+}
+
+function CallDemo({ thinking }: { thinking: boolean }) {
+  const voice = useFakeCall({ userSpeaking: !thinking, awaitingResponse: thinking });
+  return <RealtimeVoice voice={voice} onClose={noop} />;
+}
+
 function VoiceDemo({ processing }: { processing: boolean }) {
   const theme = useEffectTheme();
   const level = useDemoLevel();
@@ -137,6 +186,8 @@ function VoiceDemo({ processing }: { processing: boolean }) {
       processing={processing}
       theme={theme ?? "light"}
       colorVariant="sunset"
+      bandColors={voiceBandColors(theme)}
+      colors={voiceLobeColors(theme)}
       className="w-full rounded-composer"
     >
       <div className="composer-surface relative flex w-full flex-col rounded-composer">
@@ -239,6 +290,14 @@ export function PremiumGallery({ only }: { only?: string }) {
                 <div>
                   <Label>Transcribing (processing)</Label>
                   <VoiceDemo processing />
+                </div>
+                <div>
+                  <Label>Voice mode call bar, caller speaking (the product reads the call&apos;s level)</Label>
+                  <CallDemo thinking={false} />
+                </div>
+                <div>
+                  <Label>Voice mode call bar, waiting for the answer (processing)</Label>
+                  <CallDemo thinking />
                 </div>
               </div>
             </Section>

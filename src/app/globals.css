@@ -1624,7 +1624,8 @@
   }
   /* Text and controls inside a Voice glow host sit above the glow's layers
      (the package stacks them at z-index 1-4). */
-  .voice-glow-content {
+  .voice-glow-content,
+  .voice-glow-host > :not(.sr-only) {
     position: relative;
     z-index: 5;
   }

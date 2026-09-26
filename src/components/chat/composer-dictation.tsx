@@ -10,7 +10,7 @@ import { composerFieldClass, composerIconButtonClass } from "@/components/ui/com
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { VoiceBeam } from "voice-glow";
-import { useEffectTheme } from "@/components/effects/use-effect-theme";
+import { useEffectTheme, voiceBandColors, voiceLobeColors } from "@/components/effects/use-effect-theme";
 
 /**
  * Dictation — the composer, listening.
@@ -473,6 +473,8 @@ export function ComposerDictation({
       processing={transcribing}
       theme={effectTheme ?? "light"}
       colorVariant="sunset"
+      bandColors={voiceBandColors(effectTheme)}
+      colors={voiceLobeColors(effectTheme)}
       paused={closing}
       className="w-full rounded-composer"
     >
