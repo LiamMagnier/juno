@@ -5,6 +5,10 @@ import { VoiceBeam } from "voice-glow";
 
 import { AppProvider } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
+import { CodeComposer } from "@/components/code/code-composer";
+import { CodeStartingPoints } from "@/components/code/code-starting-points";
+import { EmptyGreeting } from "@/components/chat/empty-state";
+import { StarterChips } from "@/components/chat/starter-chips";
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 import { MessageItem } from "@/components/chat/message-item";
 import { useEffectTheme, voiceBandColors, voiceLobeColors } from "@/components/effects/use-effect-theme";
@@ -225,6 +229,31 @@ export function PremiumGallery({ only }: { only?: string }) {
         <div className="page-gutter mx-auto w-full max-w-3xl py-12">
           <h1 className="font-serif text-page-title">Premium pass</h1>
           <p className="mt-1 text-body text-muted-foreground">Libraries.dev placements on the real components.</p>
+
+          {show("landings") && (
+            <Section id="landings" title="Empty states" note="Chat and Code, one display system: the greeting in the display face, the composer as the hero, four starting points.">
+              <div className="space-y-16">
+                <div className="flex flex-col items-center">
+                  <div className="mb-6 flex w-full justify-center sm:mb-8">
+                    <EmptyGreeting />
+                  </div>
+                  <div className="relative isolate w-full">
+                    <Composer {...common} isBusy={false} status="idle" frame="landing" />
+                    <StarterChips className="mt-3" />
+                  </div>
+                </div>
+                <div className="flex flex-col items-center pt-24">
+                  <h1 className="mb-6 text-balance text-center font-serif text-display font-normal text-foreground sm:mb-8">
+                    What should we build, <span className="italic">Dev</span>?
+                  </h1>
+                  <div className="w-full">
+                    <CodeComposer />
+                    <CodeStartingPoints />
+                  </div>
+                </div>
+              </div>
+            </Section>
+          )}
 
           {show("composer") && (
             <Section

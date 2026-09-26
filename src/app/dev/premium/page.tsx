@@ -7,6 +7,7 @@ import { PremiumGallery } from "./gallery";
  * component in each state its app state can put it in, so the effects can be
  * checked in both themes without an account, a live model or a microphone.
  *
+ *   landings   Chat and Code empty states in one display system
  *   composer   the landing bloom and the streaming line on the real Composer
  *   phases     the transcript's live row with a Thinking orb per real phase
  *   image      the pixel mosaic in the generated-image placeholder

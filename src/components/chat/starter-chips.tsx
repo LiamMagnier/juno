@@ -5,6 +5,7 @@ import type { IconComponent } from "@/components/ui/icons";
 
 import { CHAT_COMPOSER_FIELD_ID } from "@/components/chat/composer";
 import { Collapse } from "@/components/ui/collapse";
+import { StartingTileBody, startingGridClass, startingTileClass } from "@/components/ui/starting-tile";
 import { menuRowClass } from "@/components/ui/menu-recipe";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
@@ -207,7 +208,7 @@ export function StarterChips({ className }: { className?: string }) {
        * pointer (lift 1px, deeper edge), selected while open. Two columns on
        * a phone, where the hint line drops and the tile becomes a row.
        */}
-      <div className="mx-auto grid max-w-[calc(48rem-2*var(--page-gutter,0px))] grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className={cn(startingGridClass, "max-w-[calc(48rem-2*var(--page-gutter,0px))]")}>
         {STARTER_CHIP_COPY.map((chip, i) => {
           const expanded = openLabel === chip.label;
           return (
@@ -224,31 +225,10 @@ export function StarterChips({ className }: { className?: string }) {
               // No `transition-colors` beside `.pressable`: that class already
               // declares the whole transition shorthand (colour, transform,
               // press), and a later transition-* utility would override it.
-              className={cn(
-                "pressable group flex min-w-0 items-center gap-2.5 rounded-card border border-border/80 bg-card/60 p-2.5 text-left",
-                "hover:-translate-y-px hover:border-foreground/15 hover:bg-card",
-                "aria-expanded:border-foreground/20 aria-expanded:bg-card",
-                "motion-reduce:hover:translate-y-0",
-                // Dealt in once, on the page's first reveal. Backwards fill so
-                // the tile is not painted for one frame before its delay; the
-                // 120ms offset lets the greeting land first.
-                "[animation-fill-mode:backwards] motion-safe:animate-rise-in"
-              )}
+              className={startingTileClass}
               style={staggerDelay(i, "tight", 120)}
             >
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "grid size-8 shrink-0 place-items-center rounded-control bg-accent text-muted-foreground",
-                  "transition-colors duration-fast ease-out-soft group-hover:text-foreground group-aria-expanded:bg-primary/10 group-aria-expanded:text-primary motion-reduce:transition-none"
-                )}
-              >
-                <chip.icon className="size-4" />
-              </span>
-              <span className="flex min-w-0 flex-col">
-                <span className="truncate text-ui font-medium text-foreground">{chip.label}</span>
-                <span className="hidden truncate text-caption text-muted-foreground sm:block">{chip.hint}</span>
-              </span>
+              <StartingTileBody icon={chip.icon} label={chip.label} hint={chip.hint} />
             </button>
           );
         })}
