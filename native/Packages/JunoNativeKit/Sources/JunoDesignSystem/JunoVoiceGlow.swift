@@ -38,22 +38,39 @@ public struct JunoVoiceGlow: View {
     private let processing: Bool
     private let paused: Bool
     private let tone: JunoVoiceGlowTone
+    private let edgeInset: CGFloat
 
     /// - Parameters:
     ///   - level: The live level (0...1) of whoever is talking, read per frame.
     ///   - processing: The reply is being thought through: gather into a beam.
     ///   - paused: No live audio (connecting, ended, muted): hold still and low.
     ///   - tone: Whose light it is. Defaults to the whole palette, the web's.
+    ///   - edgeInset: How far above the view's bottom the glow's ground line
+    ///     (the host's bottom edge) sits. The bloom spills into that strip and
+    ///     fades there, so on a phone the light never ends on a hard cut.
     public init(
         level: @escaping () -> Double,
         processing: Bool = false,
         paused: Bool = false,
-        tone: JunoVoiceGlowTone = .mixed
+        tone: JunoVoiceGlowTone = .mixed,
+        edgeInset: CGFloat = 0
     ) {
         self.level = level
         self.processing = processing
         self.paused = paused
         self.tone = tone
+        self.edgeInset = edgeInset
+    }
+
+    /// A still level (previews, a level held by the caller).
+    public init(
+        level: Double,
+        processing: Bool = false,
+        paused: Bool = false,
+        tone: JunoVoiceGlowTone = .mixed,
+        edgeInset: CGFloat = 0
+    ) {
+        self.init(level: { level }, processing: processing, paused: paused, tone: tone, edgeInset: edgeInset)
     }
 
     @Environment(\.colorScheme) private var colorScheme
@@ -83,7 +100,11 @@ public struct JunoVoiceGlow: View {
                     isDark: isDark,
                     reduceMotion: reduceMotion,
                     reduceTransparency: reduceTransparency
-                ).draw(frame, in: &context, size: size)
+                ).draw(
+                    frame,
+                    in: &context,
+                    size: CGSize(width: size.width, height: max(0, size.height - edgeInset))
+                )
             }
         }
         .allowsHitTesting(false)
