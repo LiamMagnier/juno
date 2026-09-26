@@ -5,13 +5,13 @@ import UIKit
 
 /// Full-screen voice: the orb, live captions, and the call's controls.
 ///
-/// The dock is the default and stays so — a call that runs *beside* the chat
+/// The composer is the default and stays so: a call that runs *in* the chat
 /// is what lets the reader drop a photo in mid-sentence. This is the other
 /// mode, the one ChatGPT keeps behind "Separate mode": the reader has chosen
 /// to look at the call, so the orb is the thing to look at, the transcript is
 /// captions under it, and every control is a thumb's reach from the bottom.
-/// Swiping the dock up opens it; the chevron or a swipe down goes back to the
-/// dock with the call untouched.
+/// Call settings in the composer opens it; the chevron or a swipe down goes
+/// back to the composer with the call untouched.
 struct JunoMobileVoiceFullScreen: View {
   let session: JunoMobileVoiceSession
   let close: () -> Void
@@ -88,7 +88,7 @@ struct JunoMobileVoiceFullScreen: View {
     .accessibilityIdentifier("juno.mobile.voice-fullscreen")
     // The full screen is the one surface watching the call while it is
     // looked at, so it keeps the Live Activity current while it is up; the
-    // dock does the same when it is not.
+    // composer does the same when it is not.
     .onChange(of: controller.phase) { _, phase in
       JunoMobileLiveActivityCoordinator.shared.updateVoice(
         phase: phase.liveActivityStatus, muted: controller.muted
@@ -194,7 +194,7 @@ struct JunoMobileVoiceFullScreen: View {
   }
 
   /// Push to talk holds the mic open for the press; otherwise a tap interrupts
-  /// Juno mid-sentence, the one gesture the dock also carries.
+  /// Juno mid-sentence, the one gesture the composer's Stop also carries.
   private var orbGesture: some Gesture {
     DragGesture(minimumDistance: 0)
       .onChanged { _ in
