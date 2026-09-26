@@ -463,6 +463,9 @@ final class StudioSnapshotTests: XCTestCase {
             rootView: view
                 .frame(width: size.width, height: size.height)
                 .environment(\.colorScheme, dark ? .dark : .light)
+                // Liquid Glass is composited by the window server; offscreen,
+                // the composer draws its Reduce Transparency card instead.
+                .environment(\.junoSnapshotOpaqueGlass, true)
         )
         hosting.frame = CGRect(origin: .zero, size: size)
         let window = NSWindow(

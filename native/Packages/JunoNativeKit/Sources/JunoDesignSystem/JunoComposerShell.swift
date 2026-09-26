@@ -213,6 +213,40 @@ public extension EnvironmentValues {
     @Entry var junoSnapshotOpaqueGlass = false
 }
 
+public extension View {
+    /// Chat's composer material on another composer — Code's — so the two
+    /// products type into the same surface: native Liquid Glass inside its own
+    /// `GlassEffectContainer`, or, under Reduce Transparency (and in the
+    /// offscreen snapshot harness), the web's opaque card with a hairline;
+    /// a hairline edge under Increase Contrast. The one composer material,
+    /// owned by this file so the glass gate's allow-list stays one site.
+    func junoComposerGlass(cornerRadius: CGFloat = JunoComposerMetrics.cornerRadius) -> some View {
+        modifier(JunoComposerGlassHost(cornerRadius: cornerRadius))
+    }
+}
+
+private struct JunoComposerGlassHost: ViewModifier {
+    let cornerRadius: CGFloat
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.junoSnapshotOpaqueGlass) private var snapshotOpaqueGlass
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        GlassEffectContainer(spacing: JunoComposerMetrics.containerSpacing) {
+            content
+                .containerShape(.rect(cornerRadius: cornerRadius))
+                .modifier(
+                    JunoComposerSurface(
+                        reduceTransparency: reduceTransparency || snapshotOpaqueGlass,
+                        increaseContrast: contrast == .increased,
+                        cornerRadius: cornerRadius
+                    )
+                )
+        }
+    }
+}
+
 /// The shell's material: Liquid Glass, or the opaque card that stands in for it.
 ///
 /// A modifier rather than two branches of the shell, so the rows inside keep
@@ -221,9 +255,10 @@ public extension EnvironmentValues {
 private struct JunoComposerSurface: ViewModifier {
     let reduceTransparency: Bool
     let increaseContrast: Bool
+    var cornerRadius: CGFloat = JunoComposerMetrics.cornerRadius
 
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: JunoComposerMetrics.cornerRadius, style: .continuous)
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
     }
 
     func body(content: Content) -> some View {

@@ -111,9 +111,10 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
             field
             controlRow
         }
-        // The raised rung (premium pass, rule 3): card fill, hairline, the
-        // short and the long tinted throws. The one hero object of the screen.
-        .junoLiftedSurface(cornerRadius: Studio.Radius.composer)
+        // Chat's composer material (native Liquid Glass; the web's opaque
+        // card under Reduce Transparency), so both products type into one
+        // surface — the owner's rule: native glass, never a rebuilt one.
+        .junoComposerGlass(cornerRadius: Studio.Radius.composer)
         .overlay {
             if isDropTargeted {
                 RoundedRectangle(cornerRadius: Studio.Radius.composer, style: .continuous)
