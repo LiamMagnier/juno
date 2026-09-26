@@ -2,11 +2,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, ChevronDown, Globe, Monitor, Smartphone } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { JunoMark } from "@/components/brand/logo";
-import { AsciiWordmark } from "@/components/signature/dot-matrix";
 import { ProductShot, hasProductShot } from "@/components/landing/product-shot";
 import { Plate } from "@/components/landing/plate";
 import { LandingColumn } from "@/components/landing/section";
+import { SiteFooter, SiteHeader } from "@/components/landing/site-chrome";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { downloadLink, type AppDownload, type DownloadPlatform } from "@/lib/app-downloads";
 import { staggerDelay } from "@/lib/motion";
@@ -41,25 +40,8 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
   const blocked = Boolean(mac?.available && mac.notarized === false);
 
   return (
-    <div className="min-h-dvh bg-background text-foreground">
-      <LandingColumn contentClassName="flex items-center justify-between py-4">
-        <Link
-          href="/"
-          aria-label="Juno home"
-          className="pressable inline-flex items-center gap-2.5 rounded-control motion-reduce:transition-none motion-reduce:active:scale-100"
-        >
-          <JunoMark className="size-7" />
-          <AsciiWordmark />
-        </Link>
-        <nav aria-label="Account" className="flex items-center gap-2">
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/sign-in">Sign in</Link>
-          </Button>
-          <Button asChild size="sm">
-            <Link href="/sign-up">Create account</Link>
-          </Button>
-        </nav>
-      </LandingColumn>
+    <div className="relative min-h-dvh bg-background text-foreground">
+      <SiteHeader />
 
       <main>
         <LandingColumn contentClassName="flex flex-col items-center pb-10 pt-10 text-center sm:pb-14 sm:pt-16">
@@ -170,22 +152,7 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
         </LandingColumn>
       </main>
 
-      <footer className="border-t border-border/60">
-        <LandingColumn contentClassName="flex flex-wrap items-center justify-between gap-4 py-6 text-caption text-muted-foreground">
-          <p>© {new Date().getFullYear()} Juno</p>
-          <nav aria-label="Legal" className="flex gap-4">
-            <Link href="/legal/confidentialite" lang="fr" className="rounded-xs py-1 hover:text-foreground">
-              Privacy
-            </Link>
-            <Link href="/legal/cgu" lang="fr" className="rounded-xs py-1 hover:text-foreground">
-              Terms
-            </Link>
-            <Link href="/legal/mentions-legales" lang="fr" className="rounded-xs py-1 hover:text-foreground">
-              Legal notice
-            </Link>
-          </nav>
-        </LandingColumn>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

@@ -201,7 +201,7 @@ export default async function FileUnderstandingPage() {
         <p className="font-mono text-label text-muted-foreground">
           Juno engineering · {PUBLISHED}
         </p>
-        <h1 className="mt-3 text-balance font-sans text-display text-foreground">
+        <h1 className="mt-3 text-balance font-serif text-display font-medium tracking-tight text-foreground">
           How Juno reads your files
         </h1>
         <Lede>
