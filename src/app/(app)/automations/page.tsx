@@ -73,13 +73,12 @@ export default function AutomationsPage() {
     <AppPage measure="wide">
       <AppPageHeader
         heading="Automations"
-        lede="Let a task start itself — at a time you choose or when something changes — with every run attached to the same task so context compounds."
+        lede="Tasks that start themselves, on a schedule or when something changes."
         actions={action}
       />
       {failed ? (
         <WorkLoadError onRetry={() => void load()}>
-          Couldn’t load your automations. Existing automations keep their server-side state; this
-          page is empty because the read failed, not because they were removed.
+          Couldn’t load your automations. They keep running; only this page failed to read them.
         </WorkLoadError>
       ) : schedules === null ? (
         <WorkList>
@@ -89,7 +88,7 @@ export default function AutomationsPage() {
         <EmptyState
           icon={AppIcons.automations}
           title="No automations yet"
-          description="Run a task every weekday at eight, when an invoice arrives, before a meeting, when a topic starts moving, or when a granted folder changes. Juno can work while you are elsewhere and stops for approvals when the policy requires it."
+          description="Run a task on a schedule, or when something happens, like an invoice arriving or a meeting about to start."
           action={action}
         />
       ) : (

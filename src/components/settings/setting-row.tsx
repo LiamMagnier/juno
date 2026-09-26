@@ -1,20 +1,30 @@
 import * as React from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SaveStatus, type SaveState } from "@/components/settings/save-status";
+import { Button } from "@/components/ui/button";
+import { StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 
 /**
  * The shapes every settings section is built from.
  *
- *   <SettingsGroup>   a plain title and a one-line note, then rows on hairlines.
+ *   <SettingsGroup>   a plain title and a one-line note above a grouped card of
+ *                     rows on hairlines.
  *   <SettingRow>      label and description on the left, the control on the
  *                     right and vertically centred.
  *   <SettingBlock>    a labelled full-width control (a textarea, a list) that
  *                     needs the whole measure.
  *
- * Flat, on purpose. The rows sit directly on the pane (the modal is already a
- * floating surface, the page column already has its frame), hierarchy comes
- * from weight and size, and the only lines are the hairlines between rows.
+ * GROUPED, since the premium pass. The rows used to sit directly on the pane,
+ * which made a group a heading followed by lines, and on a long section the
+ * eye could not tell where one group stopped and the next began without
+ * reading the headings. Each group's rows now sit in one card (the raised
+ * rung's hairline and contact shadow, `rounded-card`, a 16px inset), with the
+ * group's title and note ABOVE the card, not inside it. That is the shape the
+ * Mac's settings already have (`.formStyle(.grouped)` in DesktopSettingsScreen
+ * and a `DesktopSettingsGroupHeader` over each section), so the two clients
+ * now draw one picture. The only lines inside a card are the hairlines between
+ * its rows.
  *
  * The type ladder, top down: the pane's section name at `text-title`, a
  * group's title at `text-body-lg` semibold, a row's label at `text-body` medium,
@@ -23,6 +33,12 @@ import { cn } from "@/lib/utils";
  * loud as the labels it introduced. The group title was a 12px mono eyebrow,
  * which read as developer metadata rather than as the name of a group.
  */
+/**
+ * The grouped card a SettingsGroup draws its rows in. Exported so a skeleton
+ * (settings/loading.tsx) stands its placeholder rows in the same card.
+ */
+export const SETTINGS_CARD_CLASS = "surface-raised divide-y divide-border/60 rounded-card px-4";
+
 export function SettingsGroup({
   title,
   description,
@@ -55,15 +71,10 @@ export function SettingsGroup({
   // then reserve an empty header block.
   const hasHeader = title != null || Boolean(description) || aside != null;
   return (
-    <section
-      className={cn(
-        "pt-9 first:pt-0",
-        tone === "destructive" && "mt-3 border-t border-border first:mt-0 first:border-t-0",
-        className
-      )}
-    >
+    // The irreversible group stands a little further off the groups above it.
+    <section className={cn("pt-8 first:pt-0", tone === "destructive" && "pt-12", className)}>
       {hasHeader && (
-        <div className="flex items-end justify-between gap-x-6 gap-y-1 pb-1.5">
+        <div className="flex items-end justify-between gap-x-6 gap-y-1 pb-2.5">
           <div className="min-w-0 flex-1">
             {title != null && <h3 className="text-body-lg font-semibold text-foreground">{title}</h3>}
             {description && <p className="mt-0.5 text-ui text-muted-foreground">{description}</p>}
@@ -71,7 +82,9 @@ export function SettingsGroup({
           {aside && <div className="flex shrink-0 items-center gap-3">{aside}</div>}
         </div>
       )}
-      <div className="divide-y divide-border/60">{children}</div>
+      {/* The irreversible group keeps the same card: its rows' destructive
+          ink says what they are, and a red box would read as an error. */}
+      <div className={SETTINGS_CARD_CLASS}>{children}</div>
     </section>
   );
 }
@@ -168,19 +181,21 @@ export function SettingBlock({
   children: React.ReactNode;
   className?: string;
 }) {
+  // Label above the control, helper text below it: the form order, for the
+  // one row shape that holds a real field (a textarea, a list). Read top to
+  // bottom it is name, the thing, then what the thing does, which is also
+  // the order a screen reader meets them in.
   return (
     <div className={cn("py-4", className)}>
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
-        <div className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5">
-            <p className="text-body font-medium text-foreground">{label}</p>
-            {status !== undefined && <SaveStatus state={status} />}
-          </div>
-          {description && <p className="mt-0.5 text-ui text-muted-foreground">{description}</p>}
+      <div className="mb-2.5 flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5">
+          <p className="text-body font-medium text-foreground">{label}</p>
+          {status !== undefined && <SaveStatus state={status} />}
         </div>
         {aside}
       </div>
       {children}
+      {description && <p className="mt-2 text-ui text-muted-foreground">{description}</p>}
     </div>
   );
 }
@@ -226,6 +241,32 @@ export function SettingRowSkeleton({ className, style }: { className?: string; s
     <div className={cn("py-4", className)} style={style} aria-hidden="true">
       <Skeleton className="h-[1.6em] w-40 max-w-full rounded-xs text-body" />
       <Skeleton className="mt-0.5 h-[1.5em] w-64 max-w-full rounded-xs text-ui" />
+    </div>
+  );
+}
+
+/**
+ * A read that failed, inside a group's card: what did not load, in the
+ * destructive ink with the error mark, and a Try again beside it.
+ *
+ * One shape for every section. There were four: a panel empty state (a
+ * dashed box inside the card, twice on Connectors), a red line with an icon
+ * (Shared links), a muted sentence (usage History) and the Work list's own
+ * error block (Devices). An inline failure is an attention state, so it gets
+ * the colour and the small mark and no container of its own.
+ */
+export function SettingsInlineError({ children, onRetry }: { children: React.ReactNode; onRetry?: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-4" role="status">
+      <p className="flex min-w-0 items-start gap-1.5 text-ui text-destructive-ink">
+        <StatusIcons.error className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        <span>{children}</span>
+      </p>
+      {onRetry && (
+        <Button variant="outline" size="sm" onClick={onRetry} className="ml-auto">
+          Try again
+        </Button>
+      )}
     </div>
   );
 }

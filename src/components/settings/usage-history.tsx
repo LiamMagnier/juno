@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Button } from "@/components/ui/button";
+import { SettingsInlineError } from "@/components/settings/setting-row";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSettingsResource } from "@/components/settings/use-settings-resource";
 import { compactCount, formatEur, formatShortDay } from "@/components/settings/format";
@@ -85,12 +85,7 @@ export function UsageHistoryView({
 
   if (failed) {
     return (
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-4">
-        <p className="text-ui text-muted-foreground">Your usage history couldn’t be loaded.</p>
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          Try again
-        </Button>
-      </div>
+      <SettingsInlineError onRetry={onRetry}>Couldn’t load your usage history.</SettingsInlineError>
     );
   }
 

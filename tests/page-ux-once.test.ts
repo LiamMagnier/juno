@@ -157,12 +157,13 @@ test("the settings loading page's header matches the real one: no back row and n
   assert.ok(!/\bnav\b/.test(skeleton), "no back or eyebrow row (nav defaults to off)");
 });
 
-test("the settings loading page stands rows on hairlines in for rows on hairlines", () => {
-  // The pane has no cards — every section is SettingRows under
-  // `divide-y divide-border/60` — but the skeleton used to be four `h-16`
-  // cards on `space-y-4`, the outline of a page that was not the one about
-  // to replace it. The row placeholder lives beside SettingRow, and takes the
-  // row's own line boxes in em so the two cannot drift apart.
+test("the settings loading page stands rows in the group's card in for rows in the group's card", () => {
+  // Each settings group draws its rows in one grouped card (SETTINGS_CARD_CLASS,
+  // hairlines between rows) since the premium pass. The skeleton used to be four
+  // `h-16` cards on `space-y-4`, one per row, the outline of a page that was not
+  // the one about to replace it; then bare rows on hairlines, while the pane was
+  // flat. It now imports the card's own class, and the row placeholder lives
+  // beside SettingRow and takes the row's line boxes in em, so neither can drift.
   const settingRow = fs.readFileSync(SETTING_ROW, "utf8");
   const loading = fs.readFileSync(SETTINGS_LOADING, "utf8");
 
@@ -172,13 +173,11 @@ test("the settings loading page stands rows on hairlines in for rows on hairline
     /mt-0\.5 h-\[1\.5em\] w-64 max-w-full rounded-xs text-ui/.test(settingRow),
     "description bar is one text-ui line box at the row's mt-0.5"
   );
+  assert.ok(/export const SETTINGS_CARD_CLASS = "[^"]*divide-y divide-border\/60/.test(settingRow), "the group card separates rows with hairlines");
   assert.ok(/SettingRowSkeleton/.test(loading), "loading.tsx uses the shared row skeleton");
-  assert.ok(/divide-y divide-border\/60/.test(loading), "the rows are separated by the hairlines the real rows use");
-  // The class strings the old card skeletons carried, not the bare tokens:
-  // the rail well is a `rounded-card` surface for real, and the docblock
-  // names both tokens while explaining why they left.
-  assert.ok(!/h-16 w-full rounded-card/.test(loading), "no card placeholders on a pane that draws no cards");
-  assert.ok(!/className="space-y-4"/.test(loading), "no card spacing on a pane that draws no cards");
+  assert.ok(/className=\{SETTINGS_CARD_CLASS\}/.test(loading), "the placeholder rows sit in the real group card");
+  assert.ok(!/h-16 w-full rounded-card/.test(loading), "no per-row card placeholders");
+  assert.ok(!/className="space-y-4"/.test(loading), "no per-row card spacing");
 });
 
 test("WorkStatusPill carries its sentence as a tooltip by default", () => {

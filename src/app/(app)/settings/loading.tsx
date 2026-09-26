@@ -1,5 +1,5 @@
 import { AppPage, AppPageHeaderSkeleton } from "@/components/app/app-page";
-import { SettingRowSkeleton, SettingsPaneHeaderSkeleton } from "@/components/settings/setting-row";
+import { SETTINGS_CARD_CLASS, SettingRowSkeleton, SettingsPaneHeaderSkeleton } from "@/components/settings/setting-row";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SETTINGS_SECTIONS } from "@/components/settings/settings-sections";
 
@@ -12,8 +12,8 @@ import { SETTINGS_SECTIONS } from "@/components/settings/settings-sections";
  * lede (`AppPageHeaderSkeleton` draws neither by default), so the page does
  * not lift when it arrives. The pane header and the rows come from
  * setting-row.tsx, where the real ones live, and stand rows on hairlines in
- * for rows on hairlines: the pane draws no cards, so its placeholder draws
- * none either.
+ * the group's card in for rows on hairlines in the group's card: the same
+ * class, imported, so the placeholder cannot draw a different material.
  *
  * No stagger: the skeleton is a picture of the page about to arrive, not a
  * sequence, and a deal-in that is still playing when the content lands is
@@ -46,7 +46,7 @@ export default function SettingsLoading() {
         </div>
         <div className="min-w-0 max-w-2xl">
           <SettingsPaneHeaderSkeleton />
-          <div className="divide-y divide-border/60">
+          <div className={SETTINGS_CARD_CLASS}>
             {[...Array(4)].map((_, i) => (
               <SettingRowSkeleton key={i} />
             ))}

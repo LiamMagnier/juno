@@ -5,10 +5,13 @@ import Link from "next/link";
 import { CodeIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { SettingsGroup } from "@/components/settings/setting-row";
+import { SettingsGroup, SettingsInlineError } from "@/components/settings/setting-row";
 import { WorkList } from "@/components/work/shell/work-section";
 import { WorkHostRow } from "@/components/work/work-host-row";
-import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
+import { WorkRowSkeletons } from "@/components/work/shell/work-states";
+
+/** The Work list flattened into the group's card: no well, rows flush with the card's inset. */
+const FLAT_LIST = "-mx-3.5 border-0 bg-transparent p-0";
 import { WORK_POLL_MS, WORK_SYNC_EVENT, fetchWorkHosts } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 import type { ClientWorkHost } from "@/lib/work/serializers";
@@ -84,13 +87,15 @@ export function DevicesView({
       title="Your Macs"
       description="Where a task can reach a folder, an app or your signed-in browser. Open one to choose what it may do, or to revoke it."
     >
-      <div className="py-4">
+      {/* The Work list's rows, without the Work list's inset well: inside the
+          group's card a second surface would be a card in a card. */}
+      <div className="py-3">
         {failed && hosts === null ? (
-          <WorkLoadError onRetry={onRetry}>
-            Couldn’t load your Macs. Anything already signed in can still be reached, with the permissions it had.
-          </WorkLoadError>
+          <SettingsInlineError onRetry={onRetry}>
+            Couldn’t load your Macs. Any Mac already signed in keeps the permissions it had.
+          </SettingsInlineError>
         ) : hosts === null ? (
-          <WorkList>
+          <WorkList className={FLAT_LIST}>
             <WorkRowSkeletons count={2} />
           </WorkList>
         ) : hosts.length === 0 ? (
@@ -116,14 +121,14 @@ export function DevicesView({
                 since.
               </WorkStateNote>
             )}
-            <WorkList>
+            <WorkList className={FLAT_LIST}>
               {ordered.map((host) => (
                 <WorkHostRow key={host.id} host={host} />
               ))}
             </WorkList>
           </>
         )}
-        <p className="mt-4 text-ui text-muted-foreground">
+        <p className="mt-3 pb-1 text-ui text-muted-foreground">
           Some actions wait for you on every Mac, whatever it is allowed to do.{" "}
           <Link
             href="/permissions"

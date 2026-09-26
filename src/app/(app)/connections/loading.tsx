@@ -19,7 +19,7 @@ export default function ConnectionsLoading() {
       {/* No `actions`: the header has no trailing cluster since its count
           badge went (the toolbar's "Connected" segment carries the number),
           so a placeholder for one would reserve room nothing fills. */}
-      <AppPageHeaderSkeleton ledeLines={2} headingWidth="w-72" />
+      <AppPageHeaderSkeleton headingWidth="w-72" />
 
       <div className="flex flex-wrap items-center gap-2">
         <Skeleton className="h-9 w-56 rounded-menu" />
