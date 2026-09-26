@@ -5,8 +5,7 @@ import Link from "next/link";
 
 import { StartingTileBody, startingGridClass, startingTileClass } from "@/components/ui/starting-tile";
 import { CODE_COMPOSER_SEED_EVENT } from "@/components/code/code-seed";
-import { BookOpen, Wrench, type IconComponent } from "@/components/ui/icons";
-import { AppIcons } from "@/lib/app-icons";
+import { BookOpenText, Bug, GitCompare, PuzzlePiece, type IconComponent } from "@/components/ui/icons";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -27,25 +26,25 @@ const CODE_STARTER_COPY: ReadonlyArray<
   {
     label: "Fix a bug",
     hint: "Find the real cause",
-    icon: Wrench,
+    icon: Bug,
     prompt: "Find out why the failing test is failing, fix the cause, and run the tests to confirm.",
   },
   {
     label: "Build a feature",
     hint: "Small, with tests",
-    icon: AppIcons.code,
+    icon: PuzzlePiece,
     prompt: "Add a small feature: ",
   },
   {
     label: "Explain the code",
     hint: "Map the repository",
-    icon: BookOpen,
+    icon: BookOpenText,
     prompt: "Explain how this repository is organised, where the entry points are, and how a request flows through it.",
   },
   {
     label: "Review changes",
     hint: "Open pull requests",
-    icon: AppIcons.pulls,
+    icon: GitCompare,
     href: "/code/pulls",
   },
 ];

@@ -171,7 +171,8 @@ test("a voice session that could not honour the request says so without ending t
   assert.match(openaiVoice, /thinking: this\.fellBack \? false : this\.thinking/);
   // The note rides on session.ready, NOT on error — an error ends the call.
   assert.match(relaySession, /established\.notice \? \{ notice: established\.notice \}/);
-  assert.match(voiceBar, /!voice\.error && voice\.notice/);
+  // A notice shows only when there is no error, and never ends the call.
+  assert.match(voiceBar, /if \(voice\.error\) \{[\s\S]*?\}\s*if \(voice\.notice\)/);
   assert.match(voiceBar, /role="status"/);
 });
 

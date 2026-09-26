@@ -112,7 +112,8 @@ test("a chat asks for memory for its calls — its project's — and never in in
 
 test("the call says when it knows what Juno remembers — only once the relay confirms it", () => {
   const dock = src("src/components/voice/realtime-voice.tsx");
-  assert.match(dock, /\{voice\.memory && \(/);
+  // Said in the call's detail line (the status tooltip), and only once confirmed.
+  assert.match(dock, /voice\.memory \? "remembers you" : null/);
   // Both copies of the protocol carry the flag.
   assert.match(src("relay/src/protocol.ts"), /memory\?: boolean;/);
   assert.match(src("src/lib/voice-relay-protocol.ts"), /memory\?: boolean;/);

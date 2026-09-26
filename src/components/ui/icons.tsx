@@ -71,6 +71,10 @@ import {
   ArrowUUpRightIcon,
   BellSimpleIcon,
   BrainIcon,
+  BugIcon,
+  BookOpenTextIcon,
+  CompassIcon,
+  PuzzlePieceIcon,
   BinocularsIcon,
   BookmarkSimpleIcon,
   BookOpenIcon,
@@ -620,6 +624,11 @@ export const Workflow = glyph(TreeStructureIcon, "workflow");
 export const Bot = glyph(RobotIcon, "bot");
 /** A model's own reasoning: the resting mark of a thought-process row. */
 export const Brain = glyph(BrainIcon, "brain");
+/** Starting points on the empty Chat and Code screens, drawn in `duotone`. */
+export const Bug = glyph(BugIcon, "bug");
+export const BookOpenText = glyph(BookOpenTextIcon, "book-open-text");
+export const Compass = glyph(CompassIcon, "compass");
+export const PuzzlePiece = glyph(PuzzlePieceIcon, "puzzle-piece");
 export const Telescope = glyph(BinocularsIcon, "research");
 export const Sparkles = glyph(SparkleIcon, "sparkles", { motion: "pop" });
 export const Zap = glyph(LightningIcon, "zap", { motion: "pop" });

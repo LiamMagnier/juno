@@ -14,7 +14,6 @@ import { CommandPaletteLazy } from "@/components/app/command-palette-lazy";
 import { DocumentTitle } from "@/components/app/document-title";
 import { PageTransition } from "@/components/app/page-transition";
 import { AnnouncementPopupLazy } from "@/components/app/announcement-popup-lazy";
-import { AmbientAuraLazy } from "@/components/ambient/ambient-aura-lazy";
 import { useApp } from "@/components/app/app-provider";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { VerifyEmailBanner } from "@/components/auth/verify-email-banner";
@@ -624,14 +623,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           <StreamProgress active={streaming} />
 
-          {/* THE VOICE LIGHT, and it lives HERE rather than on <body>.
-              `<main>` is `relative` and starts where the sidebar ends, so the
-              layer it positions against is exactly the content column. The old
-              version was `position: fixed` in a body portal, which meant a call
-              lit the frame around the sidebar and the navigation as well as the
-              conversation — a mode light claiming chrome that is not in the
-              mode. Mounted once, here, and absent unless a call is up. */}
-          <AmbientAuraLazy />
+          {/* No voice light over the column. The ambient aura that tinted the
+              whole conversation during a call is retired: the call lives in
+              the composer now, whose meter and label already say it is live,
+              and a page-wide wash made the screen look busy without saying
+              anything more (premium pass, 2026-09-26). */}
 
           {/* An account that has never confirmed its address can read everything
               it owns and export it, but cannot spend — so the refusal has to be

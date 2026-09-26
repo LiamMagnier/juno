@@ -4,44 +4,40 @@ import type { IconComponent } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 /**
- * THE STARTING-POINT TILE, shared by Chat's empty state and Code's, so the
- * two landings hand the reader the same object (premium brief rule 2).
+ * THE STARTING-POINT CHIP, shared by Chat's empty state and Code's, so the two
+ * landings hand the reader the same object.
  *
- * Quiet at rest (ground-toned card, hairline), one rung up under the pointer
- * (lift 1px, deeper edge), selected while open. `.pressable` owns the
- * transition list, so no transition utility sits beside it. Dealt in once on
- * the page's first reveal with a backwards fill, so a tile is not painted for
- * one frame before its delay.
+ * A pill with one word and a duotone glyph in the brand ink. It replaced a
+ * four-up grid of tiles (a grey icon well, a verb and a hint line each) that
+ * read as a template: four equal cards under the composer competed with it,
+ * and the hairline icons in grey squares were the flattest thing on the page.
+ * The chip is quieter at rest and warmer up close: Phosphor's duotone cut is
+ * its own drawing (a tinted fill under the line), not a recoloured outline.
+ *
+ * The hint stays in the accessible name (and the caller's tooltip, if any), so
+ * nothing the tile used to say is lost to a screen reader.
  */
 export const startingTileClass = cn(
-  "pressable group flex min-w-0 items-center gap-2.5 rounded-card border border-border/80 bg-card/60 p-2.5 text-left",
-  "hover:-translate-y-px hover:border-foreground/15 hover:bg-card",
-  "aria-expanded:border-foreground/20 aria-expanded:bg-card",
-  "motion-reduce:hover:translate-y-0",
-  "[animation-fill-mode:backwards] motion-safe:animate-rise-in"
+  "pressable group inline-flex h-9 items-center gap-2 rounded-full border border-border/70 bg-card/70 pl-3 pr-3.5",
+  "text-ui font-medium text-foreground/80 shadow-[0_1px_1px_hsl(var(--foreground)/0.03)]",
+  "hover:border-foreground/15 hover:bg-card hover:text-foreground",
+  "aria-expanded:border-foreground/20 aria-expanded:bg-card aria-expanded:text-foreground",
+  "[animation-fill-mode:backwards] motion-safe:animate-fade-in"
 );
 
-/** Four across from `sm`, two on a phone. The caller sets the max width. */
-export const startingGridClass = "mx-auto grid w-full grid-cols-2 gap-2 sm:grid-cols-4";
+/** One centred row that wraps on a phone. The caller sets the max width. */
+export const startingGridClass = "mx-auto flex w-full flex-wrap items-center justify-center gap-2";
 
-/** The inside of a tile: the mark in its own small well, the verb, one line
- *  on what it is for (dropped on a phone, where the tile becomes a row). */
 export function StartingTileBody({ icon: Icon, label, hint }: { icon: IconComponent; label: string; hint: string }) {
   return (
     <>
-      <span
+      <Icon
         aria-hidden="true"
-        className={cn(
-          "grid size-8 shrink-0 place-items-center rounded-control bg-accent text-muted-foreground",
-          "transition-colors duration-fast ease-out-soft group-hover:text-foreground group-aria-expanded:bg-primary/10 group-aria-expanded:text-primary motion-reduce:transition-none"
-        )}
-      >
-        <Icon className="size-4" />
-      </span>
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate text-ui font-medium text-foreground">{label}</span>
-        <span className="hidden truncate text-caption text-muted-foreground sm:block">{hint}</span>
-      </span>
+        weight="duotone"
+        className="size-[18px] shrink-0 text-primary transition-transform duration-fast ease-out-soft group-hover:-rotate-6 motion-reduce:transition-none motion-reduce:group-hover:rotate-0"
+      />
+      <span>{label}</span>
+      <span className="sr-only">: {hint}</span>
     </>
   );
 }

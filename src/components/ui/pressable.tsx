@@ -114,7 +114,7 @@ const pressableVariants = cva(
       // icon is flat (no `.control-neu`), so it paints the on tone itself.
       //
       // A selected chip's words are foreground ink, like the tile's, and the
-      // accent is its edge. `text-primary-ink` measured 4.58:1 on the old
+      // accent is its edge. `text-primary` measured 4.58:1 on the old
       // `--secondary` fill but 4.27 on the on tone (4.19 in dark), under the
       // 4.5 its caption-sized label needs. The icon keeps the accent ink: a
       // glyph needs 3:1, and it has over 4.
@@ -131,7 +131,7 @@ const pressableVariants = cva(
       {
         kind: "icon",
         selected: true,
-        class: "bg-selected text-primary-ink hover:bg-selected hover:text-primary-ink",
+        class: "bg-selected text-primary hover:bg-selected hover:text-primary",
       },
 
       // Sizes. Only `icon` and `chip` are size-sensitive; a row and a tile size

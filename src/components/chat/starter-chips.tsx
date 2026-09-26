@@ -1,13 +1,12 @@
 "use client";
 
 import * as React from "react";
-import type { IconComponent } from "@/components/ui/icons";
+import { Braces, Compass, Map as MapGlyph, PenTool, type IconComponent } from "@/components/ui/icons";
 
 import { CHAT_COMPOSER_FIELD_ID } from "@/components/chat/composer";
 import { Collapse } from "@/components/ui/collapse";
 import { StartingTileBody, startingGridClass, startingTileClass } from "@/components/ui/starting-tile";
 import { menuRowClass } from "@/components/ui/menu-recipe";
-import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -60,7 +59,7 @@ const STARTER_CHIP_COPY: ReadonlyArray<{
   {
     label: "Research",
     hint: "With cited sources",
-    icon: AppIcons.research,
+    icon: Compass,
     examples: [
       "What does the latest research say about intermittent fasting? Cite the strongest studies.",
       "Compare the three most popular note-taking apps for a small team, with sources.",
@@ -70,7 +69,7 @@ const STARTER_CHIP_COPY: ReadonlyArray<{
   {
     label: "Write",
     hint: "Emails and drafts",
-    icon: ActionIcons.edit,
+    icon: PenTool,
     examples: [
       "Draft a short, friendly follow-up email after a job interview.",
       "Write a toast for my sister’s wedding that is warm and under two minutes long.",
@@ -80,7 +79,7 @@ const STARTER_CHIP_COPY: ReadonlyArray<{
   {
     label: "Code",
     hint: "Scripts and fixes",
-    icon: AppIcons.code,
+    icon: Braces,
     examples: [
       "Write a Python script that renames photos by the date they were taken.",
       "Build a React table component that sorts by any column.",
@@ -90,7 +89,7 @@ const STARTER_CHIP_COPY: ReadonlyArray<{
   {
     label: "Plan",
     hint: "Trips and projects",
-    icon: AppIcons.work,
+    icon: MapGlyph,
     examples: [
       "Plan a three-day trip to Lisbon with a mix of food, museums and walks.",
       "Turn my goals for this quarter into a week-by-week plan.",

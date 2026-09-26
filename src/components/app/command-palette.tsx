@@ -76,7 +76,7 @@ function Marked({ text, marks }: { text: string; marks: readonly SearchMark[] })
   marks.forEach((mark, i) => {
     if (mark.start > cursor) parts.push(text.slice(cursor, mark.start));
     parts.push(
-      <mark key={i} className="rounded-micro bg-primary/15 px-0.5 text-primary-ink">
+      <mark key={i} className="rounded-micro bg-primary/15 px-0.5 text-primary">
         {text.slice(mark.start, mark.end)}
       </mark>
     );

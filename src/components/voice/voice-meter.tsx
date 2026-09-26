@@ -74,9 +74,10 @@ export const VoiceMeter = React.forwardRef<HTMLSpanElement, VoiceMeterProps>(fun
             size === "stage" ? "w-1.5" : "w-[3px]",
             muted
               ? "bg-muted-foreground/40"
-              : // Juno's own voice, in the ink the aura gives it.
+              : // Juno's own voice, in neutral ink: coral is the one accent,
+                // and it belongs to you (listening and speaking alike).
                 phase === "speaking"
-                ? "bg-source"
+                ? "bg-foreground/75"
                 : // Your turn — listening and speaking alike, exactly as the
                   // aura treats them. The level and the fill direction are what
                   // separate "waiting for you" from "hearing you".
@@ -89,10 +90,14 @@ export const VoiceMeter = React.forwardRef<HTMLSpanElement, VoiceMeterProps>(fun
       {/* Muted is struck through rather than dimmed. Dimming made muted, idle
           and a dead session pixel-identical — three grey dots — and "is my
           microphone open" is the one question a call must never leave open. */}
+      {/* An <i>, not a <span>: `.voice-meter > span` (globals.css) scales every
+          bar by the level with `transform`, and on a span it overwrote this
+          line's own centring and tilt, so the strike ran off the meter's end
+          into the label. */}
       {muted && (
-        <span
+        <i
           aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 top-1/2 h-px w-[130%] -translate-x-1/2 -translate-y-1/2 rotate-[-20deg] rounded-full bg-muted-foreground"
+          className="pointer-events-none absolute left-1/2 top-1/2 h-px w-[120%] -translate-x-1/2 -translate-y-1/2 rotate-[-20deg] rounded-full bg-muted-foreground"
         />
       )}
     </span>

@@ -85,7 +85,7 @@ export function Features() {
             {FEATURES.map(({ title, body, link, icon: Icon }, i) => (
               <RevealItem key={title} index={i} className="group/feature">
                 <dt>
-                  <span className="flex size-10 items-center justify-center rounded-field bg-secondary text-foreground/75 transition-colors duration-fast ease-out-soft group-hover/feature:bg-primary/10 group-hover/feature:text-primary-ink">
+                  <span className="flex size-10 items-center justify-center rounded-field bg-secondary text-foreground/75 transition-colors duration-fast ease-out-soft group-hover/feature:bg-primary/10 group-hover/feature:text-primary">
                     <Icon aria-hidden className="size-[18px]" />
                   </span>
                   <span className="mt-4 block text-heading text-foreground">{title}</span>
@@ -133,7 +133,7 @@ export function Privacy() {
             <ul className="mt-10 grid gap-8 sm:grid-cols-3">
               {PRIVACY.map(({ icon: Icon, title, body }) => (
                 <li key={title} className="flex gap-3.5">
-                  <Icon className="mt-0.5 size-5 shrink-0 text-primary-ink" aria-hidden />
+                  <Icon className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
                   <div>
                     <p className="text-heading text-foreground">{title}</p>
                     <p className="mt-1 text-body text-muted-foreground">{body}</p>

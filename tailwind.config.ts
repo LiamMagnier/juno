@@ -476,6 +476,9 @@ const config: Config = {
         primary: {
           DEFAULT: "hsl(var(--primary-ink) / <alpha-value>)",
           foreground: "hsl(var(--primary-foreground) / <alpha-value>)",
+          // Alias, as `destructive.ink` is: `text-primary-ink` was written at ten
+          // call sites and silently generated nothing before this key existed.
+          ink: "hsl(var(--primary-ink) / <alpha-value>)",
         },
         destructive: {
           DEFAULT: "hsl(var(--destructive-ink) / <alpha-value>)",

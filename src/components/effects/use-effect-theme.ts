@@ -48,24 +48,28 @@ export function useHeldFor(flag: boolean, ms: number): boolean {
 }
 
 /**
- * The Voice glow's band in Juno's clay-coral family.
+ * THE VOICE GLOW'S PALETTE: the dawn plate, as light.
  *
- * `colorVariant="sunset"` recolours the glow's lobes, but the bright band
- * along the edge keeps the package's own theme colours (a pink core with
- * rose, lavender and sky fringes on light; white with RGB fringes on dark),
- * and that band is most of what the eye reads. Same accent family on both
- * themes, a touch lighter on dark so it reads as light rather than paint.
+ * Two palettes failed first. One clay-coral family on every lobe (the old
+ * `sunset` tuning) read as an orange shine, not a voice. The package's own
+ * `colorful` default is right on a dark ground and turns candy pink and
+ * magenta on Juno's cream paper. So the glow takes its hues from the painted
+ * plates the front door is built on (public/brand/plates): apricot and clay
+ * at the centre where the voice rises, then sage and a misty blue at the
+ * edges, the cool counterpoint the valley at dawn has. Warm enough to be
+ * Juno's, varied enough to read as sound. A touch brighter on dark so it
+ * reads as light rather than paint.
+ *
+ * `colors` is centre first, then the pairs outward (the package's order).
  */
-export function voiceBandColors(theme: "light" | "dark" | null) {
+export function junoVoicePalette(theme: "light" | "dark" | null) {
   return theme === "dark"
-    ? { core: "#f3c2a8", above: "#e8875f", mid: "#f0a56f", below: "#c65a3c" }
-    : { core: "#e07a55", above: "#f2a47a", mid: "#e9b26b", below: "#b9502f" };
-}
-
-/** The glow's lobes in the same family (the sunset lobes drift to olive on
- *  the light paper). Centre first, then the pairs outward. */
-export function voiceLobeColors(theme: "light" | "dark" | null) {
-  return theme === "dark"
-    ? ["#e8875f", "#f0a56f", "#d96a48", "#f3c2a8", "#c65a3c", "#eeb08c", "#d97a58"]
-    : ["#e07a55", "#ec9a74", "#d8694a", "#f1b490", "#c95c3f", "#f3c6a8", "#e38a6a"];
+    ? {
+        colors: ["#ff9a6b", "#ffc15f", "#ff7f73", "#86d19a", "#f59bb0", "#86b9f2", "#79d0c8"],
+        bandColors: { core: "#fff1e4", above: "#ff9a6b", mid: "#86d19a", below: "#86b9f2" },
+      }
+    : {
+        colors: ["#f07f52", "#f2ad3f", "#ec6f5f", "#6fb383", "#e8839b", "#6f9fd8", "#5fb3ab"],
+        bandColors: { core: "#ffd9bf", above: "#f07f52", mid: "#6fb383", below: "#6f9fd8" },
+      };
 }
