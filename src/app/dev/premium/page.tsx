@@ -9,6 +9,7 @@ import { PremiumGallery } from "./gallery";
  *
  *   composer   the landing bloom and the streaming line on the real Composer
  *   phases     the transcript's live row with a Thinking orb per real phase
+ *   image      the pixel mosaic in the generated-image placeholder
  *   voice      the dictation glow (fed a demo level here; the product feeds
  *              the microphone stream)
  *   agents     bot avatars on the roster, idle and working

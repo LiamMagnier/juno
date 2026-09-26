@@ -5,6 +5,7 @@ import { VoiceBeam } from "voice-glow";
 
 import { AppProvider } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
+import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 import { MessageItem } from "@/components/chat/message-item";
 import { useEffectTheme } from "@/components/effects/use-effect-theme";
 import { AUTO_MODEL_ID } from "@/lib/auto-model";
@@ -215,6 +216,15 @@ export function PremiumGallery({ only }: { only?: string }) {
                     />
                   </div>
                 ))}
+              </div>
+            </Section>
+          )}
+
+          {show("image") && (
+            <Section id="image" title="Image generation" note="The pixel mosaic churns in the image's box while the job runs; the finished picture arrives as the turn's attachment.">
+              <div className="flex flex-wrap gap-8">
+                <GenerationPlaceholder progress={{ modality: "image", stage: "generating" }} />
+                <GenerationPlaceholder progress={{ modality: "image", stage: "polling" }} />
               </div>
             </Section>
           )}
