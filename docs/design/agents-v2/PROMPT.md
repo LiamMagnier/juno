@@ -9,6 +9,7 @@ Work only in this git worktree:
 Before you do anything else, read these files in full, in this order:
   1. docs/design/agents-v2/RULES.md     — binding rules, gates and traps. A rule beats your own judgement.
   2. docs/design/agents-v2/AUDIT.md     — why: Juno Agents vs Grok Bot, Meta Muse and OpenMuse.
+  2b. docs/design/agents-v2/INFRA.md    — the agent computers: Docker desktops on the owner's own server.
   3. docs/design/agents-v2/BRIEF.md     — what to build: decisions, architecture, phases, final report.
   4. docs/design/agents-v2/PROGRESS.md  — the checklist you keep current. It is how work resumes.
 
@@ -19,7 +20,7 @@ Then:
 - Never deploy. Never touch the main checkout /Users/liammagnier/Developer/project/juno or any
   other worktree. Never use the repo .env (it points at the production database). Never print
   or commit secrets. Never force-push. Never weaken, skip or delete a test or gate to get green.
-- Before writing any code against a library (E2B, Playwright), read its installed type
+- Before writing any code against a library (Playwright, noVNC), read its installed type
   definitions in node_modules. Use only APIs that exist there.
 - Find code by symbol name. The line numbers in the brief are approximate.
 - If you hit a STOP condition (BRIEF §7), stop and tell me why instead of pushing.

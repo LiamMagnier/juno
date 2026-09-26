@@ -16,7 +16,7 @@ here.
 - [ ] `origin/main` merged into `agents/v2`
 - [ ] One-time setup done (npm ci ×3, agent-core built, `.env.local` symlinked)
 - [ ] Baseline full gates recorded below
-- [ ] E2B key present? yes / no (never print it)
+- [ ] Docker Desktop running? yes / no (needed from Phase 2 and for the final gate)
 - [ ] Required reading done
 
 ### Baseline gates (untouched tree)
@@ -42,7 +42,8 @@ here.
 ## Phase 1 — data and provider layer
 - [ ] Migration `<ts>_agents_v2` + schema + `OWNER_COLUMN` + RLS, no sync trigger
 - [ ] Env vars (env.ts, .env.example, JUNO.md §19)
-- [ ] `src/lib/computer/*` (types, provider, fake, e2b, boot, stream, remote-browser, store, sweep)
+- [ ] `src/lib/computer/*` (types, provider, fake, docker, remote-browser, live-view, store, sweep)
+- [ ] `deploy/agent-computers/*` copied verbatim from INFRA.md (Dockerfile, entrypoint, cdp-gate, policies, firewall, setup-vm)
 - [ ] `SECURITY.md` row
 - [ ] Unit tests (lifecycle, lease, caps, sweeper, secrets encrypted, off without env)
 - [ ] Gates: quick + drift + validate
@@ -52,12 +53,13 @@ here.
 - [ ] Runner: buildTools wiring, disposers, lease renewal, sweeper in tick, identity in runs, "Your computer", billing, cloud targeting
 - [ ] check-work-sandbox rules 5–7
 - [ ] Tests (20-step loop, no base64 in checkpoint, 3 images, binding + beta, purchase escalation, clean summaries, busy-lease fallback)
-- [ ] Live smoke: passed / not run (reason). Timings: create __ s, pause __ s, resume __ s. getHost domain: ____
+- [ ] Local smoke on Docker Desktop: passed / not run (reason). Timings: create __ s, start __ s, stop __ s, pause/unpause __ s. Image size: ____. x11vnc view-only syntax confirmed: ____
 - [ ] Gates: full (without next build)
 
 ## Phase 3 — API
 - [ ] Computer routes, undo, duplicate, PATCH notify/pinned, list/detail extra keys
-- [ ] CSP option + test, live-view origin constant
+- [ ] Relay `computer-view.ts` + tests; CSP connect-src covers the relay (no other CSP change)
+- [ ] `/computer-view` page for native handoff
 - [ ] Parity classification
 - [ ] Tests (ownership, off, no secrets in responses/events, rate limits, path traversal)
 - [ ] Gates: quick + native:sync:check

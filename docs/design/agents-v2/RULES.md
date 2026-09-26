@@ -35,11 +35,16 @@ the brief seem to disagree, the rule wins. Stop and write the conflict in `PROGR
   - For dev env, symlink the main checkout's `.env.local`:
     `ln -s /Users/liammagnier/Developer/project/juno/.env.local .env.local`
   - For migrations, use the throwaway Postgres in §6.
-- **Never print, log or commit a secret.** `COMPUTER_E2B_API_KEY` lives only in
-  `.env.local` or the environment. The pre-commit hook refuses `.env*` files.
-- Do not create accounts. Do not sign in to anything. Do not buy anything. The one real
-  external service you may call is **E2B**, with the owner's key, for the live smoke
-  test in Phase 2. That creates and kills a sandbox and costs cents.
+- **Never print, log or commit a secret** (tokens, VNC passwords, anything from
+  `.env.local`). The pre-commit hook refuses `.env*` files.
+- Do not create accounts. Do not sign in to anything. Do not buy anything. There is no
+  third-party sandbox service: agent computers are Docker containers on the owner's own
+  server.
+  - Locally you may use **Docker Desktop on this Mac**: build the image, and run and
+    remove `juno-agent-*` containers and volumes for the smoke test.
+  - Never touch other containers, images or volumes.
+  - Never `docker system prune`.
+  - Never run anything against the VM. `setup-vm.sh` is the owner's to run.
 
 ## 2. The owner's design rules (web, Mac, iOS)
 
@@ -73,17 +78,30 @@ the brief seem to disagree, the rule wins. Stop and write the conflict in `PROGR
 
 ## 3. Security invariants (the reviewer will check each one)
 
-1. **One computer per agent.** A sandbox is never shared between agents or users. Every
-   lookup is server-side from `(userId, agentId)`. Never accept a sandbox id from the
-   model, the client or a URL.
-2. **The provider key, the sandbox id, the CDP token and both VNC passwords stay server-side**:
+1. **One computer per agent.** A container and its volume are never shared between agents
+   or users. Every lookup is server-side from `(userId, agentId)`. Never accept a
+   container id, IP or port from the model, the client or a URL.
+2. **The container id and IP, the CDP token, both VNC passwords and relay tokens stay
+   server-side**, except the one VNC password and short relay token handed to the owner's
+   own viewer:
    - encrypted at rest with `encryptSecret` (`@/lib/crypto`);
    - never in logs, WorkEvents, AgentEvents, push or inbox payloads, tool output, the
      model's context, or `provenance.source`/`summary`.
-   - A viewer URL is minted per request (`Cache-Control: no-store`,
-     `Referrer-Policy: no-referrer`), carries the password in the **URL fragment**, and
-     is never stored.
-3. **Watch mode is view-only on the server.** It uses the separate view-only VNC
+   - The viewer's password and token are minted per request (`Cache-Control: no-store`,
+     `Referrer-Policy: no-referrer`) and kept only in component memory, never in a URL.
+3. **Containers are locked down.** Use exactly the `docker` flags in `INFRA.md`: non-root,
+   `--cap-drop ALL`, `no-new-privileges`, a read-only root, resource limits, the firewalled
+   `juno-computers` network, and only the agent's own volume. **Never**:
+   - `--privileged`;
+   - `--network host`;
+   - a host-path mount;
+   - the Docker socket;
+   - `--cap-add`;
+   - port publishing in production.
+
+   Only `src/lib/computer/docker.ts` may run `docker`, through `execFile`/`spawn` with
+   `shell: false`.
+3b. **Watch mode is view-only on the server.** It uses the separate view-only VNC
    password; it never relies on noVNC's `view_only` flag alone. Control mode is minted
    only on an explicit click, records an AgentEvent, and rotates the passwords when it ends.
 4. **Screens are untrusted content.** Never mark a screenshot or page text as trusted.
@@ -102,10 +120,12 @@ the brief seem to disagree, the rule wins. Stop and write the conflict in `PROGR
 6. **The approval floor stays**: send, publish, pay or purchase, delete, and
    account/security settings ask under every autonomy level. A pixel click or Enter on a
    page that takes payment is the existing always-confirm action `work.browser.purchase`.
-7. **Budget binds the computer.** Computer time counts in the account's 5-hour and weekly
-   windows. There is no second budget. There are caps on running computers (BRIEF §4.8).
-8. **The feature is off unless configured.** With no `COMPUTER_PROVIDER=e2b` +
-   `COMPUTER_E2B_API_KEY`:
+7. **Caps protect the server.** Enforce the running-computer caps, the per-container
+   limits and the host memory/disk preflight (BRIEF §4.7). Computer time counts in the
+   usage windows only through `COMPUTER_COST_MICRO_USD_PER_SECOND`, default 0. There is no
+   second budget.
+8. **The feature is off unless configured.** With no `COMPUTER_PROVIDER=docker`, or with
+   the image missing on the host:
    - computer tools are never registered;
    - the computer API returns `{ computer: null }`;
    - the Computer tab is hidden;
@@ -185,12 +205,11 @@ the brief seem to disagree, the rule wins. Stop and write the conflict in `PROGR
   - Tool names are ≤64 characters.
 - **Native tools get no provider `callId`.** Derive idempotency keys from `userMessageId`
   plus a digest of the normalized arguments.
-- **Iframes:**
-  - No `sandbox` attribute containing `allow-same-origin` anywhere in `src/`. A test
-    walks every file for this. For the live view, omit `sandbox`.
-  - Set `referrerPolicy="no-referrer"`.
-- `@e2b/desktop` and `e2b` are server-only. Keep them out of client bundles. If
-  `next build` complains, add them to `serverExternalPackages` in `next.config.mjs`.
+- **Iframes:** no `sandbox` attribute containing `allow-same-origin` anywhere in `src/`;
+  a test walks every file for this. The live view needs no iframe: it is the noVNC client
+  inside Juno's page.
+- `@novnc/novnc` is client-only; load it with `next/dynamic` and `ssr: false`. Anything
+  that runs `docker` or talks CDP is server-only.
 
 ## 6. Prisma migrations, exactly
 
@@ -244,14 +263,21 @@ For each new variable:
 
 | Name | Default | Meaning |
 |---|---|---|
-| `COMPUTER_PROVIDER` | `off` | `e2b` enables agent computers. `fake` is accepted only when `NODE_ENV !== "production"` (tests, galleries). |
-| `COMPUTER_E2B_API_KEY` | — | E2B key. **Not** `E2B_API_KEY`, which the code interpreter already reads as a fallback token. |
-| `COMPUTER_E2B_TEMPLATE` | `desktop` | E2B template id |
-| `COMPUTER_MAX_RUNNING_PER_USER` | `2` | awake computers per account |
-| `COMPUTER_MAX_RUNNING_TOTAL` | `10` | awake computers across the whole deployment (E2B Hobby allows 20) |
-| `COMPUTER_IDLE_PAUSE_SECONDS` | `180` | idle time before an awake computer is put to sleep |
-| `COMPUTER_RETENTION_DAYS` | `30` | a computer asleep this long is destroyed (logins lost) |
-| `COMPUTER_COST_MICRO_USD_PER_SECOND` | `46` | ≈ $0.166/h, the E2B price of 2 vCPU / 4 GiB |
+| `COMPUTER_PROVIDER` | `off` | `docker` enables agent computers on this server. `fake` is accepted only when `NODE_ENV !== "production"` (tests, galleries). |
+| `COMPUTER_DOCKER_IMAGE` | `juno-computer:1` | image built by `setup-vm.sh` |
+| `COMPUTER_DOCKER_NETWORK` | `juno-computers` | the firewalled network `setup-vm.sh` creates |
+| `COMPUTER_MEMORY_MB` | `2048` | RAM per computer (`--memory`, no container swap) |
+| `COMPUTER_CPUS` | `2` | CPUs per computer |
+| `COMPUTER_DISK_LIMIT_MB` | `10240` | `/home/agent` size limit per computer (checked by the sweeper) |
+| `COMPUTER_MIN_FREE_MEMORY_MB` | `1024` | host free memory required to start or wake a computer |
+| `COMPUTER_MIN_FREE_DISK_GB` | `10` | host free disk required to start or wake a computer |
+| `COMPUTER_MAX_RUNNING_PER_USER` | `2` | computers on (awake, waking or resting) per account |
+| `COMPUTER_MAX_RUNNING_TOTAL` | `4` | computers on, across the whole server |
+| `COMPUTER_IDLE_PAUSE_SECONDS` | `180` | idle time before an awake computer rests (`docker pause`) |
+| `COMPUTER_IDLE_STOP_MINUTES` | `30` | resting time before it sleeps (`docker stop`) |
+| `COMPUTER_RETENTION_DAYS` | `30` | a computer asleep this long is destroyed (logins and files lost) |
+| `COMPUTER_COST_MICRO_USD_PER_SECOND` | `0` | set above 0 to count computer time in the usage windows |
+| `RELAY_COMPUTER_CIDR` | `172.30.0.0/24` | relay only: container addresses the live-view relay may connect to |
 
 ## 8. Gates
 

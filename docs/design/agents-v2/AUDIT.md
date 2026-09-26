@@ -95,7 +95,7 @@ and the conversation.
 ## 5. What Agents v2 builds (the brief) — and what it defers
 
 **Builds:**
-- **Its own computer.** One E2B Desktop sandbox per agent (Ubuntu, XFCE, real Chrome,
+- **Its own computer, on the owner's own server.** One Docker desktop per agent (Linux, XFCE, real Chromium,
   shell, files). It pauses when idle, keeping memory, disk and logins, and it is never
   shared between agents.
 - **Live view and takeover.** Watch it work in a side panel and take control for
@@ -162,7 +162,6 @@ and the conversation.
 **OpenMuse**
 - github.com/CopilotKit/OpenMuse: README, docs, and the code under apps/server, apps/worker and apps/mobile
 
-**E2B**
-- docs.e2b.dev: persistence, connect, list, network, template
-- @e2b/desktop 2.4.0 source
-- e2b.dev/pricing
+**Cloud computers** (evaluated, not used; the owner chose self-hosting)
+- E2B, Daytona, Browserbase, Steel, Cua, Modal and Fly docs and pricing
+- anthropics/claude-quickstarts computer-use-demo (the Xvfb + VNC desktop pattern)

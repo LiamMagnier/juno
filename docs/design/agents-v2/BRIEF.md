@@ -31,9 +31,10 @@ The owner can open an agent in Juno on the web and:
    violet with a leaf", "remember I'm vegetarian", "check prices every morning at 8",
    "you can use my Gmail", "get your own computer". Each change appears in the chat as
    a card, with **Undo** where it applies directly.
-3. **Watch it work on its own computer.** In the side panel, a real Ubuntu desktop with
-   Chrome, where the agent browses, clicks, types, runs commands and keeps files.
-   Logins persist between tasks. The computer sleeps when idle and wakes when needed.
+3. **Watch it work on its own computer.** In the side panel, a real Linux desktop (XFCE)
+   with Chromium, **running on the owner's own server**, where the agent browses, clicks,
+   types, runs commands and keeps files. Logins persist between tasks. The computer
+   rests or sleeps when idle and wakes when needed.
 4. **Take over** for a login, 2FA or CAPTCHA, then hand back. The agent never sees the
    secret.
 5. **See what happened.** The agent's next reply knows what its last tasks produced.
@@ -41,8 +42,8 @@ The owner can open an agent in Juno on the web and:
    Computer · Setup)**.
 
 Also:
-- Everything is off, and invisible, until the owner sets `COMPUTER_PROVIDER=e2b` and
-  `COMPUTER_E2B_API_KEY` on the VM.
+- Everything is off, and invisible, until the owner runs the one-time server setup
+  (`deploy/agent-computers/setup-vm.sh`) and sets `COMPUTER_PROVIDER=docker` on the VM.
 - Shipped Mac and iPhone apps keep working.
 - Every gate is green.
 - The work is merged and pushed to `main`, and the owner is told exactly how to deploy.
@@ -64,13 +65,14 @@ Also:
    together.
 4. Do the one-time setup from RULES §8, then run the **full gate set** and record the
    baseline in `PROGRESS.md`.
-5. Check whether `COMPUTER_E2B_API_KEY` is set, in `.env.local` or the environment. Do
-   not print it: `node -e 'console.log(!!process.env.COMPUTER_E2B_API_KEY)'` after
-   loading env, or `grep -c '^COMPUTER_E2B_API_KEY=.' .env.local`.
-   - If it is set, you will run the live E2B smoke test in Phase 2.
-   - If not, build everything against the fake provider, and mark the live test
-     "not run: no key" in the final report. **Do not** stop for this.
-6. Read, at least:
+5. Check that Docker Desktop is running on this Mac: `docker info >/dev/null 2>&1 && echo up`.
+   You need it for the local computer smoke test (Phase 2) and for the final deploy gate.
+   - If it is not running, **do not start it yourself**. Write "Docker Desktop is not
+     running" in `PROGRESS.md` and tell the owner.
+   - Carry on with the work that doesn't need Docker. Check again before Phase 2.
+6. Read `INFRA.md` (the container, firewall, relay and docker-driving design) as part of
+   the required reading.
+7. Read, at least:
    - `docs/design/AGENTS.md`;
    - `docs/JUNO.md` §9b and §9c;
    - `src/lib/agents/*`;
@@ -88,14 +90,15 @@ Also:
 
 | # | Decision |
 |---|---|
-| D1 | **One persistent cloud computer per agent**, on **E2B Desktop** (`@e2b/desktop`, Ubuntu 22.04 + XFCE + Chrome + x11vnc + noVNC). Never shared between agents or users. It is created lazily, sleeps (E2B `pause`, which keeps memory, disk and logins) when idle, wakes (`Sandbox.connect`) on demand, and is destroyed on reset, retire, disable, account deletion or after `COMPUTER_RETENTION_DAYS` asleep. This deliberately reverses AGENTS.md's "clean computer every run" at the owner's request. Update the docs (Phase 8). |
+| D1 | **One persistent computer per agent, on the owner's own server.** It is a Docker container with a full Linux desktop (Xvfb + XFCE), headful Chromium, a shell and a per-agent volume at `/home/agent`. The design is in `INFRA.md`. **No third-party sandbox vendor.** A computer is never shared between agents or users. It is created lazily and has two idle tiers: **resting** (`docker pause`: RAM kept, instant resume) and **asleep** (`docker stop`: RAM freed; the disk keeps logins and files). It wakes on demand. It is destroyed on reset, retire, disable, account deletion, or after `COMPUTER_RETENTION_DAYS` asleep. The owner is upgrading the server, so **size for a real server**; do not cut capabilities to fit today's small one. This deliberately reverses AGENTS.md's "clean computer every run" at the owner's request. Update the docs (Phase 8). |
 | D2 | **No second runtime.** Agent work still runs as Work runs in `juno-work` (`scripts/work-runner.ts`). The computer is a set of tools that run's `buildTools` attaches when the run's session has an `agentId` whose computer is enabled. Plain Work runs with no agent stay exactly as they are. |
-| D3 | **The existing `browser` tool drives the agent's own Chrome** over CDP when a computer is attached: same tool name, same risk ladder, same purchase floor, but real, persistent, visible, with images loaded. No request interception: egress leaves from E2B's network, not the VM. Pixel tools (`computer_*`), shell and files are added beside it. |
+| D3 | **The existing `browser` tool drives the agent's own Chrome** over CDP when a computer is attached: same tool name, same risk ladder, same purchase floor, but real, persistent, visible, with images loaded. No request interception: egress leaves from the container's own firewalled network (`INFRA.md`, `firewall.sh`), never from the app process. Pixel tools (`computer_*`), shell and files are added beside it. |
 | D4 | **Configuration by chat** is five native chat tools: `create_agent`, `update_agent`, `agent_goal`, `agent_routine`, `agent_memory`. Direct changes apply at once, with an Undo card. Widening changes go through the existing chat approval broker (`authorizeExternalAction`, connector id `juno_agents`) as a card. Forms remain as a secondary path. |
 | D5 | **The thread is the agent's home.** `/agents/[id]` becomes a redirect to the thread with the side panel open. The side panel has three tabs: **Now · Computer · Setup**. The roster becomes a compact list. Hiring is a conversation; the old form lives at `/agents/new?form=1`. |
 | D6 | **Screenshots reach the model** through a structured image channel in agent-core. The untrusted envelope stays around the text. Images are stripped from checkpoints. Only the last 3 are kept in context, which is made safe by porting the Mac client's thinking `drop_block` binding to agent-core's Anthropic provider. |
-| D7 | **Computer time counts against the account's existing usage windows** (`COMPUTER_COST_MICRO_USD_PER_SECOND`). There are caps on awake computers per account and in total. There is no new budget system. |
-| D8 | Native (Mac and iPhone) gets **watch and take over** of the computer, plus labels for the new chat tools. This happens in Phase 7 and **must not block** the web release (see Phase 7's exit rule). |
+| D7 | **The server is protected by caps, not by a bill.** There is a cap on awake computers per account and in total, per-container memory, CPU and disk limits, and a preflight that refuses to start a computer when the host lacks free memory or disk. Computer time can still count against the account's usage windows through `COMPUTER_COST_MICRO_USD_PER_SECOND`, which defaults to `0` (it's the owner's own server). There is no new budget system. |
+| D8 | Native (Mac and iPhone) gets **watch and take over** of the computer by showing Juno's own `/computer-view` page in a `WKWebView`, plus labels for the new chat tools. This happens in Phase 7 and **must not block** the web release (see Phase 7's exit rule). |
+| D10 | **The live view streams through Juno's own voice relay** (`/voice-relay/computer`, `INFRA.md`) as VNC, drawn by the noVNC client (`@novnc/novnc`) inside Juno's page. No third-party origin, no iframe. View-only is enforced by x11vnc's separate view-only password. |
 | D9 | **Deferred:** group rooms, teach-a-task, credential vault, single-use cards, external messaging, uploaded or generated avatar images, new face vocabulary. Say so in the docs. Do not build them. |
 
 ---
@@ -146,16 +149,17 @@ Also:
 ### 4.1 Data (one migration, `<timestamp>_agents_v2`)
 
 ```prisma
-/// An agent's own cloud computer. One per agent, never shared. The provider's
-/// sandbox is created lazily; `sandboxRef` is null until first use.
+/// An agent's own computer: a Docker container on the owner's server. One per
+/// agent, never shared. The container is created lazily; `containerRef` is null
+/// until first use.
 model AgentComputer {
   id             String    @id @default(cuid())
   userId         String
   agentId        String    @unique
-  provider       String                       // "e2b" | "fake"
-  sandboxRef     String?   @db.Text           // encryptSecret(provider sandbox id)
+  provider       String                       // "docker" | "fake"
+  containerRef   String?   @db.Text           // encryptSecret(container id)
   secrets        String?   @db.Text           // encryptSecret(JSON {cdpToken, vncControl, vncView})
-  status         String    @default("asleep") // asleep | waking | awake | error
+  status         String    @default("asleep") // asleep | resting | waking | awake | error
   streamOn       Boolean   @default(false)
   leaseRunId     String?
   leaseExpiresAt DateTime?
@@ -163,6 +167,7 @@ model AgentComputer {
   lastActiveAt   DateTime?
   lastViewedAt   DateTime?
   activeSeconds  Int       @default(0)        // lifetime awake seconds, for the UI
+  diskMb         Int?                         // last measured /home/agent size
   lastError      String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -179,43 +184,56 @@ model AgentComputer {
   - `notify String @default("results")`, with values `needs_you | results | all`;
   - `pinnedAt DateTime?`.
 - `AgentComputer` goes in `OWNER_COLUMN`. Add RLS ENABLE. **No** sync trigger.
-- Add a `SECURITY.md` row: `AgentComputer.sandboxRef` and `.secrets` use `encryptSecret`.
+- Add a `SECURITY.md` row: `AgentComputer.containerRef` and `.secrets` use `encryptSecret`.
 - A row existing means the computer is **enabled**. Disabling deletes the row, after
-  destroying the sandbox.
+  removing the container and its volume.
 - `AgentEvent.detail` keeps its JSON shape. Undo data goes in it as `detail.before` and
   `detail.after`. It holds only field values, never note text: notes use `noteId`
   references, because note text is encrypted and must never be copied into the log.
 
 ### 4.2 The computer provider layer (`src/lib/computer/`, all `import "server-only"`)
 
+The container image, entrypoint, CDP gate, firewall, server setup script, the exact
+`docker` flags, pixel control through `xdotool`/`scrot`, the on-demand x11vnc and the
+relay are all specified in **`INFRA.md`**. Copy the infra files verbatim.
+
 ```ts
 // src/lib/computer/types.ts
-export type ComputerStatus = "asleep" | "waking" | "awake" | "error";
+export type ComputerStatus = "asleep" | "resting" | "waking" | "awake" | "error";
 export interface Shot { mediaType: "image/jpeg"; data: string /* base64 */; width: number; height: number }
 export interface ExecResult { stdout: string; stderr: string; exitCode: number; timedOut: boolean }
+export interface Endpoints { cdp: { host: string; port: number }; vnc: { host: string; port: number } }
 export interface ComputerHandle {
-  readonly sandboxId: string;                       // never leaves the server
-  screenshot(): Promise<Shot>;                      // JPEG q70, NOT resized (coordinates stay 1:1)
+  readonly ref: string;                             // container id; never leaves the server
+  screenshot(): Promise<Shot>;                      // JPEG q70, NOT resized (1280×800 = click space)
   click(x: number, y: number, button?: "left" | "right" | "double"): Promise<void>;
   move(x: number, y: number): Promise<void>;
   drag(from: [number, number], to: [number, number]): Promise<void>;
-  scroll(direction: "up" | "down", amount: number): Promise<void>;
+  scroll(x: number, y: number, direction: "up" | "down", amount: number): Promise<void>;
   type(text: string): Promise<void>;
-  key(keys: string): Promise<void>;                 // "enter", "ctrl+l", "Tab"
+  key(keys: string): Promise<void>;                 // xdotool names: "Return", "ctrl+l", "Tab"
   exec(cmd: string, opts: { timeoutMs: number; cwd?: string }): Promise<ExecResult>;
-  readFile(path: string): Promise<Uint8Array>;
+  readFile(path: string, maxBytes: number): Promise<Uint8Array>;
   writeFile(path: string, data: Uint8Array | string): Promise<void>;
   listFiles(path: string): Promise<Array<{ name: string; path: string; type: "file" | "dir"; size?: number }>>;
-  keepAlive(ms: number): Promise<void>;             // sandbox.setTimeout
-  host(port: number): string;                       // e.g. "6080-<id>.e2b.app"
+  endpoints(): Promise<Endpoints>;                  // container IP on Linux; docker port on macOS dev
+  startVnc(passwords: { control: string; view: string }): Promise<void>;
+  stopVnc(): Promise<void>;
+  diskUsageMb(): Promise<number>;
 }
 export interface ComputerProvider {
-  readonly id: "e2b" | "fake";
-  create(meta: { userId: string; agentId: string }): Promise<ComputerHandle>;
-  connect(sandboxId: string): Promise<ComputerHandle | null>; // resumes a paused one; null if it no longer exists
-  pause(sandboxId: string): Promise<void>;
-  destroy(sandboxId: string): Promise<void>;
-  listOwned(): Promise<Array<{ sandboxId: string; agentId?: string; userId?: string; state: "running" | "paused" }>>;
+  readonly id: "docker" | "fake";
+  available(): Promise<{ ok: true } | { ok: false; reason: string }>; // image present, daemon up
+  preflight(): Promise<{ ok: true } | { ok: false; reason: string }>; // host free memory + disk
+  create(meta: { userId: string; agentId: string; cdpToken: string }): Promise<ComputerHandle>;
+  open(ref: string): Promise<ComputerHandle | null>;                  // null if the container is gone
+  state(ref: string): Promise<"running" | "paused" | "stopped" | "missing">;
+  start(ref: string): Promise<void>;                                  // from stopped
+  pause(ref: string): Promise<void>;                                  // docker pause (resting)
+  unpause(ref: string): Promise<void>;
+  stop(ref: string): Promise<void>;                                   // docker stop (asleep)
+  destroy(ref: string, agentId: string): Promise<void>;               // rm -f + volume rm
+  listOwned(): Promise<Array<{ ref: string; agentId?: string; userId?: string; state: "running" | "paused" | "stopped" }>>;
 }
 ```
 
@@ -223,196 +241,118 @@ export interface ComputerProvider {
 - `provider.ts`: `computerProvider()` returns the configured provider or `null`.
   - It reads the env via `src/lib/env.ts`.
   - `fake` is refused in production.
-  - `isAgentComputerConfigured()` is the one switch every caller checks.
-- `e2b.ts`: `E2BProvider`, on `@e2b/desktop`.
-  - **Pin exact versions**: `npm install --save-exact @e2b/desktop@2.4.0` (it pulls
-    `e2b`). If a newer patch exists, read its changelog first.
-  - **Read the installed `.d.ts` files** under `node_modules/@e2b/desktop/dist` and
-    `node_modules/e2b/dist` before writing a line, and use only APIs that exist there.
-    The mentor's research of the Sept 2026 API follows. Verify every item:
-    - `Sandbox.create(template, { apiKey, resolution: [1280, 800], dpi: 96, timeoutMs: 600_000, metadata: { app: "juno", userId, agentId }, lifecycle: { onTimeout: "pause", autoResume: false } })`
-    - `Sandbox.connect(id, { apiKey, timeoutMs: 600_000 })`: resumes a paused sandbox. **Always pass `timeoutMs`.** A missing sandbox throws; map that to `null`.
-    - `sbx.pause()`, not the deprecated `betaPause()`. `sbx.kill()`, `sbx.setTimeout(ms)`, `sbx.getHost(port)`.
-    - `sbx.screenshot()` returns PNG bytes. Convert with `sharp` (already a dependency) to JPEG quality 70 **without resizing**.
-    - `leftClick(x, y)`, `rightClick`, `doubleClick`, `moveMouse`, `drag([x,y],[x,y])`, `scroll("down", n)` (the current signature is `(direction, amount)`, whatever the README says), `write(text)`, `press(key | key[])`.
-    - `sbx.commands.run(cmd, { timeoutMs, cwd, user, envs, background })`. Background daemons need `{ background: true, timeoutMs: 0 }`.
-    - `sbx.files.read(path, { format: "bytes" })`, `files.write(path, data)`, `files.list(path)`.
-    - `Sandbox.list({ apiKey, query: { metadata: { app: "juno" } } })`: a paginator (`nextItems()`, `hasNext`).
+  - `isAgentComputerConfigured()` is the one switch every caller checks: `COMPUTER_PROVIDER`
+    set, plus a cached `available()` (60 s).
+- `docker.ts`: `DockerProvider`, exactly as specified in `INFRA.md`.
+  - It uses only `execFile("docker", argv)` or `spawn("docker", argv, { shell: false })`,
+    with argument arrays. Never a host shell string.
+  - The creation flags are fixed.
+  - A unit test with an injected fake `runDocker` asserts the full production argv and
+    the forbidden flags.
+  - **Development on this Mac:** build the image locally with
+    `docker build -t juno-computer:dev deploy/agent-computers`, then use
+    `COMPUTER_DOCKER_IMAGE=juno-computer:dev`. Ports are published to 127.0.0.1 only on
+    macOS outside production.
 - `fake.ts`: an in-memory `FakeProvider` for tests and the dev gallery.
   - It returns a fixed 1280×800 grey JPEG.
-  - It records calls and supports pause/connect/destroy state.
+  - It records calls and supports every state transition.
   - It keeps an in-memory filesystem.
-- `boot.ts`: `ensureServices(handle, secrets)`, run after every create **and every
-  resume**. It is idempotent: check with `pgrep` before starting anything.
-  1. As root, write `/etc/opt/chrome/policies/managed/juno.json`, which stops Chrome saving
-     passwords or cards:
-     `{"PasswordManagerEnabled":false,"AutofillCreditCardEnabled":false,"AutofillAddressEnabled":false,"DefaultBrowserSettingEnabled":false}`
-  2. As root, write the CDP token to `/etc/juno/cdp-token` (mode 0600, root) and the gate
-     script (below) to `/etc/juno/cdp-gate.py`. Start it as root in the background if
-     `pgrep -f cdp-gate.py` finds nothing.
-  3. As `user`, if `pgrep -f "remote-debugging-port=9223"` finds nothing, start Chrome
-     on the visible display in the background:
-     `google-chrome --remote-debugging-port=9223 --user-data-dir=/home/user/.juno-chrome --no-first-run --no-default-browser-check --start-maximized about:blank`
-     with `envs: { DISPLAY: ":0" }`. Then wait up to 10 s for
-     `curl -s http://127.0.0.1:9223/json/version` to answer.
-  4. `mkdir -p /home/user/work`.
-- `cdp-gate.py`: the **only** way into Chrome from outside. It checks a secret header,
-  accepts WebSocket upgrades only, and rewrites `Host`. Ship it verbatim as a string
-  constant in `boot.ts`:
-
-```python
-#!/usr/bin/env python3
-# Juno CDP gate: exposes Chrome's loopback DevTools socket to Juno's worker only.
-import hmac, socket, threading
-TOKEN = open("/etc/juno/cdp-token", "rb").read().strip()
-def pipe(a, b):
-    try:
-        while True:
-            d = a.recv(65536)
-            if not d:
-                break
-            b.sendall(d)
-    except OSError:
-        pass
-    finally:
-        for s in (a, b):
-            try: s.shutdown(socket.SHUT_RDWR)
-            except OSError: pass
-def handle(c):
-    try:
-        c.settimeout(10)
-        head = b""
-        while b"\r\n\r\n" not in head:
-            d = c.recv(4096)
-            if not d or len(head) > 65536:
-                c.close(); return
-            head += d
-        c.settimeout(None)
-        h, _, rest = head.partition(b"\r\n\r\n")
-        lines = h.split(b"\r\n")
-        ok = False; upgrade = False; out = [lines[0]]
-        for line in lines[1:]:
-            k, _, v = line.partition(b":")
-            key = k.strip().lower()
-            if key == b"x-juno-cdp-token":
-                ok = hmac.compare_digest(v.strip(), TOKEN); continue
-            if key == b"upgrade" and v.strip().lower() == b"websocket":
-                upgrade = True
-            if key == b"host":
-                out.append(b"Host: 127.0.0.1:9223"); continue
-            if key == b"origin":
-                continue
-            out.append(line)
-        if not (ok and upgrade):
-            c.sendall(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-            c.close(); return
-        u = socket.create_connection(("127.0.0.1", 9223))
-        u.sendall(b"\r\n".join(out) + b"\r\n\r\n" + rest)
-        threading.Thread(target=pipe, args=(u, c), daemon=True).start()
-        pipe(c, u)
-    except OSError:
-        try: c.close()
-        except OSError: pass
-srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-srv.bind(("0.0.0.0", 9222)); srv.listen(64)
-while True:
-    conn, _ = srv.accept()
-    threading.Thread(target=handle, args=(conn,), daemon=True).start()
-```
-
 - `remote-browser.ts`: `connectAgentBrowser(handle, secrets)`.
-  1. Discover the browser WebSocket path **inside** the VM with
-     `exec("curl -s http://127.0.0.1:9223/json/version")` and parse `webSocketDebuggerUrl`.
-  2. Connect with
-     `chromium.connectOverCDP("wss://" + handle.host(9222) + path, { headers: { "X-Juno-Cdp-Token": secrets.cdpToken }, timeout: 20_000 })`,
+  1. `const { cdp } = await handle.endpoints()`.
+  2. Discover the browser WebSocket path **inside** the container with
+     `exec("curl -s http://127.0.0.1:9223/json/version")`, and parse
+     `webSocketDebuggerUrl`. Wait up to 20 s after a start for it to answer.
+  3. Connect with
+     `chromium.connectOverCDP("ws://" + cdp.host + ":" + cdp.port + path, { headers: { "X-Juno-Cdp-Token": secrets.cdpToken }, timeout: 20_000 })`,
      using `playwright`, which is already a runtime dependency.
-  3. Use `browser.contexts()[0]`, the persistent profile. **Never** call `context.close()`
+  4. Use `browser.contexts()[0]`, the persistent profile. **Never** call `context.close()`
      on it.
-  4. When done, call `browser.close()`. For a CDP connection this only disconnects.
-     **Verify in the live smoke test** that Chrome is still running afterwards.
-  5. Implement the agent-core `BrowserToolDeps` interface, the seam `browserTool(deps)`
+  5. When done, call `browser.close()`. For a CDP connection this only disconnects.
+     **Verify in the local smoke test** that Chromium is still running afterwards.
+  6. Implement the agent-core `BrowserToolDeps` interface, the seam `browserTool(deps)`
      already takes, over this page. Actions follow the newest page, and call
      `page.bringToFront()` so the live view shows what the agent does.
-  6. **Reuse, don't copy,** the snapshot, ref, `submitsForm`, `pageTakesPayment` and act
+  7. **Reuse, don't copy,** the snapshot, ref, `submitsForm`, `pageTakesPayment` and act
      logic of `src/lib/work/browser.ts`. Extract the page-level helpers into
      `src/lib/work/browser-page.ts` so that both `createWorkBrowser` (local, unchanged
      behaviour) and the remote browser use them.
      - `tests/work-browser.test.ts` must pass **unchanged**.
      - If extraction proves risky, stop extracting and call the same helpers through a
        small adapter. Never change the local browser's behaviour.
-  7. The remote browser loads images, fonts and media; it is a real browser. It keeps
+  8. The remote browser loads images, fonts and media; it is a real browser. It keeps
      the structural "click on a form submit is refused; use submit" rule, the risk
      ladder and purchase detection. The checks before `open` (`blockedFetchTarget` and
      the skill egress grant) already sit in the tool layer and still apply.
-- `stream.ts`: the live view.
-  - **Do not** use the SDK's `stream.start()`. Its single password makes view-only
-    client-side. Instead:
-    - `startStream(handle)`: generate `vncControl` and `vncView`, each 8 random
-      characters (VNC uses only the first 8 characters). Write
-      `/home/user/.juno/vncpass` (0600) as `"<control>\n__BEGIN_VIEWONLY__\n<view>\n"`.
-      Kill any running `x11vnc` or noVNC proxy. Start
-      `x11vnc -bg -display :0 -forever -shared -wait 50 -rfbport 5900 -passwdfile /home/user/.juno/vncpass -o /tmp/x11vnc.log`,
-      then the noVNC proxy on port 6080 in the background (`timeoutMs: 0`).
-    - **Copy the exact noVNC command and path from the installed `@e2b/desktop`
-      source** (`dist`, search `novnc_proxy`), including its working directory.
-    - Save the passwords with `encryptSecret`, and set `streamOn = true`.
-    - `stopStream(handle)` kills both processes and sets `streamOn = false`. Stopping
-      rotates the passwords on the next start.
-    - `viewerUrl(handle, mode, secrets)` returns
-      `https://${host(6080)}/vnc.html#autoconnect=true&resize=scale&reconnect=true&view_only=${mode === "watch" ? 1 : 0}&password=${mode === "watch" ? vncView : vncControl}`.
-      The password goes in the **fragment**, never the query.
+- `live-view.ts`: the live view.
+  - `ensureStream(handle, row)`: if `streamOn` is false, generate fresh `vncControl` and
+    `vncView` (8 characters of `[A-Za-z0-9]` each), call `handle.startVnc(...)`, save
+    them with `encryptSecret`, and set `streamOn = true`.
+  - `stopStream` calls `handle.stopVnc()` and sets `streamOn = false`.
+  - `mintViewToken(row, endpoints, mode)` returns the relay token defined in `INFRA.md`,
+    signed with the key derived from `AUTH_SECRET`, `exp` 60 s.
 - `store.ts` (`server-only`): the only module that reads or writes `AgentComputer`. It
   holds the lifecycle functions in §4.3.
 
-### 4.3 Lifecycle, leases, sleep, sweep (`src/lib/computer/store.ts`, `sweep.ts`)
+### 4.3 Lifecycle, leases, rest, sleep, sweep (`src/lib/computer/store.ts`, `sweep.ts`)
 
-- `enableComputer(userId, agentId)` creates the row (`status: "asleep"`, no sandbox). It
-  refuses if the feature is off.
+- `enableComputer(userId, agentId)` creates the row (`status: "asleep"`, no container).
+  It refuses if the feature is off.
 - `ensureAwake(userId, agentId, reason)`:
-  1. Check caps (§4.8) and the usage windows (`checkUsageWindows`; reuse whatever Work
-     dispatch calls).
-  2. `status = "waking"`.
-  3. `connect(sandboxRef)`, or `create` if there is no ref or `connect` returned `null`.
-     In that case also clear the secrets, generate a new `cdpToken`, and record an
-     AgentEvent `computer_recreated`: "Its computer was lost and has been replaced;
-     sign-ins are gone."
-  4. `ensureServices`.
+  1. **Resting** (paused): `unpause`, then go to step 5. This is instant, and needs no
+     preflight or caps change: a resting computer already counts.
+  2. Otherwise, check the caps (§4.7) and `provider.preflight()`. When the account's
+     usage windows matter (cost > 0), also run `checkUsageWindows`, which Work dispatch
+     uses. Refuse with the provider's sentence.
+  3. `status = "waking"`.
+  4. `open(containerRef)` then `start`, or `create` if there is no ref or `open` returned
+     `null`. When a missing container is recreated, clear the secrets, generate a new
+     `cdpToken`, and record an AgentEvent `computer_recreated`: "Its computer was lost and
+     has been replaced; sign-ins are gone." Then wait for CDP to answer (≤ 30 s).
   5. `status = "awake"`, `lastResumedAt = lastActiveAt = now`.
-  6. On error: `status = "error"`, `lastError` set to a **sentence with no ids or URLs**.
+  6. On error: `status = "error"`, `lastError` set to a **sentence with no ids, IPs or
+     URLs**.
+- `restComputer`: `stopStream`, `provider.pause`, `status = "resting"`, and add the awake
+  seconds to `activeSeconds`.
 - `sleepComputer(userId, agentId)`:
-  1. `stopStream`.
-  2. Take a poster: `screenshot()`, then `putObject` under
-     `agent-computers/<userId>/<agentId>/poster.jpg`. Use the storage helper the Work
-     runner uses (`@/lib/storage`).
-  3. `provider.pause`.
-  4. Add `now - lastResumedAt` to `activeSeconds` and **bill it** (§4.8).
-  5. `status = "asleep"`.
-- `resetComputer` / `disableComputer` / on retire: `destroy` the sandbox, clear the ref
-  and secrets, and delete the row (disable) or keep it asleep (reset). Delete the poster.
-  Record an AgentEvent.
+  1. If it is resting, `unpause` first.
+  2. `stopStream`.
+  3. Take a poster: `screenshot()`, then `putObject` under
+     `agent-computers/<userId>/<agentId>/poster.jpg`, using `@/lib/storage`.
+  4. `provider.stop`. It stops gracefully, so Chromium flushes cookies.
+  5. Add the awake seconds to `activeSeconds`, and bill them if the cost is > 0 (D7).
+  6. `status = "asleep"`.
+- `resetComputer` / `disableComputer` / on retire:
+  - `destroy` the container **and its volume**, and clear the ref and secrets;
+  - then delete the row (disable) or keep it asleep with no container (reset);
+  - delete the poster and record an AgentEvent.
+  - The UI says plainly that sign-ins and files are deleted.
 - **Run lease:** `acquireComputerLease(agentId, runId, ttlMs = 120_000)`.
   - It is one conditional `updateMany` where `leaseRunId` is null, or equals `runId`, or
     `leaseExpiresAt < now`, and it checks the count.
   - `renewComputerLease` runs on the Work run's existing lease-renewal timer (every 40 s)
-    and also calls `handle.keepAlive(600_000)`.
-  - `releaseComputerLease` sets `lastActiveAt = now`. It **does not** sleep the computer;
-    the sweeper does that.
+    and sets `lastActiveAt = now`.
+  - `releaseComputerLease` sets `lastActiveAt = now`. It **does not** rest or sleep the
+    computer; the sweeper does that.
 - **Sweeper** (`sweepAgentComputers()` in `sweep.ts`), called from the Work runner's
   `tick()` at most once every 60 s, with no new PM2 app. It:
-  1. Sleeps every `awake` computer with no valid lease whose
+  1. **Rests** every `awake` computer with no valid lease whose
      `max(lastActiveAt, lastViewedAt)` is older than `COMPUTER_IDLE_PAUSE_SECONDS`.
-  2. Stops the stream on awake computers with `streamOn` and no view heartbeat for 60 s.
-  3. At most every 6 h, lists `listOwned()`:
-     - kills sandboxes with no matching row, which covers deleted agents and deleted
-       accounts;
+  2. **Puts to sleep** every `resting` computer idle longer than
+     `COMPUTER_IDLE_STOP_MINUTES`.
+  3. Stops the stream on awake computers with `streamOn` and no view heartbeat for 60 s.
+  4. Every 10 min, measures `diskUsageMb` for awake computers and stores `diskMb`.
+  5. At most every 6 h, lists `listOwned()`:
+     - removes containers and volumes with no matching row, which covers deleted agents
+       and deleted accounts;
      - destroys computers asleep longer than `COMPUTER_RETENTION_DAYS`;
      - resets any `waking` status stuck for more than 3 min to `error`.
+  6. Reconciles the state: a row that says `awake` for a container Docker reports as
+     `stopped` becomes `asleep`. This happens after a server reboot, because containers
+     use `--restart no`.
 
-  Every step is try/catch-per-item and logs without ids or URLs.
-- **E2B's 1-hour continuous cap (Hobby)** and surprise pauses: every handle call goes
-  through a wrapper. If the SDK reports the sandbox as paused or not running, it calls
-  `connect()` once and retries the call once. The user sees at most a brief reconnect of
-  the live view.
+  Every step is try/catch-per-item and logs without ids, IPs or URLs.
+- **Any handle call** that finds the container paused or stopped (the sweeper raced a run)
+  unpauses or starts it once and retries once.
 
 ### 4.4 In the Work runner (`scripts/work-runner.ts` + agent-core)
 
@@ -425,7 +365,8 @@ while True:
      `createWorkBrowser`;
    - (b) add the computer tools from `runtime.computerTools(deps)`;
    - (c) push a disposer that disconnects Playwright and releases the lease, and **never
-     kills or pauses the sandbox**. The same disposer runs on park or pause.
+     stops, pauses or removes the container**; the sweeper rests it later. The same
+     disposer runs on park or pause.
 3. If the lease is busy, or waking fails, fall back to the existing local browser and
    log a line. Tell the model in the opening context: "Your computer is busy with another
    task or unavailable; you're using a temporary browser for this one."
@@ -452,7 +393,7 @@ from `work/index.ts`, recorded in `VENDORED.md`). Do **not** reuse or modify
 | `computer_key` | `{ keys }` e.g. `"ctrl+l"`, `"enter"` | `visual` | `screen.key` | `work.computer.key` | same rule as click |
 | `computer_scroll` | `{ x, y, direction, amount 1..10 }` | `visual` | `screen.scroll` | `work.computer.scroll` | `safe` |
 | `computer_shell` | `{ command ≤ 4000, timeoutSeconds 1..300 (default 60), cwd? }` | `shell` | `shell.run` | `work.computer.shell` | `command` |
-| `computer_files` | `{ action: list\|read\|write, path, content? }` (paths under `/home/user` only) | `shell` | `files.read` / `files.write` | `work.computer.files` | read `safe`, write `edit` |
+| `computer_files` | `{ action: list\|read\|write, path, content? }` (paths under `/home/agent` only) | `shell` | `files.read` / `files.write` | `work.computer.files` | read `safe`, write `edit` |
 
 Rules for these tools:
 - Intents are **disjoint** from `browser.*`, so the tier lattice never refuses them
@@ -466,13 +407,15 @@ Rules for these tools:
   image channel. The model rarely needs `computer_screenshot`.
 - `summarize(input)` is exact and bounded (≤200 characters), and names the current site
   (hostname only), e.g. `Click at (640, 320) on mail.google.com` or
-  `Run: npm test (in /home/user/work)`. This is the only thing an approval card shows.
+  `Run: npm test (in /home/agent/work)`. This is the only thing an approval card shows.
   It never contains ids or URLs with tokens.
 - `provenanceFor`:
   - `source: "the agent's computer"`;
   - `sourceKind: "web"` for pixel and browser actions, `"local_app"` for shell and files;
   - `trust: "untrusted"` for **every** output.
 - `isHealthy()` returns the handle's last known state.
+- The container desktop is 1280×800. Screenshots are **not resized**, so a click at
+  (x, y) lands where the model saw it.
 - Hard timeouts on every call: 30 s for UI actions, `timeoutSeconds` for the shell. Tools
   get no AbortSignal, so without these a stuck call blocks Stop.
 - Output limits: shell stdout and stderr are each capped at 20,000 characters (say that
@@ -515,10 +458,10 @@ decrypted). Add them to the run's opening context:
 - the notes inside the existing untrusted envelope (the model may have written them).
 - When a computer is attached, add the **"Your computer"** section:
 
-> You have your own computer: an Ubuntu desktop with Chrome, a shell and files. The
-> `browser` tool drives its Chrome, and the person can watch the same screen. Prefer
+> You have your own computer: a Linux desktop with Chromium, a shell and files. The
+> `browser` tool drives its Chromium, and the person can watch the same screen. Prefer
 > `browser` for web pages. Use the `computer_*` pixel tools only for things the page
-> tools can't reach. Keep files you want to keep under /home/user/work. Stay signed in to
+> tools can't reach. Keep files you want to keep under /home/agent/work. Stay signed in to
 > sites between tasks: your sign-ins persist. When a site needs a password, a 2FA code, a
 > CAPTCHA, payment details or anything only the person should type, call `ask_user` and
 > ask them to take over your computer for that step. Never ask for a secret in the chat
@@ -545,10 +488,11 @@ All routes:
 |---|---|
 | `GET /api/agents/[id]/computer` | `{ computer: null \| { enabled, status, streamOn, lastActiveAt, activeSeconds, hasPoster, usingNow: { summary } \| null, error: string \| null } }`. `usingNow` comes from the agent's live run's newest `tool_started.summary`. |
 | `POST /api/agents/[id]/computer` | `{ action: "enable" \| "disable" \| "wake" \| "sleep" \| "reset" }`. These are UI presses by the owner, so no card; the UI confirms disable and reset in a dialog. `wake` returns 202 and runs `ensureAwake` in `after()` (from `next/server`). Rate limit 20/h. |
-| `POST /api/agents/[id]/computer/view` | `{ mode: "watch" \| "control" }` → `{ url, mode }`. Requires `awake` (otherwise 409 `{ error: "asleep" }`). Starts the stream if it is off. `control` records AgentEvent `takeover_started`. Rate limit 60/h. `Referrer-Policy: no-referrer`. |
-| `POST /api/agents/[id]/computer/heartbeat` | `{ mode, ended?: boolean }`. Updates `lastViewedAt` and returns the status. `ended` with `mode: "control"` records `takeover_ended` and **restarts the stream** (rotating passwords) so the control URL dies. Rate limit 10/min. |
+| `POST /api/agents/[id]/computer/view` | `{ mode: "watch" \| "control", handoff?: boolean }`. Requires `awake` or `resting`; a resting computer is unpaused. Otherwise 409 `{ error: "asleep" }`. Starts the stream if it is off. Returns `{ mode, relayUrl, token, password }`: `relayUrl` is `<the voice relay origin>/voice-relay/computer`, `token` is the 60 s relay token (`INFRA.md`), and `password` is `vncView` for watch or `vncControl` for control. With `handoff: true` (native), it returns `{ url }` instead: a one-time `https://<app>/computer-view?c=<code>` link (below). `control` records AgentEvent `takeover_started`. Rate limit 60/h. Headers `Cache-Control: no-store`, `Referrer-Policy: no-referrer`. The response is never logged. |
+| `POST /api/agents/[id]/computer/heartbeat` | `{ mode, ended?: boolean }`. Updates `lastViewedAt` and returns the status. `ended` with `mode: "control"` records `takeover_ended` and **restarts the stream**, rotating both passwords so the control password dies. Rate limit 10/min. |
 | `GET /api/agents/[id]/computer/poster` | The last-frame JPEG (owner-scoped read from storage), `Cache-Control: private, no-store`. |
-| `GET /api/agents/[id]/computer/files?path=` | Lists a directory under `/home/user` (awake only). `&download=1` on a file streams it (≤25 MB, `Content-Disposition: attachment`). Refuse `..`, symlinks out of `/home/user` and absolute paths elsewhere. |
+| `GET /api/agents/[id]/computer/files?path=` | Lists a directory under `/home/agent` (awake or resting only). `&download=1` on a file streams it (≤25 MB, `Content-Disposition: attachment`). Paths are resolved inside the container with `realpath -m` and must stay under `/home/agent/`. |
+| `GET /computer-view?c=<code>` (page, outside the `(app)` group) | The viewer for native apps' `WKWebView`. `code` = HMAC-signed `{agentId, userId, mode, exp: 60 s}` with the same `AUTH_SECRET`-derived scheme, under its own label `juno-computer-handoff-v1`. The server component verifies it, mints a relay token and password, and renders the same `ComputerViewer` client component the web panel uses, full-bleed and without the app shell. Headers `no-store`, `no-referrer`, `robots: noindex`. An invalid or expired code shows "This link has expired. Open the computer again from the app." |
 | `POST /api/agents/[id]/undo` | `{ eventId }`. Applies `detail.before` from that AgentEvent if it belongs to this agent and user and has not been undone; marks `detail.undoneAt`. Returns `{ agent }`. |
 | `POST /api/agents/[id]/duplicate` | Copies profile, face, style, brief, autonomy, apps, model and active goals. Never copies notes, the computer, routines or the thread. Named "<name> 2". Returns 201 `{ agent }`. Respects the 24-agent cap. |
 
@@ -559,15 +503,15 @@ Other changes:
   - `notify`, `pinnedAt`;
   - `computer: { enabled, status } | null`;
   - `recentChanges` is **not** needed.
-- CSP (`src/lib/csp.ts`):
-  - Add an **option** `liveViewFrameOrigins` to `buildCsp`, appended to `frame-src` only
-    when passed.
-  - `src/middleware.ts` passes it from a constant in a new, dependency-free
-    `src/lib/live-view-origins.ts`: `["https://*.e2b.app"]`.
-  - **Check the host the SDK returns** from `getHost()` in the live test. If it is
-    `e2b.dev`, use that instead.
-  - Add a `tests/csp.test.ts` case for the option. The existing exact-match assertions
-    must stay green because they don't pass the option.
+- **CSP:** the viewer's WebSocket goes to the voice relay origin, which `buildCsp`
+  already allows in `connect-src` when the relay URL is configured. Confirm that in
+  `src/lib/csp.ts` and `src/middleware.ts`, and find how the web client learns the relay
+  URL (search the voice client). If the relay origin is not in `connect-src`, add it the
+  same way the voice relay is added. Do **not** loosen anything else, and keep
+  `tests/csp.test.ts` green.
+- **Relay:** implement `relay/src/computer-view.ts` exactly as `INFRA.md` specifies, with
+  its tests in `relay/tests/`. Add `RELAY_COMPUTER_CIDR` only if you need to override the
+  default. `AUTH_SECRET` is already in the relay's env allowlist.
 
 ### 4.6 Configuration by chat (`src/lib/chat/agent-config-tools.ts` + route wiring)
 
@@ -723,14 +667,24 @@ the same one used for connector or memory context in `system-prompt.ts`.
 
 ### 4.7 Caps, cost, budget (the numbers)
 
-- **Awake computers:** ≤ `COMPUTER_MAX_RUNNING_PER_USER` (2) per account and ≤
-  `COMPUTER_MAX_RUNNING_TOTAL` (10) overall. The count is `status in (awake, waking)`.
-  - Waking beyond a cap refuses with "Two of your agents' computers are already awake.
-    Stop one or wait for it to sleep."
+The defaults are sized for the **upgraded** server. The owner tunes them in `~/juno/.env`
+without a code change.
+- **Running computers:** ≤ `COMPUTER_MAX_RUNNING_PER_USER` (2) per account and ≤
+  `COMPUTER_MAX_RUNNING_TOTAL` (4) overall. The count is
+  `status in (awake, waking, resting)`, because a resting container still holds its RAM.
+  - Waking beyond a cap refuses with "Two of your agents' computers are already on. Put
+    one to sleep or wait for it to rest."
   - A run that can't get a computer falls back to the temporary browser (§4.4).
-- **Sleep** after `COMPUTER_IDLE_PAUSE_SECONDS` (180) with no lease and no viewer.
+- **Per computer:** `COMPUTER_MEMORY_MB` (2048) RAM, `COMPUTER_CPUS` (2) and
+  `COMPUTER_DISK_LIMIT_MB` (10240) of `/home/agent`.
+- **Host preflight:** free memory ≥ `COMPUTER_MIN_FREE_MEMORY_MB` (1024) and free disk ≥
+  `COMPUTER_MIN_FREE_DISK_GB` (10). This keeps the website itself healthy.
+- **Rest** (`docker pause`) after `COMPUTER_IDLE_PAUSE_SECONDS` (180) with no lease and no
+  viewer. **Sleep** (`docker stop`) after `COMPUTER_IDLE_STOP_MINUTES` (30) of rest.
 - **Retention:** destroy after `COMPUTER_RETENTION_DAYS` (30) asleep. The UI says, in
   Setup: "Asleep more than 30 days: its sign-ins and files are cleared."
+- **Cost:** `COMPUTER_COST_MICRO_USD_PER_SECOND` defaults to `0`. It's the owner's
+  server; they may set a value so computer time counts in the usage windows.
 - **Plan:** computers are available where Work is available (reuse the existing
   plan gate the agents store uses, `plan_locked`).
 
@@ -771,27 +725,37 @@ Density target: nothing larger than the thread header until you open something.
      - Feature off: the tab is not rendered at all.
      - No computer: "Nova doesn't have a computer yet. With one, it can sign in to sites,
        run code and keep files." **[Give it a computer]**. A confirm dialog explains that
-       time counts toward usage and that sign-ins persist until reset.
+       it runs on your server and that sign-ins persist until reset.
      - `asleep`: the poster image (dimmed) or an empty frame, plus "Asleep. It wakes when
        Nova starts working." **[Wake]**.
+     - `resting`: the poster or last frame, plus "Resting. Opens instantly." Opening the
+       view unpauses it.
      - `waking`: the frame, plus "Waking up…" with the small thinking orb on the text line.
-     - `awake`: an `<iframe>` of the watch URL at 16:10, fitting the panel width, with
-       `referrerPolicy="no-referrer"`, no `sandbox` attribute, `allow="clipboard-read;
-       clipboard-write"` and `translate="no"`. Below it: the line "Nova is using it:
-       <usingNow.summary>" or "Idle. Sleeps after 3 minutes." **[Take control]** ·
-       **[Full screen]**.
-     - Control mode: the iframe re-minted in `control`, a plain-text attention line (hand
+     - `awake`: the **`ComputerViewer`** client component
+       (`src/components/agents/computer-viewer.tsx`). It is the noVNC `RFB` client from
+       `@novnc/novnc`:
+       - loaded with `next/dynamic` and `ssr: false`, because it touches `window`;
+       - version pinned exact; check `npm run security:dependencies`;
+       - connected to `relayUrl?t=<token>` with `credentials: { password }`;
+       - `viewOnly` true in watch mode (the server enforces it too, through the view-only
+         VNC password), `scaleViewport` true, `resizeSession` false;
+       - 16:10, fitting the panel width, `translate="no"`.
+       Below it: the line "Nova is using it: <usingNow.summary>" or "Idle. Rests after 3
+       minutes." **[Take control]** · **[Full screen]**.
+     - Control mode: the viewer reconnects with a `control` token and password, a
+       plain-text attention line (hand
        icon, accent colour) "You have control. Nova waits until you hand back."
        **[Hand back]**. Hand back posts heartbeat `ended`, and if the agent's run has an
        open question, answers it with "Done. I've finished on your computer; continue."
        through the existing answer route.
      - `error`: "Couldn't reach the computer." **[Try again]** · **[Reset]**.
-     - Under the frame, in a disclosure: **Files** (list `/home/user/work`, download),
+     - Under the frame, in a disclosure: **Files** (list `/home/agent/work`, download),
        **Reset computer** and **Turn off** (confirm dialogs that say sign-ins and files
        are deleted), and the usage line "Awake 3 h 12 min in total".
      - **Heartbeat** every 20 s while the tab is visible (`document.visibilityState`);
-       stop when hidden or unmounted. Re-mint the URL on a 409 or when the status comes
-       back to awake.
+       stop when hidden or unmounted. Re-mint the token and reconnect on a disconnect, a
+       409, or when the status comes back to awake. The password lives only in component
+       memory, never in the URL, `localStorage` or logs.
      - When the agent's run asks a question while it has a computer, the Now tab's
        question card shows a **Take control** button that opens the Computer tab in
        control mode.
@@ -854,10 +818,15 @@ Density target: nothing larger than the thread header until you open something.
 - **Shared views** (`native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/`):
   - `NativeAgentComputerView`: the poster or frame, the plain-text state line, and
     **Wake**, **Watch**, **Take control** and **Hand back**.
-  - Watch and control open a sheet with a `WKWebView` (`NSViewRepresentable` /
-    `UIViewRepresentable`) modelled on `JunoChatKit/NativeArtifactRuntimeWebView.swift`:
-    `.nonPersistent()` store, navigation pinned to the minted host, no cookies or bearer
-    injected, unloaded on disappear or backgrounding.
+  - Watch and control call `POST …/computer/view` with `handoff: true` and open the
+    returned one-time `/computer-view?c=…` URL in a sheet with a `WKWebView`
+    (`NSViewRepresentable` / `UIViewRepresentable`) modelled on
+    `JunoChatKit/NativeArtifactRuntimeWebView.swift`:
+    - `.nonPersistent()` store;
+    - navigation pinned to the app's own origin;
+    - no cookies or bearer injected (the code is the credential, valid 60 s);
+    - unloaded on disappear or backgrounding.
+  - It is the same viewer as the web, so watch and takeover behave identically.
   - It sits in the agent page's Now tab (Mac and iOS) in place of the "Its computer"
     text feed when the feature is on, keeping the text feed as the fallback.
   - Remove the "Live" word at the Mac "Its computer" heading.
@@ -877,11 +846,17 @@ Write each phase's result, the gate results and any deviations in `PROGRESS.md` 
 moving on.
 
 **Phase 1 — Data and provider layer.**
-- The migration, `OWNER_COLUMN`, env (RULES §7), `src/lib/computer/{types,provider,fake,e2b,boot,stream,remote-browser,store,sweep}.ts`,
-  and `SECURITY.md`.
-- Unit tests with the fake provider: lifecycle, lease CAS, the caps, sweeper decisions,
-  secrets encrypted (assert that the stored value is not the plaintext), and
-  "no env = off".
+- The migration, `OWNER_COLUMN`, env (RULES §7), `src/lib/computer/{types,provider,fake,docker,remote-browser,live-view,store,sweep}.ts`,
+  the infra files from `INFRA.md` in `deploy/agent-computers/`, and `SECURITY.md`.
+- Unit tests with the fake provider:
+  - lifecycle, including rest, sleep and the missing-container recreate;
+  - lease CAS;
+  - the caps and the preflight;
+  - sweeper decisions, including reconciliation after a reboot;
+  - secrets encrypted (assert that the stored value is not the plaintext);
+  - "no env = off".
+- Also a `DockerProvider` argv test through an injected runner: the exact creation flags,
+  and the forbidden flags absent.
 - Exit: quick gates, the drift check and `prisma validate` are green.
 
 **Phase 2 — Runner integration.**
@@ -903,27 +878,38 @@ moving on.
   - a payment page escalates to `work.browser.purchase`;
   - summaries carry no ids or URLs;
   - a busy lease falls back to the temporary browser.
-- **Live smoke test (if you have the key):** `scripts/dev/computer-smoke.ts`, run with
-  `NODE_OPTIONS=--conditions=react-server npx tsx scripts/dev/computer-smoke.ts`. It must
-  not be run by `npm test`. It must:
-  1. create a computer for a fake agent id;
-  2. run `ensureServices`;
-  3. connect over CDP and open `https://example.com`;
-  4. read the page and take a screenshot;
-  5. run `exec("uname -a")`;
-  6. start the stream and print **only the hostname** of the viewer URL (not the password);
-  7. pause, reconnect, and check that the example.com tab is still open and Chrome is
-     still running;
-  8. `destroy`.
-
-  Record the timings (create, pause, resume) and the real `getHost` domain in
-  `PROGRESS.md`. Fix the CSP constant if the domain differs.
+- **Local smoke test on Docker Desktop** (required; it's free).
+  1. Build the image: `docker build -t juno-computer:dev deploy/agent-computers`.
+  2. Write `scripts/dev/computer-smoke.ts`, run with
+     `COMPUTER_PROVIDER=docker COMPUTER_DOCKER_IMAGE=juno-computer:dev NODE_OPTIONS=--conditions=react-server npx tsx scripts/dev/computer-smoke.ts`.
+     It must not be run by `npm test`.
+  3. The dev containers run on Docker's default network with ports published to
+     127.0.0.1. The VM firewall is not part of this test; the owner's setup script
+     installs it.
+  4. The script must:
+     1. create a computer for a fake agent id, and wait for CDP;
+     2. connect over CDP and open `https://example.com`;
+     3. read the page; take a screenshot (check it is 1280×800); pixel-click the page's
+        link; check the URL changed;
+     4. set a cookie with an expiry through CDP;
+     5. run `exec("uname -a")`, write and read back `/home/agent/work/hello.txt`, and
+        check that `../` and `/etc/passwd` are refused;
+     6. start x11vnc with two passwords, and confirm the view-only marker syntax with
+        `x11vnc -help`;
+     7. `pause`, `unpause`, and check the tab is still open;
+     8. `stop`, `start`, and check that the cookie **and** the file survived and that
+        Chromium is running again;
+     9. `destroy`, and check that the container and the volume are gone.
+  5. Print **no** tokens or passwords. Record the timings (create, start, stop, pause,
+     unpause) and the image size in `PROGRESS.md`.
 - Exit: the full gate set (without `next build`) is green.
 
 **Phase 3 — API.**
 - The routes in §4.5, CSP, parity classification, PATCH additions, undo, duplicate.
 - Tests: ownership (another user's agent id returns 404), feature off returns
-  `computer: null`, no route response or AgentEvent contains `password=` or a sandbox id,
+  `computer: null`, no AgentEvent, log line or push payload contains a VNC password,
+  token, container id or IP. Test the relay token mint and verify with the relay's
+  verifier: tamper, expire, wrong mode.
   plus rate limits and path traversal in files.
 - Exit: quick gates and `native:sync:check`.
 
@@ -945,7 +931,7 @@ moving on.
 
 **Phase 5 — The thread-first UI.**
 - §4.8 in full, plus the gallery `src/app/dev/agents-v2/` with fixtures for every state:
-  - panel tabs, computer states (poster, waking, awake with a stubbed iframe, control,
+  - panel tabs, computer states (poster, resting, waking, awake with the viewer fed by a fake RFB stub, control,
     error, off);
   - change cards (applied, pending, declined, undone);
   - roster, the start page, the onboarding greeting.
@@ -955,7 +941,7 @@ moving on.
   breaks them.
 - Exit: the full gate set plus `npm run build`.
 
-**Phase 6 — End to end on your machine (if you have the key).**
+**Phase 6 — End to end on your machine.**
 - With your dev server on :3170 and `.env.local` pointing at a **local** DB only (never
   production), run one real task against a real computer. If you have no local DB, run
   it through the smoke script path instead.
@@ -1011,28 +997,31 @@ What you get
 
 Verified
 - Gates: <list, each passed>, Docker deploy gate: GATE PASSED on <sha>
-- Live E2B smoke: <passed with timings / not run: no key>
+- Local computer smoke (Docker Desktop): <passed with timings / not run: reason>
 - UI: screenshots in docs/design/agents-v2/screens/ (<n> files)
 - Native: <built and tested / deferred: reason>
 
 Not verified (needs you, signed in)
 - <e.g. a real task end to end in production; takeover on iPhone>
 
-Before you deploy (only if you want agent computers on)
-1. Create an E2B account at e2b.dev and copy an API key (Hobby is free with $100 credit).
-2. On the VM: ssh in, cd ~/juno, then run
-   ./scripts/set-env-key.sh COMPUTER_PROVIDER      (enter: e2b)
-   ./scripts/set-env-key.sh COMPUTER_E2B_API_KEY   (paste the key)
-Without these, everything else ships and the computer stays hidden.
-
 Deploy
 You can deploy now from your Mac:
   deploy/deploy-from-mac.sh
 It runs the new migration <name> (expand-only, safe while the old release serves).
+Agent computers stay off and hidden until you do the two steps below.
+
+Turn on agent computers (after the deploy, once your server upgrade is done)
+1. One-time server setup (Docker on, isolated network, firewall, image build; ~10 min):
+   ssh -i ~/Developer/KEY/chatliamsdev.pem liammgnr@20.91.138.96 'sudo bash ~/juno/current/deploy/agent-computers/setup-vm.sh'
+2. Switch them on:
+   ssh -i ~/Developer/KEY/chatliamsdev.pem liammgnr@20.91.138.96
+   cd ~/juno && ./scripts/set-env-key.sh COMPUTER_PROVIDER --reload      (enter: docker)
+Tune the caps later in ~/juno/.env (COMPUTER_MAX_RUNNING_TOTAL, COMPUTER_MEMORY_MB, …).
 
 After deploy
 - JUNO_PUBLIC_UI_BASE_URL=https://chat.liams.dev node scripts/public-ui-smoke.mjs
-- Open an agent, give it a computer, ask it to open a site, watch it in the side panel.
+- Open an agent, give it a computer, ask it to open a site, watch it in the side panel,
+  then press Take control and hand back.
 ```
 
 ---
