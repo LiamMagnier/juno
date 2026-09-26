@@ -26,46 +26,44 @@ public struct StudioSidePanel: View {
     @Binding var tab: StudioPanelTab
     let createPullRequest: () -> Void
     let close: () -> Void
+    /// Files whose diffs start open — for the product shots and fixtures; the
+    /// app opens the panel with every file folded.
+    var initiallyExpanded: Set<String> = []
 
     public init(
         controller: SessionController,
         tab: Binding<StudioPanelTab>,
         createPullRequest: @escaping () -> Void,
-        close: @escaping () -> Void
+        close: @escaping () -> Void,
+        initiallyExpanded: Set<String> = []
     ) {
         self.controller = controller
         self._tab = tab
         self.createPullRequest = createPullRequest
         self.close = close
+        self.initiallyExpanded = initiallyExpanded
     }
 
     public var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: JunoSpace.hairline) {
-                ForEach(StudioPanelTab.allCases) { option in
-                    Button {
-                        tab = option
-                    } label: {
-                        HStack(spacing: JunoSpace.tight) {
-                            Text(option.title)
-                            if option == .changes, !controller.changes.isEmpty {
-                                Text("\(controller.changes.count)")
-                                    .font(Studio.Font.metaDigits)
-                                    .foregroundStyle(Studio.Ink.tertiary)
-                            }
-                        }
-                        .font(tab == option ? Studio.Font.labelEmphasis : Studio.Font.label)
-                        .foregroundStyle(tab == option ? Studio.Ink.primary : Studio.Ink.secondary)
-                        .padding(.horizontal, JunoSpace.snug)
-                        .frame(height: Studio.Metrics.control)
-                        .background(
-                            RoundedRectangle(cornerRadius: Studio.Radius.row, style: .continuous)
-                                .fill(tab == option ? Studio.Surface.selected : Color.clear)
+            HStack(spacing: JunoSpace.snug) {
+                // Juno's segmented control, the same raised key the product
+                // switch and every in-window filter use, with the change
+                // count riding the Changes segment.
+                JunoSegmented(
+                    options: StudioPanelTab.allCases.map { option in
+                        JunoSegmentedOption(
+                            option,
+                            option.title,
+                            icon: option == .changes ? .fileDiff : .terminal,
+                            count: option == .changes && !controller.changes.isEmpty ? controller.changes.count : nil
                         )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
+                    },
+                    selection: $tab,
+                    accessibilityLabel: "Panel",
+                    optionAccessibilityIdentifier: { "juno.code.panel.tab.\($0.rawValue)" },
+                    size: .compact
+                )
                 Spacer()
                 Button(action: close) {
                     JunoIconView(.panelRight, size: 14)
@@ -74,13 +72,17 @@ public struct StudioSidePanel: View {
                 .help("Close the panel (⌥⌘R)")
                 .accessibilityLabel("Close panel")
             }
-            .padding(.horizontal, JunoSpace.snug)
-            .frame(height: 44)
+            .padding(.horizontal, JunoSpace.cozy)
+            .frame(height: 48)
             .studioHairline(.bottom)
 
             switch tab {
             case .changes:
-                StudioChangesView(controller: controller, createPullRequest: createPullRequest)
+                StudioChangesView(
+                    controller: controller,
+                    createPullRequest: createPullRequest,
+                    initiallyExpanded: initiallyExpanded
+                )
             case .terminal:
                 StudioTerminalPane(controller: controller)
             }
@@ -97,7 +99,13 @@ struct StudioChangesView: View {
     let controller: SessionController
     let createPullRequest: () -> Void
 
-    @State private var expanded: Set<String> = []
+    @State private var expanded: Set<String>
+
+    init(controller: SessionController, createPullRequest: @escaping () -> Void, initiallyExpanded: Set<String> = []) {
+        self.controller = controller
+        self.createPullRequest = createPullRequest
+        _expanded = State(initialValue: initiallyExpanded)
+    }
     @State private var committing = false
     @State private var confirmRevertAll = false
     @State private var revertMessage: String?

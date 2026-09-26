@@ -520,7 +520,7 @@ private struct JunoDesktopLoadingView: View {
 /// silently fell back to the system sans, so the one place the editorial voice
 /// had to appear was the one place it did not. ``JunoSerif`` exists to make that
 /// unrepeatable.
-private struct JunoDesktopSignInView: View {
+struct JunoDesktopSignInView: View {
     /// The web's `max-w-sm` card column, and its `h-12 w-12` mark.
     private static let columnWidth: CGFloat = 360
     private static let markSize: CGFloat = 48
@@ -553,11 +553,33 @@ private struct JunoDesktopSignInView: View {
         Task { await authModel.signIn(email: email, password: submittedPassword) }
     }
 
+    /// Wide enough for the brand panel beside the card.
+    private static let splitWidth: CGFloat = 880
+    @State private var width: CGFloat = 0
+
     var body: some View {
+        HStack(spacing: 0) {
+            if width >= Self.splitWidth {
+                JunoDesktopSignInPlate()
+                    .frame(width: width * 0.46)
+                    .transition(.opacity)
+            }
+            form
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+    }
+
+    /// The form column: the mark and wordmark, the card, and the two notes.
+    private var form: some View {
         VStack(spacing: JunoSpace.section) {
-            VStack(spacing: JunoSpace.cozy) {
-                JunoMark(size: Self.markSize)
-                JunoWordmark()
+            // The brand panel carries the mark when it is on screen; one mark
+            // per window.
+            if width < Self.splitWidth {
+                VStack(spacing: JunoSpace.cozy) {
+                    JunoMark(size: Self.markSize)
+                    JunoWordmark()
+                }
             }
 
             card
@@ -595,8 +617,10 @@ private struct JunoDesktopSignInView: View {
     private var card: some View {
         VStack(spacing: JunoSpace.roomy) {
             VStack(spacing: JunoSpace.tight) {
+                // A display moment: the brief's Newsreader, like the greeting.
                 Text("Welcome back")
-                    .font(JunoSerif.pageHeading())
+                    .junoType(.display(size: 30))
+                    .accessibilityAddTraits(.isHeader)
                 Text("Sign in to continue to Juno.")
                     .font(.callout)
                     .junoSecondaryInk()
@@ -794,6 +818,68 @@ private struct JunoWordmark: View {
 /// (`interactive`) and the auth layout does not opt in, so animating it here
 /// would be a flourish the brand does not have. Drawn in a `Canvas` rather than
 /// as thousands of `Circle`s so the layout engine never sees the dots at all.
+/// The sign-in window's brand panel (premium pass, rule 5: imagery on
+/// public surfaces only).
+///
+/// When the bundle carries the painted landscape plate (`SignInPlate` —
+/// warm dawn in light, dusk in dark, from `public/brand/plates/`), the panel
+/// is that picture, full bleed. Until then it is the brand's own materials and
+/// nothing drawn to imitate a picture: a warm tonal field that deepens toward
+/// the accent at its foot like first light, the dot grid printed on it, the
+/// mark, and one line in the display face.
+struct JunoDesktopSignInPlate: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var plate: NSImage? {
+        NSImage(named: colorScheme == .dark ? "SignInPlateDusk" : "SignInPlateDawn")
+            ?? NSImage(named: "SignInPlate")
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            if let plate {
+                Image(nsImage: plate)
+                    .resizable()
+                    .scaledToFill()
+                    .accessibilityHidden(true)
+            } else {
+                Color.junoSidebar
+                RadialGradient(
+                    colors: [Color.junoAccent.opacity(colorScheme == .dark ? 0.22 : 0.16), Color.junoAccent.opacity(0)],
+                    center: .bottom,
+                    startRadius: 0,
+                    endRadius: 620
+                )
+                JunoDotField()
+                    .opacity(0.9)
+            }
+            // A foot of ink under the words, so they read on any plate.
+            LinearGradient(
+                colors: [Color.black.opacity(plate == nil ? 0 : 0.35), Color.black.opacity(0)],
+                startPoint: .bottom,
+                endPoint: .center
+            )
+            VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                JunoMark(size: 40)
+                Text("Chat and code, in one calm place.")
+                    .junoType(.display(size: 40))
+                    .foregroundStyle(plate == nil ? Color.junoForeground : Color.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                Text("Juno for Mac")
+                    .junoType(.ui)
+                    .foregroundStyle(plate == nil ? Color.junoSecondaryInk : Color.white.opacity(0.8))
+            }
+            .padding(JunoSpace.region)
+            .frame(maxWidth: 520, alignment: .leading)
+        }
+        .clipped()
+        .overlay(alignment: .trailing) {
+            Rectangle().fill(Color.junoBorder).frame(width: 1)
+        }
+    }
+}
+
 private struct JunoDotField: View {
     /// The web's `spacing = 24` and `r = 0.7`, in points.
     private static let spacing: CGFloat = JunoSpace.section

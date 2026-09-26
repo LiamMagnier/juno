@@ -183,7 +183,7 @@ struct DesktopDesignStartClient: Sendable {
 /// **One row, two columns.** Code and the legacy workspace each compose their
 /// own footer — Code stacks a workspace notice above the account block, the
 /// legacy workspace has no account block at all — so the shared thing is this
-/// row rather than a shared footer. Its anatomy is ``DesktopSidebarAccountRow``'s to the point: the same
+/// row rather than a shared footer. Its anatomy is ``DesktopAccountFooter``'s account row: the same
 /// insets, the same ``JunoRadius/row`` hover shape, the same
 /// `Color.junoSidebarSelection` fill, so the two read as one footer instead of
 /// as a button sitting on top of one.

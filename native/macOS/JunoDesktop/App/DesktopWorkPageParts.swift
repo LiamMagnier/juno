@@ -130,50 +130,21 @@ struct DesktopWorkTag: View {
     }
 }
 
-/// A run's status as a word in a quiet pill (`WorkStatusPill`). Only a live
-/// run carries the dot; every other status is its word, in its ink.
+/// A run's status as text, never a pill (owner directive).
 struct DesktopRunStatusPill: View {
     let status: String
 
-    private var tone: NativeWorkScheduleCopy.StatusTone { NativeWorkScheduleCopy.statusTone(status) }
-
-    private var ink: Color {
-        switch tone {
-        case .live: Color.junoForeground
-        case .attention: Color.junoWarningInk
-        case .good: Color.junoSuccessInk
-        case .bad: Color.junoDestructiveInk
-        case .neutral: Color.junoSecondaryInk
-        }
-    }
-
-    private var fill: Color {
-        switch tone {
-        case .live: Color.junoSecondary
-        case .attention: Color.junoWarning.opacity(0.12)
-        case .good: Color.junoSuccess.opacity(0.1)
-        case .bad: Color.junoDestructive.opacity(0.1)
-        case .neutral: Color.junoSecondary
+    private var kind: DesktopStatusText.Kind {
+        switch NativeWorkScheduleCopy.statusTone(status) {
+        case .live: .working
+        case .attention: .attention
+        case .bad: .failure
+        case .good, .neutral: .quiet
         }
     }
 
     var body: some View {
-        HStack(spacing: JunoSpace.tight) {
-            if tone == .live {
-                Circle()
-                    .fill(Color.junoAccent)
-                    .frame(width: 6, height: 6)
-                    .accessibilityHidden(true)
-            }
-            Text(NativeWorkScheduleCopy.statusLabel(status))
-        }
-        .junoType(JunoType.label)
-        .foregroundStyle(ink)
-        .lineLimit(1)
-        .fixedSize()
-        .padding(.horizontal, JunoSpace.snug)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(fill))
+        DesktopStatusText(NativeWorkScheduleCopy.statusLabel(status), kind: kind)
     }
 }
 

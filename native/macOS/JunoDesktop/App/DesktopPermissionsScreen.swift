@@ -234,15 +234,10 @@ struct DesktopWorkHostRow: View {
     }
 }
 
-/// A Mac's state as a word. Only an awake Mac — working or ready — carries
-/// the dot, because only that is live; revoked is a word in the destructive
-/// ink, and nothing is colour alone.
+/// A Mac's state as a word, never a dot (owner directive): revoked is a word
+/// in the destructive ink, stale in the warning ink, everything else quiet.
 struct DesktopHostState: View {
     let host: WorkHostSummary
-
-    private var isAwake: Bool {
-        host.revokedAt == nil && host.enabled && (host.state == "online" || host.state == "idle")
-    }
 
     private var ink: Color {
         if host.revokedAt != nil { return Color.junoDestructiveInk }
@@ -252,12 +247,7 @@ struct DesktopHostState: View {
 
     var body: some View {
         HStack(spacing: JunoSpace.tight) {
-            if isAwake {
-                Circle()
-                    .fill(Color.junoAccent)
-                    .frame(width: 6, height: 6)
-                    .accessibilityHidden(true)
-            }
+            // The state in words, no dot (owner directive).
             Text(NativeWorkPermissionsCopy.stateLabel(host))
                 .junoType(JunoType.label)
                 .foregroundStyle(ink)

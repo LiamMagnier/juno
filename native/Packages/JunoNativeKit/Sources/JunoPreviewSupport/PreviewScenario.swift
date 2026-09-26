@@ -15,6 +15,10 @@ public enum PreviewScenario: String, CaseIterable, Identifiable, Sendable {
     case mutating
     case longText
     case streaming
+    /// Marketing product shots: the normal posture with sample content chosen
+    /// for the landing and download pages — a product team's chats and a
+    /// named sample account. Never real data.
+    case showcase
 
     public var id: String { rawValue }
 
@@ -30,6 +34,7 @@ public enum PreviewScenario: String, CaseIterable, Identifiable, Sendable {
         case .mutating: "Mutation in progress"
         case .longText: "Very long text"
         case .streaming: "Streaming"
+        case .showcase: "Product shots"
         }
     }
 

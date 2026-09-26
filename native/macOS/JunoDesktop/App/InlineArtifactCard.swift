@@ -457,7 +457,7 @@ enum InlineArtifactStatus: Equatable {
     var isLive: Bool { self == .writing || self == .loading || self == .running }
 }
 
-/// `React · v2 · Updated · ● Live` — one line under the title.
+/// `React · v2 · Updated · Live` — one line under the title.
 ///
 /// In SF rather than the web's mono: these are labels, and the Mac keeps mono
 /// for code, ids, counts and costs (§10.2). The version number is tabular.
@@ -468,7 +468,6 @@ struct InlineArtifactMeta: View {
     let status: InlineArtifactStatus?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var breathing = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -491,20 +490,17 @@ struct InlineArtifactMeta: View {
             }
             if let status {
                 separator
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(status.tone)
-                        .frame(width: 6, height: 6)
-                        .opacity(status.isLive && breathing ? 0.35 : 1)
-                        .animation(
-                            status.isLive
-                                ? JunoMotion.ambient(JunoMotion.breathe(period: JunoMotion.Loop.statusBreathe), when: reduceMotion)
-                                : nil,
-                            value: breathing
-                        )
-                        .onAppear { breathing = true }
-                    Text(status.label)
-                        .foregroundStyle(status.tone)
+                // The word, never a dot (owner directive): in progress it
+                // shimmers in secondary ink; only an error wears a colour.
+                Group {
+                    switch status {
+                    case .writing, .loading, .running:
+                        JunoShimmerText(status.label, font: .caption2, active: true)
+                    case .error:
+                        Text(status.label).foregroundStyle(status.tone)
+                    case .live, .done:
+                        Text(status.label).foregroundStyle(Color.junoSecondaryInk)
+                    }
                 }
                 .fixedSize()
                 .id(status)

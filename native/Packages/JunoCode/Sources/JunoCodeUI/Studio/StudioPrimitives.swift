@@ -55,8 +55,10 @@ public enum StudioStatus: Equatable, Sendable {
     }
 }
 
-/// A status mark sized for a list row: a turning arc while working, a coral
-/// dot when it needs you, a red dot when it failed, nothing when idle.
+/// A status mark sized for a list row — a mark, never a coloured dot (owner
+/// directive, premium pass): a thin turning arc in secondary ink while
+/// working, a raised hand in the accent when it needs you, a crossed circle
+/// in the danger ink when it failed, nothing when idle.
 public struct StudioStatusGlyph: View {
     let status: StudioStatus
     var size: CGFloat = 8
@@ -73,19 +75,24 @@ public struct StudioStatusGlyph: View {
             switch status {
             case .idle:
                 Color.clear
+                    .frame(width: size, height: size)
             case .working:
-                if reduceMotion {
-                    Circle().stroke(Studio.Ink.accent, lineWidth: 1.5)
-                } else {
-                    StudioSpinner(color: Studio.Ink.accent, lineWidth: 1.5)
+                Group {
+                    if reduceMotion {
+                        Circle().stroke(Studio.Ink.secondary, lineWidth: 1.25)
+                    } else {
+                        StudioSpinner(color: Studio.Ink.secondary, lineWidth: 1.25)
+                    }
                 }
+                .frame(width: size + 2, height: size + 2)
             case .needsYou:
-                Circle().fill(Studio.Ink.accent)
+                JunoIconView(.hand, size: size + 4)
+                    .foregroundStyle(Studio.Ink.accent)
             case .failed:
-                Circle().fill(Studio.Ink.danger)
+                JunoIconView(.circleX, size: size + 4)
+                    .foregroundStyle(Studio.Ink.danger)
             }
         }
-        .frame(width: size, height: size)
         .accessibilityLabel(status.label)
     }
 }
@@ -284,6 +291,51 @@ public struct StudioDiffStat: View {
         .font(font)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(added) lines added, \(removed) removed")
+    }
+}
+
+/// Five cells that say a diff's shape at a glance: green for the added share,
+/// red for the removed, the rest empty — the review bar every code host
+/// draws beside a change. Tiny changes still light one cell of each side
+/// they touch, so "+1 −0" never looks like nothing happened.
+public struct StudioDiffBar: View {
+    let added: Int
+    let removed: Int
+
+    public init(added: Int, removed: Int) {
+        self.added = added
+        self.removed = removed
+    }
+
+    static let cells = 5
+
+    /// How many cells each side lights, out of ``cells``.
+    static func split(added: Int, removed: Int) -> (added: Int, removed: Int) {
+        let total = added + removed
+        guard total > 0 else { return (0, 0) }
+        var green = Int((Double(added) / Double(total) * Double(cells)).rounded())
+        var red = cells - green
+        if added > 0, green == 0 { green = 1; red = cells - 1 }
+        if removed > 0, red == 0 { red = 1; green = cells - 1 }
+        if added == 0 { green = 0 }
+        if removed == 0 { red = 0 }
+        return (green, red)
+    }
+
+    public var body: some View {
+        let split = Self.split(added: added, removed: removed)
+        HStack(spacing: 2) {
+            ForEach(0..<Self.cells, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(
+                        index < split.added
+                            ? Studio.Ink.added
+                            : index < split.added + split.removed ? Studio.Ink.removed : Studio.Surface.hairline
+                    )
+                    .frame(width: 7, height: 7)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

@@ -709,7 +709,7 @@ enum CodePreviewData {
 
     /// Builds a transcript with strictly increasing sequences and stable event
     /// identifiers, so `ForEach` identity and scroll restoration are repeatable.
-    private struct TranscriptBuilder {
+    struct TranscriptBuilder {
         let sessionID: CodeSessionID
         private var start: Date
         private(set) var events: [SessionEvent] = []
@@ -1299,6 +1299,216 @@ extension CodePreviewData {
             ]),
         ],
         linesAdded: 3, linesRemoved: 3
+    )
+}
+
+// MARK: - Product shots
+
+/// Sample sessions for the marketing product shots: a small TypeScript
+/// storefront and a bug fixed end to end. Sample content only — nothing here
+/// is anyone's code or data — and, like every preview fixture, inert: the
+/// controllers have no workspace, runtime or transport.
+public enum CodeShowcase {
+    static let workspace = WorkspaceRecord(
+        descriptor: WorkspaceDescriptor(
+            id: WorkspaceID(value: "ws-showcase-storefront"),
+            displayName: "storefront",
+            localPathHint: "\(NSHomeDirectory())/Developer/storefront",
+            isGitRepository: true,
+            lastOpenedAt: CodePreviewData.anchor
+        ),
+        bookmarkData: Data()
+    )
+
+    static let docsWorkspace = WorkspaceRecord(
+        descriptor: WorkspaceDescriptor(
+            id: WorkspaceID(value: "ws-showcase-docs"),
+            displayName: "docs-site",
+            localPathHint: "\(NSHomeDirectory())/Developer/docs-site",
+            isGitRepository: true,
+            lastOpenedAt: CodePreviewData.anchor
+        ),
+        bookmarkData: Data()
+    )
+
+    public static let sessionID = CodeSessionID(value: "sess-showcase-cart")
+
+    static let configuration = AgentConfiguration(
+        modelID: "claude-sonnet-5",
+        reasoningEffort: .medium,
+        permissionMode: .workspaceWrite
+    )
+
+    /// The sidebar's other sessions, so the column reads as a working week.
+    static var sessions: [CodeSession] {
+        func session(_ id: String, _ title: String, _ workspace: WorkspaceRecord, _ status: SessionStatus, _ minutes: Double, branch: String?, approval: Bool = false) -> CodeSession {
+            CodeSession(
+                id: CodeSessionID(value: id),
+                workspaceID: workspace.id,
+                title: title,
+                status: status,
+                configuration: configuration,
+                gitBranch: branch,
+                hasPendingApproval: approval,
+                createdAt: CodePreviewData.minutes(minutes + 20),
+                updatedAt: CodePreviewData.minutes(minutes)
+            )
+        }
+        return [
+            session(sessionID.value, "Fix the stale cart total", workspace, .completed, 2, branch: "fix/cart-total"),
+            session("sess-showcase-checkout", "Add Apple Pay to checkout", workspace, .running, 1, branch: "feat/apple-pay"),
+            session("sess-showcase-a11y", "Audit the product grid for VoiceOver", workspace, .waitingForApproval, 9, branch: "a11y/grid", approval: true),
+            session("sess-showcase-perf", "Lazy-load product images", workspace, .completed, 180, branch: "perf/images"),
+            session("sess-showcase-docs", "Document the webhooks API", docsWorkspace, .completed, 1_400, branch: "docs/webhooks"),
+        ]
+    }
+
+    /// A workbench over the showcase projects and sessions.
+    @MainActor
+    public static func workbench() -> WorkbenchModel {
+        WorkbenchModel.showcase(workspaces: [workspace, docsWorkspace], sessions: sessions, selected: sessionID)
+    }
+
+    /// The session the product shot opens on: a finished bug fix with its
+    /// diff, a command run and passing tests.
+    @MainActor
+    public static func sessionController() -> SessionController {
+        SessionController(previewFixture: fixture())
+    }
+
+    /// The paths the product shot expands in the side panel.
+    public static let featuredPaths = ["src/cart/selectors.ts"]
+
+    static func fixture() -> CodePreviewFixture {
+        guard let session = sessions.first(where: { $0.id == sessionID }) else {
+            preconditionFailure("the showcase session is missing")
+        }
+        var fixture = CodePreviewFixture(
+            session: session,
+            workspaceDisplayName: "storefront",
+            workspacePathHint: workspace.descriptor.localPathHint,
+            isGitRepository: true
+        )
+        fixture.gitStatus = GitStatusSummary(
+            branch: "fix/cart-total", upstream: "origin/fix/cart-total", ahead: 1, behind: 0,
+            files: [
+                GitFileStatus(path: "src/cart/selectors.ts", indexState: " ", worktreeState: "M"),
+                GitFileStatus(path: "src/cart/__tests__/selectors.test.ts", indexState: "?", worktreeState: "?"),
+            ]
+        )
+        var builder = CodePreviewData.TranscriptBuilder(sessionID: sessionID, start: session.createdAt)
+        builder.created(workspaceID: workspace.id, workspaceName: "storefront", configuration: configuration)
+        builder.contract(configuration)
+        builder.user("Removing a coupon leaves the cart total stale until the page reloads. Find the cause and fix it, with a test.")
+        builder.reasoning("The total is derived in a memoized selector, so something is probably cached on the wrong inputs.")
+        builder.toolRun(
+            id: "sc-read-selectors", name: "read_file",
+            summary: "Read src/cart/selectors.ts",
+            risk: .read, status: .succeeded, result: "84 lines read.", duration: 0.2
+        )
+        builder.toolRun(
+            id: "sc-grep", name: "grep",
+            summary: "Search for “removeCoupon”",
+            risk: .read, status: .succeeded, result: "4 matches in 3 files.", duration: 0.5
+        )
+        builder.toolRun(
+            id: "sc-read-slice", name: "read_file",
+            summary: "Read src/cart/cartSlice.ts",
+            risk: .read, status: .succeeded, result: "132 lines read.", duration: 0.2
+        )
+        builder.assistant("Found it. `selectCartTotal` is memoized on `items` alone, and it reads the coupon from a module-level cache. Removing a coupon changes `state.cart.coupon`, but nothing tells the selector to recompute. I'll pass the coupon in as a real input and add a regression test.")
+        builder.toolRun(
+            id: "sc-edit", name: "apply_patch",
+            summary: "Edit src/cart/selectors.ts",
+            risk: .write, status: .succeeded, result: "+9 −5", duration: 0.4
+        )
+        builder.fileChanged("src/cart/selectors.ts", .modified, 9, 5)
+        builder.toolRun(
+            id: "sc-test-file", name: "create_file",
+            summary: "Create src/cart/__tests__/selectors.test.ts",
+            risk: .write, status: .succeeded, result: "+31 −0", duration: 0.3
+        )
+        builder.fileChanged("src/cart/__tests__/selectors.test.ts", .created, 31, 0)
+        builder.toolRun(
+            id: "sc-run-tests", name: "run_command",
+            summary: "Run npm test -- src/cart",
+            risk: .execute, status: .succeeded, result: "24 passed", duration: 6.8,
+            output: [
+                (.stdout, " RUN  v3.2.4 /storefront"),
+                (.stdout, " ✓ src/cart/__tests__/cartSlice.test.ts (14 tests) 38ms"),
+                (.stdout, " ✓ src/cart/__tests__/coupons.test.ts (7 tests) 21ms"),
+                (.stdout, " ✓ src/cart/__tests__/selectors.test.ts (3 tests) 12ms"),
+                (.stdout, " Test Files  3 passed (3)"),
+                (.stdout, "      Tests  24 passed (24)"),
+            ]
+        )
+        builder.testRun("npm test -- src/cart", passed: true, tests: 24, failures: 0, duration: 6.8)
+        builder.assistant("Fixed. `selectCartTotal` now takes the coupon as an input, so removing one recomputes the total straight away, and the module-level cache is gone. The new test applies a coupon, removes it and checks the total at each step. All 24 cart tests pass.")
+        builder.runCompleted("Fixed the stale cart total", files: 2, testsPassed: true, duration: 94)
+        fixture.events = builder.events
+        fixture.lastTestRun = TestRunCompletedEvent(
+            command: "npm test -- src/cart", passed: true, testsRun: 24, failures: 0, durationSeconds: 6.8
+        )
+        fixture.diffs = [
+            "src/cart/selectors.ts": selectorsDiff,
+            "src/cart/__tests__/selectors.test.ts": testDiff,
+        ]
+        return fixture
+    }
+
+    private static func hunk(
+        oldStart: Int, oldCount: Int, newStart: Int, newCount: Int,
+        _ lines: [(DiffLineKind, String, Int?, Int?)]
+    ) -> DiffHunk {
+        DiffHunk(
+            oldStart: oldStart, oldCount: oldCount,
+            newStart: newStart, newCount: newCount,
+            lines: lines.map { DiffLine(kind: $0.0, text: $0.1, oldLineNumber: $0.2, newLineNumber: $0.3) }
+        )
+    }
+
+    static let selectorsDiff = TextDiff(
+        hunks: [
+            hunk(oldStart: 1, oldCount: 14, newStart: 1, newCount: 18, [
+                (.context, "import { createSelector } from \"@reduxjs/toolkit\";", 1, 1),
+                (.context, "import type { RootState } from \"../store\";", 2, 2),
+                (.removed, "import { cachedCoupon } from \"./couponCache\";", 3, nil),
+                (.context, "import { applyCoupon } from \"./pricing\";", 4, 3),
+                (.context, "", 5, 4),
+                (.context, "const selectItems = (state: RootState) => state.cart.items;", 6, 5),
+                (.added, "const selectCoupon = (state: RootState) => state.cart.coupon;", nil, 6),
+                (.context, "", 7, 7),
+                (.removed, "export const selectCartTotal = createSelector([selectItems], (items) => {", 8, nil),
+                (.removed, "  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);", 9, nil),
+                (.removed, "  return applyCoupon(subtotal, cachedCoupon);", 10, nil),
+                (.removed, "});", 11, nil),
+                (.added, "export const selectCartTotal = createSelector(", nil, 8),
+                (.added, "  [selectItems, selectCoupon],", nil, 9),
+                (.added, "  (items, coupon) => {", nil, 10),
+                (.added, "    const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);", nil, 11),
+                (.added, "    return applyCoupon(subtotal, coupon);", nil, 12),
+                (.added, "  },", nil, 13),
+                (.added, ");", nil, 14),
+            ]),
+        ],
+        linesAdded: 9, linesRemoved: 5
+    )
+
+    static let testDiff = TextDiff(
+        hunks: [
+            hunk(oldStart: 0, oldCount: 0, newStart: 1, newCount: 9, [
+                (.added, "import { describe, expect, it } from \"vitest\";", nil, 1),
+                (.added, "import { selectCartTotal } from \"../selectors\";", nil, 2),
+                (.added, "import { cartWith } from \"./fixtures\";", nil, 3),
+                (.added, "", nil, 4),
+                (.added, "describe(\"selectCartTotal\", () => {", nil, 5),
+                (.added, "  it(\"recomputes when a coupon is removed\", () => {", nil, 6),
+                (.added, "    const withCoupon = cartWith({ subtotal: 120, coupon: \"SAVE20\" });", nil, 7),
+                (.added, "    expect(selectCartTotal(withCoupon)).toBe(96);", nil, 8),
+                (.added, "    expect(selectCartTotal(cartWith({ subtotal: 120 }))).toBe(120);", nil, 9),
+            ]),
+        ],
+        linesAdded: 31, linesRemoved: 0
     )
 }
 #endif

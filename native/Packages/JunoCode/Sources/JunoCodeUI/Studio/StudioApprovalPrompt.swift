@@ -50,30 +50,57 @@ struct StudioApprovalPrompt: View {
     private func card(_ request: ApprovalRequest) -> some View {
         let copy = StudioApprovalCopy(request)
         return VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(copy.question)
-                    .font(Studio.Font.labelEmphasis)
-                    .foregroundStyle(Studio.Ink.primary)
+            HStack(alignment: .center, spacing: JunoSpace.snug) {
+                // What kind of thing is asking, in the one colour that means
+                // "needs you" — the mark's tile, never the card's edge alone.
+                JunoIconView(copy.icon, size: 14)
+                    .foregroundStyle(Studio.Ink.accent)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                            .fill(Studio.Ink.accent.opacity(0.12))
+                    )
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(copy.question)
+                        .font(Studio.Font.labelEmphasis)
+                        .foregroundStyle(Studio.Ink.primary)
+                    Text("Juno is waiting for you before it continues.")
+                        .font(Studio.Font.meta)
+                        .foregroundStyle(Studio.Ink.tertiary)
+                }
                 Spacer()
                 if controller.pendingApprovals.count > 1 {
                     Text("1 of \(controller.pendingApprovals.count)")
                         .font(Studio.Font.metaDigits)
-                        .foregroundStyle(Studio.Ink.tertiary)
+                        .foregroundStyle(Studio.Ink.secondary)
+                        .padding(.horizontal, JunoSpace.snug)
+                        .frame(height: 22)
+                        .background(Capsule().fill(Studio.Surface.muted))
                 }
             }
 
-            Text(copy.subject)
-                .font(Studio.Font.mono)
-                .foregroundStyle(Studio.Ink.primary)
-                .textSelection(.enabled)
-                .lineLimit(6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, JunoSpace.cozy)
-                .padding(.vertical, JunoSpace.snug)
-                .background(
-                    RoundedRectangle(cornerRadius: Studio.Radius.row, style: .continuous)
-                        .fill(Studio.Surface.muted)
-                )
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
+                if copy.isCommand {
+                    Text("$").foregroundStyle(Studio.Ink.tertiary)
+                }
+                Text(copy.subject)
+                    .foregroundStyle(Studio.Ink.primary)
+                    .textSelection(.enabled)
+                    .lineLimit(6)
+            }
+            .font(Studio.Font.mono)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.vertical, JunoSpace.snug + 2)
+            .background(
+                RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
+                    .fill(Studio.Surface.muted)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
+                    .strokeBorder(Studio.Surface.hairline)
+            )
 
             if request.risk == .destructive {
                 Text(Self.isFileTool(request.toolName)
@@ -163,13 +190,12 @@ struct StudioApprovalPrompt: View {
             }
         }
         .padding(JunoSpace.regular)
-        .background(
-            RoundedRectangle(cornerRadius: Studio.Radius.composer, style: .continuous)
-                .fill(Studio.Surface.raised)
-        )
+        // The raised rung, edged in the accent at low strength: the one card
+        // in the thread that is waiting on the reader.
+        .junoLiftedSurface(cornerRadius: Studio.Radius.composer)
         .overlay(
             RoundedRectangle(cornerRadius: Studio.Radius.composer, style: .continuous)
-                .strokeBorder(Studio.Ink.accent.opacity(0.45), lineWidth: 1)
+                .strokeBorder(Studio.Ink.accent.opacity(0.5), lineWidth: 1)
         )
         .focusable()
         .focusEffectDisabled()
@@ -210,6 +236,10 @@ struct StudioApprovalPrompt: View {
 struct StudioApprovalCopy {
     let question: String
     let subject: String
+    /// The mark in the card's tile: what kind of thing is asking.
+    var icon: JunoIcon = .shield
+    /// Whether the subject is a shell command, drawn after a `$`.
+    var isCommand = false
 
     init(_ request: ApprovalRequest) {
         let summary = request.summary
@@ -221,30 +251,41 @@ struct StudioApprovalCopy {
         case "run_command":
             question = "Run this command?"
             subject = object
+            icon = .terminal
+            isCommand = true
         case "run_tests":
             question = "Run the tests?"
             subject = object
+            icon = .listChecks
+            isCommand = true
         case "create_file":
             question = "Create this file?"
             subject = object
+            icon = .filePlus
         case "delete_file":
             question = "Delete this file?"
             subject = object
+            icon = .trash
         case "move_file":
             question = "Move this file?"
             subject = object
+            icon = .fileCode
         case "write_file", "apply_patch", "multi_edit":
             question = "Edit this file?"
             subject = object
+            icon = .pencil
         case "git_commit":
             question = "Create this commit?"
             subject = object
+            icon = .gitCommit
         case "web_fetch":
             question = "Fetch this page?"
             subject = object
+            icon = .web
         case "delegate_task":
             question = "Start a sub-agent that can make changes?"
             subject = summary
+            icon = .agents
         case "hook":
             question = "Run this project hook?"
             subject = summary
