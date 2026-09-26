@@ -12,19 +12,10 @@ import UIKit
 
 // MARK: - Motion
 
-enum JunoMobileMotion {
-  /// The brief's appearance spring: response 0.35, damping 0.86.
-  static let appear = Animation.spring(response: 0.35, dampingFraction: 0.86)
-  /// A slower, softer spring for large surfaces (hero art, a sheet's content).
-  static let settle = Animation.spring(response: 0.6, dampingFraction: 0.9)
-  /// The 120ms press.
-  static let press = Animation.easeOut(duration: 0.12)
-
-  /// `animation`, or nil under Reduce Motion so the change lands at once.
-  static func gated(_ animation: Animation, _ reduceMotion: Bool) -> Animation? {
-    reduceMotion ? nil : animation
-  }
-}
+// Motion comes from the house ladder (JunoMotion in JunoDesignSystem):
+// `standard` for appearance, `emphasized` for large surfaces, `press` for the
+// 120ms press, each wrapped in `JunoMotion.reduced(_, when:)`. The native
+// motion gate (scripts/check-native-motion.mjs) holds every call site to it.
 
 /// The brief's press: scale 0.97 over 120ms, and nothing under Reduce Motion.
 struct JunoMobilePressStyle: ButtonStyle {
@@ -44,7 +35,7 @@ struct JunoMobilePressStyle: ButtonStyle {
       label
         .scaleEffect(pressed && !reduceMotion ? scale : 1)
         .opacity(pressed ? 0.88 : 1)
-        .animation(JunoMobileMotion.gated(JunoMobileMotion.press, reduceMotion), value: pressed)
+        .animation(JunoMotion.reduced(JunoMotion.press, when: reduceMotion, tier: .tint), value: pressed)
     }
   }
 }
@@ -72,7 +63,7 @@ private struct JunoMobileRise: ViewModifier {
         if reduceMotion {
           shown = true
         } else {
-          withAnimation(JunoMobileMotion.settle.delay(delay)) { shown = true }
+          withAnimation(JunoMotion.reduced(JunoMotion.emphasized.delay(delay), when: reduceMotion)) { shown = true }
         }
       }
   }

@@ -566,7 +566,7 @@ struct JunoMobileModelSelectorView: View {
             .background {
                 Capsule().fill(active ? Color.junoForeground : Color.junoMuted)
             }
-            .animation(JunoMobileMotion.appear, value: active)
+            .animation(JunoMotion.standard, value: active)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(name)

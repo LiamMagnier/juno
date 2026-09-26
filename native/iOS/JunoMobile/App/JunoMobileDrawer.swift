@@ -302,7 +302,8 @@ struct JunoMobileSidebarDrawer: View {
     } label: {
       JunoIconView(.compose, size: 18)
         .foregroundStyle(Color.junoOnAccent)
-        .frame(width: 30, height: 30)
+        // 44pt: the touch target, and the search field's height beside it.
+        .frame(minWidth: 44, minHeight: 44)
     }
     // The drawer's one primary action, in the system's tinted glass.
     .junoProminentAction()
@@ -419,7 +420,7 @@ struct JunoMobileSidebarDrawer: View {
         }
       }
       .padding(.horizontal, 10)
-      .frame(minHeight: 40)
+      .frame(minWidth: 44, minHeight: 44)
       .contentShape(Rectangle())
     }
     .buttonStyle(JunoSidebarPressStyle())

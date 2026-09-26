@@ -26,7 +26,7 @@ struct JunoMobileSignInView: View {
           .transition(.opacity)
       } else {
         JunoMobileWelcome {
-          withAnimation(JunoMobileMotion.gated(JunoMobileMotion.settle, reduceMotion)) {
+          withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)) {
             welcomeSeen = true
           }
         }
@@ -80,7 +80,7 @@ private struct JunoMobileFrontDoorArt: View {
         if reduceMotion {
           rise = 1
         } else {
-          withAnimation(.spring(response: 1.3, dampingFraction: 0.92)) { rise = 1 }
+          withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)) { rise = 1 }
         }
       }
   }
@@ -153,7 +153,7 @@ private struct JunoMobileWelcome: View {
         .frame(maxWidth: .infinity)
         .clipped()
         .ignoresSafeArea(edges: .top)
-        .animation(JunoMobileMotion.gated(.spring(response: 0.9, dampingFraction: 0.9), reduceMotion), value: page)
+        .animation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion), value: page)
 
       VStack(spacing: 0) {
         HStack {
@@ -208,7 +208,7 @@ private struct JunoMobileWelcome: View {
                 .frame(width: item.id == page ? 20 : 6, height: 6)
             }
           }
-          .animation(JunoMobileMotion.gated(JunoMobileMotion.appear, reduceMotion), value: page)
+          .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: page)
           .accessibilityElement(children: .ignore)
           .accessibilityLabel("Page \(page + 1) of \(pages.count)")
 
@@ -216,7 +216,7 @@ private struct JunoMobileWelcome: View {
             if isLast {
               finish()
             } else {
-              withAnimation(JunoMobileMotion.gated(JunoMobileMotion.appear, reduceMotion)) {
+              withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
                 page += 1
               }
             }
@@ -359,7 +359,7 @@ private struct JunoMobileSignInForm: View {
         .padding(.top, JunoSpace.region)
         .padding(.bottom, JunoSpace.region)
         .junoMobileRise(delay: 0.4, distance: 14)
-        .animation(JunoMobileMotion.appear, value: authModel.lastErrorDescription)
+        .animation(JunoMotion.standard, value: authModel.lastErrorDescription)
       }
       .frame(maxWidth: 520)
       .frame(maxWidth: .infinity)

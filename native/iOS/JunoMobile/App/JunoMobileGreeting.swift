@@ -266,10 +266,10 @@ struct JunoMobileGreeting: View {
       nameIn = true
       return
     }
-    withAnimation(JunoMobileMotion.settle.delay(0.06)) {
+    withAnimation(JunoMotion.reduced(JunoMotion.emphasized.delay(0.06), when: reduceMotion)) {
       phraseIn = true
     }
-    withAnimation(JunoMobileMotion.settle.delay(0.22)) {
+    withAnimation(JunoMotion.reduced(JunoMotion.emphasized.delay(0.22), when: reduceMotion)) {
       nameIn = true
     }
   }

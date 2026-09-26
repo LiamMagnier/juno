@@ -1356,12 +1356,12 @@ struct JunoMobileComposerBeam: View {
     .accessibilityHidden(true)
     .task(id: active) {
       guard active else {
-        withAnimation(.easeOut(duration: 0.3)) { lit = false }
+        withAnimation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion)) { lit = false }
         return
       }
       try? await Task.sleep(for: .seconds(3))
       guard !Task.isCancelled else { return }
-      withAnimation(.easeIn(duration: 0.4)) { lit = true }
+      withAnimation(JunoMotion.reduced(JunoMotion.slow, when: reduceMotion)) { lit = true }
     }
   }
 }

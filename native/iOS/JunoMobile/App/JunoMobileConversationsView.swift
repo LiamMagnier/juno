@@ -268,7 +268,7 @@ private struct JunoMobileDraftChat: View {
         }
       }
       .padding(.bottom, JunoSpace.regular)
-      .animation(JunoMobileMotion.gated(JunoMobileMotion.appear, reduceMotion), value: prompt.isEmpty)
+      .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: prompt.isEmpty)
     } else {
       ScrollView {
         // The transcript's own metrics, so a spoken turn is the same
