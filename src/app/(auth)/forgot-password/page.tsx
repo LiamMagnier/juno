@@ -14,8 +14,8 @@ export default async function ForgotPasswordPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1.5 text-center">
-        <h1 className="text-balance font-serif text-display">Reset your password</h1>
+      <div className="space-y-2">
+        <h1 className="text-balance font-serif text-display font-medium tracking-tight">Reset your password</h1>
         <p className="text-body text-muted-foreground">Enter your email and we’ll send you a secure reset link.</p>
       </div>
       <ForgotPasswordForm emailEnabled={isEmailEnabled()} />

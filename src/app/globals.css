@@ -3935,3 +3935,90 @@
   0%, 100% { opacity: 0.45; }
   50% { opacity: 1; }
 }
+
+/* ─── Front door: plates, stages, reveals (premium pass, 2026-09-26) ──────────
+ * Marketing-only recipes for the landing, download and auth art. Nothing in the
+ * product uses them. docs/design/premium-pass/BRIEF.md explains the imagery.
+ */
+@layer components {
+  /* Paper grain over a painted plate: an SVG turbulence tile, multiplied so it
+     darkens the paint a touch instead of greying it. Static; never on a
+     scrolling container. */
+  .plate-grain {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.3  0 0 0 0 0.25  0 0 0 0 0.2  0 0 0 0.55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    mix-blend-mode: multiply;
+    opacity: 0.35;
+  }
+  .dark .plate-grain { mix-blend-mode: screen; opacity: 0.12; }
+
+  /* The stage: a painted plate framed as one object, with the product set on
+     it. The hairline sits inside (inset shadow) so the painting runs to the
+     rounded edge; the throw is tinted with the ground's hue. */
+  .stage {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    box-shadow:
+      inset 0 0 0 1px hsl(var(--foreground) / 0.06),
+      0 1px 2px hsl(30 20% 20% / 0.06),
+      0 30px 80px -40px hsl(20 40% 25% / 0.35);
+  }
+  .dark .stage {
+    box-shadow:
+      inset 0 0 0 1px hsl(var(--foreground) / 0.08),
+      0 30px 80px -40px hsl(0 0% 0% / 0.7);
+  }
+
+  /* A product window resting on a plate: the floating rung, with a lit top
+     edge the way glass catches a sky. */
+  .stage-window {
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.5),
+      0 0 0 1px hsl(30 15% 20% / 0.1),
+      0 2px 4px hsl(25 30% 20% / 0.06),
+      0 24px 60px -18px hsl(20 45% 22% / 0.4);
+  }
+  .dark .stage-window {
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.08),
+      0 0 0 1px hsl(0 0% 100% / 0.08),
+      0 24px 60px -18px hsl(0 0% 0% / 0.75);
+  }
+
+  /* The lab strip under the hero: one marquee on the page, and only because
+     the lineup is breadth, not a list anyone reads item by item. Two copies of
+     the track; the second is aria-hidden. Pauses on hover and focus. */
+  .marquee {
+    mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+  }
+  .marquee-track {
+    animation: marquee 48s linear infinite;
+  }
+  .marquee:hover .marquee-track,
+  .marquee:focus-within .marquee-track { animation-play-state: paused; }
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* Scroll-driven rise for the stage's product window: it settles into place as
+   the stage enters the viewport. CSS only (no scroll listeners), and only where
+   the browser has view timelines and the reader has not asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .scroll-settle {
+      animation: scroll-settle linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 40%;
+    }
+  }
+}
+@keyframes scroll-settle {
+  from { transform: translateY(48px) scale(0.965); opacity: 0.6; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track { animation: none; }
+}

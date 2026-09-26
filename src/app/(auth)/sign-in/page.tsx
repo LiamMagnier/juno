@@ -9,7 +9,7 @@ import { isAppleConfigured, isEmailLinkConfigured } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "Sign in",
-  description: "Sign in to Juno — chat with the best AI models from one thoughtful workspace.",
+  description: "Sign in to Juno: the best AI models in one calm workspace.",
 };
 
 export default async function SignInPage() {
@@ -17,8 +17,8 @@ export default async function SignInPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1.5 text-center">
-        <h1 className="text-balance font-serif text-display">Welcome back</h1>
+      <div className="space-y-2">
+        <h1 className="text-balance font-serif text-display font-medium tracking-tight">Welcome back</h1>
         <p className="text-body text-muted-foreground">Sign in to continue to Juno.</p>
       </div>
       {/* A real skeleton, not `null`: AuthForm reads useSearchParams, so it

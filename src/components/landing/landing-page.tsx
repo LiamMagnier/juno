@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { staggerDelay } from "@/lib/motion";
 import { JunoMark } from "@/components/brand/logo";
 import { AsciiWordmark } from "@/components/signature/dot-matrix";
-import { DottedDivider } from "@/components/signature/dotted-divider";
-import { HeroTranscript } from "@/components/landing/hero-transcript";
-import { FlagshipStrip, ModelLineup } from "@/components/landing/model-lineup";
+import { HeroStage } from "@/components/landing/hero-stage";
+import { LabMarquee, MODELS_FLOOR, TOTAL_LABS } from "@/components/landing/lab-marquee";
 import { Metering } from "@/components/landing/metering";
-import { Features } from "@/components/landing/features";
+import { Platforms } from "@/components/landing/platforms";
+import { Features, Privacy } from "@/components/landing/features";
 import { Pricing } from "@/components/landing/pricing";
+import { Closing } from "@/components/landing/closing";
 import { LandingHeader } from "@/components/landing/landing-header";
 import { LandingPhoneMenu } from "@/components/landing/phone-menu";
 import { LandingColumn } from "@/components/landing/section";
@@ -85,7 +86,7 @@ const COMPANY_LINKS = [
  */
 const NAV_LINKS = [
   { href: "#metering", label: "Metering" },
-  { href: "#models", label: "Models" },
+  { href: "#apps", label: "Apps" },
   { href: "#features", label: "Features" },
   { href: "#pricing", label: "Pricing" },
 ];
@@ -170,47 +171,25 @@ export function LandingPage({ nonce }: { nonce?: string }) {
 
       <main>
         {/* Runs before the hero below is parsed — see HERO_SEEN_SCRIPT. */}
-        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: HERO_SEEN_SCRIPT }} />
-        {/* Hero — static dot-grid backdrop (CSS only, no canvas) + faint coral wash.
-            `isolate`: the two backdrop layers below sit at -z-10, which without a
-            stacking context of their own resolve against the root and paint
-            behind any opaque ancestor ground.
-
-            The layers start 80px ABOVE the section (`-top-20`, past the bar's
-            57-65px), because the bar is transparent until the page scrolls:
-            a wash that began at the hero's top edge drew a hard coral seam
-            straight across the window under the bar, which the old permanent
-            hairline had been hiding. `overflow-x-clip` rather than
-            `overflow-hidden` so the upward reach is not clipped. */}
-        <section className="relative isolate overflow-x-clip">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 -top-20 bottom-0 -z-10 bg-[radial-gradient(55%_45%_at_50%_0%,hsl(var(--primary)/0.1),transparent_70%)]"
-          />
-          {/* CSS twin of DotField's resting frame (dot-field.tsx: --foreground at
-              0.05, r 0.7, 24px spacing) — the same dot motif the app shell, auth
-              and onboarding paint, at zero client JS. */}
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 -top-20 bottom-0 -z-10 [background-image:radial-gradient(hsl(var(--foreground)/0.05)_0.7px,transparent_0.8px)] [background-size:24px_24px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]"
-          />
-          {/* Centred, unlike the sections below: on a wide display a
-              left-flushed hero left the right half of the viewport empty. The
-              sections keep the app's left-aligned page header. */}
-          <LandingColumn contentClassName="flex flex-col items-center pb-16 pt-14 text-center sm:pb-20 sm:pt-20">
-            {/* The hero opens on the job to be done, not a catalogue claim. */}
+        <script nonce={nonce} suppressHydrationWarning dangerouslySetInnerHTML={{ __html: HERO_SEEN_SCRIPT }} />
+        {/* The hero: the promise, two actions, then the product on a painted
+            plate (hero-stage.tsx). The type sits on the page ground above the
+            stage rather than over the paint, so it never fights the picture
+            for contrast. */}
+        <section className="relative">
+          <LandingColumn contentClassName="flex flex-col items-center pb-10 pt-12 text-center sm:pb-14 sm:pt-20">
             <h1
               style={staggerDelay(0, "loose")}
-              className={`mt-4 max-w-[22ch] text-balance font-serif text-hero font-medium tracking-tight ${HERO_ENTER}`}
+              className={`max-w-[20ch] text-balance pb-1 font-serif lg:max-w-none text-hero font-medium tracking-tight ${HERO_ENTER}`}
             >
               Choose the best AI <span className="italic text-primary">for the work.</span>
             </h1>
             <p
               style={staggerDelay(1, "loose")}
-              className={`mt-5 max-w-prose text-pretty text-body-lg text-muted-foreground ${HERO_ENTER}`}
+              className={`mt-5 max-w-[34rem] text-pretty text-body-lg text-muted-foreground ${HERO_ENTER}`}
             >
-              Compare frontier models in one conversation, see the cost of every answer, and continue the same work on
-              web, Mac and iPhone.
+              Compare frontier models in one conversation, see what every answer costs, and pick up on web, Mac or
+              iPhone.
             </p>
             <div
               style={staggerDelay(2, "loose")}
@@ -222,26 +201,34 @@ export function LandingPage({ nonce }: { nonce?: string }) {
                   <ArrowRight aria-hidden />
                 </Link>
               </Button>
-              {/* To the receipt, not to Features three sections down: the
-                  secondary action should land on the argument, not past it. */}
               <Button asChild size="lg" variant="secondary">
-                <a href="#metering">See what a reply costs</a>
+                <Link href="/download">Download for Mac</Link>
               </Button>
             </div>
-            <div style={staggerDelay(3, "loose")} className={`mt-12 flex w-full justify-center ${HERO_ENTER}`}>
-              <HeroTranscript />
-            </div>
-            <div style={staggerDelay(4, "loose")} className={`mt-14 w-full ${HERO_ENTER}`}>
-              <DottedDivider label="In the picker today" className="mb-5" />
-              <FlagshipStrip />
-            </div>
           </LandingColumn>
+          <div style={staggerDelay(3, "loose")} className={`mx-auto w-full max-w-[80rem] px-3 sm:px-6 ${HERO_ENTER}`}>
+            <HeroStage />
+          </div>
+        </section>
+
+        {/* Under the hero, never inside it: who is in the picker. */}
+        <section aria-labelledby="labs-heading" className="pb-6 pt-12 sm:pt-16">
+          <LandingColumn contentClassName="py-0">
+            <p id="labs-heading" className="text-center text-body text-muted-foreground">
+              {MODELS_FLOOR}+ models from {TOTAL_LABS} labs, in one picker
+            </p>
+          </LandingColumn>
+          <div className="mx-auto mt-6 max-w-[80rem]">
+            <LabMarquee />
+          </div>
         </section>
 
         <Metering />
-        <ModelLineup />
+        <Platforms />
         <Features />
+        <Privacy />
         <Pricing />
+        <Closing />
       </main>
 
       <footer className="border-t border-border/60">
@@ -300,7 +287,7 @@ export function LandingPage({ nonce }: { nonce?: string }) {
               composite lands ≈3.6:1 on --background, under the 4.5:1 AA floor,
               and 11px is far below the large-text exemption. */}
           <p className="mt-8 border-t border-border/60 pt-6 font-mono text-caption text-muted-foreground">
-            © {new Date().getFullYear()} Juno · Every frontier model, one honest subscription.
+            © {new Date().getFullYear()} Juno. Every frontier model, one honest subscription.
           </p>
         </LandingColumn>
       </footer>

@@ -126,8 +126,10 @@ function PlanCard({ item, index, action }: { item: PlanCardItem; index: number; 
       </div>
       <p className="mt-1 text-ui text-muted-foreground">{tagline}</p>
 
-      <p className="mt-4 flex items-baseline gap-1.5">
-        <span className="text-display tabular-nums">{price}</span>
+      {/* Wraps as a unit: the suffix may drop to its own line in a narrow
+          card, the figure and its currency never part. */}
+      <p className="mt-4 flex flex-wrap items-baseline gap-x-1.5">
+        <span className="whitespace-nowrap text-display tabular-nums">{price}</span>
         <span className="font-mono text-caption text-muted-foreground">{suffix}</span>
       </p>
 

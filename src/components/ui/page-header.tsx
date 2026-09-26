@@ -22,7 +22,7 @@ export function PageHeader({
   as: H = "h2",
   className,
 }: {
-  eyebrow: React.ReactNode;
+  eyebrow?: React.ReactNode;
   heading: React.ReactNode;
   lede?: React.ReactNode;
   as?: "h1" | "h2";
@@ -30,8 +30,8 @@ export function PageHeader({
 }) {
   return (
     <header className={className}>
-      <p className="font-mono text-label text-muted-foreground">{eyebrow}</p>
-      <H className="mt-3 max-w-2xl text-balance font-serif text-display font-medium tracking-tight">{heading}</H>
+      {eyebrow && <p className="mb-3 font-mono text-label text-muted-foreground">{eyebrow}</p>}
+      <H className="max-w-2xl text-balance font-serif text-display font-medium tracking-tight">{heading}</H>
       {lede && <p className="mt-3 max-w-2xl text-pretty text-body-lg text-muted-foreground">{lede}</p>}
     </header>
   );

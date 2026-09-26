@@ -4,7 +4,7 @@
 // type, spacing). Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: 63e2e86ddb4bef37
+// tokens-digest: 2e1b30b9c9be5903
 //
 
 /** `--dur-*` in milliseconds. */
@@ -46,6 +46,7 @@ export const RADIUS = {
   "surface": 16,
   "panel": 20,
   "composer": 20,
+  "stage": 28,
 } as const;
 
 export type DurationToken = keyof typeof DURATION;

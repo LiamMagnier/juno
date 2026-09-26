@@ -173,6 +173,9 @@ const config: Config = {
         // distinct through placement and material, not an oversized novelty
         // radius.
         composer: "20px",
+        // Marketing stages only: the painted plates and product shots on the
+        // front door (landing, download, auth art). Never inside the product.
+        stage: "28px",
         // The two composer-seated control radii. The primary action sits at
         // `composer-action` at its 36px rest size and morphs to
         // `composer-control` as it widens to 44px while busy — the corner

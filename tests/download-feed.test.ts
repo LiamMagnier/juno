@@ -519,7 +519,8 @@ test("the pages link through the redirect route for a signed URL, and straight t
   // `download` attribute for itself. The menu only renders inside an open
   // Radix portal, which a server render never mounts, so its anchor is held
   // to the helper here; the page's is rendered below.
-  for (const file of ["../src/app/download/page.tsx", "../src/components/app/download-menu.tsx"]) {
+  // The page's markup lives in DownloadView (the route passes it the feed).
+  for (const file of ["../src/components/download/download-view.tsx", "../src/components/app/download-menu.tsx"]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
     assert.match(source, /const link = downloadLink\(download\);/, file);
     assert.match(source, /<a \{\.\.\.link\}>/, file);
