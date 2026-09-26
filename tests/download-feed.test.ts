@@ -5,7 +5,9 @@ import {
   SIGNED_URL_ASSUMED_LIFETIME_MS,
   SIGNED_URL_MIN_REMAINING_MS,
   SIGNED_URL_REUSE_MS,
+  RELEASE_NOTES_MAX,
   buildDownloadFeed,
+  releaseNotes,
   resetDownloadFeedCache,
 } from "@/lib/download-feed";
 import * as React from "react";
@@ -46,6 +48,7 @@ function release(version: string, opts: { prerelease?: boolean; draft?: boolean;
     draft: opts.draft ?? false,
     prerelease: opts.prerelease ?? false,
     published_at: "2026-09-20T00:00:00Z",
+    body: "  Calmer settings.\r\n\r\n- Software Update shows what is new.\n",
     assets: [
       asset(DMG_ID + offset, `Juno-${version}.dmg`, { size: 23_958_367, digest: `sha256:${DIGEST}` }),
       asset(MANIFEST_ID + offset, `Juno-${version}.release.json`, { size: 854 }),
@@ -169,6 +172,8 @@ test("without a token a public repository is read anonymously and keeps its gith
   assert.equal(row.size, 23_958_367);
   assert.equal(row.sha256, DIGEST);
   assert.equal(row.notarized, true);
+  // The release's notes ride along for the Mac's Software Update window.
+  assert.equal(row.notes, "Calmer settings.\n\n- Software Update shows what is new.");
 
   // The same three requests as ever, none of them carrying a credential: the
   // two listings and the manifest by its public URL. No visibility lookup and
@@ -570,4 +575,13 @@ test("the /download page keeps a public release's permanent link exactly as it w
   assert.deepEqual(downloadAnchors(html), [
     { href: `https://github.com/${REPO}/releases/download/v1.5.4/Juno-1.5.4.dmg`, download: true },
   ]);
+});
+
+test("release notes are trimmed, normalised and capped, and empty notes are null", () => {
+  assert.equal(releaseNotes(undefined), null);
+  assert.equal(releaseNotes("   \n "), null);
+  assert.equal(releaseNotes("a\r\nb"), "a\nb");
+  const long = releaseNotes("x".repeat(RELEASE_NOTES_MAX + 50));
+  assert.equal(long?.length, RELEASE_NOTES_MAX + 1);
+  assert.ok(long?.endsWith("…"));
 });

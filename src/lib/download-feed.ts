@@ -90,7 +90,23 @@ interface GitHubRelease {
   draft?: boolean;
   prerelease?: boolean;
   published_at?: string;
+  /** The release's Markdown notes, as written on GitHub. */
+  body?: string | null;
   assets?: ReleaseAsset[];
+}
+
+/**
+ * The longest release note the feed carries. The Mac's Software Update window
+ * shows it in a scrolling "What's new" card; a changelog longer than this is a
+ * page, and the window links to /download for the rest.
+ */
+export const RELEASE_NOTES_MAX = 4000;
+
+/** A release's notes for the feed: trimmed, capped, null when there are none. */
+export function releaseNotes(body: string | null | undefined): string | null {
+  const text = (body ?? "").replace(/\r\n/g, "\n").trim();
+  if (!text) return null;
+  return text.length > RELEASE_NOTES_MAX ? `${text.slice(0, RELEASE_NOTES_MAX).trimEnd()}…` : text;
 }
 
 function fetchCache(forceRefresh: boolean) {
@@ -405,6 +421,7 @@ export async function buildDownloadFeed({
       sha256: assetSha256(asset),
       available: true,
       notarized: await verdict,
+      notes: releaseNotes(source.release.body),
     };
   };
 
