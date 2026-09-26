@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import JunoAuth
 import JunoChatKit
 import JunoCodeKit
 import JunoCodeUI
@@ -45,7 +46,7 @@ struct PremiumSnapshotTests {
         URL(fileURLWithPath: ProcessInfo.processInfo.environment["JUNO_PREMIUM_SNAPSHOT_DIR"]!)
     }
 
-    nonisolated static let names = ["mac-chat-empty", "mac-chat-conversation", "mac-code-session", "mac-code-empty", "mac-product-switch"]
+    nonisolated static let names = ["mac-chat-empty", "mac-chat-conversation", "mac-code-session", "mac-code-empty", "mac-product-switch", "mac-sign-in"]
 
     @Test(arguments: names)
     func drawsTheWindow(_ name: String) async throws {
@@ -66,6 +67,17 @@ struct PremiumSnapshotTests {
                 view = AnyView(PremiumShots.codeSession(world: world))
             case "mac-code-empty":
                 view = AnyView(PremiumShots.codeEmpty(world: world))
+            case "mac-sign-in":
+                // A configuration with no auth runtime is the one signed-out
+                // state constructible offscreen; its buttons draw disabled.
+                view = AnyView(
+                    JunoDesktopSignInView(
+                        authModel: NativeAuthModel(configurationErrorDescription: ""),
+                        localStoreRecovery: nil
+                    )
+                    .frame(width: PremiumFrame.size.width, height: PremiumFrame.size.height)
+                    .junoAccentTint()
+                )
             default:
                 size = CGSize(width: 320, height: 64)
                 framed = false
