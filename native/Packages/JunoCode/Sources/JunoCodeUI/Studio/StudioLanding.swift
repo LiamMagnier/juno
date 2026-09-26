@@ -144,24 +144,60 @@ public struct StudioLanding: View {
             && !modelID.isEmpty
     }
 
-    private var greeting: String {
-        if let project { return "What should we build in \(project.descriptor.displayName)?" }
-        return "What should we build?"
+    /// The four starting points (premium pass, rule 2): real Code work,
+    /// each seeding a whole prompt — never sending one.
+    static let startingPoints: [JunoStartingPoint] = [
+        JunoStartingPoint(
+            id: "fix-test",
+            title: "Fix a failing test",
+            detail: "Find why it fails, fix it, run it again.",
+            icon: .listChecks
+        ),
+        JunoStartingPoint(
+            id: "tour",
+            title: "Explain the codebase",
+            detail: "A tour of the main modules and how they fit.",
+            icon: .compass
+        ),
+        JunoStartingPoint(
+            id: "review",
+            title: "Review my changes",
+            detail: "Read the uncommitted diff and flag the risks.",
+            icon: .fileDiff
+        ),
+        JunoStartingPoint(
+            id: "build",
+            title: "Build a feature",
+            detail: "Plan it with you, then make the change.",
+            icon: .blocks
+        ),
+    ]
+
+    /// The prompt each starting point seeds.
+    static func prompt(for point: JunoStartingPoint) -> String {
+        switch point.id {
+        case "fix-test":
+            return "Run the test suite, find the failing test, work out why it fails and fix the cause. Then run it again to prove it passes."
+        case "tour":
+            return "Give me a tour of this codebase: the main modules, how they fit together, and where a new contributor should start reading."
+        case "review":
+            return "Review the uncommitted changes on this branch. Flag anything risky, untested or inconsistent with the code around it."
+        default:
+            return "Help me build a new feature. Ask me what it should do, propose a plan, then make the change: "
+        }
     }
+
+    @State private var columnWidth: CGFloat = 720
+    @Environment(\.junoTextScale) private var textScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: JunoSpace.region)
-            VStack(alignment: .leading, spacing: JunoSpace.section) {
-                Text(greeting)
-                    .font(Studio.Font.display)
-                    .foregroundStyle(Studio.Ink.primary)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentTransition(.opacity)
+            VStack(spacing: JunoSpace.section) {
+                greetingView
 
-                VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                    placeRow
+                VStack(spacing: JunoSpace.snug) {
                     StudioComposer(
                         text: $prompt,
                         placeholder: isRemote ? "Describe the task" : "Describe the change you want",
@@ -184,7 +220,12 @@ public struct StudioLanding: View {
                         canSend: canSend,
                         send: send,
                         focus: $focused,
-                        fieldIdentifier: "juno.code.launch-prompt"
+                        fieldIdentifier: "juno.code.launch-prompt",
+                        header: AnyView(placeRow),
+                        // The waiting composer breathes until the first
+                        // keystroke, then goes still (brief: pulse-outside,
+                        // low strength, only until typing starts).
+                        beam: trimmed.isEmpty && attachments.isEmpty ? .pulse : nil
                     ) {
                         StudioModeChip(mode: mode, select: { mode = $0 }, isEnabled: !isRemote)
                     } trailing: {
@@ -206,14 +247,30 @@ public struct StudioLanding: View {
                     }
                     footnote
                 }
+
+                JunoStartingPointGrid(
+                    points: Self.startingPoints,
+                    identifier: { "juno.code.starting-point.\($0.id)" }
+                ) { point in
+                    prompt = Self.prompt(for: point)
+                    focused = true
+                }
+                // Steps aside while there is a draft: suggestions under a
+                // half-written message are for a message the reader is no
+                // longer writing. Opacity only, so the composer never moves.
+                .opacity(trimmed.isEmpty ? 1 : 0)
+                .allowsHitTesting(trimmed.isEmpty)
+                .accessibilityHidden(!trimmed.isEmpty)
+                .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: trimmed.isEmpty)
             }
-            .frame(maxWidth: 680)
+            .frame(maxWidth: 720)
             .padding(.horizontal, Studio.Metrics.gutter)
             Spacer(minLength: JunoSpace.region)
             Spacer(minLength: JunoSpace.region)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Studio.Surface.canvas)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnWidth = $0 }
         .onAppear {
             focused = true
             // Seeded at init; the host can let go of it now.
@@ -240,6 +297,30 @@ public struct StudioLanding: View {
         }
     }
 
+    /// The headline in Chat's display system (premium pass, rule 2): one
+    /// sentence in Newsreader, centred, fluid with the column like Chat's
+    /// "How can I help, *Name*?" — the project's name set in the italic cut,
+    /// the way Chat sets the reader's.
+    private var greetingView: some View {
+        let size = JunoType.displaySize(forColumnWidth: columnWidth)
+        return Group {
+            if let name = project?.descriptor.displayName {
+                Text("What should we build in \(Text(name).font(JunoType.displayItalic(size: size).font(scale: textScale)))?")
+            } else {
+                Text("What should we build?")
+            }
+        }
+        .junoType(.display(size: size))
+        .foregroundStyle(Studio.Ink.primary)
+        .multilineTextAlignment(.center)
+        .lineLimit(2)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
+        .contentTransition(.opacity)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityIdentifier("juno.code.greeting")
+    }
+
     // MARK: Place
 
     /// Where the session runs: the project, the environment, the branch.
@@ -258,9 +339,8 @@ public struct StudioLanding: View {
                 StudioChipLabel(title: branch, icon: .branch, showsChevron: false)
                     .help(environment == .worktree ? "A new worktree branches from \(branch)" : "The branch this session works on")
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding(.leading, JunoSpace.hairline)
     }
 
     private var projectMenu: some View {
@@ -393,7 +473,8 @@ public struct StudioLanding: View {
     private var footnote: some View {
         let message = remoteError ?? (canSend || trimmed.isEmpty ? nil : blockingReason)
             ?? (environment == .worktree ? blockingReason : nil)
-        HStack {
+        HStack(spacing: JunoSpace.tight) {
+            Spacer(minLength: 0)
             if isStarting || isSubmittingRemote {
                 StudioSpinner().frame(width: 10, height: 10)
                 Text("Starting…").font(Studio.Font.meta).foregroundStyle(Studio.Ink.tertiary)
@@ -406,7 +487,7 @@ public struct StudioLanding: View {
                     .font(Studio.Font.meta)
                     .foregroundStyle(Studio.Ink.tertiary)
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, JunoSpace.cozy)
         .frame(minHeight: 18)

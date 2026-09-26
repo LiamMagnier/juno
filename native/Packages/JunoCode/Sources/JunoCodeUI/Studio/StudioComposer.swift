@@ -44,6 +44,15 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     /// The field's accessibility identifier: the landing's and a thread's
     /// are different controls to a UI test.
     var fieldIdentifier = "juno.code.composer.field"
+    /// A row across the composer's top edge, above the field and inside the
+    /// shell: where the session runs (project, environment, branch) on the
+    /// new-session screen. Separated from the field by a hairline. Nil in a
+    /// thread, where the place is fixed and the title bar says it.
+    var header: AnyView? = nil
+    /// The border beam over the shell (premium pass): `.pulse` on an empty
+    /// new-session composer until the first keystroke, `.line` while a run
+    /// works. Nil draws none.
+    var beam: JunoBorderBeamStyle? = nil
     @ViewBuilder var leading: () -> Leading
     @ViewBuilder var trailing: () -> Trailing
 
@@ -88,23 +97,35 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let header {
+                header
+                    .padding(.horizontal, JunoSpace.snug)
+                    .padding(.top, JunoSpace.snug)
+                    .padding(.bottom, JunoSpace.tight)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .studioHairline(.bottom)
+            }
             if !attachments.isEmpty {
                 attachmentStrip
             }
             field
             controlRow
         }
-        .background(
-            RoundedRectangle(cornerRadius: Studio.Radius.composer, style: .continuous)
-                .fill(Studio.Surface.raised)
-                .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Studio.Radius.composer, style: .continuous)
-                .strokeBorder(
-                    isDropTargeted ? Studio.Ink.accent : Studio.Surface.hairline,
-                    lineWidth: isDropTargeted ? 1.5 : 1
-                )
+        // The raised rung (premium pass, rule 3): card fill, hairline, the
+        // short and the long tinted throws. The one hero object of the screen.
+        .junoLiftedSurface(cornerRadius: Studio.Radius.composer)
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: Studio.Radius.composer, style: .continuous)
+                    .inset(by: 4)
+                    .strokeBorder(Studio.Ink.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                    .allowsHitTesting(false)
+            }
+        }
+        .junoBorderBeam(
+            cornerRadius: Studio.Radius.composer,
+            style: beam ?? .line,
+            isActive: beam != nil && !isDropTargeted
         )
         // Above the composer, never over it. The guide goes on the menu as a
         // whole: set inside the `if` branches it is lost through the
@@ -229,6 +250,8 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
         .padding(.bottom, JunoSpace.snug)
     }
 
+    /// The composer's one accented control, Chat's disc: coral while there is
+    /// something to send or a run to stop, a quiet well while there is not.
     @ViewBuilder
     private var sendButton: some View {
         if let stop,
@@ -236,33 +259,35 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
             || (isRunning && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty)
         {
             Button(action: stop) {
-                RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                    .fill(Studio.Surface.canvas)
-                    .frame(width: 9, height: 9)
+                JunoIconView(.stop, size: 10, weight: .fill)
+                    .foregroundStyle(Color.junoOnAccent)
                     .frame(width: Studio.Metrics.control, height: Studio.Metrics.control)
-                    .background(Circle().fill(Studio.Ink.primary))
+                    .background(Circle().fill(Color.junoAccent))
+                    .contentShape(Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JunoPressButtonStyle())
             // ⌘. is the host's Stop command (Session › Stop), not a shortcut on
             // this button: the button gives way to Send once the draft has any
             // text, and the shortcut used to vanish with it.
             .help("Stop (⌘.)")
             .accessibilityLabel("Stop")
             .accessibilityIdentifier("juno.code.composer.stop")
-            .transition(.scale(scale: 0.8).combined(with: .opacity))
+            .transition(.scale(scale: JunoMotion.scaleFrom(0.9, reduceMotion: reduceMotion)).combined(with: .opacity))
         } else {
             Button(action: submit) {
-                JunoIconView(.arrowUp, size: 14)
-                    .foregroundStyle(canSend ? Studio.Surface.canvas : Studio.Ink.tertiary)
+                JunoIconView(.send, size: 14, weight: .bold)
+                    .foregroundStyle(canSend ? Color.junoOnAccent : Studio.Ink.tertiary)
                     .frame(width: Studio.Metrics.control, height: Studio.Metrics.control)
-                    .background(Circle().fill(canSend ? Studio.Ink.primary : Studio.Surface.muted))
+                    .background(Circle().fill(canSend ? Color.junoAccent : Studio.Surface.muted))
+                    .contentShape(Circle())
+                    .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: canSend)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JunoPressButtonStyle())
             .disabled(!canSend)
             .help(isRunning ? "Send while it works (↩)" : "Send (↩)")
             .accessibilityLabel(isRunning ? "Send while it works" : "Send")
             .accessibilityIdentifier("juno.code.composer.send")
-            .transition(.scale(scale: 0.8).combined(with: .opacity))
+            .transition(.scale(scale: JunoMotion.scaleFrom(0.9, reduceMotion: reduceMotion)).combined(with: .opacity))
         }
     }
 

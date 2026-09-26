@@ -41,31 +41,24 @@ public struct StudioSidePanel: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: JunoSpace.hairline) {
-                ForEach(StudioPanelTab.allCases) { option in
-                    Button {
-                        tab = option
-                    } label: {
-                        HStack(spacing: JunoSpace.tight) {
-                            Text(option.title)
-                            if option == .changes, !controller.changes.isEmpty {
-                                Text("\(controller.changes.count)")
-                                    .font(Studio.Font.metaDigits)
-                                    .foregroundStyle(Studio.Ink.tertiary)
-                            }
-                        }
-                        .font(tab == option ? Studio.Font.labelEmphasis : Studio.Font.label)
-                        .foregroundStyle(tab == option ? Studio.Ink.primary : Studio.Ink.secondary)
-                        .padding(.horizontal, JunoSpace.snug)
-                        .frame(height: Studio.Metrics.control)
-                        .background(
-                            RoundedRectangle(cornerRadius: Studio.Radius.row, style: .continuous)
-                                .fill(tab == option ? Studio.Surface.selected : Color.clear)
+            HStack(spacing: JunoSpace.snug) {
+                // Juno's segmented control, the same raised key the product
+                // switch and every in-window filter use, with the change
+                // count riding the Changes segment.
+                JunoSegmented(
+                    options: StudioPanelTab.allCases.map { option in
+                        JunoSegmentedOption(
+                            option,
+                            option.title,
+                            icon: option == .changes ? .fileDiff : .terminal,
+                            count: option == .changes && !controller.changes.isEmpty ? controller.changes.count : nil
                         )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
+                    },
+                    selection: $tab,
+                    accessibilityLabel: "Panel",
+                    optionAccessibilityIdentifier: { "juno.code.panel.tab.\($0.rawValue)" },
+                    size: .compact
+                )
                 Spacer()
                 Button(action: close) {
                     JunoIconView(.panelRight, size: 14)
@@ -74,8 +67,8 @@ public struct StudioSidePanel: View {
                 .help("Close the panel (⌥⌘R)")
                 .accessibilityLabel("Close panel")
             }
-            .padding(.horizontal, JunoSpace.snug)
-            .frame(height: 44)
+            .padding(.horizontal, JunoSpace.cozy)
+            .frame(height: 48)
             .studioHairline(.bottom)
 
             switch tab {

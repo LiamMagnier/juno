@@ -287,6 +287,51 @@ public struct StudioDiffStat: View {
     }
 }
 
+/// Five cells that say a diff's shape at a glance: green for the added share,
+/// red for the removed, the rest empty — the review bar every code host
+/// draws beside a change. Tiny changes still light one cell of each side
+/// they touch, so "+1 −0" never looks like nothing happened.
+public struct StudioDiffBar: View {
+    let added: Int
+    let removed: Int
+
+    public init(added: Int, removed: Int) {
+        self.added = added
+        self.removed = removed
+    }
+
+    static let cells = 5
+
+    /// How many cells each side lights, out of ``cells``.
+    static func split(added: Int, removed: Int) -> (added: Int, removed: Int) {
+        let total = added + removed
+        guard total > 0 else { return (0, 0) }
+        var green = Int((Double(added) / Double(total) * Double(cells)).rounded())
+        var red = cells - green
+        if added > 0, green == 0 { green = 1; red = cells - 1 }
+        if removed > 0, red == 0 { red = 1; green = cells - 1 }
+        if added == 0 { green = 0 }
+        if removed == 0 { red = 0 }
+        return (green, red)
+    }
+
+    public var body: some View {
+        let split = Self.split(added: added, removed: removed)
+        HStack(spacing: 2) {
+            ForEach(0..<Self.cells, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(
+                        index < split.added
+                            ? Studio.Ink.added
+                            : index < split.added + split.removed ? Studio.Ink.removed : Studio.Surface.hairline
+                    )
+                    .frame(width: 7, height: 7)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 /// A key or chord, drawn as the menus draw it.
 struct StudioKeycap: View {
     let keys: String

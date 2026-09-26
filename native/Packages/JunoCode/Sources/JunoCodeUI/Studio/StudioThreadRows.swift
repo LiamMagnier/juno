@@ -209,6 +209,8 @@ struct StudioToolLine: View {
 
     private var isEdit: Bool { Self.editTools.contains(record.toolName) }
 
+    private var isCommand: Bool { record.toolName == "run_command" }
+
     private var hasOutput: Bool { !record.outputLines.isEmpty }
 
     var body: some View {
@@ -247,8 +249,14 @@ struct StudioToolLine: View {
                     .padding(.leading, 18)
             }
             if showsOutput || (record.status == .failed && hasOutput) {
-                StudioOutputWell(lines: record.outputLines)
-                    .padding(.leading, 18)
+                StudioOutputWell(
+                    lines: record.outputLines,
+                    command: isCommand ? parts.object : nil,
+                    limit: showsOutput ? 12 : 6
+                )
+                .padding(.leading, 18)
+                .padding(.top, 2)
+                .transition(.opacity)
             }
         }
     }
@@ -286,23 +294,61 @@ struct StudioToolLine: View {
     }
 }
 
-/// The tail of a command's output, in a quiet monospace well.
+/// A command's output as a small terminal: the command on the first line
+/// after a `$`, then the tail of what it printed, in a monospace well with a
+/// hairline. When more was printed than is shown, the first line says how
+/// many lines came before, so a reader never mistakes a tail for the whole.
 struct StudioOutputWell: View {
     let lines: [String]
+    /// The command that printed them, when the row knows it.
+    var command: String? = nil
+    var limit = 12
+
+    private var shown: ArraySlice<String> { lines.suffix(limit) }
+    private var hidden: Int { max(0, lines.count - limit) }
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            Text(lines.suffix(12).joined(separator: "\n"))
+        VStack(alignment: .leading, spacing: 0) {
+            if let command {
+                HStack(spacing: JunoSpace.tight) {
+                    Text("$")
+                        .foregroundStyle(Studio.Ink.tertiary)
+                    Text(command)
+                        .foregroundStyle(Studio.Ink.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                }
                 .font(Studio.Font.monoSmall)
-                .foregroundStyle(Studio.Ink.secondary)
-                .textSelection(.enabled)
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.vertical, JunoSpace.tight + 1)
+                .studioHairline(.bottom)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    if hidden > 0 {
+                        Text("… \(hidden) earlier \(hidden == 1 ? "line" : "lines")")
+                            .foregroundStyle(Studio.Ink.tertiary)
+                    }
+                    Text(shown.joined(separator: "\n"))
+                        .foregroundStyle(Studio.Ink.secondary)
+                        .textSelection(.enabled)
+                }
+                .font(Studio.Font.monoSmall)
+                .lineSpacing(2)
                 .fixedSize(horizontal: true, vertical: false)
-                .padding(JunoSpace.snug)
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.vertical, JunoSpace.snug)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: Studio.Radius.row, style: .continuous)
+            RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
                 .fill(Studio.Surface.muted)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
+                .strokeBorder(Studio.Surface.hairline)
         )
     }
 }
@@ -691,35 +737,199 @@ struct StudioDividerCaption: View {
 struct StudioRunSummary: View {
     let run: RunCompletedEvent
     let turn: StudioThreadItem.TurnTotals
+    /// The session's tracked changes for this turn's files, for the card's
+    /// rows. Empty draws the card's header alone.
+    var changes: [TrackedChange] = []
     let openReview: () -> Void
+    var openFile: (String) -> Void = { _ in }
 
     var body: some View {
-        HStack(spacing: JunoSpace.snug) {
-            Text("Worked for \(StudioFormat.duration(run.durationSeconds))")
-                .font(Studio.Font.meta)
-                .foregroundStyle(Studio.Ink.tertiary)
-            // Only a failure is worth restating here: a passing run already
-            // has its own row just above.
-            if run.testsPassed == false {
-                Text("·").foregroundStyle(Studio.Ink.tertiary)
-                Text("tests failed")
-                    .font(Studio.Font.meta)
-                    .foregroundStyle(Studio.Ink.danger)
-            }
-            Spacer()
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            workedDivider
             if !turn.files.isEmpty {
-                Button(action: openReview) {
-                    HStack(spacing: JunoSpace.tight) {
-                        Text("Review \(StudioFormat.plural(turn.files.count, "file"))")
-                            .font(Studio.Font.label)
-                        StudioDiffStat(added: turn.added, removed: turn.removed)
-                    }
-                }
-                .buttonStyle(StudioSecondaryButtonStyle())
-                .help("Open the changes beside the thread (⌥⌘R)")
+                StudioChangesCard(
+                    fileCount: turn.files.count,
+                    added: turn.added,
+                    removed: turn.removed,
+                    changes: changes,
+                    openReview: openReview,
+                    openFile: openFile
+                )
             }
         }
         .padding(.top, JunoSpace.hairline)
+    }
+
+    /// "Worked for 1m 1s" between two hairlines: the end of a turn, said once.
+    private var workedDivider: some View {
+        HStack(spacing: JunoSpace.snug) {
+            Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
+            HStack(spacing: JunoSpace.tight) {
+                Text("Worked for \(StudioFormat.duration(run.durationSeconds))")
+                    .foregroundStyle(Studio.Ink.tertiary)
+                // Only a failure is worth restating here: a passing run
+                // already has its own row just above.
+                if run.testsPassed == false {
+                    Text("·").foregroundStyle(Studio.Ink.tertiary)
+                    Text("tests failed").foregroundStyle(Studio.Ink.danger)
+                }
+            }
+            .font(Studio.Font.meta)
+            .fixedSize()
+            Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// What a turn changed, as a card at its end: how many files and lines, a
+/// five-cell diff bar, Review, and a row per file — its kind as a lettered
+/// badge, its name whole and its folder giving way, its own counts. A row
+/// opens that file's diff beside the thread.
+struct StudioChangesCard: View {
+    let fileCount: Int
+    let added: Int
+    let removed: Int
+    let changes: [TrackedChange]
+    let openReview: () -> Void
+    let openFile: (String) -> Void
+
+    /// More rows than this fold behind "n more files".
+    private static let visibleRows = 5
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: JunoSpace.snug) {
+                JunoIconView(.fileDiff, size: 13)
+                    .foregroundStyle(Studio.Ink.secondary)
+                Text("Changed \(StudioFormat.plural(fileCount, "file"))")
+                    .font(Studio.Font.labelEmphasis)
+                    .foregroundStyle(Studio.Ink.primary)
+                StudioDiffStat(added: added, removed: removed)
+                StudioDiffBar(added: added, removed: removed)
+                Spacer(minLength: JunoSpace.snug)
+                Button("Review", action: openReview)
+                    .buttonStyle(StudioSecondaryButtonStyle())
+                    .help("Open the changes beside the thread (⌥⌘R)")
+                    .accessibilityIdentifier("juno.code.transcript.review")
+            }
+            .padding(.leading, JunoSpace.cozy)
+            .padding(.trailing, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.snug)
+
+            if !changes.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(changes.prefix(Self.visibleRows)) { change in
+                        StudioChangeLine(change: change) { openFile(change.path) }
+                    }
+                    if changes.count > Self.visibleRows {
+                        Button(action: openReview) {
+                            Text("\(changes.count - Self.visibleRows) more \(changes.count - Self.visibleRows == 1 ? "file" : "files")")
+                                .font(Studio.Font.meta)
+                                .foregroundStyle(Studio.Ink.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, JunoSpace.cozy)
+                                .frame(height: 30)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .studioHairline(.top)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
+                .fill(Studio.Surface.raised)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
+                .strokeBorder(Studio.Surface.hairline)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Changed \(StudioFormat.plural(fileCount, "file")), \(added) lines added, \(removed) removed")
+    }
+}
+
+/// One file in a changes card.
+struct StudioChangeLine: View {
+    let change: TrackedChange
+    let open: () -> Void
+
+    @State private var hovering = false
+
+    private var name: String { (change.path as NSString).lastPathComponent }
+    private var folder: String {
+        let parent = (change.path as NSString).deletingLastPathComponent
+        return parent.isEmpty ? "" : parent + "/"
+    }
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: JunoSpace.snug) {
+                StudioChangeKindBadge(kind: change.kind)
+                Text(name)
+                    .font(Studio.Font.mono)
+                    .foregroundStyle(Studio.Ink.primary)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+                if !folder.isEmpty {
+                    Text(folder)
+                        .font(Studio.Font.meta)
+                        .foregroundStyle(Studio.Ink.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+                Spacer(minLength: JunoSpace.snug)
+                StudioDiffStat(added: change.linesAdded, removed: change.linesRemoved)
+            }
+            .padding(.horizontal, JunoSpace.cozy)
+            .frame(height: 30)
+            .background(hovering ? Studio.Surface.hover : Color.clear)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(JunoMotion.fast, value: hovering)
+        .help("Review \(change.path)")
+        .accessibilityLabel("\(StudioChangeKindBadge.word(change.kind)) \(change.path), \(change.linesAdded) added, \(change.linesRemoved) removed")
+    }
+}
+
+/// A file's kind as a lettered badge: A added, M modified, D deleted, R
+/// renamed, in a small tinted tile so the column of letters reads at a glance.
+struct StudioChangeKindBadge: View {
+    let kind: FileChangeKind
+
+    static func word(_ kind: FileChangeKind) -> String {
+        switch kind {
+        case .created: "Added"
+        case .modified: "Modified"
+        case .deleted: "Deleted"
+        case .moved: "Renamed"
+        }
+    }
+
+    private var letter: (String, Color) {
+        switch kind {
+        case .created: ("A", Studio.Ink.added)
+        case .modified: ("M", Studio.Ink.secondary)
+        case .deleted: ("D", Studio.Ink.removed)
+        case .moved: ("R", Studio.Ink.secondary)
+        }
+    }
+
+    var body: some View {
+        Text(letter.0)
+            .font(Studio.Font.monoSmall.weight(.semibold))
+            .foregroundStyle(letter.1)
+            .frame(width: 18, height: 18)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.xs, style: .continuous)
+                    .fill(letter.1.opacity(0.12))
+            )
+            .accessibilityHidden(true)
     }
 }
 
