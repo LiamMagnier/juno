@@ -52,20 +52,23 @@ struct JunoGhostMark: View {
                 path.closeSubpath()
             }
 
+            // Outlined, it draws in the surrounding foreground style rather
+            // than a fixed `.primary`, so the same mark sits in ink on the
+            // page, in light on the incognito page, and on a tinted button.
+            let ink: GraphicsContext.Shading = active ? .color(.junoOnAccent) : .foreground
             if active {
                 context.fill(body, with: .color(.junoAccent))
             } else {
-                context.stroke(body, with: .color(.primary), lineWidth: 2)
+                context.stroke(body, with: .foreground, lineWidth: 2)
             }
 
-            let ink: Color = active ? .junoOnAccent : .primary
             context.fill(
                 Path(ellipseIn: CGRect(x: 16.6, y: 19.6, width: 4.8, height: 4.8)),
-                with: .color(ink)
+                with: ink
             )
             context.fill(
                 Path(ellipseIn: CGRect(x: 26.6, y: 19.6, width: 4.8, height: 4.8)),
-                with: .color(ink)
+                with: ink
             )
 
             let smile = Path { path in
@@ -75,9 +78,11 @@ struct JunoGhostMark: View {
                     control: CGPoint(x: 24, y: 32.4)
                 )
             }
-            context.stroke(
+            var mouth = context
+            mouth.opacity = 0.7
+            mouth.stroke(
                 smile,
-                with: .color(ink.opacity(0.7)),
+                with: ink,
                 style: StrokeStyle(lineWidth: 2, lineCap: .round)
             )
         }
@@ -125,9 +130,15 @@ struct JunoMobileIncognitoChat: View {
     @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @FocusState private var composerFocused: Bool
 
+    /// The app's own appearance, read before this screen overrides it for
+    /// its children. The ink ground is chosen from it: see ``inkGround``.
+    @Environment(\.colorScheme) private var appColorScheme
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         transcript
-            .background(Color.junoCanvas)
+            .background(inkGround.ignoresSafeArea())
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -136,15 +147,24 @@ struct JunoMobileIncognitoChat: View {
                         // Only warn when there is something to lose.
                         if model.isEmpty { close() } else { showingCloseWarning = true }
                     } label: {
-                        // The filled ghost IS the mode indicator now that the strip
-                        // is gone — coral where it is normally outlined ink.
-                        JunoGhostMark(active: true, size: 21)
+                        JunoIncognitoToggleLabel(active: true, showsTitle: sizeClass == .regular)
                     }
+                    // The toggle, on: the system's prominent glass in the
+                    // accent. Off, on the draft, it is the same control in
+                    // plain glass, so entering and leaving is one button
+                    // changing state in place.
+                    .junoProminentAction()
                     .accessibilityLabel("End incognito chat")
                     .accessibilityIdentifier("juno.mobile.incognito")
                 }
             }
             .safeAreaInset(edge: .bottom) { composer }
+            // The ink treatment: this face is always drawn dark, whatever the
+            // app is set to. A private chat should look like somewhere else
+            // at a glance, and a darker page is the plainest honest way to say
+            // it; no banner, no stripes, nothing that moves.
+            .environment(\.colorScheme, .dark)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .confirmationDialog(
                 "End this incognito chat?",
                 isPresented: $showingCloseWarning,
@@ -169,6 +189,13 @@ struct JunoMobileIncognitoChat: View {
         // mistake the search screen had. The toolbar ghost carries it instead.
     }
 
+    /// The page an incognito chat is written on: a warm near-black in either
+    /// appearance, a step deeper than the dark canvas when the app is already
+    /// dark, so the change still reads.
+    private var inkGround: Color {
+        appColorScheme == .dark ? JunoIncognitoInk.deep : JunoIncognitoInk.ground
+    }
+
     // MARK: - Transcript
 
     @ViewBuilder
@@ -189,17 +216,20 @@ struct JunoMobileIncognitoChat: View {
                 }
                 .padding(.horizontal, JunoSpace.regular)
                 .padding(.vertical, JunoSpace.section)
-                .frame(maxWidth: 768)
+                .frame(maxWidth: JunoMobileMeasure.reading)
                 .frame(maxWidth: .infinity)
             }
         }
+        .scrollContentBackground(.hidden)
         .defaultScrollAnchor(.bottom)
         .scrollPosition($scrollPosition)
         // Same correction as the saved transcript: `proxy.scrollTo(id:)` is inert
         // on a bottom-anchored scroll view, so this follow was doing nothing and
         // the anchor's own pinning was quietly carrying the feature.
         .onChange(of: streamSignature) { _, _ in
-            withAnimation(JunoMotion.fast) { scrollPosition.scrollTo(edge: .bottom) }
+            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+                scrollPosition.scrollTo(edge: .bottom)
+            }
         }
     }
 
@@ -210,17 +240,24 @@ struct JunoMobileIncognitoChat: View {
     /// The web's incognito greeting, verbatim — the sentence is the promise, and
     /// rewording a privacy claim per platform is how the two stop matching.
     private var greeting: some View {
-        VStack(spacing: JunoSpace.cozy) {
-            JunoGhostMark(active: false, size: 44)
-            Text("You're incognito")
-                .font(JunoSerif.greeting(compact: true))
-                .multilineTextAlignment(.center)
-            Text("Chats aren't saved, added to memory, or used to train models.")
-                .junoFont(size: 15, relativeTo: .subheadline)
-                .lineSpacing(3)
-                .foregroundStyle(Color.junoMutedForeground)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 340)
+        VStack(spacing: JunoSpace.regular) {
+            JunoGhostMark(active: false, size: 48)
+                .foregroundStyle(Color.junoForeground)
+                .junoMobileRise(delay: 0.04, distance: 8)
+            VStack(spacing: JunoSpace.snug) {
+                Text("You're incognito")
+                    .font(JunoMobileType.display(sizeClass == .regular ? 44 : 36))
+                    .tracking(-0.8)
+                    .foregroundStyle(Color.junoForeground)
+                    .multilineTextAlignment(.center)
+                Text("Chats aren't saved, added to memory, or used to train models.")
+                    .junoFont(size: 16, relativeTo: .subheadline)
+                    .lineSpacing(3)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 360)
+            }
+            .junoMobileRise(delay: 0.12, distance: 10)
         }
         .padding(.horizontal, JunoSpace.section)
         .accessibilityElement(children: .combine)
@@ -234,6 +271,15 @@ struct JunoMobileIncognitoChat: View {
     /// would be offering controls that cannot work. This is the same shell with
     /// only the controls incognito actually supports.
     private var composer: some View {
+        GlassEffectContainer(spacing: JunoSpace.snug) { composerCapsule }
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.top, JunoSpace.snug)
+            .safeAreaInset(edge: .bottom, spacing: JunoSpace.tight) { notSavedNote }
+            .frame(maxWidth: JunoMobileMeasure.reading)
+            .frame(maxWidth: .infinity)
+    }
+
+    private var composerCapsule: some View {
         VStack(spacing: JunoSpace.snug) {
             TextField("Message Juno privately", text: $prompt, axis: .vertical)
                 .lineLimit(1...6)
@@ -298,18 +344,32 @@ struct JunoMobileIncognitoChat: View {
         }
         .padding(JunoSpace.snug)
         .background(JunoGlassBackground(cornerRadius: 26))
-        // Dashed, exactly as the web marks its private composer. A solid border
-        // would be indistinguishable from the normal one at a glance, and the
-        // whole job of this treatment is to be noticed while typing.
+        // Dashed, as the web marks its private composer, but in the ink's own
+        // light rather than the accent: on the dark page the shape is enough,
+        // and a coral outline read as an error state.
         .overlay(
             RoundedRectangle(cornerRadius: 26, style: .continuous)
                 .strokeBorder(
-                    Color.junoAccent.opacity(0.45),
+                    Color.junoForeground.opacity(0.26),
                     style: StrokeStyle(lineWidth: 1, dash: [5, 4])
                 )
         )
-        .padding(.horizontal, JunoSpace.cozy)
-        .padding(.vertical, JunoSpace.snug)
+    }
+
+    /// The standing promise, under the composer for as long as the chat
+    /// lasts: the greeting says it once and scrolls away with the first turn.
+    private var notSavedNote: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "eye.slash")
+                .imageScale(.small)
+            Text("Not saved to your history")
+        }
+        .font(.footnote)
+        .foregroundStyle(Color.junoSecondaryInk)
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, JunoSpace.snug)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("juno.mobile.incognito-note")
     }
 
     private var sendDisabled: Bool {
@@ -343,6 +403,34 @@ struct JunoMobileIncognitoChat: View {
     private func close() {
         model.reset()
         onClose()
+    }
+}
+
+/// The incognito page's ground. Warm near-blacks from the dark canvas's own
+/// hue (30°), so the mode is the same product in a different light rather
+/// than a neutral grey stranger.
+enum JunoIncognitoInk {
+    /// Over a light app: the dark canvas's weight.
+    static let ground = Color(hue: 30 / 360, saturation: 0.07, brightness: 0.12)
+    /// Over a dark app: a step deeper than the canvas, so the change reads.
+    static let deep = Color(hue: 30 / 360, saturation: 0.08, brightness: 0.065)
+}
+
+/// The incognito toggle's face: the ghost, and on an iPad its name. The same
+/// label in both states; the button style says whether it is on.
+struct JunoIncognitoToggleLabel: View {
+    var active: Bool
+    var showsTitle: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            JunoGhostMark(active: false, size: 20)
+            if showsTitle {
+                Text("Incognito")
+                    .font(.subheadline.weight(.medium))
+            }
+        }
+        .foregroundStyle(active ? Color.junoOnAccent : Color.primary)
     }
 }
 
