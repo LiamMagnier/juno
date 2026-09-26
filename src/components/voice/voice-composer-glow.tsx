@@ -3,7 +3,7 @@
 import * as React from "react";
 import { VoiceBeam } from "voice-glow";
 
-import { junoVoicePalette, useEffectTheme } from "@/components/effects/use-effect-theme";
+import { junoVoicePalette, useEffectTheme, type VoiceGlowTone } from "@/components/effects/use-effect-theme";
 import type { VoiceCallParts } from "@/components/voice/realtime-voice";
 
 /**
@@ -13,8 +13,10 @@ import type { VoiceCallParts } from "@/components/voice/realtime-voice";
  * is thought through. The same object the library's chat-input demo draws,
  * tuned to Juno instead of left at the stock rainbow:
  *
- * - PALETTE. The dawn plate's hues (`junoVoicePalette`): apricot and clay where
- *   the voice rises, sage and misty blue at the edges.
+ * - STATE, NOT DECORATION. The composer shows no meter and no status line in
+ *   a call: the glow IS the state. Its `tone` picks the light (`junoVoicePalette`):
+ *   warm dawn while you talk, cool dusk while Juno talks, both gathered into a
+ *   travelling beam while Juno thinks, a still grey when muted.
  * - STRENGTH. Fuller on the dark ground, a notch softer on cream paper, where
  *   the same light reads louder.
  * - INPUT. A live `stream` (dictation's own microphone, analysed, never played)
@@ -32,6 +34,7 @@ export function JunoVoiceGlow({
   level,
   processing = false,
   paused = false,
+  tone = "you",
   className,
   children,
 }: {
@@ -39,11 +42,12 @@ export function JunoVoiceGlow({
   level?: () => number;
   processing?: boolean;
   paused?: boolean;
+  tone?: VoiceGlowTone;
   className?: string;
   children: React.ReactNode;
 }) {
   const theme = useEffectTheme();
-  const palette = junoVoicePalette(theme);
+  const palette = junoVoicePalette(theme, tone);
   return (
     <VoiceBeam
       stream={stream ?? undefined}
@@ -68,7 +72,7 @@ export function JunoVoiceGlow({
 export function VoiceComposerGlow({ call, children }: { call?: VoiceCallParts; children: React.ReactNode }) {
   if (!call) return <>{children}</>;
   return (
-    <JunoVoiceGlow level={call.level} processing={call.processing} paused={call.paused}>
+    <JunoVoiceGlow level={call.level} processing={call.processing} paused={call.paused} tone={call.tone}>
       {children}
     </JunoVoiceGlow>
   );

@@ -189,12 +189,14 @@ function CallComposerDemo({
   common,
   speaking = false,
   muted = false,
+  thinking = false,
 }: {
   common: Omit<React.ComponentProps<typeof Composer>, "isBusy" | "status">;
   speaking?: boolean;
   muted?: boolean;
+  thinking?: boolean;
 }) {
-  const base = useFakeCall({ userSpeaking: !speaking && !muted, awaitingResponse: false });
+  const base = useFakeCall({ userSpeaking: !speaking && !muted && !thinking, awaitingResponse: thinking });
   const voice = { ...base, assistantSpeaking: speaking, muted } as typeof base;
   return (
     <Composer
@@ -370,6 +372,10 @@ export function PremiumGallery({ only }: { only?: string }) {
                 <div>
                   <Label>Juno is speaking (Stop appears)</Label>
                   <CallComposerDemo common={common} speaking />
+                </div>
+                <div>
+                  <Label>Thinking (the glow gathers into one beam travelling side to side)</Label>
+                  <CallComposerDemo common={common} thinking />
                 </div>
                 <div>
                   <Label>Muted</Label>

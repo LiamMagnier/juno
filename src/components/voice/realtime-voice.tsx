@@ -6,15 +6,16 @@ import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { VoiceMeter } from "@/components/voice/voice-meter";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
-import { PHASE_LABEL, announcementFor, voicePhaseOf, type VoicePhase } from "@/lib/voice-phase";
+import { announcementFor, voicePhaseOf, type VoicePhase } from "@/lib/voice-phase";
 import {
   VOICE_PROVIDER_LABELS,
   VOICE_PROVIDERS,
   type VoiceProviderId,
 } from "@/lib/voice-relay-protocol";
 import { cn } from "@/lib/utils";
+import type { VoiceGlowTone } from "@/components/effects/use-effect-theme";
+import { JunoVoiceGlow } from "@/components/voice/voice-composer-glow";
 
 type VoiceController = ReturnType<typeof useRealtimeVoice>;
 
@@ -66,8 +67,25 @@ export interface VoiceCallParts {
   level: () => number;
   /** The gap after you stop, while the reply is thought through. */
   processing: boolean;
-  /** No call up (connecting, ended): the glow holds still. */
+  /** No call up (connecting, ended, muted): the glow holds still. */
   paused: boolean;
+  /** Whose light: warm while you talk, cool while Juno talks, both while it thinks. */
+  tone: VoiceGlowTone;
+}
+
+/** The glow's light for a phase: the call's state, told in colour. */
+function toneFor(phase: VoicePhase): VoiceGlowTone {
+  switch (phase) {
+    case "speaking":
+      return "juno";
+    case "thinking":
+      return "thinking";
+    case "listening":
+    case "user-speaking":
+      return "you";
+    default:
+      return "muted";
+  }
 }
 
 /** Everything the composer needs to become the call. */
@@ -83,9 +101,12 @@ export function voiceCallParts({
   const phase = voicePhaseOf(voice);
   const levelRef = voice.levelRef;
   return {
-    level: () => levelRef.current,
+    // Muted: a low, even grey band, visibly on and visibly quiet, rather than
+    // a frozen frame of whatever was said last.
+    level: phase === "muted" ? () => 0.12 : () => levelRef.current,
     processing: phase === "thinking",
     paused: phase === "idle" || phase === "connecting" || phase === "error",
+    tone: toneFor(phase),
     status: <VoiceCallStatus voice={voice} speakerName={speakerName} />,
     controls: <VoiceCallControls voice={voice} speakerName={speakerName} />,
     end: <VoiceCallEnd onClose={onClose} />,
@@ -97,29 +118,16 @@ function speakerOf(voice: VoiceController, speakerName?: string) {
 }
 
 /**
- * The meter and the phase, in one line. The label names who is talking
- * ("Juno is speaking") rather than a bare verb, and the provider and model sit
- * in the tooltip, where the curious can find them without a second line of
- * small print crowding the composer.
+ * What the call is doing, for assistive technology only. On screen the glow
+ * is the state (warm while you talk, cool while Juno talks, a travelling beam
+ * while it thinks, still grey when muted); no meter or status line competes
+ * with it. A voice mode is used without looking at the screen, so every phase
+ * change is still announced, and which provider and model are answering is
+ * said once the call is up.
  */
 export function VoiceCallStatus({ voice, speakerName }: { voice: VoiceController; speakerName?: string }) {
   const phase: VoicePhase = voicePhaseOf(voice);
   const speaker = speakerOf(voice, speakerName);
-  const meterRef = React.useRef<HTMLSpanElement | null>(null);
-  const levelRef = voice.levelRef;
-
-  // One rAF loop writing one custom property: the level never enters React
-  // state, which at 60fps would re-render the composer to move five bars.
-  React.useEffect(() => {
-    let raf = 0;
-    const tick = () => {
-      meterRef.current?.style.setProperty("--level", levelRef.current.toFixed(3));
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [levelRef]);
-
   const [announcement, setAnnouncement] = React.useState("");
   const prevPhase = React.useRef<VoicePhase | null>(null);
   React.useEffect(() => {
@@ -129,13 +137,6 @@ export function VoiceCallStatus({ voice, speakerName }: { voice: VoiceController
   }, [phase, speaker]);
 
   const live = voice.status === "live";
-  const label =
-    voice.status === "reconnecting" && voice.reconnectAttempt > 0
-      ? `Reconnecting, attempt ${voice.reconnectAttempt}`
-      : PHASE_LABEL[phase];
-  // Who is talking, where there is room to say it; a phone keeps the verb so
-  // the controls never lose their place in the row.
-  const wideLabel = phase === "speaking" ? `${speaker} is speaking` : label;
   const detail = live
     ? [VOICE_PROVIDER_LABELS[voice.provider], voice.model, voice.memory ? "remembers you" : null]
         .filter(Boolean)
@@ -143,23 +144,10 @@ export function VoiceCallStatus({ voice, speakerName }: { voice: VoiceController
     : null;
 
   return (
-    <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="flex min-w-0 items-center gap-2.5 pl-1 motion-safe:animate-fade-in">
-            <VoiceMeter ref={meterRef} phase={phase} />
-            <span className="truncate text-ui font-medium text-foreground">
-              <span className="sm:hidden">{label}</span>
-              <span className="hidden sm:inline">{wideLabel}</span>
-            </span>
-          </span>
-        </TooltipTrigger>
-        {detail && <TooltipContent>{detail}</TooltipContent>}
-      </Tooltip>
-      <span role="status" aria-live="polite" className="sr-only">
-        {announcement}
-      </span>
-    </>
+    <span role="status" aria-live="polite" className="sr-only">
+      {announcement}
+      {detail ? ` ${detail}.` : null}
+    </span>
   );
 }
 
@@ -277,16 +265,17 @@ export function RealtimeVoice({
   onClose: () => void;
   speakerName?: string;
 }) {
+  const parts = voiceCallParts({ voice, onClose, speakerName });
   return (
     <section aria-label="Voice call" className="relative mx-auto mb-3 flex w-full flex-col items-center px-2 motion-safe:animate-fade-in sm:px-0">
       <VoiceCallNotices voice={voice} />
-      <div className="flex w-full max-w-[min(100%,30rem)] items-center gap-2 rounded-full border border-border bg-popover py-1.5 pl-3 pr-1.5 shadow-float sm:w-auto sm:min-w-[22rem]">
-        <div className="flex min-w-0 flex-1 items-center">
-          <VoiceCallStatus voice={voice} speakerName={speakerName} />
+      <JunoVoiceGlow level={parts.level} processing={parts.processing} paused={parts.paused} tone={parts.tone} className="relative rounded-full">
+        <div className="voice-glow-host flex items-center gap-1 rounded-full border border-border bg-popover p-1.5 shadow-float">
+          {parts.status}
+          {parts.controls}
+          {parts.end}
         </div>
-        <VoiceCallControls voice={voice} speakerName={speakerName} />
-        <VoiceCallEnd onClose={onClose} />
-      </div>
+      </JunoVoiceGlow>
     </section>
   );
 }

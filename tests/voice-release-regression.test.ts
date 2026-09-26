@@ -199,9 +199,11 @@ test("the call bar separates what you press from what you set", () => {
   assert.match(voiceBar, /PopoverContent/);
   assert.match(voiceBar, /<Switch/);
   assert.doesNotMatch(voiceBar, /DropdownMenuItem/);
-  // The status cluster owns the flexible width so End cannot be pushed off a
-  // narrow screen.
-  assert.match(voiceBar, /min-w-0 flex-1 items-center/);
+  // No status cluster competes for the row any more (the glow is the state):
+  // the controls never shrink and End sits in the composer's own primary slot,
+  // so nothing can push it off a narrow screen.
+  assert.match(voiceBar, /flex shrink-0 items-center gap-0\.5/);
+  assert.match(voiceBar, /end: <VoiceCallEnd onClose=\{onClose\} \/>/);
 });
 
 test("the bar names the model actually answering", () => {

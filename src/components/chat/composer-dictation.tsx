@@ -466,7 +466,7 @@ export function ComposerDictation({
      * drops the drift and sweep, which the package does itself. The content
      * sits at z-index 5 over the glow's layers (1-4), as the package asks.
      */
-    <JunoVoiceGlow stream={micStream} processing={transcribing} paused={closing} className="w-full rounded-composer">
+    <JunoVoiceGlow stream={micStream} processing={transcribing} paused={closing} tone={transcribing ? "thinking" : "you"} className="w-full rounded-composer">
     <div
       role="group"
       aria-label="Dictation"
