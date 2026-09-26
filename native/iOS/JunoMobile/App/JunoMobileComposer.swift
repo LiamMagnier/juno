@@ -56,12 +56,6 @@ struct JunoMobileComposer: View {
   /// Creates the conversation a draft send belongs to and returns its id.
   /// Nil inside an existing conversation.
   var startConversation: (() async -> String?)?
-  /// How tall the chat column is, measured by the screen that owns it.
-  ///
-  /// The voice field is sized from this rather than from anything the composer
-  /// can see, because the light belongs to the conversation and the composer
-  /// occupies a strip at the bottom of it. See ``auraLayer``.
-  var chatColumnHeight: CGFloat = 0
   var composerFocused: FocusState<Bool>.Binding
   /// The swell an accepted send fires, owned by the screen because the light it
   /// drives is not always behind this view — see ``JunoMobileSendSwell``.
@@ -80,12 +74,15 @@ struct JunoMobileComposer: View {
   /// Send, stop and voice answer in the hand. See `JunoMobileHaptic`.
   @State private var sendHaptic = JunoMobileHapticTrigger()
   @State private var stopHaptic = JunoMobileHapticTrigger()
+  /// A call placed, and a call ended.
+  @State private var voiceStartHaptic = JunoMobileHapticTrigger()
+  @State private var endHaptic = JunoMobileHapticTrigger()
   /// One namespace for the composer's glass: the `+` and the primary action
   /// carry ids in it, so a state change morphs the material rather than
   /// cross-fading two panes.
   @Namespace private var glassNamespace
   /// The call in progress, published by the shell. Non-nil is what puts the
-  /// dock above this composer, the voice field behind it, and every voice-mode
+  /// call controls into this composer, the voice glow behind it, and every voice-mode
   /// degradation below into effect. See ``JunoMobileVoiceSession``.
   @Environment(\.junoVoiceSession) private var voiceSession
   /// Set while a draft's conversation is being created, so a second tap on
@@ -196,6 +193,16 @@ struct JunoMobileComposer: View {
     voiceSession?.controller.capabilities?.videoInput == true
   }
 
+  /// Whether talking over Juno interrupts it: a fact about this device's
+  /// audio route (echo cancellation or not), never a preference, so it is
+  /// said where VoiceOver finds the call.
+  private var voiceBargeInHint: Text {
+    guard let voiceSession, voiceSession.isLive else { return Text(verbatim: "") }
+    return voiceSession.controller.bargeIn == .automatic
+      ? Text("voice.barge-in.automatic")
+      : Text("voice.barge-in.manual")
+  }
+
   private var canAttachInVoice: Bool {
     attachments.count < Self.maximumVoiceAttachments
   }
@@ -301,12 +308,12 @@ struct JunoMobileComposer: View {
         .transition(.opacity)
       }
 
-      // The call's own controls, directly above the capsule and inside it,
-      // so they ride the keyboard with everything else here rather than
-      // being left behind by it.
+      // The composer is the call now (the web's `voiceCallParts`): no dock
+      // above it. What is left above is the call's one plain line of news,
+      // and the camera's own preview while Juno is looking through it.
       if let voiceSession {
-        JunoMobileVoiceDock(session: voiceSession)
-          .transition(.opacity.combined(with: .move(edge: .bottom)))
+        JunoMobileVoiceCallNotices(session: voiceSession)
+        JunoMobileVoiceSelfView(camera: voiceSession.camera) { voiceSession.camera.stop() }
       }
 
       // Dictation REPLACES the composer rather than sitting beside it: it
@@ -353,7 +360,11 @@ struct JunoMobileComposer: View {
               collapsedDraftCard
                 .transition(.opacity)
             } else {
-              TextField("Message Juno", text: $prompt, axis: .vertical)
+              TextField(
+                voiceActive ? "Type while you talk…" : "Message Juno",
+                text: $prompt,
+                axis: .vertical
+              )
                 .lineLimit(1...6)
                 .textFieldStyle(.plain)
                 .focused(composerFocused)
@@ -368,6 +379,12 @@ struct JunoMobileComposer: View {
 
             controlRow
           }
+          // In a call the glow carries the phase, so the words go here: the
+          // composer is named as the call and its value is what it is doing.
+          .accessibilityElement(children: .contain)
+          .accessibilityLabel(voiceSession == nil ? Text("Message composer") : Text("Voice call"))
+          .accessibilityValue(voiceSession.map { Text(verbatim: $0.callPhase.title) } ?? Text(verbatim: ""))
+          .accessibilityHint(voiceBargeInHint)
           .padding(.horizontal, JunoSpace.cozy)
           .padding(.vertical, JunoSpace.snug)
           // Native Liquid Glass, as the owner requires for floating chrome:
@@ -393,9 +410,12 @@ struct JunoMobileComposer: View {
     .frame(maxWidth: .infinity)
     // Voice is the one ambient field with semantic meaning. It remains mounted
     // here so it tracks the keyboard with the safe-area composer.
-    .background(alignment: .bottom) { voiceFieldLayer }
+    .background(alignment: .bottom) { voiceGlowLayer }
     .junoHaptic(JunoMobileHaptic.send, trigger: sendHaptic)
     .junoHaptic(JunoMobileHaptic.stop, trigger: stopHaptic)
+    .junoHaptic(JunoMobileHaptic.send, trigger: voiceStartHaptic)
+    .junoHaptic(JunoMobileHaptic.stop, trigger: endHaptic)
+    .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: voiceActive)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: sendDisabled)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: generatingHere)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: thinkingNotice)
@@ -426,15 +446,16 @@ struct JunoMobileComposer: View {
     .task { await applyPreviewFlags() }
   }
 
-  // MARK: Voice field
+  // MARK: Voice glow
 
+  /// Libraries.dev Voice, "mobile": the light pooled at the foot of the
+  /// screen and rising through the composer's glass. Mounted only during a
+  /// call, so an ordinary composer pays nothing for it.
   @ViewBuilder
-  private var voiceFieldLayer: some View {
+  private var voiceGlowLayer: some View {
     if let voiceSession {
-      JunoMobileVoiceField(
-        controller: voiceSession.controller,
-        columnHeight: chatColumnHeight
-      )
+      JunoMobileVoiceComposerGlow(session: voiceSession)
+        .transition(.opacity)
     }
   }
 
@@ -597,11 +618,29 @@ struct JunoMobileComposer: View {
   /// learns one position, and the glyph tells them what it will do.
   private var controlRow: some View {
     HStack(spacing: JunoSpace.tight) {
-      if voiceActive {
-        voiceAddMenu
+      if let voiceSession {
+        voiceControlRow(voiceSession)
       } else {
-        addMenu
+        chatControlRow
       }
+    }
+  }
+
+  /// The row while the composer is a call: `+` alone on the left, the call's
+  /// verbs on the right, then End in Send's place (Send again once something
+  /// is typed). No status text and no meter: the glow behind the glass says
+  /// what the call is doing.
+  @ViewBuilder
+  private func voiceControlRow(_ session: JunoMobileVoiceSession) -> some View {
+    voiceAddMenu
+    Spacer(minLength: 0)
+    JunoMobileVoiceCallControls(session: session)
+    composerActionButton
+  }
+
+  @ViewBuilder
+  private var chatControlRow: some View {
+      addMenu
 
       // Laid out before the spacer and after the fixed-size buttons, so the
       // pair is offered exactly the width the row has left.
@@ -626,7 +665,6 @@ struct JunoMobileComposer: View {
       }
 
       composerActionButton
-    }
   }
 
   /// Model · Thinking, at whatever length the row has room for.
@@ -898,8 +936,25 @@ struct JunoMobileComposer: View {
       .accessibilityLabel("Stop generation")
       .accessibilityIdentifier("juno.mobile.chat-stop")
       .contentShape(.rect)
+    } else if showsEndAction, let voiceSession {
+      Button {
+        endHaptic.fire()
+        voiceSession.hangUp()
+      } label: {
+        endLabel(saving: voiceSession.isSaving)
+      }
+      .buttonStyle(.plain)
+      .disabled(voiceSession.isSaving)
+      .transition(.scale.combined(with: .opacity))
+      .accessibilityLabel("voice.end")
+      .accessibilityIdentifier("juno.mobile.voice-end")
+      .frame(minWidth: 44, minHeight: 44)
+      .contentShape(.rect)
     } else if showsVoiceAction, let openVoiceMode {
-      Button(action: openVoiceMode) {
+      Button {
+        voiceStartHaptic.fire()
+        openVoiceMode()
+      } label: {
         actionLabel(active: true) { JunoMobileVoiceWave() }
       }
       .buttonStyle(.plain)
@@ -927,7 +982,7 @@ struct JunoMobileComposer: View {
   /// makes the two feel like one control rather than a choice.
   private var showsVoiceAction: Bool {
     openVoiceMode != nil
-      // Never during a call. The dock above has the hang-up; a second
+      // Never during a call. End has the hang-up; a second
       // control that reopens what is already open is a control that does
       // nothing, and it would take the slot Send needs to talk into the
       // conversation.
@@ -937,6 +992,34 @@ struct JunoMobileComposer: View {
       && attachments.isEmpty
       && !model.isGenerating
       && !isStarting
+  }
+
+  /// During a call, End takes the slot exactly when Send has nothing to do:
+  /// the same size and place, so the hand already knows where it is, and the
+  /// only coloured control in a call.
+  private var showsEndAction: Bool {
+    voiceActive
+      && prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      && attachments.isEmpty
+  }
+
+  /// End, as the primary slot's red face. The glyph takes the canvas ink, which
+  /// inverts with the appearance, so it clears contrast on the light red and
+  /// on the dark appearance's lifted red alike.
+  private func endLabel(saving: Bool) -> some View {
+    Group {
+      if saving {
+        ProgressView().tint(Color.junoCanvas)
+      } else {
+        JunoIconView(.phoneOff, size: 16)
+      }
+    }
+    .foregroundStyle(Color.junoCanvas)
+    .frame(width: 34, height: 34)
+    .modifier(JunoComposerSendBackground(active: true, tint: Color.junoDanger))
+    .junoGlassID("composer.action", in: glassNamespace)
+    .frame(minWidth: 44, minHeight: 44)
+    .contentShape(Rectangle())
   }
 
   private func actionLabel<Glyph: View>(
@@ -1079,7 +1162,7 @@ struct JunoMobileComposer: View {
       // Two different situations with one useless shared message on the
       // web ("still connecting" for a session that has already hung up).
       // A finished call needs to say so, because the way out of it — the
-      // red button on the dock — is not the way out of a slow one.
+      // red End button — is not the way out of a slow one.
       voiceTurnError =
         switch session.controller.phase {
         case .ended, .error: String(localized: "composer.voice.not-live")
@@ -1295,12 +1378,15 @@ struct JunoMobileVoiceWave: View {
 /// from empty to non-empty. Animating the tint keeps one view.
 struct JunoComposerSendBackground: ViewModifier {
   let active: Bool
+  /// The active face's colour: the accent for Send and Voice, the danger red
+  /// for End.
+  var tint: Color = Color.junoAccent
 
   func body(content: Content) -> some View {
     content
       .junoGlass(
         in: Circle(),
-        tint: active ? Color.junoAccent : nil,
+        tint: active ? tint : nil,
         interactive: true
       )
   }

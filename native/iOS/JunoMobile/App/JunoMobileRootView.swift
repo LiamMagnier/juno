@@ -683,8 +683,9 @@ struct JunoMobileRootView: View {
       startNewChat()
     case .voice:
       showingSettings = false
+      // The call opens in the composer, as every call does now; full
+      // screen is one tap away in the call's settings.
       startVoice()
-      voiceSession?.isFullScreen = true
     case .dictate:
       showingSettings = false
       startNewChat()
@@ -837,13 +838,21 @@ struct JunoMobileRootView: View {
       if previewSession != nil {
         // No relay in the harness: a live-looking call with a transcript, so
         // the dock and the full-screen mode can be looked at.
-        started.controller.beginPreviewSession(
-          lines: [
-            (role: .user, text: "What's the quickest way to check the sync monitor's reconnect path?"),
-            (role: .assistant, text: "Run the JunoSync tests with the reconnect filter — I can kick that off on your Mac if you like."),
-            (role: .user, text: "Yes, do that, and tell me if anything fails."),
-          ]
-        )
+        // `--juno-preview-voice-state listening|speaking|thinking|muted`
+        // holds the call in one phase for a screenshot.
+        let arguments = CommandLine.arguments
+        let state = arguments.firstIndex(of: "--juno-preview-voice-state")
+          .flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil } ?? "speaking"
+        var lines: [(role: JunoVoiceTranscriptRole, text: String)] = [
+          (role: .user, text: "What's the quickest way to check the sync monitor's reconnect path?"),
+          (role: .assistant, text: "Run the JunoSync tests with the reconnect filter. I can kick that off on your Mac if you like."),
+        ]
+        // Thinking is your last line heard in full with nothing back yet.
+        if state == "thinking" || state == "speaking" {
+          lines.append((role: .user, text: "Yes, do that, and tell me if anything fails."))
+        }
+        started.controller.beginPreviewSession(lines: lines, assistantSpeaking: state == "speaking")
+        if state == "muted" { started.controller.setMuted(true) }
         return
       }
     #endif
