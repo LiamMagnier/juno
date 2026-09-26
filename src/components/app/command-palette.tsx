@@ -850,7 +850,12 @@ function SearchPalette() {
    * deliberately NOT used here, so the strip shows it continues.
    */
   const filters = trimmed ? (
-    <div className="border-b border-border/60 px-4 py-2">
+    // `min-w-0`: the dialog lays its children out on a grid, and a grid
+    // item's automatic minimum is its content's width, which for a strip of
+    // fourteen chips is wider than the dialog. Without it the strip did not
+    // scroll; it widened the whole column, so every result row ran past the
+    // dialog's right edge and lost its trailing time.
+    <div className="min-w-0 border-b border-border/60 px-4 py-2">
       <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
         <div role="group" aria-label="Filter by type" className="flex shrink-0 gap-1">
           <FilterChip active={type === "all"} onClick={() => setType("all")}>

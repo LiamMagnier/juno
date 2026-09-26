@@ -130,9 +130,7 @@ function Opener({ page }: { page: PageName }) {
   React.useEffect(() => {
     const timer = setTimeout(() => {
       if (page === "notifications") openNotifications();
-      if (page === "search") {
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true, bubbles: true }));
-      }
+      if (page === "search") window.dispatchEvent(new Event("juno:search"));
     }, 600);
     return () => clearTimeout(timer);
   }, [page]);
