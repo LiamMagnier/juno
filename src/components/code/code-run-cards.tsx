@@ -346,7 +346,6 @@ export function CodeRunStack({
       {blocked && <BlockedNote reason={blocked.reason} onRecheck={blocked.onRecheck} />}
       {queuedNote && (
         <p className={cn(RUN_CARD, RUN_CARD_INSET, "flex items-center gap-2 text-ui text-muted-foreground motion-safe:animate-rise-in")}>
-          <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground motion-safe:animate-pulse" aria-hidden="true" />
           {queuedNote}
         </p>
       )}
@@ -1263,10 +1262,9 @@ function ApprovalCard({
         {(risk === "destructive" || risk === "outside") && (
           <span
             className={cn(
-              "flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-caption",
-              risk === "destructive"
-                ? "border-destructive/40 bg-destructive/10 text-destructive"
-                : "border-warning/40 bg-warning/10 text-warning-foreground",
+              // Words and a mark in the risk's ink, no pill: the colour says it.
+              "flex shrink-0 items-center gap-1 text-caption font-medium",
+              risk === "destructive" ? "text-destructive" : "text-warning-foreground",
             )}
           >
             <StatusIcons.warning className="size-3" aria-hidden="true" />

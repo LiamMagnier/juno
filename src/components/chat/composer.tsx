@@ -25,6 +25,7 @@ import {
   StatusIcons,
 } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { ComposerBeam } from "@/components/effects/composer-beam";
 import {
   ComposerAttachmentRow,
   ComposerPrimaryAction,
@@ -3062,6 +3063,10 @@ export function Composer({
           // DictationSwap; this wrapper only carries the drop target.
           className="w-full"
         >
+        <ComposerBeam
+          idle={frame === "landing" && !text.trim() && !privateMode && !dictating && !quotaReached}
+          streaming={isBusy}
+        >
         <ComposerShell
           // The palette's containing block: it carries `relative`, so this — not
           // the surface — is what its `bottom-full` resolves against, and so this
@@ -3688,6 +3693,7 @@ export function Composer({
                 </Tooltip>
           }
         />
+        </ComposerBeam>
 
             <input
               ref={fileInputRef}

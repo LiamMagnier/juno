@@ -112,24 +112,24 @@ function PlanCard({ item, index, action }: { item: PlanCardItem; index: number; 
       <div className="flex min-h-8 items-start justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <h3 className="text-heading">{name}</h3>
+          {/* Words, not badges (owner directive, 2026-09-26): the
+              recommended card already stands forward on the raised rung
+              with the accent edge, and "your plan" is a fact. */}
           {current ? (
-            // Plain words, not a pill: the card's coral edge already marks it.
-            <span className="inline-flex items-center gap-1 text-caption text-muted-foreground">
-              <StatusIcons.success className="size-3 shrink-0 text-primary" aria-hidden="true" />
-              Current plan
+            <span className="inline-flex items-center gap-1 text-ui text-muted-foreground">
+              <StatusIcons.success className="size-3.5 shrink-0" aria-hidden="true" />
+              Your plan
             </span>
           ) : recommended ? (
-            <span className="text-caption font-medium text-primary-ink">Recommended</span>
+            <span className="text-ui text-muted-foreground">Recommended</span>
           ) : null}
         </div>
         {header}
       </div>
       <p className="mt-1 text-ui text-muted-foreground">{tagline}</p>
 
-      {/* Wraps as a unit: the suffix may drop to its own line in a narrow
-          card, the figure and its currency never part. */}
-      <p className="mt-4 flex flex-wrap items-baseline gap-x-1.5">
-        <span className="whitespace-nowrap text-display tabular-nums">{price}</span>
+      <p className="mt-4 flex items-baseline gap-1.5">
+        <span className="text-display tabular-nums">{price}</span>
         <span className="font-mono text-caption text-muted-foreground">{suffix}</span>
       </p>
 

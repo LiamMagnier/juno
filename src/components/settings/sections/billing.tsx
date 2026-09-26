@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { StatusIcons } from "@/lib/app-icons";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -123,12 +122,9 @@ export function BillingSection() {
               <p className="text-heading" translate="no">
                 {plan.name}
               </p>
-              {generating && (
-                <Badge variant="outline" className="gap-1.5 font-sans text-success-ink">
-                  <span className="size-1.5 rounded-full bg-success" aria-hidden="true" />
-                  Active
-                </Badge>
-              )}
+              {/* Plain words, not a green "Active" badge (owner directive,
+                  2026-09-26): being on the plan you are on is the normal case. */}
+              {generating && <span className="text-ui text-muted-foreground">Your plan</span>}
             </div>
             <p className="mt-0.5 text-ui text-muted-foreground">{plan.tagline}</p>
             <p className="mt-2 text-ui text-muted-foreground">

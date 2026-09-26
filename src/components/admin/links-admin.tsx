@@ -102,7 +102,9 @@ function kindLabel(kind: AdminShareRow["kind"]): string {
   return kind === "CHAT" ? "Chat" : "Artifact";
 }
 
-const CHIP = "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 font-mono text-caption font-semibold";
+/* A fact as words, not a tinted pill (owner directive, 2026-09-26): colour
+   only where the standing needs an admin (taken down, owner banned). */
+const CHIP = "inline-flex items-center gap-1 whitespace-nowrap font-mono text-caption font-medium";
 const TH_CLASS = "px-4 py-2.5 font-mono text-caption font-medium text-muted-foreground";
 const ROW_CLASS =
   "border-b border-border/60 align-top transition-colors duration-fast ease-out-soft last:border-b-0 hover:bg-accent motion-safe:animate-fade-in [animation-fill-mode:backwards]";
@@ -115,10 +117,10 @@ const ROW_CLASS =
  * is suspended, not gone — lifting the ban brings it back.
  */
 const STATUS_CHIP: Record<ShareStatus, { label: string; tone: string; icon: IconComponent }> = {
-  live: { label: "Live", tone: "bg-success/10 text-success", icon: Link2 },
-  revoked: { label: "Revoked", tone: "bg-muted text-muted-foreground", icon: Link2Off },
-  "taken-down": { label: "Taken down", tone: "bg-destructive/10 text-destructive", icon: Link2Off },
-  "owner-banned": { label: "Owner banned", tone: "bg-warning/10 text-warning", icon: Ban },
+  live: { label: "Live", tone: "text-muted-foreground", icon: Link2 },
+  revoked: { label: "Revoked", tone: "text-muted-foreground", icon: Link2Off },
+  "taken-down": { label: "Taken down", tone: "text-destructive", icon: Link2Off },
+  "owner-banned": { label: "Owner banned", tone: "text-warning-foreground", icon: Ban },
 };
 
 function StatusChip({ status }: { status: ShareStatus }) {
@@ -530,7 +532,7 @@ export function LinksAdmin() {
                         <div className="max-w-44">
                           <p className="line-clamp-2 break-words font-medium">{s.title || "Untitled"}</p>
                           <div className="mt-0.5 flex min-w-0 items-center gap-2">
-                            <span className={cn(CHIP, "shrink-0 bg-muted text-muted-foreground")}>{kindLabel(s.kind)}</span>
+                            <span className={cn(CHIP, "shrink-0 text-muted-foreground")}>{kindLabel(s.kind)}</span>
                             <p className="truncate font-mono text-caption text-muted-foreground" title={s.token}>
                               {s.token}
                             </p>
@@ -547,7 +549,7 @@ export function LinksAdmin() {
                               <p className="truncate text-caption text-muted-foreground">{s.owner.name}</p>
                             )}
                             {s.owner.bannedAt && (
-                              <span className={cn(CHIP, "shrink-0 bg-destructive/10 text-destructive")}>
+                              <span className={cn(CHIP, "shrink-0 text-destructive")}>
                                 <Ban className="size-3" aria-hidden="true" />
                                 Banned
                               </span>
@@ -781,7 +783,7 @@ export function LinksAdmin() {
                               <p className="line-clamp-2 break-words font-medium">{share.title || "Untitled"}</p>
                               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                                 <StatusChip status={share.status} />
-                                <span className={cn(CHIP, "bg-muted text-muted-foreground")}>
+                                <span className={cn(CHIP, "text-muted-foreground")}>
                                   {kindLabel(share.kind)}
                                 </span>
                               </div>
@@ -837,7 +839,7 @@ export function LinksAdmin() {
                           <div className="flex flex-col items-end gap-1 text-right">
                             <div className="flex items-center gap-1.5">
                               {share && <OpenLinkButton share={share} />}
-                              <span className={cn(CHIP, "bg-muted text-muted-foreground")}>
+                              <span className={cn(CHIP, "text-muted-foreground")}>
                                 {r.status === "actioned" && <Link2Off className="size-3 shrink-0" aria-hidden="true" />}
                                 {r.status === "actioned" ? "Link taken down" : r.status === "dismissed" ? "Dismissed" : r.status}
                               </span>

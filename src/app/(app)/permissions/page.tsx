@@ -3,7 +3,6 @@
 import * as React from "react";
 import Link from "next/link";
 import { CodeIcons, StatusIcons } from "@/lib/app-icons";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -339,7 +338,7 @@ function ApprovalModes() {
                 {WORK_APPROVAL_MODE_LABEL[policy]}
               </span>
               {policy === DEFAULT_WORK_PERMISSION_POLICY && (
-                <Badge variant="secondary">Default</Badge>
+                <span className="text-caption text-muted-foreground">Default</span>
               )}
             </div>
             <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">

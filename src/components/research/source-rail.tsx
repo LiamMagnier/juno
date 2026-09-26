@@ -4,6 +4,7 @@ import * as React from "react";
 import { ExternalLink, Globe } from "@/components/ui/icons";
 import { SourceFavicon, hostOf, isRenderableSourceUrl } from "@/components/chat/source-chip";
 import { cn } from "@/lib/utils";
+import { StatusIcons } from "@/lib/app-icons";
 import type { ResearchSourceView } from "@/components/research/use-research-run";
 
 /**
@@ -90,7 +91,7 @@ export function SourceRail({
                 <span className="text-caption text-muted-foreground/80">({count})</span>
               )}
               {read ? (
-                <span className="size-1.5 shrink-0 rounded-full bg-success/80" title="Read in full" />
+                <StatusIcons.success className="size-3 shrink-0 text-muted-foreground" aria-label="Read in full" />
               ) : null}
               {linkable && (
                 // size-3 is the floor of the ladder; the ink rises to the

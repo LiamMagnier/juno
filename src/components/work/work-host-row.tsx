@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { ChevronRight } from "@/components/ui/icons";
 import type { ClientWorkHost } from "@/lib/work/serializers";
-import type { WorkHostState } from "@/lib/work/domain";
 import { HOST_STATE_LABEL, hostUnavailableReason } from "@/components/work/work-transport";
 import {
   workRowChevronClass,
@@ -12,6 +11,8 @@ import {
 } from "@/components/work/shell/work-section";
 import { WorkTag, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
+import { PhaseOrb } from "@/components/effects/phase-orb";
+import { StatusIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
 
 /*
@@ -41,29 +42,14 @@ import { staggerDelay } from "@/lib/motion";
  * themselves withdrew is the most expensive way to be unhelpful here.
  */
 
-const STATE_DOT: Record<WorkHostState, string> = {
-  online: "bg-primary motion-safe:animate-pulse",
-  idle: "bg-success",
-  stale: "bg-warning",
-  offline: "bg-muted-foreground/70",
-};
-
-const STATE_PILL: Record<WorkHostState, string> = {
-  online: "border-primary/25 bg-primary/10 text-primary",
-  idle: "border-success/30 bg-success/10 text-success-ink",
-  stale: "border-warning/35 bg-warning/10 text-warning-foreground",
-  offline: "border-border/70 bg-secondary text-muted-foreground",
-};
-
 /**
- * Whether this Mac can be reached, as a chip.
+ * Whether this Mac can be reached, AS WORDS (owner directive, 2026-09-26: it
+ * was a tinted pill with a dot, the busy state pulsing coral). Online and idle
+ * are muted words, busy adds a Thinking orb on the line; a stale heartbeat
+ * and a revoked Mac, the two states that ask for the reader, keep their ink
+ * and a small mark. Still no container.
  *
- * Coral (`--primary`) is reserved across Work for "this is happening now", which
- * is exactly what `online` means for a host: `hostStateFor` only returns it when
- * the heartbeat is fresh AND there is at least one active run. A Mac that is
- * awake and unoccupied is `idle`, and it gets the green of a good state rather
- * than the accent, so the accent keeps meaning what it means everywhere else on
- * this surface.
+ * Revocation beats presence, as before.
  */
 export function WorkHostStatePill({
   host,
@@ -77,23 +63,23 @@ export function WorkHostStatePill({
   return (
     <span
       className={cn(
-        // The same geometry `WorkStatusPill` and `WorkTag` carry, spelled out
-        // here rather than imported: those two take their tone from a Work
-        // status, and a host state is a different enum with its own five rows
-        // above. What has to match is the SHAPE, and it is one line.
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-micro leading-none",
-        revoked ? "border-destructive/35 bg-destructive/10 text-destructive" : STATE_PILL[host.state],
+        "inline-flex shrink-0 items-center gap-1.5 font-mono text-micro leading-none",
+        revoked
+          ? "font-medium text-destructive"
+          : host.state === "stale"
+            ? "font-medium text-warning-foreground"
+            : "text-muted-foreground",
         className
       )}
       title={reason ?? "This Mac is checking in and will take work."}
     >
-      <span
-        className={cn(
-          "size-1.5 rounded-full",
-          revoked ? "bg-destructive" : STATE_DOT[host.state]
-        )}
-        aria-hidden="true"
-      />
+      {revoked ? (
+        <StatusIcons.error className="size-3 shrink-0" aria-hidden="true" />
+      ) : host.state === "stale" ? (
+        <StatusIcons.warning className="size-3 shrink-0" aria-hidden="true" />
+      ) : host.state === "online" ? (
+        <PhaseOrb state="working" className="-my-1.5 -ml-1" />
+      ) : null}
       {revoked ? "Revoked" : HOST_STATE_LABEL[host.state]}
     </span>
   );

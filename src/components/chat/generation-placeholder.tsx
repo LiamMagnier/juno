@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import { ImageGenerationCanvas } from "@/components/aicss/image-generation";
 import { ThinkingState } from "@/components/aicss/thinking-state";
 import { Play } from "@/components/ui/icons";
@@ -28,6 +29,14 @@ import { cn } from "@/lib/utils";
  * label that says what is happening. The dot lattice is already Juno's mark, so
  * the placeholder looks like the app rather than like a loading state.
  */
+
+/**
+ * The Libraries.dev pixel mosaic (see effects/generation-mosaic.tsx), loaded
+ * on demand because it brings three.js. The Juno lattice below stays as the
+ * floor: it paints on the first frame and while the chunk loads, and it is
+ * what a browser without WebGL keeps.
+ */
+const GenerationMosaic = dynamic(() => import("@/components/effects/generation-mosaic"), { ssr: false });
 
 const STAGE_DETAILS: Record<"image" | "video", Record<string, string>> = {
   image: {
@@ -93,6 +102,7 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
         {/* The lattice opens up from AIcss's 11px: their canvas is 208px, and a
             pitch tuned for that reads as a texture rather than a field here. */}
         <ImageGenerationCanvas className="absolute inset-0" pitch={14} />
+        {!isVideo && <GenerationMosaic />}
         {isVideo && (
           // The set's play mark in its house weight: it says "this will be a
           // video", not "playing", so it is not the filled (on) cut. The class

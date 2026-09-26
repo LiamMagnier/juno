@@ -221,34 +221,24 @@ export function ProductSwitch({
 
   return (
     /*
-     * A 28px ICON PAIR IN THE BRAND ROW, not a full-width labelled pill.
+     * A LABELLED TWO-POSITION SWITCH, on its own row under the wordmark
+     * (premium pass, 2026-09-26).
      *
-     * The pill was two 36px rows' worth of column — a `pb-6 pt-3` block with
-     * two labelled segments — spent on a control you press perhaps twice a
-     * session, directly above the field and the list you use constantly. It
-     * was also, at 100% of the panel's width, the widest object in it. The
-     * reference puts the same choice in the header beside the wordmark at
-     * ~64×28: the two glyphs ARE the labels, because there are exactly two
-     * and one of them is a speech bubble.
+     * It was a 64x28 pair of bare glyphs tucked into the header. Owners and
+     * new readers alike read it as two decorative icons: nothing said "this
+     * changes which product the column lists". Two equal cells with the word
+     * beside the mark cost one 36px row and remove the guesswork, which is the
+     * trade Claude's own Chat/Code switch makes.
      *
-     * That buys back ~72px at the top of the column — more than the search
-     * field costs — which is the room the field was argued out of the panel
-     * to save in the first place.
-     *
-     * The thumb still travels (same `layoutId`, same spring), so the control
-     * that was the panel's one moving selection keeps moving. What it loses
-     * is the words, and only because at two segments they are redundant with
-     * the marks; the accessible name still carries them, and so does the
-     * tooltip, which is the one place a label is worth its pixels.
-     *
-     * THE TRACK STAYS ON `--sidebar-accent`, the panel's general tonal fill,
-     * and does NOT follow the rows onto `--sidebar-hover`. A track is a
-     * GROUND, not a state: its cells sit inside it, so a track painted in the
-     * colour a row uses for hover would leave every segment looking
-     * permanently hovered. The two row states moved out from under this token;
-     * this did not, and this is what it is for.
+     * Still LINKS (see the note at the top of the file), still one travelling
+     * raised thumb on a tonal track, still the plan gate and the chord in the
+     * tooltip. The track is full width so the two halves read as one object,
+     * and each cell is a 32px row, the same height as every row under it.
      */
-    <nav aria-label="Juno products" className="flex shrink-0 items-center rounded-control bg-sidebar-accent/70 p-0.5">
+    <nav
+      aria-label="Juno products"
+      className="grid h-9 w-full shrink-0 grid-cols-2 gap-0.5 rounded-control bg-sidebar-accent/80 p-0.5 coarse:h-12"
+    >
       {PRODUCTS.map((product) => (
         <Segment
           key={product.id}
@@ -286,102 +276,56 @@ function Segment({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-    <Link
-      href={locked ? "/upgrade" : product.href}
-      onClick={onNavigate}
-      aria-current={active ? "page" : undefined}
-      // ALWAYS named, because the box no longer carries the word. It was
-      // `accessibleName()`, which returns undefined for an open segment on the
-      // reasoning that the visible label already named it — true then, and it
-      // would have left both segments unnamed now.
-      aria-label={accessibleName(product, locked) ?? product.label}
-      className={cn(
-        // `.pressable` carries the press dip AND the colour transitions (see
-        // globals.css) — a `transition-colors` utility after it would override
-        // the shorthand and un-animate the press.
-        // 32×24, NOT a square — measured off the reference, whose control is
-        // 68.2 × 28.1 overall: 2px of padding around two 32.1 × 24.1 cells.
-        // A square reads as a button; a wide cell reads as one half of a
-        // track, which is what a two-position switch is. The label is gone
-        // from the box and lives in the accessible name and the tooltip.
-        "pressable group relative flex h-6 w-8 shrink-0 items-center justify-center rounded-md",
-        "focus-visible:outline-offset-0 motion-reduce:active:scale-100",
-        // 44px targets in the drawer, which is the only place this is touched.
-        "coarse:h-11 coarse:w-12",
-        // A locked cell holds only a glyph, so its reduced ink stops at /80:
-        // below that a mark loses the 3:1 a meaningful graphic needs.
-        locked
-          ? "text-muted-foreground/80 hover:text-muted-foreground"
-          : active
-            ? "text-foreground"
-            : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-      )}
-    >
-      {active && (
-        // A RAISED CELL, which is the segmented-control idiom and deliberately
-        // NOT the sidebar row's: a row is selected by a deeper fill on the
-        // panel's ground, and a switch cell is selected by being lifted out
-        // of its own track (`bg-sidebar` on a
-        // `bg-sidebar-accent/70` track). The two states look different because
-        // they answer different questions — "which destination am I on" versus
-        // "which half of this switch is down" — and drawing them the same way
-        // is how a switch starts reading as two rows.
-        // `spring.standard` — the documented cross-platform settle `JunoMotion`
-        // mirrors — rather than a hand-tuned stiffness/damping triple, so travel
-        // means the same thing here as it does under the page header.
-        <motion.span
-          layoutId={thumbId}
-          aria-hidden="true"
-          transition={thumbTransition}
-          className="absolute inset-0"
-          // framer has to keep the corners true while it scales the box.
-          style={{ borderRadius: 8 }}
+        <Link
+          href={locked ? "/upgrade" : product.href}
+          onClick={onNavigate}
+          aria-current={active ? "page" : undefined}
+          aria-label={accessibleName(product, locked)}
+          className={cn(
+            // `.pressable` carries the press dip AND the colour transitions
+            // (globals.css); a `transition-colors` after it would override the
+            // shorthand and un-animate the press.
+            "pressable group relative flex h-full min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 text-ui font-medium",
+            "focus-visible:outline-offset-0 motion-reduce:active:scale-100",
+            locked
+              ? "text-muted-foreground/80 hover:text-muted-foreground"
+              : active
+                ? "text-foreground"
+                : "text-muted-foreground hover:bg-sidebar-hover/70 hover:text-foreground",
+          )}
         >
-          {/* The carriage above only travels; the body below only deforms.
-              One node cannot do both — framer's layout projection owns the
-              outer transform, and a `scaleX` on the same node would be
-              rewritten by it every frame. */}
-          <motion.span
-            aria-hidden="true"
-            style={{ ...thumbSquash, borderRadius: 8 }}
-            className="block size-full rounded-md bg-sidebar shadow-soft"
-          />
-        </motion.span>
-      )}
-      {/* Reduced ink plus a sparkle is ChatGPT's own "not on your plan" mark,
-          and it replaces the product glyph rather than joining it, so a gated
-          segment is exactly as wide as an open one — a width change here would
-          move the thumb for a reason that has nothing to do with the reader. */}
-      {/* `size-3.5` (14px), not `size-4`. Measured in the reference, the glyphs
-          inside this control draw ~12.8px of ink; a 16px box draws ~14.4,
-          which is the size of a NAV row's mark — and a switch cell is 24px tall
-          against a nav row's 32, so the same mark inside it reads as crowding
-          the cell rather than sitting in it. The icon set keeps its regular
-          line at this rung (0.9px), so the mark gets lighter as well as
-          smaller rather than being a shrunken nav icon.
-
-          Each mark makes its one gesture when its cell is hovered: they are
-          Juno's own marks, so a part of each moves rather than the whole
-          glyph (Chat's ball terminal pops out of the ring's gap, Code's spark
-          turns; ICONS_AND_MOTION.md §1.3). The thumb is what travels when it
-          is pressed. */}
-      {locked ? (
-        <Sparkles className="relative size-3.5 shrink-0" aria-hidden="true" />
-      ) : (
-        <SidebarMotionIcon kind={product.kind} className="relative size-3.5 shrink-0" />
-      )}
-      {/* THE ONLY TRAILING MARK THIS SEGMENT EVER HAD IS GONE. It was a dot
-          counting the Work items blocked on the reader, and it was the one
-          thing in the shell that made a product switch a notification surface.
-          The signal did not disappear with Work — it moved to the sidebar's
-          "Needs you" fold, which is where the rows it counts actually are, so
-          pressing it triages them instead of moving you to a page that then
-          has to tell you the same number again. */}
-    </Link>
+          {active && (
+            // The raised cell: lifted out of its own track, which is the
+            // segmented-control idiom and deliberately not the sidebar row's
+            // deeper fill. The carriage travels (`layoutId`); the body inside
+            // it deforms (`useTravelSquash`). One node cannot do both.
+            <motion.span
+              layoutId={thumbId}
+              aria-hidden="true"
+              transition={thumbTransition}
+              className="absolute inset-0"
+              style={{ borderRadius: 8 }}
+            >
+              <motion.span
+                aria-hidden="true"
+                style={{ ...thumbSquash, borderRadius: 8 }}
+                className="product-switch-thumb block size-full"
+              />
+            </motion.span>
+          )}
+          {/* A locked surface is SHOWN with a sparkle in place of its mark, so a
+              gated cell is exactly as wide as an open one. */}
+          {locked ? (
+            <Sparkles className="relative size-4 shrink-0" aria-hidden="true" />
+          ) : (
+            <SidebarMotionIcon kind={product.kind} className="relative size-4 shrink-0" />
+          )}
+          <span className="relative truncate">{product.label}</span>
+        </Link>
       </TooltipTrigger>
       <TooltipContent side="bottom">
-        {product.label}
-        <Kbd className="ml-1.5">{chord}</Kbd>
+        {locked ? `Upgrade to ${PLANS[product.minPlan].name}` : `Switch to ${product.label}`}
+        {!locked && <Kbd className="ml-1.5">{chord}</Kbd>}
       </TooltipContent>
     </Tooltip>
   );

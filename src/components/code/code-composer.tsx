@@ -46,6 +46,8 @@ import { defaultReasoning, reasoningOptions, type ReasoningEffort } from "@/lib/
 import { setPendingCodePrompt } from "@/lib/code-session-handoff";
 import type { CodePrefill, CodePrefillNote } from "@/lib/code-prefill";
 import { cn } from "@/lib/utils";
+import { ComposerBeam } from "@/components/effects/composer-beam";
+import { CODE_COMPOSER_SEED_EVENT } from "@/components/code/code-seed";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
 
 const TARGET_KEY = "juno:code:new:target";
@@ -644,6 +646,24 @@ export function CodeComposer({
     [cloudBlocked, gateHint, prompt, submit, submitting],
   );
 
+  // A starting point under the landing seeds the field (code-starting-points):
+  // the text lands with the caret at its end, and nothing is sent.
+  React.useEffect(() => {
+    const onSeed = (event: Event) => {
+      const text = event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : null;
+      if (!text || submitting) return;
+      setPrompt(text);
+      requestAnimationFrame(() => {
+        const field = textareaRef.current;
+        if (!field) return;
+        field.focus();
+        field.setSelectionRange(field.value.length, field.value.length);
+      });
+    };
+    window.addEventListener(CODE_COMPOSER_SEED_EVENT, onSeed);
+    return () => window.removeEventListener(CODE_COMPOSER_SEED_EVENT, onSeed);
+  }, [submitting]);
+
   const effortOptions = React.useMemo(() => (modelInfo ? reasoningOptions(modelInfo) : []), [modelInfo]);
   const isAuto = isAutoModelId(model);
   // Effort lives inside the model chip's popover, as every composer mounts it.
@@ -680,6 +700,10 @@ export function CodeComposer({
           }}
           className="relative w-full"
         >
+          {/* The same two lights as Chat's composer (effects/composer-beam):
+              a low bloom on the empty landing, the travelling beam once a
+              start has been working for more than 3 s. */}
+          <ComposerBeam idle={!prompt.trim() && !dictating && !submitting} streaming={submitting}>
           <ComposerShell
             className={cn("max-h-[600px]", dragging && "border-primary/55 ring-2 ring-primary/20")}
             dimmed={submitting}
@@ -814,6 +838,7 @@ export function CodeComposer({
               </Tooltip>
             }
           />
+          </ComposerBeam>
 
           {dragging && <ComposerDropOverlay />}
 

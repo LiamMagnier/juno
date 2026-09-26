@@ -289,15 +289,17 @@ export function ArtifactInlineCard({
 
   // One quiet status word, cross-faded on change (the span re-mounts via key).
   // "Writing" while the model streams; then whatever the sandbox reports.
-  const status: { label: string; tone: string; live?: boolean } | null = streaming
-    ? { label: "Writing", tone: "text-primary", live: true }
+  // Plain words, no dot, and nothing at all once it is simply working: the
+  // green "Live" / "Done" and the pulsing dot said "normal" as loudly as the
+  // card could say anything (owner directive, 2026-09-26). An error keeps its
+  // colour, the one state here that asks for the reader.
+  const status: { label: string; tone: string } | null = streaming
+    ? { label: "Writing", tone: "text-muted-foreground" }
     : runStatus === "error"
       ? { label: "Error", tone: "text-destructive" }
       : runStatus === "running" || runStatus === "loading"
-        ? { label: runStatus === "running" ? "Running" : "Loading", tone: "text-source", live: true }
-        : runStatus === "done"
-          ? { label: rt.mode === "console" ? "Done" : "Live", tone: "text-success" }
-          : null;
+        ? { label: runStatus === "running" ? "Running" : "Loading", tone: "text-muted-foreground" }
+        : null;
 
   const handleConsole = React.useCallback((entry: ConsoleEntry) => {
     setConsoleEntries((prev) => (prev.length > 150 ? [...prev.slice(-120), entry] : [...prev, entry]));
@@ -346,9 +348,9 @@ export function ArtifactInlineCard({
               <span aria-hidden className="size-1 shrink-0 rounded-full bg-border" />
               <span
                 key={status.label}
-                className={cn("inline-flex shrink-0 items-center gap-1 motion-safe:animate-fade-in", status.tone)}
+                role="status"
+                className={cn("shrink-0 motion-safe:animate-fade-in", status.tone)}
               >
-                <span aria-hidden className={cn("size-1.5 rounded-full bg-current", status.live && "motion-safe:animate-pulse")} />
                 {status.label}
               </span>
             </>

@@ -1428,6 +1428,23 @@
   .sidebar-row-selected {
     background-color: hsl(var(--sidebar-selected));
   }
+  /* The product switch's down cell: lifted out of its tonal track (raised
+     rung, premium brief rule 3), which is what makes it read as a switch and
+     not as a selected row. Dark lifts by a lighter fill and a top highlight,
+     since a shadow cannot be seen on a near-black panel. */
+  .product-switch-thumb {
+    background-color: hsl(var(--card));
+    box-shadow:
+      0 0 0 1px hsl(var(--shadow-ink) / .06),
+      0 1px 2px hsl(var(--shadow-ink) / .08),
+      0 2px 6px -2px hsl(var(--shadow-ink) / .10);
+  }
+  .dark .product-switch-thumb {
+    background-color: hsl(var(--selected));
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / .06),
+      0 1px 2px hsl(0 0% 0% / .4);
+  }
   /* The same state on a trigger that owns its own `data-state`: the account
      row, whose "selected" is its menu being open. A className cannot read
      Radix's attribute, and the alternative is an arbitrary
@@ -1604,6 +1621,13 @@
     transition:
       border-color var(--dur-fast) var(--ease-out-soft),
       box-shadow   var(--dur-fast) var(--ease-out-soft);
+  }
+  /* Text and controls inside a Voice glow host sit above the glow's layers
+     (the package stacks them at z-index 1-4). */
+  .voice-glow-content,
+  .voice-glow-host > :not(.sr-only) {
+    position: relative;
+    z-index: 5;
   }
   .composer-surface:focus-within {
     border-color: hsl(var(--foreground) / .3);

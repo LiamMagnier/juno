@@ -32,7 +32,7 @@ const ThoughtProcessPanel = nextDynamic(
   { ssr: false },
 );
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
-import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { PhaseOrb, type OrbState } from "@/components/effects/phase-orb";
 import { Pressable } from "@/components/ui/pressable";
 import { toReasoningLines } from "@/lib/reasoning-lines";
 import { cn, truncate } from "@/lib/utils";
@@ -240,6 +240,18 @@ export function ActivityTimeline({
   if (!streaming && !hasReasoning && !restingDetail) return null;
   // A phase change should animate once. Reasoning-token growth never changes
   // this key, so the collapsed UI stays calm during long streams.
+  // The orb names the same phase the sentence does (see PhaseOrb): a scan
+  // while the run searches or reads, a sash while it writes, orbiting
+  // particles while a tool runs, a slow ring while it reasons.
+  const liveOrb: OrbState = live.warning
+    ? "working"
+    : active?.key === "research"
+      ? "searching"
+      : latest?.kind === "tool"
+        ? "working"
+        : active?.key === "write"
+          ? "composing"
+          : "breathing";
   const copyKey = streaming ? `${active?.key ?? "think"}-${latest?.kind ?? "reasoning"}-${live.message}` : "complete";
 
   // THE ACCESSIBLE NAME IS THE WHOLE CONTROL. The elapsed number alone rewrites
@@ -320,11 +332,9 @@ export function ActivityTimeline({
                 three hundred pixels apart is two indicators for one state, and
                 the eye reads them as two things happening. */}
             {open ? (
-              <span aria-hidden="true" className="flex size-4.5 shrink-0 items-center justify-center">
-                <span className="size-1.5 rounded-full bg-primary/70 ring-2 ring-primary/20" />
-              </span>
+              <span aria-hidden="true" className="size-5 shrink-0" />
             ) : (
-              <ThinkingDots className="text-muted-foreground" />
+              <PhaseOrb state={liveOrb} />
             )}
             {/* PLAIN TEXT. This carried AIcss's `.aicss-shine` sweep, a second
                 looping thing beside the matrix, moving a valley of alpha

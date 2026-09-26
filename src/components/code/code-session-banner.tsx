@@ -7,7 +7,8 @@ import { Loader2 } from "@/components/ui/icons";
 import { AgentStatusBadge, type AgentRunStatus } from "@/components/ui/agent-status-badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
-import { AppIcons, CodeIcons } from "@/lib/app-icons";
+import { AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
+import { PhaseOrb } from "@/components/effects/phase-orb";
 import { checksLabel, type ChecksReport } from "@/lib/code-checks";
 import { transition, variants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -48,6 +49,13 @@ import type { AutoFixHandle } from "@/components/code/use-code-auto-fix";
  */
 
 /*
+ * STATUS AS WORDS (owner directive, 2026-09-26): these were bordered pills
+ * with a leading dot, the running one pulsing green. A normal or in-progress
+ * state is now plain muted text; only a state that asks for the reader
+ * (failing checks, a Mac gone offline, an approval) carries colour and a
+ * small mark, still without a container. The recipe below is the text run
+ * the chips became, kept as one constant so the row stays one voice.
+ *
  * The header's status chips, one recipe. Four of them can sit on that row at
  * once — the task chip, the resolving chip, the cloud/PR chip and the presence
  * chip — and they had drifted into two families and two sizes (a mono 10px task
@@ -57,15 +65,13 @@ import type { AutoFixHandle } from "@/components/code/use-code-auto-fix";
  * the black ground, which is below the hairline that rings it.
  */
 const BANNER_CHIP =
-  "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2 py-1 text-caption text-muted-foreground @[40rem]/split:px-2.5";
-/** The chip's leading dot, at the one size all four use. */
-const BANNER_DOT = "h-1.5 w-1.5 shrink-0 rounded-full";
+  "inline-flex shrink-0 items-center gap-1.5 rounded-control px-1.5 py-1 text-caption text-muted-foreground";
 
-const TASK_CHIP: Partial<Record<CodeSessionStatus, { label: string; dot: string }>> = {
-  queued: { label: "Queued", dot: "bg-muted-foreground motion-safe:animate-pulse" },
-  running: { label: "Running", dot: "bg-success motion-safe:animate-pulse" },
-  awaiting_approval: { label: "Needs approval", dot: "bg-warning" },
-  stopping: { label: "Stopping…", dot: "bg-muted-foreground" },
+const TASK_CHIP: Partial<Record<CodeSessionStatus, { label: string }>> = {
+  queued: { label: "Queued" },
+  running: { label: "Running" },
+  awaiting_approval: { label: "Needs approval" },
+  stopping: { label: "Stopping…" },
 };
 
 /**
@@ -88,15 +94,6 @@ function ChipLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** The dot colour for a CI rollup, in the same three inks the rest of the product uses. */
-const CHECKS_DOT: Record<ChecksReport["state"], string> = {
-  failing: "bg-destructive",
-  running: "bg-muted-foreground motion-safe:animate-pulse",
-  passing: "bg-success",
-  neutral: "bg-muted-foreground",
-  none: "bg-muted-foreground",
-};
-
 /*
  * WHAT GITHUB SAYS ABOUT THE BRANCH, AND WHETHER JUNO ANSWERS IT.
  *
@@ -114,14 +111,6 @@ const CHECKS_DOT: Record<ChecksReport["state"], string> = {
  * keeps the resting row exactly as long as it was.
  */
 const PANEL_ROW = "flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left";
-
-/** The outcome ink for one check, matching the rollup's own vocabulary. */
-const CHECK_INK: Record<string, string> = {
-  failing: "bg-destructive",
-  running: "bg-muted-foreground motion-safe:animate-pulse",
-  passing: "bg-success",
-  neutral: "bg-muted-foreground",
-};
 
 export interface CodeSessionBannerProps {
   /** True until the session's own kind (device or cloud) is known. */
@@ -316,17 +305,9 @@ export function CodeSessionBanner({
                       : "Open checks and auto-fix."
                   }
                 >
-                  <span
-                    className={cn(
-                      BANNER_DOT,
-                      report
-                        ? CHECKS_DOT[report.state]
-                        : autoFixState?.enabled
-                          ? "bg-primary"
-                          : "bg-muted-foreground",
-                    )}
-                    aria-hidden="true"
-                  />
+                  {report?.state === "failing" && (
+                    <StatusIcons.error className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
+                  )}
                   <ChipLabel>
                     {report ? checksLabel(report) : autoFixState?.enabled ? "Auto-fix on" : "Auto-fix off"}
                   </ChipLabel>
@@ -383,7 +364,6 @@ export function CodeSessionBanner({
 
             {resolving ? (
               <span role="status" className={BANNER_CHIP}>
-                <span className={cn(BANNER_DOT, "bg-muted-foreground motion-safe:animate-pulse")} aria-hidden="true" />
                 <ChipLabel>Getting this session ready…</ChipLabel>
               </span>
             ) : isCloud ? (
@@ -409,8 +389,17 @@ export function CodeSessionBanner({
                 </span>
               )
             ) : (
-              <span role="status" title={presence.device?.name} className={BANNER_CHIP}>
-                <span className={cn(BANNER_DOT, presenceMeta.dot)} aria-hidden="true" />
+              <span
+                role="status"
+                title={presence.device?.name}
+                className={cn(
+                  BANNER_CHIP,
+                  (presence.state === "offline" || presence.state === "error") && "text-warning-foreground",
+                )}
+              >
+                {(presence.state === "offline" || presence.state === "error") && (
+                  <StatusIcons.warning className="size-3.5 shrink-0" aria-hidden="true" />
+                )}
                 <ChipLabel>{presenceMeta.label}</ChipLabel>
               </span>
             )}
@@ -444,10 +433,7 @@ export function CodeSessionBanner({
               animate={{ opacity: activity ? 1 : 0 }}
               transition={transition.fast}
             >
-              <span
-                className={cn(BANNER_DOT, "bg-primary motion-safe:animate-pulse")}
-                aria-hidden="true"
-              />
+              {activity && <PhaseOrb state="working" className="-my-1" />}
               <span className="min-w-0 truncate font-mono">{shownActivity}</span>
             </motion.p>
           </div>
@@ -513,10 +499,11 @@ function ChecksAndAutoFix({
             {report.checks.map((check) => {
               const body = (
                 <>
-                  <span
-                    className={cn(BANNER_DOT, CHECK_INK[check.outcome] ?? "bg-muted-foreground")}
-                    aria-hidden="true"
-                  />
+                  {/* A mark only where a check needs the reader; a passing or
+                      running check is its words (the outcome column). */}
+                  <span className="grid size-3.5 shrink-0 place-items-center" aria-hidden="true">
+                    {check.outcome === "failing" && <StatusIcons.error className="size-3.5 text-destructive" />}
+                  </span>
                   <span className="min-w-0 flex-1 truncate text-ui text-foreground">{check.name}</span>
                   <span className="shrink-0 text-caption text-muted-foreground">{check.outcome}</span>
                 </>
@@ -593,16 +580,6 @@ function ChecksAndAutoFix({
             <ul className="mt-2 space-y-1">
               {state.recent.map((entry) => (
                 <li key={`${entry.at}-${entry.note}`} className="flex items-start gap-2">
-                  <span
-                    className={cn(
-                      BANNER_DOT,
-                      "mt-1.5",
-                      // Coral for the two outcomes that put the event in front
-                      // of a run — started one, or handed it to the one going.
-                      entry.outcome === "skipped" ? "bg-muted-foreground" : "bg-primary",
-                    )}
-                    aria-hidden="true"
-                  />
                   <span className="min-w-0 flex-1 text-caption text-muted-foreground">{entry.note}</span>
                 </li>
               ))}

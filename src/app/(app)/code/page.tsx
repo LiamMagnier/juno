@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/session";
+import { CodeStartingPoints } from "@/components/code/code-starting-points";
 import { CodeComposer } from "@/components/code/code-composer";
 import { parseCodePrefill, type PrefillParams } from "@/lib/code-prefill";
 
@@ -112,7 +113,7 @@ export default async function CodePage({ searchParams }: { searchParams: Promise
       */}
       <div className="page-gutter mx-auto flex w-full max-w-[44rem] flex-1 flex-col items-center justify-center py-6 md:py-8">
         <h1 className="mb-6 text-balance text-center font-serif text-display font-normal text-foreground motion-safe:animate-rise-in sm:mb-8">
-          What are we building
+          What should we build
           {firstName ? (
             <>
               , <span className="italic">{firstName}</span>
@@ -122,6 +123,7 @@ export default async function CodePage({ searchParams }: { searchParams: Promise
         </h1>
         <div className="w-full">
           <CodeComposer prefill={prefill} />
+          <CodeStartingPoints />
         </div>
       </div>
     </div>

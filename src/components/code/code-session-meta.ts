@@ -205,23 +205,16 @@ export function useCodeTaskMeta(conversationId: string): CodeTaskMeta & { refres
 }
 
 /*
- * FULL-STRENGTH FILLS, and that is a contrast fix rather than a taste one.
- *
- * The two most-seen states were drawn as opacity-thinned dots — /40 for checking
- * and /50 for offline and none — alphas tuned against the old 9%-lightness
- * ground. That ground is now `0 0% 0%`, where /40 composites to ~2.1:1 and /50
- * to ~2.8:1, both under the 3:1 minimum for a non-text indicator. The dot is the
- * only mark in the banner that says whether this session can run anything, so it
- * has to survive.
- *
- * `offline` takes `bg-warning`, not a grey: a Mac that exists but is asleep is a
- * recoverable blocker, and it should not read the same as `none`, which is a
- * project no Mac has ever synced.
+ * The presence line's words. There is no dot any more (owner directive,
+ * 2026-09-26): connected and checking are plain muted text, and the two
+ * states that block a run (`offline`, a Mac that exists but is asleep, and
+ * `error`) take the warning ink and mark in the banner, so they still do not
+ * read the same as `none`, a project no Mac has ever synced.
  */
-export const PRESENCE_META: Record<PresenceState, { label: string; dot: string }> = {
-  checking: { label: "Checking your Mac…", dot: "bg-muted-foreground motion-safe:animate-pulse" },
-  online: { label: "Mac connected", dot: "bg-success" },
-  offline: { label: "Mac offline", dot: "bg-warning" },
-  none: { label: "No Mac has synced this project", dot: "bg-muted-foreground" },
-  error: { label: "Presence unavailable", dot: "bg-warning" },
+export const PRESENCE_META: Record<PresenceState, { label: string }> = {
+  checking: { label: "Checking your Mac…" },
+  online: { label: "Mac connected" },
+  offline: { label: "Mac offline" },
+  none: { label: "No Mac has synced this project" },
+  error: { label: "Presence unavailable" },
 };

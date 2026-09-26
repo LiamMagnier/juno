@@ -15,6 +15,8 @@ import {
   type VoiceProviderId,
 } from "@/lib/voice-relay-protocol";
 import { cn } from "@/lib/utils";
+import { VoiceBeam } from "voice-glow";
+import { useEffectTheme, voiceBandColors, voiceLobeColors } from "@/components/effects/use-effect-theme";
 
 type VoiceController = ReturnType<typeof useRealtimeVoice>;
 
@@ -84,6 +86,8 @@ export function RealtimeVoice({
 
   const meterRef = React.useRef<HTMLSpanElement | null>(null);
   const levelRef = voice.levelRef;
+  const readLevel = React.useCallback(() => levelRef.current, [levelRef]);
+  const effectTheme = useEffectTheme();
 
   // One rAF loop for the whole bar, writing one custom property. The level
   // never enters React state: at 60fps that would re-render the bar and every
@@ -155,10 +159,31 @@ export function RealtimeVoice({
         </div>
       )}
 
+      {/*
+       * THE VOICE GLOW (Libraries.dev Voice, premium brief), on the call bar
+       * itself: a light along its bottom edge driven by `levelRef`, the same
+       * smoothed amplitude the meter reads (the mic while you speak, the
+       * model while it answers), gathering into the travelling beam in the
+       * dead air after you stop (`thinking`). A getter, so the level never
+       * enters React state. Decorative: the phase label, the meter and the
+       * live region carry the state. The bar's popovers are portalled, so the
+       * glow's clip cannot cut them.
+       */}
+      <VoiceBeam
+        level={readLevel}
+        processing={phase === "thinking"}
+        paused={phase === "idle"}
+        theme={effectTheme ?? "light"}
+        colorVariant="sunset"
+        bandColors={voiceBandColors(effectTheme)}
+        colors={voiceLobeColors(effectTheme)}
+        strength={0.75}
+        className="w-full max-w-[min(100%,34rem)] rounded-full shadow-float sm:w-auto"
+      >
       <div
         className={cn(
-          "flex w-full max-w-[min(100%,34rem)] items-center gap-1 rounded-full border border-border",
-          "bg-popover p-1.5 shadow-float sm:w-auto"
+          "voice-glow-host flex w-full items-center gap-1 rounded-full border border-border",
+          "bg-popover p-1.5 sm:w-auto"
         )}
       >
         {/* The status cluster OWNS the flexible width and everything else is
@@ -271,6 +296,7 @@ export function RealtimeVoice({
           </BarButton>
         </div>
       </div>
+      </VoiceBeam>
     </section>
   );
 }
