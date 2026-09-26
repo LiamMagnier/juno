@@ -39,26 +39,14 @@ struct DesktopEmptyChatTests {
         #expect(ChatGreeting.size(forColumnWidth: 1600) == 48)
     }
 
-    // MARK: - Starter chips
+    // MARK: - Seeding
 
-    /// The four chips, in the web's order, each opening the web's three whole
-    /// example prompts (`STARTER_CHIP_COPY`), never a sentence opener.
+    /// A seed (a follow-up, a quote) reaches the composer through the same
+    /// request channel as ⌘U and a drop, as its own kind, so the composer
+    /// replaces the draft and places the caret, and nothing about it can reach
+    /// the send path.
     @Test
-    func theStarterChipsOpenTheWebsExamples() {
-        #expect(ChatStarterChip.all.map(\.label) == ["Research", "Write", "Code", "Plan"])
-        #expect(ChatStarterChip.all.allSatisfy { $0.examples.count == 3 })
-        #expect(ChatStarterChip.all[0].examples.first == "What does the latest research say about intermittent fasting? Cite the strongest studies.")
-        #expect(ChatStarterChip.all[3].examples.last == "Make a launch checklist for a small product release.")
-        // Whole prompts: none ends mid-sentence waiting for the reader's subject.
-        #expect(ChatStarterChip.all.flatMap(\.examples).allSatisfy { !$0.hasSuffix(" ") })
-        #expect(ChatStarterChip.all.map(\.icon) == [.research, .pencil, .code, .task])
-    }
-
-    /// A chip seeds the composer through the same request channel as ⌘U and
-    /// a drop, as its own kind — so the composer replaces the draft and places
-    /// the caret, and nothing about it can reach the send path.
-    @Test
-    func aChipIsASeedRequestNotASend() {
+    func aSeedIsARequestNotASend() {
         let request = ChatComposerRequest(kind: .seed("Help me write "))
         #expect(request.kind == .seed("Help me write "))
         #expect(request.kind != .chooseFiles)
@@ -67,14 +55,11 @@ struct DesktopEmptyChatTests {
 
     // MARK: - The handoff
 
-    /// The handoff's beats are the web's: the bubble waits 60ms, the chips
-    /// deal in 120ms after the greeting and 30ms apart, and a turn rises the
-    /// ladder's own 6pt.
+    /// The handoff's beats are the web's: the bubble waits 60ms and a turn
+    /// rises the ladder's own 6pt.
     @Test
     func theHandoffKeepsTheWebsBeats() {
         #expect(DesktopChoreography.firstTurnBeat == 0.06)
-        #expect(DesktopChoreography.chipsBeat == 0.12)
-        #expect(DesktopChoreography.chipStagger == 0.03)
         #expect(DesktopChoreography.riseDistance == JunoMotion.riseDistance)
         #expect(DesktopChoreography.greetingExitScale == 0.985)
     }

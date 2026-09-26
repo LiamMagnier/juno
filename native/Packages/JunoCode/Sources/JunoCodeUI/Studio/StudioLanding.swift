@@ -144,52 +144,8 @@ public struct StudioLanding: View {
             && !modelID.isEmpty
     }
 
-    /// The four starting points (premium pass, rule 2): real Code work,
-    /// each seeding a whole prompt — never sending one.
-    static let startingPoints: [JunoStartingPoint] = [
-        JunoStartingPoint(
-            id: "fix-test",
-            title: "Fix a failing test",
-            detail: "Find why it fails, fix it, run it again.",
-            icon: .listChecks
-        ),
-        JunoStartingPoint(
-            id: "tour",
-            title: "Explain the codebase",
-            detail: "A tour of the main modules and how they fit.",
-            icon: .compass
-        ),
-        JunoStartingPoint(
-            id: "review",
-            title: "Review my changes",
-            detail: "Read the uncommitted diff and flag the risks.",
-            icon: .fileDiff
-        ),
-        JunoStartingPoint(
-            id: "build",
-            title: "Build a feature",
-            detail: "Plan it with you, then make the change.",
-            icon: .blocks
-        ),
-    ]
-
-    /// The prompt each starting point seeds.
-    static func prompt(for point: JunoStartingPoint) -> String {
-        switch point.id {
-        case "fix-test":
-            return "Run the test suite, find the failing test, work out why it fails and fix the cause. Then run it again to prove it passes."
-        case "tour":
-            return "Give me a tour of this codebase: the main modules, how they fit together, and where a new contributor should start reading."
-        case "review":
-            return "Review the uncommitted changes on this branch. Flag anything risky, untested or inconsistent with the code around it."
-        default:
-            return "Help me build a new feature. Ask me what it should do, propose a plan, then make the change: "
-        }
-    }
-
     @State private var columnWidth: CGFloat = 720
     @Environment(\.junoTextScale) private var textScale
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -247,21 +203,6 @@ public struct StudioLanding: View {
                     }
                     footnote
                 }
-
-                JunoStartingPointGrid(
-                    points: Self.startingPoints,
-                    identifier: { "juno.code.starting-point.\($0.id)" }
-                ) { point in
-                    prompt = Self.prompt(for: point)
-                    focused = true
-                }
-                // Steps aside while there is a draft: suggestions under a
-                // half-written message are for a message the reader is no
-                // longer writing. Opacity only, so the composer never moves.
-                .opacity(trimmed.isEmpty ? 1 : 0)
-                .allowsHitTesting(trimmed.isEmpty)
-                .accessibilityHidden(!trimmed.isEmpty)
-                .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: trimmed.isEmpty)
             }
             .frame(maxWidth: 720)
             .padding(.horizontal, Studio.Metrics.gutter)
