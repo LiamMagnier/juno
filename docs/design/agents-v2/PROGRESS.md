@@ -6,38 +6,38 @@ here.
 
 ## Status
 
-- Current phase: 0
-- Last commit on `agents/v2`: —
+- Current phase: 1
+- Last commit on `agents/v2`: Phase 0 preconditions and baseline
 - Blockers: none
 
 ## Phase 0 — preconditions
-- [ ] Worktree clean on `agents/v2`, `git fetch origin` done
-- [ ] Premium pass is on main (`git merge-base --is-ancestor design/premium-pass origin/main`)
-- [ ] `origin/main` merged into `agents/v2`
-- [ ] One-time setup done (npm ci ×3, agent-core built, `.env.local` symlinked)
-- [ ] Baseline full gates recorded below
-- [ ] Docker Desktop running? yes / no (needed from Phase 2 and for the final gate)
-- [ ] Required reading done
+- [x] Worktree clean on `agents/v2`, `git fetch origin` done
+- [x] Premium pass is on main (`git merge-base --is-ancestor design/premium-pass origin/main`)
+- [x] `origin/main` merged into `agents/v2`
+- [x] One-time setup done (npm ci ×3, agent-core built, `.env.local` symlinked)
+- [x] Baseline full gates recorded below
+- [x] Docker Desktop running? yes (needed from Phase 2 and for the final gate)
+- [x] Required reading done
 
 ### Baseline gates (untouched tree)
 | Gate | Result | Note |
 |---|---|---|
-| i18n:extract | | |
-| typecheck | | |
-| test | | |
-| lint | | |
-| capabilities:check | | |
-| work:contract:check | | |
-| models:capabilities:audit | | |
-| work:sandbox:check | | |
-| agent-core build + test | | |
-| relay test | | |
-| native:sync:check | | |
-| native:design:check | | |
-| design:tokens:check | | |
-| security:check | | |
-| prisma validate + drift | | |
-| next build | | |
+| i18n:extract | pass | |
+| typecheck | pass | |
+| test | pass | |
+| lint | pass | |
+| capabilities:check | pass | |
+| work:contract:check | pass | |
+| models:capabilities:audit | pass | |
+| work:sandbox:check | pass | |
+| agent-core build + test | pass | |
+| relay test | pass | |
+| native:sync:check | pass (after `npm run design:tokens && npm run design:editor`) | Untouched `origin/main` had stale generated tokens/editor bundle |
+| native:design:check | pass | |
+| design:tokens:check | pass (after `npm run design:tokens`) | Untouched `origin/main` had stale generated tokens |
+| security:check | fail (baseline) | `Tracked secret scan failed: tests/memory-import.test.ts: possible GitHub token` (pre-existing on `origin/main`; unit tests inside `security:check` passed 116/116) |
+| prisma validate + drift | pass | No difference detected; schema valid |
+| next build | pass | |
 
 ## Phase 1 — data and provider layer
 - [ ] Migration `<ts>_agents_v2` + schema + `OWNER_COLUMN` + RLS, no sync trigger
