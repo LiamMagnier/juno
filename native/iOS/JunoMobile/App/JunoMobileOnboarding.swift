@@ -114,6 +114,7 @@ private struct JunoMobileWelcome: View {
 
   @State private var page = 0
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   private struct Page: Identifiable {
     let id: Int
@@ -194,7 +195,9 @@ private struct JunoMobileWelcome: View {
           }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
-        .frame(maxHeight: 300)
+        // Room for the copy at every text size: the accessibility sizes get
+        // the page's height back from the painting above it.
+        .frame(maxHeight: dynamicTypeSize.isAccessibilitySize ? 520 : 300)
         .junoMobileRise(delay: 0.35, distance: 14)
 
         HStack(spacing: JunoSpace.section) {
@@ -224,8 +227,9 @@ private struct JunoMobileWelcome: View {
               Image(systemName: "arrow.right")
                 .font(.subheadline.weight(.semibold))
             }
+            .frame(maxWidth: .infinity)
           }
-          .buttonStyle(JunoMobileInkButtonStyle())
+          .junoMobileFrontDoorButton()
           .sensoryFeedback(.selection, trigger: page)
           .accessibilityIdentifier("juno.mobile.welcome-continue")
         }
@@ -313,8 +317,9 @@ private struct JunoMobileSignInForm: View {
                   ProgressView().tint(JunoMobilePalette.onInk)
                 }
               }
+              .frame(maxWidth: .infinity)
             }
-            .buttonStyle(JunoMobileInkButtonStyle())
+            .junoMobileFrontDoorButton()
             .disabled(!canSubmitPassword)
             .sensoryFeedback(.impact(weight: .light), trigger: submitCount)
             .accessibilityIdentifier("juno.mobile.sign-in.password")
@@ -335,8 +340,9 @@ private struct JunoMobileSignInForm: View {
                 JunoIconView(.external, size: 15)
                 Text("auth.sign-in")
               }
+              .frame(maxWidth: .infinity)
             }
-            .buttonStyle(JunoMobileInkButtonStyle(kind: .secondary))
+            .junoMobileFrontDoorButton(prominent: false)
             .disabled(isBusy)
             .accessibilityIdentifier("juno.mobile.sign-in")
 

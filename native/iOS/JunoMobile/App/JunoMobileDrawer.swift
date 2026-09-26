@@ -293,7 +293,7 @@ struct JunoMobileSidebarDrawer: View {
     .frame(minHeight: 44)
   }
 
-  /// New chat: the drawer's one primary action, a solid ink square beside
+  /// New chat: the drawer's one primary action, native prominent glass beside
   /// the search well so it is always in reach and never below the fold.
   private var newChatRow: some View {
     Button {
@@ -301,15 +301,12 @@ struct JunoMobileSidebarDrawer: View {
       newChat()
     } label: {
       JunoIconView(.compose, size: 18)
-        .foregroundStyle(JunoMobilePalette.onInk)
-        .frame(width: 44, height: 44)
-        .background(
-          RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-            .fill(Color.junoForeground)
-        )
-        .contentShape(Rectangle())
+        .foregroundStyle(Color.junoOnAccent)
+        .frame(width: 30, height: 30)
     }
-    .buttonStyle(.junoMobilePress)
+    // The drawer's one primary action, in the system's tinted glass.
+    .junoProminentAction()
+    .buttonBorderShape(.circle)
     .disabled(!canCreateChat)
     .opacity(canCreateChat ? 1 : 0.4)
     .accessibilityLabel("chat.new")

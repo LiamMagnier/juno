@@ -370,11 +370,11 @@ struct JunoMobileComposer: View {
           }
           .padding(.horizontal, JunoSpace.cozy)
           .padding(.vertical, JunoSpace.snug)
-          // The hero object: the raised rung (solid, hairline, tinted
-          // throw) rather than glass. Glass over the warm canvas read as a
-          // grey slab, and the composer is the one surface on the screen
-          // the reader is meant to find first.
-          .junoMobileRaised(cornerRadius: 26)
+          // Native Liquid Glass, as the owner requires for floating chrome:
+          // the system material, not a rebuilt one.
+          .junoGlass(
+            in: RoundedRectangle(cornerRadius: 26, style: .continuous)
+          )
           // Native border beam (libraries.dev `line`, rebuilt in SwiftUI):
           // only while a reply streams, and static under Reduce Motion.
           .overlay {

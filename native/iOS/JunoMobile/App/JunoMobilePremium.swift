@@ -199,43 +199,26 @@ enum JunoMobilePalette {
   static let onInk = Color.junoCanvas
 }
 
-// MARK: - The primary pair
-
-/// The front door's button hierarchy, after Sign in with Apple: one solid ink
-/// capsule for the primary path, one hairline capsule for the alternative.
-struct JunoMobileInkButtonStyle: ButtonStyle {
-  enum Kind { case primary, secondary }
-  var kind: Kind = .primary
-
-  func makeBody(configuration: Configuration) -> some View {
-    InkBody(kind: kind, configuration: configuration)
-  }
-
-  private struct InkBody: View {
-    let kind: Kind
-    let configuration: Configuration
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-      configuration.label
-        .font(.body.weight(.semibold))
-        .foregroundStyle(kind == .primary ? JunoMobilePalette.onInk : Color.junoForeground)
-        .frame(maxWidth: .infinity)
-        .frame(minHeight: 54)
-        .background {
-          Capsule(style: .continuous)
-            .fill(kind == .primary ? Color.junoForeground : Color.junoRaised)
-        }
-        .overlay {
-          if kind == .secondary {
-            Capsule(style: .continuous).strokeBorder(Color.junoBorder, lineWidth: 1)
-          }
-        }
-        .opacity(isEnabled ? 1 : 0.38)
-        .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
-        .animation(JunoMobileMotion.gated(JunoMobileMotion.press, reduceMotion), value: configuration.isPressed)
-        .contentShape(Capsule())
+extension View {
+  /// The front door's button pair, in native Liquid Glass: prominent glass
+  /// tinted with ink for the primary path (the Sign in with Apple hierarchy),
+  /// plain glass for the alternative. System button styles, so the press
+  /// flex, contrast handling and metrics are the platform's own.
+  @ViewBuilder
+  func junoMobileFrontDoorButton(prominent: Bool = true) -> some View {
+    let styled = self
+      .font(.body.weight(.semibold))
+      .controlSize(.extraLarge)
+      .buttonBorderShape(.capsule)
+    if prominent {
+      styled
+        .foregroundStyle(JunoMobilePalette.onInk)
+        .buttonStyle(.glassProminent)
+        .tint(Color.junoForeground)
+    } else {
+      styled
+        .foregroundStyle(Color.junoForeground)
+        .buttonStyle(.glass)
     }
   }
 }
@@ -261,11 +244,20 @@ struct JunoMobileLandscape: View {
 
   var body: some View {
     if let plate = UIImage(named: dusk ? "PlateDusk" : "PlateDawn") {
-      Image(uiImage: plate)
-        .resizable()
-        .scaledToFill()
-        .offset(x: drift * 12)
-        .overlay { JunoMobileGrain(opacity: dusk ? 0.10 : 0.07) }
+      // The painted plate (public/brand/plates: `path.jpg` at dawn,
+      // `valley-dusk.jpg` at dusk). It settles from a slightly closer crop
+      // as `rise` completes, and pans a few points with `drift`, so paging
+      // the welcome reads as a slow camera move across the painting.
+      Color.clear
+        .overlay {
+          Image(uiImage: plate)
+            .resizable()
+            .scaledToFill()
+            .scaleEffect(1.06 + (1 - rise) * 0.06)
+            .offset(x: -drift * 10, y: (1 - rise) * 8)
+        }
+        .clipped()
+        .overlay { JunoMobileGrain(opacity: dusk ? 0.08 : 0.05) }
         .accessibilityHidden(true)
     } else {
       painted

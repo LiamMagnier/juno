@@ -294,14 +294,12 @@ struct JunoMobileConnectionsView: View {
             } label: {
                 Text("connections.connect")
                     .junoFont(size: 14, relativeTo: .footnote, weight: .semibold)
-                    .foregroundStyle(JunoMobilePalette.onInk)
-                    .padding(.horizontal, JunoSpace.regular)
-                    .frame(minHeight: 34)
-                    .background(Capsule().fill(Color.junoForeground))
+                    .foregroundStyle(Color.junoForeground)
             }
-            // Ink rather than the accent: a list of apps would otherwise be
-            // a column of competing coral buttons, one per row.
-            .buttonStyle(.junoMobilePress)
+            // Native glass rather than the accent: a list of apps would
+            // otherwise be a column of competing coral buttons, one per row.
+            .buttonStyle(.glass)
+            .controlSize(.regular)
             .frame(minHeight: 44)
             .accessibilityLabel(
                 Text(String(format: String(localized: "connections.connect.label"), connector.label))
