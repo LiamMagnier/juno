@@ -179,7 +179,7 @@ export function ProjectSourcesList({
         <span className="text-ui font-medium text-foreground">
           {uploading ? "Uploading…" : dragging ? "Drop to add to this project" : onDropFiles ? "Drop files here, or click to browse" : "Click to upload files"}
         </span>
-        <span className="font-mono text-caption text-muted-foreground">
+        <span className="text-caption text-muted-foreground">
           PDFs, documents, code and data, indexed so Juno can cite them.
         </span>
       </button>
@@ -247,7 +247,7 @@ export function ProjectSourcesList({
         <div className="space-y-6">
           {showFiles && filteredFiles.length > 0 && (
             <section aria-label="Files">
-              <p className="mb-1.5 px-3 font-mono text-label text-muted-foreground">
+              <p className="mb-1.5 px-3 text-caption font-medium text-muted-foreground">
                 Files · {filteredFiles.length}
               </p>
               <ul className="space-y-1">
@@ -270,7 +270,7 @@ export function ProjectSourcesList({
                         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs"
                       >
                         <span className="truncate text-ui font-medium text-foreground">{file.fileName}</span>
-                        <span className="flex items-center gap-2 font-mono text-caption tabular-nums text-muted-foreground">
+                        <span className="flex items-center gap-2 text-caption tabular-nums text-muted-foreground">
                           <span>{formatBytes(file.size)}</span>
                           {status && (
                             <span className="inline-flex items-center gap-1.5">
@@ -309,7 +309,7 @@ export function ProjectSourcesList({
 
           {showArtifacts && filteredArtifacts.length > 0 && (
             <section aria-label="Artifacts">
-              <p className="mb-1.5 px-3 font-mono text-label text-muted-foreground">
+              <p className="mb-1.5 px-3 text-caption font-medium text-muted-foreground">
                 Artifacts · {filteredArtifacts.length}
               </p>
               <ul className="space-y-1">
@@ -332,7 +332,7 @@ export function ProjectSourcesList({
                       </span>
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span className="truncate text-ui font-medium text-foreground">{art.title}</span>
-                        <span className="font-mono text-caption text-muted-foreground">
+                        <span className="text-caption text-muted-foreground">
                           {ARTIFACT_NOUN[art.type as ArtifactType] ?? art.type}
                         </span>
                       </span>

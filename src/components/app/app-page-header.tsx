@@ -127,9 +127,10 @@ export function AppPageHeader({
               <TooltipContent side="bottom">{backLabel ?? "Back"}</TooltipContent>
             </Tooltip>
           )}
-          {eyebrow && (
-            <span className="font-mono text-label text-muted-foreground">{eyebrow}</span>
-          )}
+          {/* In the interface face, not the mono label voice: beside a back
+              arrow it reads as where the arrow goes (a breadcrumb), and mono
+              made a one-word section name look like an identifier. */}
+          {eyebrow && <span className="text-ui text-muted-foreground">{eyebrow}</span>}
         </div>
       )}
 
@@ -142,7 +143,15 @@ export function AppPageHeader({
               `leading-tight`/`tracking-*`/`font-semibold` beside it would be worse
               than redundant, since Tailwind emits those groups AFTER font-size and
               they would silently keep overriding the rung this is adopting. */}
-          <h1 className="text-balance text-page-title">{heading}</h1>
+          {/* The display face (premium pass): every app page opens on its
+              name set in Newsreader, the same voice as the chat greeting and
+              the Code landing, so moving between Library, Projects and
+              Settings reads as one product with one editorial register. At
+              500, not the rung's 600: Newsreader's semibold at 32px is heavy
+              beside Inter controls, and the serif already carries the
+              contrast the weight used to. `leading-snug`-free: the rung's own
+              1.15 line box is what the skeleton below measures. */}
+          <h1 className="text-balance font-serif text-page-title font-medium">{heading}</h1>
           {/* `text-body` (15px × 1.6) is the same 24px line box the
               `text-sm leading-6` here used to build by hand, so nothing
               reflows — it is now the rung the scale names rather than
@@ -225,9 +234,9 @@ export function AppPageHeaderSkeleton({
               The placeholder carries the coarse step too, or the nav row is 8px
               short on every touch device. */}
           {nav !== "eyebrow" && <Skeleton className="size-8 shrink-0 coarse:size-10" />}
-          {/* The eyebrow's own `text-label` line box, so a row that holds only
+          {/* The eyebrow's own `text-ui` line box, so a row that holds only
               the eyebrow is as tall as the real one. */}
-          <span className="flex h-[1.4em] items-center text-label">
+          <span className="flex h-[1.5em] items-center text-ui">
             <Skeleton className="h-3 w-16 rounded-xs" />
           </span>
         </div>

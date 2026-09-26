@@ -126,7 +126,7 @@ export function ProjectWorkspaceHeader({
     ...(stats.codeCount ? [plural(stats.codeCount, "code session")] : []),
   ];
   const lede = (
-    <span className="font-mono text-caption tabular-nums">
+    <span className="text-caption tabular-nums">
       {counts.join(" · ")} · Updated {timeAgo(project.updatedAt)}
     </span>
   );
@@ -137,7 +137,7 @@ export function ProjectWorkspaceHeader({
         className={className}
         backHref="/projects"
         backLabel="Back to projects"
-        eyebrow="Project"
+        eyebrow="Projects"
         heading={<span className="min-w-0 truncate">{project.name}</span>}
         lede={lede}
         actions={

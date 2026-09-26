@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { FileText, MessageSquare, Plus, Search, Pin, PinOff } from "@/components/ui/icons";
+import { LoadError } from "@/components/ui/load-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Pressable } from "@/components/ui/pressable";
-import { Skeleton } from "@/components/ui/skeleton";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
   Select,
@@ -22,7 +22,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
-import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { removeStarredProject } from "@/lib/starred-projects";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
@@ -31,6 +31,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { promptPreview } from "@/lib/prompt-preview";
 import { IconSwap } from "@/components/ui/icon-swap";
+import { ProjectsGridSkeleton } from "@/components/projects/projects-grid-skeleton";
 
 interface ProjectItem {
   id: string;
@@ -251,7 +252,7 @@ export default function ProjectsPage() {
              in the same accent, 260px away, with a sentence explaining what it
              makes. Two identical primary buttons on one screen is not two
              chances to find it — it is a reader deciding which one is real. */
-          empty || loading ? undefined : (
+          empty ? undefined : (
             <Button onClick={openCreate} size="sm">
               <Plus className="size-4" aria-hidden="true" /> New project
             </Button>
@@ -299,23 +300,14 @@ export default function ProjectsPage() {
               ))}
             </SelectContent>
           </Select>
-          <span className="ml-auto font-mono text-caption tabular-nums text-muted-foreground">
+          <span className="ml-auto text-caption tabular-nums text-muted-foreground">
             {filteredItems.length} of {items.length}
           </span>
         </div>
       )}
 
       {error ? (
-        <EmptyState
-          tone="error"
-          className="mt-6"
-          icon={StatusIcons.error}
-          title="Couldn’t load your projects"
-          description="Check your connection and try once more."
-          action={
-            <Button variant="outline" size="sm" onClick={load}>Try again</Button>
-          }
-        />
+        <LoadError title="Couldn’t load your projects" onRetry={load} />
       ) : loading ? (
         <ProjectsGridSkeleton />
       ) : empty ? (
@@ -386,7 +378,7 @@ export default function ProjectsPage() {
               <button
                 type="button"
                 onClick={openCreate}
-                className="surface-inset flex h-full min-h-40 w-full items-center justify-center gap-2 rounded-card border-dashed border-border/80 p-4 text-ui text-muted-foreground transition-[color,border-color] duration-fast ease-out-soft hover:border-foreground/30 hover:text-foreground motion-reduce:transition-none"
+                className="surface-inset flex h-full min-h-44 w-full items-center justify-center gap-2 rounded-card border-dashed border-border/80 p-4 text-ui text-muted-foreground transition-[color,border-color] duration-fast ease-out-soft hover:border-foreground/30 hover:text-foreground motion-reduce:transition-none"
               >
                 <Plus className="size-4" aria-hidden="true" />
                 New project
@@ -495,9 +487,13 @@ function ProjectTile({
     <Card
       variant="interactive"
       data-icon-trigger=""
-      className="group relative flex h-full min-h-40 flex-col p-4"
+      className="group relative flex h-full min-h-44 flex-col p-4"
     >
-      <div className="flex items-start gap-3">
+      {/* The mark and the tile's actions share the top row; the name and the
+          preview get the card's whole width under them. With the name beside
+          the mark, the preview wrapped at a third of the tile, next to an
+          empty column the hover-only actions were holding open. */}
+      <div className="flex items-start justify-between gap-3">
         {p.coverUrl ? (
           <span className="surface-inset flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-field">
             <img src={p.coverUrl} className="size-full object-cover" alt="" />
@@ -507,17 +503,6 @@ function ProjectTile({
             <FolderIcon className="size-4" aria-hidden="true" />
           </span>
         )}
-        <div className="min-w-0 flex-1 pt-0.5">
-          <Link
-            href={`/projects/${p.id}`}
-            className="block truncate text-ui font-medium text-foreground outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-card focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
-          >
-            {p.name}
-          </Link>
-          <p className="mt-1 line-clamp-2 text-caption leading-relaxed text-muted-foreground">
-            {promptPreview(p.instructions) || "No instructions yet."}
-          </p>
-        </div>
 
         {/* Tile actions — above the stretched link. The pin stays visible while
             pinned; otherwise it, like the menu, arrives on hover or focus. */}
@@ -580,45 +565,29 @@ function ProjectTile({
         </div>
       </div>
 
-      <div className="mt-auto flex items-center justify-between border-t border-border/60 pt-3 font-mono text-caption tabular-nums text-muted-foreground">
+      <Link
+        href={`/projects/${p.id}`}
+        className="mt-3 block truncate text-body font-medium text-foreground outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-card focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+      >
+        {p.name}
+      </Link>
+      <p className="mt-1 line-clamp-2 text-caption leading-relaxed text-muted-foreground">
+        {promptPreview(p.instructions) || "No instructions yet."}
+      </p>
+
+      {/* Counts and recency in the interface face: they are furniture read
+          at a glance, not telemetry, and in mono they read as a log line. */}
+      <div className="mt-auto flex items-center justify-between gap-3 pt-4 text-caption tabular-nums text-muted-foreground">
         <div className="flex items-center gap-3">
           <span className="inline-flex items-center gap-1.5" title={`${p.conversationCount} chats`}>
-            <MessageSquare className="size-3" aria-hidden="true" /> {p.conversationCount}
+            <MessageSquare className="size-3.5" aria-hidden="true" /> {p.conversationCount}
           </span>
           <span className="inline-flex items-center gap-1.5" title={`${fileCount} files`}>
-            <FileText className="size-3" aria-hidden="true" /> {fileCount}
+            <FileText className="size-3.5" aria-hidden="true" /> {fileCount}
           </span>
         </div>
-        <span>Updated {timeAgo(p.updatedAt)}</span>
+        <span className="truncate">Updated {timeAgo(p.updatedAt)}</span>
       </div>
     </Card>
-  );
-}
-
-/** The grid, in placeholder form — identical to `loading.tsx` so nothing shifts. */
-function ProjectsGridSkeleton() {
-  return (
-    <div className="mt-6 grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3" role="status" aria-label="Loading projects">
-      {[...Array(6)].map((_, i) => (
-        <div
-          key={i}
-          className="surface-raised flex min-h-40 flex-col rounded-card p-4 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-          style={staggerDelay(i)}
-        >
-          <div className="flex items-start gap-3">
-            <Skeleton className="size-9 shrink-0 rounded-field" />
-            <div className="min-w-0 flex-1 space-y-2 pt-1">
-              <Skeleton className="h-3.5 w-1/2" />
-              <Skeleton className="h-3 w-4/5" />
-              <Skeleton className="h-3 w-3/5" />
-            </div>
-          </div>
-          <div className="mt-auto flex items-center justify-between border-t border-border/60 pt-3">
-            <Skeleton className="h-2.5 w-16" />
-            <Skeleton className="h-2.5 w-20" />
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }

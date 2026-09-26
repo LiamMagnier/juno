@@ -78,7 +78,7 @@ export function ProjectChatList({
             className="pl-9"
           />
         </div>
-        <span className="font-mono text-caption tabular-nums text-muted-foreground">
+        <span className="text-caption tabular-nums text-muted-foreground">
           {filtered.length} of {conversations.length}
         </span>
         <Button type="button" size="sm" variant="secondary" onClick={onNewChat} className="ml-auto">
@@ -110,7 +110,7 @@ export function ProjectChatList({
         <div className="space-y-5">
           {pinned.length > 0 && (
             <section aria-label="Pinned chats">
-              <p className="mb-1.5 px-3 font-mono text-label text-muted-foreground">
+              <p className="mb-1.5 px-3 text-caption font-medium text-muted-foreground">
                 Pinned · {pinned.length}
               </p>
               <ul className="space-y-1">
@@ -124,7 +124,7 @@ export function ProjectChatList({
           {unpinned.length > 0 && (
             <section aria-label="Recent chats">
               {pinned.length > 0 && (
-                <p className="mb-1.5 px-3 font-mono text-label text-muted-foreground">
+                <p className="mb-1.5 px-3 text-caption font-medium text-muted-foreground">
                   Recent · {unpinned.length}
                 </p>
               )}
@@ -178,7 +178,7 @@ function ChatRow({
         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs"
       >
         <span className="truncate text-ui font-medium text-foreground">{chat.title}</span>
-        <span className="font-mono text-caption tabular-nums text-muted-foreground">
+        <span className="text-caption tabular-nums text-muted-foreground">
           Updated {timeAgo(chat.lastMessageAt)}
         </span>
       </Link>

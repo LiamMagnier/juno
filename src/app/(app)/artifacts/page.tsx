@@ -27,6 +27,8 @@ import {
   WifiOff,
 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { LoadError } from "@/components/ui/load-error";
+import { cardVariants } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
@@ -602,11 +604,6 @@ function ArtifactsHome() {
         lede="Designs, sites, documents, diagrams and code made with Juno."
         actions={
           <>
-            {!loading && !empty && !error && (
-              <span className="font-mono text-caption tabular-nums text-muted-foreground">
-                {items.length} {items.length === 1 ? "artifact" : "artifacts"}
-              </span>
-            )}
             {/* Not while the first-run empty state shows: it already offers
                 New, 250px away, and a reader looking at two identical controls
                 has to work out which one is the real one. The empty state's
@@ -617,44 +614,60 @@ function ArtifactsHome() {
         }
       />
 
-      {/* Search + type filters — only once there is something to filter. */}
+      {/* Search, count and view on one row; the type filter on its own row
+          under it. Eight kinds do not fit beside a search field at any width
+          this column has, so the row used to wrap into three: search, the
+          kinds, then the view toggle stranded at the right on a line of its
+          own. The kinds scroll sideways inside their strip instead. */}
       {!loading && !empty && !error && (
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-0 flex-1 basis-48 sm:max-w-xs">
-            <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search artifacts…"
-              aria-label="Search artifacts"
-              className="pl-9"
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-0 flex-1 basis-48 sm:max-w-xs">
+              <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search artifacts…"
+                aria-label="Search artifacts"
+                className="pl-9"
+              />
+            </div>
+            <span className="ml-auto text-caption tabular-nums text-muted-foreground" aria-live="polite">
+              {filtered.length === items.length ? items.length : `${filtered.length} of ${items.length}`}{" "}
+              {items.length === 1 ? "artifact" : "artifacts"}
+            </span>
+            <SegmentedControl<ArtifactView>
+              value={view}
+              onChange={changeView}
+              options={VIEW_OPTIONS}
+              ariaLabel="Artifact view"
+              className="h-9 shrink-0"
             />
           </div>
           {/* Shown while a filter is on even when it is the only chip — an
               account of nothing but designs, opened at `?type=DESIGN`, should
               still see which filter it is looking through. */}
           {(chips.length > 1 || activeFilter !== "ALL") && (
-            <SegmentedControl<HomeTypeFilter>
-              value={activeFilter}
-              onChange={changeTypeFilter}
-              ariaLabel="Filter by type"
-              className="h-9 w-fit max-w-full shrink-0"
-              optionClassName="whitespace-nowrap"
-              options={(["ALL", ...chips] as const).map((t) => ({
-                value: t,
-                label: t === "ALL" ? "All" : TYPE_LABELS[t],
-                count: t === "ALL" ? items.length : (counts.get(t) ?? 0),
-              }))}
-            />
+            <div className="no-scrollbar -mx-1 overflow-x-auto px-1">
+              <SegmentedControl<HomeTypeFilter>
+                value={activeFilter}
+                onChange={changeTypeFilter}
+                ariaLabel="Filter by type"
+                // `w-max`, not `w-fit`: fit-content shrinks to the strip, and
+                // the grid's equal columns then crush eight labels into each
+                // other on a phone instead of letting the strip scroll.
+                className="h-9 w-max"
+                columns="content"
+                optionClassName="whitespace-nowrap"
+                options={(["ALL", ...chips] as const).map((t) => ({
+                  value: t,
+                  label: t === "ALL" ? "All" : TYPE_LABELS[t],
+                  count: t === "ALL" ? items.length : (counts.get(t) ?? 0),
+                }))}
+              />
+            </div>
           )}
-          <SegmentedControl<ArtifactView>
-            value={view}
-            onChange={changeView}
-            options={VIEW_OPTIONS}
-            ariaLabel="Artifact view"
-            className="ml-auto h-9 shrink-0"
-          />
         </div>
       )}
 
@@ -721,35 +734,35 @@ function ArtifactsHome() {
       )}
 
       {error ? (
-        <EmptyState
-          tone="error"
-          className="mt-6 motion-safe:animate-rise-in"
-          icon={error === "offline" ? WifiOff : undefined}
-          title={error === "offline" ? "You’re offline" : "Couldn’t load your artifacts"}
-          description={
-            error === "offline"
-              ? "Your artifacts will load again the moment the connection returns."
-              : "Something went wrong on the way here."
-          }
-          action={
-            <Button variant="secondary" size="sm" onClick={load}>
-              Try again
-            </Button>
-          }
-        />
+        error === "offline" ? (
+          <EmptyState
+            tone="error"
+            icon={WifiOff}
+            title="You’re offline"
+            description="Your artifacts will load again the moment the connection returns."
+          />
+        ) : (
+          <LoadError title="Couldn’t load your artifacts" onRetry={load} />
+        )
       ) : loading ? (
-        <ul className="mt-5 space-y-1" aria-label="Loading artifacts">
-          {[...Array(6)].map((_, i) => (
-            <li key={i} className="flex items-center gap-3 px-3 py-2.5" style={staggerDelay(i, "tight")}>
-              <Skeleton className="size-9 shrink-0 rounded-field" />
-              <span className="min-w-0 flex-1 space-y-2">
-                <Skeleton className="block h-3 w-48 max-w-full rounded-xs" />
-                <Skeleton className="block h-2.5 w-28 rounded-xs" />
-              </span>
-              <Skeleton className="hidden h-2.5 w-16 rounded-xs sm:block" />
-            </li>
-          ))}
-        </ul>
+        <div role="status" aria-label="Loading artifacts">
+          <div className="flex flex-wrap items-center gap-2" aria-hidden="true">
+            <Skeleton className="h-9 w-full max-w-xs rounded-field" />
+            <Skeleton className="ml-auto h-9 w-40 rounded-menu" />
+          </div>
+          <ul className="mt-5 space-y-1" aria-hidden="true">
+            {[...Array(6)].map((_, i) => (
+              <li key={i} className="flex items-center gap-3 px-3 py-2.5" style={staggerDelay(i, "tight")}>
+                <Skeleton className="size-9 shrink-0 rounded-field" />
+                <span className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="block h-3 w-48 max-w-full rounded-xs" />
+                  <Skeleton className="block h-2.5 w-28 rounded-xs" />
+                </span>
+                <Skeleton className="hidden h-2.5 w-40 rounded-xs sm:block" />
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : designsEmpty ? (
         <EmptyState
           className="mt-6"
@@ -762,8 +775,8 @@ function ArtifactsHome() {
         <EmptyState
           className="mt-6 motion-safe:animate-rise-in"
           icon={AppIcons.artifacts}
-          title="Nothing here yet"
-          description="Ask Juno to build a page, component, document or diagram, or start a design from a blank frame. Each one collects here."
+          title="No artifacts yet"
+          description="Ask Juno to build a page, a document or a diagram, or start a design from a blank frame."
           action={
             <>
               <Button size="sm" onClick={() => router.push("/chat")}>
@@ -819,13 +832,14 @@ function ArtifactsHome() {
               <li
                 key={item.id}
                 style={staggerDelay(i, "tight")}
-                // A tonal hover, and the glyph — not the card — is what lifts:
-                // the tile is a large surface and stays on the page, while
-                // `data-icon-trigger` lets the kind glyph play its `lift` — the
-                // one on the metadata line, and the preview's own when the tile
-                // has no source to show.
+                // The house interactive card: it lifts onto the larger throw
+                // under the pointer, like every tile that opens something, and
+                // `data-icon-trigger` lets the kind glyph play its `lift` too.
                 data-icon-trigger=""
-                className="group relative flex flex-col rounded-card border border-border bg-card p-2 transition-colors duration-fast ease-out-soft hover:bg-accent motion-safe:animate-rise-in [animation-fill-mode:backwards] motion-reduce:transition-none"
+                className={cn(
+                  cardVariants({ variant: "interactive" }),
+                  "group relative flex flex-col p-2 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+                )}
               >
                 <ArtifactPreview
                   type={item.type}
@@ -850,23 +864,19 @@ function ArtifactsHome() {
                     className="min-w-0 flex-1 outline-none after:absolute after:inset-0 after:rounded-card after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
                   >
                     <span className="block truncate text-ui font-medium">{item.title || "Untitled artifact"}</span>
-                    <span className="mt-0.5 flex items-center gap-1.5 font-mono text-caption tabular-nums text-muted-foreground">
+                    <span className="mt-0.5 flex items-center gap-1.5 text-caption tabular-nums text-muted-foreground">
                       {/* The list row's kind mark, at metadata size: a tile
                           previewing its source otherwise had no glyph at all,
                           so the two views named the same kind two ways. */}
                       <Icon className="size-3 shrink-0" motion="lift" aria-hidden />
-                      <span className="truncate">{rt.label}</span>
-                      {item.version > 1 && (
-                        <>
-                          <span aria-hidden className="size-1 shrink-0 rounded-full bg-border" />
-                          <span className="shrink-0">v{item.version}</span>
-                        </>
-                      )}
-                      <span aria-hidden className="size-1 shrink-0 rounded-full bg-border" />
+                      <span className="truncate">
+                        {rt.label}
+                        {item.version > 1 && <span className="ml-1.5">v{item.version}</span>}
+                      </span>
                       <time
                         dateTime={item.updatedAt}
                         title={new Date(item.updatedAt).toLocaleString()}
-                        className="shrink-0"
+                        className="ml-auto shrink-0"
                       >
                         {timeAgo(item.updatedAt)}
                       </time>
@@ -924,19 +934,21 @@ function ArtifactsHome() {
                   <span className="mt-0.5 block truncate text-caption text-muted-foreground">in “{item.conversationTitle}”</span>
                 </Link>
 
-                <span className="hidden shrink-0 items-center gap-1.5 font-mono text-caption tabular-nums text-muted-foreground sm:flex">
-                  <span>{rt.label}</span>
-                  {item.version > 1 && (
-                    <>
-                      <span aria-hidden className="size-1 rounded-full bg-border" />
-                      <span>v{item.version}</span>
-                    </>
-                  )}
-                  <span aria-hidden className="size-1 rounded-full bg-border" />
-                  <time dateTime={item.updatedAt} title={new Date(item.updatedAt).toLocaleString()}>
-                    {timeAgo(item.updatedAt)}
-                  </time>
+                {/* Kind, version and age in fixed columns, the way the
+                    Library's list sets Type, Size and Added: down a list of
+                    rows the eye reads a column, and a run of dotted fragments
+                    of different lengths lined up with nothing. */}
+                <span className="hidden w-24 shrink-0 truncate text-caption text-muted-foreground sm:block">{rt.label}</span>
+                <span className="hidden w-8 shrink-0 text-caption tabular-nums text-muted-foreground sm:block">
+                  {item.version > 1 ? `v${item.version}` : ""}
                 </span>
+                <time
+                  dateTime={item.updatedAt}
+                  title={new Date(item.updatedAt).toLocaleString()}
+                  className="hidden w-16 shrink-0 text-right text-caption tabular-nums text-muted-foreground sm:block"
+                >
+                  {timeAgo(item.updatedAt)}
+                </time>
 
                 <div className="relative z-10 flex shrink-0 items-center">
                   {renderActions(item)}

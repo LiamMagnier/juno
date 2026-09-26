@@ -20,7 +20,7 @@ export default function ArtifactsLoading() {
 
       <div className="flex flex-wrap items-center gap-2">
         <Skeleton className="h-9 w-full max-w-xs rounded-field" />
-        <Skeleton className="h-9 w-52 max-w-full rounded-menu" />
+        <Skeleton className="ml-auto h-9 w-40 rounded-menu" />
       </div>
       <ul className="mt-5 space-y-1">
         {[...Array(6)].map((_, i) => (
@@ -34,7 +34,7 @@ export default function ArtifactsLoading() {
               <Skeleton className="block h-3 w-48 max-w-full rounded-xs" />
               <Skeleton className="block h-2.5 w-28 rounded-xs" />
             </span>
-            <Skeleton className="hidden h-2.5 w-16 rounded-xs sm:block" />
+            <Skeleton className="hidden h-2.5 w-40 rounded-xs sm:block" />
           </li>
         ))}
       </ul>

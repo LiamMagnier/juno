@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ActionIcons, AppIcons } from "@/lib/app-icons";
+import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Switch } from "@/components/ui/switch";
@@ -14,7 +14,7 @@ import { createSaveLedger } from "@/components/settings/save-ledger";
 import { useSaveStates, type SaveState } from "@/components/settings/save-status";
 import { useSettingsResource } from "@/components/settings/use-settings-resource";
 import { queueSettingsPatch } from "@/components/settings/use-settings-save";
-import { SettingRow, SettingRowSkeleton, SettingsGroup } from "@/components/settings/setting-row";
+import { SettingRow, SettingRowSkeleton, SettingsGroup, SettingsInlineError } from "@/components/settings/setting-row";
 // Type-only on purpose. `@/lib/action-approval` pulls in node:crypto for the
 // receipt and policy digests, so importing a VALUE from it would drag that into
 // the browser bundle. POLICY_OPTIONS below is keyed by the union, so adding a
@@ -216,20 +216,9 @@ export function ConnectorsView({
         }
       >
         {connectorsFailed ? (
-          <div className="py-4">
-            <EmptyState
-              tone="error"
-              size="panel"
-              title="Couldn’t load your apps"
-              description="The list didn’t come back. Nothing has been disconnected."
-              action={
-                <Button variant="outline" size="sm" onClick={onRetryConnectors}>
-                  <ActionIcons.refresh className="size-4" aria-hidden="true" />
-                  Try again
-                </Button>
-              }
-            />
-          </div>
+          <SettingsInlineError onRetry={onRetryConnectors}>
+            Couldn’t load your apps. Nothing has been disconnected.
+          </SettingsInlineError>
         ) : connectors === null ? (
           <>
             <SettingRowSkeleton />
@@ -293,20 +282,9 @@ export function ConnectorsView({
         description="Juno checks these before every action in a connected app, so a change applies to chats already open."
       >
         {policyFailed ? (
-          <div className="py-4">
-            <EmptyState
-              tone="error"
-              size="panel"
-              title="Couldn’t load your permissions"
-              description="Nothing is shown rather than a guess."
-              action={
-                <Button variant="outline" size="sm" onClick={onRetryPolicy}>
-                  <ActionIcons.refresh className="size-4" aria-hidden="true" />
-                  Try again
-                </Button>
-              }
-            />
-          </div>
+          <SettingsInlineError onRetry={onRetryPolicy}>
+            Couldn’t load your permissions. They still apply as they were.
+          </SettingsInlineError>
         ) : !policy || !currentPolicy ? (
           <>
             <SettingRowSkeleton />

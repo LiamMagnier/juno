@@ -50,7 +50,7 @@ const base = {
   conversationId: null,
 } satisfies Partial<LibraryItem>;
 
-const ITEMS: LibraryItem[] = [
+export const ITEMS: LibraryItem[] = [
   {
     ...base,
     id: "fx-1",
@@ -157,7 +157,7 @@ const ITEMS: LibraryItem[] = [
  * Recently deleted: a file nothing used (a tombstone, its link withheld) and
  * two that only left the Library, whose chat and project still have them.
  */
-const DELETED_ITEMS: LibraryItem[] = [
+export const DELETED_ITEMS: LibraryItem[] = [
   {
     ...base,
     id: "fx-d1",
@@ -232,7 +232,7 @@ const UPLOADS: LibraryUpload[] = [
   },
 ];
 
-const STORAGE = { usedBytes: 1_240_000_000, quotaBytes: 10_737_418_240, remainingBytes: 9_497_418_240 };
+export const STORAGE = { usedBytes: 1_240_000_000, quotaBytes: 10_737_418_240, remainingBytes: 9_497_418_240 };
 
 const FAVORITE_MODELS: ModelId[] = ["anthropic:claude-opus-5-5", "openai:gpt-6-sol"];
 const RECENT_MODELS: ModelId[] = ["anthropic:claude-sonnet-5", "google:gemini-3.8-flash"];

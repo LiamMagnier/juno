@@ -286,8 +286,11 @@ export function CompareView() {
     >
       <AppPageHeader
         className="shrink-0"
-        eyebrow={`One prompt · ${panes.length} models`}
         heading="Compare"
+        // What the tool does and what it shows that chat does not, in one
+        // line. It replaces the eyebrow ("One prompt · 2 models"), which
+        // counted the panes the page draws directly below it.
+        lede="Ask up to three models at once and compare their answers and cost."
         actions={
           <span className="text-right text-caption text-muted-foreground">
             Comparisons aren&rsquo;t saved
@@ -334,7 +337,7 @@ export function CompareView() {
                 </TooltipContent>
               </Tooltip>
               {/* tabular-nums: this counter changes in place as panes come and go. */}
-              <span className="px-1 font-mono text-caption tabular-nums text-muted-foreground">
+              <span className="px-1 text-caption tabular-nums text-muted-foreground">
                 {panes.length}/{MAX_PANES}
               </span>
             </>
@@ -371,17 +374,13 @@ export function CompareView() {
         )}
       >
         {!hasRun && (
-          <div className="flex shrink-0 flex-col items-center gap-4 pb-8 pt-6 text-center motion-safe:animate-rise-in">
-            {/* The display rung — this was a hand-set text-xl/2xl with its own
-                tracking, which is the one heading in the app that never landed
-                on the scale. Set in the UI face: this is a tool's hero, not the
-                greeting, which keeps the serif to itself. */}
-            <h2 className="text-balance font-sans text-display">
-              Same prompt, different minds
-            </h2>
-            <p className="max-w-md text-pretty text-body leading-6 text-muted-foreground">
-              Watch {panes.length} models answer live, side by side — with the real cost of every reply.
-            </p>
+          <div className="flex shrink-0 flex-col items-center gap-3 pb-8 pt-4 text-center motion-safe:animate-rise-in">
+            {/* No second heading. This was a display-size "Same prompt,
+                different minds" and a sentence under it, a hero stacked under
+                the page's own title and lede that said the same thing twice.
+                What is left is the part that acts: three prompts to start
+                with, under a label that says so. */}
+            <p className="text-ui text-muted-foreground">Start with one of these</p>
             <div className="flex w-full max-w-2xl flex-wrap justify-center gap-2">
               {SAMPLE_PROMPTS.map((sample, i) => (
                 <button

@@ -121,7 +121,7 @@ export function ProjectWorkDefaults({
 
   return (
     <Card className="p-5">
-      <CardEyebrow>Task defaults</CardEyebrow>
+      <CardEyebrow className="font-sans text-caption font-medium">Task defaults</CardEyebrow>
       <p className="mt-1 text-body text-muted-foreground">
         What a task filed in this project starts with. Each of these is a starting point, not a
         permission: a task can still be told something different, and nothing here gives Juno

@@ -71,7 +71,7 @@ export function ProjectWorkList({
             className="pl-9"
           />
         </div>
-        <span className="font-mono text-caption tabular-nums text-muted-foreground">
+        <span className="text-caption tabular-nums text-muted-foreground">
           {filtered.length} of {workRuns.length}
         </span>
         <Button type="button" size="sm" variant="secondary" onClick={onNewWork} className="ml-auto">
@@ -124,7 +124,7 @@ export function ProjectWorkList({
                     </p>
                   </div>
                 </div>
-                <div className="mt-auto flex items-center justify-between gap-3 border-t border-border/60 pt-3 font-mono text-caption tabular-nums text-muted-foreground">
+                <div className="mt-auto flex items-center justify-between gap-3 border-t border-border/60 pt-3 text-caption tabular-nums text-muted-foreground">
                   <AgentStatusBadge status={work.status} size="sm" />
                   <span>Updated {timeAgo(work.updatedAt || work.createdAt)}</span>
                 </div>
