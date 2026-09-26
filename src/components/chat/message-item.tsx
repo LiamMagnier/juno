@@ -83,7 +83,7 @@ const ImageEditOverlay = nextDynamic(
   () => import("@/components/chat/image-edit-overlay").then((m) => m.ImageEditOverlay),
   { ssr: false },
 );
-import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { PhaseOrb } from "@/components/effects/phase-orb";
 import { splitMessageContent, stripMemoryTags } from "@/lib/message-content";
 import { resolveModel } from "@/lib/models";
 import { MESSAGE_DISPLAY_COLLAPSE_CHARS, sampleLineCount } from "@/lib/prompt-limits";
@@ -174,7 +174,17 @@ function StreamStatus({
 
   return (
     <div className="flex min-h-10 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
-      <ThinkingDots className="text-muted-foreground" />
+      <PhaseOrb
+        state={
+          recovering || submitting
+            ? "connecting"
+            : label || checking
+              ? "working"
+              : writing
+                ? "composing"
+                : "breathing"
+        }
+      />
       {/* Plain muted text beside the dots; the dots are the one moving thing
           in this row. The sentence used to shimmer as well, which put two
           animations on one line and a fifth "working" signal on the reply

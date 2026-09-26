@@ -13,9 +13,12 @@ import { cn } from "@/lib/utils";
  *    is the hero object on an empty chat, and the one thing on the page that
  *    wants to be found. The bloom stops at the first keystroke (`idle` goes
  *    false with a draft) and never comes back in a conversation.
- *  - STREAMING, once a reply has run for more than 3 s: `line`, a light that
- *    travels the bottom edge while the model works. Under 3 s nothing lights;
- *    a flash of a beam reads as a glitch.
+ *  - STREAMING, once a reply has run for more than 3 s: `md`, a light that
+ *    travels the composer's border while the model works. Under 3 s nothing
+ *    lights; a flash of a beam reads as a glitch. (The brief named `line`;
+ *    on Juno's light paper `line` renders as a grey smudge with hard spikes,
+ *    while `md` in the same palette reads as warm light on the edge in both
+ *    themes, and is the package's own recipe for a streaming composer.)
  *
  * WHY TWO WRAPPERS AND WHY THEY ARE ALWAYS MOUNTED. The composer's field must
  * never remount (it would drop focus and the caret mid-sentence), so the tree
@@ -25,8 +28,8 @@ import { cn } from "@/lib/utils";
  *  - The idle bloom WRAPS the surface: `pulse-outside` is the one type that
  *    does not clip (`overflow: visible`), and its halo needs the opaque card
  *    in front of it.
- *  - The streaming line is an OVERLAY the size of the surface, not a wrapper:
- *    `line` clips its wrapper, and the composer floats its slash palette and
+ *  - The streaming beam is an OVERLAY the size of the surface, not a wrapper:
+ *    the rotate types clip their wrapper, and the composer floats its slash palette and
  *    clarification card off its own top edge, which a clipping wrapper would
  *    cut off. The overlay has the composer's radius and ignores the pointer.
  *
@@ -35,7 +38,7 @@ import { cn } from "@/lib/utils";
  * and nothing lights before mount, so there is no hydration flip.
  *
  * Reduced motion: the pulse types ship their own `animation: none` block, the
- * rotate types do not, so the line is turned off here. The composer's own
+ * rotate types do not, so the travelling beam is turned off here. The composer's own
  * Stop button and `aria-busy` carry the state either way; the light is
  * decoration.
  */
@@ -69,11 +72,11 @@ export function ComposerBeam({
     >
       {children}
       <BorderBeam
-        size="line"
+        size="md"
         colorVariant="sunset"
         staticColors
         theme={theme ?? "light"}
-        strength={0.85}
+        strength={0.75}
         active={ready && longWait && !reduced}
         aria-hidden="true"
         className="pointer-events-none !absolute inset-0 rounded-composer"

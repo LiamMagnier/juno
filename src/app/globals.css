@@ -1622,6 +1622,12 @@
       border-color var(--dur-fast) var(--ease-out-soft),
       box-shadow   var(--dur-fast) var(--ease-out-soft);
   }
+  /* Text and controls inside a Voice glow host sit above the glow's layers
+     (the package stacks them at z-index 1-4). */
+  .voice-glow-content {
+    position: relative;
+    z-index: 5;
+  }
   .composer-surface:focus-within {
     border-color: hsl(var(--foreground) / .3);
     box-shadow:
