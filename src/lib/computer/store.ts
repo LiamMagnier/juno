@@ -1,9 +1,8 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
-import { prisma, prismaUnguarded } from "@/lib/db";
 import { env } from "@/lib/env";
-import { getObjectBytes, putObject } from "@/lib/storage";
+import { windowLimitMessage } from "@/lib/spend-ceiling";
 import { stopStream } from "./live-view";
 import { computerProvider, isAgentComputerConfigured } from "./provider";
 import type {
@@ -181,6 +180,7 @@ function toRow(raw: {
 
 const prismaPersistence: ComputerStorePersistence = {
   async findByAgent(userId, agentId) {
+    const { prisma } = await import("@/lib/db");
     const row = await prisma.agentComputer.findFirst({
       where: { userId, agentId },
     });
@@ -188,6 +188,7 @@ const prismaPersistence: ComputerStorePersistence = {
   },
 
   async findAllActiveUnguarded() {
+    const { prismaUnguarded } = await import("@/lib/db");
     const rows = await prismaUnguarded.agentComputer.findMany({
       where: {
         OR: [
@@ -201,6 +202,7 @@ const prismaPersistence: ComputerStorePersistence = {
   },
 
   async countAwakeHostUnguarded(excludeAgentId) {
+    const { prismaUnguarded } = await import("@/lib/db");
     return prismaUnguarded.agentComputer.count({
       where: {
         status: { in: ["awake", "starting"] },
@@ -210,6 +212,7 @@ const prismaPersistence: ComputerStorePersistence = {
   },
 
   async countAwakeUser(userId, excludeAgentId) {
+    const { prisma } = await import("@/lib/db");
     return prisma.agentComputer.count({
       where: {
         userId,
@@ -220,6 +223,7 @@ const prismaPersistence: ComputerStorePersistence = {
   },
 
   async upsertByAgent(userId, agentId, createData, updateData) {
+    const { prisma } = await import("@/lib/db");
     const existing = await prisma.agentComputer.findFirst({
       where: { userId, agentId },
     });
@@ -237,6 +241,7 @@ const prismaPersistence: ComputerStorePersistence = {
   },
 
   async updateByAgent(userId, agentId, data) {
+    const { prisma } = await import("@/lib/db");
     const existing = await prisma.agentComputer.findFirst({
       where: { userId, agentId },
     });
@@ -251,12 +256,14 @@ const prismaPersistence: ComputerStorePersistence = {
   },
 
   async deleteByAgent(userId, agentId) {
+    const { prisma } = await import("@/lib/db");
     await prisma.agentComputer.deleteMany({
       where: { userId, agentId },
     });
   },
 
   async acquireLeaseCas(userId, agentId, runId, now, expiresAt) {
+    const { prisma } = await import("@/lib/db");
     const updated = await prisma.agentComputer.updateMany({
       where: {
         userId,
@@ -284,6 +291,7 @@ const prismaPersistence: ComputerStorePersistence = {
   },
 
   async renewLeaseCas(userId, agentId, runId, now, expiresAt) {
+    const { prisma } = await import("@/lib/db");
     const updated = await prisma.agentComputer.updateMany({
       where: {
         userId,
@@ -299,6 +307,7 @@ const prismaPersistence: ComputerStorePersistence = {
   },
 
   async releaseLeaseCas(userId, agentId, runId, now) {
+    const { prisma } = await import("@/lib/db");
     const updated = await prisma.agentComputer.updateMany({
       where: {
         userId,
@@ -490,6 +499,7 @@ export async function getPosterBytes(
   if (cached) return cached.jpeg;
   if (activePersistence !== prismaPersistence) return null;
   try {
+    const { getObjectBytes } = await import("@/lib/storage");
     const obj = await getObjectBytes(posterStorageKey(userId, agentId));
     return Buffer.from(obj.bytes);
   } catch {
@@ -507,6 +517,7 @@ async function capturePosterQuietly(
     const shot = await provider.screenshot(handle);
     setCachedPoster(agentId, shot);
     if (activePersistence === prismaPersistence) {
+      const { putObject } = await import("@/lib/storage");
       await putObject(
         posterStorageKey(userId, agentId),
         shot.jpeg,
@@ -609,6 +620,63 @@ export async function enableComputer(
   );
 }
 
+export function computerCostMicroUsdPerSecond(): number {
+  const perMin = env.agentComputer.costUsdPerMin;
+  if (!Number.isFinite(perMin) || perMin <= 0) return 0;
+  return Math.max(0, Math.round((perMin * 1_000_000) / 60));
+}
+
+export async function billComputerSeconds(input: {
+  userId: string;
+  agentId: string;
+  seconds: number;
+  runId?: string | null;
+}): Promise<number> {
+  const rate = computerCostMicroUsdPerSecond();
+  const secs = Math.max(0, Math.floor(input.seconds));
+  if (rate <= 0 || secs <= 0) return 0;
+  const costMicroUsd = secs * rate;
+  if (activePersistence === prismaPersistence) {
+    const { recordSpend } = await import("@/lib/spend");
+    await recordSpend({
+      userId: input.userId,
+      model: "agent-computer",
+      kind: "work",
+      costUsd: costMicroUsd / 1_000_000,
+      idempotencyKey: input.runId
+        ? `computer:${input.agentId}:run:${input.runId}:${secs}`
+        : `computer:${input.agentId}:idle:${Date.now()}:${secs}`,
+    }).catch(() => {});
+  }
+  return costMicroUsd;
+}
+
+export async function settleRunComputerBilling(
+  userId: string,
+  agentId: string,
+  runId: string,
+  now = new Date()
+): Promise<number> {
+  const row = await activePersistence.findByAgent(userId, agentId);
+  if (!row || row.status !== "awake" || !row.lastResumedAt) return 0;
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor((now.getTime() - row.lastResumedAt.getTime()) / 1000)
+  );
+  if (elapsedSeconds <= 0) return 0;
+  await activePersistence.updateByAgent(userId, agentId, {
+    lastResumedAt: now,
+    lastActiveAt: now,
+    activeSeconds: row.activeSeconds + elapsedSeconds,
+  });
+  return billComputerSeconds({
+    userId,
+    agentId,
+    seconds: elapsedSeconds,
+    runId,
+  });
+}
+
 export async function ensureAwake(
   userId: string,
   agentId: string,
@@ -622,6 +690,18 @@ export async function ensureAwake(
   const provider = computerProvider();
   if (!provider || !(await isAgentComputerConfigured())) {
     throw new Error("Agent computers are not configured on this server.");
+  }
+
+  if (activePersistence === prismaPersistence && computerCostMicroUsdPerSecond() > 0) {
+    const [{ getUserPlan }, { checkUsageWindows }] = await Promise.all([
+      import("@/lib/usage"),
+      import("@/lib/spend"),
+    ]);
+    const plan = await getUserPlan(userId);
+    const windows = await checkUsageWindows(userId, plan);
+    if (!windows.allowed && windows.bound !== null) {
+      throw new Error(windowLimitMessage(windows.bound, windows.resetsAtMs));
+    }
   }
 
   let row = await activePersistence.findByAgent(userId, agentId);
@@ -723,6 +803,15 @@ export async function restComputer(
       ? Math.max(0, Math.floor((now.getTime() - row.lastResumedAt.getTime()) / 1000))
       : 0;
 
+  if (elapsedSeconds > 0) {
+    await billComputerSeconds({
+      userId,
+      agentId,
+      seconds: elapsedSeconds,
+      runId: row.leaseRunId,
+    });
+  }
+
   return activePersistence.updateByAgent(userId, agentId, {
     status: liveState === "missing" || liveState === "exited" ? "asleep" : "resting",
     streamOn: false,
@@ -760,6 +849,15 @@ export async function sleepComputer(
     row.status === "awake" && row.lastResumedAt
       ? Math.max(0, Math.floor((now.getTime() - row.lastResumedAt.getTime()) / 1000))
       : 0;
+
+  if (elapsedSeconds > 0) {
+    await billComputerSeconds({
+      userId,
+      agentId,
+      seconds: elapsedSeconds,
+      runId: row.leaseRunId,
+    });
+  }
 
   return activePersistence.updateByAgent(userId, agentId, {
     status: "asleep",
@@ -884,3 +982,89 @@ export async function releaseComputerLease(
 ): Promise<boolean> {
   return activePersistence.releaseLeaseCas(userId, agentId, runId, now);
 }
+
+export const YOUR_COMPUTER_PROMPT_SECTION =
+  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium, and the person can watch the same screen. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. Stay signed in to sites between tasks: your sign-ins persist. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, call `ask_user` and ask them to take over your computer for that step. Never ask for a secret in the chat and never type one you were told in the chat.";
+
+export const BUSY_COMPUTER_FALLBACK_NOTE =
+  "Your computer is busy with another task; you're using a temporary browser for this one.";
+
+export type RunComputerAttachment =
+  | {
+      attached: true;
+      agentId: string;
+      row: AgentComputerRow;
+      handle: ComputerHandle;
+      secrets: ComputerSecrets;
+      provider: ComputerProvider;
+      promptSection: string;
+      release(): Promise<void>;
+    }
+  | {
+      attached: false;
+      fallbackReason: "not_enabled" | "busy" | "unavailable";
+      note: string | null;
+    };
+
+export async function resolveRunComputerSession(input: {
+  userId: string;
+  agentId: string | null | undefined;
+  runId: string;
+  renewIntervalMs?: number;
+}): Promise<RunComputerAttachment> {
+  if (!input.agentId) {
+    return { attached: false, fallbackReason: "not_enabled", note: null };
+  }
+  if (!(await isAgentComputerConfigured())) {
+    return { attached: false, fallbackReason: "not_enabled", note: null };
+  }
+  const existing = await activePersistence.findByAgent(input.userId, input.agentId);
+  if (!existing) {
+    return { attached: false, fallbackReason: "not_enabled", note: null };
+  }
+
+  const lease = await acquireComputerLease(input.userId, input.agentId, input.runId);
+  if (!lease.acquired) {
+    return {
+      attached: false,
+      fallbackReason: "busy",
+      note: BUSY_COMPUTER_FALLBACK_NOTE,
+    };
+  }
+
+  const agentId = input.agentId;
+  try {
+    const awake = await ensureAwake(input.userId, agentId);
+    const renewMs = input.renewIntervalMs ?? 40_000;
+    const timer = setInterval(() => {
+      void renewComputerLease(input.userId, agentId, input.runId).catch(() => {});
+    }, renewMs);
+    timer.unref?.();
+
+    let released = false;
+    return {
+      attached: true,
+      agentId,
+      row: awake.row,
+      handle: awake.handle,
+      secrets: awake.secrets,
+      provider: awake.provider,
+      promptSection: YOUR_COMPUTER_PROMPT_SECTION,
+      async release() {
+        if (released) return;
+        released = true;
+        clearInterval(timer);
+        await settleRunComputerBilling(input.userId, agentId, input.runId).catch(() => {});
+        await releaseComputerLease(input.userId, agentId, input.runId).catch(() => {});
+      },
+    };
+  } catch {
+    await releaseComputerLease(input.userId, agentId, input.runId).catch(() => {});
+    return {
+      attached: false,
+      fallbackReason: "unavailable",
+      note: BUSY_COMPUTER_FALLBACK_NOTE,
+    };
+  }
+}
+

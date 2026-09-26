@@ -22,11 +22,35 @@ python3 /opt/juno/cdp-gate.py >/tmp/cdp-gate.log 2>&1 &
 gate=$!
 
 chrome=0
+stopping=0
 stop() {
+  stopping=1
   if [ "$chrome" -ne 0 ]; then
+    python3 -c '
+import base64, json, socket, urllib.request
+try:
+    info = json.loads(urllib.request.urlopen("http://127.0.0.1:9223/json/version", timeout=2).read())
+    path = "/" + info["webSocketDebuggerUrl"].split("/", 3)[3]
+    s = socket.create_connection(("127.0.0.1", 9223), timeout=2)
+    key = base64.b64encode(b"juno-cdp-close01").decode()
+    req = f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1:9223\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
+    s.sendall(req.encode())
+    s.recv(4096)
+    msg = b"{\"id\":1,\"method\":\"Browser.close\"}"
+    s.sendall(bytearray([0x81, 0x80 | len(msg), 0, 0, 0, 0]) + msg)
+    s.recv(1024)
+    s.close()
+except Exception:
+    pass
+' 2>/dev/null
+    for _ in $(seq 1 30); do
+      kill -0 "$chrome" 2>/dev/null || break
+      sleep 0.1
+    done
     kill -TERM "$chrome" 2>/dev/null
     wait "$chrome" 2>/dev/null
   fi
+  sync
   pkill -TERM -x x11vnc 2>/dev/null
   kill -TERM "$gate" "$session" 2>/dev/null
   kill -TERM "$xvfb" 2>/dev/null
@@ -35,7 +59,7 @@ stop() {
 trap stop TERM INT
 
 sleep 2
-while true; do
+while [ "$stopping" -eq 0 ]; do
   # A stale lock from an unclean stop makes Chromium refuse the profile.
   rm -f /home/agent/.chrome/SingletonLock /home/agent/.chrome/SingletonSocket /home/agent/.chrome/SingletonCookie
   chromium \
@@ -51,5 +75,6 @@ while true; do
     about:blank >/tmp/chromium.log 2>&1 &
   chrome=$!
   wait "$chrome"
+  [ "$stopping" -ne 0 ] && break
   sleep 1
 done

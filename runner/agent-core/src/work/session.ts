@@ -504,14 +504,21 @@ export class WorkAgentSession {
   }
 
   checkpoint(): WorkCheckpoint {
+    const scrubbedMessages: ChatMessage[] = this.messages.map((msg) => {
+      if (msg.role !== 'user') return msg;
+      return {
+        role: 'user',
+        content: msg.content.map((part): UserContent =>
+          part.type === 'image'
+            ? { type: 'text', text: '[Screenshot omitted from the saved run]' }
+            : part,
+        ),
+      };
+    });
     return {
       runId: this.runId,
       version: 1,
-      // A shallow copy is a real snapshot here: the loop only ever appends to
-      // the transcript, so the messages already in it are never rewritten. A
-      // shared reference would let the run keep growing a checkpoint someone
-      // is in the middle of serialising.
-      messages: [...this.messages],
+      messages: scrubbedMessages,
       plan: this.plan.toJSON(),
       budget: this.budget.toJSON(),
       seq: this.seq,
@@ -840,7 +847,7 @@ export class WorkAgentSession {
     id: string;
     name: string;
     input: Record<string, unknown>;
-  }): Promise<UserContent> {
+  }): Promise<UserContent | UserContent[]> {
     if (call.name === WORK_ASK_TOOL_NAME) return this.handleQuestion(call);
     if (call.name === WORK_PLAN_TOOL_NAME) return this.handlePlanUpdate(call);
     if (call.name === WORK_WRITE_PLAN_TOOL_NAME) return this.handlePlanWrite(call);
@@ -853,7 +860,12 @@ export class WorkAgentSession {
 
     // Progress accounting runs before the tier check so that a run looping on
     // refusals is caught by the same detector as one looping on successes.
+    const rawInput = call.input;
+    if (tool.signatureInput) {
+      call = { ...call, input: tool.signatureInput(rawInput) as Record<string, unknown> };
+    }
     const verdict = this.plan.observeToolCall(call.name, call.input);
+    call = { ...call, input: rawInput };
     if (verdict.state !== 'progressing') {
       this.haltReason = verdict.reason;
       this.emit({ kind: 'tool_denied', callId: call.id, tool: call.name, reason: verdict.reason });
@@ -877,19 +889,6 @@ export class WorkAgentSession {
     const risk = tool.riskFor(call.input);
     const provenance = tool.provenanceFor(call.input);
 
-    // The mode decides, above the floor. `approvalAsksUnder` checks the floor
-    // first and separately, so Skip cannot reach past it — the four things Juno
-    // cannot take back still ask under every mode.
-    //
-    // Neither can a standing grant, and that needs saying twice. The grant is
-    // keyed on the action NAME, while the floor is a question about the name
-    // and the risk together, so one action can be below the floor on one call
-    // and above it on the next: `work.browser.submit` is `command` for a search
-    // box and `irreversible` for a form that posts. Recording the grant is
-    // already refused for the second kind; without re-checking the floor here,
-    // a grant recorded on the first would still cover it, and one "and stop
-    // asking" on a search would authorise every checkout for the rest of the
-    // run.
     const floored = requiresExplicitApproval(action, risk);
     if (
       approvalAsksUnder(action, risk, this.options.approvalMode ?? 'conservative') &&
@@ -904,9 +903,6 @@ export class WorkAgentSession {
         this.emit({ kind: 'tool_denied', callId: call.id, tool: call.name, reason });
         return this.toolResult(call.id, reason, true);
       }
-      // `allowed_always` never covers the always-confirm list: those are the
-      // actions Juno cannot undo, and a standing grant for "send a message" is
-      // a standing grant to send every future message.
       if (answer === 'allowed_always' && risk !== 'irreversible' && risk !== 'sensitive') {
         this.grantedAlways.add(action);
       }
@@ -930,10 +926,12 @@ export class WorkAgentSession {
     const startedAt = this.clock.now();
     let output: string;
     let isError = false;
+    let images: ReadonlyArray<{ mediaType: 'image/jpeg' | 'image/png'; data: string }> | undefined;
     try {
       const result = await tool.execute(call.input, ctx);
       output = result.output;
       isError = result.isError ?? false;
+      images = result.images;
     } catch (err) {
       output = `Tool crashed: ${err instanceof Error ? err.message : String(err)}`;
       isError = true;
@@ -956,11 +954,6 @@ export class WorkAgentSession {
       if (scanned.detected) {
         this.options.callbacks.onAudit?.(injectionAuditIntent(provenance.source, scanned));
       }
-      // The content goes through unchanged inside the envelope. Stripping the
-      // matched span here would hand the model text that reads as coherent
-      // with a hole in it, and would hide from the user that anything was in
-      // it at all; the envelope plus the system-prompt rule is the mitigation,
-      // and the grant and the egress policy are the containment.
       content = wrapUntrusted(provenance.source, output);
     }
 
@@ -973,7 +966,19 @@ export class WorkAgentSession {
       provenance,
       ...(injection ? { injection } : {}),
     });
-    return this.toolResult(call.id, content, isError);
+
+    const resultBlock = this.toolResult(call.id, content, isError);
+    if (!isError && images && images.length > 0) {
+      return [
+        resultBlock,
+        ...images.map((img): UserContent => ({
+          type: 'image',
+          mediaType: img.mediaType,
+          data: img.data,
+        })),
+      ];
+    }
+    return resultBlock;
   }
 
   private async handleQuestion(call: {

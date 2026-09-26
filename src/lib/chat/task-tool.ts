@@ -611,6 +611,7 @@ async function startTask(
 
   // Built through the route's own schema, so the task is bounded exactly like
   // one a person creates.
+  const requestedTarget = ctx.agent ? "cloud" : "automatic";
   const createBody = protocol.createSessionSchema.safeParse({
     goal: composeTaskGoal({
       request: ctx.userRequest,
@@ -619,7 +620,7 @@ async function startTask(
       skillSlug: ctx.skillSlug,
     }),
     title: args.title,
-    requestedTarget: "automatic",
+    requestedTarget,
     ...(ctx.conversation.projectId ? { projectId: ctx.conversation.projectId } : {}),
     conversationId: ctx.conversation.id,
     model: ctx.model,
@@ -685,7 +686,7 @@ async function startTask(
   try {
     const runBody = protocol.startRunSchema.parse({
       origin: "manual",
-      requestedTarget: "automatic",
+      requestedTarget,
       idempotencyKey: keys.run,
     });
 

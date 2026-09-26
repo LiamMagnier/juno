@@ -40,7 +40,8 @@ def handle(c):
             if key == b"origin":
                 continue
             out.append(line)
-        if not (ok and upgrade):
+        is_json = lines[0].startswith(b"GET /json/")
+        if not (ok and (upgrade or is_json)):
             c.sendall(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
             c.close(); return
         u = socket.create_connection(("127.0.0.1", 9223))

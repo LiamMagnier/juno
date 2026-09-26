@@ -24,7 +24,11 @@ export interface ConnectAgentBrowserOptions {
   actionTimeoutMs?: number;
 }
 
-function createFakeAgentBrowser(): WorkBrowser {
+export interface RemoteAgentBrowser extends WorkBrowser {
+  withPage<T>(fn: (page: Page) => Promise<T>): Promise<T>;
+}
+
+function createFakeAgentBrowser(): RemoteAgentBrowser {
   let currentUrlValue = "";
   let elements: BrowserElement[] = [];
   let takesPayment = false;
@@ -101,6 +105,9 @@ function createFakeAgentBrowser(): WorkBrowser {
       }
       return { ok: true, page: makePageState(currentUrlValue) };
     },
+    async withPage(): Promise<never> {
+      throw new Error("withPage is only available on real CDP browsers");
+    },
     async close(): Promise<void> {
       // No-op for fake browser
     },
@@ -111,7 +118,7 @@ export function connectAgentBrowser(
   handle: ComputerHandle,
   secrets: ComputerSecrets,
   options?: ConnectAgentBrowserOptions
-): WorkBrowser {
+): RemoteAgentBrowser {
   const provider = options?.provider ?? computerProvider();
   if (provider?.name === "fake") {
     return createFakeAgentBrowser();
@@ -130,25 +137,29 @@ export function connectAgentBrowser(
 
   async function resolveWsEndpoint(baseCdpUrl: string): Promise<string> {
     if (!provider) return baseCdpUrl;
-    try {
-      const versionRes = await provider.exec(
-        handle,
-        "curl -sf http://127.0.0.1:9223/json/version",
-        { timeoutSeconds: 5 }
-      );
-      if (versionRes.exitCode === 0 && versionRes.stdout.trim()) {
-        const parsed = JSON.parse(versionRes.stdout) as {
-          webSocketDebuggerUrl?: string;
-        };
-        if (parsed.webSocketDebuggerUrl) {
-          const u = new URL(parsed.webSocketDebuggerUrl);
-          const base = new URL(baseCdpUrl);
-          base.pathname = u.pathname;
-          return base.toString();
+    const deadline = Date.now() + 12_000;
+    while (Date.now() < deadline) {
+      try {
+        const versionRes = await provider.exec(
+          handle,
+          "curl -sf http://127.0.0.1:9223/json/version",
+          { timeoutSeconds: 5 }
+        );
+        if (versionRes.exitCode === 0 && versionRes.stdout.trim()) {
+          const parsed = JSON.parse(versionRes.stdout) as {
+            webSocketDebuggerUrl?: string;
+          };
+          if (parsed.webSocketDebuggerUrl) {
+            const u = new URL(parsed.webSocketDebuggerUrl);
+            const base = new URL(baseCdpUrl);
+            base.pathname = u.pathname;
+            return base.toString();
+          }
         }
+      } catch {
+        // Retry until deadline
       }
-    } catch {
-      // Fall back to baseCdpUrl
+      await new Promise((r) => setTimeout(r, 250));
     }
     return baseCdpUrl;
   }
@@ -307,6 +318,14 @@ export function connectAgentBrowser(
           .catch(() => {});
         return null;
       });
+    },
+
+    async withPage<T>(fn: (current: Page) => Promise<T>): Promise<T> {
+      const current = await ensurePage();
+      if (typeof current === "string") {
+        throw new Error(current);
+      }
+      return fn(current);
     },
 
     close,

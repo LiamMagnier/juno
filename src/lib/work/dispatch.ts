@@ -1005,35 +1005,22 @@ export async function startWorkRunForUser(
       )
     : hosts;
 
-  const requestedTarget = body.requestedTarget ?? targetOf(session.requestedTarget);
-  // A client that named capabilities is making a request, and it is honoured
-  // exactly as sent — the Mac plans before it dispatches, and second-guessing a
-  // plan with a regex would be worse than the regex is good.
-  //
-  // A client that named none is asking Juno to work it out, which the composer
-  // has promised in as many words since it was written and which nothing has
-  // ever done: the field said "Leave this empty and Juno works it out from the
-  // task", and an empty field meant an empty list, which meant every task was
-  // treated as needing nothing local. `inferCapabilities` reads the goal, and
-  // the browser runs the same pure function on the same text before the button
-  // is pressed, so the sentence the reader saw is the one acted on here.
-  //
-  // An empty array is treated as absent rather than as an assertion. It is what
-  // a client sends when it has nothing to say, not a considered claim that this
-  // task needs nothing — and the cost of reading it as one is the bug above.
-  //
-  // The two are then selected on differently, and that asymmetry is the whole
-  // point of separating them. A named capability is a request, and `selectTarget`
-  // refuses when nothing can serve a request. An inferred one is a reading of
-  // some prose, and `selectForInferred` will not let a reading refuse: it drops
-  // the local guesses, runs what the cloud can serve, and says which parts will
-  // not happen. Refusing on a regex would mean a person who wrote "tidy my
-  // downloads folder" is told, by a machine that was never asked about their
-  // computer, that they cannot start — with no chip left to overrule it.
+  const hasAgentComputer = session.agentId
+    ? (await prisma.agentComputer.findFirst({
+        where: { userId: user.id, agentId: session.agentId },
+        select: { id: true },
+      })) !== null
+    : false;
+  const requestedTarget =
+    hasAgentComputer && (body.requestedTarget ?? targetOf(session.requestedTarget)) === "automatic"
+      ? "cloud"
+      : body.requestedTarget ?? targetOf(session.requestedTarget);
   const explicit = body.requiredCapabilities ?? [];
   const offers = ordered.map((host) => hostCapabilityView(host, now));
   const required: readonly WorkCapability[] =
-    explicit.length > 0 ? explicit : inferCapabilities(session.goal).capabilities;
+    explicit.length > 0
+      ? explicit
+      : inferCapabilities(session.goal, { hasAgentComputer }).capabilities;
   const selection =
     explicit.length > 0
       ? selectTarget({
@@ -1047,6 +1034,7 @@ export async function startWorkRunForUser(
           inferred: required,
           hosts: offers,
           cloudAvailable: CLOUD_WORK_AVAILABLE,
+          hasAgentComputer,
         });
 
   // No executor can serve this. Refusing is the entire reason `selectTarget`

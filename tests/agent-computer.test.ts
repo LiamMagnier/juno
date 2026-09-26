@@ -1,15 +1,33 @@
 import assert from "node:assert/strict";
+import Module, { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { decryptSecret } from "@/lib/crypto";
-import { buildDockerCreateArgv } from "@/lib/computer/docker";
-import { fakeComputerProvider } from "@/lib/computer/fake";
-import { mintViewToken } from "@/lib/computer/live-view";
-import {
+
+const mod = Module as unknown as {
+  _load: (request: string, parent: unknown, isMain: boolean) => unknown;
+};
+const origLoad = mod._load;
+mod._load = function (request: string, parent: unknown, isMain: boolean) {
+  if (request === "server-only") return {};
+  return origLoad.call(this, request, parent, isMain);
+};
+
+const req = createRequire(import.meta.url);
+const { decryptSecret } = req("../src/lib/crypto") as typeof import("@/lib/crypto");
+const { buildDockerCreateArgv } = req(
+  "../src/lib/computer/docker"
+) as typeof import("@/lib/computer/docker");
+const { fakeComputerProvider } = req(
+  "../src/lib/computer/fake"
+) as typeof import("@/lib/computer/fake");
+const { mintViewToken } = req(
+  "../src/lib/computer/live-view"
+) as typeof import("@/lib/computer/live-view");
+const {
   computerProvider,
   isAgentComputerConfigured,
   resetComputerProviderCache,
-} from "@/lib/computer/provider";
-import {
+} = req("../src/lib/computer/provider") as typeof import("@/lib/computer/provider");
+const {
   acquireComputerLease,
   createInMemoryComputerPersistence,
   disableComputer,
@@ -21,8 +39,10 @@ import {
   restComputer,
   setComputerStorePersistenceForTest,
   sleepComputer,
-} from "@/lib/computer/store";
-import { sweepAgentComputers } from "@/lib/computer/sweep";
+} = req("../src/lib/computer/store") as typeof import("@/lib/computer/store");
+const { sweepAgentComputers } = req(
+  "../src/lib/computer/sweep"
+) as typeof import("@/lib/computer/sweep");
 
 describe("agent-computer provider and lifecycle", () => {
   const prevProvider = process.env.AGENT_COMPUTER_PROVIDER;
@@ -349,4 +369,349 @@ describe("agent-computer provider and lifecycle", () => {
     assert.equal(decoded.p, 5900);
     assert.equal(decoded.m, "watch");
   });
+
+  it("completes a 20-step click/screenshot loop on the fake provider without stalling, and scrubs base64 from checkpoints", async () => {
+    const runtime = await import("../runner/agent-core/dist/work/index.js");
+    const fake = fakeComputerProvider;
+    const handle = await fake.create({
+      agentId: "ag_loop",
+      userId: "usr_loop",
+      cdpToken: "secret_cdp_token_999",
+    });
+    await fake.start(handle);
+
+    let epoch = 0;
+    const bumpEpoch = () => {
+      epoch += 1;
+      return epoch;
+    };
+    const takeShot = async () => {
+      const shot = await fake.screenshot(handle);
+      return {
+        mediaType: "image/jpeg" as const,
+        data: shot.jpeg.toString("base64"),
+        width: shot.width,
+        height: shot.height,
+      };
+    };
+
+    const tools = runtime.computerTools({
+      isHealthy: () => true,
+      pageTakesPayment: () => false,
+      currentUrl: () => "https://example.com/dashboard?token=secret_cdp_token_999",
+      screenEpoch: () => epoch,
+      screenshot: takeShot,
+      async click(opts) {
+        await fake.click(handle, opts);
+        bumpEpoch();
+        return takeShot();
+      },
+      async type(text) {
+        await fake.type(handle, text);
+        bumpEpoch();
+        return takeShot();
+      },
+      async key(keys) {
+        await fake.key(handle, keys);
+        bumpEpoch();
+        return takeShot();
+      },
+      async scroll(opts) {
+        await fake.scroll(handle, {
+          x: opts.x,
+          y: opts.y,
+          dy: opts.direction === "up" ? -opts.amount : opts.amount,
+        });
+        bumpEpoch();
+        return takeShot();
+      },
+      exec: (cmd, opts) => fake.exec(handle, cmd, opts),
+      listFiles: (dir) => fake.listFiles(handle, dir),
+      async readFile(p, maxBytes) {
+        const b = await fake.readFile(handle, p, { maxBytes });
+        return b.toString("utf8");
+      },
+      async writeFile(p, content) {
+        await fake.writeFile(handle, p, Buffer.from(content, "utf8"));
+        bumpEpoch();
+      },
+    });
+
+    let turn = 0;
+    const provider = {
+      id: "fake",
+      name: "Fake",
+      defaultModel: "fake-1",
+      models: () => ["fake-1"],
+      capabilities: () => ({
+        tools: true,
+        vision: true,
+        computerUse: true,
+        reasoningLevels: [],
+        maxContext: 200_000,
+        streaming: true,
+        mcp: false,
+      }),
+      async *stream() {
+        turn += 1;
+        if (turn === 1) {
+          yield {
+            type: "tool_call" as const,
+            id: `tc_${turn}`,
+            name: "update_plan",
+            input: { stepId: "step_1", status: "active" },
+          };
+        } else if (turn <= 21) {
+          // 20 alternating click + screenshot steps at the same coordinates
+          const isClick = turn % 2 === 0;
+          yield {
+            type: "tool_call" as const,
+            id: `tc_${turn}`,
+            name: isClick ? "computer_click" : "computer_screenshot",
+            input: isClick ? { x: 240, y: 180 } : {},
+          };
+        } else if (turn === 22) {
+          yield {
+            type: "tool_call" as const,
+            id: `tc_${turn}`,
+            name: "update_plan",
+            input: { stepId: "step_1", status: "done" },
+          };
+        } else {
+          yield { type: "text_delta" as const, text: "All 20 desktop steps completed." };
+        }
+        yield {
+          type: "done" as const,
+          stopReason: turn <= 22 ? ("tool_use" as const) : ("end_turn" as const),
+          usage: { inputTokens: 20, outputTokens: 10 },
+        };
+      },
+    };
+
+    const plan = new runtime.WorkPlan([{ id: "step_1", title: "Click through 20 steps" }]);
+    const session = new runtime.WorkAgentSession({
+      runId: "run_20_steps",
+      goal: "Click and inspect the desktop 20 times.",
+      provider,
+      model: "fake-1",
+      cwd: "/tmp",
+      tools,
+      plan,
+      budget: runtime.NO_BUDGET,
+      approvalMode: "permissive",
+      callbacks: {
+        onEvent: () => {},
+        requestApproval: async () => "allowed" as const,
+        askQuestion: async () => "ok",
+      },
+    });
+
+    const result = await session.run();
+    assert.equal(result.state, "finished");
+    assert.equal(result.terminalReason, "completed", result.detail);
+
+    // Checkpoint must never contain raw base64 or JPEG headers
+    const checkpointJson = JSON.stringify(session.checkpoint());
+    assert.ok(!checkpointJson.includes('"data":"/9j'));
+    assert.ok(!checkpointJson.includes("base64"));
+    assert.ok(checkpointJson.includes(runtime.OMITTED_SCREENSHOT_MARKER));
+  });
+
+  it("prunes message history to keep only the last 3 images and binds Anthropic thinking with drop_block + beta header", async () => {
+    const runtime = await import("../runner/agent-core/dist/work/index.js");
+
+    // 5 user messages, each carrying an image block
+    const messages = Array.from({ length: 5 }, (_, idx) => ({
+      role: "user" as const,
+      content: [
+        { type: "text" as const, text: `step ${idx + 1}` },
+        {
+          type: "image" as const,
+          mediaType: "image/jpeg" as const,
+          data: `fake_jpeg_payload_${idx + 1}`,
+        },
+      ],
+    }));
+
+    runtime.pruneOldMessageImages(messages, 3);
+    const remainingImages: string[] = [];
+    const omittedTexts: string[] = [];
+    for (const msg of messages) {
+      for (const part of msg.content) {
+        if (part.type === "image") remainingImages.push(part.data);
+        if (part.type === "text" && part.text === runtime.OMITTED_SCREENSHOT_MARKER) {
+          omittedTexts.push(part.text);
+        }
+      }
+    }
+    assert.equal(remainingImages.length, 3);
+    assert.deepEqual(remainingImages, [
+      "fake_jpeg_payload_3",
+      "fake_jpeg_payload_4",
+      "fake_jpeg_payload_5",
+    ]);
+    assert.equal(omittedTexts.length, 2);
+
+    // Thinking binding: adaptive & enabled attach block_binding + beta header together
+    const adaptive = runtime.bindingTolerantThinking({ type: "adaptive" });
+    assert.deepEqual(adaptive, {
+      type: "adaptive",
+      block_binding: { prefix_mismatch_behavior: "drop_block" },
+    });
+    const headers = runtime.anthropicRequestHeadersForThinking(adaptive, {
+      "anthropic-beta": "existing-beta-1",
+    });
+    assert.equal(
+      headers?.["anthropic-beta"],
+      `existing-beta-1,${runtime.THINKING_BINDING_BETA}`
+    );
+
+    const disabled = runtime.bindingTolerantThinking({ type: "disabled" });
+    assert.deepEqual(disabled, { type: "disabled" });
+    const disabledHeaders = runtime.anthropicRequestHeadersForThinking(disabled, {
+      "anthropic-beta": "existing-beta-1",
+    });
+    assert.equal(disabledHeaders?.["anthropic-beta"], "existing-beta-1");
+  });
+
+  it("escalates payment pages to work.browser.purchase (irreversible) and keeps summaries free of ids, tokens, and URLs", async () => {
+    const runtime = await import("../runner/agent-core/dist/work/index.js");
+    let takesPayment = true;
+    const tools = runtime.computerTools({
+      isHealthy: () => true,
+      pageTakesPayment: () => takesPayment,
+      currentUrl: () => "https://checkout.stripe.com/pay/cs_live_secret123?token=tok_abc",
+      screenEpoch: () => 1,
+      screenshot: async () => ({
+        mediaType: "image/jpeg",
+        data: "AAA",
+        width: 1280,
+        height: 800,
+      }),
+      click: async () => ({
+        mediaType: "image/jpeg",
+        data: "AAA",
+        width: 1280,
+        height: 800,
+      }),
+      type: async () => ({
+        mediaType: "image/jpeg",
+        data: "AAA",
+        width: 1280,
+        height: 800,
+      }),
+      key: async () => ({
+        mediaType: "image/jpeg",
+        data: "AAA",
+        width: 1280,
+        height: 800,
+      }),
+      scroll: async () => ({
+        mediaType: "image/jpeg",
+        data: "AAA",
+        width: 1280,
+        height: 800,
+      }),
+      exec: async () => ({ stdout: "ok", stderr: "", exitCode: 0, timedOut: false }),
+      listFiles: async () => [],
+      readFile: async () => "",
+      writeFile: async () => {},
+    });
+
+    const clickTool = tools.find((t) => t.spec.name === "computer_click")!;
+    const typeTool = tools.find((t) => t.spec.name === "computer_type")!;
+    const keyTool = tools.find((t) => t.spec.name === "computer_key")!;
+
+    assert.equal(clickTool.actionFor?.({ x: 100, y: 200 }), "work.browser.purchase");
+    assert.equal(clickTool.riskFor?.({ x: 100, y: 200 }), "irreversible");
+    assert.equal(typeTool.actionFor?.({ text: "4242" }), "work.browser.purchase");
+    assert.equal(typeTool.riskFor?.({ text: "4242" }), "irreversible");
+    assert.equal(keyTool.actionFor?.({ keys: "Return" }), "work.browser.purchase");
+    assert.equal(keyTool.riskFor?.({ keys: "Return" }), "irreversible");
+
+    takesPayment = false;
+    assert.equal(clickTool.actionFor?.({ x: 100, y: 200 }), "work.computer.click");
+    assert.equal(clickTool.riskFor?.({ x: 100, y: 200 }), "command");
+
+    // Summaries must never include query strings, tokens, container names, or raw URLs
+    for (const tool of tools) {
+      const summary = tool.summarize({
+        x: 100,
+        y: 200,
+        text: "secret_password",
+        keys: "Return",
+        direction: "down",
+        amount: 3,
+        command: "curl https://example.com?token=tok_abc",
+        action: "write",
+        path: "/home/agent/work/report.csv",
+      });
+      assert.ok(!summary.includes("cs_live_secret123"), `summary leaked path: ${summary}`);
+      assert.ok(!summary.includes("tok_abc"), `summary leaked token: ${summary}`);
+      assert.ok(!summary.includes("https://"), `summary leaked full URL: ${summary}`);
+      assert.ok(!summary.includes("juno-agent-"), `summary leaked container id: ${summary}`);
+      assert.ok(!summary.includes("secret_password"), `summary leaked typed text: ${summary}`);
+    }
+  });
+
+  it("falls back to temporary browser when computer lease is held by another run, and routes agent computer runs to cloud", async () => {
+    const store = await import("@/lib/computer/store");
+    const inference = await import("@/lib/work/inference");
+
+    await enableComputer("user_1", "agent_busy");
+    const first = await store.resolveRunComputerSession({
+      userId: "user_1",
+      agentId: "agent_busy",
+      runId: "run_holder",
+    });
+    assert.equal(first.attached, true);
+
+    const second = await store.resolveRunComputerSession({
+      userId: "user_1",
+      agentId: "agent_busy",
+      runId: "run_contender",
+    });
+    assert.equal(second.attached, false);
+    if (!second.attached) {
+      assert.equal(second.fallbackReason, "busy");
+      assert.equal(second.note, store.BUSY_COMPUTER_FALLBACK_NOTE);
+    }
+
+    if (first.attached) {
+      await first.release();
+    }
+
+    // After release, contender can attach
+    const third = await store.resolveRunComputerSession({
+      userId: "user_1",
+      agentId: "agent_busy",
+      runId: "run_contender",
+    });
+    assert.equal(third.attached, true);
+    if (third.attached) {
+      await third.release();
+    }
+
+    // Cloud targeting: "my signed-in browser" routes to cloud without degradation when hasAgentComputer is true
+    const goal = "Check my signed-in browser session and save the report to my files";
+    const inferredWithoutComputer = inference.inferCapabilities(goal);
+    assert.ok(inferredWithoutComputer.capabilities.includes("local_browser"));
+
+    const inferredWithComputer = inference.inferCapabilities(goal, {
+      hasAgentComputer: true,
+    });
+    assert.ok(!inferredWithComputer.capabilities.includes("local_browser"));
+    assert.ok(!inferredWithComputer.capabilities.includes("local_files"));
+
+    const selection = inference.selectForInferred({
+      requested: "automatic",
+      inferred: inferredWithoutComputer.capabilities,
+      hosts: [],
+      cloudAvailable: true,
+      hasAgentComputer: true,
+    });
+    assert.equal(selection.target, "cloud");
+    assert.equal(selection.degradation.length, 0);
+  });
 });
+

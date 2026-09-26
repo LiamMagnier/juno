@@ -193,6 +193,37 @@ function normalizeToolResult(result: UserContent | UserContent[]): UserContent[]
   ];
 }
 
+export const OMITTED_SCREENSHOT_MARKER = '[Screenshot omitted from the saved run]';
+
+/**
+ * Keeps only the newest `keepLast` image parts in `messages`, replacing older
+ * `{ type: 'image' }` parts with `OMITTED_SCREENSHOT_MARKER`.
+ */
+export function pruneOldMessageImages(messages: ChatMessage[], keepLast = 3): void {
+  const imageLocations: Array<{ msgIdx: number; partIdx: number }> = [];
+  for (let m = 0; m < messages.length; m++) {
+    const msg = messages[m];
+    if (msg.role !== 'user') continue;
+    for (let p = 0; p < msg.content.length; p++) {
+      if (msg.content[p]?.type === 'image') {
+        imageLocations.push({ msgIdx: m, partIdx: p });
+      }
+    }
+  }
+  const toDrop = imageLocations.length - keepLast;
+  if (toDrop <= 0) return;
+  for (let i = 0; i < toDrop; i++) {
+    const loc = imageLocations[i]!;
+    const msg = messages[loc.msgIdx];
+    if (msg && msg.role === 'user') {
+      msg.content[loc.partIdx] = {
+        type: 'text',
+        text: OMITTED_SCREENSHOT_MARKER,
+      };
+    }
+  }
+}
+
 export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopResult> {
   let usage: Usage = { inputTokens: 0, outputTokens: 0 };
   let stopReason = 'end_turn';
@@ -214,6 +245,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       else opts.messages.push({ role: 'user', content: parts });
       opts.onMessagesChanged?.();
     }
+    pruneOldMessageImages(opts.messages, 3);
     const assistantContent: AssistantContent[] = [];
     let toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
     let textAcc = '';
@@ -222,32 +254,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
     let retries = 0;
     let waitedMs = 0;
 
-    /*
-     * One step, attempted until it works, is told not to try again, or runs out
-     * of allowance.
-     *
-     * The retry lives here rather than in the adapters because this is the
-     * innermost place that still knows whether anything has been *shown* yet —
-     * and that is the whole condition. See the guard below.
-     */
     for (;;) {
-      // Reset per attempt. A retry that inherited the last attempt's partial
-      // text would emit it twice into the transcript.
       textAcc = '';
       toolCalls = [];
       stepUsage = { inputTokens: 0, outputTokens: 0 };
 
-      /*
-       * The stream is driven through a controller of this step's own, chained to
-       * the caller's, so the deadline has something to pull. Handing the caller's
-       * signal straight to the provider — which is what used to happen — left the
-       * loop with no way to end a request it had started: an adapter awaiting a
-       * socket that never delivers is not interruptible from the outside, and
-       * every ceiling above it (the budget guard, the run's runtime limit, the
-       * executor's stalled-run sweep) is checked at points that request never
-       * reaches. A Work run in that state showed `running`, zero tokens and an
-       * empty transcript for as long as anyone watched.
-       */
       const turn = new AbortController();
       const chain = () => turn.abort();
       opts.signal.addEventListener('abort', chain, { once: true });
@@ -259,21 +270,14 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
           silent = true;
           turn.abort();
         }, silenceMs);
-        // Keep the deadline referenced. If a provider request is the only live
-        // work in a short-lived runner, unref'ing this timer lets Node exit before
-        // the abort fires and leaves the caller's promise unresolved forever.
-        // Long-lived hosts already have their server handle; this makes the
-        // fail-safe correct for both hosts and one-shot CLI/test processes.
       };
 
-      /** Set when this attempt failed in a way worth another go. */
       let retryable: ProviderCallError | null = null;
 
       try {
         listen();
         for await (const ev of opts.provider.stream({
           model: opts.model,
-          // Rebuilt per turn when the caller passed a builder — see the field.
           system: typeof opts.system === 'function' ? opts.system() : opts.system,
           messages: opts.messages,
           tools: opts.tools,

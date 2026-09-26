@@ -89,14 +89,74 @@ export interface AnthropicOverride {
   timeoutMs?: number;
 }
 
+export const THINKING_BINDING_BETA = 'thinking-binding-controls-2026-08-01';
+
+export type BoundAnthropicThinkingParam =
+  | (Extract<import('./thinking.js').AnthropicThinkingParam, { type: 'adaptive' | 'enabled' }> & {
+      block_binding: { prefix_mismatch_behavior: 'drop_block' };
+    })
+  | Extract<import('./thinking.js').AnthropicThinkingParam, { type: 'disabled' }>;
+
+/**
+ * Ported from BackendCodeModelClient.swift (`bindingTolerant`).
+ * When `thinking.type` is `adaptive` or `enabled`, adds
+ * `block_binding: { prefix_mismatch_behavior: 'drop_block' }` so image pruning
+ * or message compaction on earlier turns never triggers a 400 signature mismatch.
+ */
+export function bindingTolerantThinking(
+  thinking: import('./thinking.js').AnthropicThinkingParam | undefined,
+): BoundAnthropicThinkingParam | undefined {
+  if (!thinking) return undefined;
+  if (thinking.type === 'adaptive' || thinking.type === 'enabled') {
+    return {
+      ...thinking,
+      block_binding: { prefix_mismatch_behavior: 'drop_block' },
+    };
+  }
+  return thinking;
+}
+
+/**
+ * Computes the request headers for an Anthropic call so `block_binding` and
+ * `anthropic-beta: thinking-binding-controls-2026-08-01` always travel together.
+ */
+export function anthropicRequestHeadersForThinking(
+  thinking: BoundAnthropicThinkingParam | { block_binding?: unknown } | undefined,
+  existingHeaders?: Record<string, string>,
+): Record<string, string> | undefined {
+  if (!thinking || !('block_binding' in thinking) || !thinking.block_binding) {
+    return existingHeaders;
+  }
+  const out: Record<string, string> = { ...(existingHeaders ?? {}) };
+  const betaKey =
+    Object.keys(out).find((k) => k.toLowerCase() === 'anthropic-beta') ??
+    'anthropic-beta';
+  const existingBeta = out[betaKey]?.trim();
+  if (!existingBeta) {
+    out[betaKey] = THINKING_BINDING_BETA;
+  } else {
+    const parts = existingBeta
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!parts.includes(THINKING_BINDING_BETA)) {
+      parts.push(THINKING_BINDING_BETA);
+    }
+    out[betaKey] = parts.join(',');
+  }
+  return out;
+}
+
 export class AnthropicAdapter implements ProviderAdapter {
   id = 'anthropic';
   name = 'Anthropic';
   defaultModel = 'claude-sonnet-5';
   private client: Anthropic;
   private modelCaps: Record<string, ModelCapabilities>;
+  private defaultHeaders?: Record<string, string>;
 
   constructor(apiKey?: string, override?: AnthropicOverride) {
+    this.defaultHeaders = override?.headers;
     this.client = new Anthropic({
       // In proxy mode the key is a placeholder the proxy replaces server-side.
       apiKey: override?.baseURL ? (apiKey ?? 'proxy') : resolveAnthropicKey(apiKey),
@@ -121,11 +181,9 @@ export class AnthropicAdapter implements ProviderAdapter {
   }
 
   async *stream(req: ProviderRequest): AsyncGenerator<ProviderStreamEvent> {
-    // `max_tokens` comes back out of the matrix rather than going straight
-    // through: extended thinking is billed against the same ceiling as the
-    // answer, so a budget granted without headroom is a model that thinks its
-    // whole allowance and returns an empty message.
     const bits = anthropicThinkingBits(req.model, req.maxTokens ?? 8192, req.reasoningEffort);
+    const thinking = bindingTolerantThinking(bits.thinking);
+    const headers = anthropicRequestHeadersForThinking(thinking, this.defaultHeaders);
     const stream = this.client.messages.stream(
       {
         model: req.model,
@@ -137,13 +195,13 @@ export class AnthropicAdapter implements ProviderAdapter {
           description: t.description,
           input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
         })),
-        ...(bits.thinking ? { thinking: bits.thinking as Anthropic.ThinkingConfigParam } : {}),
-        // `output_config` rides alongside adaptive thinking and is not in the
-        // SDK's typed params on every version, so it goes through the same
-        // untyped door the website's own client uses.
+        ...(thinking ? { thinking: thinking as unknown as Anthropic.ThinkingConfigParam } : {}),
         ...(bits.outputConfig ? { output_config: bits.outputConfig } : {}),
       } as Anthropic.MessageStreamParams,
-      { signal: req.signal },
+      {
+        signal: req.signal,
+        ...(headers ? { headers } : {}),
+      },
     );
 
     // Classified for the same reason the OpenAI-compatible adapter classifies —

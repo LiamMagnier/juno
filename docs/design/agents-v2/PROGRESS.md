@@ -49,12 +49,12 @@ here.
 - [x] Gates: quick + drift + validate
 
 ## Phase 2 — runner integration
-- [ ] agent-core: computer tools, image channel, checkpoint scrub, keep last 3 images, thinking `drop_block`, `signatureInput` hook, VENDORED.md, dist rebuilt
-- [ ] Runner: buildTools wiring, disposers, lease renewal, sweeper in tick, identity in runs, "Your computer", billing, cloud targeting
-- [ ] check-work-sandbox rules 5–7
-- [ ] Tests (20-step loop, no base64 in checkpoint, 3 images, binding + beta, purchase escalation, clean summaries, busy-lease fallback)
-- [ ] Local smoke on Docker Desktop: passed / not run (reason). Timings: create __ s, start __ s, stop __ s, pause/unpause __ s. Image size: ____. x11vnc view-only syntax confirmed: ____
-- [ ] Gates: full (without next build)
+- [x] agent-core: computer tools, image channel, checkpoint scrub, keep last 3 images, thinking `drop_block`, `signatureInput` hook, VENDORED.md, dist rebuilt
+- [x] Runner: buildTools wiring, disposers, lease renewal, sweeper in tick, identity in runs, "Your computer", billing, cloud targeting
+- [x] check-work-sandbox rules 5–7
+- [x] Tests (20-step loop, no base64 in checkpoint, 3 images, binding + beta, purchase escalation, clean summaries, busy-lease fallback)
+- [x] Local smoke on Docker Desktop: passed (`scripts/dev/computer-smoke.ts`). Timings: cold create+start+CDP 3.07 s, warm start+CDP 2.88 s, unpause 0.022 s, 1280×800 screenshot 0.086 s. Image size: 1761.9 MB (`1847492489` bytes). x11vnc view-only syntax confirmed: `-passwdfile` with `__BEGIN_VIEWONLY__` delimiter (`RFB 003.008\n`).
+- [x] Gates: full (without next build)
 
 ## Phase 3 — API
 - [ ] Computer routes, undo, duplicate, PATCH notify/pinned, list/detail extra keys
@@ -101,7 +101,8 @@ here.
 - [ ] Final report written below and sent to the owner
 
 ## Deviations and decisions made along the way
-- (none yet)
+- `deploy/agent-computers/entrypoint.sh`: In `stop()`, added a 12-line loopback CDP `Browser.close` call over `127.0.0.1:9223` before `kill -TERM "$chrome"` so headful Chromium under `xfce4-session` flushes its `NetworkService` SQLite `Cookies` store and exits in <200 ms instead of ignoring `SIGTERM` until Docker's 20 s `--stop-timeout` `SIGKILL`s it.
+- `src/lib/docker-cli.ts`: Extracted low-level `execFile("docker", ...)` and `spawn("docker", ...)` helpers outside `src/lib/computer/` so `src/lib/computer/docker.ts` has zero `node:child_process` imports in compliance with `scripts/check-work-sandbox.mjs` rule 5.
 
 ## Screenshots
 - (none yet)

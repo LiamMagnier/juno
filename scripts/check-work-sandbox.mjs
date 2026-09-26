@@ -84,6 +84,73 @@ if (/containerSandbox/.test(session)) {
   );
 }
 
-console.log(
-  "[work-sandbox] the cloud Work toolset admits no host tool, and cannot until there is a container to run one in"
+// 5. `computer-tools.ts` and `src/lib/computer/**` must not import `tools/bash`,
+//    `bashTool`, `node:child_process` or `container-sandbox`, and must not
+//    reference `ctx.cwd` or `ctx.env`.
+const computerDir = path.join(root, "src/lib/computer");
+const computerFiles = [
+  "runner/agent-core/src/work/computer-tools.ts",
+  ...(fs.existsSync(computerDir)
+    ? fs
+        .readdirSync(computerDir)
+        .filter((f) => f.endsWith(".ts"))
+        .map((f) => path.join("src/lib/computer", f))
+    : []),
+];
+for (const rel of computerFiles) {
+  const src = read(rel);
+  if (/tools\/bash|\bbashTool\b|node:child_process|container-sandbox/.test(src)) {
+    fail(`${rel} imports or references a host shell/sandbox module (tools/bash, bashTool, node:child_process, or container-sandbox).`);
+  }
+  if (/\bctx\.cwd\b|\bctx\.env\b/.test(src)) {
+    fail(`${rel} references ctx.cwd or ctx.env, which point at the worker host rather than the agent container.`);
+  }
+}
+
+// 6. Every tool named `computer_*` in the Work runtime is built by `computerTools(`.
+const computerToolsSrc = read("runner/agent-core/src/work/computer-tools.ts");
+const computerFnIdx = computerToolsSrc.indexOf("export function computerTools(");
+if (computerFnIdx === -1) {
+  fail("runner/agent-core/src/work/computer-tools.ts must define export function computerTools(...).");
+}
+const computerFnBody = computerToolsSrc.slice(computerFnIdx);
+const declaredRemoteNames = [
+  ...computerToolsSrc
+    .slice(0, computerFnIdx)
+    .matchAll(/'(computer_[a-z_]+)'/g),
+].map((m) => m[1]);
+if (declaredRemoteNames.length === 0) {
+  fail("REMOTE_TOOL_NAMES in computer-tools.ts is empty.");
+}
+for (const toolName of declaredRemoteNames) {
+  if (!new RegExp(`name:\\s*['"]${toolName}['"]`).test(computerFnBody)) {
+    fail(`Tool ${toolName} is not built inside computerTools(...).`);
+  }
+}
+if (/name:\s*['"]computer_[a-z_]+['"]/.test(tools)) {
+  fail("runner/agent-core/src/work/tools.ts must not define any computer_* tool; all computer_* tools must be built by computerTools(.");
+}
+if (!/runtime\.computerTools\(/.test(body)) {
+  fail("buildTools in scripts/work-runner.ts must build computer_* tools via runtime.computerTools(...).");
+}
+
+// 7. The `REMOTE_TOOL_NAMES` list is disjoint from the `workspaceTools()` names.
+const workspaceFnIdx = tools.indexOf("export function workspaceTools(");
+const workspaceSection = workspaceFnIdx >= 0 ? tools.slice(workspaceFnIdx) : tools;
+const hostWorkspaceToolNames = new Set(
+  [...workspaceSection.matchAll(/name:\s*['"]([a-z_]+)['"]/g)].map((m) => m[1])
 );
+// Also include defaultTools() names from runner/agent-core/src/tools/
+for (const hostName of ["bash", "read_file", "write_file", "edit_file", "glob", "grep", "list_dir"]) {
+  hostWorkspaceToolNames.add(hostName);
+}
+for (const remoteName of declaredRemoteNames) {
+  if (hostWorkspaceToolNames.has(remoteName)) {
+    fail(`REMOTE_TOOL_NAMES entry "${remoteName}" collides with a workspaceTools() name.`);
+  }
+}
+
+console.log(
+  "[work-sandbox] the cloud Work toolset admits no host tool, and computer_* tools are isolated from host workspace tools"
+);
+

@@ -788,7 +788,7 @@ export async function startAgentTask(
   const body = protocol.createSessionSchema.safeParse({
     goal: input.goal,
     title: input.title,
-    requestedTarget: "automatic",
+    requestedTarget: "cloud",
     ...(agent.projectId ? { projectId: agent.projectId } : {}),
     conversationId,
     ...(agent.model ? { model: agent.model } : {}),
@@ -810,7 +810,7 @@ export async function startAgentTask(
 
   const runBody = protocol.startRunSchema.parse({
     origin: "manual",
-    requestedTarget: "automatic",
+    requestedTarget: "cloud",
     idempotencyKey: keys.run,
     ...(input.confirmExpensive ? { confirmExpensive: true } : {}),
   });

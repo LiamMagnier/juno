@@ -26,6 +26,12 @@ export interface ToolResult {
    * that do not run a process (reads, edits, globs).
    */
   exitCode?: number;
+  /**
+   * Optional ephemeral screenshot/image blocks returned alongside the text tool
+   * result. Forwarded into the conversation as `{ type: 'image' }` user blocks,
+   * pruned to the last 3 before each provider request, and scrubbed on checkpoint.
+   */
+  images?: ReadonlyArray<{ mediaType: 'image/jpeg' | 'image/png'; data: string }>;
 }
 
 export interface ToolDefinition {

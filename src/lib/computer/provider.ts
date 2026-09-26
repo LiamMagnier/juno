@@ -20,6 +20,9 @@ export function computerProvider(): ComputerProvider | null {
     return dockerComputerProvider;
   }
   if (mode === "fake") {
+    if (process.env.NODE_ENV === "production") {
+      return null;
+    }
     return fakeComputerProvider;
   }
   return null;
