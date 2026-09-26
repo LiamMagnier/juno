@@ -4,11 +4,10 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Link2Off, Loader2 } from "@/components/ui/icons";
-import { StatusIcons } from "@/lib/app-icons";
+import { LoadError } from "@/components/ui/load-error";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { EmptyState } from "@/components/ui/empty-state";
 import { type ConnectorStatus } from "@/components/connections/types";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
 import { ConnectorDirectory, type DirectoryItem } from "@/components/connections/connector-directory";
@@ -187,17 +186,10 @@ export default function ConnectionsPage() {
       />
 
       {error ? (
-        <EmptyState
-          tone="error"
-          size="panel"
-          icon={StatusIcons.error}
+        <LoadError
           title="Couldn’t load your connections"
-          description="Check your connection and try again. Nothing was changed."
-          action={
-            <Button variant="outline" size="sm" onClick={load}>
-              Try again
-            </Button>
-          }
+          description="Nothing was disconnected. Check your connection and try again."
+          onRetry={load}
         />
       ) : loading ? (
         // The toolbar's placeholder too, as loading.tsx draws it: without it

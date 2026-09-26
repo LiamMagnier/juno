@@ -3,13 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { Plus } from "@/components/ui/icons";
+import { LoadError } from "@/components/ui/load-error";
 import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { WorkList } from "@/components/work/shell/work-section";
 import { WorkScheduleRow } from "@/components/work/work-schedule-row";
-import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
+import { WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { fetchWorkSchedules } from "@/components/work/work-transport";
 import { EmptyState } from "@/components/ui/empty-state";
 
@@ -77,9 +78,11 @@ export default function AutomationsPage() {
         actions={action}
       />
       {failed ? (
-        <WorkLoadError onRetry={() => void load()}>
-          Couldn’t load your automations. They keep running; only this page failed to read them.
-        </WorkLoadError>
+        <LoadError
+          title="Couldn’t load your automations"
+          description="They keep running. Check your connection and try again."
+          onRetry={() => void load()}
+        />
       ) : schedules === null ? (
         <WorkList>
           <WorkRowSkeletons />

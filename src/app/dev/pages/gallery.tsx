@@ -66,8 +66,8 @@ function route(path: string, url: URL, method: string, state: PageState, page: P
       FILE: items.filter((i) => i.kind === "FILE").length,
     };
     return own(
-      { items, nextCursor: null, counts, storage: STORAGE },
-      { items: [], nextCursor: null, counts: { all: 0, IMAGE: 0, FILE: 0 }, storage: { ...STORAGE, usedBytes: 0 } }
+      { items, total: items.length, nextCursor: null, counts, storage: STORAGE },
+      { items: [], total: 0, nextCursor: null, counts: { all: 0, IMAGE: 0, FILE: 0 }, storage: { ...STORAGE, usedBytes: 0 } }
     );
   }
   if (path === "/api/artifacts") {
@@ -87,6 +87,7 @@ function route(path: string, url: URL, method: string, state: PageState, page: P
     );
   }
   if (path === "/api/memory/backfill") return json({ remaining: 0 });
+  if (path === "/api/memory/edits") return json({ edits: [] });
   if (path === "/api/skills") return own(FIXTURE_LIBRARY, FIXTURE_EMPTY_LIBRARY);
   if (path === "/api/notifications/count") return json({ unreadCount: 2, urgent: false });
   if (path === "/api/notifications") {

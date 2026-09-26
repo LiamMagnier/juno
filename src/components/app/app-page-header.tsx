@@ -127,9 +127,10 @@ export function AppPageHeader({
               <TooltipContent side="bottom">{backLabel ?? "Back"}</TooltipContent>
             </Tooltip>
           )}
-          {eyebrow && (
-            <span className="font-mono text-label text-muted-foreground">{eyebrow}</span>
-          )}
+          {/* In the interface face, not the mono label voice: beside a back
+              arrow it reads as where the arrow goes (a breadcrumb), and mono
+              made a one-word section name look like an identifier. */}
+          {eyebrow && <span className="text-ui text-muted-foreground">{eyebrow}</span>}
         </div>
       )}
 
@@ -233,9 +234,9 @@ export function AppPageHeaderSkeleton({
               The placeholder carries the coarse step too, or the nav row is 8px
               short on every touch device. */}
           {nav !== "eyebrow" && <Skeleton className="size-8 shrink-0 coarse:size-10" />}
-          {/* The eyebrow's own `text-label` line box, so a row that holds only
+          {/* The eyebrow's own `text-ui` line box, so a row that holds only
               the eyebrow is as tall as the real one. */}
-          <span className="flex h-[1.4em] items-center text-label">
+          <span className="flex h-[1.5em] items-center text-ui">
             <Skeleton className="h-3 w-16 rounded-xs" />
           </span>
         </div>

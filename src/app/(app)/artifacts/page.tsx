@@ -27,6 +27,7 @@ import {
   WifiOff,
 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { LoadError } from "@/components/ui/load-error";
 import { cardVariants } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -653,7 +654,11 @@ function ArtifactsHome() {
                 value={activeFilter}
                 onChange={changeTypeFilter}
                 ariaLabel="Filter by type"
-                className="h-9 w-fit shrink-0"
+                // `w-max`, not `w-fit`: fit-content shrinks to the strip, and
+                // the grid's equal columns then crush eight labels into each
+                // other on a phone instead of letting the strip scroll.
+                className="h-9 w-max"
+                columns="content"
                 optionClassName="whitespace-nowrap"
                 options={(["ALL", ...chips] as const).map((t) => ({
                   value: t,
@@ -729,22 +734,16 @@ function ArtifactsHome() {
       )}
 
       {error ? (
-        <EmptyState
-          tone="error"
-          className="mt-6 motion-safe:animate-rise-in"
-          icon={error === "offline" ? WifiOff : undefined}
-          title={error === "offline" ? "You’re offline" : "Couldn’t load your artifacts"}
-          description={
-            error === "offline"
-              ? "Your artifacts will load again the moment the connection returns."
-              : "Something went wrong on the way here."
-          }
-          action={
-            <Button variant="secondary" size="sm" onClick={load}>
-              Try again
-            </Button>
-          }
-        />
+        error === "offline" ? (
+          <EmptyState
+            tone="error"
+            icon={WifiOff}
+            title="You’re offline"
+            description="Your artifacts will load again the moment the connection returns."
+          />
+        ) : (
+          <LoadError title="Couldn’t load your artifacts" onRetry={load} />
+        )
       ) : loading ? (
         <div role="status" aria-label="Loading artifacts">
           <div className="flex flex-wrap items-center gap-2" aria-hidden="true">
@@ -776,8 +775,8 @@ function ArtifactsHome() {
         <EmptyState
           className="mt-6 motion-safe:animate-rise-in"
           icon={AppIcons.artifacts}
-          title="Nothing here yet"
-          description="Ask Juno to build a page, component, document or diagram, or start a design from a blank frame. Each one collects here."
+          title="No artifacts yet"
+          description="Ask Juno to build a page, a document or a diagram, or start a design from a blank frame."
           action={
             <>
               <Button size="sm" onClick={() => router.push("/chat")}>

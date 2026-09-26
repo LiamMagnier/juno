@@ -156,10 +156,10 @@ export function ProjectOverviewRail({
               onClick={onEditInstructions}
               className="-mx-2 block w-full rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
             >
-              <p className="line-clamp-4 whitespace-pre-wrap break-words font-mono text-caption leading-relaxed text-muted-foreground">
+              <p className="line-clamp-4 whitespace-pre-wrap break-words text-caption leading-relaxed text-muted-foreground">
                 {instructions}
               </p>
-              <p className="mt-2 font-mono text-caption tabular-nums text-muted-foreground">
+              <p className="mt-2 text-caption tabular-nums text-muted-foreground">
                 {instructions.length.toLocaleString()} chars · {plural(instructionLines, "line")}
               </p>
             </button>
@@ -226,7 +226,7 @@ export function ProjectOverviewRail({
                       <span className="block truncate text-ui font-medium text-foreground">
                         {file.fileName}
                       </span>
-                      <span className="block font-mono text-caption tabular-nums text-muted-foreground">
+                      <span className="block text-caption tabular-nums text-muted-foreground">
                         {formatBytes(file.size)}
                       </span>
                     </a>
@@ -262,7 +262,7 @@ export function ProjectOverviewRail({
           icon={NotebookPen}
           action={
             <div className="-mr-2 flex items-center gap-1">
-              <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-caption text-muted-foreground">
+              <span className="pr-1 text-caption text-muted-foreground">
                 Only you
               </span>
               <Pressable
@@ -304,7 +304,7 @@ export function ProjectOverviewRail({
                   <p className="line-clamp-3 text-pretty text-caption leading-relaxed text-foreground/85">
                     {memorySummary}
                   </p>
-                  <p className="mt-1.5 font-mono text-caption tabular-nums text-muted-foreground">
+                  <p className="mt-1.5 text-caption tabular-nums text-muted-foreground">
                     Summary · updated {timeAgo(memory.summary.updatedAt)}
                   </p>
                 </button>
@@ -363,9 +363,9 @@ function RailSection({
       <div className="flex min-h-7 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
           {Icon && <Icon className="size-3.5 text-muted-foreground" aria-hidden={true} />}
-          <CardEyebrow className="truncate">{title}</CardEyebrow>
+          <CardEyebrow className="truncate font-sans text-caption font-medium">{title}</CardEyebrow>
           {count !== undefined && count > 0 && (
-            <span className="font-mono text-caption tabular-nums text-muted-foreground">
+            <span className="text-caption tabular-nums text-muted-foreground">
               {count.toLocaleString()}
             </span>
           )}
@@ -421,7 +421,7 @@ function RailMore({ onClick, children }: { onClick: () => void; children: React.
     <button
       type="button"
       onClick={onClick}
-      className="-mx-2 mt-1.5 flex w-full items-center gap-1.5 rounded-control px-2 py-1.5 text-left font-mono text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
+      className="-mx-2 mt-1.5 flex w-full items-center gap-1.5 rounded-control px-2 py-1.5 text-left text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
     >
       {children}
       <ArrowRight className="size-3 shrink-0" aria-hidden="true" />

@@ -905,7 +905,7 @@ export default function ProjectDetailPage() {
                       the same thing on one screen is how a page stops being
                       read. */}
                   <div className="mb-3 flex min-h-7 items-center">
-                    <CardEyebrow>Chats in this project</CardEyebrow>
+                    <CardEyebrow className="font-sans text-caption font-medium">Chats in this project</CardEyebrow>
                   </div>
                   <ProjectChatList
                     projectId={data.project.id}
@@ -1019,7 +1019,7 @@ export default function ProjectDetailPage() {
                         Juno behaves in this project" — which is the eyebrow's
                         own gloss; the line that carries new information is
                         the one saying where the text is injected. */}
-                    <CardEyebrow>System instructions</CardEyebrow>
+                    <CardEyebrow className="font-sans text-caption font-medium">System instructions</CardEyebrow>
                     <p className="mt-1 text-body text-muted-foreground">
                       Prepended to every chat, work run, and code session in this project.
                     </p>
@@ -1050,9 +1050,9 @@ export default function ProjectDetailPage() {
                   placeholder="How should Juno behave? (role, tone, constraints…)"
                   spellCheck={false}
                   aria-label="Project instructions"
-                  className="min-h-[16rem] font-mono text-body leading-relaxed"
+                  className="min-h-[16rem] text-body leading-relaxed"
                 />
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 font-mono text-caption">
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-caption tabular-nums">
                   <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
                     {instructions.length.toLocaleString()} chars
                     {nearInstructionsLimit ? " · large prompt (context window is the limit)" : ""}
@@ -1073,7 +1073,7 @@ export default function ProjectDetailPage() {
                       the eyebrow alone, so of the three cards on the tab, two
                       explained themselves and one did not. */}
                   <div className="min-h-9">
-                    <CardEyebrow>Identity and model</CardEyebrow>
+                    <CardEyebrow className="font-sans text-caption font-medium">Identity and model</CardEyebrow>
                     <p className="mt-1 text-body text-muted-foreground">
                       What Juno is called here, and which model answers by default.
                     </p>
@@ -1141,7 +1141,7 @@ export default function ProjectDetailPage() {
                         text-foreground` against the other card's muted
                         description — one of the two was a second title. */}
                     <div className="min-h-9 min-w-0">
-                      <CardEyebrow>Tools</CardEyebrow>
+                      <CardEyebrow className="font-sans text-caption font-medium">Tools</CardEyebrow>
                       <p className="mt-1 text-body text-muted-foreground">
                         Narrow what Juno may reach for while answering here.
                       </p>
@@ -1303,7 +1303,7 @@ export default function ProjectDetailPage() {
           }}
         >
           <DialogHeader className="shrink-0 space-y-0 border-b border-border/60 px-6 py-5 pr-14 text-left">
-            <CardEyebrow>Project instructions</CardEyebrow>
+            <CardEyebrow className="font-sans text-caption font-medium">Project instructions</CardEyebrow>
             <DialogTitle className="mt-2 text-title">
               How Juno behaves in this project
             </DialogTitle>
@@ -1337,7 +1337,7 @@ export default function ProjectDetailPage() {
               autoFocus
               aria-label="Project instructions"
               // Monospace: this is a prompt, so alignment and indentation carry meaning.
-              className="min-h-0 flex-1 resize-none px-4 py-3.5 font-mono text-body leading-relaxed"
+              className="min-h-0 flex-1 resize-none px-4 py-3.5 text-body leading-relaxed"
             />
           </div>
 
@@ -1346,7 +1346,7 @@ export default function ProjectDetailPage() {
               point DARKER than the panel — a recess nobody asked for and nobody
               could see. Inside a floating layer the recessed rung is --secondary. */}
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 bg-secondary px-6 py-4">
-            <div className="flex items-center gap-3 font-mono text-caption">
+            <div className="flex items-center gap-3 text-caption tabular-nums">
               <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
                 {instructions.length.toLocaleString()} chars
               </span>
@@ -1418,7 +1418,7 @@ function plural(n: number, noun: string) {
 function TabCount({ value }: { value: number }) {
   if (!value) return null;
   return (
-    <span className="font-mono text-caption tabular-nums text-muted-foreground">
+    <span className="text-caption tabular-nums text-muted-foreground">
       {value.toLocaleString()}
     </span>
   );

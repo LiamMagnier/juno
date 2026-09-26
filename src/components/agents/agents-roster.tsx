@@ -3,12 +3,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { Plus } from "@/components/ui/icons";
+import { LoadError } from "@/components/ui/load-error";
 import { Button } from "@/components/ui/button";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cardVariants } from "@/components/ui/card";
-import { AppIcons } from "@/lib/app-icons";
 import { AGENT_TEMPLATES } from "@/lib/agents/templates";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -65,17 +64,7 @@ export function AgentsRoster() {
         }
       />
       {error && !agents ? (
-        <EmptyState
-          tone="error"
-          icon={AppIcons.agents}
-          title="Couldn’t load your agents"
-          description={error}
-          action={
-            <Button variant="secondary" size="sm" onClick={refresh}>
-              Try again
-            </Button>
-          }
-        />
+        <LoadError title="Couldn’t load your agents" description={error} onRetry={refresh} />
       ) : ordered === null ? (
         <div className="@container" role="status" aria-label="Loading agents">
           <div className="grid grid-cols-1 gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3">

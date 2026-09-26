@@ -39,7 +39,7 @@ export function MemoryHeader({ actions }: { actions: React.ReactNode }) {
   return (
     <AppPageHeader
       heading="Memory"
-      lede="What Juno carries from one chat to the next. You can change or remove any of it."
+      lede="What Juno carries from one chat to the next."
       actions={actions}
       className="mb-5"
     />

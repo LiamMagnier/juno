@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { FileText, MessageSquare, Plus, Search, Pin, PinOff } from "@/components/ui/icons";
+import { LoadError } from "@/components/ui/load-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,7 +22,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
-import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { removeStarredProject } from "@/lib/starred-projects";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
@@ -306,16 +307,7 @@ export default function ProjectsPage() {
       )}
 
       {error ? (
-        <EmptyState
-          tone="error"
-          className="mt-6"
-          icon={StatusIcons.error}
-          title="Couldn’t load your projects"
-          description="Check your connection and try once more."
-          action={
-            <Button variant="outline" size="sm" onClick={load}>Try again</Button>
-          }
-        />
+        <LoadError title="Couldn’t load your projects" onRetry={load} />
       ) : loading ? (
         <ProjectsGridSkeleton />
       ) : empty ? (
