@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { AppPage } from "@/components/ui/app-page";
 import { JunoMark } from "@/components/brand/logo";
+import { Plate } from "@/components/landing/plate";
 import { SharedChatTranscript } from "@/components/share/shared-chat-transcript";
 import { SharedArtifactViewer } from "@/components/share/shared-artifact-viewer";
 import { ReportShareButton } from "@/components/share/report-share-dialog";
@@ -92,6 +93,22 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
           // The transcript stays flat prose on the page ground, at the reading measure.
           <AppPage scroll={false} measure="reading" className="flex-1" contentClassName="py-8">
             <SharedChatTranscript messages={chat.messages} artifacts={chat.artifacts} />
+            {/* The end of a shared conversation is where a reader decides what
+                Juno is: one quiet invitation on the front door's own art. */}
+            <aside className="stage mt-14 rounded-stage">
+              <Plate name="horizon" dim sizes="(min-width: 768px) 720px, 100vw" imageClassName="object-[50%_65%]" />
+              <div className="relative m-3 flex flex-col gap-4 rounded-panel bg-card/85 p-5 backdrop-blur-xl sm:m-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-serif text-title font-medium text-foreground">Made with Juno</p>
+                  <p className="mt-1 text-body text-muted-foreground">
+                    Every frontier model in one calm place, with the cost of each answer in plain sight.
+                  </p>
+                </div>
+                <Button asChild className="shrink-0">
+                  <Link href="/sign-up">Start with Juno</Link>
+                </Button>
+              </div>
+            </aside>
           </AppPage>
         ) : artifact ? (
           <AppPage

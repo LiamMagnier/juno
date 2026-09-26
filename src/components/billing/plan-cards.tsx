@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { StatusIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
 import type { PlanConfig } from "@/lib/plans";
@@ -114,12 +113,13 @@ function PlanCard({ item, index, action }: { item: PlanCardItem; index: number; 
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <h3 className="text-heading">{name}</h3>
           {current ? (
-            <Badge variant="outline" className="gap-1">
+            // Plain words, not a pill: the card's coral edge already marks it.
+            <span className="inline-flex items-center gap-1 text-caption text-muted-foreground">
               <StatusIcons.success className="size-3 shrink-0 text-primary" aria-hidden="true" />
               Current plan
-            </Badge>
+            </span>
           ) : recommended ? (
-            <Badge variant="soft">Recommended</Badge>
+            <span className="text-caption font-medium text-primary-ink">Recommended</span>
           ) : null}
         </div>
         {header}

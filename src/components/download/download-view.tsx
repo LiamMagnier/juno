@@ -63,7 +63,7 @@ export function DownloadView({ downloads }: { downloads: AppDownload[] }) {
                 </a>
               </Button>
             ) : (
-              <span className="inline-flex h-11 items-center rounded-field bg-secondary px-6 text-body font-medium text-muted-foreground">
+              <span className="text-body text-muted-foreground">
                 {mac?.note ?? "Mac build not published yet"}
               </span>
             )}
@@ -242,7 +242,7 @@ function PlatformAction({ download, fallback }: { download?: AppDownload; fallba
 
 function Unavailable({ label }: { label: string }) {
   return (
-    <span className="inline-flex h-8 w-fit shrink-0 items-center rounded-full bg-secondary px-3 text-ui font-medium text-muted-foreground">
+    <span className="shrink-0 text-ui text-muted-foreground">
       {label}
     </span>
   );
