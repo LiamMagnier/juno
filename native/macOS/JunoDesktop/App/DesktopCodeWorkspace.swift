@@ -59,13 +59,9 @@ struct DesktopCodeWorkspace: View {
     @State private var previewTarget: CodePreviewTarget?
     @State private var voiceSession: DesktopVoiceSession?
     @State private var voiceUnavailable: String?
-    @State private var plan: DesktopUsagePlan?
-    @State private var planReadAt: Date?
     @State private var registry = DesktopWorkbenchRegistry.shared
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private static let planReadFloor: TimeInterval = 60
 
     // MARK: - Selection
 
@@ -183,10 +179,8 @@ struct DesktopCodeWorkspace: View {
                 remoteDeviceID: $remoteDeviceID,
                 product: $product,
                 isBootstrapping: isBootstrapping,
+                configuration: configuration,
                 session: session,
-                avatarModel: configuration?.avatarModel,
-                syncModel: configuration?.syncModel,
-                plan: plan,
                 openRepository: { isChoosingRepository = true },
                 newSession: { id in selection.wrappedValue = id.map { .repository($0) } ?? .draft },
                 rename: beginRename,
@@ -272,7 +266,6 @@ struct DesktopCodeWorkspace: View {
             Text(voiceUnavailable ?? "Juno could not start voice mode.")
         }
         .task { await bootstrap() }
-        .task(id: liveRunCount) { await readPlan() }
         .task(id: selectedSessionID) { await resolveController() }
         .task(id: selectedTask?.id) { followSelectedTask() }
         .task(id: remoteDeviceID) { await loadRemoteSessions() }
@@ -491,27 +484,46 @@ struct DesktopCodeWorkspace: View {
             }
         }
 
-        ToolbarItemGroup(placement: .primaryAction) {
+        // Chat's rule: New session sits in the toolbar only while the sidebar,
+        // and its own New session row, is hidden. Never both at once.
+        ToolbarItem(placement: .navigation) {
             Button(action: newSession) {
-                Label("New session", systemImage: "square.and.pencil")
+                Label { Text("New session") } icon: { JunoSymbol(.new) }
             }
             .help("New session (⌘N)")
             .accessibilityIdentifier("juno.code.new-session")
+        }
+        .hidden(columnVisibility != .detailOnly)
 
+        // The side panel's two tabs as labelled toggles: a word and a mark
+        // each, the Changes one carrying the session's diff so the toolbar
+        // says what there is to review before it is opened. The chosen panel
+        // wears the solid cut of its mark ("fill means on"), never a colour.
+        ToolbarItemGroup(placement: .primaryAction) {
             Button { togglePanel(.changes) } label: {
-                Label("Changes", systemImage: "plusminus")
+                DesktopCodeToolbarLabel(
+                    title: "Changes",
+                    icon: .diff,
+                    isOn: isPanelOn(.changes),
+                    stat: changeTotals
+                )
             }
             .disabled(controller == nil)
-            .help("Changes (⌥⌘R)")
+            .help("Review the changes in this session (⌥⌘R)")
+            .accessibilityLabel("Changes")
+            .accessibilityValue(changeTotals.map { "\($0.added) lines added, \($0.removed) removed" } ?? "No changes")
             .accessibilityIdentifier("juno.code.review.toggle")
 
             Button { togglePanel(.terminal) } label: {
-                Label("Terminal", systemImage: "terminal")
+                DesktopCodeToolbarLabel(title: "Terminal", icon: .terminal, isOn: isPanelOn(.terminal))
             }
             .disabled(controller?.context == nil)
-            .help("Terminal (⌥⌘C)")
+            .help("Show the session's terminal (⌥⌘C)")
+            .accessibilityLabel("Terminal")
             .accessibilityIdentifier("juno.code.terminal.toggle")
+        }
 
+        ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button("Preview", action: openPreview)
                     .disabled(controller?.context == nil)
@@ -556,9 +568,23 @@ struct DesktopCodeWorkspace: View {
                 }
                 .disabled(controller == nil)
             } label: {
-                Label("More", systemImage: "ellipsis")
+                Label { Text("More") } icon: { JunoSymbol(.more) }
             }
+            .help("Preview, pull request, screen control and session actions")
             .accessibilityIdentifier("juno.code.more")
+        }
+    }
+
+    private func isPanelOn(_ tab: StudioPanelTab) -> Bool {
+        panelPresentation.wrappedValue && panelTab.wrappedValue == tab
+    }
+
+    /// The session's diff, summed, or nil while nothing has changed.
+    private var changeTotals: (added: Int, removed: Int)? {
+        guard let changes = controller?.changes, !changes.isEmpty else { return nil }
+        return changes.reduce(into: (added: 0, removed: 0)) { total, change in
+            total.added += change.linesAdded
+            total.removed += change.linesRemoved
         }
     }
 
@@ -994,22 +1020,6 @@ struct DesktopCodeWorkspace: View {
         await remoteModel.watchEvents(deviceID: selectedRemote.deviceID, sessionID: selectedRemote.sessionID)
     }
 
-    private var liveRunCount: Int {
-        workbenchModel.sessions.filter(\.status.isActive).count
-            + codeModel.tasks.filter(\.status.isActive).count
-    }
-
-    private func readPlan() async {
-        guard let sender = configuration?.requestSender, let session else { return }
-        if plan != nil, let planReadAt, Date().timeIntervalSince(planReadAt) < Self.planReadFloor {
-            return
-        }
-        let snapshot = await NativeUsageClient(sender: sender).load(range: .month, for: session.profile.id)
-        guard let loaded = snapshot.plan else { return }
-        planReadAt = Date()
-        withAnimation(JunoMotion.standard) { plan = loaded }
-    }
-
     private func selectDefaultRemoteDevice(from devices: [NativeCodeDevice]) {
         guard remoteDeviceID.isEmpty || !devices.contains(where: { $0.id == remoteDeviceID }) else { return }
         remoteDeviceID = devices.first(where: \.online)?.id ?? devices.first?.id ?? ""
@@ -1018,6 +1028,31 @@ struct DesktopCodeWorkspace: View {
 
 /// The title bar's quiet run status: "Working 1m 12s" while a run is live,
 /// "Needs you" while it waits. Nothing at rest.
+/// A labelled toolbar toggle: the mark (solid while its panel is open), the
+/// word, and for Changes the session's diff in tabular digits. A toolbar of
+/// bare glyphs read as four riddles; each item now says what it opens.
+private struct DesktopCodeToolbarLabel: View {
+    let title: String
+    let icon: JunoIcon
+    let isOn: Bool
+    var stat: (added: Int, removed: Int)? = nil
+
+    var body: some View {
+        HStack(spacing: JunoSpace.tight) {
+            JunoSymbol(icon, weight: isOn ? .fill : .regular)
+            Text(title)
+                .junoFont(size: 13, relativeTo: .callout, weight: .medium)
+            if let stat {
+                StudioDiffStat(added: stat.added, removed: stat.removed)
+                    .contentTransition(.numericText())
+            }
+        }
+        .padding(.horizontal, JunoSpace.hairline)
+        .fixedSize()
+        .contentShape(.rect)
+    }
+}
+
 private struct DesktopCodeRunClock: View {
     let controller: SessionController
 

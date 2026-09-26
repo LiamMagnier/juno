@@ -49,72 +49,71 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
     }
 }
 
-/// The Chat/Code switch (§1.4 of the redesign): a native `Picker`, icon-only,
-/// in the sidebar's segment of the unified toolbar.
+/// The Chat/Code switch (§1.4 of the redesign, reworked in the premium pass):
+/// a **labelled** two-segment switch in the sidebar's segment of the unified
+/// toolbar — the product's mark and its name, with a raised key that slides
+/// between them.
 ///
-/// **A system control, not a Juno one.** The switch it replaces was a
-/// segmented control labelled "Juno product" pinned in a strip above the
-/// source list, which put a second band of chrome between the traffic lights
-/// and the rows. In the toolbar the strip reads traffic lights · the system
-/// sidebar toggle · space · the switch, and there is nothing else to draw.
+/// **Why labelled.** The icon-only system picker it replaces read as two
+/// anonymous glyphs beside the traffic lights: the one control that changes
+/// what the whole window is for said nothing about it until hovered. The words
+/// cost 60 points of a toolbar that has nothing else in that segment.
 ///
-/// **Selection is the fill cut and the system's own segment highlight — never
-/// an accent.** Each label names its image by the product's regular or solid
-/// drawing, so the chosen product is the one drawn solid; the control adds its
-/// neutral highlight. No tint is applied here or above it (§0.4): the toolbar
-/// owner sits above the one `.junoAccentTint()` in the window.
+/// **Juno's segmented control, not the system's.** ``JunoSegmented`` is the
+/// inset track and raised thumb every in-window switch already uses, carried
+/// on `JunoMotion.standard` (a cross-fade under Reduce Motion), so the
+/// product switch and a page's filter read as one family. Its ToolbarItem
+/// hides the shared glass capsule (`sharedBackgroundVisibility(.hidden)`),
+/// because a track inside a capsule is two shapes for one control.
 ///
-/// The selection is optional so a product outside ``DesktopProductMode/switchable``
-/// would read as *no segment chosen* rather than as a selection with no tag,
-/// which SwiftUI logs as an invalid state. Since Phase 5 Stage D every product
-/// is switchable, so this is a guard, not a case that happens.
+/// **Selection is the raised key and the solid cut of the mark — never an
+/// accent.** The toolbar owner sits above the one `.junoAccentTint()` in the
+/// window (§0.4).
+///
+/// Each segment keeps the automation identifier the launch UI suite finds it
+/// by (`juno.product-brand.<product>`), and the control keeps "Juno product";
+/// VoiceOver reads the control's own label, "Product", and adjusts it.
 struct DesktopProductSwitch: View {
     @Binding var product: DesktopProductMode
 
-    private var selection: Binding<DesktopProductMode?> {
+    private var options: [JunoSegmentedOption<DesktopProductMode>] {
+        DesktopProductMode.switchable.map { mode in
+            JunoSegmentedOption(mode, mode.label, icon: mode.icon)
+        }
+    }
+
+    /// The product, set **outside** any animation. The segmented control moves
+    /// its thumb inside `withAnimation`, and a product change swaps the whole
+    /// workspace: animated, that swap would keep two split views alive for the
+    /// length of the transition — crash rule 1 (`MACOS_CRASH_ROOT_CAUSE.md`).
+    /// The arriving workspace has its own rise (``JunoDesktopWorkspaceView``).
+    private var selection: Binding<DesktopProductMode> {
         Binding(
-            get: { DesktopProductMode.switchable.contains(product) ? product : nil },
-            set: { if let value = $0 { product = value } }
+            get: { product },
+            set: { next in
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { product = next }
+            }
         )
     }
 
     var body: some View {
-        Picker("Product", selection: selection) {
-            ForEach(DesktopProductMode.switchable) { mode in
-                Label(
-                    mode.label,
-                    image: mode.icon.assetName(product == mode ? .fill : .regular)
-                )
-                .help(mode.help)
-                .tag(Optional(mode))
-                .accessibilityIdentifier("juno.product-brand.\(mode.rawValue)")
-            }
-        }
-        .labelsHidden()
-        .junoProductPickerStyle()
+        JunoSegmented(
+            options: options,
+            selection: selection,
+            accessibilityLabel: "Product",
+            optionAccessibilityIdentifier: { "juno.product-brand.\($0.rawValue)" },
+            size: .compact
+        )
+        .help(DesktopProductMode.switchable.map(\.help).joined(separator: "   "))
         // The identifier the launch UI suite already finds the switch by. It
-        // is an automation handle, never shown or spoken: VoiceOver reads the
-        // picker's own label, "Product".
+        // is an automation handle, never shown or spoken.
         .accessibilityIdentifier("Juno product")
     }
 }
 
 extension View {
-    /// `.tabs` where it exists, `.segmented` where it does not.
-    ///
-    /// On macOS 27 the tabs style is the right *semantic* as well as the right
-    /// look: VoiceOver announces the segments as tabs, which is what a mode
-    /// switch is. macOS 26 has no tabs style, and the segmented control is the
-    /// closest the platform offers.
-    @ViewBuilder
-    func junoProductPickerStyle() -> some View {
-        if #available(macOS 27, *) {
-            pickerStyle(.tabs)
-        } else {
-            pickerStyle(.segmented)
-        }
-    }
-
     /// Installs the Chat/Code switch in the toolbar of the column this is
     /// applied to. Apply it to a product's **sidebar** content: an item
     /// declared by the sidebar column lands in the sidebar's segment of the
@@ -129,6 +128,9 @@ extension View {
             ToolbarItem(placement: .primaryAction) {
                 DesktopProductSwitch(product: product)
             }
+            // The switch draws its own inset track; the system's shared
+            // capsule around it would be a second shape for one control.
+            .sharedBackgroundVisibility(.hidden)
         }
     }
 

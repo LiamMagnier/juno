@@ -215,7 +215,6 @@
 		E9A0FE9C7FC697E66F368AF4 /* ComposerModelChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3E16891F7E491EB85E9FE8D /* ComposerModelChip.swift */; };
 		EB8621B27559C85125EF55F2 /* DesktopSearchPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5B553BFA9DE401FD05F2D98 /* DesktopSearchPanel.swift */; };
 		EECA061ECF7B53BDB8266F4D /* DesktopHostPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EFB8984FA997DDF53805FB8 /* DesktopHostPage.swift */; };
-		EF6B0AA71D4C8A18AECCBF04 /* DesktopCodeAccountFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83368A128D410411E190E1E4 /* DesktopCodeAccountFooter.swift */; };
 		EFA69F6076E6748752E50D81 /* DesktopScreenshotCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1993A9494C8380785278132D /* DesktopScreenshotCapture.swift */; };
 		F0415B5D42956526FE49F11E /* JunoWorkAutomation in Frameworks */ = {isa = PBXBuildFile; productRef = EFDF48E1D7E6735BFAC0AD07 /* JunoWorkAutomation */; };
 		F1D53C69526B4D3C764D79A4 /* DesktopChatSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 902F9BAEFB8A937F86CE9DAC /* DesktopChatSidebar.swift */; };
@@ -371,7 +370,6 @@
 		80D39602F40988BFE1716914 /* TranscriptAttachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptAttachments.swift; sourceTree = "<group>"; };
 		80E08901FA58A4F4DD67CE18 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		80EA814E49254F2ED0BCA441 /* DesktopEmptyChatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopEmptyChatTests.swift; sourceTree = "<group>"; };
-		83368A128D410411E190E1E4 /* DesktopCodeAccountFooter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCodeAccountFooter.swift; sourceTree = "<group>"; };
 		856BEA1C563BFB12201A1FDA /* JunoShortcutRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoShortcutRegistryTests.swift; sourceTree = "<group>"; };
 		85BC3F6A39AEE2AC01D4DFB1 /* JunoShortcutRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoShortcutRegistry.swift; sourceTree = "<group>"; };
 		860C2F4F840D28B7CCA34C43 /* ArtifactRuntimeSandboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactRuntimeSandboxTests.swift; sourceTree = "<group>"; };
@@ -604,7 +602,6 @@
 				3CBAC5E3086D8DC63B3905E8 /* DesktopAutomationsScreen.swift */,
 				902F9BAEFB8A937F86CE9DAC /* DesktopChatSidebar.swift */,
 				254B3DC49106D54CC41DE6B9 /* DesktopChatWorkspace.swift */,
-				83368A128D410411E190E1E4 /* DesktopCodeAccountFooter.swift */,
 				7597B1472C5D749C74C2C1D4 /* DesktopCodeHost.swift */,
 				E025C22E2B1F77D35FC1483B /* DesktopCodePreviewDock.swift */,
 				AE0BCDD021BF5183D9F1413D /* DesktopCodeStudio.swift */,
@@ -1030,7 +1027,6 @@
 				43924999102C6A264DEEDE3C /* DesktopAutomationsScreen.swift in Sources */,
 				F1D53C69526B4D3C764D79A4 /* DesktopChatSidebar.swift in Sources */,
 				70C7D6F21F795F1A92984D27 /* DesktopChatWorkspace.swift in Sources */,
-				EF6B0AA71D4C8A18AECCBF04 /* DesktopCodeAccountFooter.swift in Sources */,
 				7374309827C987CF0E3D49A9 /* DesktopCodeHost.swift in Sources */,
 				0541EBFC31E4BE5D6C38E894 /* DesktopCodePreviewDock.swift in Sources */,
 				07A83475FE4A621A61851E47 /* DesktopCodeStudio.swift in Sources */,

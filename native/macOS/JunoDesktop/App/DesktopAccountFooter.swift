@@ -11,10 +11,9 @@ import SwiftUI
 /// and on what plan, the sync mark when there is something to say, and the
 /// Settings gear — pinned under the source list in its `safeAreaBar`.
 ///
-/// **Chat's, for now.** The spec names this file as the footer both products
-/// share; Code keeps ``DesktopSidebarFooter`` (DesktopCodeAccountFooter.swift)
-/// until its own rework adopts this one, so the two columns are not both
-/// rewritten underneath a parallel change.
+/// **Both products' footer** (premium pass, rule 1). Code pins this same view
+/// under its column; the only thing it changes is what the gear opens — the
+/// settings of the product on screen (``DesktopFooterSettingsAction``).
 ///
 /// **A word, not a meter.** The plan is one word after the name — "Pro" — and
 /// says nothing about usage below 80% of the week's budget. Above that it
@@ -29,6 +28,9 @@ import SwiftUI
 struct DesktopAccountFooter: View {
     let configuration: JunoDesktopConfiguration
     let session: NativeAuthenticatedSession
+    /// What the gear opens, when it is not the app's Settings: Code points it
+    /// at Code's settings window. Nil is Chat's gear.
+    var settingsAction: DesktopFooterSettingsAction? = nil
 
     /// The account's plan meters, or nil until the first read lands. Nil draws
     /// no plan word at all rather than a guessed one.
@@ -176,7 +178,11 @@ struct DesktopAccountFooter: View {
 
     private var settingsButton: some View {
         Button {
-            DesktopSettingsRouter.open(.general, using: openSettings)
+            if let settingsAction {
+                settingsAction.action()
+            } else {
+                DesktopSettingsRouter.open(.general, using: openSettings)
+            }
         } label: {
             JunoIconView(.settings, size: 16)
                 .foregroundStyle(Color.junoSidebarInk)
@@ -184,9 +190,9 @@ struct DesktopAccountFooter: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.borderless)
-        .help(JunoShortcutRegistry.help("Settings", .settings))
-        .accessibilityLabel("Settings")
-        .accessibilityIdentifier("juno.desktop.footer.settings")
+        .help(settingsAction?.help ?? JunoShortcutRegistry.help("Settings", .settings))
+        .accessibilityLabel(settingsAction?.help ?? "Settings")
+        .accessibilityIdentifier(settingsAction?.identifier ?? "juno.desktop.footer.settings")
     }
 
     // MARK: Plan
@@ -204,6 +210,14 @@ struct DesktopAccountFooter: View {
         planReadAt = Date()
         plan = loaded
     }
+}
+
+/// The footer gear's target when it is not the app's Settings.
+struct DesktopFooterSettingsAction {
+    /// The tooltip, which is also the spoken name.
+    let help: String
+    let identifier: String
+    let action: () -> Void
 }
 
 // MARK: - Plan word
@@ -678,5 +692,43 @@ private struct DesktopPopoverRow: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .accessibilityLabel(title)
+    }
+}
+
+// MARK: - Dot fill bar
+
+/// Juno's dot matrix, as a proportion.
+///
+/// `dot-matrix.tsx` fills `round(ratio × dots)` of eighteen 5px dots in
+/// `--primary` and leaves the rest on `--border`. Dots rather than a continuous
+/// bar because the matrix is the product's own mark, and because at a sidebar's
+/// width a bar two percent full and a bar four percent full are the same three
+/// pixels.
+struct DesktopSidebarDotFillBar: View {
+    let fraction: Double
+    var tint: Color = .junoAccent
+    /// An unlimited plan's full bar, held back so it reads as "not a limit"
+    /// rather than as "full". The web dims the same bar for the same reason.
+    var dimmed = false
+
+    private static let dots = 18
+    private static let diameter: CGFloat = 5
+    private static let gap: CGFloat = 3
+
+    private var filled: Int {
+        Int((min(1, max(0, fraction.isFinite ? fraction : 0)) * Double(Self.dots)).rounded())
+    }
+
+    var body: some View {
+        HStack(spacing: Self.gap) {
+            ForEach(0..<Self.dots, id: \.self) { index in
+                Circle()
+                    .fill(index < filled ? tint : Color.junoBorder)
+                    .frame(width: Self.diameter, height: Self.diameter)
+            }
+        }
+        .opacity(dimmed ? 0.4 : 1)
+        .animation(JunoMotion.standard, value: filled)
+        .accessibilityHidden(true)
     }
 }
