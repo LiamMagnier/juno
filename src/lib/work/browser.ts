@@ -62,6 +62,11 @@
  */
 
 import type { Browser, BrowserContext, Page, Route } from "playwright";
+import {
+  selectorForElement,
+  snapshotPage,
+  submitsFormOnPage,
+} from "./browser-page";
 
 /*
  * The three shapes below mirror `BrowserElement`, `BrowserPageState` and
@@ -168,9 +173,6 @@ export interface WorkBrowser {
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 25_000;
 const DEFAULT_ACTION_TIMEOUT_MS = 10_000;
 
-/** How many interactive elements one snapshot names. Mirrors the tool's cap. */
-const MAX_ELEMENTS = 60;
-
 /**
  * Headers the transport owns, which must not be forwarded from the page.
  *
@@ -215,19 +217,6 @@ const IGNORED_RESOURCE_TYPES = new Set(["image", "media", "font"]);
  * browsing session is not the thing that hits it.
  */
 const MAX_REQUESTS_PER_ACTION = 150;
-
-/**
- * What a page looks like when it is asking for a card.
- *
- * Used to grade a submit as a purchase rather than as a send, so a wrong
- * answer is only ever a card that says "Buy" over a form that was not one —
- * both readings stop and ask, because a submit that is not plainly a query
- * already floors. It is deliberately narrow: the field that names a card
- * number or its security code, by the autocomplete token the spec defines or
- * by the names every checkout has used since long before that token existed.
- */
-const PAYMENT_FIELD =
-  /card[-_ ]?number|credit[-_ ]?card|(^|[^a-z])(cvv|cvc|csc)([^a-z]|$)|security[-_ ]?code/i;
 
 /**
  * The environment Chromium is launched with.
@@ -452,128 +441,20 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
    * match of a selector on a page that has since changed under it.
    */
   async function snapshot(current: Page): Promise<BrowserPageState> {
-    await current.waitForLoadState("domcontentloaded", { timeout: navigationTimeout }).catch(() => {});
-    const collected = (await current.evaluate((options: { max: number; payment: string }) => {
-      const { max } = options;
-      const paymentField = new RegExp(options.payment, "i");
-      const selector =
-        'a[href], button, input, textarea, select, [role="button"], [role="link"], [contenteditable="true"]';
-      const found: Array<{
-        ref: number;
-        role: string;
-        label: string;
-        href?: string;
-        submits?: boolean;
-        method?: "get" | "post";
-      }> = [];
-      let ref = 0;
-      for (const node of Array.from(document.querySelectorAll(selector))) {
-        if (found.length >= max) break;
-        const element = node as HTMLElement;
-        const rect = element.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-        const visible =
-          rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-        if (!visible) continue;
-
-        const tag = element.tagName.toLowerCase();
-        const type = (element.getAttribute("type") ?? "").toLowerCase();
-        const role =
-          tag === "a"
-            ? "link"
-            : tag === "button" || type === "submit" || type === "button"
-              ? "button"
-              : tag === "select"
-                ? "dropdown"
-                : tag === "input" && (type === "checkbox" || type === "radio")
-                  ? type
-                  : "textbox";
-        const label =
-          (element.innerText || "").trim() ||
-          element.getAttribute("aria-label") ||
-          element.getAttribute("placeholder") ||
-          element.getAttribute("name") ||
-          element.getAttribute("value") ||
-          element.getAttribute("title") ||
-          "";
-        const submits =
-          Boolean(element.closest("form")) &&
-          ((tag === "button" && (type === "" || type === "submit")) ||
-            (tag === "input" && (type === "submit" || type === "image")));
-
-        // Recorded for every element in a form, not only for the ones that
-        // press it: a form is also sent by pressing Enter in one of its
-        // fields, and that field is a legitimate target for `submit`.
-        const form = element.closest("form");
-        const method =
-          form === null ? undefined : (form.method || "get").toLowerCase() === "get" ? "get" : "post";
-
-        ref += 1;
-        element.setAttribute("data-juno-ref", String(ref));
-        found.push({
-          ref,
-          role,
-          label: label.replace(/\s+/g, " ").slice(0, 80),
-          ...(tag === "a" ? { href: element.getAttribute("href") ?? "" } : {}),
-          ...(submits ? { submits: true } : {}),
-          ...(method ? { method } : {}),
-        });
-      }
-
-      const takesPayment = Array.from(document.querySelectorAll("input")).some((input) => {
-        const autocomplete = (input.getAttribute("autocomplete") ?? "").toLowerCase();
-        if (autocomplete.includes("cc-number") || autocomplete.includes("cc-csc")) return true;
-        return paymentField.test(
-          `${input.getAttribute("name") ?? ""} ${input.getAttribute("id") ?? ""} ${input.getAttribute("placeholder") ?? ""}`
-        );
-      });
-      return { found, takesPayment };
-    }, { max: MAX_ELEMENTS, payment: PAYMENT_FIELD.source })) as {
-      found: BrowserElement[];
-      takesPayment: boolean;
-    };
-
-    elements = collected.found;
-    takesPayment = collected.takesPayment;
-    return {
-      url: current.url(),
-      title: await current.title().catch(() => ""),
-      html: await current.content(),
-      elements: collected.found,
-    };
+    const res = await snapshotPage(current, navigationTimeout);
+    elements = res.elements;
+    takesPayment = res.takesPayment;
+    return res.page;
   }
 
-  /** The selector a target names, or the sentence saying why it names none. */
   function selectorFor(
     target: { ref?: number; selector?: string },
   ): { selector: string } | { refusal: string } {
-    if (typeof target.ref === "number") {
-      const known = elements.some((element) => element.ref === target.ref);
-      if (!known) {
-        return {
-          refusal: `There is nothing numbered ${target.ref} on the page you last read. Read the page again and use a number from that list.`,
-        };
-      }
-      return { selector: `[data-juno-ref="${target.ref}"]` };
-    }
-    if (target.selector) return { selector: target.selector };
-    return { refusal: "A ref or a selector is required." };
+    return selectorForElement(elements, target);
   }
 
-  /** Whether pressing this element would send the form it is in. */
   async function submitsForm(current: Page, selector: string): Promise<boolean> {
-    return current
-      .$eval(selector, (node) => {
-        const element = node as HTMLElement;
-        if (!element.closest("form")) return false;
-        const tag = element.tagName.toLowerCase();
-        const type = (element.getAttribute("type") ?? "").toLowerCase();
-        return (
-          (tag === "button" && (type === "" || type === "submit")) ||
-          (tag === "input" && (type === "submit" || type === "image"))
-        );
-      })
-      .catch(() => false);
+    return submitsFormOnPage(current, selector);
   }
 
   /**

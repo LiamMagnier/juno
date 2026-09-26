@@ -6,8 +6,8 @@ here.
 
 ## Status
 
-- Current phase: 1
-- Last commit on `agents/v2`: Phase 0 preconditions and baseline
+- Current phase: 2
+- Last commit on `agents/v2`: Phase 1 data and provider layer
 - Blockers: none
 
 ## Phase 0 — preconditions
@@ -40,13 +40,13 @@ here.
 | next build | pass | |
 
 ## Phase 1 — data and provider layer
-- [ ] Migration `<ts>_agents_v2` + schema + `OWNER_COLUMN` + RLS, no sync trigger
-- [ ] Env vars (env.ts, .env.example, JUNO.md §19)
-- [ ] `src/lib/computer/*` (types, provider, fake, docker, remote-browser, live-view, store, sweep)
-- [ ] `deploy/agent-computers/*` copied verbatim from INFRA.md (Dockerfile, entrypoint, cdp-gate, policies, firewall, setup-vm)
-- [ ] `SECURITY.md` row
-- [ ] Unit tests (lifecycle, lease, caps, sweeper, secrets encrypted, off without env)
-- [ ] Gates: quick + drift + validate
+- [x] Migration `<ts>_agents_v2` + schema + `OWNER_COLUMN` + RLS, no sync trigger
+- [x] Env vars (env.ts, .env.example, JUNO.md §19)
+- [x] `src/lib/computer/*` (types, provider, fake, docker, remote-browser, live-view, store, sweep)
+- [x] `deploy/agent-computers/*` copied verbatim from INFRA.md (Dockerfile, entrypoint, cdp-gate, policies, firewall, setup-vm)
+- [x] `SECURITY.md` row
+- [x] Unit tests (lifecycle, lease, caps, sweeper, secrets encrypted, off without env)
+- [x] Gates: quick + drift + validate
 
 ## Phase 2 — runner integration
 - [ ] agent-core: computer tools, image channel, checkpoint scrub, keep last 3 images, thinking `drop_block`, `signatureInput` hook, VENDORED.md, dist rebuilt

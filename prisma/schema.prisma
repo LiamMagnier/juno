@@ -151,6 +151,7 @@ model User {
   agentIdeas                  AgentIdea[]
   agentNotes                  AgentNote[]
   agentEvents                 AgentEvent[]
+  agentComputers              AgentComputer[]
 
   @@index([image])
 }
@@ -3786,17 +3787,23 @@ model Agent {
   /// The starting point it was hired from. Copy and defaults only.
   template  String?
 
+  /// needs_you | results | all. Which notifications this agent sends.
+  notify   String    @default("results")
+  /// Set when the agent is pinned in the roster; pinned agents sort first.
+  pinnedAt DateTime?
+
   lastReflectedAt DateTime?
   sortOrder       Int       @default(0)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
 
-  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  goals  AgentGoal[]
-  ideas  AgentIdea[]
-  notes  AgentNote[]
-  events AgentEvent[]
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goals    AgentGoal[]
+  ideas    AgentIdea[]
+  notes    AgentNote[]
+  events   AgentEvent[]
+  computer AgentComputer?
 
   @@index([userId, deletedAt, sortOrder])
 }
@@ -3893,4 +3900,33 @@ model AgentEvent {
 
   @@index([agentId, createdAt])
   @@index([userId, createdAt])
+}
+
+/// An agent's own computer: a Docker container on the owner's server. One per
+/// agent, never shared. The container is created lazily; `containerRef` is null
+/// until first use.
+model AgentComputer {
+  id             String    @id @default(cuid())
+  userId         String
+  agentId        String    @unique
+  provider       String // "docker" | "fake"
+  containerRef   String?   @db.Text // encryptSecret(container id)
+  secrets        String?   @db.Text // encryptSecret(JSON {cdpToken, vncControl, vncView})
+  status         String    @default("asleep") // asleep | resting | waking | awake | error
+  streamOn       Boolean   @default(false)
+  leaseRunId     String?
+  leaseExpiresAt DateTime?
+  lastResumedAt  DateTime?
+  lastActiveAt   DateTime?
+  lastViewedAt   DateTime?
+  activeSeconds  Int       @default(0) // lifetime awake seconds, for the UI
+  diskMb         Int? // last measured /home/agent size
+  lastError      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent          Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([status, lastActiveAt])
 }

@@ -160,6 +160,66 @@ export const env = {
     elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID,
   },
 
+  // Agent computers (optional — disabled unless AGENT_COMPUTER_PROVIDER is set)
+  agentComputer: {
+    get provider(): string {
+      return (process.env.AGENT_COMPUTER_PROVIDER ?? "").trim();
+    },
+    get image(): string {
+      return (process.env.AGENT_COMPUTER_IMAGE ?? "").trim() || "juno-agent-computer:1";
+    },
+    get storageRoot(): string {
+      return (process.env.AGENT_COMPUTER_STORAGE_ROOT ?? "").trim() || "/var/lib/juno-computers";
+    },
+    get network(): string {
+      return (process.env.AGENT_COMPUTER_NETWORK ?? "").trim() || "juno-agent-net";
+    },
+    get memoryMb(): number {
+      const n = Number(process.env.AGENT_COMPUTER_MEMORY_MB);
+      return Number.isFinite(n) && n > 0 ? n : 2048;
+    },
+    get cpus(): number {
+      const n = Number(process.env.AGENT_COMPUTER_CPUS);
+      return Number.isFinite(n) && n > 0 ? n : 1.5;
+    },
+    get shmMb(): number {
+      const n = Number(process.env.AGENT_COMPUTER_SHM_MB);
+      return Number.isFinite(n) && n > 0 ? n : 1024;
+    },
+    get diskQuotaMb(): number {
+      const n = Number(process.env.AGENT_COMPUTER_DISK_QUOTA_MB);
+      return Number.isFinite(n) && n > 0 ? n : 4096;
+    },
+    get maxAwakeHost(): number {
+      const n = Number(process.env.AGENT_COMPUTER_MAX_AWAKE_HOST);
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : 6;
+    },
+    get maxAwakeUser(): number {
+      const n = Number(process.env.AGENT_COMPUTER_MAX_AWAKE_USER);
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : 2;
+    },
+    get minFreeMemMb(): number {
+      const n = Number(process.env.AGENT_COMPUTER_MIN_FREE_MEM_MB);
+      return Number.isFinite(n) && n >= 0 ? n : 4096;
+    },
+    get minFreeDiskMb(): number {
+      const n = Number(process.env.AGENT_COMPUTER_MIN_FREE_DISK_MB);
+      return Number.isFinite(n) && n >= 0 ? n : 10240;
+    },
+    get restMinutes(): number {
+      const n = Number(process.env.AGENT_COMPUTER_REST_MINUTES);
+      return Number.isFinite(n) && n > 0 ? n : 20;
+    },
+    get sleepHours(): number {
+      const n = Number(process.env.AGENT_COMPUTER_SLEEP_HOURS);
+      return Number.isFinite(n) && n > 0 ? n : 24;
+    },
+    get costUsdPerMin(): number {
+      const n = Number(process.env.AGENT_COMPUTER_COST_USD_PER_MIN);
+      return Number.isFinite(n) && n >= 0 ? n : 0;
+    },
+  },
+
   isProd: process.env.NODE_ENV === "production",
 };
 
