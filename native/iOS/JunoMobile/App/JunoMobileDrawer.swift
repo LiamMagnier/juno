@@ -44,6 +44,19 @@ struct JunoMobileSidebarDrawer: View {
   /// Publishes a conversation and hands the link to the share sheet. Nil
   /// where the app has no share client.
   var shareConversation: ((String) -> Void)?
+  /// `.drawer` is the phone's sheet; `.sidebar` is the iPad's column, drawn
+  /// in the Mac's row grammar. Same data, same actions, same menus.
+  var layout: Layout = .drawer
+  /// Whether the open chat is an unsaved draft, which is what selects the
+  /// sidebar's New chat row.
+  var isDrafting: Bool = false
+  /// Plain-text status beside Code and Work in the iPad sidebar.
+  var statuses: [JunoMobileSection: JunoMobileSidebarStatus] = [:]
+  /// An incognito chat is open: no saved conversation is the current one,
+  /// whatever the list last had selected.
+  var incognito: Bool = false
+
+  enum Layout { case drawer, sidebar }
 
   @State private var renameTarget: NativeConversation?
   @State private var renameValue = ""
@@ -111,9 +124,14 @@ struct JunoMobileSidebarDrawer: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      header
-      list
-      footer
+      if layout == .drawer {
+        header
+        list
+        footer
+      } else {
+        sidebarList
+        sidebarFooter
+      }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     .accessibilityIdentifier("juno.mobile.sidebar")
@@ -476,9 +494,12 @@ struct JunoMobileSidebarDrawer: View {
   ) -> some View {
     JunoMobileConversationRow(
       title: conversation.title,
-      pinned: pinned,
+      // The iPad's section header already says so.
+      pinned: pinned && layout == .drawer,
       pending: conversation.isPending,
-      selected: selection == .chat && conversationModel?.selectedConversationID == conversation.id,
+      selected: !incognito && selection == .chat
+        && conversationModel?.selectedConversationID == conversation.id,
+      sidebar: layout == .sidebar,
       action: {
         selectionHaptic.fire()
         openConversation(conversation.id)
@@ -693,6 +714,193 @@ struct JunoMobileSidebarDrawer: View {
   }
 }
 
+// MARK: - iPad sidebar
+
+extension JunoMobileSidebarDrawer {
+  /// The destinations the iPad sidebar lists as rows, in the Mac's order: the
+  /// two products that run work, then where content lives. Tasks and
+  /// Connections sit behind More, as they do on the Mac.
+  fileprivate static let sidebarDestinations: [JunoMobileSection] = [
+    .code, .work, .library, .projects, .artifacts, .agents,
+  ]
+  fileprivate static let sidebarOverflow: [JunoMobileSection] = [.tasks, .connections]
+
+  /// The iPad column: the Mac's sidebar, row for row.
+  ///
+  /// New chat and Search first, then the destinations, then pinned projects,
+  /// pinned chats and one Recent list. No brand header (the window chrome and
+  /// the greeting already carry it) and no attention card: Code and Work say
+  /// what is waiting on their own rows.
+  var sidebarList: some View {
+    List {
+      Group {
+        JunoMobileIPadSidebarRow(
+          icon: .new, title: "chat.new",
+          selected: selection == .chat && isDrafting
+        ) {
+          selectionHaptic.fire()
+          newChat()
+        }
+        .disabled(!canCreateChat)
+        .accessibilityIdentifier("juno.mobile.sidebar-new-chat")
+
+        JunoMobileIPadSidebarRow(
+          icon: .search, title: "navigation.search", selected: selection == .search
+        ) {
+          selectionHaptic.fire()
+          openDestination(.search)
+        }
+        .accessibilityIdentifier("juno.mobile.sidebar-search")
+
+        ForEach(Self.sidebarDestinations) { destination in
+          destinationRow(destination)
+        }
+        // A destination reached through More is shown as a row while it is
+        // open, so the selection always has somewhere to sit.
+        if Self.sidebarOverflow.contains(selection) {
+          destinationRow(selection)
+        }
+        moreMenu
+      }
+      .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
+      .listRowSeparator(.hidden)
+      .listRowBackground(Color.clear)
+
+      let pinnedProjects = projects.filter(\.starred)
+      if !pinnedProjects.isEmpty {
+        Section {
+          ForEach(pinnedProjects) { project in
+            projectRow(project)
+          }
+        } header: {
+          sidebarSectionLabel("Pinned projects")
+        }
+        .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+      }
+
+      if !pinnedChats.isEmpty {
+        Section {
+          ForEach(pinnedChats) { conversationRow($0, pinned: true) }
+        } header: {
+          sidebarSectionLabel("Pinned chats")
+        }
+        .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+      }
+
+      let recent = recentGroups.flatMap(\.conversations)
+      if !recent.isEmpty {
+        Section {
+          ForEach(recent) { conversationRow($0, pinned: false) }
+        } header: {
+          sidebarSectionLabel("Recent")
+        }
+        .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+      }
+    }
+    .listStyle(.plain)
+    .listSectionSpacing(.compact)
+    .scrollContentBackground(.hidden)
+    .scrollIndicators(.hidden)
+    .environment(\.defaultMinListRowHeight, 44)
+  }
+
+  private func destinationRow(_ destination: JunoMobileSection) -> some View {
+    JunoMobileIPadSidebarRow(
+      icon: destination.junoIcon,
+      title: destination.title,
+      selected: selection == destination,
+      status: statuses[destination]
+    ) {
+      selectionHaptic.fire()
+      openDestination(destination)
+    }
+    .accessibilityIdentifier("juno.mobile.sidebar-\(destination.rawValue)")
+  }
+
+  private var moreMenu: some View {
+    Menu {
+      ForEach(Self.sidebarOverflow) { destination in
+        Button {
+          openDestination(destination)
+        } label: {
+          Label { Text(destination.title) } icon: { JunoIconView(destination.junoIcon, size: 15) }
+        }
+      }
+    } label: {
+      JunoMobileIPadSidebarRowLabel(icon: .ellipsis, title: "More")
+    }
+    // A `Menu` tints its label with the accent; the row is ink.
+    .tint(Color.primary)
+    .frame(minWidth: 44, minHeight: 44)
+    .contentShape(.rect(cornerRadius: 8))
+    .accessibilityIdentifier("juno.mobile.sidebar-more")
+  }
+
+  /// The Mac's section header: small, semibold, secondary ink, sentence case.
+  private func sidebarSectionLabel(_ key: LocalizedStringKey) -> some View {
+    Text(key)
+      .font(.footnote.weight(.semibold))
+      .foregroundStyle(Color.junoSecondaryInk)
+      .textCase(nil)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, 10)
+      .padding(.top, 16)
+      .padding(.bottom, 2)
+      .accessibilityAddTraits(.isHeader)
+  }
+
+  /// Who is signed in, and the way to Settings: a plain row on a hairline,
+  /// as the Mac's footer is. The column itself is the system's glass.
+  var sidebarFooter: some View {
+    Button(action: { openDestination(.settings) }) {
+      HStack(spacing: 10) {
+        JunoAvatar(
+          imageData: avatarData,
+          imageURL: session.profile.imageURL,
+          name: profileName,
+          size: 28
+        )
+        VStack(alignment: .leading, spacing: 0) {
+          Text(profileName)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(Color.junoForeground)
+            .lineLimit(1)
+          if let planName = plan?.planName {
+            Text(planName)
+              .font(.caption)
+              .foregroundStyle(Color.junoSecondaryInk)
+              .lineLimit(1)
+          }
+        }
+        Spacer(minLength: 0)
+        JunoIconView(.settings, size: 16)
+          .foregroundStyle(Color.junoSecondaryInk)
+      }
+      .padding(.horizontal, 12)
+      .frame(minHeight: 52)
+      .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: 10, style: .continuous))
+      .hoverEffect(.highlight)
+      .contentShape(.rect)
+    }
+    .buttonStyle(JunoSidebarPressStyle())
+    .frame(minWidth: 44, minHeight: 44)
+    .contentShape(.rect)
+    .padding(.horizontal, 8)
+    .padding(.vertical, 6)
+    .overlay(alignment: .top) {
+      Rectangle().fill(Color.junoHairline).frame(height: 0.5)
+    }
+    .accessibilityLabel("Open settings for \(profileName)")
+    .accessibilityIdentifier("juno.mobile.sidebar-profile")
+  }
+}
+
 /// A compact workspace tile: 16pt monochrome glyph and label on a quiet fill.
 /// The glyph takes the accent only when it is the selected destination.
 struct JunoMobileSidebarTile: View {
@@ -765,7 +973,12 @@ struct JunoMobileConversationRow: View {
   var pinned: Bool
   var pending: Bool
   var selected: Bool = false
+  /// The iPad sidebar's metrics: the Mac's 15pt label and 8pt wash, with a
+  /// pointer highlight.
+  var sidebar: Bool = false
   let action: () -> Void
+
+  private var radius: CGFloat { sidebar ? 8 : 10 }
 
   var body: some View {
     Button(action: action) {
@@ -775,7 +988,7 @@ struct JunoMobileConversationRow: View {
             .foregroundStyle(Color.junoTertiaryInk)
         }
         Text(title)
-          .junoFont(size: 16, relativeTo: .body, weight: selected ? .medium : .regular)
+          .junoFont(size: sidebar ? 15 : 16, relativeTo: .body, weight: selected ? .medium : .regular)
           .foregroundStyle(.primary)
           .lineLimit(1)
           .truncationMode(.tail)
@@ -786,11 +999,13 @@ struct JunoMobileConversationRow: View {
         }
       }
       .padding(.horizontal, 10)
-      .frame(minHeight: 40)
+      .frame(minHeight: sidebar ? 44 : 40)
       .background(
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-          .fill(selected ? Color.junoMuted : .clear)
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
+          .fill(selected ? (sidebar ? Color.junoSelectedFill : Color.junoMuted) : .clear)
       )
+      .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: radius, style: .continuous))
+      .hoverEffect(.highlight)
       .contentShape(Rectangle())
     }
     .buttonStyle(JunoSidebarPressStyle())

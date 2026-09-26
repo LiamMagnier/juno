@@ -329,45 +329,72 @@ struct JunoMobileStartingPoints: View {
   let points: [JunoMobileStartingPoint]
 
   @State private var tapped = 0
+  @Environment(\.horizontalSizeClass) private var sizeClass
 
   var body: some View {
-    ScrollView(.horizontal) {
-      HStack(spacing: JunoSpace.snug) {
-        ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
-          Button {
-            tapped += 1
-            point.action()
-          } label: {
-            VStack(alignment: .leading, spacing: JunoSpace.snug) {
-              JunoIconView(point.icon, size: 17)
-                .foregroundStyle(Color.junoForeground)
-                .frame(width: 32, height: 32)
-                .background(Circle().fill(Color.junoMuted))
-              VStack(alignment: .leading, spacing: 2) {
-                Text(point.title)
-                  .font(.subheadline.weight(.semibold))
-                  .foregroundStyle(Color.junoForeground)
-                Text(point.detail)
-                  .font(.footnote)
-                  .foregroundStyle(Color.junoSecondaryInk)
-              }
-              .lineLimit(1)
-            }
-            .padding(JunoSpace.cozy)
-            .frame(minWidth: 150, alignment: .leading)
-            .junoMobileRaised(cornerRadius: 18)
-            .contentShape(.rect(cornerRadius: 18))
+    Group {
+      if sizeClass == .regular {
+        // On an iPad the row has the room to be a row: equal columns under
+        // the composer, each card lifting under the pointer.
+        HStack(alignment: .top, spacing: JunoSpace.snug) {
+          ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
+            card(point, index: index, expands: true)
           }
-          .buttonStyle(.junoMobilePress)
-          .junoMobileRise(delay: 0.3 + Double(index) * 0.06, distance: 12)
-          .accessibilityIdentifier("juno.mobile.starting-point.\(point.id)")
+        }
+        // Equal heights: each card fills to the tallest, and no taller.
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, JunoSpace.regular)
+      } else {
+        ScrollView(.horizontal) {
+          HStack(spacing: JunoSpace.snug) {
+            ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
+              card(point, index: index, expands: false)
+            }
+          }
+          .padding(.vertical, JunoSpace.snug)
+        }
+        .contentMargins(.horizontal, JunoSpace.regular, for: .scrollContent)
+        .scrollIndicators(.hidden)
+        .scrollClipDisabled()
+      }
+    }
+    .sensoryFeedback(.selection, trigger: tapped)
+  }
+
+  private func card(_ point: JunoMobileStartingPoint, index: Int, expands: Bool) -> some View {
+    Button {
+      tapped += 1
+      point.action()
+    } label: {
+      VStack(alignment: .leading, spacing: JunoSpace.snug) {
+        JunoIconView(point.icon, size: 17)
+          .foregroundStyle(Color.junoForeground)
+          .frame(width: 32, height: 32)
+          .background(Circle().fill(Color.junoMuted))
+        VStack(alignment: .leading, spacing: 2) {
+          Text(point.title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Color.junoForeground)
+            .lineLimit(expands ? 2 : 1)
+            .fixedSize(horizontal: false, vertical: true)
+          Text(point.detail)
+            .font(.footnote)
+            .foregroundStyle(Color.junoSecondaryInk)
+            .lineLimit(expands ? 2 : 1)
+            .fixedSize(horizontal: false, vertical: true)
         }
       }
-      .padding(.vertical, JunoSpace.snug)
+      .padding(JunoSpace.cozy)
+      .frame(minWidth: 150, maxWidth: expands ? .infinity : nil, alignment: .leading)
+      .frame(maxHeight: expands ? .infinity : nil, alignment: .topLeading)
+      .junoMobileRaised(cornerRadius: 18)
+      .contentShape(.hoverEffect, .rect(cornerRadius: 18))
+      .hoverEffect(.lift)
+      .contentShape(.rect(cornerRadius: 18))
     }
-    .contentMargins(.horizontal, JunoSpace.regular, for: .scrollContent)
-    .scrollIndicators(.hidden)
-    .scrollClipDisabled()
-    .sensoryFeedback(.selection, trigger: tapped)
+    .buttonStyle(.junoMobilePress)
+    .frame(minWidth: 44, minHeight: 44)
+    .junoMobileRise(delay: 0.3 + Double(index) * 0.06, distance: 12)
+    .accessibilityIdentifier("juno.mobile.starting-point.\(point.id)")
   }
 }

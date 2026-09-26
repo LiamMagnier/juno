@@ -386,6 +386,11 @@ struct JunoMobileComposer: View {
     }
     .padding(.horizontal, JunoSpace.regular)
     .padding(.vertical, JunoSpace.tight)
+    // The transcript's measure, so on an iPad the capsule lines up with the
+    // column it writes into instead of spanning the window. Before the voice
+    // field, which stays as wide as the screen it lights.
+    .frame(maxWidth: JunoMobileMeasure.reading)
+    .frame(maxWidth: .infinity)
     // Voice is the one ambient field with semantic meaning. It remains mounted
     // here so it tracks the keyboard with the safe-area composer.
     .background(alignment: .bottom) { voiceFieldLayer }
