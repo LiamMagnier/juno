@@ -729,14 +729,10 @@ private struct JunoMobileModelRowLabel: View {
                         .foregroundStyle(Color.junoForeground)
                         .lineLimit(2)
                     if model.choosesReasoningAutomatically {
+                        // Plain text, no badge container (owner directive).
                         Text("Smart")
-                            .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .foregroundStyle(Color.junoSecondaryInk)
-                            .background {
-                                Capsule().strokeBorder(Color.junoBorder, lineWidth: 0.75)
-                            }
+                            .junoFont(size: 12, relativeTo: .caption, weight: .medium)
+                            .foregroundStyle(Color.junoTertiaryInk)
                     }
                     Spacer(minLength: 0)
                 }
