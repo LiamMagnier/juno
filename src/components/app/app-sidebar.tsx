@@ -990,36 +990,15 @@ export function AppSidebar({
                   transition={transition.base}
                   className="truncate font-serif text-title text-foreground translate-y-[3px]"
                 >
-                  Juno{isCode ? " Code" : ""}
+                  Juno
                 </motion.span>
               )}
             </Link>
           </motion.div>
-          {/* The ONE product switch in the shell. Expanded it is this 28px
-              icon pair; at the rail it stays the 44px icon column below,
-              because 64px has no room for a header row at all. */}
-          {/* Fades with the collapse rather than vanishing in the frame the
-              rows start to move: the closing panel is still 200px wide at that
-              moment, so a cut here was the one thing in the header that
-              visibly snapped. */}
-          <AnimatePresence initial={false} mode="popLayout">
-            {!collapsed && (
-              <motion.div
-                key="header-switch"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={transition.fast}
-                className="shrink-0"
-              >
-                <ProductSwitch
-                  active={product}
-                  plan={quota.plan}
-                  onNavigate={() => setSidebarOpen(false)}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {/* The product switch moved OUT of this row to its own labelled
+              row below (see ProductSwitch): the header is collapse and the
+              wordmark, and the wordmark is "Juno" in both products because
+              the switch under it now says which one is down. */}
           {/* The drawer's own close, drawn only below md. No tooltip: the
               drawer's focus scope skips links when it opens, so this is the
               control that takes focus, and a tooltip on it opened on every
@@ -1038,6 +1017,30 @@ export function AppSidebar({
             </Button>
           )}
         </motion.div>
+
+        {/* The labelled Chat | Code switch, full width on its own row. It
+            fades with the collapse rather than cutting (the closing panel is
+            still ~200px wide when the rows start to move), and `popLayout`
+            lets the rows below close the gap on the same frame. */}
+        <AnimatePresence initial={false} mode="popLayout">
+          {!collapsed && (
+            <motion.div
+              key="header-switch"
+              layout="position"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ ...layoutTransition, opacity: transition.fast }}
+              className="px-2 pb-2 pt-0.5"
+            >
+              <ProductSwitch
+                active={product}
+                plan={quota.plan}
+                onNavigate={() => setSidebarOpen(false)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* The rail keeps the stacked icon column: see the note above.
             It FADES in and out rather than cutting, on the same collapse the
