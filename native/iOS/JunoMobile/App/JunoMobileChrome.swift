@@ -271,21 +271,51 @@ struct JunoInlineError: View {
     }
 }
 
-/// A pill that states a live status in one word plus a colour: connected,
-/// running, failed. The colour never carries the meaning alone.
+/// A status, stated as plain text. **Not a pill any more.**
+///
+/// The owner's directive for the premium pass: capsules and coloured pips for
+/// ordinary states (Running, Ready, Connected, Online, Done, v2) read as AI
+/// slop. So an ordinary state is quiet secondary text with no container, and
+/// only an attention state (needs approval or input, failed, destructive)
+/// keeps its colour, led by an SF Symbol so the meaning never rides on colour
+/// alone. The type keeps its name and signature so every call site moved at
+/// once; `filled` is accepted and ignored.
 struct JunoStatusPill: View {
     let text: String
     let tint: Color
     var filled = true
 
+    private enum Tone { case quiet, caution, danger }
+
+    private var tone: Tone {
+        if tint == Color.junoDanger || tint == Color.junoDestructive { return .danger }
+        if tint == Color.junoCaution || tint == Color.junoWarning || tint == Color.junoWarningInk {
+            return .caution
+        }
+        return .quiet
+    }
+
+    /// Single letters (a diff's A / M / D) are labels, not states: no glyph.
+    private var isGlyphWorthy: Bool { text.count > 1 }
+
     var body: some View {
-        Text(text)
-            .junoFont(size: 12, relativeTo: .footnote, weight: .semibold)
-            .foregroundStyle(filled ? tint : Color.junoMutedForeground)
-            .padding(.horizontal, JunoSpace.snug)
-            .frame(minHeight: 22)
-            .background(Capsule().fill(filled ? tint.opacity(0.14) : Color.junoMuted))
-            .accessibilityLabel(text)
+        HStack(spacing: 4) {
+            if tone != .quiet, isGlyphWorthy {
+                Image(systemName: tone == .danger ? "xmark.octagon.fill" : "exclamationmark.circle.fill")
+                    .imageScale(.small)
+                    .accessibilityHidden(true)
+            }
+            Text(text)
+        }
+        .junoFont(size: 12, relativeTo: .footnote, weight: tone == .quiet ? .medium : .semibold)
+        .foregroundStyle(
+            tone == .danger ? Color.junoDanger
+                : tone == .caution ? Color.junoCaution
+                : Color.junoSecondaryInk
+        )
+        .lineLimit(1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
     }
 }
 

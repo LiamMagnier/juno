@@ -89,10 +89,13 @@ struct JunoMobileCodeHostsStrip: View {
             .foregroundStyle(.primary)
             .lineLimit(1)
           HStack(spacing: 4) {
-            if let online {
-              Circle()
-                .fill(online ? Color.junoSuccess : Color.junoMutedForeground.opacity(0.5))
-                .frame(width: 6, height: 6)
+            // Online is the ordinary state and says so in words; only an
+            // offline Mac earns a symbol.
+            if online == false {
+              Image(systemName: "wifi.slash")
+                .imageScale(.small)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .accessibilityHidden(true)
             }
             Text(subtitle)
               .junoFont(size: 11, relativeTo: .caption2)
@@ -310,14 +313,12 @@ struct JunoMobileCodeRemoteSessionRow: View {
     }
   }
 
+  /// Colour only for the two states that ask something of the reader.
+  /// Running and done are ordinary states: secondary ink, no colour.
   private var statusTint: Color {
     if session.isAwaitingApproval { return Color.junoCaution }
-    if session.isRunning { return Color.junoAccent }
-    switch session.currentStatus {
-    case "completed": return Color.junoSuccess
-    case "failed": return Color.junoDanger
-    default: return Color.junoMutedForeground
-    }
+    if session.currentStatus == "failed" { return Color.junoDanger }
+    return Color.junoSecondaryInk
   }
 
   @ViewBuilder
@@ -325,31 +326,18 @@ struct JunoMobileCodeRemoteSessionRow: View {
     if session.isAwaitingApproval {
       JunoIconView(.permission, size: 15).foregroundStyle(Color.junoCaution)
     } else if session.isRunning {
-      JunoMobileRunningDot()
+      // The system's own quiet activity mark, not a breathing coloured dot.
+      ProgressView()
+        .controlSize(.mini)
+        .frame(width: 15, height: 15)
+        .accessibilityLabel("Running")
     } else {
       switch session.currentStatus {
-      case "completed": JunoIconView(.check, size: 15).foregroundStyle(Color.junoSuccess)
+      case "completed": JunoIconView(.check, size: 15).foregroundStyle(Color.junoTertiaryInk)
       case "failed": JunoIconView(.error, size: 15).foregroundStyle(Color.junoDanger)
       default: JunoIconView(.code, size: 15).foregroundStyle(Color.junoMutedForeground)
       }
     }
-  }
-}
-
-/// A breathing accent dot for a session in flight. Still under Reduce Motion.
-struct JunoMobileRunningDot: View {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    TimelineView(.animation(minimumInterval: 1 / 20, paused: reduceMotion)) { context in
-      let phase = reduceMotion ? 1 : 0.7 + 0.3 * sin(context.date.timeIntervalSinceReferenceDate * 3)
-      Circle()
-        .fill(Color.junoAccent)
-        .frame(width: 9, height: 9)
-        .scaleEffect(phase)
-        .opacity(0.6 + 0.4 * phase)
-    }
-    .accessibilityLabel("Running")
   }
 }
 

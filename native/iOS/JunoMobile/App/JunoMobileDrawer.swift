@@ -590,9 +590,8 @@ struct JunoMobileSidebarDrawer: View {
       if let first = attentionItems.first { openRecent(first) }
     } label: {
       HStack(spacing: 10) {
-        Circle()
-          .fill(Color.junoCaution)
-          .frame(width: 7, height: 7)
+        Image(systemName: "exclamationmark.circle.fill")
+          .foregroundStyle(Color.junoCaution)
           .accessibilityHidden(true)
         VStack(alignment: .leading, spacing: 2) {
           Text("Needs attention")

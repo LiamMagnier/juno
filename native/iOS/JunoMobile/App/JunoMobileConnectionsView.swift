@@ -274,17 +274,12 @@ struct JunoMobileConnectionsView: View {
             Button {
                 disconnectTarget = connector
             } label: {
-                // A status, not a call to action: a green dot and neutral
-                // ink. Tapping it still offers to disconnect.
-                HStack(spacing: 6) {
-                    Circle().fill(Color.junoSuccess).frame(width: 6, height: 6)
-                    Text("connections.connected")
-                        .junoFont(size: 14, relativeTo: .footnote, weight: .medium)
-                        .foregroundStyle(Color.junoSecondaryInk)
-                }
-                .padding(.horizontal, JunoSpace.cozy)
-                .frame(minHeight: 32)
-                .background(Capsule().strokeBorder(Color.junoBorder, lineWidth: 0.75))
+                // A status, not a call to action: plain secondary text, no
+                // container. Tapping it still offers to disconnect.
+                Text("connections.connected")
+                    .junoFont(size: 14, relativeTo: .footnote, weight: .medium)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .frame(minHeight: 32)
             }
             .buttonStyle(.plain)
             .disabled(model.isMutating)
