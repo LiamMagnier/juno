@@ -988,10 +988,29 @@ public final class WorkbenchModel {
         return model
     }
 
+    /// The product-shot workbench (``CodeShowcase``): the preview's inert
+    /// graph over the showcase projects and sessions.
+    static func showcase(
+        workspaces: [WorkspaceRecord],
+        sessions: [CodeSession],
+        selected: CodeSessionID
+    ) -> WorkbenchModel {
+        let model = preview(scenario: .transcript)
+        model.workspaces = workspaces
+        model.sessions = sessions
+        model.selectedSessionID = selected
+        return model
+    }
+
     /// Builds this session's preview controller from its fixture, cached so
     /// selection changes do not discard local edits made during QA.
     private func previewController(for sessionID: CodeSessionID) -> SessionController? {
         if let existing = controllers[sessionID] { return existing }
+        if sessionID == CodeShowcase.sessionID {
+            let controller = CodeShowcase.sessionController()
+            controllers[sessionID] = controller
+            return controller
+        }
         guard let scenario = CodePreviewScenario.allCases.first(
             where: { $0.sessionID == sessionID }
         ) else { return nil }

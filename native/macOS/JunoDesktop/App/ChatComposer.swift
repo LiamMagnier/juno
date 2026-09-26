@@ -935,6 +935,8 @@ struct ChatComposer: View {
     /// is in `prompt` and sent in full either way.
     @State private var draftExpanded = false
     @State private var composerWidth: CGFloat = 0
+    /// A reply has streamed past ``beamBeat``: the beam may travel.
+    @State private var streamedPastBeat = false
     /// Mirrors the environment's call for the paste monitor, which runs outside
     /// a body evaluation and so must read state, not a stale environment copy.
     @State private var isInCall = false
@@ -987,6 +989,10 @@ struct ChatComposer: View {
     private var isGenerating: Bool {
         privateChat?.isStreaming ?? model.isGenerating
     }
+
+    /// How long a reply streams before the beam starts: a short answer should
+    /// not flash an effect at the reader.
+    private static let beamBeat: Duration = .seconds(3)
 
     /// Past four images a turn, providers answer about the first and ignore the
     /// rest. The relay enforces the same ceiling; this stops the reader first.
@@ -1180,6 +1186,12 @@ struct ChatComposer: View {
             captionBelow: { captionBelow }
         )
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { composerWidth = $0 }
+        .task(id: isGenerating) {
+            streamedPastBeat = false
+            guard isGenerating else { return }
+            try? await Task.sleep(for: Self.beamBeat)
+            if !Task.isCancelled, isGenerating { streamedPastBeat = true }
+        }
         .onPasteCommand(of: [.fileURL, .image, .png, .tiff]) { _ in
             _ = attachFromPasteboard()
         }
@@ -1520,7 +1532,21 @@ struct ChatComposer: View {
             JunoComposerDropEdge(label: "Drop to attach")
         } else if isPrivate {
             JunoComposerPrivateEdge()
+        } else if let beam = beamStyle {
+            // The border beam (premium pass): it breathes around an empty new
+            // chat's composer until the first keystroke, and travels the edge
+            // while a reply has been streaming for more than three seconds.
+            // One effect at a time, and never with the private or drop edge.
+            JunoBorderBeam(cornerRadius: JunoComposerMetrics.cornerRadius, style: beam, isActive: true)
         }
+    }
+
+    /// Which beam the shell wears now, if any.
+    private var beamStyle: JunoBorderBeamStyle? {
+        if isGenerating, streamedPastBeat { return .line }
+        let isEmptyLanding = model.selectedConversationID == nil && fixedProjectID == nil && !voiceActive
+            && prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return isEmptyLanding && !isGenerating ? .pulse : nil
     }
 
     /// The one quiet line under the dock (the web's `footnote`): what is

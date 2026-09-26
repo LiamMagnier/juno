@@ -72,6 +72,18 @@ final class SnapshotPreviewWorld {
     let configuration: JunoDesktopConfiguration
 
     private static var instance: SnapshotPreviewWorld?
+    private static var showcaseInstance: SnapshotPreviewWorld?
+
+    /// The product-shot world: the same harness over the `.showcase`
+    /// fixtures — a sample team's chats and a named sample account.
+    static func showcase() async throws -> SnapshotPreviewWorld {
+        if let showcaseInstance { return showcaseInstance }
+        let world = try PreviewWorld(scenario: .showcase)
+        await world.activate()
+        let made = SnapshotPreviewWorld(world: world)
+        showcaseInstance = made
+        return made
+    }
 
     static func shared() async throws -> SnapshotPreviewWorld {
         if let instance { return instance }

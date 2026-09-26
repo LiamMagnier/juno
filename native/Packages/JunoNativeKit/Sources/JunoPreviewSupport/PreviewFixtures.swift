@@ -129,9 +129,35 @@ public enum PreviewFixtures {
             return manyRecords(accountID)
         case .longText:
             return longTextRecords(accountID)
+        case .showcase:
+            return showcaseRecords(accountID)
         default:
             return normalRecords(accountID)
         }
+    }
+
+    /// The product-shot column: a small product team's week. Sample content
+    /// only, with the same ids as the normal set so `conv-1` opens the same way.
+    private static func showcaseRecords(_ a: StorageAccountID) -> [StoredRecord] {
+        var out: [StoredRecord] = [settings(a), memorySummary(a)]
+        let chats: [(String, String, Bool, String?, TimeInterval)] = [
+            ("conv-1", "Launch plan for Field Notes 2.0", true, nil, -300),
+            ("conv-proj", "Beta feedback, week 3", false, "proj-1", -1_500),
+            ("conv-2", "Pricing page copy", false, nil, -5_400),
+            ("conv-4", "Onboarding email sequence", false, nil, -20_000),
+            ("conv-5", "Q4 hiring plan", false, nil, -86_000),
+            ("conv-6", "Lisbon offsite agenda", false, nil, -170_000),
+        ]
+        for (index, chat) in chats.enumerated() {
+            let project = chat.3.map { #","projectId":"\#($0)""# } ?? ""
+            out.append(record(a, "conversation", chat.0, UInt64(6 - index % 3), """
+            {"id":"\(chat.0)","title":"\(chat.1)","model":"anthropic:claude-sonnet-4-6","kind":"chat","pinned":\(chat.2),"archivedAt":null\(project),"createdAt":"\(iso(chat.4 - 3600))","updatedAt":"\(iso(chat.4))","lastMessageAt":"\(iso(chat.4))"}
+            """))
+        }
+        out.append(record(a, "project", "proj-1", 8, """
+        {"id":"proj-1","name":"Field Notes","nameSource":"user","instructions":"The notes app we are launching. Keep the voice warm and plain.","starred":true,"createdAt":"\(iso(-200000))","updatedAt":"\(iso(-1500))"}
+        """))
+        return out
     }
 
     private static func normalRecords(_ a: StorageAccountID) -> [StoredRecord] {

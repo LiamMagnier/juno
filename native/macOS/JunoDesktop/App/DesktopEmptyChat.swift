@@ -259,6 +259,9 @@ struct ChatStarterChip: Identifiable, Equatable {
     let label: String
     let icon: JunoIcon
     let examples: [String]
+    /// One line saying what the starting point is for, under its word on the
+    /// card (premium pass, rule 2).
+    var detail: String = ""
 
     var id: String { label }
 
@@ -270,22 +273,22 @@ struct ChatStarterChip: Identifiable, Equatable {
             "What does the latest research say about intermittent fasting? Cite the strongest studies.",
             "Compare the three most popular note-taking apps for a small team, with sources.",
             "Summarise what changed in EU AI regulation this year and link the primary texts.",
-        ]),
+        ], detail: "Answers with sources you can check."),
         ChatStarterChip(label: "Write", icon: .pencil, examples: [
             "Draft a short, friendly follow-up email after a job interview.",
             "Write a toast for my sister’s wedding that is warm and under two minutes long.",
             "Turn my rough notes into a clear one-page project update.",
-        ]),
+        ], detail: "Drafts and replies in your voice."),
         ChatStarterChip(label: "Code", icon: .code, examples: [
             "Write a Python script that renames photos by the date they were taken.",
             "Build a React table component that sorts by any column.",
             "Explain how this regular expression works, one part at a time.",
-        ]),
+        ], detail: "Scripts, components, explanations."),
         ChatStarterChip(label: "Plan", icon: .task, examples: [
             "Plan a three-day trip to Lisbon with a mix of food, museums and walks.",
             "Turn my goals for this quarter into a week-by-week plan.",
             "Make a launch checklist for a small product release.",
-        ]),
+        ], detail: "Trips, launches and weeks, in steps."),
     ]
 }
 
@@ -324,7 +327,6 @@ struct ChatStarterChips: View {
     @State private var generation = 0
     /// The chip whose examples are showing.
     @State private var openLabel: String?
-    @FocusState private var focusedChip: String?
     /// The chip row's height, which the examples hang below.
     @State private var rowHeight: CGFloat = JunoChipMetrics.height
 
@@ -336,15 +338,23 @@ struct ChatStarterChips: View {
     }
 
     var body: some View {
-        JunoChipFlow(
-            spacing: JunoChipMetrics.spacing,
-            lineSpacing: JunoChipMetrics.spacing,
-            alignment: .center
-        ) {
-            ForEach(Array(ChatStarterChip.all.enumerated()), id: \.element.id) { index, chip in
-                chipButton(chip, index: index)
-            }
+        // Four starting-point cards (premium pass, rule 2): the word, its
+        // mark and one line of what it is for. A card still opens its three
+        // examples rather than writing anything.
+        JunoStartingPointGrid(
+            points: ChatStarterChip.all.map {
+                JunoStartingPoint(id: $0.label, title: $0.label, detail: $0.detail, icon: $0.icon)
+            },
+            selectedID: openLabel,
+            identifier: { "juno.desktop.chat.starter.\($0.id.lowercased())" }
+        ) { point in
+            if let chip = ChatStarterChip.all.first(where: { $0.label == point.id }) { toggle(chip) }
         }
+        .frame(maxWidth: 672)
+        // Dealt in after the greeting, as one row: a rise and a fade.
+        .opacity(pose == .shown ? 1 : 0)
+        .offset(y: pose == .arriving ? JunoMotion.shift(DesktopChoreography.chipRise, reduceMotion: reduceMotion) : 0)
+        .animation(dealAnimation(index: 0), value: pose)
         .frame(maxWidth: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = $0 }
         // Hung below the row, outside its layout: the list's top sits 12pt
@@ -367,9 +377,8 @@ struct ChatStarterChips: View {
         .allowsHitTesting(isAvailable)
         .accessibilityHidden(!isAvailable)
         .onKeyPress(.escape) {
-            guard let label = openLabel else { return .ignored }
+            guard openLabel != nil else { return .ignored }
             openLabel = nil
-            focusedChip = label
             return .handled
         }
         .onAppear {
@@ -390,29 +399,6 @@ struct ChatStarterChips: View {
         .onChange(of: hasDraft) { _, drafting in
             if drafting { openLabel = nil }
         }
-    }
-
-    private func chipButton(_ chip: ChatStarterChip, index: Int) -> some View {
-        let expanded = openLabel == chip.label
-        return Button {
-            toggle(chip)
-        } label: {
-            Label {
-                Text(chip.label)
-            } icon: {
-                JunoIconView(chip.icon, size: JunoChipMetrics.glyphSize)
-            }
-            .contentShape(Capsule())
-        }
-        .buttonStyle(JunoChipStyle(isSelected: expanded))
-        .focused($focusedChip, equals: chip.label)
-        .accessibilityHint(expanded ? "Hides the examples" : "Shows example prompts")
-        .accessibilityAddTraits(expanded ? .isSelected : [])
-        .accessibilityIdentifier("juno.desktop.chat.starter.\(chip.label.lowercased())")
-        .opacity(pose == .shown ? 1 : 0)
-        .offset(y: pose == .arriving ? JunoMotion.shift(DesktopChoreography.chipRise, reduceMotion: reduceMotion) : 0)
-        // Dealt in one at a time; taken away all at once.
-        .animation(dealAnimation(index: index), value: pose)
     }
 
     private func dealAnimation(index: Int) -> Animation? {

@@ -26,17 +26,22 @@ public struct StudioSidePanel: View {
     @Binding var tab: StudioPanelTab
     let createPullRequest: () -> Void
     let close: () -> Void
+    /// Files whose diffs start open — for the product shots and fixtures; the
+    /// app opens the panel with every file folded.
+    var initiallyExpanded: Set<String> = []
 
     public init(
         controller: SessionController,
         tab: Binding<StudioPanelTab>,
         createPullRequest: @escaping () -> Void,
-        close: @escaping () -> Void
+        close: @escaping () -> Void,
+        initiallyExpanded: Set<String> = []
     ) {
         self.controller = controller
         self._tab = tab
         self.createPullRequest = createPullRequest
         self.close = close
+        self.initiallyExpanded = initiallyExpanded
     }
 
     public var body: some View {
@@ -73,7 +78,11 @@ public struct StudioSidePanel: View {
 
             switch tab {
             case .changes:
-                StudioChangesView(controller: controller, createPullRequest: createPullRequest)
+                StudioChangesView(
+                    controller: controller,
+                    createPullRequest: createPullRequest,
+                    initiallyExpanded: initiallyExpanded
+                )
             case .terminal:
                 StudioTerminalPane(controller: controller)
             }
@@ -90,7 +99,13 @@ struct StudioChangesView: View {
     let controller: SessionController
     let createPullRequest: () -> Void
 
-    @State private var expanded: Set<String> = []
+    @State private var expanded: Set<String>
+
+    init(controller: SessionController, createPullRequest: @escaping () -> Void, initiallyExpanded: Set<String> = []) {
+        self.controller = controller
+        self.createPullRequest = createPullRequest
+        _expanded = State(initialValue: initiallyExpanded)
+    }
     @State private var committing = false
     @State private var confirmRevertAll = false
     @State private var revertMessage: String?
