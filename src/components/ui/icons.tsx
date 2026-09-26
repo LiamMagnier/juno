@@ -71,10 +71,6 @@ import {
   ArrowUUpRightIcon,
   BellSimpleIcon,
   BrainIcon,
-  BugIcon,
-  BookOpenTextIcon,
-  CompassIcon,
-  PuzzlePieceIcon,
   BinocularsIcon,
   BookmarkSimpleIcon,
   BookOpenIcon,
@@ -262,6 +258,13 @@ import {
   JunoAgentsGlyph,
   JunoSendGlyph,
 } from "@/components/ui/juno-glyphs";
+import {
+  JunoCallSettingsGlyph,
+  JunoEndCallGlyph,
+  JunoMicGlyph,
+  JunoMicOffGlyph,
+  JunoStopGlyph,
+} from "@/components/ui/juno-call-glyphs";
 import { cn } from "@/lib/utils";
 
 /**
@@ -402,6 +405,14 @@ function glyph(
 
 /** Chat: the logo's bubble as a line. Its `fill` weight is the logo itself —
  *  the solid bubble with the spark cut out — for the selected state. */
+// The voice call's own controls (juno-call-glyphs.tsx), on the same grid and
+// line: a capsule mic with no stand, one clean slash, two offset rails, a soft
+// solid square, and the receiver laid flat as one outline.
+export const CallMic = glyph(JunoMicGlyph, "call-mic");
+export const CallMicOff = glyph(JunoMicOffGlyph, "call-mic-off");
+export const CallSettings = glyph(JunoCallSettingsGlyph, "call-settings");
+export const CallStop = glyph(JunoStopGlyph, "call-stop");
+export const CallEnd = glyph(JunoEndCallGlyph, "call-end");
 export const JunoChat = glyph(JunoChatGlyph, "juno-chat", { motion: "parts" });
 /** Code: the spark between two chevrons, where `</>` puts a slash. */
 export const JunoCode = glyph(JunoCodeGlyph, "juno-code", { motion: "parts" });
@@ -624,11 +635,6 @@ export const Workflow = glyph(TreeStructureIcon, "workflow");
 export const Bot = glyph(RobotIcon, "bot");
 /** A model's own reasoning: the resting mark of a thought-process row. */
 export const Brain = glyph(BrainIcon, "brain");
-/** Starting points on the empty Chat and Code screens, drawn in `duotone`. */
-export const Bug = glyph(BugIcon, "bug");
-export const BookOpenText = glyph(BookOpenTextIcon, "book-open-text");
-export const Compass = glyph(CompassIcon, "compass");
-export const PuzzlePiece = glyph(PuzzlePieceIcon, "puzzle-piece");
 export const Telescope = glyph(BinocularsIcon, "research");
 export const Sparkles = glyph(SparkleIcon, "sparkles", { motion: "pop" });
 export const Zap = glyph(LightningIcon, "zap", { motion: "pop" });

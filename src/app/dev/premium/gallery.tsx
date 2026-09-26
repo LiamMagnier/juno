@@ -6,9 +6,7 @@ import { JunoVoiceGlow } from "@/components/voice/voice-composer-glow";
 import { AppProvider } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
 import { CodeComposer } from "@/components/code/code-composer";
-import { CodeStartingPoints } from "@/components/code/code-starting-points";
 import { EmptyGreeting } from "@/components/chat/empty-state";
-import { StarterChips } from "@/components/chat/starter-chips";
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 import { MessageItem } from "@/components/chat/message-item";
 import { RealtimeVoice, voiceCallParts } from "@/components/voice/realtime-voice";
@@ -260,7 +258,6 @@ export function PremiumGallery({ only }: { only?: string }) {
                   </div>
                   <div className="relative isolate w-full">
                     <Composer {...common} isBusy={false} status="idle" frame="landing" />
-                    <StarterChips className="mt-3" />
                   </div>
                 </div>
                 <div className="flex flex-col items-center pt-24">
@@ -269,7 +266,6 @@ export function PremiumGallery({ only }: { only?: string }) {
                   </h1>
                   <div className="w-full">
                     <CodeComposer />
-                    <CodeStartingPoints />
                   </div>
                 </div>
               </div>

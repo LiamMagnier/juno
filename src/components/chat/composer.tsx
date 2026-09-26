@@ -1125,18 +1125,6 @@ export function Composer({
     return () => window.removeEventListener("juno:composer-seed", seed);
   }, []);
 
-  // The other half of that conversation: the starter chips step aside while
-  // there is a draft (starter-chips.tsx). Typing reaches them as a native
-  // `input` event, but a seed, dictation or the clear after a send writes
-  // `text` without one, so the draft announces its emptiness here, once per
-  // flip rather than per keystroke. `/\S/` rather than `trim()` because it
-  // stops at the first non-space character instead of copying the whole
-  // draft, and a pasted curriculum is 50k of them.
-  const draftEmpty = !/\S/.test(text);
-  React.useEffect(() => {
-    window.dispatchEvent(new CustomEvent("juno:composer-draft", { detail: { empty: draftEmpty } }));
-  }, [draftEmpty]);
-
   // Files handed over by another surface — the document viewer's "ask about
   // this area" crop. Through the same door a drop or a paste uses, so the
   // private-mode, voice and storage rules apply to it unchanged.

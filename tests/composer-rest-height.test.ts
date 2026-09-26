@@ -104,9 +104,8 @@ test("the new-chat skeleton stands in the landing frame chat-view draws", () => 
   assert.match(chatView, /<EmptyGreeting \/>[\s\S]*<PrivateGreeting \/>/, "chat-view stacks both greetings in one row");
   assert.match(skeleton, /<PrivateGreeting \/>/, "the skeleton sizes the greeting row by the incognito greeting too");
 
-  const chips = /<StarterChips className="([^"]+)" \/>/.exec(chatView);
-  assert.ok(chips, "chat-view places StarterChips with a margin of its own");
-  // The starting points are tiles on a shared grid now (premium pass): the
-  // skeleton draws the same grid at the same margin.
-  assert.match(skeleton, new RegExp(`startingGridClass, "${chips![1]} `), "the tile row sits at chat-view's margin");
+  // The empty screen is the greeting and the composer alone: no starting-point
+  // row under it, and so none in the skeleton either.
+  assert.doesNotMatch(chatView, /StarterChips/, "chat-view draws nothing under the composer");
+  assert.doesNotMatch(skeleton, /startingGridClass/, "the skeleton draws no starting-point row");
 });

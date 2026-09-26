@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Settings2, Square } from "@/components/ui/icons";
+import { CallEnd, CallMic, CallMicOff, CallSettings, CallStop, MonitorUp, MonitorX } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
@@ -179,7 +179,7 @@ export function VoiceCallControls({ voice, speakerName }: { voice: VoiceControll
         <>
           {voice.assistantSpeaking && (
             <CallButton onClick={voice.interrupt} label={`Stop ${speaker} speaking`} className="motion-safe:animate-fade-in">
-              <Square className="size-3 fill-current" />
+              <CallStop className="size-4" />
             </CallButton>
           )}
           <CallButton
@@ -188,7 +188,7 @@ export function VoiceCallControls({ voice, speakerName }: { voice: VoiceControll
             pressed={voice.muted}
             label={voice.muted ? "Turn your microphone back on" : "Mute your microphone"}
           >
-            <SwapGlyph on={voice.muted} onGlyph={<MicOff className="size-4" />} offGlyph={<Mic className="size-4" />} />
+            <SwapGlyph on={voice.muted} onGlyph={<CallMicOff className="size-[18px]" />} offGlyph={<CallMic className="size-[18px]" />} />
           </CallButton>
           {voice.capabilities?.screenInput && live && (
             <CallButton
@@ -231,7 +231,7 @@ export function VoiceCallEnd({ onClose }: { onClose: () => void }) {
             "motion-reduce:active:scale-100 coarse:size-11"
           )}
         >
-          <PhoneOff className="size-4" />
+          <CallEnd className="size-5" />
         </button>
       </TooltipTrigger>
       <TooltipContent>End call</TooltipContent>
@@ -327,7 +327,7 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
               "motion-reduce:active:scale-100"
             )}
           >
-            <Settings2 className="size-4" />
+            <CallSettings className="size-[18px]" />
           </PopoverTrigger>
         </TooltipTrigger>
         <TooltipContent>Call settings</TooltipContent>
