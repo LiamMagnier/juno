@@ -8,13 +8,14 @@ import { Markdown } from "@/components/chat/markdown";
 import { splitMessageContent, type ArtifactType } from "@/lib/message-content";
 import { runtimeFor } from "@/lib/artifact-runtime";
 import { resolveModel } from "@/lib/models";
+import { SharedTurnActions } from "@/components/share/shared-turn-actions";
 import type { SharedArtifactRef, SharedChatMessage } from "@/lib/share";
 
 /*
  * Read-only transcript for the public share page (server component; the
  * Markdown renderer is its client island). Mirrors the app's message voice:
  * user turns as subtly shaded bubbles, assistant turns flat and full-width
- * with a mono model eyebrow. Attachments, reasoning, and interactive blocks
+ * with Copy and the model name under each answer. Attachments, reasoning, and interactive blocks
  * are deliberately absent — a share shows the words, nothing else.
  */
 
@@ -57,9 +58,6 @@ function AssistantMessage({ message, artifactsByIdentifier }: { message: SharedC
 
   return (
     <div>
-      {modelName && (
-        <p className="mb-1.5 font-mono text-caption text-muted-foreground">{modelName}</p>
-      )}
       <div className="space-y-1">
         {parts.map((part, i) => {
           if (part.type === "text") return <Markdown key={i} content={part.text} />;
@@ -71,6 +69,9 @@ function AssistantMessage({ message, artifactsByIdentifier }: { message: SharedC
           return null;
         })}
       </div>
+      {/* Below the answer, not above it: the model is a receipt for what was
+          written, and a mono eyebrow over every reply read as a byline. */}
+      <SharedTurnActions content={message.content} modelName={modelName} />
     </div>
   );
 }
