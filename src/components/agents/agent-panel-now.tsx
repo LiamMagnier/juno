@@ -101,14 +101,14 @@ export function AgentPanelNow({
     <div className="space-y-6">
       {/* Needs you & Working on */}
       {work.session ? (
-        <section aria-label={needsAttention ? "Needs you" : "Working on"} className="space-y-2.5">
+        <section aria-label={needsAttention ? "Needs you" : "Working on"} className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-ui font-medium text-foreground">
+            <h3 className="font-mono text-micro uppercase tracking-wider text-muted-foreground">
               {needsAttention ? "Needs you" : live ? "Working on" : "Recent task"}
             </h3>
             <div className="flex items-center gap-2">
               {needsAttention && hasComputer && onTakeControl ? (
-                <Button size="sm" variant="secondary" onClick={onTakeControl} className="gap-1.5">
+                <Button size="sm" variant="secondary" onClick={onTakeControl} className="h-7 gap-1.5 px-2.5 text-caption">
                   <Hand className="size-3.5 text-primary" aria-hidden="true" />
                   Take control
                 </Button>
@@ -127,22 +127,28 @@ export function AgentPanelNow({
       ) : agent.task ? (
         <section aria-label={agent.task.needsAttention ? "Needs you" : "Working on"} className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-ui font-medium text-foreground">
+            <h3 className="font-mono text-micro uppercase tracking-wider text-muted-foreground">
               {agent.task.needsAttention ? "Needs you" : "Working on"}
             </h3>
             {agent.task.needsAttention && hasComputer && onTakeControl ? (
-              <Button size="sm" variant="secondary" onClick={onTakeControl} className="gap-1.5">
+              <Button size="sm" variant="secondary" onClick={onTakeControl} className="h-7 gap-1.5 px-2.5 text-caption">
                 <Hand className="size-3.5 text-primary" aria-hidden="true" />
                 Take control
               </Button>
             ) : null}
           </div>
-          <div className="rounded-card border border-border bg-card p-3.5">
-            <p className="text-ui font-medium text-foreground">{agent.task.title}</p>
-            <p className="mt-1 text-caption text-muted-foreground">
+          <div
+            className={
+              agent.task.needsAttention
+                ? "border-l-2 border-primary py-1 pl-3"
+                : "border-l-2 border-border py-1 pl-3"
+            }
+          >
+            <p className="text-ui font-medium leading-snug text-foreground">{agent.task.title}</p>
+            <p className="mt-0.5 text-caption text-muted-foreground">
               {agent.task.needsAttention
-                ? `${agent.name} stopped and is waiting for your input.`
-                : `${agent.name} is working on this task.`}
+                ? `${agent.name} paused and is waiting for your input in the thread.`
+                : `${agent.name} is actively working on this task.`}
             </p>
           </div>
         </section>
@@ -160,14 +166,19 @@ export function AgentPanelNow({
       )}
 
       {/* Goals */}
-      <section aria-labelledby="panel-goals" className="space-y-2.5">
-        <h3 id="panel-goals" className="text-ui font-medium text-foreground">
-          Goals
-        </h3>
+      <section aria-labelledby="panel-goals" className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h3 id="panel-goals" className="font-mono text-micro uppercase tracking-wider text-muted-foreground">
+            Goals
+          </h3>
+          {activeGoals.length > 0 ? (
+            <span className="font-mono text-micro text-muted-foreground">{activeGoals.length} active</span>
+          ) : null}
+        </div>
         {activeGoals.length > 0 ? (
-          <ul className="divide-y divide-border rounded-card border border-border bg-card">
+          <ul className="divide-y divide-border/60 border-y border-border/60">
             {activeGoals.map((goal) => (
-              <li key={goal.id} className="flex items-start gap-2.5 px-3 py-2.5">
+              <li key={goal.id} className="flex items-start gap-2.5 py-2.5">
                 <Checkbox
                   id={`goal-${goal.id}`}
                   checked={goal.status === "achieved"}
@@ -176,8 +187,13 @@ export function AgentPanelNow({
                   aria-label={`Mark "${goal.title}" achieved`}
                   className="mt-0.5"
                 />
-                <label htmlFor={`goal-${goal.id}`} className="min-w-0 flex-1 cursor-pointer text-ui text-foreground">
-                  <span className="block">{goal.title}</span>
+                <label htmlFor={`goal-${goal.id}`} className="min-w-0 flex-1 cursor-pointer">
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className="text-ui font-medium leading-snug text-foreground">{goal.title}</span>
+                    {goal.cadence && goal.cadence !== "none" ? (
+                      <span className="shrink-0 font-mono text-micro text-muted-foreground">{goal.cadence}</span>
+                    ) : null}
+                  </span>
                   {goal.lastCheckInNote ? (
                     <span className="mt-0.5 block text-caption text-muted-foreground">{goal.lastCheckInNote}</span>
                   ) : null}
@@ -186,18 +202,25 @@ export function AgentPanelNow({
             ))}
           </ul>
         ) : (
-          <p className="text-ui text-muted-foreground">No active goals yet.</p>
+          <p className="border-y border-border/60 py-2.5 text-ui text-muted-foreground">No active goals yet.</p>
         )}
-        <form onSubmit={(e) => void handleAddGoal(e)} className="flex items-center gap-2">
+        <form onSubmit={(e) => void handleAddGoal(e)} className="flex items-center gap-1.5 pt-0.5">
           <Input
             value={newGoalTitle}
             onChange={(e) => setNewGoalTitle(e.target.value)}
             placeholder="Add a goal…"
             aria-label="Add goal"
-            className="h-8 text-ui"
+            className="h-7 text-caption"
           />
-          <Button type="submit" size="sm" variant="secondary" loading={addingGoal} disabled={!newGoalTitle.trim()}>
-            <Plus className="size-3.5" aria-hidden="true" />
+          <Button
+            type="submit"
+            size="sm"
+            variant="secondary"
+            loading={addingGoal}
+            disabled={!newGoalTitle.trim()}
+            className="h-7 shrink-0 px-2.5 text-caption"
+          >
+            <Plus className="size-3" aria-hidden="true" />
             Add
           </Button>
         </form>
@@ -208,13 +231,13 @@ export function AgentPanelNow({
 
       {/* Next up */}
       {upcoming.length > 0 ? (
-        <section aria-labelledby="panel-next-up" className="space-y-2.5">
-          <h3 id="panel-next-up" className="text-ui font-medium text-foreground">
+        <section aria-labelledby="panel-next-up" className="space-y-2">
+          <h3 id="panel-next-up" className="font-mono text-micro uppercase tracking-wider text-muted-foreground">
             Next up
           </h3>
-          <ul className="divide-y divide-border rounded-card border border-border bg-card">
+          <ul className="divide-y divide-border/60 border-y border-border/60">
             {upcoming.map((routine) => (
-              <li key={routine.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+              <li key={routine.id} className="flex items-center justify-between gap-3 py-2">
                 <span className="min-w-0">
                   <span className="block truncate text-ui font-medium text-foreground">{routine.name}</span>
                   <span className="block truncate text-caption text-muted-foreground">{routine.schedule}</span>
@@ -230,7 +253,7 @@ export function AgentPanelNow({
 
       {/* Activity */}
       <section aria-labelledby="panel-activity" className="space-y-2">
-        <h3 id="panel-activity" className="text-ui font-medium text-foreground">
+        <h3 id="panel-activity" className="font-mono text-micro uppercase tracking-wider text-muted-foreground">
           Activity
         </h3>
         <AgentActivity agentId={agent.id} refreshKey={refreshKey} limit={8} initialItems={mockActivity} />
@@ -267,29 +290,36 @@ function IdeasSection({ detail, onChanged }: { detail: ClientAgentDetail; onChan
 
   if (ideas.length === 0) return null;
   return (
-    <section aria-labelledby="panel-ideas" className="space-y-2.5">
-      <h3 id="panel-ideas" className="text-ui font-medium text-foreground">
+    <section aria-labelledby="panel-ideas" className="space-y-2">
+      <h3 id="panel-ideas" className="font-mono text-micro uppercase tracking-wider text-muted-foreground">
         Ideas
       </h3>
-      <ul className="space-y-2">
+      <ul className="divide-y divide-border/60 border-y border-border/60">
         {ideas.map((idea, index) => (
           <li
             key={idea.id}
             style={staggerDelay(index)}
-            className="rounded-card border border-border bg-card p-3.5 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+            className="py-2.5 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
           >
-            <p className="text-ui font-medium text-foreground">{idea.title}</p>
-            {idea.detail ? <p className="mt-1 text-caption text-muted-foreground">{idea.detail}</p> : null}
-            <div className="mt-3 flex items-center gap-2">
+            <p className="text-ui font-medium leading-snug text-foreground">{idea.title}</p>
+            {idea.detail ? <p className="mt-0.5 text-caption leading-relaxed text-muted-foreground">{idea.detail}</p> : null}
+            <div className="mt-2 flex items-center gap-2">
               <Button
                 size="sm"
                 loading={busy === idea.id}
                 disabled={busy !== null || agent.status !== "active"}
                 onClick={() => void decide(idea, "start")}
+                className="h-7 px-3 text-caption"
               >
                 Start
               </Button>
-              <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void decide(idea, "dismiss")}>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy !== null}
+                onClick={() => void decide(idea, "dismiss")}
+                className="h-7 px-2.5 text-caption text-muted-foreground hover:text-foreground"
+              >
                 Not now
               </Button>
             </div>

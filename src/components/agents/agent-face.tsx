@@ -76,7 +76,7 @@ function Body({ shape }: { shape: AgentShape }) {
 function ringPath(): { arc: string; ball: [number, number] } {
   const cx = 51;
   const cy = 12;
-  const r = 5.5;
+  const r = 4.6;
   const at = (deg: number): [number, number] => {
     const t = (deg * Math.PI) / 180;
     return [Math.round((cx + r * Math.cos(t)) * 100) / 100, Math.round((cy + r * Math.sin(t)) * 100) / 100];
@@ -94,9 +94,9 @@ function Mark({ mark, eyes }: { mark: AgentAvatar["mark"]; eyes: ShapeSpec["eyes
       return null;
     case "ring":
       return (
-        <g className="agent-face__mark">
-          <path d={RING.arc} fill="none" strokeWidth={2.2} strokeLinecap="round" />
-          <circle cx={RING.ball[0]} cy={RING.ball[1]} r={1.8} stroke="none" />
+        <g className="agent-face__mark" opacity={0.7}>
+          <path d={RING.arc} fill="none" strokeWidth={1.6} strokeLinecap="round" />
+          <circle cx={RING.ball[0]} cy={RING.ball[1]} r={1.4} stroke="none" />
         </g>
       );
     case "spark":

@@ -213,10 +213,32 @@ export function ComputerViewer({
         className={
           fullBleed
             ? "relative flex-1 overflow-hidden bg-neutral-950"
-            : "relative aspect-[16/10] w-full overflow-hidden rounded-card border border-border bg-neutral-950"
+            : "relative flex aspect-[16/10] w-full flex-col overflow-hidden rounded-lg border border-border bg-neutral-950 shadow-xs"
         }
       >
-        <div ref={containerRef} className="h-full w-full" translate="no" />
+        {!fullBleed && (
+          <div className="flex h-6 shrink-0 items-center justify-between border-b border-neutral-800 bg-neutral-900 px-2.5 font-mono text-[10px] text-neutral-400">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1" aria-hidden="true">
+                <span className="size-2 rounded-full bg-neutral-700" />
+                <span className="size-2 rounded-full bg-neutral-700" />
+                <span className="size-2 rounded-full bg-neutral-700" />
+              </div>
+              <span>{agentName.toLowerCase()}-desktop · 1280×800</span>
+            </div>
+            <span className="inline-flex items-center gap-1.5 text-neutral-300">
+              <span
+                className={
+                  mode === "control"
+                    ? "size-1.5 rounded-full bg-amber-400"
+                    : "size-1.5 rounded-full bg-emerald-400"
+                }
+              />
+              {mode === "control" ? "CONTROL" : "WATCHING"}
+            </span>
+          </div>
+        )}
+        <div ref={containerRef} className="min-h-0 flex-1 w-full" translate="no" />
 
         {status !== "connected" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-neutral-950/85 px-4 text-center text-ui text-neutral-300">

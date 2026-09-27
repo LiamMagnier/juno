@@ -93,7 +93,7 @@ export function AgentsRoster({ initialAgents }: { initialAgents?: ClientAgent[] 
       ) : ordered.length === 0 ? (
         <FirstHire />
       ) : (
-        <ul className="divide-y divide-border overflow-hidden rounded-card border border-border bg-card">
+        <ul className="divide-y divide-border/60 border-y border-border/60">
           {ordered.map((agent, index) => {
             const sentence = localStateSentence(agent, agent.state);
             const subtitle = agent.role ? `${agent.role} · ${sentence}` : sentence;
@@ -108,21 +108,25 @@ export function AgentsRoster({ initialAgents }: { initialAgents?: ClientAgent[] 
                 <Link
                   href={href}
                   data-face-trigger
-                  className="flex items-center gap-3 px-4 py-3 transition-colors duration-fast ease-out-soft hover:bg-accent"
+                  className="flex items-center gap-3.5 px-2 py-3.5 transition-colors duration-fast ease-out-soft hover:bg-accent/40"
                 >
                   <AgentFace avatar={agent.avatar} state={agent.state} size="sm" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate text-ui font-medium text-foreground">{agent.name}</span>
                       {agent.pinnedAt ? (
-                        <span className="font-mono text-caption text-muted-foreground">Pinned</span>
+                        <span className="font-mono text-micro uppercase tracking-wider text-muted-foreground">Pinned</span>
                       ) : null}
                     </div>
-                    <p className="truncate text-caption text-muted-foreground">{subtitle}</p>
+                    <p className="mt-0.5 truncate text-caption text-muted-foreground">{subtitle}</p>
                   </div>
                   {needsYou ? (
-                    <span className="inline-flex shrink-0 items-center gap-1 text-caption font-medium text-primary" aria-label="Needs you">
-                      <Hand className="size-4" aria-hidden="true" />
+                    <span
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/25 bg-primary/8 px-2.5 py-0.5 text-caption font-medium text-primary"
+                      aria-label="Needs you"
+                    >
+                      <Hand className="size-3.5" aria-hidden="true" />
+                      <span>Needs you</span>
                     </span>
                   ) : null}
                 </Link>

@@ -106,18 +106,23 @@ export function AgentActivity({
   }
 
   return (
-    <ol className="relative space-y-0.5">
+    <ol className="relative divide-y divide-border/50 border-t border-border/60">
       {visible.map((item, index) => {
         const body = (
           <>
             <ActivityGlyph tone={item.tone} />
             <span className="min-w-0 flex-1">
-              <span className={cn("block text-ui", item.tone === "attention" ? "font-medium text-foreground" : "text-foreground")}>
+              <span
+                className={cn(
+                  "block text-caption leading-snug",
+                  item.tone === "attention" ? "font-medium text-foreground" : "text-foreground"
+                )}
+              >
                 {item.title}
               </span>
-              {item.detail ? <span className="mt-0.5 block text-ui text-muted-foreground">{item.detail}</span> : null}
+              {item.detail ? <span className="mt-0.5 block text-caption text-muted-foreground">{item.detail}</span> : null}
             </span>
-            <time dateTime={item.at} className="shrink-0 font-mono text-caption text-muted-foreground">
+            <time dateTime={item.at} className="shrink-0 font-mono text-micro text-muted-foreground">
               {formatAgo(item.at)}
             </time>
           </>
@@ -131,12 +136,12 @@ export function AgentActivity({
             {opensRun(item) ? (
               <Link
                 href={`/work/${item.sessionId}`}
-                className="flex items-start gap-2.5 rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent"
+                className="flex items-start gap-2.5 py-2 transition-colors duration-fast ease-out-soft hover:bg-accent/40"
               >
                 {body}
               </Link>
             ) : (
-              <div className="flex items-start gap-2.5 px-2 py-1.5">{body}</div>
+              <div className="flex items-start gap-2.5 py-2">{body}</div>
             )}
           </li>
         );

@@ -61,6 +61,49 @@ const NOTIFY_SUMMARY: Record<AgentNotifyLevel, string> = {
   all: "Finished tasks, questions, and ideas from reflection.",
 };
 
+function formatConnectorLabel(id: string): string {
+  const clean = id.replace(/^composio:/, "");
+  const map: Record<string, string> = {
+    gmail: "Gmail",
+    "google-calendar": "Calendar",
+    googlecalendar: "Calendar",
+    "apple-mail": "Mail",
+    "apple-calendar": "Calendar",
+    notion: "Notion",
+    github: "GitHub",
+    slack: "Slack",
+    linear: "Linear",
+  };
+  if (map[clean]) return map[clean];
+  return clean.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatComputerStatus(status: string): string {
+  const map: Record<string, string> = {
+    awake: "Awake",
+    resting: "Resting",
+    sleeping: "Asleep",
+    starting: "Waking",
+    waking: "Waking",
+    error: "Error",
+    disabled: "Off",
+  };
+  return map[status] ?? status;
+}
+
+function formatModelLabel(model: string | null, effort: string | null): string {
+  const base = !model
+    ? "Default"
+    : model
+        .replace(/^claude-/, "")
+        .replace(/sonnet-4-6/i, "Sonnet 4.6")
+        .replace(/opus-4-6/i, "Opus 4.6")
+        .replace(/haiku-4-5/i, "Haiku 4.5");
+  if (!effort) return base;
+  const eff = effort.charAt(0).toUpperCase() + effort.slice(1);
+  return `${base} · ${eff}`;
+}
+
 function ExpandRow({
   label,
   summary,
@@ -75,26 +118,30 @@ function ExpandRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="border-b border-border last:border-b-0">
+    <div>
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent/50"
+        className="flex min-h-9 w-full items-center justify-between gap-4 py-2 text-left transition-colors duration-fast ease-out-soft hover:text-foreground"
       >
-        <span className="min-w-0 flex-1">
-          <span className="block text-ui font-medium text-foreground">{label}</span>
-          <span className="mt-0.5 block truncate text-caption text-muted-foreground">{summary}</span>
+        <span className="shrink-0 text-ui font-medium text-foreground">{label}</span>
+        <span className="flex min-w-0 items-center gap-1.5 text-right">
+          <span className="truncate text-ui text-muted-foreground">{summary}</span>
+          <ChevronDown
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-in-out",
+              open && "rotate-180 text-foreground"
+            )}
+            aria-hidden="true"
+          />
         </span>
-        <ChevronDown
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out",
-            open && "rotate-180"
-          )}
-          aria-hidden="true"
-        />
       </button>
-      {open ? <div className="space-y-3 border-t border-border/60 bg-muted/15 px-3.5 py-3.5">{children}</div> : null}
+      {open ? (
+        <div className="mb-2.5 mt-1 space-y-3 rounded-control border border-border/70 bg-muted/20 p-3">
+          {children}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -213,7 +260,7 @@ export function AgentPanelSetup({
         You can change any of this by telling {agent.name} in the chat.
       </p>
 
-      <div className="overflow-hidden rounded-card border border-border bg-card">
+      <div className="divide-y divide-border/60 border-y border-border/60">
         {/* 1. Name and role */}
         <ExpandRow
           label="Name and role"
@@ -250,10 +297,10 @@ export function AgentPanelSetup({
         <ExpandRow
           label="Face"
           summary={
-            <span className="inline-flex items-center gap-2">
-              <AgentFace avatar={agent.avatar} size="sm" />
-              <span>
-                {agent.avatar.shape} · {agent.avatar.tone}
+            <span className="inline-flex items-center gap-1.5">
+              <AgentFace avatar={agent.avatar} size="xs" />
+              <span className="capitalize">
+                {agent.avatar.tone} {agent.avatar.shape}
               </span>
             </span>
           }
@@ -271,9 +318,7 @@ export function AgentPanelSetup({
         {/* 3. Personality */}
         <ExpandRow
           label="Personality"
-          summary={`${AGENT_STYLE_LABEL[agent.style]}${
-            agent.instructions ? ` · ${agent.instructions.slice(0, 48)}${agent.instructions.length > 48 ? "…" : ""}` : ""
-          }`}
+          summary={AGENT_STYLE_LABEL[agent.style]}
           open={expanded === "personality"}
           onToggle={() => toggle("personality")}
         >
@@ -325,7 +370,7 @@ export function AgentPanelSetup({
         {/* 5. Apps */}
         <ExpandRow
           label="Apps"
-          summary={agent.connectorIds.length > 0 ? agent.connectorIds.join(", ") : "None"}
+          summary={agent.connectorIds.length > 0 ? agent.connectorIds.map(formatConnectorLabel).join(", ") : "None"}
           open={expanded === "apps"}
           onToggle={() => toggle("apps")}
         >
@@ -341,7 +386,7 @@ export function AgentPanelSetup({
         {detail.computerConfigured ? (
           <ExpandRow
             label="Computer"
-            summary={compStatus === "disabled" ? "Off" : compStatus}
+            summary={formatComputerStatus(compStatus)}
             open={expanded === "computer"}
             onToggle={() => toggle("computer")}
           >
@@ -416,7 +461,7 @@ export function AgentPanelSetup({
         {/* 7. Model and effort */}
         <ExpandRow
           label="Model and effort"
-          summary={`${agent.model ?? "Your default"}${agent.reasoningEffort ? ` · ${agent.reasoningEffort}` : ""}`}
+          summary={formatModelLabel(agent.model, agent.reasoningEffort)}
           open={expanded === "model"}
           onToggle={() => toggle("model")}
         >
@@ -472,18 +517,16 @@ export function AgentPanelSetup({
         </ExpandRow>
 
         {/* 9. Suggests ideas */}
-        <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-3">
-          <span className="min-w-0 flex-1">
-            <span className="block text-ui font-medium text-foreground">Suggests ideas</span>
-            <span className="mt-0.5 block text-caption text-muted-foreground">
-              Raises bounded ideas during daily reflection.
-            </span>
-          </span>
-          <Switch
-            checked={agent.proactive}
-            onCheckedChange={(checked) => void savePatch("proactive", { proactive: checked })}
-            aria-label="Suggests ideas"
-          />
+        <div className="flex min-h-9 items-center justify-between gap-4 py-2">
+          <span className="shrink-0 text-ui font-medium text-foreground">Suggests ideas</span>
+          <div className="flex items-center gap-2.5">
+            <span className="text-caption text-muted-foreground">Daily reflection</span>
+            <Switch
+              checked={agent.proactive}
+              onCheckedChange={(checked) => void savePatch("proactive", { proactive: checked })}
+              aria-label="Suggests ideas"
+            />
+          </div>
         </div>
 
         {/* 10. Memory */}

@@ -3,14 +3,14 @@
 import * as React from "react";
 import { useSearchParams } from "next/navigation";
 import { useTheme } from "next-themes";
-import { AgentThreadHeader, AgentGreeting } from "@/components/agents/agent-thread-header";
+import { AgentThreadHeader } from "@/components/agents/agent-thread-header";
 import { AgentPanel, type AgentPanelTab } from "@/components/agents/agent-panel";
 import { AgentStart } from "@/components/agents/agent-start";
 import { AgentChangeCard } from "@/components/chat/agent-change-card";
 import { ApprovalCard } from "@/components/chat/approval-card";
 import { AgentFace } from "@/components/agents/agent-face";
 import { Button } from "@/components/ui/button";
-import { Hand, Pin, Plus } from "@/components/ui/icons";
+import { ArrowUp, Check, Hand, Monitor, Pin, Plus } from "@/components/ui/icons";
 import type {
   ClientAgent,
   ClientAgentActivity,
@@ -19,15 +19,16 @@ import type {
 } from "@/lib/agents/types";
 import type { ClientAgentComputerFile } from "@/components/agents/agents-transport";
 import type { ActionReceiptStatus, ClientActionApproval } from "@/lib/action-approval";
+import { cn } from "@/lib/utils";
 
-const NOW_ISO = "2026-09-27T06:00:00.000Z";
+const NOW_ISO = "2026-09-27T08:42:00.000Z";
 
 function makeFixtureAgent(overrides: Partial<ClientAgent> = {}): ClientAgent {
   return {
     id: "agent-mira",
     name: "Mira",
     role: "Chief of staff",
-    avatar: { shape: "orb", tone: "coral", eyes: "soft", mark: "ring" },
+    avatar: { shape: "orb", tone: "coral", eyes: "soft", mark: "spark" },
     style: "warm",
     instructions:
       "Triage incoming vendor threads, keep weekly goals on track, and prepare morning briefings before 8:30am.",
@@ -249,15 +250,137 @@ function makeComputerApproval(): ClientActionApproval {
   };
 }
 
-function Section({ id, title, note, children }: { id: string; title: string; note: string; children: React.ReactNode }) {
+function AppSidebarShell({
+  agents,
+  activeAgentId,
+  activeNav = "chat",
+}: {
+  agents: ClientAgent[];
+  activeAgentId?: string | null;
+  activeNav?: "chat" | "agents";
+}) {
   return (
-    <section id={id} className="border-t border-border/60 py-8 first:border-t-0 first:pt-0">
-      <div className="mb-4">
-        <h2 className="text-label font-semibold text-foreground">{title}</h2>
-        <p className="mt-0.5 text-label text-muted-foreground">{note}</p>
+    <aside
+      aria-label="Workspace navigation"
+      className="hidden w-60 shrink-0 flex-col border-r border-border/70 bg-muted/15 lg:flex"
+    >
+      {/* Top brand bar aligned to h-12 */}
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/70 px-3.5">
+        <div className="flex items-center gap-2">
+          <span className="grid size-6 place-items-center rounded-md bg-foreground font-serif text-caption font-semibold text-background">
+            J
+          </span>
+          <span className="text-ui font-semibold tracking-tight text-foreground">Juno</span>
+        </div>
+        <Button size="icon-sm" variant="ghost" aria-label="New chat" className="size-7 text-muted-foreground">
+          <Plus className="size-3.5" />
+        </Button>
       </div>
-      {children}
-    </section>
+
+      <div className="flex-1 space-y-5 overflow-y-auto px-2.5 py-3">
+        {/* Primary nav */}
+        <nav aria-label="Primary" className="space-y-0.5">
+          <div
+            className={cn(
+              "flex items-center justify-between rounded-control px-2.5 py-1.5 text-ui",
+              activeNav === "agents"
+                ? "bg-selected font-medium text-foreground"
+                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            )}
+          >
+            <span>Agents</span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 font-mono text-micro font-medium text-primary">
+              <Hand className="size-2.5" />1
+            </span>
+          </div>
+          <div className="flex items-center justify-between rounded-control px-2.5 py-1.5 text-ui text-muted-foreground">
+            <span>Automations</span>
+            <span className="font-mono text-micro text-muted-foreground">2</span>
+          </div>
+          <div className="flex items-center justify-between rounded-control px-2.5 py-1.5 text-ui text-muted-foreground">
+            <span>Artifacts</span>
+          </div>
+        </nav>
+
+        {/* Pinned Agents */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between px-2.5">
+            <span className="font-mono text-micro uppercase tracking-wider text-muted-foreground">Agents</span>
+            <span className="font-mono text-micro text-muted-foreground">{agents.length}</span>
+          </div>
+          <ul className="space-y-0.5">
+            {agents.map((agent) => {
+              const selected = activeNav === "chat" && agent.id === activeAgentId;
+              return (
+                <li key={agent.id}>
+                  <div
+                    className={cn(
+                      "flex items-center gap-2.5 rounded-control px-2.5 py-1.5 transition-colors",
+                      selected
+                        ? "bg-selected font-medium text-foreground"
+                        : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+                    )}
+                  >
+                    <AgentFace avatar={agent.avatar} state={agent.state} size="xs" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="truncate text-ui text-foreground">{agent.name}</span>
+                        {agent.state === "waiting" ? (
+                          <Hand className="size-3 shrink-0 text-primary" aria-hidden="true" />
+                        ) : null}
+                      </div>
+                      <p className="truncate text-micro text-muted-foreground">{agent.role}</p>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        {/* Recent threads */}
+        <div className="space-y-1">
+          <span className="block px-2.5 font-mono text-micro uppercase tracking-wider text-muted-foreground">
+            Recent
+          </span>
+          <ul className="space-y-0.5 text-ui text-muted-foreground">
+            <li className="truncate rounded-control px-2.5 py-1.5 hover:bg-accent/40">Q4 SaaS Vendor Audit</li>
+            <li className="truncate rounded-control px-2.5 py-1.5 hover:bg-accent/40">Board Deck Executive Memo</li>
+            <li className="truncate rounded-control px-2.5 py-1.5 hover:bg-accent/40">Stripe Webhook Reconciliation</li>
+          </ul>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between border-t border-border/70 px-3.5 py-2.5">
+        <div className="min-w-0">
+          <p className="truncate text-caption font-medium text-foreground">Liam Magnier</p>
+          <p className="truncate font-mono text-micro text-muted-foreground">Workspace · Pro</p>
+        </div>
+        <span className="size-2 rounded-full bg-emerald-500" aria-hidden="true" />
+      </div>
+    </aside>
+  );
+}
+
+function ThreadComposerBar({ placeholder }: { placeholder: string }) {
+  return (
+    <div className="shrink-0 border-t border-border/50 bg-background px-4 py-3">
+      <div className="mx-auto flex max-w-2xl items-center justify-between gap-3 rounded-2xl border border-border bg-card px-3.5 py-2 shadow-2xs">
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <span className="grid size-6 shrink-0 place-items-center rounded-full border border-border/70 text-muted-foreground">
+            <Plus className="size-3.5" />
+          </span>
+          <span className="truncate text-ui text-muted-foreground">{placeholder}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="hidden font-mono text-micro text-muted-foreground sm:inline">Sonnet 4.6</span>
+          <span className="grid size-7 place-items-center rounded-full bg-primary text-primary-foreground">
+            <ArrowUp className="size-3.5" />
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -276,42 +399,68 @@ export function AgentsV2Gallery() {
   const [activeTab, setActiveTab] = React.useState<AgentPanelTab>("now");
 
   const miraDetail = React.useMemo(() => makeFixtureDetail(), []);
-  const noComputerDetail = React.useMemo(
+  const miraWorkingDetail = React.useMemo(
     () =>
       makeFixtureDetail(
         {
-          id: "agent-scout",
-          name: "Scout",
-          role: "Researcher",
-          state: "idle",
-          stateSentence: "Ready for something new",
+          state: "working",
+          stateSentence: "Working · Reviewing Acme 2026 pricing sheet in Chromium",
           needsYou: 0,
-          task: null,
-          computer: { enabled: false, status: "disabled" },
+          task: {
+            sessionId: "sess-mira-1",
+            title: "Draft renewal comparison & update vendor tracker",
+            status: "running",
+            needsAttention: false,
+            lastActivityAt: NOW_ISO,
+            conversationId: "conv-mira",
+          },
         },
-        null
-      ),
-    []
-  );
-  const restingDetail = React.useMemo(
-    () => makeFixtureDetail({}, { status: "resting", streamOn: false }),
-    []
-  );
-  const wakingDetail = React.useMemo(
-    () => makeFixtureDetail({}, { status: "starting", streamOn: false }),
-    []
-  );
-  const errorDetail = React.useMemo(
-    () =>
-      makeFixtureDetail(
-        {},
         {
-          status: "error",
-          streamOn: false,
-          error: "Container health check timed out after 30s on 127.0.0.1:6080.",
+          status: "awake",
+          streamOn: true,
+          usingNow: { summary: "Reviewing Acme 2026 pricing sheet in Chromium" },
         }
       ),
     []
+  );
+
+  const scoutAgent = React.useMemo(
+    () =>
+      makeFixtureAgent({
+        id: "agent-scout",
+        name: "Scout",
+        role: "Researcher",
+        avatar: { shape: "orb", tone: "teal", eyes: "round", mark: "antenna" },
+        pinnedAt: null,
+        state: "idle",
+        stateSentence: "Ready for something new",
+        needsYou: 0,
+        task: null,
+        computer: { enabled: false, status: "disabled" },
+      }),
+    []
+  );
+
+  const ledgerAgent = React.useMemo(
+    () =>
+      makeFixtureAgent({
+        id: "agent-ledger",
+        name: "Ledger",
+        role: "Operations",
+        avatar: { shape: "capsule", tone: "sage", eyes: "tall", mark: "leaf" },
+        pinnedAt: null,
+        status: "paused",
+        state: "sleeping",
+        stateSentence: "Paused",
+        needsYou: 0,
+        task: null,
+      }),
+    []
+  );
+
+  const rosterAgents = React.useMemo(
+    () => [miraDetail.agent, scoutAgent, ledgerAgent],
+    [miraDetail.agent, scoutAgent, ledgerAgent]
   );
 
   const [computerApproval, setComputerApproval] = React.useState<ClientActionApproval | null>(null);
@@ -319,259 +468,391 @@ export function AgentsV2Gallery() {
     setComputerApproval(makeComputerApproval());
   }, []);
 
-  const showSection = (name: string) => !view || view === name;
+  // 1. Flagship Thread + Now Panel Viewport (?view=thread-now)
+  if (view === "thread-now") {
+    return (
+      <main className="flex h-dvh w-full overflow-hidden bg-background text-foreground">
+        <AppSidebarShell agents={rosterAgents} activeAgentId={miraDetail.agent.id} activeNav="chat" />
 
-  return (
-    <main className="min-h-dvh bg-background px-4 py-8 text-foreground">
-      <div className="mx-auto max-w-[78rem] space-y-8">
-        <header className="border-b border-border pb-4">
-          <p className="font-mono text-label text-muted-foreground">AGENTS V2 · THREAD-FIRST GALLERY</p>
-          <h1 className="mt-1 text-title font-semibold text-foreground">
-            One home per agent: the thread, the 3-tab side panel, and the cloud computer
-          </h1>
-        </header>
+        <div className="flex min-w-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_24rem]">
+          {/* Center Thread Pane */}
+          <div className="hidden min-w-0 flex-col border-r border-border/70 bg-background lg:flex">
+            <AgentThreadHeader
+              agent={miraDetail.agent}
+              state={miraDetail.agent.state}
+              taskTitle={miraDetail.agent.task?.title ?? null}
+              activePanelTab={activeTab}
+              onTogglePanel={(tab) => setActiveTab(tab)}
+            />
 
-        {showSection("thread-now") && (
-          <Section
-            id="thread-now"
-            title="1. Thread + Now panel (split layout)"
-            note="The thread header carries the sm face, state sentence, Computer toggle, Agent panel toggle, and overflow menu. The right slot holds Now · Computer · Setup."
-          >
-            <div className="grid grid-cols-1 overflow-hidden rounded-card border border-border bg-card lg:grid-cols-[minmax(0,1fr)_24rem]">
-              <div className="flex min-w-0 flex-col">
-                <AgentThreadHeader
-                  agent={miraDetail.agent}
-                  state={miraDetail.agent.state}
-                  taskTitle={miraDetail.agent.task?.title ?? null}
-                  activePanelTab={activeTab}
-                  onTogglePanel={(tab) => setActiveTab((prev) => (prev === tab ? prev : tab))}
-                />
-                <div className="flex-1 space-y-4 p-5">
-                  <AgentGreeting agent={miraDetail.agent} />
-                  <div className="mx-auto max-w-[38rem] space-y-3">
-                    {computerApproval && <ApprovalCard approval={computerApproval} />}
-                    <AgentChangeCard
-                      change={{
-                        eventId: "evt-routine-1",
-                        agentId: "agent-mira",
-                        agentName: "Mira",
-                        summary: "Added routine: Morning briefing (Every weekday at 08:30)",
-                        changes: [
-                          { label: "Routine", to: "Morning briefing · Every weekday at 08:30" },
-                        ],
-                      }}
-                    />
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+              <div className="mx-auto max-w-2xl space-y-5">
+                {/* User Turn */}
+                <div className="flex justify-end">
+                  <div className="max-w-lg rounded-2xl border border-border/60 bg-muted/50 px-4 py-2.5 text-ui leading-relaxed text-foreground">
+                    Set up a weekday 8:30am morning briefing routine, then pull the Acme FY26 renewal quote from Gmail
+                    and draft a counter-proposal under our $40k target.
                   </div>
                 </div>
-              </div>
-              <div className="min-h-[34rem] border-t border-border lg:border-l lg:border-t-0">
-                <AgentPanel
-                  agentId={miraDetail.agent.id}
-                  initialDetail={miraDetail}
-                  staticPreview
-                  mockActivity={MOCK_ACTIVITY}
-                  mockFiles={MOCK_FILES}
-                  tab={activeTab}
-                  onTabChange={setActiveTab}
-                  onClose={() => {}}
-                />
-              </div>
-            </div>
-          </Section>
-        )}
 
-        {showSection("computer") && (
-          <Section
-            id="computer"
-            title="2. Computer panel states"
-            note="No computer (disabled), asleep, resting, waking (ThinkingOrb), awake (watching vs controlling), error, and the single <details> files/power disclosure."
-          >
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              <div className="overflow-hidden rounded-card border border-border bg-card">
-                <div className="border-b border-border px-3 py-2 font-mono text-label text-muted-foreground">
-                  No computer (enabled = false)
-                </div>
-                <div className="h-[26rem]">
-                  <AgentPanel
-                    agentId={noComputerDetail.agent.id}
-                    initialDetail={noComputerDetail}
-                    staticPreview
-                    tab="computer"
-                    onTabChange={() => {}}
-                    onClose={() => {}}
-                  />
-                </div>
-              </div>
-
-              <div className="overflow-hidden rounded-card border border-border bg-card">
-                <div className="border-b border-border px-3 py-2 font-mono text-label text-muted-foreground">
-                  Awake · Watching + open Files disclosure
-                </div>
-                <div className="h-[32rem]">
-                  <AgentPanel
-                    agentId={miraDetail.agent.id}
-                    initialDetail={miraDetail}
-                    staticPreview
-                    mockFiles={MOCK_FILES}
-                    initialComputerMode="watch"
-                    tab="computer"
-                    onTabChange={() => {}}
-                    onClose={() => {}}
-                  />
-                </div>
-              </div>
-
-              <div className="overflow-hidden rounded-card border border-border bg-card">
-                <div className="border-b border-border px-3 py-2 font-mono text-label text-muted-foreground">
-                  Awake · Controlling (Hand back)
-                </div>
-                <div className="h-[32rem]">
-                  <AgentPanel
-                    agentId={miraDetail.agent.id}
-                    initialDetail={miraDetail}
-                    staticPreview
-                    initialComputerMode="control"
-                    tab="computer"
-                    onTabChange={() => {}}
-                    onClose={() => {}}
-                  />
-                </div>
-              </div>
-
-              <div className="overflow-hidden rounded-card border border-border bg-card">
-                <div className="border-b border-border px-3 py-2 font-mono text-label text-muted-foreground">
-                  Waking (status = starting · ThinkingOrb)
-                </div>
-                <div className="h-[26rem]">
-                  <AgentPanel
-                    agentId={wakingDetail.agent.id}
-                    initialDetail={wakingDetail}
-                    staticPreview
-                    tab="computer"
-                    onTabChange={() => {}}
-                    onClose={() => {}}
-                  />
-                </div>
-              </div>
-
-              <div className="overflow-hidden rounded-card border border-border bg-card">
-                <div className="border-b border-border px-3 py-2 font-mono text-label text-muted-foreground">
-                  Resting (status = resting) & Asleep
-                </div>
-                <div className="h-[26rem]">
-                  <AgentPanel
-                    agentId={restingDetail.agent.id}
-                    initialDetail={restingDetail}
-                    staticPreview
-                    tab="computer"
-                    onTabChange={() => {}}
-                    onClose={() => {}}
-                  />
-                </div>
-              </div>
-
-              <div className="overflow-hidden rounded-card border border-border bg-card">
-                <div className="border-b border-border px-3 py-2 font-mono text-label text-muted-foreground">
-                  Error (status = error)
-                </div>
-                <div className="h-[26rem]">
-                  <AgentPanel
-                    agentId={errorDetail.agent.id}
-                    initialDetail={errorDetail}
-                    staticPreview
-                    tab="computer"
-                    onTabChange={() => {}}
-                    onClose={() => {}}
-                  />
-                </div>
-              </div>
-            </div>
-          </Section>
-        )}
-
-        {showSection("setup") && (
-          <Section
-            id="setup"
-            title="3. Setup panel (11 expand-in-place rows)"
-            note="Hint line at top, 11 scannable rows with inline Save, and Pause/Resume · Duplicate · Retire in the footer."
-          >
-            <div className="mx-auto max-w-[30rem] overflow-hidden rounded-card border border-border bg-card">
-              <div className="h-[44rem]">
-                <AgentPanel
-                  agentId={miraDetail.agent.id}
-                  initialDetail={miraDetail}
-                  staticPreview
-                  initialExpandedSetupRow="routines"
-                  tab="setup"
-                  onTabChange={() => {}}
-                  onClose={() => {}}
-                />
-              </div>
-            </div>
-          </Section>
-        )}
-
-        {showSection("roster-start") && (
-          <Section
-            id="roster-start"
-            title="4. Compact Roster & Chat-first Start"
-            note="/agents is a compact scannable list (pinned first, face sm + name + role · state sentence + trailing hand icon when waiting). /agents/new starts a conversation in one click."
-          >
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <div className="rounded-card border border-border bg-card p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-ui font-semibold text-foreground">Agents</h3>
-                    <p className="text-label text-muted-foreground">1 waiting on you · 2 active</p>
+                {/* Agent Turn */}
+                <div className="space-y-3.5">
+                  <div className="flex items-center gap-2">
+                    <AgentFace avatar={miraDetail.agent.avatar} state="waiting" size="xs" />
+                    <span className="text-ui font-medium text-foreground">Mira</span>
+                    <span className="font-mono text-micro text-muted-foreground">08:42</span>
                   </div>
-                  <Button size="sm" variant="default">
-                    <Plus className="size-4" />
-                    New agent
-                  </Button>
+
+                  <AgentChangeCard
+                    change={{
+                      eventId: "evt-routine-1",
+                      agentId: "agent-mira",
+                      agentName: "Mira",
+                      summary: "Added routine: Morning briefing (Every weekday at 08:30)",
+                      changes: [{ label: "Routine", to: "Morning briefing · Every weekday at 08:30" }],
+                    }}
+                  />
+
+                  <div className="space-y-2.5 text-ui leading-relaxed text-foreground">
+                    <p>
+                      I’ve scheduled your weekday 8:30am morning briefing. I also located Acme’s FY26 enterprise renewal
+                      proposal in your inbox and compared their pricing tiers:
+                    </p>
+                    <div className="grid grid-cols-3 gap-2 border-y border-border/60 py-2.5 text-caption">
+                      <div>
+                        <span className="block font-mono text-micro text-muted-foreground">12-MO STANDARD</span>
+                        <span className="font-medium text-foreground">$42,000 / yr</span>
+                      </div>
+                      <div>
+                        <span className="block font-mono text-micro text-muted-foreground">24-MO COMMIT</span>
+                        <span className="font-medium text-foreground">$36,400 / yr (-13%)</span>
+                      </div>
+                      <div>
+                        <span className="block font-mono text-micro text-muted-foreground">RECOMMENDED COUNTER</span>
+                        <span className="font-medium text-primary">$38,000 / yr (12-mo)</span>
+                      </div>
+                    </div>
+                    <p className="text-muted-foreground">
+                      To open the live Acme billing portal spreadsheet and run the seat-utilization script, I need a
+                      cloud computer. Should I spin one up and save the comparison workbook?
+                    </p>
+                  </div>
+
+                  {computerApproval && <ApprovalCard approval={computerApproval} />}
                 </div>
-                <ul className="divide-y divide-border overflow-hidden rounded-card border border-border bg-background">
-                  {[
-                    miraDetail.agent,
-                    noComputerDetail.agent,
-                    makeFixtureAgent({
-                      id: "agent-ledger",
-                      name: "Ledger",
-                      role: "Operations",
-                      pinnedAt: null,
-                      status: "paused",
-                      state: "sleeping",
-                      stateSentence: "Paused",
-                      needsYou: 0,
-                    }),
-                  ].map((agent) => (
-                    <li key={agent.id} className="flex items-center gap-3 px-4 py-3">
-                      <AgentFace avatar={agent.avatar} state={agent.state} size="sm" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="truncate text-ui font-medium text-foreground">{agent.name}</span>
-                          {agent.pinnedAt && <Pin className="size-3 shrink-0 text-muted-foreground" />}
+              </div>
+            </div>
+
+            <ThreadComposerBar placeholder="Reply to Mira or approve the cloud computer…" />
+          </div>
+
+          {/* Mobile compact thread context bar above the Now sheet */}
+          <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/70 bg-muted/20 px-3.5 text-caption text-muted-foreground lg:hidden">
+            <span className="truncate">Thread · “Set up a weekday 8:30am morning briefing…”</span>
+            <span className="shrink-0 font-mono text-micro text-primary">1 approval</span>
+          </div>
+
+          {/* Right Agent Panel (Now) */}
+          <div className="min-h-0 flex-1">
+            <AgentPanel
+              agentId={miraDetail.agent.id}
+              initialDetail={miraDetail}
+              staticPreview
+              mockActivity={MOCK_ACTIVITY}
+              mockFiles={MOCK_FILES}
+              tab="now"
+              onTabChange={setActiveTab}
+              onClose={() => {}}
+            />
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // 2. Flagship Computer Panel Viewport (?view=computer)
+  if (view === "computer") {
+    return (
+      <main className="flex h-dvh w-full overflow-hidden bg-background text-foreground">
+        <AppSidebarShell agents={rosterAgents} activeAgentId={miraWorkingDetail.agent.id} activeNav="chat" />
+
+        <div className="flex min-w-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_25.5rem]">
+          {/* Center Thread Pane showing live computer activity + states */}
+          <div className="hidden min-w-0 flex-col border-r border-border/70 bg-background lg:flex">
+            <AgentThreadHeader
+              agent={miraWorkingDetail.agent}
+              state="working"
+              taskTitle="Reviewing Acme 2026 pricing sheet in Chromium"
+              activePanelTab="computer"
+              onTogglePanel={() => {}}
+            />
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+              <div className="mx-auto max-w-2xl space-y-5">
+                <div className="flex justify-end">
+                  <div className="max-w-lg rounded-2xl border border-border/60 bg-muted/50 px-4 py-2.5 text-ui leading-relaxed text-foreground">
+                    Approved. Open the Acme billing portal in Chromium, export the seat utilization sheet, and draft the
+                    $38,000/yr 12-month counter-proposal.
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <AgentFace avatar={miraWorkingDetail.agent.avatar} state="working" size="xs" />
+                    <span className="text-ui font-medium text-foreground">Mira</span>
+                    <span className="font-mono text-micro text-muted-foreground">Using cloud computer</span>
+                  </div>
+
+                  {/* Live computer step log */}
+                  <div className="divide-y divide-border/60 border-y border-border/60">
+                    <div className="flex items-center justify-between gap-3 py-2 text-caption">
+                      <span className="flex items-center gap-2 text-foreground">
+                        <Check className="size-3.5 text-muted-foreground" />
+                        <span>Opened billing.acme.io/renewals/fy26 in Chromium</span>
+                      </span>
+                      <span className="font-mono text-micro text-muted-foreground">1280×800</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 py-2 text-caption">
+                      <span className="flex items-center gap-2 text-foreground">
+                        <Check className="size-3.5 text-muted-foreground" />
+                        <span>Saved /home/agent/work/vendor-comparison-q4.xlsx</span>
+                      </span>
+                      <span className="font-mono text-micro text-muted-foreground">42.1 KB</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 py-2 text-caption">
+                      <span className="flex items-center gap-2 font-medium text-foreground">
+                        <Monitor className="size-3.5 text-primary" />
+                        <span>Drafting counter-proposal table in acme-counter-proposal.md</span>
+                      </span>
+                      <span className="font-mono text-micro text-emerald-500">Live</span>
+                    </div>
+                  </div>
+
+                  <p className="text-ui leading-relaxed text-foreground">
+                    I’ve pulled the 120-seat utilization report from Acme’s portal (94 active seats, 26 idle) and
+                    generated <span className="font-mono text-caption">vendor-comparison-q4.xlsx</span>. You can watch
+                    my desktop in the Computer panel or press <span className="font-medium">Take control</span> at any
+                    time to step in.
+                  </p>
+
+                  {/* Compact reference strip of Computer lifecycle states */}
+                  <div className="space-y-2 pt-2">
+                    <span className="font-mono text-micro uppercase tracking-wider text-muted-foreground">
+                      Computer Takeover &amp; Lifecycle States
+                    </span>
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <div className="rounded-control border border-primary/30 bg-primary/8 p-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-micro font-medium text-primary">TAKEOVER</span>
+                          <Hand className="size-3 text-primary" />
                         </div>
-                        <p className="mt-0.5 truncate text-label text-muted-foreground">
-                          {agent.role} · {agent.stateSentence}
+                        <p className="mt-1 text-caption font-medium text-foreground">You have control</p>
+                        <p className="mt-0.5 text-micro text-muted-foreground">Mira pauses until you press Hand back.</p>
+                      </div>
+                      <div className="rounded-control border border-border/70 bg-muted/20 p-2.5">
+                        <span className="font-mono text-micro text-muted-foreground">RESTING</span>
+                        <p className="mt-1 text-caption font-medium text-foreground">Opens instantly</p>
+                        <p className="mt-0.5 text-micro text-muted-foreground">
+                          Container paused after 3m idle; unpauses in 20ms.
                         </p>
                       </div>
-                      {agent.state === "waiting" && (
-                        <span className="inline-flex items-center gap-1 text-label font-medium text-foreground">
-                          <Hand className="size-3.5" />
-                          <span className="font-mono text-caption">1</span>
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="overflow-hidden rounded-card border border-border bg-card p-2">
-                <AgentStart initialTemplate={null} />
+                      <div className="rounded-control border border-border/70 bg-muted/20 p-2.5">
+                        <span className="font-mono text-micro text-muted-foreground">RETENTION</span>
+                        <p className="mt-1 text-caption font-medium text-foreground">Persistent /home/agent</p>
+                        <p className="mt-0.5 text-micro text-muted-foreground">
+                          Cookies &amp; files kept; cleared after 30d asleep.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-          </Section>
-        )}
+
+            <ThreadComposerBar placeholder="Steer Mira or press Take control on the right…" />
+          </div>
+
+          {/* Mobile compact thread context bar */}
+          <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/70 bg-muted/20 px-3.5 text-caption text-muted-foreground lg:hidden">
+            <span className="truncate">Thread · Reviewing Acme FY26 pricing sheet</span>
+            <span className="shrink-0 font-mono text-micro text-emerald-500">Computer live</span>
+          </div>
+
+          {/* Right Agent Panel (Computer) */}
+          <div className="min-h-0 flex-1">
+            <AgentPanel
+              agentId={miraWorkingDetail.agent.id}
+              initialDetail={miraWorkingDetail}
+              staticPreview
+              mockFiles={MOCK_FILES}
+              initialComputerMode="watch"
+              tab="computer"
+              onTabChange={() => {}}
+              onClose={() => {}}
+            />
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // 3. Flagship Setup Panel Viewport (?view=setup)
+  if (view === "setup") {
+    return (
+      <main className="flex h-dvh w-full overflow-hidden bg-background text-foreground">
+        <AppSidebarShell agents={rosterAgents} activeAgentId={miraDetail.agent.id} activeNav="chat" />
+
+        <div className="flex min-w-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_25rem]">
+          {/* Center Thread Pane showing Configuration by Chat */}
+          <div className="hidden min-w-0 flex-col border-r border-border/70 bg-background lg:flex">
+            <AgentThreadHeader
+              agent={miraDetail.agent}
+              state="idle"
+              taskTitle={null}
+              activePanelTab="setup"
+              onTogglePanel={() => {}}
+            />
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+              <div className="mx-auto max-w-2xl space-y-5">
+                <div className="flex justify-end">
+                  <div className="max-w-lg rounded-2xl border border-border/60 bg-muted/50 px-4 py-2.5 text-ui leading-relaxed text-foreground">
+                    Only notify me when you need my input, remember that we prefer 12-month SaaS commitments unless the
+                    discount exceeds 20%, and keep the weekday 8:30am morning briefing active.
+                  </div>
+                </div>
+
+                <div className="space-y-3.5">
+                  <div className="flex items-center gap-2">
+                    <AgentFace avatar={miraDetail.agent.avatar} state="idle" size="xs" />
+                    <span className="text-ui font-medium text-foreground">Mira</span>
+                    <span className="font-mono text-micro text-muted-foreground">08:40</span>
+                  </div>
+
+                  <AgentChangeCard
+                    change={{
+                      eventId: "evt-setup-1",
+                      agentId: "agent-mira",
+                      agentName: "Mira",
+                      summary: "Updated notifications to Needs you only & saved note to memory",
+                      changes: [
+                        { label: "Notifications", from: "Results", to: "Needs you only" },
+                        { label: "Memory", to: "Prefer 12-month SaaS commitments unless 24-mo discount > 20%" },
+                      ],
+                    }}
+                  />
+
+                  <p className="text-ui leading-relaxed text-foreground">
+                    All set. I’ve switched my notifications to{" "}
+                    <span className="font-medium">Needs you only</span>, saved your 12-month SaaS renewal rule to my
+                    memory, and kept your weekday 08:30 morning briefing active. You can review or edit any of these 11
+                    settings directly in the <span className="font-medium">Setup</span> panel.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <ThreadComposerBar placeholder="Tell Mira what to change, or edit settings in Setup…" />
+          </div>
+
+          {/* Mobile compact thread context bar */}
+          <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/70 bg-muted/20 px-3.5 text-caption text-muted-foreground lg:hidden">
+            <span className="truncate">Thread · Updated notifications &amp; memory</span>
+            <span className="shrink-0 font-mono text-micro text-muted-foreground">11 settings</span>
+          </div>
+
+          {/* Right Agent Panel (Setup) */}
+          <div className="min-h-0 flex-1">
+            <AgentPanel
+              agentId={miraDetail.agent.id}
+              initialDetail={miraDetail}
+              staticPreview
+              initialExpandedSetupRow="routines"
+              tab="setup"
+              onTabChange={() => {}}
+              onClose={() => {}}
+            />
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // 4. Flagship Roster & Chat-first Hire Viewport (?view=roster-start or default)
+  return (
+    <main className="flex h-dvh w-full overflow-hidden bg-background text-foreground">
+      <AppSidebarShell agents={rosterAgents} activeAgentId={null} activeNav="agents" />
+
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Top Workspace Bar */}
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/70 px-5">
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-ui font-semibold text-foreground">Agents</h1>
+            <span className="font-mono text-micro text-muted-foreground">1 waiting on you · 2 active</span>
+          </div>
+          <Button size="sm" className="h-7 gap-1.5 px-2.5 text-caption">
+            <Plus className="size-3.5" />
+            New agent
+          </Button>
+        </header>
+
+        <div className="grid min-h-0 flex-1 grid-cols-1 divide-y divide-border/70 overflow-y-auto lg:grid-cols-[23.5rem_minmax(0,1fr)] lg:divide-x lg:divide-y-0">
+          {/* Left Column: Compact Scannable Roster (/agents) */}
+          <section aria-label="Your agents" className="flex flex-col justify-between p-5">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-micro uppercase tracking-wider text-muted-foreground">
+                  Roster ({rosterAgents.length})
+                </span>
+                <span className="font-mono text-micro text-muted-foreground">Pinned first</span>
+              </div>
+
+              <ul className="divide-y divide-border/60 border-y border-border/60">
+                {rosterAgents.map((agent) => (
+                  <li key={agent.id} className="flex items-center gap-3 py-3">
+                    <AgentFace avatar={agent.avatar} state={agent.state} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate text-ui font-medium text-foreground">{agent.name}</span>
+                        {agent.pinnedAt && <Pin className="size-3 shrink-0 text-muted-foreground" />}
+                      </div>
+                      <p className="mt-0.5 truncate text-caption text-muted-foreground">
+                        {agent.state === "waiting"
+                          ? `${agent.role} · Waiting on you`
+                          : `${agent.role} · ${agent.stateSentence}`}
+                      </p>
+                    </div>
+                    {agent.state === "waiting" && (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/25 bg-primary/8 px-2 py-0.5 text-micro font-medium text-primary">
+                        <Hand className="size-3" />
+                        <span>Needs you</span>
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="hidden space-y-2 border-t border-border/60 pt-4 lg:block">
+              <span className="font-mono text-micro uppercase tracking-wider text-muted-foreground">
+                Recent Agent Activity
+              </span>
+              <div className="space-y-1.5 text-caption text-muted-foreground">
+                <p className="truncate">
+                  <span className="font-medium text-foreground">Mira</span> paused on Acme renewal pricing · 2m ago
+                </p>
+                <p className="truncate">
+                  <span className="font-medium text-foreground">Scout</span> finished competitor pricing brief · 3h ago
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* Right Column: Chat-First Hire (/agents/new) */}
+          <section aria-label="New agent" className="min-w-0 overflow-y-auto px-2 py-1">
+            <AgentStart initialTemplate={null} />
+          </section>
+        </div>
       </div>
     </main>
   );

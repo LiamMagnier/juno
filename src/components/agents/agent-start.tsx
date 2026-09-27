@@ -63,24 +63,37 @@ export function AgentStart({ initialTemplate }: { initialTemplate: string | null
         lede="Pick a starting point to open a thread with your new agent, or start from scratch."
       />
 
-      <div className="mb-8 flex flex-col items-center text-center motion-safe:animate-rise-in">
-        <div data-face-trigger className="grid size-28 place-items-center rounded-panel border border-border bg-card">
+      <div className="mb-6 flex items-center gap-4 border-y border-border/60 py-3.5 motion-safe:animate-rise-in">
+        <div
+          data-face-trigger
+          className="grid size-14 shrink-0 place-items-center rounded-2xl border border-border/70 bg-muted/30"
+        >
           <AgentFace
             avatar={hovered.avatar}
             state={busyId ? "working" : "idle"}
-            size="lg"
+            size="md"
             name={hovered.names[0] ?? "New agent"}
           />
         </div>
-        <p className="mt-3 text-ui font-medium text-foreground">
-          {hovered.names[0] ?? "New agent"} · <span className="text-muted-foreground">{hovered.label}</span>
-        </p>
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-micro uppercase tracking-wider text-muted-foreground">
+            Starting point preview
+          </p>
+          <p className="mt-0.5 truncate text-body font-semibold text-foreground">
+            {hovered.names[0] ?? "New agent"}{" "}
+            <span className="font-normal text-muted-foreground">· {hovered.label}</span>
+          </p>
+          <p className="mt-0.5 truncate text-caption text-muted-foreground">
+            {hovered.firstGoal ? `First goal: “${hovered.firstGoal}”` : hovered.promise}
+          </p>
+        </div>
       </div>
 
-      <ul className="grid grid-cols-1 gap-3 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3">
+      <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         {AGENT_TEMPLATES.map((template, index) => {
           const isScratch = template.id === "custom";
           const isBusy = busyId === template.id;
+          const isSelected = hovered.id === template.id;
           return (
             <li
               key={template.id}
@@ -95,16 +108,27 @@ export function AgentStart({ initialTemplate }: { initialTemplate: string | null
                 onClick={() => void handlePick(template)}
                 className={cn(
                   cardVariants({ variant: "interactive" }),
-                  "flex h-full w-full items-start gap-3.5 p-4 text-left",
+                  "flex h-full w-full items-start gap-3 p-3.5 text-left transition-colors",
+                  isSelected && "border-foreground/30 bg-accent/30",
                   isBusy && "border-foreground/40 bg-selected"
                 )}
               >
                 <AgentFace avatar={template.avatar} size="sm" state={isBusy ? "working" : "idle"} />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-body font-medium text-foreground">
-                    {isScratch ? "Start from scratch" : template.label}
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="truncate text-ui font-semibold text-foreground">
+                      {isScratch ? "Start from scratch" : template.label}
+                    </span>
+                    <span className="shrink-0 font-mono text-micro text-muted-foreground">
+                      {template.names[0]}
+                    </span>
                   </span>
-                  <span className="mt-0.5 block text-ui text-muted-foreground">{template.promise}</span>
+                  <span className="mt-1 line-clamp-2 block text-caption leading-relaxed text-muted-foreground">
+                    {template.promise}
+                  </span>
+                  <span className="mt-2 block truncate font-mono text-micro text-muted-foreground">
+                    {template.firstGoal ? `→ “${template.firstGoal}”` : "→ Custom brief & tools"}
+                  </span>
                 </span>
               </button>
             </li>
@@ -112,11 +136,11 @@ export function AgentStart({ initialTemplate }: { initialTemplate: string | null
         })}
       </ul>
 
-      <p className="mt-6 text-center text-ui text-muted-foreground">
+      <p className="mt-6 text-center text-caption text-muted-foreground">
         Prefer to configure everything up front?{" "}
         <Link
           href={initialTemplate ? `/agents/new?form=1&template=${encodeURIComponent(initialTemplate)}` : "/agents/new?form=1"}
-          className="text-foreground underline-offset-4 hover:underline"
+          className="font-medium text-foreground underline-offset-4 hover:underline"
         >
           Set up with a form
         </Link>

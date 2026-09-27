@@ -75,42 +75,43 @@ export function AgentPanel({
       aria-label={detail ? `${detail.agent.name} panel` : "Agent panel"}
       className="flex h-full w-full flex-col bg-background"
     >
-      {/* Header */}
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/70 px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-2.5">
+      {/* Unified h-12 header aligned with AgentThreadHeader */}
+      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border/70 px-3.5">
+        <div className="flex min-w-0 items-center gap-2">
           {detail ? (
             <>
               <AgentFace avatar={detail.agent.avatar} state={detail.agent.state} size="xs" />
               <span className="truncate text-ui font-medium text-foreground">{detail.agent.name}</span>
             </>
           ) : (
-            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-4 w-24" />
           )}
         </div>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="ghost"
-          onClick={onClose}
-          aria-label="Close agent panel"
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <X className="size-4" aria-hidden="true" />
-        </Button>
-      </div>
 
-      {/* Tabs: Now · Computer · Setup (no count badge) */}
-      <div className="shrink-0 border-b border-border/70 px-4 py-2">
-        <SegmentedControl
-          ariaLabel="Agent panel view"
-          value={activeTab}
-          onChange={(next) => {
-            if (next !== "computer") setComputerMode("watch");
-            onTabChange(next as AgentPanelTab);
-          }}
-          options={options}
-          className="w-full"
-        />
+        <div className="flex shrink-0 items-center gap-1.5">
+          <SegmentedControl
+            ariaLabel="Agent panel view"
+            value={activeTab}
+            onChange={(next) => {
+              if (next !== "computer") setComputerMode("watch");
+              onTabChange(next as AgentPanelTab);
+            }}
+            options={options}
+            columns="content"
+            className="rounded-control p-0.5"
+            optionClassName="h-6 px-2.5 py-0 text-caption font-medium"
+          />
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            onClick={onClose}
+            aria-label="Close agent panel"
+            className="size-7 text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-3.5" aria-hidden="true" />
+          </Button>
+        </div>
       </div>
 
       {/* Body */}

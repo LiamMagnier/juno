@@ -186,8 +186,8 @@ export function AgentThreadHeader({
   };
 
   return (
-    <div className="flex shrink-0 justify-center border-b border-border/70 px-4 py-2">
-      <div className="flex w-full max-w-3xl items-center gap-3">
+    <div className="flex h-12 shrink-0 items-center justify-center border-b border-border/70 px-4">
+      <div className="flex w-full max-w-3xl items-center gap-2.5">
         <button
           ref={faceRef}
           type="button"
@@ -203,7 +203,14 @@ export function AgentThreadHeader({
           onClick={() => onTogglePanel?.("now")}
           className="min-w-0 flex-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <p className="truncate text-ui font-medium text-foreground">{agent.name}</p>
+          <div className="flex items-baseline gap-2">
+            <span className="truncate text-ui font-medium text-foreground">{agent.name}</span>
+            {agent.role ? (
+              <span className="hidden truncate text-caption text-muted-foreground sm:inline">
+                {agent.role}
+              </span>
+            ) : null}
+          </div>
           <p className="truncate text-caption text-muted-foreground" aria-live="polite">
             {sentence}
           </p>
