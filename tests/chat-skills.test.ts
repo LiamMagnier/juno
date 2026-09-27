@@ -7,7 +7,9 @@ import {
   applyChatSkill,
   chatSkillGrantLayer,
   narrowRuntimeToolsForSkill,
+  skillAppliedActivity,
   withheldCapabilityCount,
+  withheldSummaryLine,
   type ChatSkillCapabilities,
   type ChatSkillVersionRow,
 } from "@/lib/chat/skills";
@@ -258,6 +260,50 @@ test("a refused skill is said to the reader on both paths, once the stream is op
   assert.match(savedStream, refusalRow("skillOutcome"));
   // One row per turn: a path that sent it twice would read as two skills.
   assert.equal(route.split('title: "Skill not applied"').length - 1, 2);
+});
+
+test("an applied skill is said to the reader on both paths, once the stream is open", () => {
+  // The success twin of the refusal row. Progressive disclosure is the whole
+  // point of loading a skill's body: if the run does not name it, the reader
+  // cannot tell a skilled answer from an ordinary one.
+  const route = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
+  const privateBranch = route.slice(route.indexOf("if (input.privateMode) {"), route.indexOf("const durableFirstSubmission"));
+  const savedStream = route.slice(route.indexOf("const generate = async ("));
+  const appliedRow = (outcome: string) =>
+    new RegExp(
+      `if \\(${outcome}\\?\\.applied\\) \\{\\s*sendActivity\\(skillAppliedActivity\\(${outcome}\\.application\\)\\);`
+    );
+
+  assert.match(privateBranch, appliedRow("privateSkill"));
+  assert.ok(
+    privateBranch.indexOf("skillAppliedActivity(") > privateBranch.indexOf("createSseSender(controller)"),
+    "the private row is sent inside the stream, not before it exists"
+  );
+  assert.match(savedStream, appliedRow("skillOutcome"));
+  assert.equal(route.split("skillAppliedActivity(").length - 1, 2);
+});
+
+test("the applied row names the skill, its version, and anything withheld", () => {
+  const outcome = apply({
+    version: version({ requestedTools: [CHAT_SKILL_TOOLS.documents, CHAT_SKILL_TOOLS.browser] }),
+    capabilities: BARE,
+  });
+  assert.equal(outcome.applied, true);
+  if (!outcome.applied) return;
+  const row = skillAppliedActivity(outcome.application);
+  assert.equal(row.kind, "tool");
+  assert.equal(row.title, "Used skill · Tidy inbox");
+  assert.match(row.detail ?? "", /^v2 · Without tools:/);
+  assert.doesNotMatch(row.title, /[—–]/);
+  assert.doesNotMatch(row.detail ?? "", /[—–]/);
+  assert.ok(withheldSummaryLine(outcome.application.resolved));
+
+  const clear = apply();
+  assert.equal(clear.applied, true);
+  if (!clear.applied) return;
+  const quiet = skillAppliedActivity(clear.application);
+  assert.equal(quiet.detail, "v2");
+  assert.equal(withheldSummaryLine(clear.application.resolved), null);
 });
 
 test("trust does not gate explicit invocation — the user typed the name", () => {

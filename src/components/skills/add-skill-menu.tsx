@@ -15,12 +15,11 @@ import { ActionIcons, AppIcons } from "@/lib/app-icons";
 /**
  * The page's one way in: every route to a new skill behind a single button.
  *
- * Three doors, in the order they are easiest to walk through. Importing is
- * first because a skill is easier to get than to write (the format is the one
- * Claude and Codex read, and there are thousands on GitHub); writing is for
- * somebody who already has the instructions; and "Create with Juno" hands the
- * blank page to a conversation, which is the easiest way to write one you do
- * not have yet.
+ * Three doors, in the order they are easiest to walk through. Writing is
+ * first because it is the skill's own home at `/skills/new`; importing is for
+ * the format Claude and Codex already read (there are thousands on GitHub);
+ * and "Create with Juno" hands the blank page to a conversation, which is the
+ * easiest way to write one you do not have yet.
  */
 export function AddSkillMenu({
   onImport,
@@ -41,13 +40,13 @@ export function AddSkillMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuItem onSelect={onImport}>
-          <GitHubMark className="size-4 shrink-0" />
-          Import from GitHub…
-        </DropdownMenuItem>
         <DropdownMenuItem onSelect={onWrite}>
           <ActionIcons.edit aria-hidden="true" />
           Write a skill
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onImport}>
+          <GitHubMark className="size-4 shrink-0" />
+          Import from GitHub…
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onCreateWithJuno}>
           <AppIcons.conversation aria-hidden="true" />

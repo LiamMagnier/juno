@@ -203,6 +203,56 @@ export function withheldCapabilityCount(resolved: ResolvedSkillPermissions): num
   return tools.length + connectors.length + apps.length + domains.length;
 }
 
+/**
+ * One quiet line naming what the skill asked for and this conversation could
+ * not give it. For the activity row the reader sees, not for the model.
+ */
+export function withheldSummaryLine(resolved: ResolvedSkillPermissions): string | null {
+  const groups: [string, string[]][] = [
+    ["tools", resolved.withheld.tools],
+    ["connectors", resolved.withheld.connectors],
+    ["apps", resolved.withheld.apps],
+    ["sites", resolved.withheld.domains],
+  ];
+  const parts = groups
+    .filter(([, names]) => names.length > 0)
+    .map(([label, names]) => {
+      const shown = names.slice(0, 3).join(", ");
+      const rest = names.length - Math.min(names.length, 3);
+      return `${label}: ${shown}${rest > 0 ? ` +${rest}` : ""}`;
+    });
+  if (parts.length === 0) return null;
+  return `Without ${parts.join("; ")}`;
+}
+
+/**
+ * Title prefix of the quiet activity row that says a skill ran.
+ *
+ * A literal the thought-process panel matches by prefix so its bundle does not
+ * have to pull this module and the permission graph behind it.
+ */
+export const SKILL_USED_ACTIVITY_PREFIX = "Used skill";
+
+/**
+ * The activity row for a skill that applied: "Used skill · {name}", with the
+ * version and any withheld capabilities on the detail line.
+ */
+export function skillAppliedActivity(application: ChatSkillApplication): {
+  kind: "tool";
+  title: string;
+  detail: string | undefined;
+} {
+  const name = application.candidate.name?.trim() || application.candidate.slug;
+  const parts = [`v${application.version}`];
+  const withheld = withheldSummaryLine(application.resolved);
+  if (withheld) parts.push(withheld);
+  return {
+    kind: "tool",
+    title: `${SKILL_USED_ACTIVITY_PREFIX} · ${name}`,
+    detail: parts.join(" · "),
+  };
+}
+
 function withheldSentence(resolved: ResolvedSkillPermissions): string | null {
   const groups: [string, string[]][] = [
     ["tools", resolved.withheld.tools],

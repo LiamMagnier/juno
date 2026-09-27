@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { GitHubMark } from "@/components/connections/connector-logos";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { sourceLabel, type LibrarySkill, type LibrarySource } from "@/lib/skills/library-contract";
-import { staggerDelay, transition } from "@/lib/motion";
+import { duration, staggerDelay, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { SkillSourceAvatar } from "@/components/skills/skill-source-avatar";
 import {
@@ -31,6 +31,21 @@ import { sourceAttention, sourceCounts, sourceHasUpdate } from "@/components/ski
 /** The DOM id a group is scrolled to after an install lands in it. */
 export function skillSourceAnchor(sourceId: string): string {
   return `skill-source-${sourceId}`;
+}
+
+/**
+ * The beat before a post-install highlight lets go, in seconds.
+ *
+ * Emphasis + slow ≈ the hold the fade used to hard-code as 0.9 / 0.6. Paired
+ * with `highlightClearMs` so the page's timeout always outlives the fade.
+ */
+export function highlightFadeDelaySeconds(reduce: boolean): number {
+  return reduce ? duration.slow : duration.emphasis + duration.slow;
+}
+
+/** When the page may drop the highlight state: the fade, plus one base beat. */
+export function highlightClearMs(reduce: boolean): number {
+  return Math.round((highlightFadeDelaySeconds(reduce) + duration.emphasis + duration.base) * 1000);
 }
 
 /**
@@ -117,7 +132,7 @@ export function SkillSourceGroup({
           className="pointer-events-none absolute inset-0 -z-10 bg-selected"
           initial={{ opacity: 1 }}
           animate={{ opacity: 0 }}
-          transition={{ ...transition.emphasis, delay: reduce ? 0.6 : 0.9 }}
+          transition={{ ...transition.emphasis, delay: highlightFadeDelaySeconds(reduce) }}
         />
       ) : null}
 
@@ -229,7 +244,7 @@ export function SkillSourceGroup({
           <ChevronRight
             motion="none"
             className={cn(
-              "size-4 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
+              "size-4 text-muted-foreground transition-transform duration-base ease-out-soft motion-reduce:transition-none",
               expanded && "rotate-90"
             )}
           />

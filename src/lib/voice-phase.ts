@@ -78,7 +78,10 @@ export const PHASE_LABEL: Record<VoicePhase, string> = {
   idle: "Call ended",
   connecting: "Connecting",
   listening: "Listening",
-  "user-speaking": "Listening",
+  // Who holds the floor, not just that a mic is open: "Listening" alone
+  // flattened "you are talking now" into idle listen, and the glow's warm
+  // tone was the only place the difference showed.
+  "user-speaking": "You're speaking",
   thinking: "Thinking",
   speaking: "Speaking",
   muted: "Muted",

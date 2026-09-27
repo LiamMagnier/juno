@@ -8,6 +8,13 @@ import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { composioSlugFromId, isComposioAppId } from "@/lib/composio";
 import { env, isComposioConfigured } from "@/lib/env";
 import { wrapUntrusted } from "@/lib/untrusted-content";
+import {
+  decryptAuthHeader,
+  headersForServer,
+  isUserMcpConnectorId,
+  userMcpConnectorId,
+  userMcpRowId,
+} from "@/lib/user-mcp";
 import { truncateConnectorResult, type TruncatedForModel } from "@/lib/work/connectors";
 import { classifyToolAccess, type ToolAccess, type ToolAccessHints } from "@/lib/tool-access";
 import { recordToolInvocation, settleToolInvocation } from "@/lib/tool-audit";
@@ -85,8 +92,34 @@ async function refreshConnection(def: ConnectorDef, row: Connection): Promise<st
 export async function getActiveConnectors(userId: string, requestedIds?: string[]): Promise<ActiveConnector[]> {
   if (!requestedIds || requestedIds.length === 0) return [];
   const ids = [...new Set(requestedIds)];
-  const rows = await prisma.connection.findMany({ where: { userId, provider: { in: ids } } });
+
+  // User-registered remote MCP servers are `user_mcp:<id>`, never Connection
+  // rows. They are resolved first so a request that names both shapes in one
+  // call still returns both; Connection lookups below drop the prefix ids.
   const out: ActiveConnector[] = [];
+  const userMcpRowIds = ids.map((id) => userMcpRowId(id)).filter((id): id is string => !!id);
+  const connectionProviders = ids.filter((id) => !isUserMcpConnectorId(id));
+
+  if (userMcpRowIds.length > 0) {
+    const servers = await prisma.userMcpServer.findMany({
+      where: { userId, id: { in: userMcpRowIds }, enabled: true },
+    });
+    for (const server of servers) {
+      // A broken row is skipped quietly here on purpose: one dead connector
+      // must not fail the chat. `lastError` on the row (written by /test) is
+      // how the person finds out; see UserMcpServer.lastError.
+      const authHeader = decryptAuthHeader(server.authHeader);
+      out.push({
+        id: userMcpConnectorId(server.id),
+        label: server.name,
+        mcpUrl: server.url,
+        headers: headersForServer(authHeader),
+      });
+    }
+  }
+
+  if (connectionProviders.length === 0) return out;
+  const rows = await prisma.connection.findMany({ where: { userId, provider: { in: connectionProviders } } });
   for (const row of rows) {
     if (isComposioAppId(row.provider)) {
       const slug = composioSlugFromId(row.provider);

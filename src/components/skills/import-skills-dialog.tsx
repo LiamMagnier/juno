@@ -638,7 +638,7 @@ function CandidateRow({
             <ChevronDown
               motion="none"
               className={cn(
-                "size-4 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                "size-4 transition-transform duration-base ease-out-soft motion-reduce:transition-none",
                 detailsOpen && "rotate-180"
               )}
               aria-hidden="true"
@@ -725,7 +725,7 @@ function ProblemsRow({ problems }: { problems: SkillImportPreview["problems"] })
         <ChevronDown
           motion="none"
           className={cn(
-            "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+            "size-3.5 transition-transform duration-base ease-out-soft motion-reduce:transition-none",
             open && "rotate-180"
           )}
           aria-hidden="true"

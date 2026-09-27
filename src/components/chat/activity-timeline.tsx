@@ -4,7 +4,6 @@ import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import { Brain, ChevronRight, Globe, Wrench } from "@/components/ui/icons";
-import { ThinkingReasoning } from "@/components/aicss/thinking-reasoning";
 import { WebSearchBlock } from "@/components/aicss/web-search";
 import {
   buildRun,
@@ -34,7 +33,6 @@ const ThoughtProcessPanel = nextDynamic(
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
 import { PhaseOrb, type OrbState } from "@/components/effects/phase-orb";
 import { Pressable } from "@/components/ui/pressable";
-import { toReasoningLines } from "@/lib/reasoning-lines";
 import { cn, truncate } from "@/lib/utils";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 
@@ -73,6 +71,12 @@ function liveCopy(
   if (latest?.kind === "tool" && latest.title.startsWith("Using ")) {
     const tool = [latest.title.slice(6), latest.detail].filter(Boolean).join(" · ");
     return { message: `Using ${tool}`, warning: false };
+  }
+
+  // Prefix matches `SKILL_USED_ACTIVITY_PREFIX` in `@/lib/chat/skills`, kept as
+  // a literal so this strip does not pull the skill permission module.
+  if (latest?.kind === "tool" && latest.title.startsWith("Used skill")) {
+    return { message: latest.title, warning: false };
   }
 
   if (activeLabel === "Write") {
@@ -294,12 +298,11 @@ export function ActivityTimeline({
         .filter(Boolean)
         .join(", ");
 
-  // The lines AIcss's viewport shows. A display chunking of what the provider
-  // sent — never a claim about where its steps were; see reasoning-lines.ts.
-  const reasoningLines = streaming ? toReasoningLines(reasoning, reasoningParts) : [];
+  // Live blocks: only the search line still streams under the strip. Reasoning
+  // no longer renders here (summary first; the panel owns the full trace).
   const searchSites = streaming ? toSearchSites(run.sources) : [];
   const showSearch = !!streaming && !!run.query;
-  const hasLiveBlocks = reasoningLines.length > 0 || showSearch;
+  const hasLiveBlocks = showSearch;
 
   return (
     <>
@@ -407,38 +410,24 @@ export function ActivityTimeline({
         )}
       </Pressable>
 
-      {/* THE LIVE TRACE, which this component used to refuse to show.
-          The refusal was right about the CONTAINER and got read as being about
-          the content: a raw growing block of provider summary — half sentences,
-          stray code, media queries — reflowed the transcript on every delta and
-          made the answer look broken. AIcss's viewport is the container that
-          answers it. Each line is a 40px slot clamped to two lines, the whole
-          thing caps at 180px and then scrolls behind a mask, and the newest line
-          is translated into view rather than scrolled to. Nothing under the
-          reader moves, and a half-finished sentence is the last of six quiet grey
-          lines instead of a wall.
-
-          `aria-hidden` because every delta rewrites these nodes: while
-          message-item mounted this strip inside the turn's `aria-live="polite"`
-          region (the answer body now), a screen reader read the model's
-          entire private reasoning aloud, twice-revised, before ever reaching
-          the answer. The strip's own aria-label already names the state, and
-          a reader who wants the reasoning opens the panel. */}
-      {hasLiveBlocks && (
+      {/* LIVE REASONING STAYS OUT OF THE TRANSCRIPT. Summary first, detail on
+          demand (Claude Code / Codex): the strip above is the whole live status
+          ("Thinking · 4s"), and the full trace opens in ThoughtProcessPanel.
+          Streaming `ThinkingReasoning` here used to dump provider reasoning as
+          a growing grey wall above the answer; even capped at 180px it made
+          the primary timeline look broken and buried the reply. Searches still
+          stream because they are a single query line the reader is waiting on,
+          not the model's private channel. */}
+      {showSearch && (
         <div aria-hidden="true" className="mb-3 flex flex-col gap-2.5 pl-2">
-          {showSearch && (
-            <WebSearchBlock
-              query={run.query!}
-              sites={searchSites}
-              // Settled once the run has moved past research: the query stops
-              // shimmering the moment the phase it describes is over, not when
-              // the whole answer lands.
-              settled={!researchActive}
-            />
-          )}
-          {reasoningLines.length > 0 && (
-            <ThinkingReasoning lines={reasoningLines} streaming showHeader={false} />
-          )}
+          <WebSearchBlock
+            query={run.query!}
+            sites={searchSites}
+            // Settled once the run has moved past research: the query stops
+            // shimmering the moment the phase it describes is over, not when
+            // the whole answer lands.
+            settled={!researchActive}
+          />
         </div>
       )}
 

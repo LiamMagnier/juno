@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import nextDynamic from "next/dynamic";
+import { toast } from "sonner";
 import { MoreHorizontal } from "@/components/ui/icons";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ import {
   type SkillResource,
 } from "@/lib/work/skills";
 import { sourceLabel, type ClientSkillSource } from "@/lib/skills/library-contract";
+import { serializeSkillMd, SKILL_MD_FILENAME } from "@/lib/skills/skill-md";
 import { cn } from "@/lib/utils";
 import { SkillEditor, type SkillDraft } from "@/components/skills/skill-editor";
 import { SkillSourceAvatar } from "@/components/skills/skill-source-avatar";
@@ -132,6 +134,17 @@ export function SkillDetailView({
   const status = version?.securityStatus ?? skill.securityStatus;
   const blocked = status === "blocked";
   const repoUrl = source ? (installedFrom?.url ?? githubRepoUrl(source.owner, source.repo)) : null;
+  // Export is for instructions this account owns: a skill you wrote, or one
+  // whose text you have vouched for. An installed skill's file belongs to its
+  // repository and is already one press away on GitHub.
+  const canExportSkillMd = yours || skill.trust === "user_authored";
+  const skillMd = () =>
+    serializeSkillMd({
+      name: skill.slug,
+      description: skill.description,
+      instructions: version?.instructions ?? "",
+      allowedTools: version?.requestedTools ?? [],
+    });
 
   return (
     <AppPage measure="reading">
@@ -169,6 +182,36 @@ export function SkillDetailView({
                     <ActionIcons.edit aria-hidden="true" />
                     Edit
                   </DropdownMenuItem>
+                ) : null}
+                {canExportSkillMd ? (
+                  <>
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        void navigator.clipboard.writeText(skillMd()).then(
+                          () => toast.success(`Copied ${SKILL_MD_FILENAME}`),
+                          () => toast.error(`Couldn’t copy ${SKILL_MD_FILENAME}.`)
+                        );
+                      }}
+                    >
+                      <ActionIcons.copy aria-hidden="true" />
+                      Copy {SKILL_MD_FILENAME}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        const url = URL.createObjectURL(
+                          new Blob([skillMd()], { type: "text/markdown;charset=utf-8" })
+                        );
+                        const link = document.createElement("a");
+                        link.href = url;
+                        link.download = SKILL_MD_FILENAME;
+                        link.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                    >
+                      <ActionIcons.download aria-hidden="true" />
+                      Download {SKILL_MD_FILENAME}
+                    </DropdownMenuItem>
+                  </>
                 ) : null}
                 {source && repoUrl ? (
                   <DropdownMenuItem asChild>
@@ -445,7 +488,7 @@ function UsageChoice({
           <span className="font-mono" translate="no">
             /{skill.slug}
           </span>{" "}
-          in chat, or pick it from the + menu.
+          in chat, or pick it from the + menu. Chat always uses the skill you pick.
         </>
       ),
     },
@@ -455,9 +498,10 @@ function UsageChoice({
       // Choosing this trusts the skill in the same write (see `setUsage`), and
       // for an installed skill that means instructions somebody else wrote no
       // longer reach the model marked as untrusted. Said before the press.
+      // Automatic selection is a Work-task path only; chat is always explicit.
       description: trustPermitsAutoSelection(skill.trust)
-        ? "Juno picks it when your request matches its description."
-        : "Juno picks it when your request matches its description. Choosing this trusts its instructions.",
+        ? "Work tasks pick this when the request matches its description. Chat always uses the skill you pick."
+        : "Work tasks pick this when the request matches its description. Chat always uses the skill you pick. Choosing this trusts its instructions.",
     },
   ];
   return (
@@ -465,6 +509,9 @@ function UsageChoice({
       <h2 id="skill-usage" className="text-body font-semibold text-foreground">
         Usage
       </h2>
+      <p className="mt-1 text-ui text-muted-foreground">
+        Automatic selection applies to Work tasks. Chat always uses the skill you pick.
+      </p>
       <RadioGroup
         value={usage}
         onValueChange={(value) => onChange(value as SkillUsage)}

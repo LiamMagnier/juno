@@ -22,7 +22,7 @@ import {
 } from "@/lib/skills/library-contract";
 import { openSkillDraftingChat } from "@/components/skills/add-skill-menu";
 import { ImportSkillsDialog } from "@/components/skills/import-skills-dialog";
-import { skillSourceAnchor } from "@/components/skills/skill-source-group";
+import { highlightClearMs, skillSourceAnchor } from "@/components/skills/skill-source-group";
 import { SkillsLibraryView } from "@/components/skills/skills-library-view";
 import { UpdateSourceDialog } from "@/components/skills/update-source-dialog";
 import { useSkillLibrary } from "@/components/skills/use-skill-library";
@@ -75,7 +75,10 @@ export function SkillsLibraryPage({ importOnOpen = false }: { importOnOpen?: boo
             ?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" })
         )
       );
-      window.setTimeout(() => setHighlight((current) => (current === sourceId ? null : current)), 2400);
+      window.setTimeout(
+        () => setHighlight((current) => (current === sourceId ? null : current)),
+        highlightClearMs(reduce)
+      );
     },
     [reduce]
   );

@@ -301,16 +301,24 @@ async function inheritFromProject(
   // The account's linked apps, which are the ceiling the project's list is
   // intersected against: a project naming Gmail does not thereby link Gmail.
   // Read only when there is a list to intersect, so a project with no connector
-  // opinion costs no query.
-  const linkedConnectorIds =
-    defaults.connectorIds === undefined
-      ? []
-      : (
-          await prisma.connection.findMany({
-            where: { userId: user.id },
-            select: { provider: true },
-          })
-        ).map((row) => row.provider);
+  // opinion costs no query. User MCP servers (`user_mcp:<id>`) are linked
+  // through their own table and join the same ceiling list.
+  let linkedConnectorIds: string[] = [];
+  if (defaults.connectorIds !== undefined) {
+    const { userMcpConnectorId } = await import("@/lib/user-mcp");
+    const connections = await prisma.connection.findMany({
+      where: { userId: user.id },
+      select: { provider: true },
+    });
+    const userServers = await prisma.userMcpServer.findMany({
+      where: { userId: user.id, enabled: true },
+      select: { id: true },
+    });
+    linkedConnectorIds = [
+      ...connections.map((row) => row.provider),
+      ...userServers.map((row) => userMcpConnectorId(row.id)),
+    ];
+  }
 
   const inherited = inheritFromProjectDefaults({
     requestedTarget,

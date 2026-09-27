@@ -163,7 +163,12 @@ import {
 import { postGenerationPlan } from "@/lib/chat/post-processing";
 import { appendSkillBlock, composeSystemPrompt } from "@/lib/chat/prompt-sections";
 import { loadChatSkill } from "@/lib/chat/skill-runtime";
-import { CHAT_SKILL_REFUSAL_MESSAGES, narrowRuntimeToolsForSkill, withheldCapabilityCount } from "@/lib/chat/skills";
+import {
+  CHAT_SKILL_REFUSAL_MESSAGES,
+  narrowRuntimeToolsForSkill,
+  skillAppliedActivity,
+  withheldCapabilityCount,
+} from "@/lib/chat/skills";
 import { recordWorkAudit } from "@/lib/work/audit";
 import { chatBodySchema } from "@/lib/chat/request";
 import { isAttachmentParserPending, isAttachmentParserUnavailable } from "@/lib/attachment-context";
@@ -1144,6 +1149,11 @@ async function handleChat(req: Request) {
               title: "Skill not applied",
               detail: CHAT_SKILL_REFUSAL_MESSAGES[privateSkill.reason],
             });
+          }
+          // Progressive disclosure the reader can see: the skill that shaped
+          // this turn is named in the run instead of vanishing into the prompt.
+          if (privateSkill?.applied) {
+            sendActivity(skillAppliedActivity(privateSkill.application));
           }
           if (activeConnectors.length) {
             // Private chats reach no connector. An approval receipt is a durable
@@ -2837,6 +2847,12 @@ async function handleChat(req: Request) {
           title: "Skill not applied",
           detail: CHAT_SKILL_REFUSAL_MESSAGES[skillOutcome.reason],
         });
+      }
+      // The success twin of the refusal row: the composer showed the skill
+      // armed, so the run has to say which one actually shaped the answer.
+      // Version rides the detail line so a reloaded message still names it.
+      if (skillOutcome?.applied) {
+        sendActivity(skillAppliedActivity(skillOutcome.application));
       }
       if (activeConnectors.length) {
         sendActivity({

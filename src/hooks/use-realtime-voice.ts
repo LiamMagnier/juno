@@ -34,6 +34,17 @@ import {
 } from "@/lib/realtime-voice-activity";
 import { attachAuraLevel, auraStateForVoicePhase, setAuraState } from "@/lib/aura";
 import { voicePhaseOf } from "@/lib/voice-phase";
+import {
+  claimVoiceEnvelope,
+  foldSpeechBands,
+  publishVoiceBands,
+  resetVoiceLevel,
+  setVoiceLevelSource,
+  timeDomainRms,
+  voiceLevelRef,
+  VOICE_BAND_COUNT,
+  type VoiceLevelSource,
+} from "@/lib/voice-level";
 
 export type VoiceProviderAvailability = Partial<Record<VoiceProviderId, boolean>>;
 
@@ -204,8 +215,14 @@ async function attachmentToJpegBase64(attachment: ClientAttachment): Promise<str
  * Realtime voice session against the Juno voice relay.
  * Audio: mic -> AudioWorklet -> PCM16 mono 16 kHz binary frames up;
  * PCM16 mono 24 kHz frames down -> scheduled AudioBuffer playback.
- * `levelRef` carries a smoothed 0..1 amplitude (mic while listening, model
- * while speaking) — the orb reads ONLY this ref, keeping visuals decoupled.
+ *
+ * SPEAKER ENVELOPES ARE SPLIT. `userLevelRef` is the microphone, smoothed;
+ * `assistantLevelRef` is what is actually leaving the playback graph
+ * (an AnalyserNode on the scheduled sources, so the envelope matches the
+ * word as it is heard rather than as its PCM frame arrived). `levelRef` is
+ * the multiplexed floor for aura compatibility: the active speaker's
+ * envelope, with `levelSourceRef` saying whose floor it is. The glow and
+ * the agent face read the split pair; the light reads the multiplex.
  */
 export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {}) {
   const [status, setStatus] = React.useState<RealtimeVoiceStatus>("idle");
@@ -236,20 +253,32 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const [error, setError] = React.useState<string | null>(null);
   const [closedReason, setClosedReason] = React.useState<string | null>(null);
 
+  /** Multiplexed 0..1 floor for the aura. Active speaker only. */
   const levelRef = React.useRef(0);
+  /** The caller's smoothed microphone envelope. */
+  const userLevelRef = voiceLevelRef("user");
+  /** The model's smoothed playback envelope (analyser on the play graph). */
+  const assistantLevelRef = voiceLevelRef("assistant");
+  /** Whose floor `levelRef` is carrying right now. */
+  const levelSourceRef = React.useRef<VoiceLevelSource>("idle");
   const wsRef = React.useRef<WebSocket | null>(null);
   const micCtxRef = React.useRef<AudioContext | null>(null);
   const micStreamRef = React.useRef<MediaStream | null>(null);
   const micNodeRef = React.useRef<AudioWorkletNode | null>(null);
+  const micAnalyserRef = React.useRef<AnalyserNode | null>(null);
   const playCtxRef = React.useRef<AudioContext | null>(null);
   const playCursorRef = React.useRef(0);
   const playSourcesRef = React.useRef<Set<AudioBufferSourceNode>>(new Set());
+  const playAnalyserRef = React.useRef<AnalyserNode | null>(null);
   const playRmsRef = React.useRef(0);
   const mutedRef = React.useRef(false);
   const speakingRef = React.useRef(false);
   const providerTurnActiveRef = React.useRef(false);
+  /** Raw mic RMS from the worklet, before envelope smoothing. */
   const micLevelRef = React.useRef(0);
+  /** Raw play peak-hold from PCM, kept for the barge detector. */
   const playLevelRef = React.useRef(0);
+  const releaseEnvelopeRef = React.useRef<(() => void) | null>(null);
   const cursorRef = React.useRef(emptyCursor());
   const turnAttachmentsRef = React.useRef(new Map<string, ClientAttachment[]>());
   const capsRef = React.useRef<ProviderCapabilities | null>(null);
@@ -365,35 +394,101 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   };
 
-  // Single smoothed amplitude: model speech wins while it plays, else the mic.
+  // Two smoothed envelopes and one multiplexed floor.
   //
   // GATED ON THE TRANSPORT, and smoothed by elapsed time. It used to run for
   // the whole life of the hook regardless of whether a call existed — a
   // permanent animation frame on every screen that could start one, for a
   // number nothing was reading — and it smoothed by a fixed fraction per frame,
   // so the envelope reacted twice as fast on a 120Hz display as on a 60Hz one.
+  //
+  // The assistant envelope is read off the PLAYBACK analyser, not the PCM
+  // frame that scheduled the buffer. PCM arrives before it is heard (up to a
+  // scheduling window), so a packet RMS is the shape of a word the room has
+  // not been given yet — and between packets that peak-hold decayed off a
+  // frozen mic frame whenever the multiplex flipped. Now each speaker keeps
+  // its own envelope and the floor switches to a value that is already live.
   React.useEffect(() => {
     if (status === "idle") {
       levelRef.current = 0;
+      userLevelRef.current = 0;
+      assistantLevelRef.current = 0;
+      levelSourceRef.current = "idle";
+      setVoiceLevelSource("idle");
+      resetVoiceLevel();
       return;
     }
     let raf = 0;
     let last = performance.now();
+    const timeDomain = new Uint8Array(1024);
+    const freq = new Uint8Array(512);
+    const bandScratch = new Float32Array(VOICE_BAND_COUNT);
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      const target = speakingRef.current ? playLevelRef.current : mutedRef.current ? 0 : micLevelRef.current;
-      levelRef.current += (target - levelRef.current) * (1 - Math.exp(-14 * dt));
       // τ = 0.2s is exactly `* 0.92` at 60Hz, which is what these were, minus
       // the frame-rate dependence — these feed the barge-in detector, so the
       // number had to stay the same where it was already tuned.
       const decay = Math.exp(-dt / 0.2);
       playLevelRef.current *= decay;
       playRmsRef.current *= decay;
+
+      // Sample the graph that is actually audible. Playback first: while the
+      // model talks its bands are the meter's, so the morpheme of the reply
+      // reads even when the microphone is still open underneath it.
+      let playRaw = playLevelRef.current;
+      const playAnalyser = playAnalyserRef.current;
+      if (playAnalyser) {
+        playAnalyser.getByteTimeDomainData(timeDomain.subarray(0, playAnalyser.fftSize));
+        playRaw = Math.max(playRaw, Math.min(1, timeDomainRms(timeDomain.subarray(0, playAnalyser.fftSize)) * 4));
+        if (speakingRef.current) {
+          playAnalyser.getByteFrequencyData(freq.subarray(0, playAnalyser.frequencyBinCount));
+          foldSpeechBands(
+            freq.subarray(0, playAnalyser.frequencyBinCount),
+            playCtxRef.current?.sampleRate ?? 24000,
+            playAnalyser.fftSize,
+            bandScratch
+          );
+          publishVoiceBands(bandScratch);
+        }
+      }
+
+      const micAnalyser = micAnalyserRef.current;
+      if (micAnalyser && !speakingRef.current && !mutedRef.current) {
+        micAnalyser.getByteFrequencyData(freq.subarray(0, micAnalyser.frequencyBinCount));
+        foldSpeechBands(
+          freq.subarray(0, micAnalyser.frequencyBinCount),
+          micCtxRef.current?.sampleRate ?? 48000,
+          micAnalyser.fftSize,
+          bandScratch
+        );
+        publishVoiceBands(bandScratch);
+      }
+
+      const userTarget = mutedRef.current ? 0 : micLevelRef.current;
+      // Zero when not talking: the assistant envelope must fall with its own
+      // silence, never hold the last word under the next thing that happens.
+      const assistantTarget = speakingRef.current ? playRaw : 0;
+      userLevelRef.current += (userTarget - userLevelRef.current) * (1 - Math.exp(-14 * dt));
+      assistantLevelRef.current += (assistantTarget - assistantLevelRef.current) * (1 - Math.exp(-14 * dt));
+
+      const active = speakingRef.current ? assistantLevelRef.current : userLevelRef.current;
+      levelRef.current += (active - levelRef.current) * (1 - Math.exp(-14 * dt));
+      const nextSource: VoiceLevelSource = speakingRef.current
+        ? "assistant"
+        : mutedRef.current
+          ? "muted"
+          : "user";
+      levelSourceRef.current = nextSource;
+      setVoiceLevelSource(nextSource);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
+    // userLevelRef/assistantLevelRef come from the module singleton
+    // (voiceLevelRef), so they are stable for the life of the page and are
+    // deliberately not dependencies (lint would only re-run the loop on them).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
   /**
@@ -416,8 +511,16 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     // light a ref that is frozen at its last value would leave a dead call
     // glowing at whatever it was saying when it dropped.
     if (status === "idle") return;
+    // A call owns the bus. Read-aloud that starts underneath a live call does
+    // not get to point the light at its own envelope.
+    releaseEnvelopeRef.current?.();
+    releaseEnvelopeRef.current = claimVoiceEnvelope("call");
     attachAuraLevel(levelRef);
-    return () => attachAuraLevel(null);
+    return () => {
+      attachAuraLevel(null);
+      releaseEnvelopeRef.current?.();
+      releaseEnvelopeRef.current = null;
+    };
   }, [status]);
 
   // A hook unmounting mid-call — a route change, a surface closing — has to put
@@ -427,6 +530,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     () => () => {
       setAuraState("voice", "idle");
       attachAuraLevel(null);
+      releaseEnvelopeRef.current?.();
+      releaseEnvelopeRef.current = null;
     },
     []
   );

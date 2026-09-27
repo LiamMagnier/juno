@@ -7,7 +7,11 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AppIcons, StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
-import { skillAttention, type SkillRowData } from "@/components/skills/skill-library-model";
+import {
+  skillAttention,
+  skillOriginBadge,
+  type SkillRowData,
+} from "@/components/skills/skill-library-model";
 
 /**
  * The row recipe every line of the library shares: text on the page, a hairline
@@ -53,9 +57,11 @@ const ATTENTION_COPY = {
  * switch as well, because a row nested inside a group also sits inside the
  * group's own click target.
  *
- * Nothing else is on the row. The slash name, the version, trust and the scan
- * status live on the skill's page; the one fact that earns a glyph here is
- * that the skill cannot run as things stand (blocked, or waiting for consent).
+ * Origin is said as quiet text beside the description: Yours, Installed, or
+ * Untrusted when the account has not vouched for the instructions. The slash
+ * name and the version live on the skill's page; the one fact that earns a
+ * glyph here is that the skill cannot run as things stand (blocked, or
+ * waiting for consent).
  *
  * `inheritedOff` is a source switched off above it: the row keeps its own
  * state, dims with the group, and its switch waits for the source to come
@@ -84,6 +90,7 @@ export function SkillRow({
 }) {
   const attention = skillAttention(skill);
   const blocked = attention === "blocked";
+  const origin = skillOriginBadge(skill);
   return (
     <div
       role="listitem"
@@ -113,9 +120,17 @@ export function SkillRow({
         >
           {skill.name}
         </Link>
-        {skill.description ? (
-          <p className="mt-0.5 truncate text-ui text-muted-foreground">{skill.description}</p>
-        ) : null}
+        <p className="mt-0.5 flex min-w-0 items-center gap-x-2 text-ui text-muted-foreground">
+          {skill.description ? <span className="truncate">{skill.description}</span> : null}
+          <span
+            className={cn(
+              "shrink-0 text-caption",
+              origin.caution ? "font-medium text-warning-foreground" : undefined
+            )}
+          >
+            {origin.label}
+          </span>
+        </p>
       </div>
 
       {attention ? (

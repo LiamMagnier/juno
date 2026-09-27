@@ -26,44 +26,80 @@ import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /**
- * Hiring an agent (docs/design/AGENTS.md §5.1).
+ * The hire form (docs/design/AGENTS.md §5.1), and the power-user surface of
+ * the talk-first hire conversation.
  *
  * Four questions on one page, top to bottom, in the order a person decides
  * them: what it is for, what it is called and looks like, how it works, and
  * what it starts on. Not a wizard: every answer stays on screen while the next
- * one is given, because they depend on each other — a Writer called Quill who
+ * one is given, because they depend on each other. A Writer called Quill who
  * is allowed to "just do it" is a combination somebody should see whole before
  * pressing Hire.
  *
  * Picking a starting point fills the rest with that job's defaults, and only
  * the fields the person has not touched yet: changing your mind about the job
  * must not throw away a name you already typed.
+ *
+ * `initial` seeds the fields from the hire conversation's living draft when
+ * this is opened as Edit details. Anything the draft left null falls through
+ * to the starting point, so the form is never a blank page beside a half-built
+ * teammate.
  */
-export function AgentHire({ initialTemplate }: { initialTemplate: string | null }) {
+export interface AgentHireValues {
+  templateId?: string | null;
+  name?: string | null;
+  role?: string | null;
+  avatar?: AgentAvatar | null;
+  style?: AgentStyle | null;
+  instructions?: string | null;
+  approvalMode?: WorkPermissionPolicy | null;
+  connectorIds?: string[] | null;
+  firstGoal?: string | null;
+}
+
+export function AgentHire({
+  initialTemplate,
+  initial,
+  onHired,
+  embedded = false,
+}: {
+  initialTemplate: string | null;
+  /** Values from the hire conversation, or any prefill. Null fields fall through to the starting point. */
+  initial?: AgentHireValues;
+  /** Defaults to the agent page with `?hired=1`. */
+  onHired?: (id: string) => void;
+  /** True inside the Edit details sheet: no page chrome, no Cancel link. */
+  embedded?: boolean;
+}) {
   const router = useRouter();
   const connectors = useLinkedConnectors();
-  const start = agentTemplate(initialTemplate) ?? AGENT_TEMPLATES[0];
+  const start =
+    agentTemplate(initial?.templateId ?? initialTemplate) ?? AGENT_TEMPLATES[0];
 
   const [templateId, setTemplateId] = React.useState<string>(start.id);
-  const [name, setName] = React.useState(start.names[0]);
-  const [role, setRole] = React.useState(start.role);
-  const [avatar, setAvatar] = React.useState<AgentAvatar>(start.avatar);
-  const [style, setStyle] = React.useState<AgentStyle>(start.style);
-  const [instructions, setInstructions] = React.useState(start.instructions);
-  const [approvalMode, setApprovalMode] = React.useState<WorkPermissionPolicy>(start.approvalMode);
-  const [connectorIds, setConnectorIds] = React.useState<string[]>([]);
-  const [firstGoal, setFirstGoal] = React.useState(start.firstGoal);
+  const [name, setName] = React.useState(initial?.name ?? start.names[0]);
+  const [role, setRole] = React.useState(initial?.role ?? start.role);
+  const [avatar, setAvatar] = React.useState<AgentAvatar>(initial?.avatar ?? start.avatar);
+  const [style, setStyle] = React.useState<AgentStyle>(initial?.style ?? start.style);
+  const [instructions, setInstructions] = React.useState(initial?.instructions ?? start.instructions);
+  const [approvalMode, setApprovalMode] = React.useState<WorkPermissionPolicy>(
+    initial?.approvalMode ?? start.approvalMode
+  );
+  const [connectorIds, setConnectorIds] = React.useState<string[]>(initial?.connectorIds ?? []);
+  const [firstGoal, setFirstGoal] = React.useState(initial?.firstGoal ?? start.firstGoal);
   const [saving, setSaving] = React.useState(false);
   const touched = React.useRef(new Set<string>());
   const touch = (field: string) => touched.current.add(field);
 
   // Suggested apps are pre-ticked once the linked list arrives, for the
   // starting point in force, and only while the person has not chosen any.
+  // A conversation draft that already carries connectors wins over suggestions.
   React.useEffect(() => {
     if (!connectors || touched.current.has("connectors")) return;
+    if (initial?.connectorIds && initial.connectorIds.length > 0) return;
     const suggested = agentTemplate(templateId)?.suggestedConnectors ?? [];
     setConnectorIds(connectors.filter((option) => suggested.includes(option.id)).map((option) => option.id));
-  }, [connectors, templateId]);
+  }, [connectors, templateId, initial?.connectorIds]);
 
   const pick = (template: AgentTemplate) => {
     setTemplateId(template.id);
@@ -101,18 +137,13 @@ export function AgentHire({ initialTemplate }: { initialTemplate: string | null 
       return;
     }
     announceAgentsChanged();
-    router.push(`/agents/${outcome.value.id}?hired=1`);
+    const id = outcome.value.id;
+    if (onHired) onHired(id);
+    else router.push(`/agents/${id}?hired=1`);
   };
 
-  return (
-    <AppPage measure="wide">
-      <AppPageHeader
-        heading="New agent"
-        lede="A teammate with its own brief, goals and memory. It works in the cloud and asks before anything it cannot take back."
-        backHref="/agents"
-        backLabel="Agents"
-      />
-      <form onSubmit={submit} className="@container">
+  const form = (
+    <form onSubmit={submit} className={embedded ? "@container space-y-8" : "@container"}>
         <div className="grid grid-cols-1 gap-8 @[52rem]:grid-cols-[minmax(0,1fr)_16rem]">
           <div className="min-w-0 space-y-10">
             <Step n={1} title="What should it take on?">
@@ -260,14 +291,16 @@ export function AgentHire({ initialTemplate }: { initialTemplate: string | null 
               <Button type="submit" loading={saving} disabled={!trimmedName}>
                 Hire {trimmedName || "agent"}
               </Button>
-              <Button asChild variant="ghost">
-                <Link href="/agents">Cancel</Link>
-              </Button>
+              {embedded ? null : (
+                <Button asChild variant="ghost">
+                  <Link href="/agents">Cancel</Link>
+                </Button>
+              )}
             </div>
           </div>
 
-          <aside className="order-first @[52rem]:order-none">
-            <div className="@[52rem]:sticky @[52rem]:top-6">
+          <aside className={embedded ? "" : "order-first @[52rem]:order-none"}>
+            <div className={embedded ? "" : "@[52rem]:sticky @[52rem]:top-6"}>
               <FacePreview avatar={avatar} name={trimmedName} />
               <p className="mt-4 text-center text-body font-medium text-foreground">{trimmedName || "New agent"}</p>
               {role.trim() ? <p className="text-center text-ui text-muted-foreground">{role.trim()}</p> : null}
@@ -275,6 +308,19 @@ export function AgentHire({ initialTemplate }: { initialTemplate: string | null 
           </aside>
         </div>
       </form>
+    );
+
+  if (embedded) return form;
+
+  return (
+    <AppPage measure="wide">
+      <AppPageHeader
+        heading="New agent"
+        lede="A teammate with its own brief, goals and memory. It works in the cloud and asks before anything it cannot take back."
+        backHref="/agents"
+        backLabel="Agents"
+      />
+      {form}
     </AppPage>
   );
 }

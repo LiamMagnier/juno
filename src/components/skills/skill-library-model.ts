@@ -64,6 +64,28 @@ export function sourceCounts(source: Pick<LibrarySource, "skills">): { total: nu
 }
 
 /**
+ * The origin/trust chip on a library row.
+ *
+ * Attention below stays binary (blocked / consent) and keeps the only glyph.
+ * This is quieter text: where the instructions came from, and whether the
+ * account has vouched for them. Untrusted is the one that must never hide
+ * behind a section header, so it wins over "Installed".
+ */
+export type SkillOriginBadge = {
+  label: "Yours" | "Installed" | "Untrusted";
+  /** Untrusted instructions: the one origin worth a warmer ink. */
+  caution: boolean;
+};
+
+export function skillOriginBadge(
+  skill: Pick<SkillRowData, "trust" | "sourceId">
+): SkillOriginBadge {
+  if (skill.trust === "untrusted") return { label: "Untrusted", caution: true };
+  if (skill.sourceId === null) return { label: "Yours", caution: false };
+  return { label: "Installed", caution: false };
+}
+
+/**
  * The one thing about a skill worth a glyph on its row, or null.
  *
  * Blocked outranks consent: a blocked version cannot run at all, and approving

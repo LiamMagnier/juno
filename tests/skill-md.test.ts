@@ -4,6 +4,7 @@ import {
   AGENT_SKILLS_SPEC_KEYS,
   MAX_SKILL_MD_CHARS,
   parseSkillMd,
+  serializeSkillMd,
   titleFromSkillName,
 } from "@/lib/skills/skill-md";
 
@@ -227,4 +228,38 @@ test("titles are derived without mangling the acronyms half these names are", ()
   assert.equal(titleFromSkillName("tidy-inbox"), "Tidy inbox");
   assert.equal(titleFromSkillName("pdf"), "Pdf");
   assert.equal(titleFromSkillName("mcp-server-builder"), "Mcp server builder");
+});
+
+test("serializeSkillMd writes a file parseSkillMd reads back", () => {
+  const written = serializeSkillMd({
+    name: "tidy-inbox",
+    description: "Sorts an inbox into folders. Use when the user mentions email triage.",
+    instructions: "# Tidy inbox\n\nMove anything older than a month into Archive.",
+    license: "MIT",
+    compatibility: "Needs a shell",
+    allowedTools: ["Read", "Bash(git add *)"],
+    metadata: { entitlement: "premium", version: "2" },
+  });
+  const result = parseSkillMd(written);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.skill.name, "tidy-inbox");
+  assert.match(result.skill.description, /^Sorts an inbox/);
+  assert.match(result.skill.instructions, /^# Tidy inbox/);
+  assert.equal(result.skill.license, "MIT");
+  assert.equal(result.skill.compatibility, "Needs a shell");
+  assert.deepEqual(result.skill.allowedTools, ["Read", "Bash(git add *)"]);
+  assert.deepEqual(result.skill.metadata, { entitlement: "premium", version: "2" });
+});
+
+test("serializeSkillMd quotes a description the reader would otherwise split", () => {
+  const written = serializeSkillMd({
+    name: "quoted",
+    description: 'Says "hello": then stops.',
+    instructions: "Body.",
+  });
+  const result = parseSkillMd(written);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.skill.description, 'Says "hello": then stops.');
 });

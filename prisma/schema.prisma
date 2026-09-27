@@ -90,6 +90,7 @@ model User {
   authoredAnnouncements       Announcement[]               @relation("AnnouncementAuthor")
   announcementDismissals      AnnouncementDismissal[]
   connections                 Connection[]
+  userMcpServers              UserMcpServer[]
   codeDevices                 CodeDevice[]
   codeTasks                   CodeTask[]
   codeRemoteSessions          CodeRemoteSession[]
@@ -199,6 +200,63 @@ model Connection {
 
   @@unique([userId, provider])
   @@index([userId])
+}
+
+/**
+ * A remote MCP server the user added themselves (URL + optional Authorization
+ * header), as opposed to the closed native registry in src/lib/connectors.ts
+ * and Composio's managed catalog.
+ *
+ * SEPARATE FROM `Connection` ON PURPOSE. Connection is the OAuth/credential
+ * ledger for closed ConnectorIds: unique on [userId, provider] where provider
+ * is a registry id, and every column exists to refresh a token Juno owns. A
+ * user MCP server has no OAuth handshake of its own (auth is one static header
+ * the user pasted), can be renamed without forking a token row, and carries
+ * health fields (status, lastCheckedAt, toolCount) that a linked GitHub account
+ * never needed. Stuffing it into Connection would make `provider` mean "a
+ * registry id OR a cuid of a row in another table" and every lookup that
+ * assumes the first would silently skip these.
+ *
+ * The auth header is encrypted like Connection.accessToken: a database dump
+ * must not yield a working bearer token for someone else's MCP endpoint.
+ *
+ * Once enabled, a row appears in getActiveConnectors as `user_mcp:<id>` so
+ * chat, agents and Work can request it like any other connector id.
+ */
+model UserMcpServer {
+  id            String    @id @default(cuid())
+  userId        String
+  name          String
+  url           String    @db.Text
+  /// Full Authorization header value (e.g. "Bearer …"), encrypted at rest.
+  authHeader    String?   @db.Text
+  /// Master switch. Disabled rows stay listed but never resolve to a connector.
+  enabled       Boolean   @default(true)
+  /// untested | ok | error — last connection test only, not a live probe.
+  status        String    @default("untested")
+  /// Why the last test failed, shown on the tile. Cleared when a test passes.
+  /// getActiveConnectors still skips a broken row quietly at generation time
+  /// (a chat must not die because one connector is down); this is how the
+  /// person finds out without guessing.
+  lastError     String?   @db.Text
+  lastCheckedAt DateTime?
+  /// Tool count from the last successful test, so the directory can say
+  /// "12 tools" without opening a connection on every list.
+  toolCount     Int       @default(0)
+  /// Tool names from the last successful test (display / connector picker).
+  tools         String[]  @default([])
+  /// Optional handle from the server's initialize result, for display only.
+  accountLabel  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Two servers may not share a name in one account: the label is what the
+  /// connector picker and the tool namespace show, and collisions there are
+  /// indistinguishable at a glance.
+  @@unique([userId, name])
+  @@index([userId, enabled])
 }
 
 model Account {

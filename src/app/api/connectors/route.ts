@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/session";
 import { listConnectors, isConnectorConfigured } from "@/lib/connectors";
 import { isComposioConfigured } from "@/lib/env";
 import { listConnectedComposioApps } from "@/lib/composio";
+import { serializeUserMcpServer, userMcpConnectorId } from "@/lib/user-mcp";
 
 export const runtime = "nodejs";
 
@@ -35,6 +36,40 @@ export async function GET() {
   });
 
   const composioApps = isComposioConfigured() ? await listConnectedComposioApps(user.id) : [];
+
+  // User-registered MCP servers project here as connected `user_mcp:<id>`
+  // entries so every connector picker (chat +, agents, Work) already filters
+  // `connected` sees them without a second list. Only ENABLED rows count as
+  // connected: the row's `enabled` is the one switch (see lib/user-mcp.ts), and
+  // a disabled server must not look available in a picker it will not serve.
+  const userMcpRows = await prisma.userMcpServer.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "desc" },
+  });
+  const userMcpConnectors = userMcpRows.map((row) => {
+    const dto = serializeUserMcpServer(row);
+    return {
+      id: userMcpConnectorId(row.id),
+      kind: "user_mcp",
+      label: row.name,
+      description: row.url,
+      capability: `Let the model use tools from your ${row.name} MCP server.`,
+      configured: true,
+      // Disabled rows still list here (the Connections page needs them) but
+      // report connected:false so pickers drop them. The page reads the
+      // dedicated /api/mcp/servers list for the real enabled flag.
+      connected: row.enabled,
+      accountLabel: dto.accountLabel,
+      connectedAt: row.createdAt.toISOString(),
+      tools: dto.tools,
+      enabled: dto.enabled,
+      status: dto.status,
+      lastError: dto.lastError,
+      toolCount: dto.toolCount,
+      lastCheckedAt: dto.lastCheckedAt,
+    };
+  });
+
   const connectors = [
     ...directConnectors,
     ...composioApps.map((app) => ({
@@ -48,6 +83,7 @@ export async function GET() {
       accountLabel: app.label,
       connectedAt: app.connectedAt.toISOString(),
     })),
+    ...userMcpConnectors,
   ];
 
   return NextResponse.json({ connectors, composioConfigured: isComposioConfigured() });

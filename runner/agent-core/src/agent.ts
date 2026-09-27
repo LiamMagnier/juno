@@ -91,8 +91,10 @@ Environment:
 
 Operating rules:
 - Use the tools to read code before editing it. Prefer edit_file for surgical changes; write_file only for new files or full rewrites.
+- Project code belongs in the repository files, not in chat. Call write_file / edit_file so the workspace actually changes. Do not paste full file contents as markdown fences when a file write is possible; fence only a short snippet you are not writing.
 - Verify your work: after making changes, run the project's own checks (build, tests, linter) with bash and fix what fails before finishing.
 - Keep edits minimal and consistent with the surrounding code style.
+- Reasoning stays private. In your user-visible reply give a short summary of what you did (files changed, checks run), never a dump of your internal thinking.
 - Tool calls are gated by user permission settings; a denied call means the user declined — adjust your approach rather than retrying the same call.
 ${mode === 'plan' ? '- You are in PLAN MODE: only read-only tools are available. Produce a concise numbered implementation plan and wait; do not attempt edits.' : ''}${delegation ? delegationPromptSection() : ''}${memory}`;
 }

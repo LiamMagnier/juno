@@ -510,6 +510,65 @@ export function parseSkillMd(source: string): SkillMdResult {
 }
 
 /**
+ * One YAML scalar, written so `parseSkillMd` can read it back.
+ *
+ * Bare when it is a plain word or path; JSON-string otherwise. JSON double
+ * quotes are a subset of YAML double quotes, so this is the whole of the
+ * writer's escaping and there is no second quoting rule to drift from the
+ * reader's `unquote`.
+ */
+function yamlScalar(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length > 0 && /^[A-Za-z0-9][A-Za-z0-9 ._/-]*$/.test(trimmed) && !trimmed.includes(": ")) {
+    return trimmed;
+  }
+  return JSON.stringify(value);
+}
+
+/** What `serializeSkillMd` writes. The parse half's fields, minus the bookkeeping. */
+export interface SkillMdExport {
+  /** Slash name. */
+  name: string;
+  description: string;
+  instructions: string;
+  license?: string | null;
+  compatibility?: string | null;
+  metadata?: Record<string, string>;
+  allowedTools?: readonly string[];
+}
+
+/**
+ * Writes a `SKILL.md` from Juno's shape.
+ *
+ * The inverse of `parseSkillMd` for the six spec keys: name, description and
+ * the body always; license, compatibility, metadata and allowed-tools only
+ * when they hold something. Host extensions and ignored keys are not
+ * reconstructed — Juno does not act on them, and inventing `context: fork` on
+ * the way out would claim a setting the export cannot honour.
+ */
+export function serializeSkillMd(skill: SkillMdExport): string {
+  const lines: string[] = [
+    "---",
+    `name: ${yamlScalar(skill.name)}`,
+    `description: ${yamlScalar(skill.description)}`,
+  ];
+  if (skill.license) lines.push(`license: ${yamlScalar(skill.license)}`);
+  if (skill.compatibility) lines.push(`compatibility: ${yamlScalar(skill.compatibility)}`);
+  const tools = skill.allowedTools ?? [];
+  if (tools.length > 0) {
+    lines.push("allowed-tools:");
+    for (const tool of tools) lines.push(`  - ${yamlScalar(tool)}`);
+  }
+  const metadata = Object.entries(skill.metadata ?? {});
+  if (metadata.length > 0) {
+    lines.push("metadata:");
+    for (const [key, value] of metadata) lines.push(`  ${key}: ${yamlScalar(value)}`);
+  }
+  lines.push("---", "", skill.instructions.trim(), "");
+  return lines.join("\n");
+}
+
+/**
  * A display name for a skill whose `name` is a slug.
  *
  * The spec has one field where Juno has two — `WorkSkill.name` is prose shown in

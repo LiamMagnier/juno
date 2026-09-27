@@ -3,13 +3,14 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Link2Off, Loader2 } from "@/components/ui/icons";
+import { Link2Off, Loader2, Plus } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { type ConnectorStatus } from "@/components/connections/types";
+import { type ConnectorStatus, type UserMcpServerStatus } from "@/components/connections/types";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
+import { AddMcpServerDialog } from "@/components/connections/add-mcp-server-dialog";
 import { ConnectorDirectory, type DirectoryItem } from "@/components/connections/connector-directory";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
@@ -60,6 +61,7 @@ export default function ConnectionsPage() {
   const [error, setError] = React.useState(false);
   const [disconnectTarget, setDisconnectTarget] = React.useState<DirectoryItem | null>(null);
   const [credentialsTarget, setCredentialsTarget] = React.useState<ConnectorStatus | null>(null);
+  const [addMcpOpen, setAddMcpOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [connectingId, setConnectingId] = React.useState<string | null>(null);
   const [enabled, setEnabled] = React.useState<Record<string, boolean>>({});
@@ -103,7 +105,10 @@ export default function ConnectionsPage() {
     return () => clearTimeout(settle);
   }, [router]);
 
-  // "Expose to chats" toggles — client-side only, persisted per connector.
+  // "Expose to chats" toggles for REGISTRY connectors only, client-side and
+  // persisted per connector. User MCP servers do NOT use this key: their one
+  // switch is the server-side `enabled` column (lib/user-mcp.ts), so two
+  // machines cannot disagree about whether a server is on.
   React.useEffect(() => {
     try {
       const raw = window.localStorage.getItem(ENABLED_KEY);
@@ -112,6 +117,23 @@ export default function ConnectionsPage() {
   }, []);
 
   const setEnabledFor = (id: string, value: boolean) => {
+    if (id.startsWith("user_mcp:")) {
+      const rowId = id.slice("user_mcp:".length);
+      void (async () => {
+        try {
+          const r = await fetch(`/api/mcp/servers/${encodeURIComponent(rowId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled: value }),
+          });
+          if (!r.ok) throw new Error();
+          setConnectors((prev) => prev?.map((c) => (c.id === id ? { ...c, enabled: value, connected: value } : c)) ?? prev);
+        } catch {
+          toast.error("Couldn’t change that server. Please try again.");
+        }
+      })();
+      return;
+    }
     const next = { ...enabled, [id]: value };
     setEnabled(next);
     try {
@@ -142,30 +164,74 @@ export default function ConnectionsPage() {
   };
 
   // One dialog for both backends — each has its own disconnect endpoint.
+  // user_mcp "Disconnect" is a DELETE of the row (Remove on the tile).
   const disconnect = async () => {
     if (!disconnectTarget) return;
     const target = disconnectTarget;
     setBusy(true);
     try {
-      const url =
-        target.source === "composio"
+      const isUserMcp = target.source === "user_mcp" || target.id.startsWith("user_mcp:");
+      const rowId = isUserMcp ? target.id.replace(/^user_mcp:/, "") : null;
+      const url = isUserMcp
+        ? `/api/mcp/servers/${encodeURIComponent(rowId!)}`
+        : target.source === "composio"
           ? `/api/connectors/composio/${encodeURIComponent(target.slug!)}`
           : `/api/connectors/${target.id}`;
       const r = await fetch(url, { method: "DELETE" });
       if (!r.ok) throw new Error();
-      setConnectors(
-        (prev) =>
-          prev?.map((c) => (c.id === target.id ? { ...c, connected: false, accountLabel: null, connectedAt: null } : c)) ??
-          prev
-      );
-      toast.success(`Disconnected ${target.label}.`);
+      if (isUserMcp) {
+        // Gone for good, so drop the row rather than flipping it to disconnected.
+        setConnectors((prev) => prev?.filter((c) => c.id !== target.id) ?? prev);
+        toast.success(`Removed ${target.label}.`);
+      } else {
+        setConnectors(
+          (prev) =>
+            prev?.map((c) => (c.id === target.id ? { ...c, connected: false, accountLabel: null, connectedAt: null } : c)) ??
+            prev
+        );
+        toast.success(`Disconnected ${target.label}.`);
+      }
       // Composio apps live in the directory's own fetched list — refetch both.
       window.dispatchEvent(new CustomEvent("juno:connections-changed"));
     } catch {
-      toast.error("Couldn’t disconnect. Please try again.");
+      toast.error(target.source === "user_mcp" ? "Couldn’t remove that server. Please try again." : "Couldn’t disconnect. Please try again.");
     } finally {
       setBusy(false);
       setDisconnectTarget(null);
+    }
+  };
+
+  const userMcpSaved = (server: UserMcpServerStatus) => {
+    // Refresh the whole list: /api/connectors projects user MCP rows, and a
+    // local patch would drift from that projection the first time a field
+    // (status, tools) changes shape.
+    void load();
+    toast.success(`${server.name} is ready to use.`);
+  };
+
+  const testUserMcp = async (item: DirectoryItem) => {
+    const rowId = item.id.replace(/^user_mcp:/, "");
+    setConnectingId(item.id);
+    try {
+      const r = await fetch(`/api/mcp/servers/${encodeURIComponent(rowId)}/test`, { method: "POST" });
+      const data = (await r.json().catch(() => ({}))) as {
+        result?: { ok: boolean; toolNames?: string[]; error?: string };
+        error?: string;
+      };
+      if (!r.ok) throw new Error(data.error ?? "Couldn’t test that server.");
+      const result = data.result;
+      if (result?.ok) {
+        const n = result.toolNames?.length ?? 0;
+        toast.success(n ? `${item.label}: ${n} ${n === 1 ? "tool" : "tools"} found.` : `${item.label}: connected, no tools.`);
+        void load();
+      } else {
+        toast.error(result?.error ?? "Could not reach that MCP server.");
+        void load();
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn’t test that server.");
+    } finally {
+      setConnectingId(null);
     }
   };
 
@@ -183,6 +249,12 @@ export default function ConnectionsPage() {
            app/(app)/library/page.tsx — same fix, same rule. */
         heading="Connections"
         lede="Link your repositories, designs and docs so Juno can work with them."
+        actions={
+          <Button size="sm" className="gap-1.5" onClick={() => setAddMcpOpen(true)}>
+            <Plus className="size-4" />
+            Add MCP server
+          </Button>
+        }
       />
 
       {error ? (
@@ -214,6 +286,7 @@ export default function ConnectionsPage() {
           onEnabledChange={setEnabledFor}
           onConnectNative={connect}
           onDisconnect={setDisconnectTarget}
+          onTestUserMcp={(item) => void testUserMcp(item)}
           connectingId={connectingId}
         />
       )}
@@ -222,6 +295,12 @@ export default function ConnectionsPage() {
         Connected tools are available to the model when you enable them in a chat. Each provider shows the exact
         permissions during its consent flow.
       </p>
+
+      <AddMcpServerDialog
+        open={addMcpOpen}
+        onOpenChange={setAddMcpOpen}
+        onSaved={userMcpSaved}
+      />
 
       <CredentialsDialog
         connector={credentialsTarget}
@@ -232,9 +311,13 @@ export default function ConnectionsPage() {
       <Dialog open={!!disconnectTarget} onOpenChange={(open) => !open && setDisconnectTarget(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Disconnect {disconnectTarget?.label}?</DialogTitle>
+            <DialogTitle>
+              {disconnectTarget?.source === "user_mcp" ? `Remove ${disconnectTarget?.label}?` : `Disconnect ${disconnectTarget?.label}?`}
+            </DialogTitle>
             <DialogDescription>
-              Juno will lose access to your {disconnectTarget?.label} account. You can reconnect anytime.
+              {disconnectTarget?.source === "user_mcp"
+                ? "Juno will forget this MCP server and its Authorization header. You can add it again later."
+                : `Juno will lose access to your ${disconnectTarget?.label} account. You can reconnect anytime.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -243,7 +326,13 @@ export default function ConnectionsPage() {
             </Button>
             <Button variant="destructive" onClick={disconnect} disabled={busy}>
               {busy ? <Loader2 className="size-4 animate-spin" /> : <Link2Off className="size-4" />}
-              {busy ? "Disconnecting…" : "Disconnect"}
+              {busy
+                ? disconnectTarget?.source === "user_mcp"
+                  ? "Removing…"
+                  : "Disconnecting…"
+                : disconnectTarget?.source === "user_mcp"
+                  ? "Remove"
+                  : "Disconnect"}
             </Button>
           </DialogFooter>
         </DialogContent>

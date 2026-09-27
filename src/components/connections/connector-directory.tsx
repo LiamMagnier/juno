@@ -64,8 +64,8 @@ interface CatalogResponse {
 
 export interface DirectoryItem {
   key: string;
-  source: "native" | "composio";
-  /** Connector id ("github") or composio app id ("composio:gmail"). */
+  source: "native" | "composio" | "user_mcp";
+  /** Connector id ("github") or composio app id ("composio:gmail") or `user_mcp:<id>`. */
   id: string;
   slug?: string;
   label: string;
@@ -81,6 +81,15 @@ export interface DirectoryItem {
    *  true — their auth is Juno's own. */
   managedAuth?: boolean;
   accountLabel?: string | null;
+  /** user_mcp: the server's own enable switch (server-side, one concept). */
+  enabled?: boolean;
+  /** user_mcp: untested | ok | error. */
+  status?: string | null;
+  lastError?: string | null;
+  toolCount?: number;
+  tools?: string[];
+  /** user_mcp: raw endpoint, shown as the one-line description. */
+  url?: string;
 }
 
 type Filter = "all" | "connected";
@@ -185,6 +194,7 @@ function ConnectorTile({
   onEnabledChange,
   onConnect,
   onDisconnect,
+  onTest,
   index,
 }: {
   item: DirectoryItem;
@@ -193,6 +203,7 @@ function ConnectorTile({
   onEnabledChange: (v: boolean) => void;
   onConnect: () => void;
   onDisconnect: () => void;
+  onTest?: () => void;
   index: number;
 }) {
   const unavailable = !item.configured;
@@ -202,6 +213,11 @@ function ConnectorTile({
   // with a generic error — indistinguishable from a reload, and "try again"
   // could never work. Say what is actually required instead.
   const needsSetup = item.source === "composio" && item.managedAuth === false && !item.connected;
+  const isUserMcp = item.source === "user_mcp";
+  // user_mcp's switch IS the server-side `enabled` column. The `enabled` prop
+  // is the localStorage "Use in chats" map for registry connectors only; using
+  // it here would reintroduce the two-switch split this feature removes.
+  const switchOn = isUserMcp ? (item.enabled ?? item.connected) : enabled;
   const state: TileState = item.connected
     ? "connected"
     : item.connecting
@@ -215,16 +231,20 @@ function ConnectorTile({
   const description = item.connected
     ? item.accountLabel && item.accountLabel !== item.label
       ? item.accountLabel
-      : "Connected and ready"
+      : isUserMcp
+        ? item.url || item.description
+        : "Connected and ready"
     : item.connecting
       ? "Finishing connection…"
       : unavailable
         ? "Not set up on this server"
         : needsSetup
           ? "Needs its own OAuth app in Composio"
-          : item.noAuth
-            ? "Ready without sign-in"
-            : item.description;
+          : isUserMcp
+            ? item.lastError || item.url || item.description
+            : item.noAuth
+              ? "Ready without sign-in"
+              : item.description;
 
   return (
     <Card
@@ -251,7 +271,42 @@ function ConnectorTile({
       <div className="mt-auto flex min-h-8 items-center justify-between gap-2 border-t border-border/60 pt-2.5">
         <TileStatus state={state} />
 
-        {item.connected ? (
+        {isUserMcp ? (
+          // One switch: the server's own `enabled`. Not a second "Use in chats"
+          // localStorage toggle (that was the split-brain this replaces). Test
+          // and Remove sit beside it.
+          <div className="flex w-full items-center justify-between gap-1.5">
+            <label className="flex cursor-pointer items-center gap-2 pr-1">
+              <Switch checked={switchOn} onCheckedChange={onEnabledChange} aria-label={`Enable ${item.label}`} />
+              <span className="whitespace-nowrap text-caption text-muted-foreground">{switchOn ? "On" : "Off"}</span>
+            </label>
+            <div className="flex items-center gap-0.5">
+              {onTest && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onTest}
+                  disabled={busy}
+                  className="h-7 gap-1.5 px-2 text-caption text-muted-foreground"
+                >
+                  {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Plug className="size-3.5" />}
+                  Test
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onDisconnect}
+                disabled={busy}
+                aria-haspopup="dialog"
+                className="danger-hover h-7 gap-1.5 px-2 text-caption text-muted-foreground"
+              >
+                {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2Off className="size-3.5" />}
+                Remove
+              </Button>
+            </div>
+          </div>
+        ) : item.connected ? (
           <div className="flex w-full items-center justify-between gap-1.5">
             {/* Only a linked app can be exposed to chats. A normal Switch with
                 a plain label — the toggle is a setting, not a hero. It leads
@@ -309,6 +364,7 @@ function TileGrid({
   onEnabledChange,
   onConnect,
   onDisconnect,
+  onTest,
   trailing,
 }: {
   items: DirectoryItem[];
@@ -317,6 +373,7 @@ function TileGrid({
   onEnabledChange: (id: string, v: boolean) => void;
   onConnect: (item: DirectoryItem) => void;
   onDisconnect: (item: DirectoryItem) => void;
+  onTest?: (item: DirectoryItem) => void;
   trailing?: React.ReactNode;
 }) {
   return (
@@ -331,6 +388,7 @@ function TileGrid({
           onEnabledChange={(v) => onEnabledChange(item.id, v)}
           onConnect={() => onConnect(item)}
           onDisconnect={() => onDisconnect(item)}
+          onTest={onTest ? () => onTest(item) : undefined}
         />
       ))}
       {trailing}
@@ -345,6 +403,7 @@ export function ConnectorDirectory({
   onEnabledChange,
   onConnectNative,
   onDisconnect,
+  onTestUserMcp,
   connectingId,
   canConfigureServer = true,
 }: {
@@ -360,6 +419,7 @@ export function ConnectorDirectory({
   onEnabledChange: (id: string, v: boolean) => void;
   onConnectNative: (c: ConnectorStatus) => void;
   onDisconnect: (item: DirectoryItem) => void;
+  onTestUserMcp?: (item: DirectoryItem) => void;
   connectingId: string | null;
 }) {
   const [query, setQuery] = React.useState("");
@@ -373,12 +433,39 @@ export function ConnectorDirectory({
   const [error, setError] = React.useState(false);
   const [busySlug, setBusySlug] = React.useState<string | null>(null);
 
-  // Native connectors are a fixed, tiny set — filter them in the client so the
-  // search box covers both backends with one keystroke.
-  const nativeItems = React.useMemo<DirectoryItem[]>(
+  // User-registered MCP servers (kind "user_mcp") sit beside the registry set
+  // so one keystroke covers every shape the account can reach.
+  const userMcpItems = React.useMemo<DirectoryItem[]>(
     () =>
       connectors
-        .filter((c) => c.kind !== "composio_app")
+        .filter((c) => c.kind === "user_mcp")
+        .map((c) => ({
+          key: `user_mcp:${c.id}`,
+          source: "user_mcp" as const,
+          id: c.id,
+          label: c.label,
+          description: c.description,
+          // Disabled rows are still listed here (the page owns the switch), but
+          // `connected` is false so the Connected/Available split and pickers
+          // treat them as off. The tile footer draws the enable Switch either way.
+          connected: c.connected,
+          connecting: connectingId === c.id,
+          configured: true,
+          accountLabel: c.accountLabel,
+          enabled: c.enabled ?? c.connected,
+          status: c.status,
+          lastError: c.lastError,
+          toolCount: c.toolCount,
+          tools: c.tools,
+          url: c.description,
+        })),
+    [connectors, connectingId]
+  );
+
+  const registryItems = React.useMemo<DirectoryItem[]>(
+    () =>
+      connectors
+        .filter((c) => c.kind !== "composio_app" && c.kind !== "user_mcp")
         .map((c) => ({
           key: `native:${c.id}`,
           source: "native" as const,
@@ -488,13 +575,23 @@ export function ConnectorDirectory({
   const q = query.trim().toLowerCase();
   const items = React.useMemo(() => {
     // Composio items arrive already searched and category-filtered by the API;
-    // the native handful is matched here so one keystroke covers both backends.
-    const matches = (i: DirectoryItem) =>
-      (!q || i.label.toLowerCase().includes(q) || i.id.toLowerCase().includes(q)) &&
-      (!activeCategory || (NATIVE_CATEGORIES[i.id] ?? []).includes(activeCategory));
-    const visible = [...nativeItems.filter(matches), ...composioItems];
+    // the native handful and user MCP rows are matched here so one keystroke
+    // covers every backend. Category chips only narrow the REGISTRY set (they
+    // carry Composio taxonomy); user MCP tiles always show in All.
+    const textMatch = (i: DirectoryItem) =>
+      !q ||
+      i.label.toLowerCase().includes(q) ||
+      i.id.toLowerCase().includes(q) ||
+      (i.url ?? "").toLowerCase().includes(q);
+    const registryMatch = (i: DirectoryItem) =>
+      textMatch(i) && (!activeCategory || (NATIVE_CATEGORIES[i.id] ?? []).includes(activeCategory));
+    const visible = [
+      ...userMcpItems.filter(textMatch),
+      ...registryItems.filter(registryMatch),
+      ...composioItems.filter(textMatch),
+    ];
     return filter === "connected" ? visible.filter((i) => i.connected) : visible;
-  }, [activeCategory, nativeItems, composioItems, filter, q]);
+  }, [activeCategory, userMcpItems, registryItems, composioItems, filter, q]);
 
   const connectedItems = React.useMemo(() => items.filter((i) => i.connected), [items]);
   const availableItems = React.useMemo(() => items.filter((i) => !i.connected), [items]);
@@ -505,11 +602,14 @@ export function ConnectorDirectory({
       if (c) onConnectNative(c);
       return;
     }
+    if (item.source === "user_mcp") return;
     setBusySlug(item.slug!);
     window.location.href = `/api/connectors/composio/${encodeURIComponent(item.slug!)}/connect`;
   };
 
-  const connectedCount = [...nativeItems, ...composioItems].filter((i) => i.connected).length;
+  // Disabled user MCP rows are listed but not "connected"; the Connected tab
+  // therefore shows only enabled ones, matching what pickers will offer.
+  const connectedCount = [...userMcpItems, ...registryItems, ...composioItems].filter((i) => i.connected).length;
   const categoryLabel = categories.find((c) => c.id === activeCategory)?.label.toLowerCase();
 
   const gridProps = {
@@ -518,6 +618,7 @@ export function ConnectorDirectory({
     onEnabledChange,
     onConnect: connect,
     onDisconnect,
+    onTest: onTestUserMcp,
   };
 
   const skeletons = loading

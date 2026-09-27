@@ -80,6 +80,9 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["Subscription", "userId"],
   ["Settings", "userId"],
   ["Connection", "userId"],
+  // User-registered remote MCP servers. Auth header is encrypted at rest and
+  // every route scopes by userId; the guard is the tripwire that keeps it that way.
+  ["UserMcpServer", "userId"],
   ["CodeDevice", "userId"],
   ["DevicePushToken", "userId"],
   ["WebPushSubscription", "userId"],

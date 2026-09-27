@@ -371,6 +371,9 @@ export function buildRun(
   // Only deep research's per-query sends are real searches. "Preparing web
   // search" is an INTENT, not work — counting it would inflate the noun.
   const searchEvs = events.filter((e) => e.kind === "search" && e.title === T_SEARCHING);
+  // Prefix matches `SKILL_USED_ACTIVITY_PREFIX` in `@/lib/chat/skills`, kept as
+  // a literal so this panel does not pull the skill permission module.
+  const skillEvs = events.filter((e) => e.kind === "tool" && e.title.startsWith("Used skill"));
 
   const tWrite = at(writeEv);
   const tSearch0 = at(searchEvs[0]);
@@ -482,6 +485,15 @@ export function buildRun(
   if (effortEv?.detail) facts.push({ label: "Effort", value: effortEv.detail.replace(/\s+effort$/i, "") });
   if (contextEv?.detail) facts.push({ label: "Context", value: contextEv.detail });
   if (connectorsEv?.detail) facts.push({ label: "Tools", value: connectorsEv.detail });
+  // One fact and one spine row: progressive disclosure has to be readable
+  // after the run, not only while it streams.
+  if (skillEvs[0]) {
+    const skill = skillEvs[0];
+    facts.push({
+      label: "Skill",
+      value: [skill.title.replace(/^Used skill · /, ""), skill.detail].filter(Boolean).join(" · "),
+    });
+  }
   if (usageEv?.detail) facts.push({ label: "Cost", value: usageEv.detail });
 
   // One end for the header and for the last phase, so "total = sum of parts" is
@@ -492,6 +504,7 @@ export function buildRun(
   const steps = buildSteps({
     events,
     searchEvs,
+    skillEvs,
     sourceEvents,
     sources,
     calls,
@@ -541,6 +554,7 @@ export function buildRun(
 function buildSteps(input: {
   events: ClientActivityEvent[];
   searchEvs: ClientActivityEvent[];
+  skillEvs: ClientActivityEvent[];
   sourceEvents: ClientActivityEvent[];
   sources: RunModel["sources"];
   calls: Call[];
@@ -557,6 +571,7 @@ function buildSteps(input: {
   const {
     events,
     searchEvs,
+    skillEvs,
     sourceEvents,
     sources,
     calls,
@@ -618,6 +633,20 @@ function buildSteps(input: {
       source: { url: s.url, domain: s.domain, access: s.access, citeIndex: citeIndexOf(s.url) },
     });
   });
+
+  // ── SKILL: which instructions shaped this turn, before any of its work ────
+  for (const e of skillEvs) {
+    steps.push({
+      id: e.id,
+      kind: "tool",
+      phase: "think",
+      label: e.title,
+      detail: e.detail ?? null,
+      ms: null,
+      running: false,
+      failed: false,
+    });
+  }
 
   // ── THINK: the model's own account, then the calls it made ────────────────
   const parts = toSteps(context?.reasoningParts);

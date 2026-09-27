@@ -65,15 +65,20 @@ export function ThinkingReasoning({
   className?: string;
   id?: string;
 }) {
-  // While the run is live the trace is always open; once it settles it folds
-  // into its own summary and the reader can put it back.
+  // Summary first, detail on demand (Claude Code / Codex). The live run is
+  // NEVER an open dump of provider reasoning: unbroken prose, half sentences
+  // and stray fences reflowed the transcript and buried the answer. The strip
+  // above already says what phase the run is in; this block is evidence the
+  // reader opens, not a second feed of the model's private channel.
   const [open, setOpen] = React.useState(false);
   const [fade, setFade] = React.useState({ top: false, bottom: true });
   const viewportRef = React.useRef<HTMLDivElement>(null);
 
   const done = !streaming;
-  // Headless has no control to fold it with, so it is never folded.
-  const expanded = showHeader ? (done ? open : true) : true;
+  // Live: collapsed unless this instance has a header the reader can press.
+  // Headless (showHeader false) stays collapsed while streaming so the
+  // transcript never grows under the reader mid-run.
+  const expanded = showHeader ? (done ? open : false) : open;
   const count = lines.length;
   const contentH = count > 0 ? count * SENT_H + (count - 1) * GAP : 0;
   const capped = contentH > MAX_H;
@@ -110,23 +115,25 @@ export function ThinkingReasoning({
     setOpen(next);
   };
 
-  // No lines is no block. A header alone would claim a trace that never arrived,
-  // and headless it would be an empty 0px viewport holding a margin open.
+  // No lines is no block. A header alone would claim a trace that never arrived.
+  // Live headless is also a no-op: the ActivityTimeline strip is already the
+  // one-line status, and a folded body with no toggle would only hold a margin.
   if (count === 0) return null;
+  if (!showHeader && !done && !open) return null;
 
   const bodyId = id ? `${id}-stream` : undefined;
 
   return (
     <div className={cn("aicss-tr", className)}>
-      {showHeader && (
+      {showHeader ? (
         <button
           type="button"
           className="aicss-tr-header"
-          data-clickable={done ? "true" : "false"}
+          data-clickable="true"
           aria-expanded={expanded}
-          aria-controls={done && open ? bodyId : undefined}
-          aria-label={done ? "Toggle thought" : undefined}
-          onClick={done ? toggle : undefined}
+          aria-controls={expanded ? bodyId : undefined}
+          aria-label={done ? "Toggle thought" : "Show thinking"}
+          onClick={toggle}
         >
           {done ? (
             <span className="aicss-tr-label">
@@ -142,9 +149,9 @@ export function ThinkingReasoning({
               trace is folded and back up when it opens (globals.css). The
               turn is A-to-B with both ends on screen, so it takes the
               symmetric curve rather than the block's decelerate. */}
-          {done && <ChevronUp className="aicss-tr-chevron size-3" />}
+          <ChevronUp className="aicss-tr-chevron size-3" />
         </button>
-      )}
+      ) : null}
 
       <div className="aicss-tr-collapsible" data-collapsed={expanded ? "false" : "true"}>
         <div className="aicss-tr-inner">

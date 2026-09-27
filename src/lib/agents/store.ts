@@ -21,6 +21,7 @@ import { decryptField, encryptField } from "@/lib/field-crypto";
 import { DEFAULT_MODEL } from "@/lib/models";
 import { canUseModel } from "@/lib/plans";
 import { getUserPlan } from "@/lib/usage";
+import { isUserMcpConnectorId, userMcpConnectorId, userMcpRowId } from "@/lib/user-mcp";
 import { normalizeAgentAvatar } from "@/lib/agents/avatar";
 import {
   AGENT_ROUTINE_CADENCE_LABEL,
@@ -511,14 +512,33 @@ export async function ensureAgentThread(userId: string, agent: Agent): Promise<s
  * disconnected after; a grant for an app nobody linked is a permission waiting
  * to become real the day somebody links it (the argument in
  * `createWorkSessionForUser`). So the agent stores only what is linked now.
+ *
+ * `user_mcp:<id>` ids resolve against UserMcpServer (enabled rows only), not
+ * Connection. Splitting the two keeps "linked" meaning the same thing for a
+ * native OAuth app and a user-registered MCP endpoint.
  */
 async function linkedConnectorIds(userId: string, wanted: readonly string[]): Promise<string[]> {
   if (wanted.length === 0) return [];
-  const linked = await prisma.connection.findMany({
-    where: { userId, provider: { in: [...wanted] } },
-    select: { provider: true },
-  });
-  const have = new Set(linked.map((row) => row.provider));
+  const have = new Set<string>();
+
+  const connectionIds = wanted.filter((id) => !isUserMcpConnectorId(id));
+  if (connectionIds.length > 0) {
+    const linked = await prisma.connection.findMany({
+      where: { userId, provider: { in: [...connectionIds] } },
+      select: { provider: true },
+    });
+    for (const row of linked) have.add(row.provider);
+  }
+
+  const userMcpIds = wanted.map((id) => userMcpRowId(id)).filter((id): id is string => !!id);
+  if (userMcpIds.length > 0) {
+    const servers = await prisma.userMcpServer.findMany({
+      where: { userId, id: { in: userMcpIds }, enabled: true },
+      select: { id: true },
+    });
+    for (const server of servers) have.add(userMcpConnectorId(server.id));
+  }
+
   return wanted.filter((id) => have.has(id));
 }
 

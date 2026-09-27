@@ -1318,13 +1318,22 @@ export const MessageItem = React.memo(function MessageItem({
         navigates to, not announcements.
       */}
       <div className="min-w-0 flex-1">
-        {/* A Code turn draws its commands, file writes and approvals as its
-            own cards (code-activity.tsx) beside the turn; the research-shaped
-            strip would list the same rows a second time, minus the output. */}
-        {surface !== "code" && (
+        {/* The run strip.
+            Chat: full ActivityTimeline (research + tools + reasoning dock).
+            Code: CodeActivity already draws commands/writes as cards beside the
+            turn, so this strip only carries REASONING (one line + dock). Without
+            it, Code turns hid thinking entirely while `hasRunTrace` suppressed
+            StreamStatus — reasoning became invisible or leaked into the body. */}
+        {surface !== "code" || view.reasoning?.trim() ? (
           <ActivityTimeline
             messageId={message.id}
-            events={view.activity}
+            events={
+              surface === "code"
+                ? (view.activity ?? []).filter(
+                    (e) => e.kind !== "tool" && e.kind !== "write" && e.kind !== "warning" && e.kind !== "done"
+                  )
+                : view.activity
+            }
             reasoning={view.reasoning}
             reasoningParts={view.reasoningParts}
             // For a source step's citation chip only — see ActivityTimeline.
@@ -1334,7 +1343,7 @@ export const MessageItem = React.memo(function MessageItem({
             // the inline finish row below and the panel cannot word it differently.
             finishNote={finishNote}
           />
-        )}
+        ) : null}
         {/*
           Above the answer, not below it. The turn is BLOCKED on this — the tool
           loop in src/lib/mcp.ts is holding — so the question has to sit where
