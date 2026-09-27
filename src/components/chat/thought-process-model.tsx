@@ -20,6 +20,12 @@
 import * as React from "react";
 import type { WebSearchSite } from "@/components/aicss/web-search";
 import { toSteps } from "@/lib/reasoning-parts";
+import {
+  receiptFailureReason,
+  receiptIconKindForCall,
+  receiptLabelForCall,
+  type ReceiptIconKind,
+} from "@/lib/chat/tool-receipt";
 import type { ClientActivityEvent, ClientMemoryReceipt, ClientSource, ClientToolDetail } from "@/types/chat";
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -201,6 +207,10 @@ interface Call {
    */
   offsetMs: number | null;
   warn: boolean;
+  /** The connector label and the function name, as the producer sent them
+   *  ("Linear", "linear__create_issue"). What the receipt label is said from. */
+  server?: string;
+  name?: string;
   /**
    * What the model asked the connector for and what came back — server-
    * produced, already redacted, already truncated, already budgeted.
@@ -264,6 +274,9 @@ export interface Step {
   /** At most one `true` across the whole array. */
   running: boolean;
   failed: boolean;
+  /** The receipt glyph a tool step wears (`lib/chat/tool-receipt`). Absent on
+   *  every other kind, which draws its kind's own mark. */
+  icon?: ReceiptIconKind;
   body?:
     | { type: "tool"; tool: ClientToolDetail }
     | { type: "prose"; text: string }
@@ -418,6 +431,9 @@ export function buildRun(
             : [e.title.slice("Using ".length), e.detail].filter(Boolean).join(" · "),
         offsetMs: ts !== null && t0 !== null && ts >= t0 ? ts - t0 : null,
         warn: e.kind === "warning",
+        ...(e.kind === "tool"
+          ? { server: e.title.slice("Using ".length), ...(e.detail ? { name: e.detail } : {}) }
+          : {}),
         // Carried through untouched — no parsing, no re-formatting, no
         // re-measuring. The server already redacted, pretty-printed, cut and
         // budgeted it, and a second opinion formed here could only disagree
@@ -706,12 +722,15 @@ function buildSteps(input: {
       continue;
     }
     const tool = call.tool;
+    // The one receipt vocabulary: "Searched the web", "Linear · Create issue".
+    // A failure says why in one line under it; a success says nothing more.
     steps.push({
       id: call.id,
       kind: "tool",
       phase: "think",
-      label: call.object,
-      detail: null,
+      label: receiptLabelForCall(tool?.server || call.server, tool?.name || call.name),
+      detail: receiptFailureReason(tool),
+      icon: receiptIconKindForCall(tool?.name || call.name),
       // ABSENT, never zero, for the calls that never reached the network — an
       // unknown tool name, an unavailable connector, a refused action. A zero
       // would read as "the connector answered instantly".

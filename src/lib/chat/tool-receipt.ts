@@ -85,6 +85,7 @@ const RECEIPT_RUNNING: Record<string, string> = {
   computer_exec: "Running a command",
   computer_files: "Working with files on its computer",
   computer_read_file: "Working with files on its computer",
+  computer_read_page: "Working with files on its computer",
   computer_write_file: "Writing a file on its computer",
   computer_open_url: "Opening a page on its computer",
   // Juno Code / Work vocabulary (kept in step with JunoWorkVocabulary).
@@ -147,6 +148,7 @@ const RECEIPT_DONE: Record<string, string> = {
   computer_exec: "Ran a command",
   computer_files: "Worked with files on its computer",
   computer_read_file: "Worked with files on its computer",
+  computer_read_page: "Worked with files on its computer",
   computer_write_file: "Wrote a file on its computer",
   computer_open_url: "Opened a page on its computer",
   list_folder: "Looked through a folder",
@@ -208,6 +210,7 @@ const RECEIPT_ICON: Record<string, ReceiptIconKind> = {
   computer_exec: "terminal",
   computer_files: "file",
   computer_read_file: "file",
+  computer_read_page: "file",
   computer_write_file: "filePlus",
   computer_open_url: "web",
   list_folder: "file",
@@ -277,13 +280,43 @@ export function receiptIconKind(tool: string | undefined): ReceiptIconKind {
   return RECEIPT_ICON[tool] ?? "tools";
 }
 
+/**
+ * The label for one chat tool call, from the connector label the producer
+ * sent (`server`: "Linear", "Web search") and the function the model called
+ * (`name`: "linear__create_issue", "web_search").
+ *
+ * A tool this vocabulary knows says what it did ("Searched the web"). Any
+ * other call wears its connector and a readable tool title ("Linear · Create
+ * issue"), never the raw namespaced function name.
+ */
+export function receiptLabelForCall(
+  server: string | undefined,
+  name: string | undefined,
+  running = false,
+): string {
+  const map = running ? RECEIPT_RUNNING : RECEIPT_DONE;
+  if (name && map[name]) return map[name];
+  const connector = server?.trim() || null;
+  let title = name?.trim() ?? "";
+  const split = title.indexOf("__");
+  if (split !== -1) title = title.slice(split + 2);
+  if (!connector && !title) return running ? "Using a tool" : "Used a tool";
+  return receiptLabel("mcp", {
+    running,
+    connectorLabel: connector,
+    toolTitle: title ? sentenceCased(title) : null,
+  });
+}
+
 /** The same, for a chat tool detail row. */
 export function receiptLabelForDetail(tool: ClientToolDetail, running = false): string {
-  return receiptLabel(tool.name, {
-    running,
-    connectorLabel: tool.server,
-    toolTitle: tool.name,
-  });
+  return receiptLabelForCall(tool.server, tool.name, running);
+}
+
+/** The glyph for a chat tool call: the vocabulary's own, else a connector. */
+export function receiptIconKindForCall(name: string | undefined): ReceiptIconKind {
+  if (name && RECEIPT_ICON[name]) return RECEIPT_ICON[name];
+  return "connectors";
 }
 
 export type ReceiptStatus = "running" | "ok" | "failed" | "denied" | "waiting";

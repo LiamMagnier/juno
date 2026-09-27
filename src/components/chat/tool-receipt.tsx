@@ -93,6 +93,13 @@ const RECEIPT_ICONS: Record<ReceiptIconKind, IconComponent> = {
   success: Check,
 };
 
+/** The house glyph for a receipt icon kind, for surfaces that draw their own
+ *  row (the Thought process panel) but must wear the same mark. */
+export function ReceiptGlyph({ kind, className }: { kind: ReceiptIconKind; className?: string }) {
+  const Glyph = RECEIPT_ICONS[kind] ?? Wrench;
+  return <Glyph className={className} aria-hidden="true" />;
+}
+
 const STATUS_ICONS: Record<"error" | "success" | "warning", IconComponent> = {
   error: StatusIcons.error,
   success: StatusIcons.success,

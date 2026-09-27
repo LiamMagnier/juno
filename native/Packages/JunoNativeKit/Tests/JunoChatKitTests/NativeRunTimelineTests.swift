@@ -218,7 +218,10 @@ final class NativeRunTimelineTests: XCTestCase {
         XCTAssertEqual(NativeToolPresentation.phrase(running), "GitHub · Create issue")
         var used = running
         used.status = .succeeded
-        XCTAssertEqual(NativeToolPresentation.phrase(used), "Used GitHub")
+        XCTAssertEqual(NativeToolPresentation.phrase(used), "GitHub · Create issue")
+        var untitled = NativeToolCall(callID: "c3", tool: "mcp", connectorLabel: "GitHub", status: .succeeded)
+        untitled.status = .succeeded
+        XCTAssertEqual(NativeToolPresentation.phrase(untitled), "Used GitHub")
 
         let code = NativeToolCall(callID: "d", tool: "run_code", status: .succeeded, figure: NativeToolCall.Figure(kind: "files", n: 2))
         XCTAssertEqual(NativeToolPresentation.figure(code), "2 files created")

@@ -49,6 +49,7 @@ const VisualLearningBlockRenderer = nextDynamic(
 );
 import { ActivityTimeline } from "@/components/chat/activity-timeline";
 import { codeLiveCopy } from "@/components/code/code-activity";
+import { writtenPaths } from "@/lib/chat/tool-receipt";
 /**
  * Split: a card that appears only while the tool loop in src/lib/mcp.ts is
  * holding for a decision — `message.approvals?.length` guards it — and 24 kB
@@ -1076,6 +1077,12 @@ export const MessageItem = React.memo(function MessageItem({
   // Stable ref (message.sources / a version's sources) — safe as a memo dep and
   // as a prop into the memoized Markdown.
   const sources = view.sources;
+  // Code only: files this turn's write receipts already carry, so the body
+  // does not print the same file a second time in full.
+  const writtenFiles = React.useMemo(
+    () => (surface === "code" ? writtenPaths(view.activity) : undefined),
+    [surface, view.activity],
+  );
   const parts = React.useMemo(
     () =>
       isUser
@@ -1458,7 +1465,7 @@ export const MessageItem = React.memo(function MessageItem({
             <div className={cn("space-y-1", message.streaming && message.content.length > 140 && "stream-tail")}>
             {parts.map((part, i) =>
               part.type === "text" ? (
-                <Markdown key={i} content={part.text} streaming={message.streaming} sources={sources} />
+                <Markdown key={i} content={part.text} streaming={message.streaming} sources={sources} writtenFiles={writtenFiles} />
               ) : part.type === "artifact" ? (
                 (() => {
                   const artifact = resolveArtifactTag(artifactsByIdentifier, part.identifier, message);

@@ -53,6 +53,8 @@ import {
   toolResultNoteText,
 } from "@/lib/run-receipt";
 import type { ClientMemoryReceipt, ClientToolDetail } from "@/types/chat";
+import { ReceiptGlyph } from "@/components/chat/tool-receipt";
+import { receiptCanRetry } from "@/lib/chat/tool-receipt";
 import {
   LiveCopy,
   PhaseKey,
@@ -212,6 +214,9 @@ function StepMarker({ step }: { step: Step }) {
   }
   if (step.kind === "think") {
     return <span className="size-[7px] rounded-full bg-current" aria-hidden="true" />;
+  }
+  if (step.kind === "tool" && step.icon) {
+    return <ReceiptGlyph kind={step.icon} className="size-3" />;
   }
   const Glyph =
     step.kind === "search"
@@ -627,6 +632,9 @@ export function ThoughtProcessPanel({
     !!seedDraft &&
     step.body?.type === "tool" &&
     !!step.body.tool.args &&
+    // Never a write: re-running a `create_issue` that half-landed files a
+    // duplicate. The shared rule, so Code and chat refuse the same calls.
+    receiptCanRetry(step.body.tool.name) &&
     (step.body.tool.status === "failed" || step.body.tool.resultNote === "unfinished");
 
   const askToRunAgain = React.useCallback(

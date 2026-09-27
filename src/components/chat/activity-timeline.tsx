@@ -34,6 +34,7 @@ import { useThoughtPanel } from "@/components/chat/thought-panel-context";
 import { PhaseOrb, type OrbState } from "@/components/effects/phase-orb";
 import { Pressable } from "@/components/ui/pressable";
 import { cn, truncate } from "@/lib/utils";
+import { receiptLabelForCall } from "@/lib/chat/tool-receipt";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 
 /**
@@ -69,8 +70,12 @@ function liveCopy(
   }
 
   if (latest?.kind === "tool" && latest.title.startsWith("Using ")) {
-    const tool = [latest.title.slice(6), latest.detail].filter(Boolean).join(" · ");
-    return { message: `Using ${tool}`, warning: false };
+    // The receipt's own present tense ("Searching the web", "Linear · Create
+    // issue"), so the strip and the Thought process row say one call one way.
+    return {
+      message: receiptLabelForCall(latest.title.slice("Using ".length), latest.detail, true),
+      warning: false,
+    };
   }
 
   // Prefix matches `SKILL_USED_ACTIVITY_PREFIX` in `@/lib/chat/skills`, kept as

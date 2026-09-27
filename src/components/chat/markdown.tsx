@@ -33,6 +33,7 @@ import { SourceChip } from "@/components/chat/source-chip";
 import { DEMOTED_HEADINGS } from "@/lib/markdown-headings";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
+import { fenceMatchesWrittenFile } from "@/lib/chat/tool-receipt";
 
 /** Pull the `language-xxx` hint rehype-highlight writes onto the inner <code>. */
 function langOf(children: React.ReactNode): string {
@@ -187,6 +188,34 @@ function closeDangling(block: string): string {
  * expanded, the copy receipt) at exactly the moment a reader reaches for it.
  */
 const StreamingContext = React.createContext(false);
+/** Paths this turn's write receipts already carry (`writtenPaths`). A fence
+ *  that names one of them is the same file a second time. */
+const WrittenFilesContext = React.createContext<ReadonlySet<string> | null>(null);
+
+/**
+ * A fence that repeats a file a write receipt above already carries: one
+ * line, with the file one press away. Never dropped, because the receipt's
+ * diff is the change and this may be the whole file, but never printed in
+ * full by default either: the answer stays the hero, the file stays a receipt.
+ */
+function WrittenFileFence({ filename, children }: { filename: string; children: React.ReactNode }) {
+  const [shown, setShown] = React.useState(false);
+  if (shown) return <>{children}</>;
+  return (
+    <p className="my-3 flex min-w-0 items-baseline gap-2 text-caption text-muted-foreground">
+      <span className="min-w-0 truncate">
+        <span className="font-mono text-foreground/80">{filename}</span> is in the changes above.
+      </span>
+      <button
+        type="button"
+        onClick={() => setShown(true)}
+        className="shrink-0 underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
+      >
+        Show file
+      </button>
+    </p>
+  );
+}
 
 /** `ts:src/auth.ts` → lang `ts`, meta `title="src/auth.ts"`, so the highlighter
  *  still finds the language and the header still finds the file. */
@@ -233,6 +262,30 @@ function CodeBlock({ children, node }: { children: React.ReactNode; node?: { chi
   const raw = textOf(children).replace(/\n$/, "");
   const meta = node?.children?.find((c) => c.tagName === "code")?.data?.meta ?? undefined;
   const filename = fenceFilename(meta);
+  const written = React.useContext(WrittenFilesContext);
+  const lowerLang = lang.toLowerCase();
+  if (
+    !streaming &&
+    filename &&
+    written &&
+    lowerLang !== "diff" &&
+    lowerLang !== "patch" &&
+    fenceMatchesWrittenFile(filename, written)
+  ) {
+    return (
+      <WrittenFileFence filename={filename}>
+        <AicssCodeBlock
+          className="my-4"
+          label={lang}
+          filename={filename}
+          code={raw}
+          lines={splitHighlightedLines(children)}
+          collapsible
+          defaultExpanded
+        />
+      </WrittenFileFence>
+    );
+  }
 
   if (isVisualLang(lang)) {
     return <InlineVisualBlock source={raw} streaming={streaming} />;
@@ -683,12 +736,15 @@ export const Markdown = React.memo(function Markdown({
   className,
   streaming,
   sources,
+  writtenFiles,
 }: {
   content: string;
   className?: string;
   streaming?: boolean;
   /** Web-search / deep-research sources backing this message, in citation order. */
   sources?: ClientSource[];
+  /** Paths this turn wrote (Code). A fence naming one folds to a single line. */
+  writtenFiles?: ReadonlySet<string>;
 }) {
   // Split FIRST, normalise per block. Whole-document normalisation ran before
   // the split and cost the blocks their offsets: `\(` → `$` shortens the text,
@@ -703,6 +759,7 @@ export const Markdown = React.memo(function Markdown({
   );
   return (
     <StreamingContext.Provider value={!!streaming}>
+    <WrittenFilesContext.Provider value={writtenFiles && writtenFiles.size > 0 ? writtenFiles : null}>
     <div className={cn("prose-juno", className)} data-streaming={streaming ? "true" : undefined} data-no-auto-translate>
       {blocks.map((block, i) => (
         <MarkdownBlock
@@ -713,6 +770,7 @@ export const Markdown = React.memo(function Markdown({
         />
       ))}
     </div>
+    </WrittenFilesContext.Provider>
     </StreamingContext.Provider>
   );
 });

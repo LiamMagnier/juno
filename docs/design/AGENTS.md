@@ -379,17 +379,29 @@ mark and the prop are dropped below `sm`; the eyes never are.
 
 ### 5.1 Hiring an agent (`/agents/new`)
 
-Chat-first hiring (`AgentStart`) is the default: one heading (*Who do you want
-to hire?*), seven template chips (*Chief of staff*, *Researcher*, *Deal finder*,
-*Trip planner*, *Writer*, *Monitor*, and *Start from scratch*), and an optional
-one-line goal field. Clicking a chip creates the agent and its thread
-(`POST /api/agents`) and redirects straight to `/chat/<conversationId>` where
-the agent greets in its own voice and offers starter chips to refine its role,
-routines, goals, notes or computer in conversation (`update_agent`,
-`manage_agent_goal`, `manage_agent_routine`, `manage_agent_note`,
-`manage_agent_computer`). Visiting `/agents/new?form=1` (*Customize every
-detail first →*) reveals the four-step form (template, name and face builder,
-style/brief/autonomy, and first goal).
+Hiring is a job board (`AgentJobBoard`, shared by `/agents/new` and the empty
+roster). The starting points are a tight row list: *Chief of staff*,
+*Researcher*, *Deal finder*, *Trip planner*, *Writer* and *Monitor*, then
+*Start from scratch* as its own row under a hairline rather than a seventh
+equal tile. Hovering or focusing a row fills the brief beside it (face, first
+suggested name, role, promise, standing brief, voice and autonomy, and the
+floor: it always asks before it sends, publishes, pays or deletes), so the
+whole combination is visible before **Hire**. Pressing a row or **Hire**
+creates the agent and its thread (`POST /api/agents`) and redirects straight to
+`/chat/<conversationId>`, where the agent greets in its own voice and offers
+starter chips to refine its role, routines, goals, notes or computer in
+conversation (`update_agent`, `manage_agent_goal`, `manage_agent_routine`,
+`manage_agent_note`, `manage_agent_computer`). *Set up with a form*
+(`/agents/new?form=1`) reveals the four-step form (template, name and face
+builder, style/brief/autonomy, and first goal).
+
+The empty roster shows *Hire your first agent* and the same board, and only
+after a successful read returned zero agents. A failed roster read is a load
+error with Try again, never the empty state: the transport treats a body
+without an `agents` array as a failure, and the store treats every per-agent
+glance (latest task, attention, schedules, ideas, computer) as optional, so a
+missing related table cannot turn an existing roster into an error or an empty
+list.
 
 ### 5.2 The thread and the three-tab side panel (`Now · Computer · Setup`)
 

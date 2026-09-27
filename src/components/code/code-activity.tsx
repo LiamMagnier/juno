@@ -5,6 +5,7 @@ import * as React from "react";
 import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
 import {
   FileChangeReceiptRow,
+  ToolFailureReceiptRow,
   ToolReceiptList,
   ToolReceiptRow,
 } from "@/components/chat/tool-receipt";
@@ -205,9 +206,11 @@ function WriteRow({ event }: { event: ClientActivityEvent }) {
         setOpened(true);
       }}
     >
-      {rows ? (
+      {/* Present whenever a patch arrived, so the row opens; the parse waits
+          for the first open. */}
+      {change.patch ? (
         <div tabIndex={0} className="max-h-72 overflow-auto focus-visible:-outline-offset-2">
-          <FileDiff file={change.path} rows={rows} />
+          {rows ? <FileDiff file={change.path} rows={rows} /> : null}
         </div>
       ) : null}
     </FileChangeReceiptRow>
@@ -239,15 +242,10 @@ function NoteRow({ event }: { event: ClientActivityEvent }) {
       />
     );
   }
-  return (
-    <ToolReceiptRow
-      icon="warning"
-      label={event.title}
-      object={event.detail || null}
-      status={failed ? "failed" : "ok"}
-      reason={failed ? event.detail || event.title : null}
-    />
-  );
+  if (failed) {
+    return <ToolFailureReceiptRow label={event.title} reason={event.detail || null} />;
+  }
+  return <ToolReceiptRow icon="warning" label={event.title} object={event.detail || null} status="ok" />;
 }
 
 /* ── The list ────────────────────────────────────────────────────────────── */

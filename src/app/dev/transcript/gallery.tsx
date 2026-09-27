@@ -5,11 +5,14 @@ import { AppProvider } from "@/components/app/app-provider";
 import { MessageItem } from "@/components/chat/message-item";
 import { MessageList } from "@/components/chat/message-list";
 import { SharedChatTranscript } from "@/components/share/shared-chat-transcript";
+import { CodeActivity } from "@/components/code/code-activity";
+import { Markdown } from "@/components/chat/markdown";
+import { writtenPaths } from "@/lib/chat/tool-receipt";
 import { Button } from "@/components/ui/button";
 import { AUTO_MODEL_ID } from "@/lib/auto-model";
 import type { ChatMessage } from "@/hooks/use-chat";
 import type { AppBootstrap } from "@/types/app";
-import type { ClientArtifact } from "@/types/chat";
+import type { ClientActivityEvent, ClientArtifact } from "@/types/chat";
 
 /* Only what the rendered components read is filled in (see /dev/premium). */
 const BOOTSTRAP = {
@@ -369,6 +372,50 @@ function StreamingDemo() {
   );
 }
 
+/* A Code turn's receipts: a passing command, a failing one (opens on its
+ * output), a write with a real diff, a read, and a warning. */
+const CODE_EVENTS = [
+  { id: "c1", kind: "tool", title: "Read src/lib/cache.ts", createdAt: at(0) },
+  { id: "c2", kind: "tool", title: "$ npm test", detail: "✔ 41 passing", exitCode: 0, createdAt: at(1) },
+  {
+    id: "c3",
+    kind: "write",
+    title: "edit src/lib/cache.ts",
+    detail: "+2 −1",
+    patch: "--- a/src/lib/cache.ts\n+++ b/src/lib/cache.ts\n@@ -1,3 +1,4 @@\n export function hitRate(hits: number, total: number) {\n-  return hits / total;\n+  if (total === 0) return 0;\n+  return hits / total;\n }\n",
+    createdAt: at(2),
+  },
+  { id: "c4", kind: "tool", title: "$ npm run lint", detail: "src/lib/cache.ts:4 unexpected any\n1 problem", exitCode: 1, createdAt: at(3) },
+  { id: "c5", kind: "warning", title: "Could not reach the preview", detail: "The dev server did not answer on port 3100.", createdAt: at(4) },
+] as unknown as ClientActivityEvent[];
+
+const CODE_BODY = [
+  "Guarded the divide by zero. The change is in the receipt above.",
+  "",
+  "```ts title=\"src/lib/cache.ts\"",
+  "export function hitRate(hits: number, total: number) {",
+  "  if (total === 0) return 0;",
+  "  return hits / total;",
+  "}",
+  "```",
+  "",
+  "A file nobody wrote still prints in full:",
+  "",
+  "```ts title=\"src/lib/other.ts\"",
+  "export const other = 1;",
+  "```",
+].join("\n");
+
+function CodeReceiptsDemo() {
+  const written = React.useMemo(() => writtenPaths(CODE_EVENTS), []);
+  return (
+    <div data-testid="code-receipts">
+      <CodeActivity events={CODE_EVENTS} />
+      <Markdown className="mt-4" content={CODE_BODY} writtenFiles={written} />
+    </div>
+  );
+}
+
 export function TranscriptGallery({ only }: { only?: string }) {
   const convo = useTurnState(CONVERSATION);
   const show = (id: string) => !only || only === id;
@@ -431,6 +478,12 @@ export function TranscriptGallery({ only }: { only?: string }) {
           {show("streaming") && (
             <Section id="streaming" title="Streaming" note="The real MessageList: the live row, text arriving under the tail fade, the follow, and Jump to latest.">
               <StreamingDemo />
+            </Section>
+          )}
+
+          {show("code") && (
+            <Section id="code" title="Code receipts" note="Juno Code's rows on the shared receipt: one line each, output or diff one press away, and a fence repeating a written file folded to one line.">
+              <CodeReceiptsDemo />
             </Section>
           )}
 

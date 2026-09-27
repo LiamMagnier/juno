@@ -573,7 +573,8 @@ test("a copied step says what its row says, payload included", () => {
   const step = run.steps.find((s) => s.kind === "tool")!;
   const md = toStepMarkdown(step);
 
-  assert.match(md, /^### Linear · create_issue\n/);
+  // The row's own words: the receipt label, then its one-line reason.
+  assert.match(md, /^### Linear · Create issue\n/);
   assert.match(md, /\nFailed\n/);
   // No duration line: the call never reached the network, so there is no
   // number — and a "Duration 0.0s" would read as "it answered instantly".

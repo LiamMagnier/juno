@@ -131,7 +131,7 @@ public enum NativeToolPresentation {
         }
     }
 
-    /// The done line: "Searched the web for “…”", "Used GitHub".
+    /// The done line: "Searched the web for “…”", "GitHub · Create issue".
     public static func doneLine(_ call: NativeToolCall) -> NativeRunPhraseLine {
         switch call.tool {
         case "web_search", "provider_web_search":
@@ -169,6 +169,15 @@ public enum NativeToolPresentation {
         case "computer_write_file": return single("Wrote a file on its computer")
         case "computer_open_url": return single("Opened a page on its computer")
         case "mcp":
+            // The connector and its tool ARE the label, settled or running
+            // (web `receiptLabelForCall`): "GitHub · Create issue". Only a call
+            // with no tool title falls back to "Used GitHub".
+            if let title = call.toolTitle, !title.isEmpty {
+                return NativeRunPhraseLine([
+                    NativeRunPhrase([.label(call.connectorLabel ?? "Connector")]),
+                    NativeRunPhrase([.label(title)]),
+                ])
+            }
             return NativeRunPhraseLine([NativeRunPhrase([.phrase("Used"), .label(call.connectorLabel ?? "a connector")])])
         default:
             return single("Used a tool")
