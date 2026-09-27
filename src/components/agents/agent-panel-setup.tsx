@@ -94,7 +94,9 @@ function ExpandRow({
           aria-hidden="true"
         />
       </button>
-      {open ? <div className="space-y-3 border-t border-border/60 bg-muted/15 px-3.5 py-3.5">{children}</div> : null}
+      {open ? (
+        <div className="space-y-3 border-t border-border/60 bg-muted/20 px-3.5 py-3.5">{children}</div>
+      ) : null}
     </div>
   );
 }
@@ -192,7 +194,7 @@ export function AgentPanelSetup({
 
   const handleDownloadNotes = () => {
     const md = [
-      `# ${agent.name} — Memory`,
+      `# ${agent.name} memory`,
       "",
       ...detail.notes.map((n) => `- ${n.content} _(${n.source})_`),
     ].join("\n");
@@ -223,13 +225,13 @@ export function AgentPanelSetup({
         >
           <div className="space-y-2.5">
             <div>
-              <label htmlFor="setup-name" className="mb-1 block text-caption text-muted-foreground">
+              <label htmlFor="setup-name" className="mb-1 block font-mono text-label text-muted-foreground">
                 Name
               </label>
               <Input id="setup-name" value={name} onChange={(e) => setName(e.target.value)} className="h-8 text-ui" />
             </div>
             <div>
-              <label htmlFor="setup-role" className="mb-1 block text-caption text-muted-foreground">
+              <label htmlFor="setup-role" className="mb-1 block font-mono text-label text-muted-foreground">
                 Role
               </label>
               <Input id="setup-role" value={role} onChange={(e) => setRole(e.target.value)} className="h-8 text-ui" />
@@ -268,9 +270,9 @@ export function AgentPanelSetup({
           </div>
         </ExpandRow>
 
-        {/* 3. Personality */}
+        {/* 3. Style and brief */}
         <ExpandRow
-          label="Personality"
+          label="Style and brief"
           summary={`${AGENT_STYLE_LABEL[agent.style]}${
             agent.instructions ? ` · ${agent.instructions.slice(0, 48)}${agent.instructions.length > 48 ? "…" : ""}` : ""
           }`}
@@ -280,8 +282,8 @@ export function AgentPanelSetup({
           <div className="space-y-3">
             <StylePicker value={style} onChange={setStyle} />
             <div>
-              <label htmlFor="setup-brief" className="mb-1 block text-caption text-muted-foreground">
-                Standing brief
+              <label htmlFor="setup-brief" className="mb-1 block font-mono text-label text-muted-foreground">
+                Brief
               </label>
               <Textarea
                 id="setup-brief"
@@ -322,9 +324,9 @@ export function AgentPanelSetup({
           </div>
         </ExpandRow>
 
-        {/* 5. Apps */}
+        {/* 5. Connected apps */}
         <ExpandRow
-          label="Apps"
+          label="Connected apps"
           summary={agent.connectorIds.length > 0 ? agent.connectorIds.join(", ") : "None"}
           open={expanded === "apps"}
           onToggle={() => toggle("apps")}
@@ -486,18 +488,18 @@ export function AgentPanelSetup({
           />
         </div>
 
-        {/* 10. Memory */}
+        {/* 10. What it knows */}
         <ExpandRow
-          label="Memory"
+          label="What it knows"
           summary={`${detail.notes.length} ${detail.notes.length === 1 ? "note" : "notes"}`}
           open={expanded === "memory"}
           onToggle={() => toggle("memory")}
         >
           <div className="space-y-3">
             {detail.notes.length > 0 ? (
-              <ul className="divide-y divide-border rounded-control border border-border bg-card">
+              <ul className="divide-y divide-border">
                 {detail.notes.map((note) => (
-                  <li key={note.id} className="space-y-1.5 p-2.5">
+                  <li key={note.id} className="space-y-1.5 py-2.5 first:pt-0 last:pb-0">
                     {editingNoteId === note.id ? (
                       <div className="space-y-2">
                         <Textarea
@@ -562,7 +564,7 @@ export function AgentPanelSetup({
                 ))}
               </ul>
             ) : (
-              <p className="text-caption text-muted-foreground">Nothing saved in memory yet.</p>
+              <p className="text-caption text-muted-foreground">Nothing saved yet.</p>
             )}
 
             <div className="flex items-center gap-2">
@@ -595,7 +597,7 @@ export function AgentPanelSetup({
               <div className="flex justify-end">
                 <Button size="sm" variant="ghost" onClick={handleDownloadNotes} className="gap-1">
                   <Download className="size-3" aria-hidden="true" />
-                  Download memory (.md)
+                  Download notes (.md)
                 </Button>
               </div>
             ) : null}
@@ -615,9 +617,9 @@ export function AgentPanelSetup({
         >
           <div className="space-y-3">
             {detail.routines.length > 0 ? (
-              <ul className="divide-y divide-border rounded-control border border-border bg-card">
+              <ul className="divide-y divide-border">
                 {detail.routines.map((routine) => (
-                  <li key={routine.id} className="flex items-center justify-between gap-2 p-2.5">
+                  <li key={routine.id} className="flex items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-ui font-medium text-foreground">{routine.name}</p>
                       <p className="truncate text-caption text-muted-foreground">{routine.schedule}</p>

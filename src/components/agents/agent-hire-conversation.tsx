@@ -205,7 +205,7 @@ function DraftSummary({
         settle={settle("approvalMode")}
       />
       <DraftRow
-        label="Apps"
+        label="Connected apps"
         value={connectorLabels || (draft.connectorIds?.length === 0 ? "None" : null)}
         missing="None linked"
         settle={settle("connectorIds")}

@@ -95,8 +95,25 @@ async function call<T>(
 
 const base = (id: string) => `/api/agents/${encodeURIComponent(id)}`;
 
+/**
+ * The roster read. A body without an `agents` array is a failure, not an empty
+ * roster: coercing it to `[]` is how a broken response paints "Hire your first
+ * agent" over a person who already has Nova.
+ */
 export function fetchAgents(): Promise<AgentOutcome<ClientAgent[]>> {
-  return call("/api/agents", {}, (d) => (Array.isArray(d.agents) ? (d.agents as ClientAgent[]) : []));
+  return call("/api/agents", {}, (d) => d).then((outcome) => {
+    if (outcome.kind !== "ok") return outcome;
+    const agents = (outcome.value as Record<string, unknown>).agents;
+    if (!Array.isArray(agents)) {
+      return {
+        kind: "failed",
+        status: 0,
+        error: "malformed",
+        message: "Juno could not read your agents. Try again in a moment.",
+      } as const;
+    }
+    return { kind: "ok", value: agents as ClientAgent[] } as const;
+  });
 }
 
 export function fetchAgentDetail(id: string): Promise<AgentOutcome<ClientAgentDetail>> {

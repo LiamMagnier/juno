@@ -61,8 +61,11 @@ export function useVisiblePoll(run: () => void, everyMs: number) {
 }
 
 export interface AgentsRoster {
+  /** `null` until a successful read lands. `[]` means the account truly has none. */
   agents: ClientAgent[] | null;
   error: string | null;
+  /** True once a successful read has landed, so `[]` is empty rather than loading. */
+  settled: boolean;
   refresh: () => void;
 }
 
@@ -70,6 +73,7 @@ export function useAgents(options: { enabled?: boolean } = {}): AgentsRoster {
   const enabled = options.enabled ?? true;
   const [agents, setAgents] = React.useState<ClientAgent[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [settled, setSettled] = React.useState(false);
   const seq = React.useRef(0);
 
   const refresh = React.useCallback(() => {
@@ -81,7 +85,9 @@ export function useAgents(options: { enabled?: boolean } = {}): AgentsRoster {
       if (outcome.kind === "ok") {
         setAgents(outcome.value);
         setError(null);
+        setSettled(true);
       } else if (outcome.kind === "failed") {
+        // Keep any list already on screen; a failed poll must never paint empty.
         setError(outcome.message);
       }
     });
@@ -92,7 +98,7 @@ export function useAgents(options: { enabled?: boolean } = {}): AgentsRoster {
   }, [refresh]);
   useVisiblePoll(refresh, ROSTER_POLL_MS);
 
-  return { agents, error, refresh };
+  return { agents, error, settled, refresh };
 }
 
 export interface AgentDetailState {

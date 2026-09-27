@@ -10,8 +10,18 @@ export const runtime = "nodejs";
 export async function GET() {
   const { user, error } = await requireUser();
   if (!user) return error;
-  const agents = await listAgentsForUser(user.id);
-  return NextResponse.json({ agents });
+  try {
+    const agents = await listAgentsForUser(user.id);
+    return NextResponse.json({ agents });
+  } catch (err) {
+    console.error("[agents] roster read failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { error: "roster_failed", message: "Your agents could not be loaded. Nothing was deleted. Try again in a moment." },
+      { status: 500 }
+    );
+  }
 }
 
 /** Hires an agent: the agent, its thread, and its first goal when one was given. */

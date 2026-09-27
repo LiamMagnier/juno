@@ -1,13 +1,9 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
-import { AgentFace } from "@/components/agents/agent-face";
 import { agentStateSentence, type AgentState } from "@/lib/agents/domain";
 import type { ClientAgent } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
-import { cardVariants } from "@/components/ui/card";
-import { staggerDelay } from "@/lib/motion";
 
 /**
  * "today at 09:00", "tomorrow at 09:00", "Mon at 09:00", "12 Oct" — in the
@@ -63,37 +59,3 @@ export function NeedsYouDot({ className }: { className?: string }) {
   return <span aria-hidden="true" className={cn("inline-block size-2 shrink-0 rounded-full bg-primary", className)} />;
 }
 
-export function AgentCard({ agent, index = 0 }: { agent: ClientAgent; index?: number }) {
-  const sentence = localStateSentence(agent);
-  const waiting = agent.state === "waiting";
-  return (
-    <Link
-      href={`/agents/${agent.id}`}
-      className={cn(
-        // The house interactive card (lifts under the pointer), like every
-        // tile in the app pages that opens something.
-        cardVariants({ variant: "interactive" }),
-        "group flex h-full min-w-0 items-start gap-4 p-4",
-        "motion-safe:animate-rise-in [animation-fill-mode:backwards]"
-      )}
-      style={staggerDelay(index)}
-      aria-label={`${agent.name}. ${sentence}`}
-    >
-      <AgentFace avatar={agent.avatar} state={agent.state} size="md" />
-      <div className="min-w-0 flex-1 pt-0.5">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-body font-medium text-foreground">{agent.name}</p>
-        </div>
-        {agent.role ? <p className="truncate text-ui text-muted-foreground">{agent.role}</p> : null}
-        <p
-          className={cn(
-            "mt-2 line-clamp-2 text-ui",
-            waiting ? "text-foreground" : "text-muted-foreground"
-          )}
-        >
-          {sentence}
-        </p>
-      </div>
-    </Link>
-  );
-}

@@ -154,29 +154,32 @@ export function AgentHire({
         <div className="grid grid-cols-1 gap-8 @[52rem]:grid-cols-[minmax(0,1fr)_16rem]">
           <div className="min-w-0 space-y-10">
             <Step n={1} title="What should it take on?">
-              <div role="radiogroup" aria-label="Starting point" className="grid grid-cols-1 gap-2 @[32rem]:grid-cols-2">
+              <ul className="overflow-hidden rounded-card border border-border bg-card" role="radiogroup" aria-label="Starting point">
                 {AGENT_TEMPLATES.map((option, index) => (
-                  <button
+                  <li
                     key={option.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={option.id === templateId}
-                    onClick={() => pick(option)}
                     style={staggerDelay(index, "tight")}
-                    className={cn(
-                      "flex items-start gap-3 rounded-card border border-border bg-card p-3 text-left",
-                      "transition-colors duration-fast ease-out-soft hover:bg-accent aria-checked:border-foreground/40 aria-checked:bg-selected",
-                      "motion-safe:animate-rise-in [animation-fill-mode:backwards]"
-                    )}
+                    className="motion-safe:animate-rise-in [animation-fill-mode:backwards]"
                   >
-                    <AgentFace avatar={option.avatar} size="sm" />
-                    <span className="min-w-0">
-                      <span className="block text-ui font-medium text-foreground">{option.label}</span>
-                      <span className="mt-0.5 block text-ui text-muted-foreground">{option.promise}</span>
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={option.id === templateId}
+                      onClick={() => pick(option)}
+                      className={cn(
+                        "flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent",
+                        option.id === templateId && "bg-selected"
+                      )}
+                    >
+                      <AgentFace avatar={option.avatar} size="sm" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-ui font-medium text-foreground">{option.label}</span>
+                        <span className="mt-0.5 block truncate text-caption text-muted-foreground">{option.promise}</span>
+                      </span>
+                    </button>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </Step>
 
             <Step n={2} title="Name and face">

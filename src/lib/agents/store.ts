@@ -122,38 +122,49 @@ async function deriveForAgents(userId: string, agents: readonly Agent[], now: Da
   if (ids.length === 0) return result;
 
   const { isAgentComputerConfigured } = await import("@/lib/computer/provider");
+  // Every glance is optional: a missing related table or a computer feature
+  // that is off must not turn a roster that exists into an error or an empty
+  // list. The agents themselves are read above and are the only hard fact.
   const [newest, attention, schedules, ideas, computerConfigured, computers] = await Promise.all([
     Promise.all(
       ids.map((agentId) =>
-        prisma.workSession.findFirst({
-          where: { userId, agentId, deletedAt: null },
-          orderBy: { lastActivityAt: "desc" },
-          select: TASK_SELECT,
-        })
+        prisma.workSession
+          .findFirst({
+            where: { userId, agentId, deletedAt: null },
+            orderBy: { lastActivityAt: "desc" },
+            select: TASK_SELECT,
+          })
+          .catch(() => null)
       )
     ),
-    prisma.workSession.groupBy({
-      by: ["agentId"],
-      where: { userId, agentId: { in: ids }, needsAttention: true, deletedAt: null },
-      _count: { _all: true },
-    }),
-    prisma.workSchedule.findMany({
-      where: {
-        userId,
-        enabled: true,
-        nextRunAt: { not: null },
-        session: { userId, agentId: { in: ids }, deletedAt: null },
-      },
-      orderBy: { nextRunAt: "asc" },
-      select: { id: true, name: true, nextRunAt: true, session: { select: { agentId: true } } },
-      take: 200,
-    }),
-    prisma.agentIdea.groupBy({
-      by: ["agentId"],
-      where: { userId, agentId: { in: ids }, status: "new" },
-      _count: { _all: true },
-    }),
-    isAgentComputerConfigured(),
+    prisma.workSession
+      .groupBy({
+        by: ["agentId"],
+        where: { userId, agentId: { in: ids }, needsAttention: true, deletedAt: null },
+        _count: { _all: true },
+      })
+      .catch(() => [] as Array<{ agentId: string; _count: { _all: number } }>),
+    prisma.workSchedule
+      .findMany({
+        where: {
+          userId,
+          enabled: true,
+          nextRunAt: { not: null },
+          session: { userId, agentId: { in: ids }, deletedAt: null },
+        },
+        orderBy: { nextRunAt: "asc" },
+        select: { id: true, name: true, nextRunAt: true, session: { select: { agentId: true } } },
+        take: 200,
+      })
+      .catch(() => [] as Array<{ id: string; name: string; nextRunAt: Date | null; session: { agentId: string | null } }>),
+    prisma.agentIdea
+      .groupBy({
+        by: ["agentId"],
+        where: { userId, agentId: { in: ids }, status: "new" },
+        _count: { _all: true },
+      })
+      .catch(() => [] as Array<{ agentId: string; _count: { _all: number } }>),
+    isAgentComputerConfigured().catch(() => false),
     prisma.agentComputer
       .findMany({
         where: { userId, agentId: { in: ids } },

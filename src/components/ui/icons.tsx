@@ -97,6 +97,7 @@ import {
   CircleDashedIcon,
   CircleIcon,
   CircleNotchIcon,
+  CalculatorIcon,
   ClockCounterClockwiseIcon,
   ClockIcon,
   CloudArrowUpIcon,
@@ -126,6 +127,7 @@ import {
   FileArrowUpIcon,
   FileCodeIcon,
   FileMagnifyingGlassIcon,
+  FilePlusIcon,
   FileTextIcon,
   FileXlsIcon,
   FilmStripIcon,
@@ -572,6 +574,8 @@ export const FolderInput = glyph(FolderSimplePlusIcon, "folder-input");
 export const FolderLock = glyph(FolderLockIcon, "folder-lock");
 export const FolderKanban = glyph(KanbanIcon, "folder-kanban");
 export const FileText = glyph(FileTextIcon, "file-text");
+export const FilePlus = glyph(FilePlusIcon, "file-plus");
+export const Calculator = glyph(CalculatorIcon, "calculator");
 export const FileCode = glyph(FileCodeIcon, "file-code");
 export const FileCode2 = glyph(FileCodeIcon, "file-code-2");
 export const FileSpreadsheet = glyph(FileXlsIcon, "file-spreadsheet");
