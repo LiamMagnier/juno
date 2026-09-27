@@ -29,7 +29,7 @@ import {
   type UtilityLlm,
 } from "@/lib/memory";
 import { normalizeAgentAvatar } from "@/lib/agents/avatar";
-import { AGENT_REFLECT_INTERVAL_MS, formatAgentWhen, reflectionDue } from "@/lib/agents/domain";
+import { AGENT_REFLECT_INTERVAL_MS, agentNotifyLevel, formatAgentWhen, reflectionDue } from "@/lib/agents/domain";
 import {
   announcedIdeaIds,
   goalCheckInDue,
@@ -232,7 +232,12 @@ export async function reflectAgent(
  * the meantime drops out of the count. A low-priority update, pushed quietly
  * (`passive`: no sound, no wake) to the devices whose Updates switch is on.
  */
-async function announceIdeas(userId: string, agent: Pick<Agent, "id" | "name" | "avatar">, freshIds: string[]): Promise<void> {
+async function announceIdeas(
+  userId: string,
+  agent: Pick<Agent, "id" | "name" | "avatar"> & { notify?: string | null },
+  freshIds: string[]
+): Promise<void> {
+  if (agentNotifyLevel(agent.notify) !== "all") return;
   const collapseKey = `agent-ideas:${agent.id}`;
   const unread = await prisma.notification.findFirst({
     where: { userId, readAt: null, actionData: { path: ["collapseKey"], equals: collapseKey } },

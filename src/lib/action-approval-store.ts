@@ -713,3 +713,52 @@ export async function listActionApprovals(input: {
   });
   return rows.map((row) => serializeActionApproval(row));
 }
+
+export async function requestActionApproval(input: {
+  userId: string;
+  conversationId: string | null;
+  generationId: string;
+  callId: string;
+  provider: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  allowAlways?: boolean;
+  signal?: AbortSignal;
+  onCreated?: (approval: ClientActionApproval) => void;
+}): Promise<{ approved: boolean; reason: string; receiptId: string | null }> {
+  const res = await authorizeExternalAction({
+    userId: input.userId,
+    surface: "chat",
+    sessionId: input.generationId,
+    conversationId: input.conversationId,
+    connectorId: input.provider,
+    connectorLabel: input.provider === "juno_agents" ? "Agents" : input.provider,
+    toolName: input.toolName,
+    functionName: input.toolName,
+    args: input.args,
+    callId: input.callId,
+    provenance: {
+      source: "chat_model",
+      sourceKind: "agent_config",
+      derivedFromUntrusted: false,
+    },
+    signal: input.signal,
+    onApprovalRequest: input.onCreated,
+  });
+  if (res.kind === "authorized") {
+    if (res.receiptId) {
+      await completeExternalAction({
+        userId: input.userId,
+        receiptId: res.receiptId,
+        ok: true,
+        result: "Approved",
+      }).catch(() => undefined);
+    }
+    return { approved: true, reason: "approved", receiptId: res.receiptId };
+  }
+  if (res.kind === "replay") {
+    return { approved: false, reason: "already_tried", receiptId: res.receiptId };
+  }
+  return { approved: false, reason: res.reason, receiptId: res.receiptId };
+}
+

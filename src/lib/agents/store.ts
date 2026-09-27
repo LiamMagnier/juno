@@ -33,6 +33,7 @@ import {
   deriveAgentState,
   routineTrigger,
   type AgentEventKind,
+  type AgentNoteSource,
   type AgentTaskGlance,
   type CreateAgentInput,
   type CreateRoutineInput,
@@ -64,6 +65,7 @@ export interface AgentResult<T = unknown> {
   status: number;
   body: Record<string, unknown>;
   value?: T;
+  eventId?: string;
 }
 
 /** A refusal carries no value, so it fits whatever result the caller promised. */
@@ -346,8 +348,8 @@ export async function recordAgentEvent(input: {
   text?: string | null;
   detail?: Record<string, unknown>;
   sessionId?: string | null;
-}): Promise<void> {
-  await prisma.agentEvent
+}): Promise<string | undefined> {
+  const row = await prisma.agentEvent
     .create({
       data: {
         userId: input.userId,
@@ -366,7 +368,9 @@ export async function recordAgentEvent(input: {
         kind: input.kind,
         error: err instanceof Error ? err.message : String(err),
       });
+      return null;
     });
+  return row?.id;
 }
 
 /** One line of a longer text, cut at a word where one is close. */
@@ -1287,22 +1291,94 @@ export async function createAgentRoutine(
       });
     }
   }
-  await recordAgentEvent({
+  const eventId = await recordAgentEvent({
     userId: user.id,
     agentId: agent.id,
     kind: "routine_created",
     title: `New routine: ${body.name}`,
     text: AGENT_ROUTINE_CADENCE_LABEL[input.cadence],
     sessionId: created.session.id,
+    detail: {
+      before: { __entity: "routine_created", scheduleId: row.id },
+      after: { scheduleId: row.id, name: body.name },
+    },
   });
   const routines = await listAgentRoutines(user.id, agent.id);
   const routine = routines.find((item) => item.id === row.id);
-  return { status: 201, body: { routine }, value: routine };
+  return {
+    status: 201,
+    body: { routine, ...(eventId ? { eventId } : {}) },
+    value: routine,
+    eventId,
+  };
+}
+
+export async function updateAgentRoutine(
+  user: AgentActor,
+  agent: Agent,
+  scheduleId: string,
+  enabled: boolean
+): Promise<AgentResult<ClientAgentRoutine>> {
+  const row = await prisma.workSchedule.findFirst({
+    where: { id: scheduleId, userId: user.id, session: { userId: user.id, agentId: agent.id, deletedAt: null } },
+  });
+  if (!row) return refusal(404, "not_found", "That routine no longer exists.");
+  await prisma.workSchedule.update({
+    where: { id: row.id, userId: user.id },
+    data: { enabled },
+  });
+  const eventId = await recordAgentEvent({
+    userId: user.id,
+    agentId: agent.id,
+    kind: "updated",
+    title: `${enabled ? "Resumed" : "Paused"} routine: ${row.name}`,
+    sessionId: row.sessionId,
+    detail: {
+      before: { __entity: "routine_updated", scheduleId: row.id, enabled: row.enabled },
+      after: { scheduleId: row.id, enabled },
+    },
+  });
+  const routines = await listAgentRoutines(user.id, agent.id);
+  const routine = routines.find((item) => item.id === row.id);
+  return {
+    status: 200,
+    body: { routine, ...(eventId ? { eventId } : {}) },
+    value: routine,
+    eventId,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // The chat turn
 // ---------------------------------------------------------------------------
+
+function extractRunSummary(
+  run: {
+    terminalDetail: string | null;
+    events: readonly { payload: unknown }[];
+  } | null
+): string | null {
+  if (!run) return null;
+  for (const evt of run.events) {
+    const payload = evt.payload && typeof evt.payload === "object" && !Array.isArray(evt.payload)
+      ? (evt.payload as Record<string, unknown>)
+      : null;
+    if (!payload) continue;
+    const report = payload.report && typeof payload.report === "object" && !Array.isArray(payload.report)
+      ? (payload.report as Record<string, unknown>)
+      : null;
+    if (report && typeof report.answer === "string" && report.answer.trim()) {
+      return report.answer.trim().slice(0, 600);
+    }
+    if (typeof payload.detail === "string" && payload.detail.trim()) {
+      return payload.detail.trim().slice(0, 600);
+    }
+  }
+  if (typeof run.terminalDetail === "string" && run.terminalDetail.trim()) {
+    return run.terminalDetail.trim().slice(0, 600);
+  }
+  return null;
+}
 
 /**
  * What the chat route appends for a turn in an agent's thread, or null.
@@ -1318,11 +1394,12 @@ export async function createAgentRoutine(
 export async function agentChatContext(
   user: AgentActor,
   agentId: string,
-  options: { taskHandoff: boolean; handoff?: boolean }
-): Promise<{ agent: Agent; block: string; handoff: boolean } | null> {
+  options: { taskHandoff: boolean; handoff?: boolean; selfConfig?: boolean }
+): Promise<{ agent: Agent; block: string; handoff: boolean; paused: boolean } | null> {
   const agent = await findAgent(user.id, agentId);
   if (!agent) return null;
-  const [goals, notes, teammates] = await Promise.all([
+  const paused = agent.status !== "active";
+  const [goals, notes, teammates, routinesCount, recentSessions] = await Promise.all([
     prisma.agentGoal.findMany({
       where: { userId: user.id, agentId, status: "active" },
       orderBy: { createdAt: "asc" },
@@ -1345,11 +1422,46 @@ export async function agentChatContext(
       take: AGENT_PROMPT_TEAMMATES,
       select: { name: true, role: true },
     }),
+    prisma.workSchedule.count({
+      where: { userId: user.id, session: { userId: user.id, agentId, deletedAt: null } },
+    }),
+    prisma.workSession.findMany({
+      where: { userId: user.id, agentId, deletedAt: null, status: { not: "draft" } },
+      orderBy: [{ lastActivityAt: "desc" }, { createdAt: "desc" }],
+      take: 5,
+      select: {
+        title: true,
+        status: true,
+        runs: {
+          where: {
+            userId: user.id,
+            status: { in: ["completed", "failed", "cancelled", "budget_exceeded"] },
+          },
+          orderBy: { finishedAt: "desc" },
+          take: 1,
+          select: {
+            terminalDetail: true,
+            events: {
+              where: { userId: user.id, kind: "run_finished" },
+              orderBy: { seq: "desc" },
+              take: 1,
+              select: { payload: true },
+            },
+          },
+        },
+      },
+    }),
   ]);
+  const recentWork = recentSessions.map((session) => ({
+    title: session.title,
+    status: session.status,
+    summary: extractRunSummary(session.runs[0] ?? null),
+  }));
   const handoff = options.handoff === true && teammates.length > 0;
   return {
     agent,
-    handoff,
+    handoff: !paused && handoff,
+    paused,
     block: buildAgentPromptBlock(
       {
         name: agent.name,
@@ -1362,6 +1474,10 @@ export async function agentChatContext(
         teammates,
         taskHandoff: options.taskHandoff,
         handoff,
+        selfConfig: options.selfConfig ?? options.taskHandoff,
+        routinesCount,
+        recentWork,
+        paused,
       },
       user.name
     ),
@@ -1393,8 +1509,21 @@ export async function createAgentGoal(
       dueAt: input.dueAt ? new Date(input.dueAt) : null,
     },
   });
-  await recordAgentEvent({ userId: user.id, agentId: agent.id, kind: "goal_set", title: `New goal: ${goal.title}` });
-  return { status: 201, body: { goal: serializeGoal(goal) } };
+  const eventId = await recordAgentEvent({
+    userId: user.id,
+    agentId: agent.id,
+    kind: "goal_set",
+    title: `New goal: ${goal.title}`,
+    detail: {
+      before: { __entity: "goal_created", goalId: goal.id },
+      after: { goalId: goal.id, title: goal.title },
+    },
+  });
+  return {
+    status: 201,
+    body: { goal: serializeGoal(goal), ...(eventId ? { eventId } : {}) },
+    eventId,
+  };
 }
 
 export async function updateAgentGoal(
@@ -1405,6 +1534,13 @@ export async function updateAgentGoal(
 ): Promise<AgentResult> {
   const goal = await prisma.agentGoal.findFirst({ where: { id: goalId, userId: user.id, agentId: agent.id } });
   if (!goal) return refusal(404, "not_found", "That goal no longer exists.");
+  const beforeFields = {
+    title: goal.title,
+    detail: goal.detail,
+    cadence: goal.cadence,
+    status: goal.status,
+    dueAt: goal.dueAt,
+  };
   const updated = await prisma.agentGoal.update({
     where: { id: goal.id, userId: user.id },
     data: {
@@ -1415,18 +1551,38 @@ export async function updateAgentGoal(
       ...(patch.dueAt !== undefined ? { dueAt: patch.dueAt ? new Date(patch.dueAt) : null } : {}),
     },
   });
+  let eventId: string | undefined;
   if (patch.status && patch.status !== goal.status) {
     const verb =
       patch.status === "achieved" ? "Achieved" : patch.status === "dropped" ? "Dropped" : patch.status === "paused" ? "Paused" : "Resumed";
-    await recordAgentEvent({
+    eventId = await recordAgentEvent({
       userId: user.id,
       agentId: agent.id,
       kind: "goal_updated",
       title: `${verb}: ${updated.title}`,
-      detail: { status: patch.status },
+      detail: {
+        status: patch.status,
+        before: { __entity: "goal_updated", goalId: goal.id, fields: beforeFields },
+        after: { goalId: goal.id, status: updated.status },
+      },
+    });
+  } else {
+    eventId = await recordAgentEvent({
+      userId: user.id,
+      agentId: agent.id,
+      kind: "goal_updated",
+      title: `Updated goal: ${updated.title}`,
+      detail: {
+        before: { __entity: "goal_updated", goalId: goal.id, fields: beforeFields },
+        after: { goalId: goal.id, title: updated.title },
+      },
     });
   }
-  return { status: 200, body: { goal: serializeGoal(updated) } };
+  return {
+    status: 200,
+    body: { goal: serializeGoal(updated), ...(eventId ? { eventId } : {}) },
+    eventId,
+  };
 }
 
 export async function deleteAgentGoal(user: AgentActor, agent: Agent, goalId: string): Promise<AgentResult> {
@@ -1444,19 +1600,37 @@ export async function listAgentNotes(user: AgentActor, agent: Agent) {
   return notes.map((note) => serializeNote(readNote(note)));
 }
 
-export async function createAgentNote(user: AgentActor, agent: Agent, content: string): Promise<AgentResult> {
+export async function createAgentNote(
+  user: AgentActor,
+  agent: Agent,
+  content: string,
+  source: AgentNoteSource = "user"
+): Promise<AgentResult> {
   const count = await prisma.agentNote.count({ where: { userId: user.id, agentId: agent.id, deletedAt: null } });
   if (count >= MAX_AGENT_NOTES) {
     return refusal(409, "too_many_notes", `${agent.name} already keeps ${MAX_AGENT_NOTES} notes. Delete some it no longer needs.`);
   }
   const note = await prisma.agentNote.create({
-    data: { userId: user.id, agentId: agent.id, content: encryptField(content), source: "user" },
+    data: { userId: user.id, agentId: agent.id, content: encryptField(content), source },
   });
   // The log says THAT it learned something, never what: the note is encrypted
   // at rest and the log is not, so copying it there would undo the one and
   // leave a plaintext duplicate of the person's own words.
-  await recordAgentEvent({ userId: user.id, agentId: agent.id, kind: "note_added", title: "You told it something" });
-  return { status: 201, body: { note: serializeNote({ ...note, content }) } };
+  const eventId = await recordAgentEvent({
+    userId: user.id,
+    agentId: agent.id,
+    kind: "note_added",
+    title: source === "agent" ? `${agent.name} noted something` : "You told it something",
+    detail: {
+      before: { __entity: "note_created", noteId: note.id },
+      after: { noteId: note.id },
+    },
+  });
+  return {
+    status: 201,
+    body: { note: serializeNote({ ...note, content }), ...(eventId ? { eventId } : {}) },
+    eventId,
+  };
 }
 
 export async function updateAgentNote(user: AgentActor, agent: Agent, noteId: string, content: string): Promise<AgentResult> {
@@ -1477,7 +1651,17 @@ export async function deleteAgentNote(user: AgentActor, agent: Agent, noteId: st
     data: { deletedAt: new Date() },
   });
   if (deleted.count === 0) return refusal(404, "not_found", "That note no longer exists.");
-  return { status: 200, body: { ok: true } };
+  const eventId = await recordAgentEvent({
+    userId: user.id,
+    agentId: agent.id,
+    kind: "updated",
+    title: "Removed a note",
+    detail: {
+      before: { __entity: "note_deleted", noteId },
+      after: { noteId, deleted: true },
+    },
+  });
+  return { status: 200, body: { ok: true, ...(eventId ? { eventId } : {}) }, eventId };
 }
 
 /**

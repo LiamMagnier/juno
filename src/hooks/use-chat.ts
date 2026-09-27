@@ -552,6 +552,11 @@ export function useChat(opts: UseChatOptions) {
               setStatus((cur) => (cur === "submitting" ? "thinking" : cur));
               if (chunk.event.kind === "reasoning") setStatus((cur) => (cur === "writing" ? cur : "thinking"));
               if (chunk.event.kind === "write") setStatus("writing");
+              if (chunk.event.agentChange && typeof window !== "undefined") {
+                window.dispatchEvent(
+                  new CustomEvent("juno:agent-updated", { detail: { agentId: chunk.event.agentChange.agentId } })
+                );
+              }
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantTempId
@@ -1102,7 +1107,11 @@ export function useChat(opts: UseChatOptions) {
         const res = await fetch(path, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...body, generationId }),
+          body: JSON.stringify({
+            ...body,
+            generationId,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          }),
           signal: controller.signal,
         });
 

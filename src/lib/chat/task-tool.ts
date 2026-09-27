@@ -313,6 +313,7 @@ export const TASK_REFUSALS = {
   approval_failed: "The approval for this task could not be used, so nothing was started.",
   stopped: "The reply was stopped before the task started, so nothing was started.",
   already_tried: "This message already tried to start a task and it did not start. Nothing new was started.",
+  agent_paused: "This agent is paused. Resume it before starting a task. Nothing was started.",
   internal_error: "Juno could not start the task because of a problem on its side. Nothing was started.",
 } as const;
 
@@ -502,8 +503,8 @@ export interface StartTaskToolContext {
    * that agent instead of the default a model-started task otherwise gets —
    * a mode somebody chose on the agent's page is a decision, not a default.
    */
-  agent?: { id: string; approvalMode: WorkPermissionPolicy } | null;
-  /** The generation id: with the approval call id, the broker's idempotency key. */
+  agent?: { id: string; approvalMode: WorkPermissionPolicy; status?: string } | null;
+  /** The generation id: with the broker's idempotency key. */
   generationId: string;
   onApprovalRequest?: (approval: ClientActionApproval) => void;
   /** Called once per turn, with the session as it stands after its run was dispatched. */
@@ -568,6 +569,7 @@ async function startTask(
   const args = parseStartTaskArgs(rawArgs);
   if (!args) return taskRefusal("invalid_arguments");
   if (signal?.aborted) return taskRefusal("stopped");
+  if (ctx.agent?.status && ctx.agent.status !== "active") return taskRefusal("agent_paused");
 
   const [{ prisma }, dispatch, protocol, serializers, store] = await Promise.all([
     import("@/lib/prisma"),
@@ -577,6 +579,15 @@ async function startTask(
     import("@/lib/action-approval-store"),
   ]);
   const { user } = ctx;
+  if (ctx.agent) {
+    const agentRow = await prisma.agent.findFirst({
+      where: { id: ctx.agent.id, userId: user.id, deletedAt: null },
+      select: { status: true },
+    });
+    if (!agentRow || agentRow.status !== "active") {
+      return taskRefusal("agent_paused");
+    }
+  }
   const keys = taskIdempotencyKeys(ctx.userMessageId);
   const ownSessionId = dispatch.sessionIdForKey(user, keys.session);
 

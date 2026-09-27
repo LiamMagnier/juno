@@ -6,8 +6,8 @@ here.
 
 ## Status
 
-- Current phase: 2
-- Last commit on `agents/v2`: Phase 1 data and provider layer
+- Current phase: 5
+- Last commit on `agents/v2`: Phase 4 configuration by chat
 - Blockers: none
 
 ## Phase 0 — preconditions
@@ -65,14 +65,14 @@ here.
 - [x] Gates: quick + native:sync:check
 
 ## Phase 4 — configuration by chat
-- [ ] Five tools, gate, route wiring, pinned regex updated
-- [ ] JunoRules + actionPreview + approval-card variant + stale-card refusal
-- [ ] `agentChange` activity (type, serializer whitelist, wire status, card, undo)
-- [ ] `timeZone` request field
-- [ ] Prompt: selfConfig, onboarding, recent work; voice persona off
-- [ ] Pause bug fixed
-- [ ] Tests
-- [ ] Gates: quick + native:wire:check
+- [x] Five tools, gate, route wiring, pinned regex updated
+- [x] JunoRules + actionPreview + approval-card variant + stale-card refusal
+- [x] `agentChange` activity (type, serializer whitelist, wire status, card, undo)
+- [x] `timeZone` request field
+- [x] Prompt: selfConfig, onboarding, recent work; voice persona off
+- [x] Pause bug fixed
+- [x] Tests
+- [x] Gates: quick + native:wire:check
 
 ## Phase 5 — thread-first UI
 - [ ] Thread header + side panel (Now, Computer, Setup) + sheet on mobile

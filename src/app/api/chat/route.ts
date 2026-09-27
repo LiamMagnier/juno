@@ -195,6 +195,10 @@ import {
   handoffDetailFromArgs,
   isHandoffApproval,
 } from "@/lib/chat/handoff-tool";
+import {
+  chatAgentConfigToolsEnabled,
+  createAgentConfigTools,
+} from "@/lib/chat/agent-config-tools";
 import { cheapestWorkModel } from "@/lib/work/models";
 import { agentChatContext } from "@/lib/agents/store";
 import { agentApprovalMode, agentTurnModel } from "@/lib/agents/domain";
@@ -2321,6 +2325,10 @@ async function handleChat(req: Request) {
     ...taskGate,
     skillPermits: narrowRuntimeToolsForSkill([HAND_OFF_TOOL_ID], appliedSkill).length > 0,
   });
+  const agentConfigToolsOn = chatAgentConfigToolsEnabled({
+    ...taskGate,
+    skillPermits: true,
+  });
   /*
    * An agent's thread (docs/design/AGENTS.md): the reply is the agent's, with
    * its brief, goals and notes appended after everything else in the prompt,
@@ -3016,7 +3024,7 @@ async function handleChat(req: Request) {
       };
       let taskAnnounced = false;
       const taskTool =
-        taskToolOn && userMessageId
+        taskToolOn && !agentContext?.paused && userMessageId
           ? createStartTaskTool({
               user,
               conversation: { id: conversationId, projectId: conversation.projectId },
@@ -3034,7 +3042,11 @@ async function handleChat(req: Request) {
               // later with nobody watching, so it asks first.
               untrustedContent: untrustedContentInTurn || allAttachments.length > 0,
               agent: agentContext
-                ? { id: agentContext.agent.id, approvalMode: agentApprovalMode(agentContext.agent.approvalMode) }
+                ? {
+                    id: agentContext.agent.id,
+                    approvalMode: agentApprovalMode(agentContext.agent.approvalMode),
+                    status: agentContext.agent.status,
+                  }
                 : null,
               generationId,
               onApprovalRequest: requestApproval,
@@ -3054,7 +3066,11 @@ async function handleChat(req: Request) {
           ? createHandoffTool({
               user,
               conversation: { id: conversationId, projectId: conversation.projectId },
-              fromAgent: { id: agentContext.agent.id, name: agentContext.agent.name },
+              fromAgent: {
+                id: agentContext.agent.id,
+                name: agentContext.agent.name,
+                status: agentContext.agent.status,
+              },
               userMessageId,
               userRequest: clarificationVisibleContent ?? preflightVisibleContent ?? input.message?.trim() ?? "",
               // The same reading as the task's: any file in the window counts.
@@ -3063,7 +3079,44 @@ async function handleChat(req: Request) {
               onApprovalRequest: requestApproval,
             })
           : null;
-      const nativeTools = [taskTool, handoffTool].filter((tool): tool is NativeChatTool => tool !== null);
+      const agentConfigTools =
+        agentConfigToolsOn && userMessageId
+          ? createAgentConfigTools({
+              user,
+              conversation: { id: conversationId, projectId: conversation.projectId },
+              agent: agentContext
+                ? {
+                    id: agentContext.agent.id,
+                    name: agentContext.agent.name,
+                    role: agentContext.agent.role,
+                    style: agentContext.agent.style,
+                    instructions: agentContext.agent.instructions,
+                    approvalMode: agentContext.agent.approvalMode,
+                    notify: (agentContext.agent as { notify?: string | null }).notify ?? "results",
+                    proactive: agentContext.agent.proactive,
+                    status: agentContext.agent.status,
+                    model: agentContext.agent.model,
+                    reasoningEffort: agentContext.agent.reasoningEffort,
+                    connectorIds: agentContext.agent.connectorIds,
+                  }
+                : null,
+              userMessageId,
+              untrustedContent: untrustedContentInTurn,
+              timeZone: input.timeZone,
+              generationId,
+              onApprovalRequest: requestApproval,
+              onAgentChange: (change) => {
+                sendActivity({
+                  kind: "tool",
+                  title: change.summary,
+                  agentChange: change,
+                });
+              },
+            })
+          : [];
+      const nativeTools = [taskTool, handoffTool, ...agentConfigTools].filter(
+        (tool): tool is NativeChatTool => tool !== null
+      );
 
       try {
         const modelStream = researchNotice

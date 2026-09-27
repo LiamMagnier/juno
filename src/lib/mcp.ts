@@ -200,6 +200,8 @@ export interface ToolExecution {
   durationMs?: number;
   /** Pixels to hand back with the text. Empty and absent mean the same thing. */
   images?: readonly ToolResultImage[];
+  /** Optional structured receipt for an agent configuration tool call. */
+  agentChange?: import("@/types/chat").ClientAgentChange;
 }
 
 export interface McpToolset {

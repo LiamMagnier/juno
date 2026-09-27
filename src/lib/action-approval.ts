@@ -126,6 +126,15 @@ const JunoRules: Readonly<Record<string, ActionRiskClass>> = {
   // "unknown", which asks under every policy, and the turn hung.
   "juno_runtime:read_document": "read_only",
   "juno_runtime:inspect_image": "read_only",
+  // Agent configuration changes that add recurring cost, a persistent computer,
+  // higher autonomy or new connected apps (src/lib/chat/agent-config-tools.ts).
+  "juno_agents:create_routine": "external_write",
+  "juno_agents:enable_computer": "external_write",
+  "juno_agents:raise_autonomy": "external_write",
+  "juno_agents:add_connectors": "external_write",
+  "juno_agents:create_agent": "external_write",
+  "juno_agents:update_agent": "external_write",
+  "juno_agents:agent_routine": "external_write",
 };
 
 const READ_VERBS = new Set([
@@ -422,6 +431,31 @@ export function actionPreview(input: {
     const to = `Hand off to ${teammate || "a teammate"}`;
     const handoff = title ? `${to}: ${title}.` : `${to}.`;
     return estimate ? `${handoff} Estimated cost ${estimate}.` : handoff;
+  }
+  if (input.connectorId === "juno_agents") {
+    const previewObj =
+      input.args.preview && typeof input.args.preview === "object" && !Array.isArray(input.args.preview)
+        ? (input.args.preview as Record<string, unknown>)
+        : null;
+    const headline =
+      previewObj && typeof previewObj.headline === "string" && previewObj.headline.trim()
+        ? previewObj.headline.trim().replace(/[.!?]+$/, "")
+        : "";
+    if (headline) return `${headline}.`;
+    if (input.toolName === "create_routine" || input.toolName === "agent_routine") {
+      const name = typeof input.args.name === "string" ? input.args.name.trim() : "a recurring routine";
+      return `Schedule ${name}.`;
+    }
+    if (input.toolName === "enable_computer") {
+      return "Enable a persistent cloud computer for this agent.";
+    }
+    if (input.toolName === "raise_autonomy") {
+      return "Raise this agent's autonomy setting.";
+    }
+    if (input.toolName === "add_connectors") {
+      return "Grant this agent access to additional connected apps.";
+    }
+    return "Update this agent's setup.";
   }
   const verb = input.toolName.replace(/[_-]+/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2");
   const suffix =

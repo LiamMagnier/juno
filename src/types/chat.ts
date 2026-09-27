@@ -232,6 +232,21 @@ export interface ClientMemoryReceipt {
   sourceMessageId?: string | null;
 }
 
+export interface ClientAgentChangeItem {
+  label: string;
+  from?: string;
+  to: string;
+}
+
+export interface ClientAgentChange {
+  agentId: string;
+  agentName: string;
+  eventId?: string;
+  summary: string;
+  changes: ClientAgentChangeItem[];
+  undone?: boolean;
+}
+
 export interface ClientActivityEvent {
   id: string;
   kind: ActivityKind;
@@ -258,6 +273,8 @@ export interface ClientActivityEvent {
     problems: Array<{ identifier: string; code: string; detail: string; repairable: boolean }>;
     repairs: Array<{ identifier: string; code: string; detail: string; repairable: boolean }>;
   };
+  /** Structured receipt for conversational agent setup or self-configuration edits. */
+  agentChange?: ClientAgentChange;
 }
 
 /** How an artifact version came to be. Null on rows older than the column. */

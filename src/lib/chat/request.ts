@@ -163,6 +163,9 @@ export const chatBodySchema = z
     // Which surface sent the request — tags the spend ledger so admin can split
     // website vs native-app spending. Defaults to "web".
     client: z.enum(["web", "app"]).optional(),
+    // IANA timezone from the browser or native client (e.g. "Europe/Paris"),
+    // used when an agent routine is created from chat without an explicit zone.
+    timeZone: z.string().trim().min(1).max(64).optional(),
     privateHistory: z
       .array(
         z.object({

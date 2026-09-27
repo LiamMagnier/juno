@@ -151,6 +151,56 @@ function isAgentHandoff(approval: Pick<ClientActionApproval, "connectorId" | "to
   return approval.connectorId === "juno_work" && approval.toolName === "hand_off_to_teammate";
 }
 
+function isAgentConfig(approval: Pick<ClientActionApproval, "connectorId">): boolean {
+  return approval.connectorId === "juno_agents";
+}
+
+interface AgentConfigPreview {
+  headline: string | null;
+  changes: Array<{ label: string; from?: string; to: string }>;
+}
+
+function readAgentConfigPreview(detail: Record<string, unknown>): AgentConfigPreview {
+  const raw = detail.preview;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { headline: null, changes: [] };
+  }
+  const obj = raw as Record<string, unknown>;
+  const headline = typeof obj.headline === "string" && obj.headline.trim() ? obj.headline.trim() : null;
+  const rawChanges = Array.isArray(obj.changes) ? obj.changes : [];
+  const changes = rawChanges.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const item = entry as Record<string, unknown>;
+    if (typeof item.label !== "string" || typeof item.to !== "string") return [];
+    return [
+      {
+        label: item.label,
+        ...(typeof item.from === "string" && item.from.trim() ? { from: item.from.trim() } : {}),
+        to: item.to,
+      },
+    ];
+  });
+  return { headline, changes };
+}
+
+const AGENT_CONFIG_STATUS_COPY: Record<ActionReceiptStatus, string> = {
+  pending: "Waiting for your answer.",
+  allowed: "Allowed. Updating agent setup.",
+  denied: "Denied. Nothing was changed.",
+  executing: "Updating agent setup.",
+  executed: "Updated.",
+  failed: "Could not update the agent setup.",
+  expired: "This expired before it was answered, so nothing was changed.",
+  superseded: "This was cancelled before it was answered, so nothing was changed.",
+  blocked: "Your permissions blocked this, so nothing was changed.",
+};
+
+const AGENT_CONFIG_DECISION_COPY: Record<ActionApprovalDecision, string> = {
+  allow_once: "Updating agent setup.",
+  allow_scope: "Updating agent setup.",
+  deny: "Denied. Nothing was changed.",
+};
+
 const HANDOFF_CARD_COPY = {
   description:
     "It becomes their task, in their own thread, with their apps and autonomy. They report back there, not in this chat, and you can stop it at any time.",
@@ -386,13 +436,27 @@ export function ApprovalCard({
   // A handoff to a teammate is a task too, with the teammate added.
   const handoff = isAgentHandoff(current);
   const task = handoff || isTaskHandoff(current);
+  const agentConfig = isAgentConfig(current);
+  const agentConfigPreview = agentConfig ? readAgentConfigPreview(current.detail) : null;
   const taskTitle = task ? detailText(current.detail, "title") : null;
   const taskEstimate = task ? detailText(current.detail, "estimate") : null;
   const taskBrief = task ? detailText(current.detail, "goal") : null;
   const teammate = handoff ? detailText(current.detail, "teammate") : null;
   const taskCopy = handoff ? HANDOFF_CARD_COPY : TASK_CARD_COPY;
-  const statusCopy = handoff ? HANDOFF_STATUS_COPY : task ? TASK_STATUS_COPY : STATUS_COPY;
-  const decisionCopy = handoff ? HANDOFF_DECISION_COPY : task ? TASK_DECISION_COPY : DECISION_COPY;
+  const statusCopy = handoff
+    ? HANDOFF_STATUS_COPY
+    : task
+      ? TASK_STATUS_COPY
+      : agentConfig
+        ? AGENT_CONFIG_STATUS_COPY
+        : STATUS_COPY;
+  const decisionCopy = handoff
+    ? HANDOFF_DECISION_COPY
+    : task
+      ? TASK_DECISION_COPY
+      : agentConfig
+        ? AGENT_CONFIG_DECISION_COPY
+        : DECISION_COPY;
 
   const decide = React.useCallback(
     async (decision: ActionApprovalDecision) => {
@@ -511,7 +575,7 @@ export function ApprovalCard({
       )}
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-        {handoff ? (
+        {handoff || agentConfig ? (
           <AppIcons.agents
             className={cn("size-4 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
             aria-hidden="true"
@@ -536,14 +600,15 @@ export function ApprovalCard({
               ? answerable
                 ? "Start a background task?"
                 : "Background task"
-              : answerable
-                ? "Juno needs your approval"
-                : "Approval request"}
+              : agentConfig
+                ? answerable
+                  ? "Allow this agent setup change?"
+                  : "Agent setup change"
+                : answerable
+                  ? "Juno needs your approval"
+                  : "Approval request"}
         </p>
-        {/* A task has no connector risk to rank: what it may do once running is
-            governed by its own approval mode, and the estimate below is what
-            this answer actually commits. */}
-        {!task && (
+        {!task && !agentConfig && (
           <span
             className={cn(
               "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-caption font-medium",
@@ -560,14 +625,6 @@ export function ApprovalCard({
         {answerable && remaining !== null && (
           <span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-micro text-muted-foreground">
             <Clock className="size-3" aria-hidden="true" />
-            {/* The numerals tick every second, so they are kept out of the
-                accessibility tree — announced once per second they would bury
-                everything else on the card. The same deadline is stated once,
-                as an absolute time, in the sentence below it. That sentence is
-                also why the whole block sits behind `remaining !== null`:
-                `toLocaleTimeString` renders in the server's locale and time
-                zone, so formatting it before the first client tick would
-                hydrate a different time than the one the reader ends up with. */}
             <span aria-hidden="true">Expires in {formatCountdown(remaining)}</span>
             <span className="sr-only">
               Answer this request before {new Date(current.expiresAt).toLocaleTimeString()}
@@ -577,12 +634,14 @@ export function ApprovalCard({
       </header>
 
       <p className={cn("mt-2 leading-relaxed text-foreground", answerable ? "text-body font-medium" : "text-ui")}>
-        {task && taskTitle ? taskTitle : current.preview}
+        {task && taskTitle
+          ? taskTitle
+          : agentConfig && agentConfigPreview?.headline
+            ? agentConfigPreview.headline
+            : current.preview}
       </p>
       {task ? (
         <>
-          {/* Who takes it leads the facts: on a handoff it is the one thing
-              that differs from the task this card would otherwise be. */}
           {teammate && (
             <p className="mt-1 text-label text-muted-foreground">
               To <span className="text-foreground">{teammate}</span>
@@ -594,19 +653,33 @@ export function ApprovalCard({
             </p>
           )}
         </>
+      ) : agentConfig && agentConfigPreview && agentConfigPreview.changes.length > 0 ? (
+        <dl className="mt-2.5 divide-y divide-border/50 rounded-field border border-border/50 bg-secondary px-3 py-2">
+          {agentConfigPreview.changes.map((item, idx) => (
+            <div key={`${item.label}-${idx}`} className="flex flex-wrap items-baseline justify-between gap-2 py-1.5 text-label">
+              <dt className="font-medium text-muted-foreground">{item.label}</dt>
+              <dd className="text-right text-foreground">
+                {item.from ? (
+                  <>
+                    <span className="text-muted-foreground">{item.from}</span>
+                    <span className="mx-1.5 text-muted-foreground" aria-hidden="true">
+                      →
+                    </span>
+                    <span className="font-medium text-foreground">{item.to}</span>
+                  </>
+                ) : (
+                  <span className="font-medium text-foreground">{item.to}</span>
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
       ) : (
         <p className="mt-1 font-mono text-micro text-muted-foreground">
           {current.connectorLabel} · {current.toolName}
         </p>
       )}
-      {/* 13px here, 12px on the secondary rank below. Those used to be 13 and
-          12.5 — the only fractional type size in the product, a half-pixel that
-          lands off the device grid and reads as a rendering artefact rather than
-          a rank. A 1px step is the smallest one anybody can actually see. */}
-      {/* A task's description is a promise about what starting it means, so it
-          is shown while the question is open and drops once it is answered;
-          the status line below says what became of it. */}
-      {(!task || answerable) && (
+      {(!task || answerable) && !agentConfig && (
         <p className="mt-2 text-ui leading-relaxed text-muted-foreground">
           {task ? taskCopy.description : risk.detail}
         </p>
@@ -627,82 +700,55 @@ export function ApprovalCard({
         </div>
       )}
 
-      {/* The point of the card. Collapsed by default so the sentence above stays
-          readable, but never summarised: these are the exact arguments the
-          digest was computed over, with credential-shaped keys already redacted
-          server-side. */}
-      <div className="mt-2.5 rounded-field border border-border/50 bg-secondary">
-        {/* A button that owns `aria-expanded`, not a <summary>: the same
-            disclosure to a keyboard (Enter and Space) and to a screen reader
-            ("collapsed" / "expanded"), but one whose content can fold. */}
-        <button
-          type="button"
-          onClick={() => setDetailOpen((v) => !v)}
-          aria-expanded={detailOpen}
-          aria-controls={detailOpen ? detailId : undefined}
-          className={cn(
-            // min-h-11 rather than padding: this is a real 44px target on touch,
-            // and it is the control that decides whether anyone actually reads
-            // the arguments before answering.
-            //
-            // No focus override — the global `:focus-visible` outline
-            // (globals.css) is authoritative, and a ring here would need
-            // outline-none first, which trades a working focus ring for a
-            // hand-rolled one.
-            "flex min-h-11 w-full items-center gap-1.5 rounded-field px-3 text-left text-label font-medium text-foreground",
-            // Full accent. This control sits on the `bg-secondary` shell, and
-            // accent at 40% over secondary is a 1.4-point step — the control
-            // that decides whether anyone reads the arguments had no hover.
-            "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
-          )}
-        >
-          <ChevronRight
-            // A turn with both ends on screen: the symmetric curve, on the
-            // disclosure rung every other caret in the transcript uses.
+      {!agentConfig && (
+        <div className="mt-2.5 rounded-field border border-border/50 bg-secondary">
+          <button
+            type="button"
+            onClick={() => setDetailOpen((v) => !v)}
+            aria-expanded={detailOpen}
+            aria-controls={detailOpen ? detailId : undefined}
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
-              detailOpen && "rotate-90"
+              "flex min-h-11 w-full items-center gap-1.5 rounded-field px-3 text-left text-label font-medium text-foreground",
+              "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
             )}
-            aria-hidden="true"
-          />
-          {handoff ? "What they will be told" : task ? "What the task will be told" : "Exactly what will be sent"}
-        </button>
-        {/* Folds on the grid rows with the caret instead of cutting in under
-            it. The hairline and padding are inside the clip, so they fold too;
-            nothing is mounted while closed. */}
-        <Collapse open={detailOpen}>
-          <div id={detailId} className="border-t border-border/50 px-3 py-2.5">
-            {/* The brief is prose the model wrote for the task, so it is read as
-                prose. It is the `goal` argument verbatim, which is what the
-                receipt bound; the title and estimate are shown above. */}
-            {task && taskBrief ? (
-              <p className="whitespace-pre-wrap break-words text-label leading-relaxed text-foreground">
-                {taskBrief}
-              </p>
-            ) : detailRows.length === 0 ? (
-              <p className="text-label leading-relaxed text-muted-foreground">
-                This call sends no arguments.
-              </p>
-            ) : (
-              <dl className="space-y-1.5">
-                {detailRows.map(([key, value]) => (
-                  <div key={key} className="flex flex-col gap-0.5 @[24rem]:flex-row @[24rem]:gap-2">
-                    <dt className="shrink-0 font-mono text-micro text-muted-foreground @[24rem]:w-28">{key}</dt>
-                    <dd className="min-w-0 whitespace-pre-wrap break-words font-mono text-micro leading-relaxed text-foreground">
-                      {formatDetailValue(value)}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-          </div>
-        </Collapse>
-      </div>
+          >
+            <ChevronRight
+              className={cn(
+                "size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                detailOpen && "rotate-90"
+              )}
+              aria-hidden="true"
+            />
+            {handoff ? "What they will be told" : task ? "What the task will be told" : "Exactly what will be sent"}
+          </button>
+          <Collapse open={detailOpen}>
+            <div id={detailId} className="border-t border-border/50 px-3 py-2.5">
+              {task && taskBrief ? (
+                <p className="whitespace-pre-wrap break-words text-label leading-relaxed text-foreground">
+                  {taskBrief}
+                </p>
+              ) : detailRows.length === 0 ? (
+                <p className="text-label leading-relaxed text-muted-foreground">
+                  This call sends no arguments.
+                </p>
+              ) : (
+                <dl className="space-y-1.5">
+                  {detailRows.map(([key, value]) => (
+                    <div key={key} className="flex flex-col gap-0.5 @[24rem]:flex-row @[24rem]:gap-2">
+                      <dt className="shrink-0 font-mono text-micro text-muted-foreground @[24rem]:w-28">{key}</dt>
+                      <dd className="min-w-0 whitespace-pre-wrap break-words font-mono text-micro leading-relaxed text-foreground">
+                        {formatDetailValue(value)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </div>
+          </Collapse>
+        </div>
+      )}
 
       {answerable && (
-        // Refuse first and at equal weight. A row that leads with a primary
-        // Allow has already answered for the reader, who is here precisely
-        // because they were meant to stop and think.
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button
             variant="destructive-outline"
@@ -710,15 +756,12 @@ export function ApprovalCard({
             onClick={() => decide("deny")}
             className="h-11 px-4"
           >
-            {handoff ? "Don’t hand off" : task ? "Don’t start" : "Don’t allow"}
+            {handoff ? "Don’t hand off" : task ? "Don’t start" : agentConfig ? "Deny" : "Don’t allow"}
           </Button>
           <Button disabled={sending} onClick={() => decide("allow_once")} className="h-11 px-4">
             {handoff ? "Hand off" : task ? "Start task" : "Allow once"}
           </Button>
-          {/* Offered only where the store will honour it. `canAllowScope` is
-              true for reversible writes alone, so a standing permission is never
-              offered for something that cannot be taken back. */}
-          {canAllowScope && (
+          {canAllowScope && !agentConfig && (
             <Button
               variant="outline"
               disabled={sending}

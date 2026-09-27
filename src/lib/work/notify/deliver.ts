@@ -64,6 +64,7 @@ import {
   type WorkNotifyMessage,
   type WorkNotifyUrgency,
 } from "@/lib/work/notifications";
+import { agentNotifyLevel } from "@/lib/agents/domain";
 import { workNotificationEmail } from "@/lib/work/notify/email";
 
 /**
@@ -234,9 +235,19 @@ async function deliver(
   const agent = run.session.agentId
     ? await prismaUnguarded.agent.findFirst({
         where: { id: run.session.agentId, userId: run.userId, deletedAt: null },
-        select: { id: true, name: true, avatar: true },
+        select: { id: true, name: true, avatar: true, notify: true },
       })
     : null;
+  if (
+    agent &&
+    agentNotifyLevel((agent as { notify?: string | null }).notify) === "needs_you" &&
+    (status === "completed" || status === "cancelled")
+  ) {
+    return {
+      delivered: false,
+      reason: "This agent only notifies when it needs your input or hits an error.",
+    };
+  }
 
   const mayQuote = mayIncludeRunDetail(run.inputSensitivity, run.outputSensitivity);
   const quoted = {

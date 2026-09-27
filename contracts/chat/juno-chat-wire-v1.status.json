@@ -64,6 +64,7 @@
     "request.workHandoff": "native",
     "request.privateMode": "native",
     "request.client": "native",
+    "request.timeZone": "native",
     "request.privateHistory": "native",
     "request.privateHistory[].role": "native",
     "request.privateHistory[].content": "native",
@@ -251,6 +252,10 @@
       "status": "planned",
       "note": "The artifact check's receipt (verified, repaired, refused) is not drawn on the Mac yet."
     },
+    "ClientActivityEvent.agentChange": {
+      "status": "web-only",
+      "note": "Structured receipt for conversational agent configuration edits; native refreshes the agent record on turn completion."
+    },
 
     "ClientToolDetail.server": "native",
     "ClientToolDetail.name": "native",
@@ -325,9 +330,6 @@
   "nativeOnly": {
     "request.clientFeatures": {
       "note": "The grammar the client renders (Tool calls & research rework, SPEC §2.2; web/tools-thinking-research, not on main). Today's server strips it: chatBodySchema is not strict."
-    },
-    "request.timeZone": {
-      "note": "The reader's IANA zone for current_time and research (the same rework); stripped by today's server."
     },
     "request.locale": {
       "note": "The reader's BCP-47 locale (the same rework); stripped by today's server."
