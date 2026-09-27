@@ -892,13 +892,32 @@ public final class NativeAgentsModel {
         }
     }
 
+    public func computerHeartbeat(agentID: String, mode: String, ended: Bool = false) async {
+        guard let accountID else { return }
+        do {
+            let updated = try await client.computerHeartbeat(
+                agentID: agentID,
+                mode: mode,
+                ended: ended,
+                for: accountID
+            )
+            guard self.accountID == accountID else { return }
+            if var detail = details[agentID] {
+                detail.computer = updated
+                details[agentID] = detail
+            }
+        } catch {
+            // Periodic keepalive; do not surface transient network errors
+        }
+    }
+
     public func computerHandBack(agentID: String) async {
         guard let accountID else { return }
         do {
             let updated = try await client.computerHeartbeat(
                 agentID: agentID,
-                watching: false,
-                releasingControl: true,
+                mode: "control",
+                ended: true,
                 for: accountID
             )
             guard self.accountID == accountID else { return }

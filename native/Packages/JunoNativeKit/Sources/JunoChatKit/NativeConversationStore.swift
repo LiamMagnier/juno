@@ -213,10 +213,10 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
     public var imageAttachments: [NativeChatAttachment] { attachments.filter(\.isImage) }
 
     private static let agentConfigTools: Set<String> = [
-        "update_agent", "agent_profile",
-        "manage_agent_goal", "agent_goals",
-        "manage_agent_routine", "agent_routines",
-        "manage_agent_note", "agent_notes",
+        "create_agent", "update_agent", "agent_profile",
+        "agent_goal", "manage_agent_goal", "agent_goals",
+        "agent_routine", "manage_agent_routine", "agent_routines",
+        "agent_memory", "manage_agent_note", "agent_notes",
         "manage_agent_computer", "agent_computer",
     ]
 

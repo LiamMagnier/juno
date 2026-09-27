@@ -213,7 +213,7 @@ export function ComputerViewer({
         className={
           fullBleed
             ? "relative flex-1 overflow-hidden bg-neutral-950"
-            : "relative aspect-[16/10] w-full overflow-hidden rounded-lg border border-neutral-200/80 bg-neutral-950 dark:border-neutral-800"
+            : "relative aspect-[16/10] w-full overflow-hidden rounded-card border border-border bg-neutral-950"
         }
       >
         <div ref={containerRef} className="h-full w-full" translate="no" />

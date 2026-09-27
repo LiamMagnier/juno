@@ -11,6 +11,13 @@ import type { NativeChatTool } from "@/lib/llm";
 import type { ClientActionApproval } from "@/lib/action-approval";
 import type { ClientAgentChange, ClientAgentChangeItem } from "@/types/chat";
 import {
+  AGENT_EYES,
+  AGENT_MARKS,
+  AGENT_SHAPES,
+  AGENT_TONES,
+} from "@/lib/agents/avatar";
+import { AGENT_TEMPLATES } from "@/lib/agents/templates";
+import {
   AGENT_GOAL_CADENCES,
   AGENT_GOAL_STATUSES,
   AGENT_NOTIFY_LEVELS,
@@ -33,6 +40,8 @@ import {
 } from "@/lib/work/domain";
 import type { McpFunctionTool, ToolExecution } from "@/lib/mcp";
 type ToolDefinition = McpFunctionTool;
+
+const AGENT_TEMPLATE_IDS = AGENT_TEMPLATES.map((t) => t.id);
 
 const AGENT_NOTIFY_LABEL: Record<AgentNotifyLevel, string> = {
   needs_you: "Only when it needs you",
@@ -116,18 +125,37 @@ export const CREATE_AGENT_TOOL: ToolDefinition = {
   function: {
     name: CREATE_AGENT_TOOL_NAME,
     description:
-      "Create a new persistent agent for the user when they describe someone they want to hire or set up (for example: 'hire an agent to watch our competitors every Monday'). Creates the agent, its thread, and optional first goal or routine.",
+      "Create a new persistent agent for the user when they describe someone they want to hire or set up (for example: 'hire an agent to watch our competitors every Monday'). Creates the agent, its thread, and optional first goal.",
     parameters: {
       type: "object",
       properties: {
         name: { type: "string", description: "Short given name for the agent (e.g. 'Scout', 'Ledger')." },
         role: { type: "string", description: "One-line job description (e.g. 'Competitor & pricing watch')." },
+        template: { type: "string", enum: AGENT_TEMPLATE_IDS, description: "Optional starter template ID." },
         style: { type: "string", enum: [...AGENT_STYLES], description: "How the agent writes." },
         instructions: { type: "string", description: "Durable brief and standing instructions for the agent." },
+        faceShape: { type: "string", enum: [...AGENT_SHAPES], description: "Avatar face shape." },
+        faceTone: { type: "string", enum: [...AGENT_TONES], description: "Avatar colour tone." },
+        faceEyes: { type: "string", enum: [...AGENT_EYES], description: "Avatar eye style." },
+        faceMark: { type: "string", enum: [...AGENT_MARKS], description: "Avatar mark or accessory." },
+        autonomy: {
+          type: "string",
+          enum: [...WORK_PERMISSION_POLICIES],
+          description: "Autonomy mode: conservative (ask every time), balanced (ask before risky steps), or permissive.",
+        },
         approvalMode: {
           type: "string",
           enum: [...WORK_PERMISSION_POLICIES],
           description: "Autonomy mode: conservative (ask every time), balanced (ask before risky steps), or permissive.",
+        },
+        apps: {
+          type: "array",
+          items: { type: "string" },
+          description: "Connected app provider IDs this agent may use.",
+        },
+        computer: {
+          type: "boolean",
+          description: "Whether to give this agent its own persistent computer.",
         },
         notify: {
           type: "string",
@@ -135,21 +163,6 @@ export const CREATE_AGENT_TOOL: ToolDefinition = {
           description: "When to notify the user: needs_you, results, or all.",
         },
         firstGoal: { type: "string", description: "Optional first standing goal title." },
-        routine: {
-          type: "object",
-          description: "Optional recurring routine to schedule immediately.",
-          properties: {
-            name: { type: "string" },
-            instructions: { type: "string" },
-            cadence: { type: "string", enum: [...AGENT_ROUTINE_CADENCES] },
-            hour: { type: "number" },
-            minute: { type: "number" },
-            weekday: { type: "number" },
-            monthday: { type: "number" },
-            timezone: { type: "string" },
-          },
-          required: ["name", "instructions", "cadence"],
-        },
       },
       required: ["name", "role"],
     },
@@ -161,14 +174,25 @@ export const UPDATE_AGENT_TOOL: ToolDefinition = {
   function: {
     name: UPDATE_AGENT_TOOL_NAME,
     description:
-      "Update your own profile, brief, tone, autonomy, notification level, status (active or paused), connected apps, or personal computer when the user asks you to change how you work.",
+      "Update an agent's profile, brief, face, tone, autonomy, notification level, status (active or paused), connected apps, or personal computer when the user asks to change how it works.",
     parameters: {
       type: "object",
       properties: {
+        agent: { type: "string", description: "Name of the agent to update (omit when already in the agent's own thread)." },
         name: { type: "string", description: "New name for this agent." },
         role: { type: "string", description: "New one-line role description." },
         style: { type: "string", enum: [...AGENT_STYLES], description: "Writing tone: warm, direct, playful, or formal." },
         instructions: { type: "string", description: "Updated durable brief and rules." },
+        addToInstructions: { type: "string", description: "Append one line or rule to the agent's existing instructions." },
+        faceShape: { type: "string", enum: [...AGENT_SHAPES], description: "Avatar face shape." },
+        faceTone: { type: "string", enum: [...AGENT_TONES], description: "Avatar colour tone." },
+        faceEyes: { type: "string", enum: [...AGENT_EYES], description: "Avatar eye style." },
+        faceMark: { type: "string", enum: [...AGENT_MARKS], description: "Avatar mark or accessory." },
+        autonomy: {
+          type: "string",
+          enum: [...WORK_PERMISSION_POLICIES],
+          description: "Autonomy setting: conservative, balanced, or permissive.",
+        },
         approvalMode: {
           type: "string",
           enum: [...WORK_PERMISSION_POLICIES],
@@ -180,6 +204,7 @@ export const UPDATE_AGENT_TOOL: ToolDefinition = {
           description: "Notification preference: needs_you (only when blocked), results (completed tasks), or all (including ideas).",
         },
         proactive: { type: "boolean", description: "Whether to suggest ideas during daily reflection." },
+        pinned: { type: "boolean", description: "Whether to pin this agent to the top of the roster." },
         status: { type: "string", enum: [...AGENT_STATUSES], description: "Set to paused to sleep, or active to resume." },
         model: { type: "string", description: "Preferred model ID, or null for account default." },
         reasoningEffort: { type: "string", description: "Reasoning effort (low, medium, high, max)." },
@@ -188,12 +213,20 @@ export const UPDATE_AGENT_TOOL: ToolDefinition = {
           items: { type: "string" },
           description: "Connected app provider IDs this agent may use.",
         },
+        addApps: {
+          type: "array",
+          items: { type: "string" },
+          description: "App provider IDs to add to this agent.",
+        },
+        removeApps: {
+          type: "array",
+          items: { type: "string" },
+          description: "App provider IDs to remove from this agent.",
+        },
         computer: {
-          type: "object",
-          properties: {
-            enabled: { type: "boolean", description: "Enable or disable this agent's persistent cloud computer." },
-          },
-          required: ["enabled"],
+          type: "string",
+          enum: ["on", "off", "reset"],
+          description: "Turn this agent's persistent cloud computer on, off, or reset it.",
         },
       },
     },
@@ -204,13 +237,13 @@ export const AGENT_GOAL_TOOL: ToolDefinition = {
   type: "function",
   function: {
     name: AGENT_GOAL_TOOL_NAME,
-    description: "Add, update, pause, achieve, or drop a standing goal for this agent.",
+    description: "Add, update, pause, resume, achieve, or drop a standing goal for this agent.",
     parameters: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["add", "update", "achieve", "pause", "drop"],
+          enum: ["add", "update", "achieve", "pause", "resume", "drop"],
           description: "What to do with the goal.",
         },
         goalId: { type: "string", description: "ID of the existing goal (optional if title matches an existing goal)." },
@@ -229,17 +262,18 @@ export const AGENT_ROUTINE_TOOL: ToolDefinition = {
   function: {
     name: AGENT_ROUTINE_TOOL_NAME,
     description:
-      "Add, pause, or resume a recurring scheduled routine for this agent (for example, every Monday at 08:00 or every weekday at 09:00).",
+      "Create, pause, resume, or delete a recurring scheduled routine for this agent (for example, every Monday at 08:00 or every weekday at 09:00).",
     parameters: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["add", "pause", "resume"],
-          description: "Whether to add a new routine, pause an existing one, or resume a paused one.",
+          enum: ["create", "add", "pause", "resume", "delete"],
+          description: "Whether to create a new routine, pause an existing one, resume a paused one, or delete one.",
         },
-        scheduleId: { type: "string", description: "Routine schedule ID when pausing or resuming." },
-        name: { type: "string", description: "Routine name (used to add, or to match an existing routine by name)." },
+        routineId: { type: "string", description: "Routine ID when pausing, resuming, or deleting." },
+        scheduleId: { type: "string", description: "Routine schedule ID when pausing, resuming, or deleting." },
+        name: { type: "string", description: "Routine name (used to create, or to match an existing routine by name)." },
         instructions: { type: "string", description: "What the routine should do each time it runs." },
         cadence: { type: "string", enum: [...AGENT_ROUTINE_CADENCES], description: "Schedule cadence." },
         hour: { type: "number", description: "Hour of day (0-23) in the user's timezone." },
@@ -258,16 +292,17 @@ export const AGENT_MEMORY_TOOL: ToolDefinition = {
   function: {
     name: AGENT_MEMORY_TOOL_NAME,
     description:
-      "Remember a durable fact or rule in this agent's memory notes, or forget an outdated note.",
+      "Remember a durable fact or rule in this agent's memory notes, forget an outdated note, or list existing notes.",
     parameters: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["remember", "forget"],
-          description: "Use 'remember' to store a note (max 500 chars) or 'forget' to remove a note.",
+          enum: ["remember", "forget", "list"],
+          description: "Use 'remember' to store a note, 'forget' to remove a note, or 'list' to read notes.",
         },
-        content: { type: "string", description: "The note text to remember (max 500 chars), or text to match when forgetting." },
+        text: { type: "string", description: "The note text to remember (max 1000 chars), or text to match when forgetting." },
+        content: { type: "string", description: "The note text to remember (max 1000 chars), or text to match when forgetting." },
         noteId: { type: "string", description: "Optional note ID when forgetting a specific note." },
       },
       required: ["action"],
@@ -282,8 +317,22 @@ export const AGENT_MEMORY_TOOL: ToolDefinition = {
 export type AgentConfigApprovalRule =
   | "create_routine"
   | "enable_computer"
+  | "reset_computer"
+  | "disable_computer"
   | "raise_autonomy"
-  | "add_connectors";
+  | "add_connectors"
+  | "change_model";
+
+export function isStaleAgentApproval(
+  requestedUpdatedAt: Date | string | number | null | undefined,
+  currentUpdatedAt: Date | string | number | null | undefined
+): boolean {
+  if (requestedUpdatedAt == null || currentUpdatedAt == null) return false;
+  const reqMs = requestedUpdatedAt instanceof Date ? requestedUpdatedAt.getTime() : new Date(requestedUpdatedAt).getTime();
+  const curMs = currentUpdatedAt instanceof Date ? currentUpdatedAt.getTime() : new Date(currentUpdatedAt).getTime();
+  if (Number.isNaN(reqMs) || Number.isNaN(curMs)) return false;
+  return reqMs !== curMs;
+}
 
 export interface AgentSnapshotForConfig {
   id: string;
@@ -366,7 +415,8 @@ export function classifyAgentConfigApproval(
         ],
       };
     }
-    if (rawArgs.approvalMode === "permissive") {
+    const requestedAutonomy = rawArgs.approvalMode ?? rawArgs.autonomy;
+    if (requestedAutonomy === "permissive") {
       return {
         requiresApproval: true,
         ruleName: "raise_autonomy",
@@ -380,12 +430,28 @@ export function classifyAgentConfigApproval(
         ],
       };
     }
+    if (rawArgs.computer === true || (rawArgs.computer && typeof rawArgs.computer === "object" && (rawArgs.computer as Record<string, unknown>).enabled === true)) {
+      return {
+        requiresApproval: true,
+        ruleName: "enable_computer",
+        headline: `${targetName} wants to enable its persistent computer`,
+        changes: [{ label: "Computer", from: "Off", to: "Enabled" }],
+      };
+    }
+    if (Array.isArray(rawArgs.apps) && rawArgs.apps.length > 0) {
+      return {
+        requiresApproval: true,
+        ruleName: "add_connectors",
+        headline: `${targetName} wants access to ${(rawArgs.apps as string[]).join(", ")}`,
+        changes: [{ label: "Connected apps", from: "None", to: (rawArgs.apps as string[]).join(", ") }],
+      };
+    }
     return { requiresApproval: false, ruleName: null, headline: `Hire ${targetName}`, changes: [] };
   }
 
   if (toolName === AGENT_ROUTINE_TOOL_NAME) {
     const action = typeof rawArgs.action === "string" ? rawArgs.action : "add";
-    if (action === "add") {
+    if (action === "add" || action === "create") {
       const cadence = typeof rawArgs.cadence === "string" ? rawArgs.cadence : "daily";
       const hour = typeof rawArgs.hour === "number" ? rawArgs.hour : 9;
       const minute = typeof rawArgs.minute === "number" ? rawArgs.minute : 0;
@@ -404,6 +470,21 @@ export function classifyAgentConfigApproval(
         ],
       };
     }
+    if (action === "resume" || action === "delete") {
+      const rName = typeof rawArgs.name === "string" && rawArgs.name.trim() ? rawArgs.name.trim() : "Routine";
+      return {
+        requiresApproval: true,
+        ruleName: "create_routine",
+        headline: `${targetName} wants to ${action} routine ${rName}`,
+        changes: [
+          {
+            label: "Routine",
+            from: action === "resume" ? "Paused" : rName,
+            to: action === "resume" ? "Active" : "Deleted",
+          },
+        ],
+      };
+    }
     return { requiresApproval: false, ruleName: null, headline: `Update routine`, changes: [] };
   }
 
@@ -412,12 +493,23 @@ export function classifyAgentConfigApproval(
       rawArgs.computer && typeof rawArgs.computer === "object" && !Array.isArray(rawArgs.computer)
         ? (rawArgs.computer as Record<string, unknown>)
         : null;
-    const enablingComputer = computerObj?.enabled === true && !agent.computerEnabled;
+    const computerMode =
+      typeof rawArgs.computer === "string"
+        ? rawArgs.computer
+        : computerObj?.enabled === true
+          ? "on"
+          : computerObj?.enabled === false
+            ? "off"
+            : null;
+    const enablingComputer = computerMode === "on" && !agent.computerEnabled;
+    const resettingComputer = computerMode === "reset";
+    const disablingComputer = computerMode === "off" && Boolean(agent.computerEnabled);
 
+    const rawAutonomy = typeof rawArgs.approvalMode === "string" ? rawArgs.approvalMode : rawArgs.autonomy;
     const nextMode =
-      typeof rawArgs.approvalMode === "string" &&
-      (WORK_PERMISSION_POLICIES as readonly string[]).includes(rawArgs.approvalMode)
-        ? (rawArgs.approvalMode as WorkPermissionPolicy)
+      typeof rawAutonomy === "string" &&
+      (WORK_PERMISSION_POLICIES as readonly string[]).includes(rawAutonomy)
+        ? (rawAutonomy as WorkPermissionPolicy)
         : null;
     const prevMode = normalizeAutonomy(agent.approvalMode);
     const raisingAutonomy = nextMode !== null && AUTONOMY_RANK[nextMode] > AUTONOMY_RANK[prevMode];
@@ -425,10 +517,16 @@ export function classifyAgentConfigApproval(
 
     const requestedConnectors = Array.isArray(rawArgs.connectorIds)
       ? rawArgs.connectorIds.filter((c): c is string => typeof c === "string")
-      : null;
+      : Array.isArray(rawArgs.addApps)
+        ? [...new Set([...agent.connectorIds, ...rawArgs.addApps.filter((c): c is string => typeof c === "string")])]
+        : null;
     const addedConnectors = requestedConnectors
       ? requestedConnectors.filter((c) => !agent.connectorIds.includes(c))
       : [];
+
+    const changingModel =
+      (typeof rawArgs.model === "string" && rawArgs.model !== (agent.model ?? "")) ||
+      (typeof rawArgs.reasoningEffort === "string" && rawArgs.reasoningEffort !== (agent.reasoningEffort ?? ""));
 
     const approvalChanges: ClientAgentChangeItem[] = [];
     let ruleName: AgentConfigApprovalRule | null = null;
@@ -438,6 +536,14 @@ export function classifyAgentConfigApproval(
       ruleName = "enable_computer";
       headline = `${targetName} wants to enable its persistent computer`;
       approvalChanges.push({ label: "Computer", from: "Off", to: "Enabled" });
+    } else if (resettingComputer) {
+      ruleName = "reset_computer";
+      headline = `${targetName} wants to reset its computer (sign-ins and files will be cleared)`;
+      approvalChanges.push({ label: "Computer", from: "Enabled", to: "Reset (clears sign-ins & files)" });
+    } else if (disablingComputer) {
+      ruleName = "disable_computer";
+      headline = `${targetName} wants to turn off its computer (sign-ins and files will be deleted)`;
+      approvalChanges.push({ label: "Computer", from: "Enabled", to: "Off (deletes sign-ins & files)" });
     }
     if (raisingAutonomy && nextMode) {
       ruleName = ruleName ?? "raise_autonomy";
@@ -464,6 +570,26 @@ export function classifyAgentConfigApproval(
         from: agent.connectorIds.length > 0 ? agent.connectorIds.join(", ") : "None",
         to: requestedConnectors!.join(", "),
       });
+    }
+    if (changingModel) {
+      ruleName = ruleName ?? "change_model";
+      if (approvalChanges.length === 0) {
+        headline = `${targetName} wants to change its model or reasoning effort`;
+      }
+      if (typeof rawArgs.model === "string" && rawArgs.model !== (agent.model ?? "")) {
+        approvalChanges.push({
+          label: "Model",
+          from: agent.model ?? "Default",
+          to: rawArgs.model || "Default",
+        });
+      }
+      if (typeof rawArgs.reasoningEffort === "string" && rawArgs.reasoningEffort !== (agent.reasoningEffort ?? "")) {
+        approvalChanges.push({
+          label: "Reasoning effort",
+          from: agent.reasoningEffort ?? "Default",
+          to: rawArgs.reasoningEffort || "Default",
+        });
+      }
     }
 
     if (ruleName) {
@@ -504,10 +630,16 @@ export function describeAgentPatchChanges(
       from: before.instructions.trim() ? `${before.instructions.trim().slice(0, 60)}${before.instructions.trim().length > 60 ? "…" : ""}` : "Empty",
       to: rawArgs.instructions.trim() ? `${rawArgs.instructions.trim().slice(0, 60)}${rawArgs.instructions.trim().length > 60 ? "…" : ""}` : "Empty",
     });
+  } else if (typeof rawArgs.addToInstructions === "string" && rawArgs.addToInstructions.trim()) {
+    changes.push({
+      label: "Instructions",
+      to: `+ ${rawArgs.addToInstructions.trim().slice(0, 60)}`,
+    });
   }
-  if (typeof rawArgs.approvalMode === "string" && rawArgs.approvalMode !== before.approvalMode) {
+  const rawAutonomy = typeof rawArgs.approvalMode === "string" ? rawArgs.approvalMode : rawArgs.autonomy;
+  if (typeof rawAutonomy === "string" && rawAutonomy !== before.approvalMode) {
     const prev = normalizeAutonomy(before.approvalMode);
-    const next = normalizeAutonomy(rawArgs.approvalMode);
+    const next = normalizeAutonomy(rawAutonomy);
     changes.push({ label: "Autonomy", from: WORK_APPROVAL_MODE_LABEL[prev], to: WORK_APPROVAL_MODE_LABEL[next] });
   }
   if (typeof rawArgs.notify === "string" && rawArgs.notify !== normalizeNotify(before.notify)) {
@@ -517,6 +649,9 @@ export function describeAgentPatchChanges(
   }
   if (typeof rawArgs.proactive === "boolean" && rawArgs.proactive !== before.proactive) {
     changes.push({ label: "Proactive ideas", from: before.proactive ? "On" : "Off", to: rawArgs.proactive ? "On" : "Off" });
+  }
+  if (typeof rawArgs.pinned === "boolean") {
+    changes.push({ label: "Pinned", to: rawArgs.pinned ? "Pinned" : "Unpinned" });
   }
   if (typeof rawArgs.status === "string" && rawArgs.status !== before.status) {
     changes.push({
@@ -546,12 +681,29 @@ export function describeAgentPatchChanges(
     rawArgs.computer && typeof rawArgs.computer === "object" && !Array.isArray(rawArgs.computer)
       ? (rawArgs.computer as Record<string, unknown>)
       : null;
-  if (computerObj && typeof computerObj.enabled === "boolean" && computerObj.enabled !== Boolean(before.computerEnabled)) {
+  const computerMode =
+    typeof rawArgs.computer === "string"
+      ? rawArgs.computer
+      : computerObj?.enabled === true
+        ? "on"
+        : computerObj?.enabled === false
+          ? "off"
+          : null;
+  if (computerMode === "reset") {
     changes.push({
       label: "Computer",
-      from: before.computerEnabled ? "Enabled" : "Off",
-      to: computerObj.enabled ? "Enabled" : "Off",
+      from: "Enabled",
+      to: "Reset",
     });
+  } else if (computerMode === "on" || computerMode === "off") {
+    const nextEnabled = computerMode === "on";
+    if (nextEnabled !== Boolean(before.computerEnabled)) {
+      changes.push({
+        label: "Computer",
+        from: before.computerEnabled ? "Enabled" : "Off",
+        to: nextEnabled ? "Enabled" : "Off",
+      });
+    }
   }
   return changes;
 }
@@ -681,6 +833,50 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
           }),
         };
       }
+    } else if (toolName === UPDATE_AGENT_TOOL_NAME) {
+      const requestedName = typeof rawArgs.agent === "string" ? rawArgs.agent.trim() : "";
+      if (!requestedName) {
+        return {
+          ok: false,
+          response: jsonExecution({
+            status: "refused",
+            reason: "invalid_arguments",
+            message: "Specify the agent name when updating an agent from outside its thread.",
+          }),
+        };
+      }
+      const roster = await prisma.agent.findMany({
+        where: { userId: ctx.user.id, status: { not: "retired" } },
+      });
+      const exact = roster.filter((a) => a.name === requestedName);
+      const matches =
+        exact.length > 0
+          ? exact
+          : roster.filter((a) => a.name.toLowerCase() === requestedName.toLowerCase());
+      if (matches.length === 0) {
+        return {
+          ok: false,
+          response: jsonExecution({
+            status: "refused",
+            reason: "not_found",
+            message: `Could not find an agent named "${requestedName}".`,
+          }),
+        };
+      }
+      if (matches.length > 1) {
+        return {
+          ok: false,
+          response: jsonExecution({
+            status: "refused",
+            reason: "ambiguous_agent",
+            message: `More than one agent is named "${requestedName}". Rename one first.`,
+          }),
+        };
+      }
+      freshAgent = matches[0]!;
+    }
+
+    if (freshAgent && toolName !== CREATE_AGENT_TOOL_NAME) {
       const isResumingSelf =
         toolName === UPDATE_AGENT_TOOL_NAME && rawArgs.status === "active";
       if (freshAgent.status !== "active" && !isResumingSelf) {
@@ -737,6 +933,7 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
     );
 
     if (classification.requiresApproval && classification.ruleName) {
+      const requestedUpdatedAt = freshAgent?.updatedAt;
       const seq = ++callIndex;
       const approval = await approvals.requestActionApproval({
         userId: ctx.user.id,
@@ -769,108 +966,132 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
           }),
         };
       }
+      if (freshAgent) {
+        const latestAgent = await agents.findAgent(ctx.user.id, freshAgent.id);
+        if (!latestAgent || isStaleAgentApproval(requestedUpdatedAt, latestAgent.updatedAt)) {
+          return {
+            ok: false,
+            response: jsonExecution({
+              status: "refused",
+              reason: "stale_approval",
+              message: `${freshAgent.name} changed since you were asked. Ask again.`,
+            }),
+          };
+        }
+        freshAgent = latestAgent;
+      }
     }
 
     return { ok: true, freshAgent };
   };
 
-  if (!ctx.agent) {
-    // Normal chat: offer `create_agent`
-    const createTool: NativeChatTool = {
-      tool: CREATE_AGENT_TOOL,
-      label: AGENT_CONFIG_TOOL_LABELS.create_agent,
-      access: "write",
-      execute: (rawArgs: Record<string, unknown>, signal?: AbortSignal) =>
-        serializeCall(async () => {
-          const check = await guardAndApprove(CREATE_AGENT_TOOL_NAME, rawArgs, signal);
-          if (!check.ok) return check.response;
+  const createTool: NativeChatTool = {
+    tool: CREATE_AGENT_TOOL,
+    label: AGENT_CONFIG_TOOL_LABELS.create_agent,
+    access: "write",
+    execute: (rawArgs: Record<string, unknown>, signal?: AbortSignal) =>
+      serializeCall(async () => {
+        const check = await guardAndApprove(CREATE_AGENT_TOOL_NAME, rawArgs, signal);
+        if (!check.ok) return check.response;
 
-          const parsed = createAgentSchema.safeParse({
-            name: rawArgs.name,
-            role: rawArgs.role,
-            style: rawArgs.style,
-            instructions: rawArgs.instructions,
-            approvalMode: rawArgs.approvalMode,
-            notify: rawArgs.notify,
-            firstGoal: rawArgs.firstGoal,
-            projectId: ctx.conversation.projectId ?? undefined,
+        const avatarArg: Record<string, unknown> = {};
+        if (typeof rawArgs.faceShape === "string") avatarArg.shape = rawArgs.faceShape;
+        if (typeof rawArgs.faceTone === "string") avatarArg.tone = rawArgs.faceTone;
+        if (typeof rawArgs.faceEyes === "string") avatarArg.eyes = rawArgs.faceEyes;
+        if (typeof rawArgs.faceMark === "string") avatarArg.mark = rawArgs.faceMark;
+
+        const parsed = createAgentSchema.safeParse({
+          name: rawArgs.name,
+          role: rawArgs.role,
+          template: rawArgs.template,
+          style: rawArgs.style,
+          instructions: rawArgs.instructions,
+          ...(Object.keys(avatarArg).length > 0 ? { avatar: avatarArg } : {}),
+          approvalMode: rawArgs.approvalMode ?? rawArgs.autonomy,
+          connectorIds: Array.isArray(rawArgs.apps) ? rawArgs.apps : rawArgs.connectorIds,
+          notify: rawArgs.notify,
+          firstGoal: rawArgs.firstGoal,
+          projectId: ctx.conversation.projectId ?? undefined,
+        });
+        if (!parsed.success) {
+          return jsonExecution({
+            status: "refused",
+            reason: "invalid_arguments",
+            message: parsed.error.issues[0]?.message ?? "Invalid agent configuration.",
           });
-          if (!parsed.success) {
-            return jsonExecution({
-              status: "refused",
-              reason: "invalid_arguments",
-              message: parsed.error.issues[0]?.message ?? "Invalid agent configuration.",
-            });
-          }
+        }
 
-          const agents = await import("@/lib/agents/store");
-          const created = await agents.createAgentForUser(ctx.user, parsed.data);
-          if (created.status !== 201 || !created.value) {
-            return jsonExecution({
-              status: "refused",
-              reason: String(created.body.error ?? "create_failed"),
-              message: String(created.body.message ?? "Could not create the agent."),
-            });
-          }
+        const agents = await import("@/lib/agents/store");
+        const created = await agents.createAgentForUser(ctx.user, parsed.data);
+        if (created.status !== 201 || !created.value) {
+          return jsonExecution({
+            status: "refused",
+            reason: String(created.body.error ?? "create_failed"),
+            message: String(created.body.message ?? "Could not create the agent."),
+          });
+        }
 
-          const changes: ClientAgentChangeItem[] = [
-            { label: "Name", to: created.value.name },
-            ...(created.value.role ? [{ label: "Role", to: created.value.role }] : []),
-          ];
+        const changes: ClientAgentChangeItem[] = [
+          { label: "Name", to: created.value.name },
+          ...(created.value.role ? [{ label: "Role", to: created.value.role }] : []),
+        ];
 
-          if (parsed.data.firstGoal) {
-            changes.push({ label: "Goal", to: parsed.data.firstGoal });
-          }
+        if (parsed.data.firstGoal) {
+          changes.push({ label: "Goal", to: parsed.data.firstGoal });
+        }
 
-          const routineRaw =
-            rawArgs.routine && typeof rawArgs.routine === "object" && !Array.isArray(rawArgs.routine)
-              ? (rawArgs.routine as Record<string, unknown>)
-              : null;
-          if (routineRaw) {
-            const freshRow = await agents.findAgent(ctx.user.id, created.value.id);
-            const routineInput = createRoutineSchema.safeParse({
-              ...routineRaw,
-              timezone:
-                typeof routineRaw.timezone === "string" && routineRaw.timezone.trim()
-                  ? routineRaw.timezone.trim()
-                  : ctx.timeZone || "UTC",
-            });
-            if (freshRow && routineInput.success) {
-              const routineRes = await agents.createAgentRoutine(ctx.user, freshRow, routineInput.data);
-              if (routineRes.status === 201 && routineRes.value) {
-                changes.push({
-                  label: "Routine",
-                  to: `${routineRes.value.name} (${routineRes.value.schedule})`,
-                });
-              }
+        if (rawArgs.computer === true || (rawArgs.computer && typeof rawArgs.computer === "object" && (rawArgs.computer as Record<string, unknown>).enabled === true)) {
+          const computer = await import("@/lib/computer/store");
+          await computer.enableComputer(ctx.user.id, created.value.id).catch(() => {});
+          changes.push({ label: "Computer", to: "Enabled" });
+        }
+
+        const routineRaw =
+          rawArgs.routine && typeof rawArgs.routine === "object" && !Array.isArray(rawArgs.routine)
+            ? (rawArgs.routine as Record<string, unknown>)
+            : null;
+        if (routineRaw) {
+          const freshRow = await agents.findAgent(ctx.user.id, created.value.id);
+          const routineInput = createRoutineSchema.safeParse({
+            ...routineRaw,
+            timezone:
+              typeof routineRaw.timezone === "string" && routineRaw.timezone.trim()
+                ? routineRaw.timezone.trim()
+                : ctx.timeZone || "UTC",
+          });
+          if (freshRow && routineInput.success) {
+            const routineRes = await agents.createAgentRoutine(ctx.user, freshRow, routineInput.data);
+            if (routineRes.status === 201 && routineRes.value) {
+              changes.push({
+                label: "Routine",
+                to: `${routineRes.value.name} (${routineRes.value.schedule})`,
+              });
             }
           }
+        }
 
-          const change: ClientAgentChange = {
+        const change: ClientAgentChange = {
+          agentId: created.value.id,
+          agentName: created.value.name,
+          summary: `Hired ${created.value.name}`,
+          changes,
+        };
+        ctx.onAgentChange?.(change);
+
+        return jsonExecution(
+          {
+            status: "created",
             agentId: created.value.id,
-            agentName: created.value.name,
-            summary: `Hired ${created.value.name}`,
-            changes,
-          };
-          ctx.onAgentChange?.(change);
+            name: created.value.name,
+            role: created.value.role,
+            conversationId: created.value.conversationId,
+            url: created.value.conversationId ? `/chat/${created.value.conversationId}` : `/agents/${created.value.id}`,
+          },
+          { agentChange: change }
+        );
+      }),
+  };
 
-          return jsonExecution(
-            {
-              status: "created",
-              agentId: created.value.id,
-              name: created.value.name,
-              role: created.value.role,
-              conversationId: created.value.conversationId,
-              url: created.value.conversationId ? `/chat/${created.value.conversationId}` : `/agents/${created.value.id}`,
-            },
-            { agentChange: change }
-          );
-        }),
-    };
-    return [createTool];
-  }
-
-  // Agent thread: offer `update_agent`, `agent_goal`, `agent_routine`, `agent_memory`
   const updateTool: NativeChatTool = {
     tool: UPDATE_AGENT_TOOL,
     label: AGENT_CONFIG_TOOL_LABELS.update_agent,
@@ -906,11 +1127,71 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
           computerEnabled: Boolean(compRow && compRow.status !== "disabled"),
         };
 
-        const computerPatch =
+        const computerObj =
           rawArgs.computer && typeof rawArgs.computer === "object" && !Array.isArray(rawArgs.computer)
             ? (rawArgs.computer as Record<string, unknown>)
             : null;
-        const { computer: _ignoredComputer, ...agentPatchFields } = rawArgs;
+        const computerMode =
+          typeof rawArgs.computer === "string"
+            ? rawArgs.computer
+            : computerObj?.enabled === true
+              ? "on"
+              : computerObj?.enabled === false
+                ? "off"
+                : null;
+
+        const {
+          computer: _ignoredComputer,
+          agent: _ignoredAgent,
+          autonomy,
+          addToInstructions,
+          faceShape,
+          faceTone,
+          faceEyes,
+          faceMark,
+          addApps,
+          removeApps,
+          ...restPatch
+        } = rawArgs;
+
+        const agentPatchFields: Record<string, unknown> = { ...restPatch };
+        if (agentPatchFields.approvalMode === undefined && typeof autonomy === "string") {
+          agentPatchFields.approvalMode = autonomy;
+        }
+        if (typeof addToInstructions === "string" && addToInstructions.trim()) {
+          const currentInstructions = freshAgent.instructions.trim();
+          agentPatchFields.instructions = currentInstructions
+            ? `${currentInstructions}\n${addToInstructions.trim()}`
+            : addToInstructions.trim();
+        }
+        if (
+          typeof faceShape === "string" ||
+          typeof faceTone === "string" ||
+          typeof faceEyes === "string" ||
+          typeof faceMark === "string"
+        ) {
+          const prevAvatar =
+            typeof freshAgent.avatar === "object" &&
+            freshAgent.avatar !== null &&
+            !Array.isArray(freshAgent.avatar)
+              ? (freshAgent.avatar as Record<string, unknown>)
+              : {};
+          agentPatchFields.avatar = {
+            shape: typeof faceShape === "string" ? faceShape : prevAvatar.shape,
+            tone: typeof faceTone === "string" ? faceTone : prevAvatar.tone,
+            eyes: typeof faceEyes === "string" ? faceEyes : prevAvatar.eyes,
+            mark: typeof faceMark === "string" ? faceMark : prevAvatar.mark,
+          };
+        }
+        if (agentPatchFields.connectorIds === undefined && (Array.isArray(addApps) || Array.isArray(removeApps))) {
+          const removeSet = new Set(
+            Array.isArray(removeApps) ? removeApps.filter((c): c is string => typeof c === "string") : []
+          );
+          const added = Array.isArray(addApps) ? addApps.filter((c): c is string => typeof c === "string") : [];
+          agentPatchFields.connectorIds = [
+            ...new Set([...freshAgent.connectorIds.filter((c) => !removeSet.has(c)), ...added]),
+          ];
+        }
 
         let eventId: string | undefined;
         let updatedName = freshAgent.name;
@@ -936,12 +1217,12 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
           updatedName = result.value.name;
         }
 
-        if (computerPatch && typeof computerPatch.enabled === "boolean") {
-          if (computerPatch.enabled) {
-            await computer.enableComputer(ctx.user.id, freshAgent.id);
-          } else {
-            await computer.disableComputer(ctx.user.id, freshAgent.id);
-          }
+        if (computerMode === "on") {
+          await computer.enableComputer(ctx.user.id, freshAgent.id);
+        } else if (computerMode === "off") {
+          await computer.disableComputer(ctx.user.id, freshAgent.id);
+        } else if (computerMode === "reset") {
+          await computer.resetComputer(ctx.user.id, freshAgent.id);
         }
 
         const changes = describeAgentPatchChanges(beforeSnapshot, rawArgs);
@@ -965,6 +1246,10 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
         );
       }),
   };
+
+  if (!ctx.agent) {
+    return [createTool, updateTool];
+  }
 
   const goalTool: NativeChatTool = {
     tool: AGENT_GOAL_TOOL,
@@ -1066,11 +1351,13 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
             ? "achieved"
             : action === "pause"
               ? "paused"
-              : action === "drop"
-                ? "dropped"
-                : typeof rawArgs.status === "string" && (AGENT_GOAL_STATUSES as readonly string[]).includes(rawArgs.status)
-                  ? rawArgs.status
-                  : undefined;
+              : action === "resume"
+                ? "active"
+                : action === "drop"
+                  ? "dropped"
+                  : typeof rawArgs.status === "string" && (AGENT_GOAL_STATUSES as readonly string[]).includes(rawArgs.status)
+                    ? rawArgs.status
+                    : undefined;
 
         const updated = await agents.updateAgentGoal(ctx.user, freshAgent, targetGoalId, {
           ...(title ? { title } : {}),
@@ -1124,7 +1411,7 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
         ]);
 
         const action = typeof rawArgs.action === "string" ? rawArgs.action : "add";
-        if (action === "add") {
+        if (action === "add" || action === "create") {
           const parsed = createRoutineSchema.safeParse({
             name: rawArgs.name,
             instructions: rawArgs.instructions,
@@ -1172,8 +1459,13 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
           );
         }
 
-        // Pause or resume existing routine
-        let scheduleId = typeof rawArgs.scheduleId === "string" ? rawArgs.scheduleId.trim() : "";
+        // Pause, resume, or delete existing routine
+        let scheduleId =
+          typeof rawArgs.routineId === "string" && rawArgs.routineId.trim()
+            ? rawArgs.routineId.trim()
+            : typeof rawArgs.scheduleId === "string"
+              ? rawArgs.scheduleId.trim()
+              : "";
         const name = typeof rawArgs.name === "string" ? rawArgs.name.trim() : "";
         if (!scheduleId && name) {
           const match = await prisma.workSchedule.findFirst({
@@ -1192,6 +1484,31 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
             reason: "not_found",
             message: "Could not find a matching routine.",
           });
+        }
+
+        if (action === "delete") {
+          const existingSchedule = await prisma.workSchedule.findFirst({
+            where: { id: scheduleId, userId: ctx.user.id },
+          });
+          if (!existingSchedule) {
+            return jsonExecution({
+              status: "refused",
+              reason: "not_found",
+              message: "Could not find a matching routine.",
+            });
+          }
+          await prisma.workSchedule.delete({ where: { id: scheduleId } });
+          const change: ClientAgentChange = {
+            agentId: freshAgent.id,
+            agentName: freshAgent.name,
+            summary: `Deleted routine ${existingSchedule.name}`,
+            changes: [{ label: `Routine (${existingSchedule.name})`, from: "Scheduled", to: "Deleted" }],
+          };
+          ctx.onAgentChange?.(change);
+          return jsonExecution(
+            { status: "deleted", routineId: scheduleId },
+            { agentChange: change }
+          );
         }
 
         const enabled = action === "resume";
@@ -1236,7 +1553,16 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
 
         const agents = await import("@/lib/agents/store");
         const action = typeof rawArgs.action === "string" ? rawArgs.action : "remember";
-        const content = typeof rawArgs.content === "string" ? rawArgs.content.trim().slice(0, 500) : "";
+        const rawText = typeof rawArgs.text === "string" ? rawArgs.text : rawArgs.content;
+        const content = typeof rawText === "string" ? rawText.trim().slice(0, 500) : "";
+
+        if (action === "list") {
+          const notes = await agents.listAgentNotes(ctx.user, freshAgent);
+          return jsonExecution({
+            status: "listed",
+            notes: notes.map((n) => ({ id: n.id, content: n.content, createdAt: n.createdAt })),
+          });
+        }
 
         if (action === "remember") {
           if (!content) {
@@ -1307,5 +1633,5 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
       }),
   };
 
-  return [updateTool, goalTool, routineTool, memoryTool];
+  return [updateTool, goalTool, routineTool, memoryTool, createTool];
 }

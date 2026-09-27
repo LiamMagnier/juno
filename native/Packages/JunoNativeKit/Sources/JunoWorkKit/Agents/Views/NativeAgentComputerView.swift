@@ -24,6 +24,7 @@ struct NativeAgentComputerView: View {
 
     @State private var posterImage: Image?
     @State private var isWorking = false
+    @State private var confirmingEnable = false
     @State private var activeHandoff: HandoffSession?
     @State private var controlling = false
 
@@ -54,6 +55,8 @@ struct NativeAgentComputerView: View {
         }
         .sheet(item: $activeHandoff) { session in
             NativeAgentComputerHandoffSheet(
+                model: model,
+                agentID: agent.id,
                 agentName: agent.name,
                 session: session,
                 onHandBack: {
@@ -83,15 +86,47 @@ struct NativeAgentComputerView: View {
                 .junoSecondaryInk()
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button {
-                performAction("wake")
-            } label: {
-                Text("Give it a computer")
-                    .frame(minHeight: NativeAgentMetrics.target)
-                    .contentShape(.rect)
+            if confirmingEnable {
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    Text("Give \(agent.name) its own Linux desktop? It stays between tasks and rests when idle.")
+                        .font(.callout)
+                        .junoInk()
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: JunoSpace.snug) {
+                        Button {
+                            confirmingEnable = false
+                            performAction("enable")
+                        } label: {
+                            Text("Give it a computer")
+                                .frame(minHeight: NativeAgentMetrics.target)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.junoProminent)
+                        .disabled(isWorking)
+
+                        Button {
+                            confirmingEnable = false
+                        } label: {
+                            Text("Not now")
+                                .frame(minHeight: NativeAgentMetrics.target)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isWorking)
+                    }
+                }
+            } else {
+                Button {
+                    confirmingEnable = true
+                } label: {
+                    Text("Give it a computer")
+                        .frame(minHeight: NativeAgentMetrics.target)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.junoProminent)
+                .disabled(isWorking)
             }
-            .buttonStyle(.junoProminent)
-            .disabled(isWorking)
         }
     }
 
@@ -223,7 +258,7 @@ struct NativeAgentComputerView: View {
             return "Asleep. It wakes when \(agent.name) starts working."
         case "resting":
             return "Resting. Opens instantly."
-        case "waking":
+        case "starting", "waking":
             return "Waking up…"
         case "awake":
             if let summary = computer.usingNowSummary, !summary.isEmpty {
@@ -279,6 +314,8 @@ struct NativeAgentComputerView: View {
 // MARK: - Handoff Viewer Sheet
 
 private struct NativeAgentComputerHandoffSheet: View {
+    let model: NativeAgentsModel
+    let agentID: String
     let agentName: String
     let session: NativeAgentComputerView.HandoffSession
     let onHandBack: () -> Void
@@ -329,6 +366,12 @@ private struct NativeAgentComputerHandoffSheet: View {
 
             NativeAgentComputerHandoffWebView(url: session.url, isActive: scenePhase == .active)
                 .frame(minWidth: 640, minHeight: 420)
+        }
+        .task(id: session.id) {
+            while !Task.isCancelled {
+                await model.computerHeartbeat(agentID: agentID, mode: session.mode)
+                try? await Task.sleep(for: .seconds(20))
+            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background {

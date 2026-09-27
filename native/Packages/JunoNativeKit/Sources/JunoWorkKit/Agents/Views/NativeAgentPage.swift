@@ -925,9 +925,11 @@ struct NativeAgentNowTab: View {
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
                 HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                     NativeAgentHeading(title: "Its computer")
-                    Text(feed.isLive ? "Running" : "Last run")
-                        .junoCodeSmall()
-                        .junoSecondaryInk()
+                    if !feed.isLive {
+                        Text("Last run")
+                            .junoCodeSmall()
+                            .junoSecondaryInk()
+                    }
                 }
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(feed.lines) { line in

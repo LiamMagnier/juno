@@ -207,15 +207,15 @@ export function AgentPanelComputer({
           {staticPreview ? (
             <div
               translate="no"
-              className="relative aspect-[16/10] w-full overflow-hidden rounded-lg border border-border bg-neutral-950 text-neutral-100"
+              className="relative aspect-[16/10] w-full overflow-hidden rounded-card border border-border bg-neutral-950 text-neutral-100"
             >
               <div className="flex h-7 items-center justify-between border-b border-neutral-800 bg-neutral-900 px-3 font-mono text-caption text-neutral-400">
-                <span>chromium — {agent.name.toLowerCase()}-desktop (1280×800)</span>
+                <span>chromium · {agent.name.toLowerCase()}-desktop (1280×800)</span>
                 <span>{mode === "control" ? "CONTROL" : "WATCHING"}</span>
               </div>
               <div className="flex h-[calc(100%-1.75rem)] flex-col justify-between p-4">
                 <div className="rounded-sm border border-neutral-800 bg-neutral-900/80 p-3 font-mono text-caption text-neutral-300">
-                  {computer.usingNow?.summary ?? `https://dashboard.stripe.com/subscriptions — signed in as ${agent.name}`}
+                  {computer.usingNow?.summary ?? `https://dashboard.stripe.com/subscriptions · signed in as ${agent.name}`}
                 </div>
                 <div className="flex items-center justify-between text-caption text-neutral-400">
                   <span>/home/agent/work</span>
@@ -261,9 +261,9 @@ export function AgentPanelComputer({
             </div>
           )}
         </div>
-      ) : status === "starting" ? (
+      ) : status === "starting" || status === "waking" ? (
         <div className="space-y-2.5">
-          <div className="relative grid aspect-[16/10] w-full place-items-center overflow-hidden rounded-lg border border-border bg-neutral-950 text-neutral-300">
+          <div className="relative grid aspect-[16/10] w-full place-items-center overflow-hidden rounded-card border border-border bg-neutral-950 text-neutral-300">
             <div className="flex items-center gap-2 text-ui">
               <ThinkingOrb size={20} state="working" />
               <span>Waking up…</span>
@@ -276,7 +276,7 @@ export function AgentPanelComputer({
         </div>
       ) : status === "resting" || status === "sleeping" ? (
         <div className="space-y-2.5">
-          <div className="relative aspect-[16/10] w-full overflow-hidden rounded-lg border border-border bg-neutral-950">
+          <div className="relative aspect-[16/10] w-full overflow-hidden rounded-card border border-border bg-neutral-950">
             {computer.hasPoster && !staticPreview ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -298,7 +298,7 @@ export function AgentPanelComputer({
         </div>
       ) : status === "error" ? (
         <div className="space-y-2.5">
-          <div className="relative grid aspect-[16/10] w-full place-items-center overflow-hidden rounded-lg border border-destructive/40 bg-neutral-950 p-4 text-center">
+          <div className="relative grid aspect-[16/10] w-full place-items-center overflow-hidden rounded-card border border-destructive/40 bg-neutral-950 p-4 text-center">
             <div className="space-y-1">
               <p className="text-ui font-medium text-neutral-100">Couldn’t reach the computer.</p>
               {computer.error ? (
@@ -321,7 +321,7 @@ export function AgentPanelComputer({
       ) : (
         /* asleep */
         <div className="space-y-2.5">
-          <div className="relative aspect-[16/10] w-full overflow-hidden rounded-lg border border-border bg-neutral-950">
+          <div className="relative aspect-[16/10] w-full overflow-hidden rounded-card border border-border bg-neutral-950">
             {computer.hasPoster && !staticPreview ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img

@@ -130,11 +130,16 @@ const JunoRules: Readonly<Record<string, ActionRiskClass>> = {
   // higher autonomy or new connected apps (src/lib/chat/agent-config-tools.ts).
   "juno_agents:create_routine": "external_write",
   "juno_agents:enable_computer": "external_write",
+  "juno_agents:reset_computer": "external_write",
+  "juno_agents:disable_computer": "external_write",
   "juno_agents:raise_autonomy": "external_write",
   "juno_agents:add_connectors": "external_write",
+  "juno_agents:change_model": "external_write",
   "juno_agents:create_agent": "external_write",
   "juno_agents:update_agent": "external_write",
+  "juno_agents:agent_goal": "external_write",
   "juno_agents:agent_routine": "external_write",
+  "juno_agents:agent_memory": "external_write",
 };
 
 const READ_VERBS = new Set([

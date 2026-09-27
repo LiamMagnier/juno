@@ -749,7 +749,7 @@ public struct NativeAgentsClient: Sendable {
         mode: String,
         handoff: Bool = true,
         for accountID: AccountID
-    ) async throws -> (wsURL: String, handoffURL: String?) {
+    ) async throws -> (wsURL: String?, handoffURL: String?) {
         try validate(agentID)
         let response = try await send(
             .post,
@@ -761,15 +761,18 @@ public struct NativeAgentsClient: Sendable {
             for: accountID
         )
         guard let root = try object(response) else { throw WorkRemoteError.malformedResponse }
-        let wsURL = try string(root, "wsUrl")
-        let handoffURL = optionalString(root["handoffUrl"])
+        let handoffURL = optionalString(root["url"]) ?? optionalString(root["handoffUrl"])
+        let wsURL = optionalString(root["relayUrl"]) ?? optionalString(root["wsUrl"])
+        if handoff, handoffURL == nil {
+            throw WorkRemoteError.malformedResponse
+        }
         return (wsURL: wsURL, handoffURL: handoffURL)
     }
 
     public func computerHeartbeat(
         agentID: String,
-        watching: Bool,
-        releasingControl: Bool = false,
+        mode: String = "watch",
+        ended: Bool = false,
         for accountID: AccountID
     ) async throws -> NativeAgentCloudComputer? {
         try validate(agentID)
@@ -777,8 +780,8 @@ public struct NativeAgentsClient: Sendable {
             .post,
             "/api/agents/\(agentID)/computer/heartbeat",
             body: .object([
-                "watching": .bool(watching),
-                "releasingControl": .bool(releasingControl),
+                "mode": .string(mode),
+                "ended": .bool(ended),
             ]),
             for: accountID
         )

@@ -1620,17 +1620,20 @@ paths:
                 handoff: { type: boolean }
       responses:
         '200':
-          description: Short-lived relay token and optional one-time handoff URL.
+          description: Short-lived relay token or one-time handoff URL.
           content:
             application/json:
               schema:
                 type: object
-                required: [wsUrl, mode, expiresAt]
                 properties:
+                  url: { type: string }
+                  handoffUrl: { type: string }
                   wsUrl: { type: string }
+                  relayUrl: { type: string }
+                  token: { type: string }
+                  password: { type: string }
                   mode: { type: string, enum: [watch, control] }
                   expiresAt: { type: string, format: date-time }
-                  handoffUrl: { type: string }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
         '429': { $ref: '#/components/responses/GeneralRouteError' }
@@ -1647,10 +1650,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [watching]
               properties:
-                watching: { type: boolean }
-                releasingControl: { type: boolean }
+                mode: { type: string, enum: [watch, control] }
+                ended: { type: boolean }
       responses:
         '200':
           description: Updated computer status.

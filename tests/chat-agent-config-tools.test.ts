@@ -16,6 +16,7 @@ import {
   classifyAgentConfigApproval,
   createAgentConfigTools,
   describeAgentPatchChanges,
+  isStaleAgentApproval,
   summarizeAgentConfigToolInput,
   type AgentSnapshotForConfig,
 } from "@/lib/chat/agent-config-tools";
@@ -85,7 +86,7 @@ test("tool definitions and gate cover normal chat and agent threads", () => {
   });
   assert.deepEqual(
     normalChatTools.map((t) => t.tool.function.name),
-    ["create_agent"]
+    ["create_agent", "update_agent"]
   );
 
   const agentThreadTools = createAgentConfigTools({
@@ -98,8 +99,23 @@ test("tool definitions and gate cover normal chat and agent threads", () => {
   });
   assert.deepEqual(
     agentThreadTools.map((t) => t.tool.function.name),
-    ["update_agent", "agent_goal", "agent_routine", "agent_memory"]
+    ["update_agent", "agent_goal", "agent_routine", "agent_memory", "create_agent"]
   );
+
+  // RULES.md §5: flat schemas only (no nested objects, no additionalProperties, every property has a description)
+  for (const def of [CREATE_AGENT_TOOL, UPDATE_AGENT_TOOL, AGENT_GOAL_TOOL, AGENT_ROUTINE_TOOL, AGENT_MEMORY_TOOL]) {
+    assert.ok(def.function.name.length <= 64);
+    const params = def.function.parameters as Record<string, unknown>;
+    assert.equal(params.additionalProperties, undefined, `${def.function.name} must not set additionalProperties`);
+    const props = (params.properties ?? {}) as Record<string, Record<string, unknown>>;
+    for (const [propName, propSchema] of Object.entries(props)) {
+      assert.notEqual(propSchema.type, "object", `${def.function.name}.${propName} must not be a nested object`);
+      assert.ok(
+        typeof propSchema.description === "string" && propSchema.description.length > 0,
+        `${def.function.name}.${propName} must have a description`
+      );
+    }
+  }
 });
 
 test("prompt injection defense: untrustedContentInTurn immediately refuses every config tool", async () => {
@@ -247,11 +263,26 @@ test("approval classification: cost and authority changes require approval; beni
   assert.equal(addConnectors.requiresApproval, true);
   assert.equal(addConnectors.ruleName, "add_connectors");
 
-  // All 4 juno_agents rules classify as external_write in action-approval.ts
-  for (const rule of ["create_routine", "enable_computer", "raise_autonomy", "add_connectors"]) {
-    const classified = classifyExternalAction({ connectorId: "juno_agents", toolName: rule });
+  // All juno_agents rules and all 5 tool names classify as external_write in action-approval.ts
+  for (const rule of [
+    "create_routine",
+    "enable_computer",
+    "reset_computer",
+    "disable_computer",
+    "raise_autonomy",
+    "add_connectors",
+    "change_model",
+    ...AGENT_CONFIG_TOOL_NAMES,
+  ]) {
+    const classified = classifyExternalAction({ connectorId: "juno_agents", toolName: rule, args: { role: "admin", key: "val" } });
     assert.equal(classified.riskClass, "external_write", rule);
   }
+
+  // Stale card detection binds approval to updatedAt
+  const t0 = new Date("2026-09-27T08:00:00.000Z");
+  const t1 = new Date("2026-09-27T08:00:05.000Z");
+  assert.equal(isStaleAgentApproval(t0, t0), false);
+  assert.equal(isStaleAgentApproval(t0, t1), true);
 });
 
 test("actionPreview and approval-card render structured juno_agents diffs with Deny first and Allow once", () => {
