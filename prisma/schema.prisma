@@ -90,6 +90,7 @@ model User {
   authoredAnnouncements       Announcement[]               @relation("AnnouncementAuthor")
   announcementDismissals      AnnouncementDismissal[]
   connections                 Connection[]
+  customConnectors            CustomConnector[]
   codeDevices                 CodeDevice[]
   codeTasks                   CodeTask[]
   codeRemoteSessions          CodeRemoteSession[]
@@ -198,6 +199,32 @@ model Connection {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, provider])
+  @@index([userId])
+}
+
+// A remote MCP server the user added by URL. Its OAuth tokens live in the
+// ordinary Connection row under provider `id` ("mcp:<slug>"), so the runtime,
+// the approval broker, the audit log and every connector picker treat it like
+// any built-in connector. Only OAuth servers (RFC 9728 / 8414 / 7591 + PKCE).
+model CustomConnector {
+  id             String    @id // "mcp:<10 chars>", also the Connection.provider
+  userId         String
+  name           String
+  url            String    @db.Text // canonical https MCP endpoint
+  description    String?   @db.Text // the server's initialize `instructions`, capped
+  serverName     String? // serverInfo.name, for display
+  // Tool names the user switched off; never offered to the model.
+  disabledTools  String[]  @default([])
+  // Last successful tools/list: [{ name, description, access }]. Display
+  // only; the runtime always lists live.
+  tools          Json?
+  toolsCheckedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, url])
   @@index([userId])
 }
 

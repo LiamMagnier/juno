@@ -23,6 +23,7 @@ import {
   AGENTS,
   ARTIFACTS,
   CONNECTORS,
+  CUSTOM_CONNECTORS,
   NOTIFICATIONS,
   PROJECTS,
   PROJECT_DETAIL,
@@ -51,6 +52,45 @@ function route(path: string, url: URL, method: string, state: PageState, page: P
     return json(state === "empty" ? emptyBody : body);
   };
   const shell = page === "projects" || page === "project" ? null : true;
+
+  // Custom MCP servers: the add dialog's check, and a server's own page. A
+  // pasted address containing "open" answers as a server with no sign-in,
+  // "nothing" as unreachable, so each refusal can be seen.
+  if (path === "/api/connectors/custom/probe") {
+    return new Promise<Response>((resolve) => {
+      void (async () => {
+        const body = JSON.parse(String(pendingBody.get(path) ?? "{}")) as { url?: string };
+        await new Promise((r) => setTimeout(r, 1100));
+        const raw = (body.url ?? "").trim();
+        const href = /^[a-z]+:\/\//i.test(raw) ? raw : `https://${raw}`;
+        const host = new URL(href).host;
+        if (raw.includes("open")) {
+          resolve(await json({ ok: false, reason: "no_auth", message: "That server doesn't ask you to sign in. For now Juno only adds servers that sign in with OAuth, so your account stays yours." }));
+        } else if (raw.includes("nothing")) {
+          resolve(await json({ ok: false, reason: "unreachable", message: "Juno couldn't reach an MCP server at that address. Check the URL and try again." }));
+        } else {
+          const label = host.replace(/^(mcp|api|www)\./, "").split(".")[0] ?? host;
+          resolve(await json({ ok: true, url: href, host, authHost: `auth.${host.replace(/^mcp\./, "")}`, suggestedName: label.charAt(0).toUpperCase() + label.slice(1), existing: null }));
+        }
+      })();
+    });
+  }
+  const custom = path.match(/^\/api\/connectors\/custom\/([^/]+)(\/tools)?$/);
+  if (custom) {
+    const id = decodeURIComponent(custom[1]);
+    const current = CUSTOM_CONNECTORS[id];
+    if (!current) return json({ error: "not_found" }, 404);
+    if (custom[2]) {
+      return new Promise<Response>((resolve) => setTimeout(() => resolve(json({ connector: current })), 700));
+    }
+    if (method === "PATCH") {
+      const patch = JSON.parse(String(pendingBody.get(path) ?? "{}")) as Partial<typeof current>;
+      Object.assign(current, patch);
+      return json({ connector: current });
+    }
+    if (method === "GET") return json({ connector: current });
+  }
+  if (path === "/api/settings") return json({ settings: { blockedConnectors: [] } });
 
   if (method !== "GET") return json({ ok: true });
 
@@ -106,6 +146,9 @@ function route(path: string, url: URL, method: string, state: PageState, page: P
   return null;
 }
 
+/** The last body sent to each route, for the few shimmed routes that read one. */
+const pendingBody = new Map<string, string>();
+
 function installFixtureFetch(state: PageState, page: PageName): () => void {
   const real = window.fetch;
   window.fetch = (input, init) => {
@@ -113,6 +156,7 @@ function installFixtureFetch(state: PageState, page: PageName): () => void {
     const url = new URL(raw, window.location.origin);
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     if (url.origin === window.location.origin && url.pathname.startsWith("/api/")) {
+      if (typeof init?.body === "string") pendingBody.set(url.pathname, init.body);
       const answer = route(url.pathname, url, method, state, page);
       if (answer) return answer;
       console.warn("[dev/pages] unanswered", method, url.pathname);

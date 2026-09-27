@@ -4,6 +4,7 @@
  * states without an account. Dates are relative to now so the "Updated 2h
  * ago" metadata reads the way a real account does on any day.
  */
+import type { CustomConnector } from "@/components/connections/custom-connector-api";
 import type { AppBootstrap } from "@/types/app";
 import type { ClientConversation } from "@/types/chat";
 import type { ClientAgent } from "@/lib/agents/types";
@@ -287,7 +288,56 @@ export const CONNECTORS: ConnectorStatus[] = [
   connector("apple-calendar", "credentials", "Apple Calendar", "Read and add events with an app-specific password.", false),
   connector("apple-mail", "credentials", "Apple Mail", "Search and read mail over IMAP.", false),
   connector("apple-music", "credentials", "Apple Music", "Search the catalogue and your library.", false),
+  {
+    ...connector("mcp:acmetix01", "custom_mcp", "Acme Tickets", "Search and file tickets.", true, "mcp.acme.example"),
+    url: "https://mcp.acme.example/mcp",
+    toolCount: 5,
+  },
+  {
+    ...connector("mcp:weatherl02", "custom_mcp", "Weather Lab", "MCP server at weather.example", false, "weather.example"),
+    url: "https://weather.example/mcp",
+    toolCount: null,
+  },
 ];
+
+/** Custom MCP servers as `/api/connectors/custom/[id]` returns them. */
+export const CUSTOM_CONNECTORS: Record<string, CustomConnector> = {
+  "mcp:acmetix01": {
+    id: "mcp:acmetix01",
+    name: "Acme Tickets",
+    url: "https://mcp.acme.example/mcp",
+    host: "mcp.acme.example",
+    description: "Search, read and file tickets in Acme's tracker. Prefer search before creating a duplicate.",
+    serverName: "Acme Tickets",
+    connected: true,
+    connectedAt: ago(400),
+    disabledTools: ["delete_ticket"],
+    tools: [
+      { name: "search_tickets", title: "Search tickets", description: "Find tickets by text, assignee or label.", access: "read" },
+      { name: "get_ticket", title: "Read a ticket", description: "A ticket with its comments and history.", access: "read" },
+      { name: "list_projects", description: "Every project you can see.", access: "read" },
+      { name: "create_ticket", title: "File a ticket", description: "Create a ticket in a project.", access: "write" },
+      { name: "add_comment", title: "Comment", description: "Add a comment to a ticket.", access: "write" },
+      { name: "delete_ticket", title: "Delete a ticket", description: "Permanently deletes a ticket.", access: "write" },
+    ],
+    toolsCheckedAt: ago(30),
+    createdAt: ago(500),
+  },
+  "mcp:weatherl02": {
+    id: "mcp:weatherl02",
+    name: "Weather Lab",
+    url: "https://weather.example/mcp",
+    host: "weather.example",
+    description: null,
+    serverName: null,
+    connected: false,
+    connectedAt: null,
+    disabledTools: [],
+    tools: null,
+    toolsCheckedAt: null,
+    createdAt: ago(20),
+  },
+};
 
 function avatar(shape: string, tone: string, eyes: string, mark: string) {
   return { shape, tone, eyes, mark } as ClientAgent["avatar"];

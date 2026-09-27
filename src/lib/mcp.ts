@@ -14,6 +14,8 @@ import { recordToolInvocation, settleToolInvocation } from "@/lib/tool-audit";
 import { authorizeExternalAction, completeExternalAction } from "@/lib/action-approval-store";
 import type { ClientActionApproval } from "@/lib/action-approval";
 import type { Connection } from "@prisma/client";
+import { customAccessToken, isCustomConnectorId } from "@/lib/custom-connectors";
+import { safeMcpFetch } from "@/lib/mcp-safe-fetch";
 
 /*
  * Bridges linked connectors (see connectors.ts) to the model at generation time.
@@ -35,6 +37,11 @@ export interface ActiveConnector {
   label: string;
   mcpUrl: string;
   headers: Record<string, string>;
+  /**
+   * A server the user added by URL: every request goes through the SSRF-safe
+   * fetcher, and the tools they switched off are never offered.
+   */
+  custom?: { disabledTools: string[] };
 }
 
 // Refresh a few minutes before expiry so MCP tokens don't die mid-request.
@@ -86,8 +93,28 @@ export async function getActiveConnectors(userId: string, requestedIds?: string[
   if (!requestedIds || requestedIds.length === 0) return [];
   const ids = [...new Set(requestedIds)];
   const rows = await prisma.connection.findMany({ where: { userId, provider: { in: ids } } });
+  const customIds = rows.map((row) => row.provider).filter(isCustomConnectorId);
+  const customs = customIds.length
+    ? new Map(
+        (await prisma.customConnector.findMany({ where: { userId, id: { in: customIds } } })).map((c) => [c.id, c])
+      )
+    : new Map();
   const out: ActiveConnector[] = [];
   for (const row of rows) {
+    if (isCustomConnectorId(row.provider)) {
+      const connector = customs.get(row.provider);
+      if (!connector) continue;
+      const token = await customAccessToken(connector, row);
+      if (!token) continue;
+      out.push({
+        id: connector.id,
+        label: connector.name,
+        mcpUrl: connector.url,
+        headers: { Authorization: `Bearer ${token}` },
+        custom: { disabledTools: connector.disabledTools },
+      });
+      continue;
+    }
     if (isComposioAppId(row.provider)) {
       const slug = composioSlugFromId(row.provider);
       if (!slug || row.scope !== "composio:active" || !isComposioConfigured()) continue;
@@ -348,12 +375,15 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
       try {
         const transport = new StreamableHTTPClientTransport(new URL(c.mcpUrl), {
           requestInit: { headers: c.headers },
+          ...(c.custom ? { fetch: safeMcpFetch } : {}),
         });
         const client = new Client({ name: "juno", version: "1.0.0" });
         await client.connect(transport);
         clients.set(c.id, client);
         const listed = await client.listTools();
+        const disabled = new Set(c.custom?.disabledTools ?? []);
         for (const t of listed.tools) {
+          if (disabled.has(t.name)) continue;
           const fnName = uniqueToolName(`${c.id}${SEP}${t.name}`, (n) => routing.has(n));
           // A server may send annotations, some of them, or none at all. Keep
           // only the two booleans we act on, and only when they really are

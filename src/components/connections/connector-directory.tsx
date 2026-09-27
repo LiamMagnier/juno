@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Link2, Link2Off, Loader2, Plug, Search } from "@/components/ui/icons";
+import { KeyRound, Link2, Link2Off, Loader2, Plug, Plus, Search, SlidersHorizontal } from "@/components/ui/icons";
+import { motion, useReducedMotion } from "framer-motion";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,8 @@ import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { cn } from "@/lib/utils";
-import { staggerDelay } from "@/lib/motion";
+import { staggerDelay, transition } from "@/lib/motion";
+import { monogram } from "@/components/connections/custom-connector-api";
 
 /**
  * ONE directory for every tool Juno can connect to.
@@ -34,6 +36,12 @@ import { staggerDelay } from "@/lib/motion";
  *
  * The grid is split by the one thing that matters to the reader: what is
  * already linked ("Connected") sits above what could be ("Available").
+ *
+ * A third source, CUSTOM: MCP servers the reader added by URL. They sit in the
+ * same two sections (a server is linked or it isn't), wear a monogram instead
+ * of a brand mark, and open a manage dialog for their tools. The Available
+ * grid always ends in an "Add an MCP server" tile, so the way to bring your
+ * own is where you are already looking for an app.
  */
 
 interface CatalogItem {
@@ -64,7 +72,7 @@ interface CatalogResponse {
 
 export interface DirectoryItem {
   key: string;
-  source: "native" | "composio";
+  source: "native" | "composio" | "custom";
   /** Connector id ("github") or composio app id ("composio:gmail"). */
   id: string;
   slug?: string;
@@ -81,6 +89,9 @@ export interface DirectoryItem {
    *  true — their auth is Juno's own. */
   managedAuth?: boolean;
   accountLabel?: string | null;
+  /** Custom only: the server's host, and how many of its tools Juno may use. */
+  host?: string;
+  toolCount?: number | null;
 }
 
 type Filter = "all" | "connected";
@@ -126,7 +137,11 @@ function appLabel(item: Pick<CatalogItem, "name" | "slug">): string {
 function AppLogo({ item }: { item: DirectoryItem }) {
   return (
     <span className="surface-inset flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-field text-muted-foreground">
-      {item.source === "native" ? (
+      {item.source === "custom" ? (
+        <span className="text-ui font-semibold text-foreground" aria-hidden="true">
+          {monogram(item.label)}
+        </span>
+      ) : item.source === "native" ? (
         <ConnectorMark id={item.id} className="size-5" />
       ) : item.logo ? (
         // A bitmap logo carries its own padding, so it sits one rung larger than
@@ -185,6 +200,8 @@ function ConnectorTile({
   onEnabledChange,
   onConnect,
   onDisconnect,
+  onManage,
+  landed,
   index,
 }: {
   item: DirectoryItem;
@@ -193,8 +210,13 @@ function ConnectorTile({
   onEnabledChange: (v: boolean) => void;
   onConnect: () => void;
   onDisconnect: () => void;
+  onManage?: () => void;
+  /** Just came back from signing in: flashed once. */
+  landed: boolean;
   index: number;
 }) {
+  const reduce = useReducedMotion() ?? false;
+  const custom = item.source === "custom";
   const unavailable = !item.configured;
   // Composio hosts no OAuth app for this toolkit (verified live: e.g. twitter),
   // so authorize() 400s with "Composio does not manage auth for toolkit …".
@@ -212,7 +234,15 @@ function ConnectorTile({
           ? "setup"
           : "available";
 
-  const description = item.connected
+  const description = custom
+    ? item.connected
+      ? item.toolCount != null
+        ? `${item.toolCount} ${item.toolCount === 1 ? "tool" : "tools"} · ${item.host}`
+        : item.host ?? ""
+      : item.connecting
+        ? "Finishing sign-in…"
+        : `Sign in to finish adding · ${item.host}`
+    : item.connected
     ? item.accountLabel && item.accountLabel !== item.label
       ? item.accountLabel
       : "Connected and ready"
@@ -233,11 +263,24 @@ function ConnectorTile({
         // No hover state: the tile is not itself a target (its switch and its
         // button are), and a card that shades or lifts under the pointer
         // promises a click that goes nowhere.
-        "group flex flex-col gap-3 p-3.5 motion-safe:animate-rise-in [animation-fill-mode:backwards]",
+        "group relative isolate flex scroll-mt-24 flex-col gap-3 p-3.5 motion-safe:animate-rise-in [animation-fill-mode:backwards]",
         unavailable && "text-muted-foreground"
       )}
       style={staggerDelay(index, "tight")}
+      id={tileAnchor(item.id)}
     >
+      {landed ? (
+        // Where the connection the reader just made went: the selected tone,
+        // held for a beat and let go once on the emphasis rung (the skills
+        // library's landing flash). Opacity only, under the tile's content.
+        <motion.span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 -z-10 rounded-inherit bg-selected"
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 0 }}
+          transition={{ ...transition.emphasis, delay: reduce ? 0.6 : 1.1 }}
+        />
+      ) : null}
       <div className="flex items-start gap-3">
         <AppLogo item={item} />
         {/* Name over account (or the one-line description), both at the
@@ -260,17 +303,33 @@ function ConnectorTile({
               <Switch checked={enabled} onCheckedChange={onEnabledChange} aria-label={`Use ${item.label} in chats`} />
               <span className="whitespace-nowrap text-caption text-muted-foreground">Use in chats</span>
             </label>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onDisconnect}
-              disabled={busy}
-              aria-haspopup="dialog"
-              className="danger-hover h-7 gap-1.5 px-2 text-caption text-muted-foreground"
-            >
-              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2Off className="size-3.5" />}
-              Disconnect
-            </Button>
+            {custom && onManage ? (
+              // A server's tools are chosen one by one, and signing out lives
+              // with them: one Manage door instead of a Disconnect that would
+              // leave the tool choices unreachable from here.
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onManage}
+                aria-haspopup="dialog"
+                className="h-7 gap-1.5 px-2 text-caption text-muted-foreground"
+              >
+                <SlidersHorizontal className="size-3.5" />
+                Manage
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onDisconnect}
+                disabled={busy}
+                aria-haspopup="dialog"
+                className="danger-hover h-7 gap-1.5 px-2 text-caption text-muted-foreground"
+              >
+                {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2Off className="size-3.5" />}
+                Disconnect
+              </Button>
+            )}
           </div>
         ) : needsSetup ? (
           <Tooltip>
@@ -291,6 +350,27 @@ function ConnectorTile({
               Composio dashboard, then connect it here.
             </TooltipContent>
           </Tooltip>
+        ) : custom ? (
+          <div className="flex w-full items-center justify-between gap-1.5">
+            {onManage ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onManage}
+                aria-haspopup="dialog"
+                className="h-7 gap-1.5 px-2 text-caption text-muted-foreground"
+              >
+                <SlidersHorizontal className="size-3.5" />
+                Manage
+              </Button>
+            ) : (
+              <span />
+            )}
+            <Button size="sm" variant="secondary" disabled={busy} onClick={onConnect} className="h-7 gap-1.5 px-2.5 text-caption">
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <KeyRound className="size-3.5" />}
+              Sign in
+            </Button>
+          </div>
         ) : (
           <Button size="sm" variant="secondary" disabled={busy || unavailable} onClick={onConnect} className="ml-auto h-7 gap-1.5 px-2.5 text-caption">
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
@@ -309,6 +389,8 @@ function TileGrid({
   onEnabledChange,
   onConnect,
   onDisconnect,
+  onManage,
+  landedId,
   trailing,
 }: {
   items: DirectoryItem[];
@@ -317,6 +399,8 @@ function TileGrid({
   onEnabledChange: (id: string, v: boolean) => void;
   onConnect: (item: DirectoryItem) => void;
   onDisconnect: (item: DirectoryItem) => void;
+  onManage?: (item: DirectoryItem) => void;
+  landedId: string | null;
   trailing?: React.ReactNode;
 }) {
   return (
@@ -331,6 +415,8 @@ function TileGrid({
           onEnabledChange={(v) => onEnabledChange(item.id, v)}
           onConnect={() => onConnect(item)}
           onDisconnect={() => onDisconnect(item)}
+          onManage={item.source === "custom" && onManage ? () => onManage(item) : undefined}
+          landed={landedId === item.id}
         />
       ))}
       {trailing}
@@ -347,6 +433,10 @@ export function ConnectorDirectory({
   onDisconnect,
   connectingId,
   canConfigureServer = true,
+  onManageCustom,
+  onAddCustom,
+  onConnectCustom,
+  landedId = null,
 }: {
   connectors: ConnectorStatus[];
   composioConfigured: boolean;
@@ -361,6 +451,12 @@ export function ConnectorDirectory({
   onConnectNative: (c: ConnectorStatus) => void;
   onDisconnect: (item: DirectoryItem) => void;
   connectingId: string | null;
+  /** Custom MCP servers: open one's tools, add a new one. */
+  onManageCustom?: (id: string) => void;
+  onAddCustom?: () => void;
+  onConnectCustom?: (id: string) => void;
+  /** A connector that just finished signing in, flashed once. */
+  landedId?: string | null;
 }) {
   const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<Filter>("all");
@@ -380,8 +476,8 @@ export function ConnectorDirectory({
       connectors
         .filter((c) => c.kind !== "composio_app")
         .map((c) => ({
-          key: `native:${c.id}`,
-          source: "native" as const,
+          key: `${c.kind === "custom_mcp" ? "custom" : "native"}:${c.id}`,
+          source: c.kind === "custom_mcp" ? ("custom" as const) : ("native" as const),
           id: c.id,
           label: c.label,
           description: c.description,
@@ -389,6 +485,7 @@ export function ConnectorDirectory({
           connecting: connectingId === c.id,
           configured: c.configured,
           accountLabel: c.accountLabel,
+          ...(c.kind === "custom_mcp" ? { host: c.accountLabel ?? undefined, toolCount: c.toolCount ?? null } : {}),
         })),
     [connectors, connectingId]
   );
@@ -500,6 +597,10 @@ export function ConnectorDirectory({
   const availableItems = React.useMemo(() => items.filter((i) => !i.connected), [items]);
 
   const connect = (item: DirectoryItem) => {
+    if (item.source === "custom") {
+      onConnectCustom?.(item.id);
+      return;
+    }
     if (item.source === "native") {
       const c = connectors.find((x) => x.id === item.id);
       if (c) onConnectNative(c);
@@ -518,7 +619,13 @@ export function ConnectorDirectory({
     onEnabledChange,
     onConnect: connect,
     onDisconnect,
+    onManage: onManageCustom ? (item: DirectoryItem) => onManageCustom(item.id) : undefined,
+    landedId,
   };
+
+  // Bring your own: always the last tile of Available, unfiltered or not,
+  // except while searching (it would read as a result).
+  const addTile = onAddCustom && !q ? <AddServerTile index={availableItems.length} onClick={onAddCustom} /> : null;
 
   const skeletons = loading
     ? Array.from({ length: 6 }, (_, i) => <ConnectorTileSkeleton key={`sk-${i}`} index={i} />)
@@ -619,11 +726,20 @@ export function ConnectorDirectory({
           </div>
         )}
 
-        {(availableItems.length > 0 || loading) && filter !== "connected" && (
+        {(availableItems.length > 0 || loading || addTile) && filter !== "connected" && (
           <div className={cn(connectedItems.length > 0 && "mt-8")}>
             <h2 className="text-heading">Available</h2>
             <p className="mb-4 text-ui text-muted-foreground">Connect an app to let Juno work inside it.</p>
-            <TileGrid items={availableItems} {...gridProps} trailing={skeletons} />
+            <TileGrid
+              items={availableItems}
+              {...gridProps}
+              trailing={
+                <>
+                  {skeletons}
+                  {addTile}
+                </>
+              }
+            />
           </div>
         )}
 
@@ -679,6 +795,44 @@ export function ConnectorDirectory({
         )}
       </div>
     </section>
+  );
+}
+
+export function tileAnchor(id: string): string {
+  return `connector-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+/**
+ * "Add an MCP server": a tile-sized door at the end of Available. Dashed at
+ * rest (a place for something, not a thing), and the one tile here that IS a
+ * target, so it alone answers the pointer: the hairline firms up, the well
+ * lifts a step, the plus turns a quarter. Pressing sinks it a touch.
+ */
+function AddServerTile({ index, onClick }: { index: number; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-haspopup="dialog"
+      style={staggerDelay(index, "tight")}
+      className={cn(
+        "group flex min-h-[7.5rem] flex-col items-start justify-between gap-3 rounded-card border border-dashed border-border p-3.5 text-left",
+        "transition-[border-color,background-color,transform] duration-fast ease-out-soft",
+        "hover:border-solid hover:border-foreground/25 hover:bg-accent/50 active:scale-[0.99]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+      )}
+    >
+      <span className="surface-inset flex size-10 items-center justify-center rounded-field text-muted-foreground transition-[transform,color] duration-base ease-out-soft group-hover:-translate-y-0.5 group-hover:text-foreground motion-reduce:group-hover:translate-y-0">
+        <Plus className="size-5 transition-transform duration-base ease-out-soft group-hover:rotate-90 motion-reduce:group-hover:rotate-0" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-ui font-medium leading-5 text-foreground">Add an MCP server</span>
+        <span className="block text-caption leading-4 text-muted-foreground">
+          Bring your own tools: any MCP server that signs in with OAuth.
+        </span>
+      </span>
+    </button>
   );
 }
 

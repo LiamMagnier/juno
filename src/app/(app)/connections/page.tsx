@@ -3,14 +3,17 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Link2Off, Loader2 } from "@/components/ui/icons";
+import { Link2Off, Loader2, Plus } from "@/components/ui/icons";
 import { LoadError } from "@/components/ui/load-error";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { type ConnectorStatus } from "@/components/connections/types";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
-import { ConnectorDirectory, type DirectoryItem } from "@/components/connections/connector-directory";
+import { ConnectorDirectory, tileAnchor, type DirectoryItem } from "@/components/connections/connector-directory";
+import { AddCustomConnectorDialog } from "@/components/connections/add-custom-connector-dialog";
+import { CustomConnectorDialog } from "@/components/connections/custom-connector-dialog";
+import { beginCustomConnectorSignIn } from "@/components/connections/custom-connector-api";
 import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { useApp } from "@/components/app/app-provider";
@@ -29,9 +32,8 @@ const ERRORS: Record<string, string> = {
   use_credentials: "That app connects with credentials, not OAuth — use its Connect button here.",
   invalid_credentials: "Apple didn’t accept those credentials. Check the Apple ID and app-specific password.",
   unknown: "Unknown connector.",
+  custom_unreachable: "Juno couldn’t start signing in to that server. Check it’s up and try again.",
 };
-
-const ENABLED_KEY = "juno:mcp:enabled";
 
 const CONNECTOR_BRAND_LABELS: Record<string, string> = {
   github: "GitHub",
@@ -62,7 +64,17 @@ export default function ConnectionsPage() {
   const [credentialsTarget, setCredentialsTarget] = React.useState<ConnectorStatus | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [connectingId, setConnectingId] = React.useState<string | null>(null);
-  const [enabled, setEnabled] = React.useState<Record<string, boolean>>({});
+  /**
+   * "Use in chats" is Settings' per-app block list, the one the approval
+   * broker enforces: switching an app off here refuses its tools in every
+   * chat, and Settings → Connectors shows the same switch. (It used to be a
+   * localStorage flag nothing read.)
+   */
+  const [blocked, setBlocked] = React.useState<string[]>([]);
+  const [addOpen, setAddOpen] = React.useState(false);
+  const [manageId, setManageId] = React.useState<string | null>(null);
+  const [landedId, setLandedId] = React.useState<string | null>(null);
+  const [justConnected, setJustConnected] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
     setError(false);
@@ -92,9 +104,9 @@ export default function ConnectionsPage() {
     const err = params.get("error");
     let settle: ReturnType<typeof setTimeout> | undefined;
     if (connected) {
-      const label = connectorResultLabel(connected);
-      toast.success(`${label} is connected and ready to use.`);
-      // Brief "Connecting" hold so the pill visibly settles into Active.
+      // The toast waits for the list: a custom server's id is not its name.
+      setJustConnected(connected);
+      // Brief "Connecting" hold so the tile visibly settles into Connected.
       setConnectingId(connected);
       settle = setTimeout(() => setConnectingId(null), 1400);
     }
@@ -103,20 +115,56 @@ export default function ConnectionsPage() {
     return () => clearTimeout(settle);
   }, [router]);
 
-  // "Expose to chats" toggles — client-side only, persisted per connector.
+  // Once the list is in: say what connected, by name, and show where it went.
   React.useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(ENABLED_KEY);
-      if (raw) setEnabled(JSON.parse(raw) as Record<string, boolean>);
-    } catch {}
+    if (!justConnected || !connectors) return;
+    const match = connectors.find((c) => c.id === justConnected);
+    const label = match?.label ?? connectorResultLabel(justConnected);
+    toast.success(`${label} is connected and ready to use.`);
+    setJustConnected(null);
+    setLandedId(justConnected);
+    requestAnimationFrame(() => {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      document.getElementById(tileAnchor(justConnected))?.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+    });
+    const clear = setTimeout(() => setLandedId(null), 2600);
+    return () => clearTimeout(clear);
+  }, [connectors, justConnected]);
+
+  React.useEffect(() => {
+    let live = true;
+    fetch("/api/settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { settings?: { blockedConnectors?: string[] } } | null) => {
+        if (live && data?.settings?.blockedConnectors) setBlocked(data.settings.blockedConnectors);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
   }, []);
 
-  const setEnabledFor = (id: string, value: boolean) => {
-    const next = { ...enabled, [id]: value };
-    setEnabled(next);
+  const enabled = React.useMemo(() => {
+    const map: Record<string, boolean> = {};
+    for (const c of connectors ?? []) map[c.id] = !blocked.includes(c.id);
+    return map;
+  }, [blocked, connectors]);
+
+  const setEnabledFor = async (id: string, value: boolean) => {
+    const before = blocked;
+    const next = value ? blocked.filter((b) => b !== id) : [...new Set([...blocked, id])];
+    setBlocked(next);
     try {
-      window.localStorage.setItem(ENABLED_KEY, JSON.stringify(next));
-    } catch {}
+      const r = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blockedConnectors: next }),
+      });
+      if (!r.ok) throw new Error();
+    } catch {
+      setBlocked(before);
+      toast.error("Couldn’t save that. Try again.");
+    }
   };
 
   const connect = (c: ConnectorStatus) => {
@@ -150,7 +198,7 @@ export default function ConnectionsPage() {
       const url =
         target.source === "composio"
           ? `/api/connectors/composio/${encodeURIComponent(target.slug!)}`
-          : `/api/connectors/${target.id}`;
+          : `/api/connectors/${encodeURIComponent(target.id)}`;
       const r = await fetch(url, { method: "DELETE" });
       if (!r.ok) throw new Error();
       setConnectors(
@@ -183,6 +231,12 @@ export default function ConnectionsPage() {
            app/(app)/library/page.tsx — same fix, same rule. */
         heading="Connections"
         lede="Link your repositories, designs and docs so Juno can work with them."
+        actions={
+          <Button variant="secondary" size="sm" onClick={() => setAddOpen(true)} className="gap-1.5" aria-haspopup="dialog">
+            <Plus className="size-4" />
+            Add MCP server
+          </Button>
+        }
       />
 
       {error ? (
@@ -215,13 +269,41 @@ export default function ConnectionsPage() {
           onConnectNative={connect}
           onDisconnect={setDisconnectTarget}
           connectingId={connectingId}
+          onAddCustom={() => setAddOpen(true)}
+          onManageCustom={setManageId}
+          onConnectCustom={(id) => {
+            setConnectingId(id);
+            beginCustomConnectorSignIn(id);
+          }}
+          landedId={landedId}
         />
       )}
 
       <p className="mt-8 text-caption text-muted-foreground">
-        Connected tools are available to the model when you enable them in a chat. Each provider shows the exact
-        permissions during its consent flow.
+        Connected tools are available to the model when you enable them in a chat, and Juno asks before any tool
+        that changes something. Each provider shows the exact permissions during its consent flow.
       </p>
+
+      <AddCustomConnectorDialog open={addOpen} onOpenChange={setAddOpen} />
+
+      <CustomConnectorDialog
+        connectorId={manageId}
+        onOpenChange={(open) => !open && setManageId(null)}
+        onChanged={load}
+        onDisconnect={(c) => {
+          setManageId(null);
+          setDisconnectTarget({
+            key: `custom:${c.id}`,
+            source: "custom",
+            id: c.id,
+            label: c.name,
+            description: c.host,
+            connected: true,
+            connecting: false,
+            configured: true,
+          });
+        }}
+      />
 
       <CredentialsDialog
         connector={credentialsTarget}
