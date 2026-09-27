@@ -11,11 +11,13 @@ import type { Agent, AgentEvent, AgentGoal, AgentIdea, AgentNote } from "@prisma
 import { normalizeAgentAvatar, type AgentAvatar } from "@/lib/agents/avatar";
 import {
   agentApprovalMode,
+  agentNotifyLevel,
   agentStyle,
   type AgentGoalCadence,
   type AgentGoalStatus,
   type AgentIdeaStatus,
   type AgentNoteSource,
+  type AgentNotifyLevel,
   type AgentState,
   type AgentStatus,
   type AgentStyle,
@@ -37,6 +39,11 @@ export interface ClientAgentRoutineGlance {
   nextRunAt: string;
 }
 
+export interface ClientAgentComputerGlance {
+  enabled: boolean;
+  status: string;
+}
+
 export interface ClientAgent {
   id: string;
   name: string;
@@ -52,6 +59,8 @@ export interface ClientAgent {
   conversationId: string | null;
   status: AgentStatus;
   proactive: boolean;
+  notify?: AgentNotifyLevel;
+  pinnedAt?: string | null;
   template: string | null;
   lastReflectedAt: string | null;
   sortOrder: number;
@@ -67,6 +76,8 @@ export interface ClientAgent {
   nextRoutine: ClientAgentRoutineGlance | null;
   /** Ideas it raised that nobody has started or dismissed. */
   newIdeas: number;
+  /** Present when agent computers are configured; null otherwise. */
+  computer?: ClientAgentComputerGlance | null;
 }
 
 export interface ClientAgentGoal {
@@ -129,6 +140,19 @@ export interface ClientAgentActivity {
   tone: "neutral" | "attention" | "success" | "danger";
 }
 
+export interface ClientAgentComputer {
+  enabled: boolean;
+  status: string;
+  streamOn: boolean;
+  lastActiveAt: string | null;
+  activeSeconds: number;
+  hasPoster: boolean;
+  usingNow: { summary: string } | null;
+  error: string | null;
+  diskMb?: number | null;
+  diskQuotaMb?: number;
+}
+
 export interface ClientAgentDetail {
   agent: ClientAgent;
   goals: ClientAgentGoal[];
@@ -136,6 +160,8 @@ export interface ClientAgentDetail {
   notes: ClientAgentNote[];
   routines: ClientAgentRoutine[];
   tasks: ClientAgentTask[];
+  computer?: ClientAgentComputer | null;
+  computerConfigured?: boolean;
 }
 
 const iso = (value: Date | null | undefined): string | null => (value ? value.toISOString() : null);
@@ -147,9 +173,11 @@ export interface AgentDerived {
   needsYou: number;
   nextRoutine: ClientAgentRoutineGlance | null;
   newIdeas: number;
+  computer?: ClientAgentComputerGlance | null;
 }
 
 export function serializeAgent(agent: Agent, derived: AgentDerived): ClientAgent {
+  const raw = agent as Agent & { notify?: string | null; pinnedAt?: Date | null };
   return {
     id: agent.id,
     name: agent.name,
@@ -165,12 +193,20 @@ export function serializeAgent(agent: Agent, derived: AgentDerived): ClientAgent
     conversationId: agent.conversationId,
     status: agent.status === "paused" ? "paused" : "active",
     proactive: agent.proactive,
+    notify: agentNotifyLevel(raw.notify),
+    pinnedAt: iso(raw.pinnedAt),
     template: agent.template,
     lastReflectedAt: iso(agent.lastReflectedAt),
     sortOrder: agent.sortOrder,
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),
-    ...derived,
+    state: derived.state,
+    stateSentence: derived.stateSentence,
+    task: derived.task,
+    needsYou: derived.needsYou,
+    nextRoutine: derived.nextRoutine,
+    newIdeas: derived.newIdeas,
+    computer: derived.computer ?? null,
   };
 }
 

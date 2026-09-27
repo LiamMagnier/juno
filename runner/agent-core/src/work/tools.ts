@@ -680,6 +680,8 @@ export interface BrowserToolDeps {
   allowedDomains?(): readonly string[] | null;
   onCitation?(citation: WorkCitation): void;
   now?(): Date;
+  /** Screen/page epoch incremented on mutating actions for stall signature discrimination. */
+  screenEpoch?(): number;
 }
 
 export type BrowserAction = 'open' | 'read' | 'click' | 'type' | 'submit';
@@ -803,6 +805,14 @@ export function browserTool(deps: BrowserToolDeps): WorkToolDefinition {
       trust: 'untrusted',
     }),
     isHealthy: () => deps.available(),
+    ...(deps.screenEpoch
+      ? {
+          signatureInput: (input: Record<string, unknown>) => ({
+            ...input,
+            screen: deps.screenEpoch?.(),
+          }),
+        }
+      : {}),
     spec: {
       name: 'browser',
       description:

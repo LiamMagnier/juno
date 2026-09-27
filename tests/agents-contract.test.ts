@@ -113,6 +113,10 @@ test("the native client names only routes the server has", () => {
     "/api/agents/{id}/activity",
     "/api/agents/{id}/reflect",
     "/api/agents/{id}/tasks",
+    "/api/agents/{id}/computer",
+    "/api/agents/{id}/computer/view",
+    "/api/agents/{id}/computer/heartbeat",
+    "/api/agents/{id}/computer/poster",
   ]);
   const used = [...client.matchAll(/"(\/api\/agents[^"]*)"/g)].map((match) =>
     match[1].replace(/\\\([^)]*\)/g, "{id}")

@@ -437,9 +437,9 @@ test("the chat route gates the tool and its prompt section on one flag", () => {
   assert.match(route, /const taskToolOn = chatTaskToolEnabled\(\{/);
   assert.match(route, /workHandoff: input\.workHandoff,/);
   assert.match(route, /taskHandoff: taskToolOn,/);
-  // The task tool and the handoff tool ride one list, each only when its own
-  // gate opened; an empty list is no native tools at all.
-  assert.match(route, /const nativeTools = \[taskTool, handoffTool\]\.filter\(/);
+  // The task tool, handoff tool and agent config tools ride one list, each only
+  // when its own gate opened; an empty list is no native tools at all.
+  assert.match(route, /const nativeTools = \[taskTool, handoffTool(?:, \.\.\.agentConfigTools)?\]\.filter\(/);
   assert.match(route, /nativeTools: nativeTools\.length > 0 \? nativeTools : undefined,/);
   assert.match(route, /send\(\{ type: "work", session \}\);/);
   // The private branch builds no task or handoff tool: it sits above the saved

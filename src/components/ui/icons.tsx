@@ -476,6 +476,7 @@ export const SidebarOpen = glyph(SidebarSimpleIcon, "sidebar-open");
 export const SidebarClose = glyph(SidebarSimpleIcon, "sidebar-close");
 export const PanelRightOpen = glyph(SidebarSimpleIcon, "panel-right-open", { mirrored: true });
 export const PanelRightClose = glyph(SidebarSimpleIcon, "panel-right-close", { mirrored: true });
+export const PanelRight = PanelRightOpen;
 
 // ---------------------------------------------------------------------------
 // Actions

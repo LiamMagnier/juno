@@ -202,6 +202,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["AgentIdea", "userId"],
   ["AgentNote", "userId"],
   ["AgentEvent", "userId"],
+  // An agent's persistent virtual desktop: encrypted containerRef and VNC/CDP
+  // secrets, lease state, and runtime usage. Cross-account sweeps (idle
+  // descanso/sleep and reboot reconciliation) use prismaUnguarded explicitly.
+  ["AgentComputer", "userId"],
 ]);
 
 /**

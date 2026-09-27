@@ -405,3 +405,74 @@ test("a reflection reads titles and statuses, never task content", () => {
   assert.match(message, /0\. Track the EU AI Act/);
   assert.match(message, /- Summarise drafts: completed \(today at 09:00\)/);
 });
+
+test("onboarding, selfConfig, recent work untrusted wrapping, and paused state in buildAgentPromptBlock", () => {
+  const onboardingBlock = buildAgentPromptBlock(
+    {
+      name: "Scout",
+      role: "Research",
+      style: "warm",
+      instructions: "Short brief.",
+      approvalMode: "balanced",
+      goals: [],
+      notes: [],
+      teammates: [],
+      taskHandoff: true,
+      selfConfig: true,
+      routinesCount: 0,
+      recentWork: [
+        {
+          title: "Invoice sweep",
+          status: "completed",
+          summary: "Found 3 unpaid invoices totaling €4,200.",
+        },
+      ],
+    },
+    "Liam"
+  );
+  assert.match(onboardingBlock, /This is a new hire with almost nothing set up yet/);
+  assert.match(onboardingBlock, /## Configuring yourself/);
+  assert.match(onboardingBlock, /<<<JUNO_UNTRUSTED_BEGIN>>> source=recent_work/);
+  assert.match(onboardingBlock, /<untrusted source="recent_work">/);
+  assert.match(onboardingBlock, /Invoice sweep \(completed\): Found 3 unpaid invoices/);
+
+  const voiceBlock = buildAgentPromptBlock(
+    {
+      name: "Scout",
+      role: "Research",
+      style: "warm",
+      instructions: "Short brief.",
+      approvalMode: "balanced",
+      goals: [],
+      notes: [],
+      teammates: [],
+      taskHandoff: false,
+      selfConfig: false,
+    },
+    "Liam"
+  );
+  assert.doesNotMatch(voiceBlock, /## Configuring yourself/);
+  assert.doesNotMatch(voiceBlock, /This is a new hire with almost nothing set up yet/);
+
+  const pausedBlock = buildAgentPromptBlock(
+    {
+      name: "Scout",
+      role: "Research",
+      style: "warm",
+      instructions: "Short brief.",
+      approvalMode: "balanced",
+      goals: [],
+      notes: [],
+      teammates: [{ name: "Atlas", role: "Inbox" }],
+      taskHandoff: true,
+      handoff: true,
+      selfConfig: true,
+      paused: true,
+    },
+    "Liam"
+  );
+  assert.match(pausedBlock, /You are currently paused/);
+  assert.doesNotMatch(pausedBlock, /start_task/);
+  assert.doesNotMatch(pausedBlock, /hand_off_to_teammate/);
+});
+

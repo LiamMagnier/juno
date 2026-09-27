@@ -481,6 +481,10 @@ export interface WorkToolDefinition extends ToolDefinition {
   provenanceFor(input: Record<string, unknown>): WorkProvenance;
   /** Absent means always healthy. Consulted per call, never cached. */
   isHealthy?(): boolean;
+  /**
+   * Optional input normalizer for `plan.observeToolCall` stall detection.
+   */
+  signatureInput?(input: Record<string, unknown>): unknown;
 }
 
 // ---------------------------------------------------------------------------

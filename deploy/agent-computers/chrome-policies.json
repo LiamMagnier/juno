@@ -1,0 +1,10 @@
+{
+  "PasswordManagerEnabled": false,
+  "AutofillCreditCardEnabled": false,
+  "AutofillAddressEnabled": false,
+  "DefaultBrowserSettingEnabled": false,
+  "MetricsReportingEnabled": false,
+  "BackgroundModeEnabled": false,
+  "PromptForDownloadLocation": false,
+  "DownloadDirectory": "/home/agent/work/downloads"
+}

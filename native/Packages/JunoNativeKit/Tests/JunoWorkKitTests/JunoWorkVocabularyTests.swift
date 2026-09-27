@@ -22,6 +22,9 @@ final class JunoWorkVocabularyTests: XCTestCase {
         "list_folder", "read_file", "search_files", "file_details",
         "apply_changes", "permanently_delete",
         "browser_control", "app_control", "screen_control",
+        "computer_screenshot", "computer_click", "computer_type",
+        "computer_key", "computer_scroll", "computer_shell", "computer_files",
+        "create_agent", "update_agent", "agent_goal", "agent_routine", "agent_memory",
     ]
 
     func testEveryRegisteredToolHasAPresentAndPastPhrase() {

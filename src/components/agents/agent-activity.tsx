@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { ArrowRight, Check, Hand, X } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,12 +13,18 @@ import { cn } from "@/lib/utils";
 import { fetchActivity } from "@/components/agents/agents-transport";
 import { formatAgo } from "@/components/agents/agent-bits";
 
-const TONE: Record<ClientAgentActivity["tone"], string> = {
-  neutral: "bg-muted-foreground/40",
-  attention: "bg-primary",
-  success: "bg-success",
-  danger: "bg-destructive",
-};
+function ActivityGlyph({ tone }: { tone: ClientAgentActivity["tone"] }) {
+  if (tone === "success") {
+    return <Check aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />;
+  }
+  if (tone === "danger") {
+    return <X aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-destructive" />;
+  }
+  if (tone === "attention") {
+    return <Hand aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-primary" />;
+  }
+  return <ArrowRight aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />;
+}
 
 /**
  * The lines about one run, which open it: a task at its current state, an
@@ -33,28 +40,34 @@ function opensRun(item: ClientAgentActivity): item is ClientAgentActivity & { se
 /**
  * Activity: one log for everything the agent did.
  *
- * Grok Bot shipped with its audit view "coming"; this is the view. Its own
- * events (hired, paused, goals, ideas, routines, what it learned, work it
- * handed to a teammate or took from one), one line per task at its current
- * state, and one per approval its tasks were given, newest first. A line about
- * a run opens the run where it lives — `/work/<id>` resolves to the
- * conversation that holds it — because the full record of a run is the run's
- * own log, not a copy of it here.
+ * Uses plain glyphs (check, cross, hand, arrow) in muted or attention colour —
+ * no coloured tone dots or pills (BRIEF.md §4.8.1).
  */
-export function AgentActivity({ agentId, refreshKey }: { agentId: string; refreshKey: number }) {
-  const [items, setItems] = React.useState<ClientAgentActivity[] | null>(null);
+export function AgentActivity({
+  agentId,
+  refreshKey,
+  limit = 80,
+  initialItems,
+}: {
+  agentId: string;
+  refreshKey: number;
+  limit?: number;
+  initialItems?: ClientAgentActivity[];
+}) {
+  const [items, setItems] = React.useState<ClientAgentActivity[] | null>(initialItems ?? null);
   const [error, setError] = React.useState<string | null>(null);
 
   const load = React.useCallback(() => {
-    void fetchActivity(agentId).then((outcome) => {
+    if (initialItems) return;
+    void fetchActivity(agentId, limit).then((outcome) => {
       if (outcome.kind === "ok") {
-        setItems(outcome.value);
+        setItems(outcome.value.slice(0, limit));
         setError(null);
       } else if (outcome.kind === "failed") {
         setError(outcome.message);
       }
     });
-  }, [agentId]);
+  }, [agentId, limit, initialItems]);
 
   React.useEffect(() => {
     load();
@@ -80,25 +93,28 @@ export function AgentActivity({ agentId, refreshKey }: { agentId: string; refres
       <div className="space-y-3" role="status" aria-label="Loading activity">
         {[0, 1, 2, 3].map((i) => (
           <div key={i} className="flex items-center gap-3">
-            <Skeleton className="size-2 rounded-full" />
+            <Skeleton className="size-3.5" />
             <Skeleton className="h-3.5 w-64 max-w-full" />
           </div>
         ))}
       </div>
     );
   }
-  if (items.length === 0) {
+  const visible = items.slice(0, limit);
+  if (visible.length === 0) {
     return <EmptyState size="panel" icon={AppIcons.agents} title="Nothing yet" description="What it does will be written here." />;
   }
 
   return (
     <ol className="relative space-y-0.5">
-      {items.map((item, index) => {
+      {visible.map((item, index) => {
         const body = (
           <>
-            <span aria-hidden="true" className={cn("mt-1.5 size-2 shrink-0 rounded-full", TONE[item.tone])} />
+            <ActivityGlyph tone={item.tone} />
             <span className="min-w-0 flex-1">
-              <span className="block text-ui text-foreground">{item.title}</span>
+              <span className={cn("block text-ui", item.tone === "attention" ? "font-medium text-foreground" : "text-foreground")}>
+                {item.title}
+              </span>
               {item.detail ? <span className="mt-0.5 block text-ui text-muted-foreground">{item.detail}</span> : null}
             </span>
             <time dateTime={item.at} className="shrink-0 font-mono text-caption text-muted-foreground">
@@ -115,12 +131,12 @@ export function AgentActivity({ agentId, refreshKey }: { agentId: string; refres
             {opensRun(item) ? (
               <Link
                 href={`/work/${item.sessionId}`}
-                className="flex items-start gap-3 rounded-control px-2 py-2 transition-colors duration-fast ease-out-soft hover:bg-accent"
+                className="flex items-start gap-2.5 rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent"
               >
                 {body}
               </Link>
             ) : (
-              <div className="flex items-start gap-3 px-2 py-2">{body}</div>
+              <div className="flex items-start gap-2.5 px-2 py-1.5">{body}</div>
             )}
           </li>
         );

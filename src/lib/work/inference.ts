@@ -210,7 +210,17 @@ const CAPABILITY_ORDER = new Map<WorkCapability, number>(
  * every rule, but the wire schema is the authority on what it will accept and
  * this function must not be able to produce something it would reject.
  */
-export function inferCapabilities(goal: string): CapabilityInference {
+export const AGENT_COMPUTER_CAPABILITIES: ReadonlySet<WorkCapability> = new Set<WorkCapability>([
+  "local_browser",
+  "local_files",
+  "local_shell",
+  "local_computer_use",
+]);
+
+export function inferCapabilities(
+  goal: string,
+  options?: { hasAgentComputer?: boolean }
+): CapabilityInference {
   const text = goal.trim();
   if (text.length === 0) return { capabilities: [], evidence: [] };
 
@@ -218,6 +228,9 @@ export function inferCapabilities(goal: string): CapabilityInference {
   const found = new Set<WorkCapability>();
 
   for (const rule of RULES) {
+    if (options?.hasAgentComputer && AGENT_COMPUTER_CAPABILITIES.has(rule.capability)) {
+      continue;
+    }
     if (found.has(rule.capability)) continue;
     for (const pattern of rule.patterns) {
       const match = pattern.exec(text);
@@ -236,60 +249,31 @@ export function inferCapabilities(goal: string): CapabilityInference {
 
 const LOCAL_ONLY = new Set<string>(LOCAL_ONLY_CAPABILITIES);
 
-/**
- * Chooses a target from *inferred* requirements, under one extra rule: a guess
- * is never allowed to refuse.
- *
- * `selectTarget` is right to return `target: null` when a task genuinely needs a
- * Mac and no Mac can take it — the alternative is a queued task nobody will
- * ever run. But that logic assumes the requirement came from the reader. Here it
- * came from the regexes above, and the consequences of the two are not
- * symmetrical: a wrong guess that refuses is a person staring at a disabled
- * button, told their note about "my downloads folder" needs a computer they were
- * never asked about. That is the exact failure the file's opening asymmetry
- * exists to prevent, and stopping at inference alone did not prevent it.
- *
- * So when the only thing standing between a reader and a running task is a
- * guess, the guess yields: the local requirements are dropped, the task runs on
- * what the cloud can serve, and the degradation says plainly which parts will
- * not happen. The reader keeps the button and the truth.
- *
- * This holds even when the local guess was the *only* thing read out of the
- * task, and that is the deliberate half. Refusing there assumes the reading was
- * right; running assumes it might have been wrong. The docstring at the top of
- * this file already committed to which of those to assume — "under-claiming
- * local work is recoverable: the run starts in the cloud, discovers it cannot
- * reach a file, and says so" — and a dead-ended button is not recoverable by
- * anything the reader can do, because the chip that used to let them override
- * the target is gone.
- *
- * The one thing that still refuses is a cloud that is not accepting work: there
- * is no reading to yield, and nowhere left to run.
- *
- * Explicit requirements do not come through here. `selectTarget` remains the
- * function for those, and it still refuses, because "run this on my Mac" is a
- * request rather than a reading.
- */
 export function selectForInferred(input: {
   requested: WorkTarget;
   inferred: readonly WorkCapability[];
   hosts: readonly HostCapabilityView[];
   cloudAvailable: boolean;
+  hasAgentComputer?: boolean;
 }): TargetSelection {
+  const effectiveInferred = input.hasAgentComputer
+    ? input.inferred.filter((capability) => !AGENT_COMPUTER_CAPABILITIES.has(capability))
+    : input.inferred;
+
   const first = selectTarget({
-    requested: input.requested,
-    required: input.inferred,
+    requested: input.hasAgentComputer && input.requested === "automatic" ? "cloud" : input.requested,
+    required: effectiveInferred,
     hosts: input.hosts,
     cloudAvailable: input.cloudAvailable,
   });
   if (first.target !== null) return first;
 
-  const guessedLocal = input.inferred.filter((capability) => LOCAL_ONLY.has(capability));
-  const rest = input.inferred.filter((capability) => !LOCAL_ONLY.has(capability));
+  const guessedLocal = effectiveInferred.filter((capability) => LOCAL_ONLY.has(capability));
+  const rest = effectiveInferred.filter((capability) => !LOCAL_ONLY.has(capability));
   if (guessedLocal.length === 0) return first;
 
   const without = selectTarget({
-    requested: input.requested,
+    requested: input.hasAgentComputer && input.requested === "automatic" ? "cloud" : input.requested,
     required: rest,
     hosts: input.hosts,
     cloudAvailable: input.cloudAvailable,

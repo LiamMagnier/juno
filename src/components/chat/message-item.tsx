@@ -58,6 +58,10 @@ const ApprovalCard = nextDynamic(
   () => import("@/components/chat/approval-card").then((m) => m.ApprovalCard),
   { ssr: false },
 );
+const AgentChangeCard = nextDynamic(
+  () => import("@/components/chat/agent-change-card").then((m) => m.AgentChangeCard),
+  { ssr: false },
+);
 import { SourcesPill } from "@/components/chat/sources-pill";
 import { isAuditableAnswer, useCitationAudit } from "@/components/chat/citation-audit";
 
@@ -1355,6 +1359,17 @@ export const MessageItem = React.memo(function MessageItem({
             {message.approvals.map((approval) => (
               <ApprovalCard key={approval.id} approval={approval} />
             ))}
+          </div>
+        ) : null}
+        {view.activity?.some((evt) => Boolean(evt.agentChange)) ? (
+          <div className="mb-3 space-y-2">
+            {view.activity
+              .filter((evt): evt is typeof evt & { agentChange: NonNullable<typeof evt.agentChange> } =>
+                Boolean(evt.agentChange)
+              )
+              .map((evt) => (
+                <AgentChangeCard key={evt.id} change={evt.agentChange} />
+              ))}
           </div>
         ) : null}
         {message.progress && !message.error ? (

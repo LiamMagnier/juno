@@ -240,18 +240,15 @@ test("the server still never reports listening", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The hire arrival
+// Thread-first hire & /agents/[id] redirect
 // ---------------------------------------------------------------------------
 
-test("a hired agent's face lands at xl on the spring, opens its eyes, and settles at lg", () => {
-  const page = src("src/components/agents/agent-page.tsx");
-  assert.match(page, /React\.useState<Arrival \| null>\(hired \? "landing" : null\)/);
-  assert.match(page, /state=\{arrival === "landing" \? "done" : arrival \? "idle" : agent\.state\}/);
-  assert.match(page, /size=\{arrival === "landing" \|\| arrival === "greeting" \? "xl" : "lg"\}/);
-  // Screen readers hear the real state, not the choreography.
-  assert.match(page, /labelState=\{agent\.state\}/);
-  // Reduced motion: no arrival at all.
-  assert.match(page, /const arrival = reduceMotion \? null : arrivalStep;/);
-  // Transform-only settling, on the shared layout spring, for everything that moves.
-  assert.equal(page.match(/transition=\{spring\.layout\}/g)?.length, 4);
+test("hiring lands directly in the agent's thread and /agents/[id] redirects to /chat/<conversationId>", () => {
+  const page = src("src/app/(app)/agents/[id]/page.tsx");
+  assert.match(page, /ensureAgentThread/);
+  assert.match(page, /redirect\(`\/chat\/\$\{encodeURIComponent\(conversationId\)\}/);
+
+  const greeting = src("src/components/agents/agent-thread-header.tsx");
+  assert.match(greeting, /Tell me what you'd like me to take on and I'll set myself up\./);
 });
+

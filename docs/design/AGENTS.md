@@ -178,7 +178,7 @@ all of the *runtime* exists and is stricter than theirs; what is missing is the
 
 | Capability | Grok Bot | Muse | Juno today | Where |
 | --- | --- | --- | --- | --- |
-| Own cloud computer | shared VM per account | VM per person | **per-run** cloud executor: a real headless Chromium behind a DNS-pinned, intercept-and-fulfil leash, `web_search`/`web_fetch`, cloud files and deliverables. **No shell in the cloud** — `workspaceTools()` is filtered out and `scripts/check-work-sandbox.mjs` enforces it | `src/lib/work/browser.ts`, `scripts/work-runner.ts`, `runner/agent-core` |
+| Own cloud computer | shared VM per account | VM per person | **per-agent** persistent Docker desktop (`AgentComputer`, `juno-computer:1`: Xvfb + XFCE + Chromium + shell + `/home/agent/work` volume, isolated per agent on `172.30.0.0/24` with `--icc=false` and RFC1918 egress blocked) plus the temporary per-run cloud browser as fallback | `src/lib/computer/`, `deploy/agent-computers/`, `scripts/work-runner.ts` |
 | Your own Mac as a computer | — | — | a paired Mac runs Work locally: files, a shell, the signed-in browser, computer use — the machine a person already trusts | `WorkHost`, `native/Packages/JunoWork`, §9b |
 | Plans a job, works it for hours | yes | yes | plan state machine, stall/repetition policing, structural validation | §9b.2 |
 | Stops to ask | approvals | Sentinel cards | questions + approvals with action/policy digests, expiry, always-allow ceilings | §9b.3 |
@@ -190,15 +190,13 @@ all of the *runtime* exists and is stricter than theirs; what is missing is the
 | Memory you can inspect | — | Identity | Memory page, edit, export, sensitive-topic guard | §7 |
 | Voice | voice chat | yes | realtime speech-to-speech relay | §10 |
 | Budget that binds autonomy | weekly quota | tiers | 5-hour + weekly windows enforced at admission and mid-run | §9b.1 |
-| Comes back to you | push | push, decides if a result is worth it | **email** per the routine's notify policy; push and in-app notifications are not wired (`createNotification` has no caller, the apps never register APNs) | `src/lib/work/notify/` |
-| **A named, persistent agent** | **yes** | **yes** | **no** — assistants are prompt personas, runs are anonymous | — |
-| **An avatar that shows state** | **yes** | **yes** | **no** | — |
-| **Goals the agent pursues** | via chat | Goals | **no** | — |
-| **Proactive ideas / check-ins** | — | Ideas | **no** | — |
-| **One place per agent: now, goals, routines, log, rules, memory** | Bot page | shelves | **no** — the pieces exist per task, not per agent | — |
-| **Agent-scoped memory** | yes | Identity | **no** — account memory only | — |
-
-The last six rows are the build.
+| Comes back to you | push | push, decides if a result is worth it | **in-app, Web Push, APNs and email** per `Agent.notify` (`needs_you | results | all`) | `src/lib/work/notify/` |
+| **A named, persistent agent** | **yes** | **yes** | **yes** (`Agent`) | `src/lib/agents/` |
+| **An avatar that shows state** | **yes** | **yes** | **yes** (`AgentFace`, `JunoAgentFace.swift`) | `src/components/agents/agent-face.tsx` |
+| **Goals the agent pursues** | via chat | Goals | **yes** (`AgentGoal`) | `src/lib/agents/` |
+| **Proactive ideas / check-ins** | — | Ideas | **yes** (`AgentIdea`, `reflectAgent`) | `src/lib/agents/reflect.ts` |
+| **One place per agent: now, computer, setup** | Bot page | shelves | **yes** — thread-first split side panel (`Now · Computer · Setup`) | `src/components/agents/agent-panel.tsx` |
+| **Agent-scoped memory** | yes | Identity | **yes** (`AgentNote`, encrypted at rest) | `src/lib/agents/store.ts` |
 
 ---
 
@@ -207,26 +205,39 @@ The last six rows are the build.
 **An agent is a teammate that lives in Chat.** It is not a third product and it
 does not reopen `TWO_PRODUCTS.md`: a conversation still decides when an ask
 becomes work, and an agent is *who* that work is delegated to. What an agent
-adds is a name, a face, a standing brief, goals, routines, rules and a memory of
-its own — and one page that answers "what is it doing, and does it need me?"
+adds is a name, a face, a standing brief, goals, routines, rules, a memory of
+its own, and an optional **dedicated cloud computer** — with its thread as the
+home surface and a three-tab side panel (**Now · Computer · Setup**) beside it.
 
 - **Its thread is an ordinary chat.** `Conversation.agentId` points at the
   agent; `kind` stays `"chat"` (`TWO_PRODUCTS.md` §5 — no new kind, because
   the phone drops kinds it does not know). Everything a chat does, the thread
-  does: attachments, connectors, voice, canvas, and the in-chat task panel.
+  does: attachments, connectors, voice, canvas, self-configuration tools, and
+  the in-chat task panel.
 - **It works through Work.** The agent hands a job to `start_task` exactly as
   Chat does; the task is a `WorkSession` stamped with `agentId`, under the
   agent's autonomy and connectors, narrowed — never widened — by every layer
   that already narrows (§9b.5). No second runtime, no second approval system,
   no second budget.
-- **Its computer is a clean one, every run.** Juno does not copy Grok's shared
-  machine. Each run gets its own executor; nothing one agent's run signed into
-  is visible to another's; the browser holds no Juno credential. The agent's
-  continuity lives in its memory, its goals and its thread — things a person
-  can read — not in a cookie jar nobody can.
+- **Its computer is isolated per agent (`Agents v2`).** Reversing the v1
+  stateless-only rule without copying Grok's shared account-wide VM: when the
+  owner enables a computer for an agent (`AgentComputer`), that agent gets its
+  own isolated Docker container (`juno-computer:1`) and persistent `/home/agent`
+  volume (`juno-comp-<agentId>`). One agent's sign-ins, cookies and files are
+  never shared with another agent's container (`--icc=false`). When a site needs
+  a password, 2FA code, CAPTCHA or payment step, the agent calls `ask_user` and
+  the owner takes over the live desktop (`noVNC` over the authenticated WebSocket
+  relay) to type it directly, then hands control back.
+- **Configuration by chat.** Five chat tools (`update_agent`,
+  `manage_agent_goal`, `manage_agent_routine`, `manage_agent_note`,
+  `manage_agent_computer`) let the owner configure the agent in conversation.
+  Benign edits on trusted turns apply immediately with an inline **Undo** card
+  (`agentChange`); privilege-escalating changes (widening autonomy, enabling the
+  computer, adding connectors, or any tool call on an untrusted turn) require
+  confirmation on the deterministic `ApprovalCard`.
 - **Approvals are cards, never prose** (Muse's Sentinel lesson). The floor —
   send, publish, pay, delete, account and security settings — asks under every
-  autonomy level, and the agent's page says so beside the control.
+  autonomy level, and the agent's panel says so beside the control.
 - **Budget binds it** like any run: the account's 5-hour and weekly windows.
   An agent cannot outspend its owner's window, and no routine adds a ceiling of
   its own (`TWO_PRODUCTS.md` §4).
@@ -240,24 +251,22 @@ its own — and one page that answers "what is it doing, and does it need me?"
 
 - **Sidebar.** One destination row, **Agents**, after Design. Below the
   destinations, an **Agents** fold (like Pinned projects) lists each agent with
-  its live mini-face — peripheral recognition, Grok's point — and the one
-  trailing signal a row may carry: a toned dot when that agent needs you.
-- **`/agents`** — the roster. A card per agent: face, name, role, and one
-  sentence of state ("Working on *Competitor pricing*", "Needs you — approve
-  sending an email", "Next: Monday 09:00 — Weekly digest"). A **New agent**
-  card. Nothing else.
-- **`/agents/new`** — hiring, in four steps (§5.1).
-- **`/agents/[id]`** — the agent's page: the face at size, name, role, state
-  sentence, **Message** as the one primary action, and five tabs — **Now,
-  Goals, Routines, Activity, Profile**.
-- **`/chat/[conversationId]`** — the agent's thread. The chat view gains one
-  row above the transcript: the face, the name, the state, a link to the page.
-- **Mac and iPhone.** An **Agents** row in the Mac's Chat sidebar (after
-  Artifacts) and an Agents entry in the phone's drawer (after Work): the
-  roster, the agent page with the same five tabs, hiring as a sheet, and the
-  same face drawn natively from the same numbers (`JunoAgentFace.swift`).
-  Message opens the agent's thread in the app's own chat. A question or an
-  approval is answered in the thread, where the existing Work cards live.
+  its live mini-face (`Pinned` first) and a raised hand glyph when that agent
+  needs you. Clicking an agent opens its **thread** (`/chat/[conversationId]`).
+- **`/agents`** — the compact roster list: face `sm` · name · `role · state
+  sentence` · trailing hand icon when it needs you, plus **New agent**.
+- **`/agents/new`** — chat-first hiring (`AgentStart`): pick a template chip or
+  *Start from scratch* to create the agent and jump straight into its thread
+  where it sets itself up in one or two messages (`?form=1` keeps the full
+  four-step form).
+- **`/agents/[id]`** — server redirect to `/chat/<conversationId>?agent=<tab>`
+  (`now | computer | setup`).
+- **`/chat/[conversationId]`** — the agent's thread and its split side panel
+  (`?agent=now|computer|setup`).
+- **Mac and iPhone.** An **Agents** row in the Mac's Chat sidebar and the
+  phone's drawer: the roster, the agent page with `NativeAgentComputerView`
+  (poster, state sentence, **Wake**, **Watch**, **Take control**, **Hand back**
+  via `/computer-view?c=…` one-time handoff sheet), and `JunoAgentFace.swift`.
 
 ---
 
@@ -370,60 +379,47 @@ mark and the prop are dropped below `sm`; the eyes never are.
 
 ### 5.1 Hiring an agent (`/agents/new`)
 
-Four questions on one page, top to bottom, every answer staying on screen while
-the next is given (Muse's guidance, without a wizard's modal chrome — a Writer
-called Quill who may "just do it" is a combination to see whole before Hire).
-Picking a starting point refills only the fields not yet touched:
+Chat-first hiring (`AgentStart`) is the default: one heading (*Who do you want
+to hire?*), seven template chips (*Chief of staff*, *Researcher*, *Deal finder*,
+*Trip planner*, *Writer*, *Monitor*, and *Start from scratch*), and an optional
+one-line goal field. Clicking a chip creates the agent and its thread
+(`POST /api/agents`) and redirects straight to `/chat/<conversationId>` where
+the agent greets in its own voice and offers starter chips to refine its role,
+routines, goals, notes or computer in conversation (`update_agent`,
+`manage_agent_goal`, `manage_agent_routine`, `manage_agent_note`,
+`manage_agent_computer`). Visiting `/agents/new?form=1` (*Customize every
+detail first →*) reveals the four-step form (template, name and face builder,
+style/brief/autonomy, and first goal).
 
-1. **What should it take on?** Seven starting points, each a one-line promise
-   with a sensible brief, autonomy and suggested connectors — *Chief of staff*
-   (inbox, calendar, follow-ups), *Researcher* (reads widely, cites, reports),
-   *Deal finder* (compares prices, watches for drops — asks before buying),
-   *Trip planner*, *Writer* (drafts, never publishes without you), *Monitor*
-   (watches pages and feeds, reports changes), and *Start from scratch*.
-2. **Name and face.** A name field (suggestions per starting point), and the
-   face builder: shape, tone, eyes, mark as four rows of swatches, with the live
-   preview cycling through its states on hover so you see the character before
-   you commit.
-3. **How it works.** Communication style (`warm`, `direct`, `playful`,
-   `formal`), the brief (pre-filled, editable), and autonomy — the three Work
-   modes by their promise labels, with the floor listed underneath.
-4. **A first goal** (optional) — one sentence the agent starts from.
+### 5.2 The thread and the three-tab side panel (`Now · Computer · Setup`)
 
-**Hire** creates the agent, its thread and the goal; the face arrives on the
-spring (`done` → `idle`) and the page lands on the agent.
-
-### 5.2 The agent's page
-
-Header: face (`lg`) with its live state, name, role, and the state sentence.
-**Message** is the primary action; **Pause** / **Resume** beside it; *Think it
-over now*, *Edit profile* and *Retire* in the overflow. On the first visit after
-hiring, one line welcomes it and names its autonomy. Then the tabs:
+An agent's home is its thread (`/chat/[conversationId]`), accompanied by a
+split side panel (`AgentPanel`, `380px` on desktop, bottom drawer on mobile,
+deep-linkable via `?agent=now|computer|setup`; `/agents/[id]` redirects there):
 
 - **Now** — the block that needs you first (open questions and approvals from
   its tasks, answerable in place with the existing Work cards — Deny first),
-  then the task it is doing (title, plan tally, the step it is on, time working,
-  *Open in chat*), then **Its computer** — the last things the run did in the
-  browser, in files and in code, as a quiet feed of rows, never a fake
-  screenshot — then **Ideas** (Start / Not now), then **Upcoming** (next routine
-  fires).
-- **Goals** — each goal with its status, cadence and last check-in; add, pause,
-  achieve, drop; *Work on this* opens the thread with the goal as the message.
-- **Routines** — the agent's automations with their next fire; *New routine*
-  takes a name, the instructions and a cadence and creates a real
-  `WorkSchedule` under the agent.
-- **Activity** — one log for everything the agent did: tasks started, finished,
-  stopped to ask; approvals given; goals set and checked in; ideas raised and
-  taken; routines created; memory learned.
-- **Profile** — name, role, face, style and brief; **Autonomy** with the floor
-  spelled out; **Connected apps** it may use; **What it knows** — the agent's
-  own memory, each note editable and deletable, with *Download*; and Delete.
-
-### 5.3 The thread
-
-The chat view, unchanged, with one header row: the face (`sm`, live), the name,
-the state sentence, and *Agent page*. The empty thread greets in the agent's own
-voice. A task the agent starts is drawn by `WorkRunPanel` exactly as today.
+  then the task it is doing (title, plan tally, the step it is on, time working),
+  then **Goals** (up to 5 active goals with quick add and *Work on this* →
+  thread), **Ideas** (Start / Not now), **Upcoming** (next routine fires), and a
+  collapsible **Recent activity** disclosure.
+- **Computer** — the agent's dedicated cloud desktop (`ComputerView` on web,
+  `NativeAgentComputerView` on Mac & iPhone): a 16:10 dark stage showing the
+  last poster frame (`GET /api/agents/[id]/computer/poster`), a live state
+  badge (`Running`, `Needs you — take control to continue`, `Paused for you`,
+  `Sleeping`, or `Waking up…`), **Watch** / **Take control** / **Hand back to
+  <name>**, and a live noVNC session over the authenticated WebSocket relay
+  (`/ws/agents/[id]/computer` on web, `/computer-view?c=…` one-time handoff
+  sheet on Mac & iPhone). Below the screen sits a compact feed of the last 5
+  actions on the computer. When no cloud computer is enabled, it shows the quiet
+  feed of recent browser/file/code actions plus **Give <name> a computer**.
+- **Setup** — identity (name, role, face swatches, style, instructions),
+  **Autonomy** with the floor spelled out, **Notify me** (`Only when it needs me`,
+  `When a task finishes or needs me`, `Every step`) and **Pin to sidebar**,
+  **Routines** (enable/pause/delete + create), **Connected apps**, **Own cloud
+  computer** (Enable, Reset computer, Delete computer and all its files),
+  **What it knows** (`AgentNote`, encrypted at rest, with edit/delete/download),
+  and **Retire agent**.
 
 ---
 
@@ -435,15 +431,22 @@ All additive — new tables and nullable columns only (§20.2b expand/contract).
   mark}`), `style`, `instructions`, `model?`, `reasoningEffort?`,
   `approvalMode` (a `WorkPermissionPolicy`), `connectorIds[]`, `projectId?`,
   `conversationId?` (its thread), `status` (`active | paused`), `proactive`,
-  `template?`, `lastReflectedAt?`, `sortOrder`, timestamps, `deletedAt?`.
+  `notify` (`needs_you | results | all`), `pinned` (`Boolean`), `template?`,
+  `lastReflectedAt?`, `sortOrder`, timestamps, `deletedAt?`.
+- `AgentComputer` — `agentId` (unique), `userId`, `status` (`creating | running |
+  taking_over | sleeping | error | destroyed`), `containerName`, `volumeName`,
+  `novncPort?`, `vncPasswordEnc?`, `width` (1280), `height` (800),
+  `takeoverReason?`, `takeoverSessionId?`, `lastActiveAt`, `lastPosterAt?`,
+  `lastError?`.
 - `AgentGoal` — `title`, `detail`, `status` (`active | paused | achieved |
   dropped`), `cadence` (`none | daily | weekly`), `lastCheckInAt?`,
   `lastCheckInNote?`, `dueAt?`.
 - `AgentIdea` — `title`, `detail`, `prompt`, `status` (`new | started |
   dismissed`), `goalId?`, `decidedAt?`; the task a started idea became is
   recorded on its `idea_started` event.
-- `AgentNote` — the agent's own memory: `content`, `source` (`user | agent |
-  reflection`), soft-deleted.
+- `AgentNote` — the agent's own memory: `content` (AES-256-GCM encrypted at
+  rest with prefix `enc:v1:`), `source` (`user | agent | reflection`),
+  soft-deleted.
 - `AgentEvent` — the activity log: `kind`, `title`, `detail` JSON,
   `sessionId?`, `createdAt`.
 - `Conversation.agentId?` and `WorkSession.agentId?`, indexed.
@@ -456,21 +459,26 @@ Web and native share one surface, bearer- and cookie-authenticated through
 | Route | Does |
 | --- | --- |
 | `GET/POST /api/agents` | roster (with derived state) · hire |
-| `GET/PATCH/DELETE /api/agents/[id]` | the page's payload · edit / pause · retire |
+| `GET/PATCH/DELETE /api/agents/[id]` | the panel's payload (including `computer` + `computerConfigured`) · edit / pause / pin / notify · retire |
 | `POST /api/agents/[id]/thread` | the agent's thread, created on first use |
+| `GET/POST /api/agents/[id]/computer` | computer status · `ensure` / `wake` / `sleep` / `takeover` / `handback` / `reset` / `destroy` |
+| `POST /api/agents/[id]/computer/view` | mint a single-use 60s WebSocket/handoff token (`wsPath`, `viewUrl`, `mode`, `expiresAt`) |
+| `POST /api/agents/[id]/computer/heartbeat` | keepalive while watching or taking over |
+| `GET /api/agents/[id]/computer/poster` | latest JPEG frame (`Cache-Control: private, no-store`, `204` if none) |
 | `GET/POST /api/agents/[id]/goals`, `PATCH/DELETE …/goals/[goalId]` | goals |
 | `GET/POST /api/agents/[id]/routines` | routines (a `WorkSession` + `WorkSchedule` under the agent) |
 | `GET /api/agents/[id]/activity` | the log |
-| `GET/POST /api/agents/[id]/notes`, `PATCH/DELETE …/notes/[noteId]` | what it knows |
+| `GET/POST /api/agents/[id]/notes`, `PATCH/DELETE …/notes/[noteId]` | what it knows (encrypted at rest) |
 | `POST /api/agents/[id]/reflect` | ideas and check-ins, at most every 6 h unless `force` |
 | `PATCH /api/agents/[id]/ideas/[ideaId]` | start / dismiss |
 | `POST /api/agents/[id]/tasks` | start a task as the agent (409 `confirm_expensive` asks first) |
 
 ## 8. What is deliberately not done
 
-- **No shared machine, no persistent cookie jar.** See §3. A person who wants an
-  agent signed in as them pairs their Mac; that is a machine they already trust
-  and can see.
+- **No shared machine across agents.** See §3. Each agent that has a cloud
+  computer gets its own isolated Docker container (`juno-computer:1`) and volume
+  (`juno-comp-<agentId>`) with inter-container networking disabled
+  (`--icc=false`). A person can also pair their Mac for local Work.
 - **No watch-me skill capture.** Screen-recording a person's browser into
   instructions is a privacy surface of its own; skills already come from a run
   (*save as skill*) and from repositories.
@@ -479,16 +487,22 @@ Web and native share one surface, bearer- and cookie-authenticated through
   teammate, in its thread, and reports back there). Rooms where agents assign
   each other work still need a claim model the executor does not have.
 
-**Shipped since the first cut** (September 2026): push end to end — every Work
-run and agent task writes an in-app notification (the sidebar's Notifications
-inbox) and pushes to iPhone/iPad (APNs), browsers (Web Push, opt-in per
-browser) and the Mac (local notifications while the app runs; APNs on the Mac
-waits for a Developer ID push profile), each device with its own "needs you"
-and "updates" switches; a background reflection sweep (`juno-agent-reflector`)
-that respects goal cadence and usage windows; approvals and questions answered
-on the native agent page; the Mac sidebar's per-agent fold; the native Agents
-glyph; voice calls in an agent's thread speak as that agent, and its face
-listens.
+**Shipped in Agents v1 & v2** (September 2026): per-agent isolated Docker cloud
+computers (`juno-computer:1`: Xvfb + XFCE + Chromium + `x11vnc` + `xdotool` +
+`scrot`) with live noVNC Watch/Takeover/Hand-back on web (`/ws/agents/[id]/computer`)
+and Mac/iPhone (`/computer-view?c=…`); 9 `computer_*` Work tools (`computer_screenshot`,
+`computer_click`, `computer_move`, `computer_type`, `computer_key`,
+`computer_scroll`, `computer_open_url`, `computer_bash`, `computer_wait`);
+5 chat self-configuration tools (`update_agent`, `manage_agent_goal`,
+`manage_agent_routine`, `manage_agent_note`, `manage_agent_computer`) with
+inline Undo cards (`agentChange`) for benign edits and deterministic
+`ApprovalCard` confirmation for privilege escalations; thread-first home UX with
+the 3-tab side panel (`Now · Computer · Setup`), compact `/agents` list, and
+chat-first `/agents/new`; `Agent.notify` (`needs_you | results | all`, with email
+fallback when no push channel exists), `Agent.pinned`, and AES-256-GCM
+encryption at rest for `AgentNote.content` (`enc:v1:`); push end to end across
+in-app, APNs, Web Push and Mac local notifications; `juno-agent-reflector`
+background sweep; and voice calls in an agent's thread.
 - **No companion mode.** No affection meters, no idle chatter. An agent speaks
   when it has done something or needs something.
 - **No new `Conversation.kind`** and **no second runtime** (§3).

@@ -183,8 +183,16 @@ export { evaluateEgress, hostMatches, normalizeHost, type EgressPolicy } from '.
  */
 export {
   DEFAULT_STREAM_SILENCE_MS,
+  OMITTED_SCREENSHOT_MARKER,
   ProviderSilenceError,
+  pruneOldMessageImages,
 } from '../loop.js';
+
+export {
+  THINKING_BINDING_BETA,
+  anthropicRequestHeadersForThinking,
+  bindingTolerantThinking,
+} from '../providers/anthropic.js';
 
 /*
  * The failure taxonomy, for the same reason.
@@ -261,3 +269,13 @@ export {
   type WebSearchHit,
   type WorkToolShape,
 } from './tools.js';
+
+export {
+  REMOTE_TOOL_NAMES,
+  computerTools,
+  type ComputerExecOutcome,
+  type ComputerFileEntryItem,
+  type ComputerShotData,
+  type ComputerToolsDeps,
+} from './computer-tools.js';
+

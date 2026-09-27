@@ -212,6 +212,28 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
     /// The pictures on this message, in the order they were attached.
     public var imageAttachments: [NativeChatAttachment] { attachments.filter(\.isImage) }
 
+    private static let agentConfigTools: Set<String> = [
+        "create_agent", "update_agent", "agent_profile",
+        "agent_goal", "manage_agent_goal", "agent_goals",
+        "agent_routine", "manage_agent_routine", "agent_routines",
+        "agent_memory", "manage_agent_note", "agent_notes",
+        "manage_agent_computer", "agent_computer",
+    ]
+
+    /// Whether this finished assistant message ran one of the agent self-configuration tools.
+    public var containsCompletedAgentConfigTool: Bool {
+        guard !isPending else { return false }
+        return activity.contains { item in
+            if let callTool = item.call?.tool, Self.agentConfigTools.contains(callTool) {
+                return true
+            }
+            if let detailName = item.tool?.name, Self.agentConfigTools.contains(detailName) {
+                return true
+            }
+            return false
+        }
+    }
+
     /// Turns a streaming placeholder into the finished answer a `done` frame
     /// describes.
     ///
@@ -832,6 +854,15 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     public private(set) var chatApprovalsByConversation: [String: [NativeChatApproval]] = [:]
     public private(set) var chatApprovalInFlightID: String?
     public var selectedConversationID: String?
+
+    /// Identifier of the latest finished assistant message in the selected conversation
+    /// that ran an agent self-configuration tool (BRIEF.md §4.9).
+    public var latestCompletedAgentConfigMessageID: String? {
+        guard let id = selectedConversationID, let list = messagesByConversation[id] else {
+            return nil
+        }
+        return list.last(where: \.containsCompletedAgentConfigTool)?.id
+    }
     /// True while the reader is composing a chat that does not exist yet. It
     /// suppresses the "open the most recent conversation" fallback in
     /// ``reload()`` — without it, the first sync tick after tapping New chat

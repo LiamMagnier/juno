@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import nextDynamic from "next/dynamic";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { EyeOff, GitFork, GripVertical, Loader2 } from "@/components/ui/icons";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
@@ -52,6 +52,8 @@ import { useConversationResearch } from "@/components/research/use-conversation-
 import { useConversationWork } from "@/components/chat/use-conversation-work";
 import type { ClientAgent } from "@/lib/agents/types";
 import { AgentGreeting, AgentThreadHeader, threadAgentState } from "@/components/agents/agent-thread-header";
+import { AgentPanel, normalizeAgentPanelTab, type AgentPanelTab } from "@/components/agents/agent-panel";
+import { AGENTS_CHANGED_EVENT, fetchAgentDetail } from "@/components/agents/agents-transport";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
 import { SessionOutputs } from "@/components/chat/session-outputs";
 import { PendingSteers } from "@/components/work/steering/pending-steers";
@@ -158,7 +160,7 @@ function titleMessages(messages: ClientMessage[]): { role: "USER" | "ASSISTANT";
     .map((m) => ({ role: m.role as "USER" | "ASSISTANT", content: m.content.slice(0, 4000) }));
 }
 
-export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, agent, initialPrompt, initialPromptResearch, initialResearchRun, initialReasoningEffort, initialConnectors, initialArtifactIdentifier, initialFocusMessageId }: ChatViewProps) {
+export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, agent: initialAgent, initialPrompt, initialPromptResearch, initialResearchRun, initialReasoningEffort, initialConnectors, initialArtifactIdentifier, initialFocusMessageId }: ChatViewProps) {
   const {
     settings,
     quota,
@@ -174,6 +176,60 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   } = useApp();
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [agent, setAgent] = React.useState<ClientAgent | null>(initialAgent ?? null);
+  React.useEffect(() => {
+    setAgent(initialAgent ?? null);
+  }, [initialAgent]);
+  const [agentPanelTab, setAgentPanelTab] = React.useState<AgentPanelTab | null>(() =>
+    normalizeAgentPanelTab(searchParams?.get("agent"))
+  );
+  React.useEffect(() => {
+    setAgentPanelTab(normalizeAgentPanelTab(searchParams?.get("agent")));
+  }, [searchParams]);
+
+  const setAgentTab = React.useCallback((next: AgentPanelTab | null) => {
+    setAgentPanelTab(next);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (next) url.searchParams.set("agent", next);
+      else url.searchParams.delete("agent");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+  }, []);
+
+  const toggleAgentTab = React.useCallback((target: AgentPanelTab) => {
+    setAgentPanelTab((prev) => {
+      const next = prev === target ? null : target;
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        if (next) url.searchParams.set("agent", next);
+        else url.searchParams.delete("agent");
+        window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+      }
+      return next;
+    });
+  }, []);
+
+  const refreshThreadAgent = React.useCallback(() => {
+    if (!agent?.id) return;
+    void fetchAgentDetail(agent.id).then((outcome) => {
+      if (outcome.kind === "ok") {
+        setAgent(outcome.value.agent);
+      }
+    });
+  }, [agent?.id]);
+
+  React.useEffect(() => {
+    if (!agent?.id) return;
+    window.addEventListener(AGENTS_CHANGED_EVENT, refreshThreadAgent);
+    window.addEventListener("juno:agent-updated", refreshThreadAgent);
+    return () => {
+      window.removeEventListener(AGENTS_CHANGED_EVENT, refreshThreadAgent);
+      window.removeEventListener("juno:agent-updated", refreshThreadAgent);
+    };
+  }, [agent?.id, refreshThreadAgent]);
+
   const tts = useTts();
   const layoutRef = React.useRef<HTMLDivElement>(null);
   // A browser-visible mount marker makes route/remount regressions observable
@@ -1435,6 +1491,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const agentState = agent
     ? threadAgentState(agent, chat.isBusy, work.session, voiceOpen ? voicePhaseOf(realtimeVoice) : null)
     : null;
+  const wasBusyRef = React.useRef(false);
+  React.useEffect(() => {
+    if (wasBusyRef.current && !chat.isBusy && agent?.id) {
+      refreshThreadAgent();
+    }
+    wasBusyRef.current = chat.isBusy;
+  }, [chat.isBusy, agent?.id, refreshThreadAgent]);
   React.useEffect(() => {
     window.dispatchEvent(new CustomEvent("juno:streaming", { detail: showStreamSweep }));
     return () => {
@@ -2232,6 +2295,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               state={agentState ?? "idle"}
               taskTitle={work.session?.title ?? null}
               levelRef={voiceOpen ? realtimeVoice.levelRef : undefined}
+              activePanelTab={agentPanelTab}
+              onTogglePanel={toggleAgentTab}
             />
           ) : null}
           {/* `handoff === "leaving"` holds the empty branch through its one exit
@@ -2369,7 +2434,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                           : "opacity-100"
                       )}
                     >
-                      {agent ? <AgentGreeting agent={agent} /> : <EmptyGreeting />}
+                      {agent ? (
+                        <AgentGreeting
+                          agent={agent}
+                          onSelectSuggestion={(chip) => void sendFromComposer(chip, [])}
+                        />
+                      ) : (
+                        <EmptyGreeting />
+                      )}
                     </div>
                     <div
                       aria-hidden={Boolean(!privateMode || chat.pendingClarification)}
@@ -2567,6 +2639,38 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             onAsk={privateMode ? undefined : handleDocumentAsk}
             fullscreen={fullscreen}
             onToggleFullscreen={() => setFullscreen((f) => !f)}
+          />
+        </div>
+      )}
+
+      {/* Agent side panel — uses the same split slot as CanvasPanel and DocumentViewer
+          (open artifact or document takes precedence). */}
+      {agent && !privateMode && !openArtifact && !openDocument && agentPanelTab !== null && (
+        <div
+          style={{ "--juno-canvas-width": `${canvas.width ?? CANVAS_SSR_WIDTH}px` } as React.CSSProperties}
+          className={cn(
+            "relative z-40 size-full bg-background @[50rem]/split:w-[var(--juno-canvas-width)] @[50rem]/split:min-w-[420px] @[50rem]/split:shrink-0 @[50rem]/split:border-l",
+            canvas.resizing && "select-none transition-none",
+            !canvas.resizing && "duration-base ease-drawer motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in",
+            "@[50rem]/split:relative"
+          )}
+        >
+          <button
+            type="button"
+            {...canvas.separatorProps}
+            aria-label="Resize agent panel"
+            title="Drag to resize. Arrow keys adjust, Home resets."
+            className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none @[50rem]/split:flex @[50rem]/split:hover:bg-primary/10 @[50rem]/split:hover:before:bg-primary/40"
+          >
+            <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
+              <GripVertical className="size-3.5" />
+            </span>
+          </button>
+          <AgentPanel
+            agentId={agent.id}
+            tab={agentPanelTab}
+            onTabChange={(next) => setAgentTab(next)}
+            onClose={() => setAgentTab(null)}
           />
         </div>
       )}

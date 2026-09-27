@@ -99,6 +99,17 @@ copy of `juno-app/core/src`, including the subagent orchestration layer
   user/assistant alternation every provider requires; the promise resolves
   when the text leaves the queue, which is what the cloud runner's `steer_ack`
   is timed on. `src/test/queue.test.ts` covers both. Re-apply when re-syncing.
+- `src/tools/types.ts` (`ToolResult.images`), `src/work/types.ts`
+  (`WorkToolDefinition.signatureInput`), `src/work/tools.ts` (`BrowserToolDeps.screenEpoch`),
+  `src/work/session.ts` (`scrubCheckpointMessages`, `OMITTED_SCREENSHOT_MARKER`,
+  `result.images` block forwarding, `signatureInput` hook), `src/loop.ts`
+  (`pruneOldMessageImages`, `OMITTED_EARLIER_SCREENSHOT_MARKER`), `src/providers/anthropic.ts`
+  (`THINKING_BINDING_BETA`, `bindingTolerantThinking`, `anthropicRequestHeadersForThinking`),
+  and `src/work/computer-tools.ts` (`computerTools`, `REMOTE_TOOL_NAMES`):
+  Agents v2 persistent desktop tools, screenshot image channel, checkpoint base64
+  scrubbing, 3-image pruning + Anthropic `drop_block` thinking binding, and screen
+  epoch anti-repetition signatures. Re-apply when re-syncing.
+
 
 ## Build
 

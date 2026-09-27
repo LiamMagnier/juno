@@ -66,7 +66,7 @@ export function AgentHire({
   initialTemplate: string | null;
   /** Values from the hire conversation, or any prefill. Null fields fall through to the starting point. */
   initial?: AgentHireValues;
-  /** Defaults to the agent page with `?hired=1`. */
+  /** Post-hire side effect for the caller (closing Edit details); navigation to the thread is the form's own. */
   onHired?: (id: string) => void;
   /** True inside the Edit details sheet: no page chrome, no Cancel link. */
   embedded?: boolean;
@@ -137,9 +137,16 @@ export function AgentHire({
       return;
     }
     announceAgentsChanged();
-    const id = outcome.value.id;
-    if (onHired) onHired(id);
-    else router.push(`/agents/${id}?hired=1`);
+    const agent = outcome.value;
+    // Edit details hires from the sheet: notify the caller, then follow the
+    // same thread-first landing as every other hire path (Agents v2 §4.8.2 —
+    // `/agents/[id]` is the thread with the side panel).
+    if (onHired) onHired(agent.id);
+    router.push(
+      agent.conversationId
+        ? `/chat/${encodeURIComponent(agent.conversationId)}`
+        : `/agents/${encodeURIComponent(agent.id)}`
+    );
   };
 
   const form = (

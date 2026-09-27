@@ -98,6 +98,7 @@ function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
     const patch = typeof record.patch === "string" && record.patch.length > 0 ? record.patch : undefined;
     const exitCode =
       typeof record.exitCode === "number" && Number.isFinite(record.exitCode) ? record.exitCode : undefined;
+    const agentChange = readAgentChange(record.agentChange);
 
     return [
       {
@@ -110,11 +111,41 @@ function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
         ...(tool ? { tool } : {}),
         ...(patch ? { patch } : {}),
         ...(exitCode !== undefined ? { exitCode } : {}),
+        ...(agentChange ? { agentChange } : {}),
       },
     ];
   });
 
   return events.length ? events : undefined;
+}
+
+function readAgentChange(raw: unknown): ClientActivityEvent["agentChange"] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.agentId !== "string" || typeof r.agentName !== "string" || typeof r.summary !== "string") {
+    return undefined;
+  }
+  const rawChanges = Array.isArray(r.changes) ? r.changes : [];
+  const changes = rawChanges.flatMap((c) => {
+    if (!c || typeof c !== "object" || Array.isArray(c)) return [];
+    const item = c as Record<string, unknown>;
+    if (typeof item.label !== "string" || typeof item.to !== "string") return [];
+    return [
+      {
+        label: item.label,
+        ...(typeof item.from === "string" ? { from: item.from } : {}),
+        to: item.to,
+      },
+    ];
+  });
+  return {
+    agentId: r.agentId,
+    agentName: r.agentName,
+    ...(typeof r.eventId === "string" ? { eventId: r.eventId } : {}),
+    summary: r.summary,
+    changes,
+    ...(typeof r.undone === "boolean" ? { undone: r.undone } : {}),
+  };
 }
 
 /**

@@ -115,6 +115,7 @@
     "@composio/core": "^0.13.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@napi-rs/canvas": "^1.0.9",
+    "@novnc/novnc": "1.7.0",
     "@phosphor-icons/react": "^2.1.10",
     "@prisma/client": "^6.0.0",
     "@radix-ui/react-avatar": "^1.2.6",

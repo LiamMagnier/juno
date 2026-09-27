@@ -27,10 +27,9 @@ import { formatLocalWhen } from "@/components/agents/agent-bits";
  *      ARE the ones in the thread — Deny first, digest-checked — and a run can
  *      never disagree with itself about what happened depending on where it
  *      was read. Nothing here is a second implementation of an approval.
- *   2. Its computer — the calls the run made, from the same log. Never a
- *      picture: Juno's cloud browser renders no pixels for a person, and a
- *      screenshot-shaped placeholder would be a picture of something that did
- *      not happen.
+ *   2. Its computer: the calls the run made, from the same log (with live
+ *      desktop view and takeover in `agent-panel-computer.tsx` when an
+ *      `AgentComputer` is enabled).
  *   3. Ideas it raised, each a card with Start on it.
  *   4. What is next on its clock.
  */

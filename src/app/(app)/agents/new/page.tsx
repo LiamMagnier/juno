@@ -1,11 +1,21 @@
+import { AgentHire } from "@/components/agents/agent-hire";
 import { AgentHireConversation } from "@/components/agents/agent-hire-conversation";
 
 /**
- * Hiring an agent. Talk-first (Muse-style); `?template=` preselects a
- * starting point, which the empty roster links to. The four-question form is
- * still here as Edit details on the same page.
+ * Hiring an agent (`docs/design/agents-v2/BRIEF.md` §4.8.4).
+ * Talk-first: the hire conversation drafts name, face, role and brief as you
+ * speak, and `?template=` preselects a starting point, which the empty roster
+ * links to. With `?form=1`, renders the full `AgentHire` form instead.
  */
-export default async function NewAgentPage({ searchParams }: { searchParams: Promise<{ template?: string }> }) {
-  const { template } = await searchParams;
-  return <AgentHireConversation initialTemplate={typeof template === "string" ? template : null} />;
+export default async function NewAgentPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ template?: string; form?: string }>;
+}) {
+  const { template, form } = await searchParams;
+  const initialTemplate = typeof template === "string" ? template : null;
+  if (form === "1" || form === "true") {
+    return <AgentHire initialTemplate={initialTemplate} />;
+  }
+  return <AgentHireConversation initialTemplate={initialTemplate} />;
 }

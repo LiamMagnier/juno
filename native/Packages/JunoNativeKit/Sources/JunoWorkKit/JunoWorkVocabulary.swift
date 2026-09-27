@@ -48,6 +48,21 @@ public enum JunoWorkVocabulary {
         case "screen_control": return "Working on your screen"
         case "web_search", "web_research": return "Searching the web"
         case "fetch_page", "read_page": return "Reading a web page"
+        case "computer_screenshot", "computer_screen": return "Looking at its screen"
+        case "computer_click": return "Clicking on its screen"
+        case "computer_type": return "Typing on its computer"
+        case "computer_key": return "Pressing a key"
+        case "computer_scroll": return "Scrolling its screen"
+        case "computer_wait": return "Waiting on its computer"
+        case "computer_shell", "computer_exec": return "Running a command"
+        case "computer_files", "computer_read_file": return "Working with files on its computer"
+        case "computer_write_file": return "Writing a file on its computer"
+        case "create_agent": return "Creating an agent"
+        case "update_agent", "agent_profile": return "Updating its profile"
+        case "agent_goal", "manage_agent_goal", "agent_goals": return "Updating its goals"
+        case "agent_routine", "manage_agent_routine", "agent_routines": return "Updating its routines"
+        case "agent_memory", "manage_agent_note", "agent_notes": return "Saving a note"
+        case "manage_agent_computer", "agent_computer": return "Setting up its computer"
         default: return sentenceCased(name)
         }
     }
@@ -68,6 +83,21 @@ public enum JunoWorkVocabulary {
         case "screen_control": return "Worked on your screen"
         case "web_search", "web_research": return "Searched the web"
         case "fetch_page", "read_page": return "Read a web page"
+        case "computer_screenshot", "computer_screen": return "Looked at its screen"
+        case "computer_click": return "Clicked on its screen"
+        case "computer_type": return "Typed on its computer"
+        case "computer_key": return "Pressed a key"
+        case "computer_scroll": return "Scrolled its screen"
+        case "computer_wait": return "Waited on its computer"
+        case "computer_shell", "computer_exec": return "Ran a command"
+        case "computer_files", "computer_read_file": return "Worked with files on its computer"
+        case "computer_write_file": return "Wrote a file on its computer"
+        case "create_agent": return "Created an agent"
+        case "update_agent", "agent_profile": return "Updated its profile"
+        case "agent_goal", "manage_agent_goal", "agent_goals": return "Updated its goals"
+        case "agent_routine", "manage_agent_routine", "agent_routines": return "Updated its routines"
+        case "agent_memory", "manage_agent_note", "agent_notes": return "Saved a note"
+        case "manage_agent_computer", "agent_computer": return "Updated its computer"
         default: return sentenceCased(name)
         }
     }
@@ -82,6 +112,8 @@ public enum JunoWorkVocabulary {
         case "browser_control": return "Use your browser"
         case "app_control": return "Use an app"
         case "screen_control": return "Control your screen"
+        case "computer_shell", "computer_exec": return "Run a command"
+        case "computer_files", "computer_write_file": return "Write a file"
         default: return sentenceCased(name)
         }
     }

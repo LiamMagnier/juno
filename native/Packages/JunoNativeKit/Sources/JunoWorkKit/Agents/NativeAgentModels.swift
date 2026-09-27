@@ -489,6 +489,38 @@ public extension NativeAgentActivity {
     }
 }
 
+/// The cloud desktop attached to an agent (`/api/agents/{id}/computer`).
+public struct NativeAgentCloudComputer: Equatable, Sendable {
+    public var enabled: Bool
+    public var status: String
+    public var streamOn: Bool
+    public var lastActiveAt: Date?
+    public var activeSeconds: Int
+    public var hasPoster: Bool
+    public var usingNowSummary: String?
+    public var error: String?
+
+    public init(
+        enabled: Bool,
+        status: String,
+        streamOn: Bool = false,
+        lastActiveAt: Date? = nil,
+        activeSeconds: Int = 0,
+        hasPoster: Bool = false,
+        usingNowSummary: String? = nil,
+        error: String? = nil
+    ) {
+        self.enabled = enabled
+        self.status = status
+        self.streamOn = streamOn
+        self.lastActiveAt = lastActiveAt
+        self.activeSeconds = activeSeconds
+        self.hasPoster = hasPoster
+        self.usingNowSummary = usingNowSummary
+        self.error = error
+    }
+}
+
 /// Everything the agent's page draws. `ClientAgentDetail`.
 ///
 /// Mutable, unlike the rows inside it, because the store edits a page in place
@@ -501,6 +533,8 @@ public struct NativeAgentDetail: Equatable, Sendable {
     public var notes: [NativeAgentNote]
     public var routines: [NativeAgentRoutine]
     public var tasks: [NativeAgentTask]
+    public var computer: NativeAgentCloudComputer?
+    public var computerConfigured: Bool
 
     public init(
         agent: NativeAgent,
@@ -508,7 +542,9 @@ public struct NativeAgentDetail: Equatable, Sendable {
         ideas: [NativeAgentIdea],
         notes: [NativeAgentNote],
         routines: [NativeAgentRoutine],
-        tasks: [NativeAgentTask]
+        tasks: [NativeAgentTask],
+        computer: NativeAgentCloudComputer? = nil,
+        computerConfigured: Bool = false
     ) {
         self.agent = agent
         self.goals = goals
@@ -516,6 +552,8 @@ public struct NativeAgentDetail: Equatable, Sendable {
         self.notes = notes
         self.routines = routines
         self.tasks = tasks
+        self.computer = computer
+        self.computerConfigured = computerConfigured
     }
 }
 

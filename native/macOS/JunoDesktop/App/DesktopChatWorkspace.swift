@@ -2153,6 +2153,16 @@ struct DesktopConversationView: View {
         } isTargeted: { targeted in
             isDropTargeted = targeted && attachmentModel != nil && privateChat == nil
         }
+        .onChange(of: model.latestCompletedAgentConfigMessageID, initial: false) { oldID, newID in
+            guard let newID, newID != oldID, let agentsModel = configuration.agentsModel else { return }
+            let activeAgentID = threadAgent?.id
+            Task {
+                await agentsModel.refresh()
+                if let activeAgentID {
+                    await agentsModel.loadDetail(id: activeAgentID)
+                }
+            }
+        }
     }
 
     /// The agent whose thread is open, if it is one.

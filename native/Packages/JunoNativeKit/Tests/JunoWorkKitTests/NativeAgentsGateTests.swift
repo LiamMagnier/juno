@@ -472,6 +472,39 @@ final class NativeAgentsGateTests: XCTestCase {
         return fields
     }
 
+    @MainActor
+    func testComputerHandoffAndHeartbeatMatchServerWireContract() async throws {
+        var routes = agentRoutes(status: "idle")
+        routes["/api/agents/agent_1/computer/view"] = json(#"{"url":"https://juno.test/computer-view?c=tok_1"}"#)
+        routes["/api/agents/agent_1/computer/heartbeat"] = json(#"{"ok":true}"#)
+        let transport = AgentsTransport(routes: routes)
+        let model = NativeAgentsModel(client: NativeAgentsClient(sender: transport))
+        await model.start(for: account)
+        defer { model.stop() }
+
+        let handoffURL = await model.computerHandoffURL(agentID: "agent_1", mode: "control")
+        XCTAssertEqual(handoffURL, "https://juno.test/computer-view?c=tok_1")
+
+        await model.computerHeartbeat(agentID: "agent_1", mode: "control")
+        await model.computerHandBack(agentID: "agent_1")
+
+        let requests = await transport.requests
+        let viewReq = try XCTUnwrap(requests.first(where: { $0.path == "/api/agents/agent_1/computer/view" }))
+        let viewBody = try object(viewReq.body)
+        XCTAssertEqual(viewBody["mode"]?.stringValue, "control")
+        XCTAssertEqual(viewBody["handoff"]?.boolValue, true)
+
+        let heartbeatReqs = requests.filter { $0.path == "/api/agents/agent_1/computer/heartbeat" }
+        XCTAssertEqual(heartbeatReqs.count, 2)
+        let activeHB = try object(heartbeatReqs[0].body)
+        XCTAssertEqual(activeHB["mode"]?.stringValue, "control")
+        XCTAssertEqual(activeHB["ended"]?.boolValue, false)
+
+        let endedHB = try object(heartbeatReqs[1].body)
+        XCTAssertEqual(endedHB["mode"]?.stringValue, "control")
+        XCTAssertEqual(endedHB["ended"]?.boolValue, true)
+    }
+
     private func json(_ body: String, status: Int = 200) -> HTTPResponse {
         HTTPResponse(statusCode: status, headers: HTTPHeaders(), body: Data(body.utf8))
     }

@@ -21,8 +21,9 @@
  *
  * Motion stays on the house ladder: conversation rows `motion-safe:animate-rise-in`,
  * the face cross-fades its state on the fast rung, the Hire button presses with
- * `.pressable`. Hire navigates with `?hired=1`, where the agent page already
- * plays the done settle on arrival (agent-page.tsx).
+ * `.pressable`. Hire lands in the agent's thread (Agents v2 §4.8.2): the
+ * conversation is created with the agent, and `/agents/[id]` is that thread
+ * with the side panel open.
  */
 
 import * as React from "react";
@@ -424,7 +425,11 @@ export function AgentHireConversation({ initialTemplate }: { initialTemplate: st
       return;
     }
     announceAgentsChanged();
-    router.push(`/agents/${outcome.value.id}?hired=1`);
+    router.push(
+      outcome.value.conversationId
+        ? `/chat/${encodeURIComponent(outcome.value.conversationId)}`
+        : `/agents/${encodeURIComponent(outcome.value.id)}`
+    );
   };
 
   const acceptLatest = () => {
@@ -645,9 +650,8 @@ export function AgentHireConversation({ initialTemplate }: { initialTemplate: st
               initialTemplate={initialTemplate}
               initial={draftToInitial(draft)}
               embedded
-              onHired={(id) => {
+              onHired={() => {
                 setEditing(false);
-                router.push(`/agents/${id}?hired=1`);
               }}
             />
           </div>

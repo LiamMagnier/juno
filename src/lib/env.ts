@@ -160,6 +160,112 @@ export const env = {
     elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID,
   },
 
+  // Agent computers (optional — disabled unless AGENT_COMPUTER_PROVIDER / COMPUTER_PROVIDER is set)
+  agentComputer: {
+    get provider(): string {
+      return (
+        process.env.AGENT_COMPUTER_PROVIDER ??
+        process.env.COMPUTER_PROVIDER ??
+        ""
+      ).trim();
+    },
+    get image(): string {
+      return (
+        process.env.AGENT_COMPUTER_IMAGE ??
+        process.env.COMPUTER_DOCKER_IMAGE ??
+        ""
+      ).trim() || "juno-agent-computer:1";
+    },
+    get storageRoot(): string {
+      return (process.env.AGENT_COMPUTER_STORAGE_ROOT ?? "").trim() || "/var/lib/juno-computers";
+    },
+    get network(): string {
+      return (process.env.AGENT_COMPUTER_NETWORK ?? "").trim() || "juno-agent-net";
+    },
+    get memoryMb(): number {
+      const n = Number(
+        process.env.AGENT_COMPUTER_MEMORY_MB ?? process.env.COMPUTER_MEMORY_MB
+      );
+      return Number.isFinite(n) && n > 0 ? n : 2048;
+    },
+    get cpus(): number {
+      const n = Number(
+        process.env.AGENT_COMPUTER_CPUS ?? process.env.COMPUTER_CPUS
+      );
+      return Number.isFinite(n) && n > 0 ? n : 1.5;
+    },
+    get shmMb(): number {
+      const n = Number(process.env.AGENT_COMPUTER_SHM_MB);
+      return Number.isFinite(n) && n > 0 ? n : 1024;
+    },
+    get diskQuotaMb(): number {
+      const n = Number(
+        process.env.AGENT_COMPUTER_DISK_QUOTA_MB ??
+          process.env.COMPUTER_DISK_LIMIT_MB
+      );
+      return Number.isFinite(n) && n > 0 ? n : 4096;
+    },
+    get maxAwakeHost(): number {
+      const n = Number(process.env.AGENT_COMPUTER_MAX_AWAKE_HOST);
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : 6;
+    },
+    get maxAwakeUser(): number {
+      const n = Number(process.env.AGENT_COMPUTER_MAX_AWAKE_USER);
+      return Number.isFinite(n) && n > 0 ? Math.floor(n) : 2;
+    },
+    get minFreeMemMb(): number {
+      const n = Number(
+        process.env.AGENT_COMPUTER_MIN_FREE_MEM_MB ??
+          process.env.COMPUTER_MIN_FREE_MEMORY_MB
+      );
+      return Number.isFinite(n) && n >= 0 ? n : 4096;
+    },
+    get minFreeDiskMb(): number {
+      if (process.env.AGENT_COMPUTER_MIN_FREE_DISK_MB) {
+        const n = Number(process.env.AGENT_COMPUTER_MIN_FREE_DISK_MB);
+        if (Number.isFinite(n) && n >= 0) return n;
+      }
+      if (process.env.COMPUTER_MIN_FREE_DISK_GB) {
+        const gb = Number(process.env.COMPUTER_MIN_FREE_DISK_GB);
+        if (Number.isFinite(gb) && gb >= 0) return gb * 1024;
+      }
+      return 10240;
+    },
+    get restMinutes(): number {
+      if (process.env.AGENT_COMPUTER_REST_MINUTES) {
+        const n = Number(process.env.AGENT_COMPUTER_REST_MINUTES);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+      if (process.env.COMPUTER_IDLE_PAUSE_SECONDS) {
+        const s = Number(process.env.COMPUTER_IDLE_PAUSE_SECONDS);
+        if (Number.isFinite(s) && s > 0) return s / 60;
+      }
+      return 20;
+    },
+    get sleepHours(): number {
+      if (process.env.AGENT_COMPUTER_SLEEP_HOURS) {
+        const n = Number(process.env.AGENT_COMPUTER_SLEEP_HOURS);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+      if (process.env.COMPUTER_IDLE_STOP_MINUTES) {
+        const m = Number(process.env.COMPUTER_IDLE_STOP_MINUTES);
+        if (Number.isFinite(m) && m > 0) return m / 60;
+      }
+      return 24;
+    },
+    get costUsdPerMin(): number {
+      if (process.env.AGENT_COMPUTER_COST_USD_PER_MIN) {
+        const n = Number(process.env.AGENT_COMPUTER_COST_USD_PER_MIN);
+        if (Number.isFinite(n) && n >= 0) return n;
+      }
+      if (process.env.COMPUTER_COST_MICRO_USD_PER_SECOND) {
+        const micro = Number(process.env.COMPUTER_COST_MICRO_USD_PER_SECOND);
+        if (Number.isFinite(micro) && micro >= 0) return (micro * 60) / 1_000_000;
+      }
+      return 0;
+    },
+  },
+
   isProd: process.env.NODE_ENV === "production",
 };
 

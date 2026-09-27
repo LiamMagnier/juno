@@ -10,17 +10,14 @@
     "unclassified": "Nobody has decided yet. `npm run native:wire:check` fails."
   },
   "x-native-summary": {
-    "native": 158,
+    "native": 159,
     "planned": 65,
-    "web-only": 22,
+    "web-only": 32,
     "unclassified": 0
   },
   "x-native-only": {
     "request.clientFeatures": {
       "note": "The grammar the client renders (Tool calls & research rework, SPEC §2.2; web/tools-thinking-research, not on main). Today's server strips it: chatBodySchema is not strict."
-    },
-    "request.timeZone": {
-      "note": "The reader's IANA zone for current_time and research (the same rework); stripped by today's server."
     },
     "request.locale": {
       "note": "The reader's BCP-47 locale (the same rework); stripped by today's server."
@@ -454,6 +451,12 @@
             "web",
             "app"
           ],
+          "x-native": "native"
+        },
+        "timeZone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
           "x-native": "native"
         },
         "privateHistory": {
@@ -1238,6 +1241,11 @@
           ],
           "x-native": "planned",
           "x-native-note": "The artifact check's receipt (verified, repaired, refused) is not drawn on the Mac yet."
+        },
+        "agentChange": {
+          "$ref": "#/$defs/ClientAgentChange",
+          "x-native": "web-only",
+          "x-native-note": "Structured receipt for conversational agent configuration edits; native refreshes the agent record on turn completion."
         }
       },
       "required": [
@@ -1245,6 +1253,65 @@
         "kind",
         "title",
         "createdAt"
+      ]
+    },
+    "ClientAgentChange": {
+      "type": "object",
+      "properties": {
+        "agentId": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "agentName": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "eventId": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "summary": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientAgentChangeItem"
+          },
+          "x-native": "web-only"
+        },
+        "undone": {
+          "type": "boolean",
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "agentId",
+        "agentName",
+        "summary",
+        "changes"
+      ]
+    },
+    "ClientAgentChangeItem": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "from": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "to": {
+          "type": "string",
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "label",
+        "to"
       ]
     },
     "ClientArtifact": {

@@ -253,6 +253,7 @@ export const HANDOFF_REFUSALS = {
   approval_failed: "The approval for this handoff could not be used, so nothing was handed off.",
   stopped: "The reply was stopped before the handoff, so nothing was handed off.",
   already_tried: "This message already tried to hand work off and it did not go through. Nothing new was handed off.",
+  agent_paused: "This agent is paused. Resume it before handing work to a teammate. Nothing was handed off.",
   rate_limited: "There have been too many handoffs in the last hour, so nothing was handed off.",
   internal_error: "Juno could not hand this off because of a problem on its side. Nothing was handed off.",
 } as const;
@@ -372,7 +373,7 @@ export interface HandoffToolContext {
   user: { id: string; email?: string | null; name?: string | null };
   conversation: { id: string; projectId: string | null };
   /** The agent whose thread this is: the one handing the work over. */
-  fromAgent: { id: string; name: string };
+  fromAgent: { id: string; name: string; status?: string };
   /** The persisted user turn this reply answers. Every key derives from it. */
   userMessageId: string;
   /** The user's own words this turn, as the transcript shows them. */
@@ -442,6 +443,9 @@ async function handOff(
   const args = parseHandoffArgs(rawArgs);
   if (!args) return early(handoffRefusal("invalid_arguments"));
   if (signal?.aborted) return early(handoffRefusal("stopped"));
+  if (ctx.fromAgent.status && ctx.fromAgent.status !== "active") {
+    return early(handoffRefusal("agent_paused"));
+  }
 
   const [{ prisma }, agents, dispatch, approvals, { rateLimit }] = await Promise.all([
     import("@/lib/prisma"),
@@ -451,6 +455,13 @@ async function handOff(
     import("@/lib/rate-limit"),
   ]);
   const { user } = ctx;
+  const fromAgentRow = await prisma.agent.findFirst({
+    where: { id: ctx.fromAgent.id, userId: user.id, deletedAt: null },
+    select: { status: true },
+  });
+  if (!fromAgentRow || fromAgentRow.status !== "active") {
+    return early(handoffRefusal("agent_paused"));
+  }
 
   const roster = await prisma.agent.findMany({
     where: { userId: user.id, deletedAt: null },

@@ -106,6 +106,22 @@ public enum NativeToolPresentation {
         case "calculate": return single("Calculating")
         case "start_task": return single("Handing this to a task")
         case "suggest_research": return single("Suggested research")
+        case "create_agent": return single("Creating an agent")
+        case "update_agent", "agent_profile": return single("Updating its profile")
+        case "agent_goal", "manage_agent_goal", "agent_goals": return single("Updating its goals")
+        case "agent_routine", "manage_agent_routine", "agent_routines": return single("Updating its routines")
+        case "agent_memory", "manage_agent_note", "agent_notes": return single("Saving a note")
+        case "manage_agent_computer", "agent_computer": return single("Setting up its computer")
+        case "computer_screenshot", "computer_screen": return single("Looking at its screen")
+        case "computer_click": return single("Clicking on its screen")
+        case "computer_type": return single("Typing on its computer")
+        case "computer_key": return single("Pressing a key")
+        case "computer_scroll": return single("Scrolling its screen")
+        case "computer_wait": return single("Waiting on its computer")
+        case "computer_shell", "computer_exec": return single("Running a command")
+        case "computer_files", "computer_read_file", "computer_read_page": return single("Working with files on its computer")
+        case "computer_write_file": return single("Writing a file on its computer")
+        case "computer_open_url": return single("Opening a page on its computer")
         case "mcp":
             var phrases = [NativeRunPhrase([.label(call.connectorLabel ?? "Connector")])]
             if let title = call.toolTitle, !title.isEmpty { phrases.append(NativeRunPhrase([.label(title)])) }
@@ -136,6 +152,22 @@ public enum NativeToolPresentation {
             if let title = call.args["title"], !title.isEmpty { return line(["Started a task"], .quote(title)) }
             return single("Started a task")
         case "suggest_research": return single("Suggested research")
+        case "create_agent": return single("Created an agent")
+        case "update_agent", "agent_profile": return single("Updated its profile")
+        case "agent_goal", "manage_agent_goal", "agent_goals": return single("Updated its goals")
+        case "agent_routine", "manage_agent_routine", "agent_routines": return single("Updated its routines")
+        case "agent_memory", "manage_agent_note", "agent_notes": return single("Saved a note")
+        case "manage_agent_computer", "agent_computer": return single("Updated its computer")
+        case "computer_screenshot", "computer_screen": return single("Looked at its screen")
+        case "computer_click": return single("Clicked on its screen")
+        case "computer_type": return single("Typed on its computer")
+        case "computer_key": return single("Pressed a key")
+        case "computer_scroll": return single("Scrolled its screen")
+        case "computer_wait": return single("Waited on its computer")
+        case "computer_shell", "computer_exec": return single("Ran a command")
+        case "computer_files", "computer_read_file", "computer_read_page": return single("Worked with files on its computer")
+        case "computer_write_file": return single("Wrote a file on its computer")
+        case "computer_open_url": return single("Opened a page on its computer")
         case "mcp":
             return NativeRunPhraseLine([NativeRunPhrase([.phrase("Used"), .label(call.connectorLabel ?? "a connector")])])
         default:
@@ -277,6 +309,19 @@ public enum NativeToolPresentation {
         case "calculate": "calculator"
         case "start_task": "task"
         case "suggest_research": "research"
+        case "update_agent", "agent_profile": "agents"
+        case "manage_agent_goal", "agent_goals": "listChecks"
+        case "manage_agent_routine", "agent_routines": "clock"
+        case "manage_agent_note", "agent_notes": "memory"
+        case "manage_agent_computer", "agent_computer": "monitor"
+        case "computer_screen", "computer_scroll": "monitor"
+        case "computer_click": "crosshair"
+        case "computer_type", "computer_key": "keyboard"
+        case "computer_wait": "clock"
+        case "computer_exec": "terminal"
+        case "computer_read_file", "computer_read_page": "file"
+        case "computer_write_file": "filePlus"
+        case "computer_open_url": "web"
         case "mcp": "connectors"
         default: "tools"
         }
@@ -296,6 +341,21 @@ public enum NativeToolPresentation {
         case "calculate": "Calculating"
         case "start_task": "Starting a task"
         case "suggest_research": "Suggesting research"
+        case "update_agent", "agent_profile": "Updating agent profile"
+        case "manage_agent_goal", "agent_goals": "Managing agent goals"
+        case "manage_agent_routine", "agent_routines": "Managing agent routines"
+        case "manage_agent_note", "agent_notes": "Saving agent notes"
+        case "manage_agent_computer", "agent_computer": "Managing agent computer"
+        case "computer_screen": "Inspecting screen"
+        case "computer_click": "Clicking on screen"
+        case "computer_type": "Typing on computer"
+        case "computer_key": "Pressing keys"
+        case "computer_scroll": "Scrolling screen"
+        case "computer_wait": "Waiting on computer"
+        case "computer_exec": "Running shell command"
+        case "computer_read_file", "computer_read_page": "Reading computer file"
+        case "computer_write_file": "Writing computer file"
+        case "computer_open_url": "Opening web page"
         case "mcp": "Connector tools"
         default: "Another tool"
         }
