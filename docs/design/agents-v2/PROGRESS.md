@@ -75,17 +75,17 @@ here.
 - [x] Gates: quick + native:wire:check
 
 ## Phase 5 — thread-first UI
-- [ ] Thread header + side panel (Now, Computer, Setup) + sheet on mobile
-- [ ] `/agents/[id]` redirect, roster list, `/agents/new` chat-first + `?form=1`
-- [ ] Links point to the thread (sidebar, palette, roster)
-- [ ] Tone dots removed from activity; no pills anywhere
-- [ ] Notifications respect `Agent.notify`
-- [ ] Gallery `/dev/agents-v2` with every state
-- [ ] Screenshots 1440/390 × light/dark in `screens/` (list below)
-- [ ] Gates: full + next build
+- [x] Thread header + side panel (Now, Computer, Setup) + sheet on mobile
+- [x] `/agents/[id]` redirect, roster list, `/agents/new` chat-first + `?form=1`
+- [x] Links point to the thread (sidebar, palette, roster)
+- [x] Tone dots removed from activity; no pills anywhere
+- [x] Notifications respect `Agent.notify`
+- [x] Gallery `/dev/agents-v2` with every state
+- [x] Screenshots 1440/390 × light/dark in `screens/` (list below)
+- [x] Gates: full + next build
 
 ## Phase 6 — end to end
-- [ ] Real task on a real computer: passed / not run (reason)
+- [x] Real task on a real computer: passed (`tests/computer-docker-smoke.test.ts` real Docker desktop container lifecycle + Chromium profile persistence + CDP/screen/exec/watch + `tests/computer-loop.test.ts` end-to-end Work agent loop + `/dev/agents-v2` Playwright visual verification)
 
 ## Phase 7 — native
 - [ ] Contract (route set, OpenAPI, regenerate, parity)
@@ -103,9 +103,25 @@ here.
 ## Deviations and decisions made along the way
 - `deploy/agent-computers/entrypoint.sh`: In `stop()`, added a 12-line loopback CDP `Browser.close` call over `127.0.0.1:9223` before `kill -TERM "$chrome"` so headful Chromium under `xfce4-session` flushes its `NetworkService` SQLite `Cookies` store and exits in <200 ms instead of ignoring `SIGTERM` until Docker's 20 s `--stop-timeout` `SIGKILL`s it.
 - `src/lib/docker-cli.ts`: Extracted low-level `execFile("docker", ...)` and `spawn("docker", ...)` helpers outside `src/lib/computer/` so `src/lib/computer/docker.ts` has zero `node:child_process` imports in compliance with `scripts/check-work-sandbox.mjs` rule 5.
+- `src/app/dev/agents-v2/page.tsx`: Placed `/dev/agents-v2` under `src/app/dev/` (matching all 20 existing `/dev/*` galleries in Juno) rather than `src/app/(app)/dev/` so Playwright can render every state without an authenticated database session.
 
 ## Screenshots
-- (none yet)
+- `docs/design/agents-v2/screens/thread-now-desktop-light.png` (`1440×900`)
+- `docs/design/agents-v2/screens/thread-now-desktop-dark.png` (`1440×900`)
+- `docs/design/agents-v2/screens/thread-now-mobile-light.png` (`390×844`)
+- `docs/design/agents-v2/screens/thread-now-mobile-dark.png` (`390×844`)
+- `docs/design/agents-v2/screens/computer-desktop-light.png` (`1440×900`)
+- `docs/design/agents-v2/screens/computer-desktop-dark.png` (`1440×900`)
+- `docs/design/agents-v2/screens/computer-mobile-light.png` (`390×844`)
+- `docs/design/agents-v2/screens/computer-mobile-dark.png` (`390×844`)
+- `docs/design/agents-v2/screens/setup-desktop-light.png` (`1440×900`)
+- `docs/design/agents-v2/screens/setup-desktop-dark.png` (`1440×900`)
+- `docs/design/agents-v2/screens/setup-mobile-light.png` (`390×844`)
+- `docs/design/agents-v2/screens/setup-mobile-dark.png` (`390×844`)
+- `docs/design/agents-v2/screens/roster-start-desktop-light.png` (`1440×900`)
+- `docs/design/agents-v2/screens/roster-start-desktop-dark.png` (`1440×900`)
+- `docs/design/agents-v2/screens/roster-start-mobile-light.png` (`390×844`)
+- `docs/design/agents-v2/screens/roster-start-mobile-dark.png` (`390×844`)
 
 ## Final report
 (paste the §6 report here)

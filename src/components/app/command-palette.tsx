@@ -37,6 +37,7 @@ import { useModifierKeyLabel } from "@/components/ui/platform";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { staggerDelay } from "@/lib/motion";
+import { useAgents } from "@/components/agents/use-agents";
 import type { ClientConversation } from "@/types/chat";
 
 /** One row in either palette. `run` fires on click / Enter; `meta` is the muted
@@ -1091,6 +1092,9 @@ function CommandMenu() {
     if (open) setQuery("");
   }, [open]);
 
+  const { agents: rawSidebarAgents } = useAgents({ enabled: open });
+  const sidebarAgents = React.useMemo(() => rawSidebarAgents ?? [], [rawSidebarAgents]);
+
   // Projects are not in app context; fetched per open so the section is live.
   React.useEffect(() => {
     if (!open) return;
@@ -1338,8 +1342,21 @@ function CommandMenu() {
       },
     ].filter((c) => matches(c.label, c.keywords));
 
-    return [...actions, ...chats, ...codeSessions, ...projectRows, ...settings];
-  }, [conversations, projects, q, go, resolvedTheme, toggleTheme, mod]);
+    const agentRows: PaletteItem[] = (
+      q
+        ? sidebarAgents.filter((a) => matches(a.name, `${a.role} agent teammate`))
+        : sidebarAgents.slice(0, 5)
+    ).map((a) => ({
+      id: "agent-" + a.id,
+      group: "Agents",
+      label: a.name,
+      meta: a.role || a.stateSentence,
+      icon: AppIcons.agents,
+      run: () => go(a.conversationId ? `/chat/${a.conversationId}` : `/agents/${a.id}`),
+    }));
+
+    return [...actions, ...agentRows, ...chats, ...codeSessions, ...projectRows, ...settings];
+  }, [conversations, projects, sidebarAgents, q, go, resolvedTheme, toggleTheme, mod]);
 
 
   // The same anatomy as the search surface's empty state, so the two

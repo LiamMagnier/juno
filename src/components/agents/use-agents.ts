@@ -50,10 +50,12 @@ export function useVisiblePoll(run: () => void, everyMs: number) {
     start();
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener(AGENTS_CHANGED_EVENT, onChanged);
+    window.addEventListener("juno:agent-updated", onChanged);
     return () => {
       stop();
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener(AGENTS_CHANGED_EVENT, onChanged);
+      window.removeEventListener("juno:agent-updated", onChanged);
     };
   }, [everyMs]);
 }

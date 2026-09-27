@@ -1,22 +1,32 @@
-import { Suspense } from "react";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
-import { loadAgentDetail } from "@/lib/agents/store";
-import { AgentPage } from "@/components/agents/agent-page";
+import { ensureAgentThread, findAgent } from "@/lib/agents/store";
+
+function mapTabParam(raw: string | undefined): "now" | "computer" | "setup" {
+  if (raw === "computer") return "computer";
+  if (raw === "profile" || raw === "setup" || raw === "goals" || raw === "routines" || raw === "activity") {
+    return "setup";
+  }
+  return "now";
+}
 
 /**
- * One agent's page. The first paint is the server's read, so the face and the
- * state sentence are right the moment the page arrives; the client polls from
- * there (use-agents.ts).
+ * `/agents/[id]` redirects to the agent's chat thread with the side panel open
+ * (`docs/design/agents-v2/BRIEF.md` §4.8.2).
  */
-export default async function AgentRoute({ params }: { params: Promise<{ id: string }> }) {
+export default async function AgentRoute({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string; agent?: string }>;
+}) {
   const user = await requireUser();
   const { id } = await params;
-  const detail = await loadAgentDetail(user.id, id);
-  if (!detail) notFound();
-  return (
-    <Suspense>
-      <AgentPage initial={detail} />
-    </Suspense>
-  );
+  const query = await searchParams;
+  const agent = await findAgent(user.id, id);
+  if (!agent) notFound();
+  const conversationId = await ensureAgentThread(user.id, agent);
+  const tab = mapTabParam(query.agent ?? query.tab);
+  redirect(`/chat/${encodeURIComponent(conversationId)}?agent=${tab}`);
 }

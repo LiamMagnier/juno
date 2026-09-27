@@ -140,6 +140,19 @@ export interface ClientAgentActivity {
   tone: "neutral" | "attention" | "success" | "danger";
 }
 
+export interface ClientAgentComputer {
+  enabled: boolean;
+  status: string;
+  streamOn: boolean;
+  lastActiveAt: string | null;
+  activeSeconds: number;
+  hasPoster: boolean;
+  usingNow: { summary: string } | null;
+  error: string | null;
+  diskMb?: number | null;
+  diskQuotaMb?: number;
+}
+
 export interface ClientAgentDetail {
   agent: ClientAgent;
   goals: ClientAgentGoal[];
@@ -147,6 +160,8 @@ export interface ClientAgentDetail {
   notes: ClientAgentNote[];
   routines: ClientAgentRoutine[];
   tasks: ClientAgentTask[];
+  computer?: ClientAgentComputer | null;
+  computerConfigured?: boolean;
 }
 
 const iso = (value: Date | null | undefined): string | null => (value ? value.toISOString() : null);

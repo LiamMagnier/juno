@@ -326,6 +326,12 @@ export async function loadAgentDetail(userId: string, agentId: string, now = new
       take: 12,
     }),
   ]);
+  const { loadAgentComputerStatusPayload } = await import("@/lib/computer/store");
+  const { isAgentComputerConfigured } = await import("@/lib/computer/provider");
+  const [computer, computerConfigured] = await Promise.all([
+    loadAgentComputerStatusPayload(userId, agentId),
+    isAgentComputerConfigured(),
+  ]);
   return {
     agent: serialized[0],
     goals: goals.map(serializeGoal),
@@ -333,6 +339,8 @@ export async function loadAgentDetail(userId: string, agentId: string, now = new
     notes: notes.map((note) => serializeNote(readNote(note))),
     routines,
     tasks: tasks.map(toTask),
+    computer,
+    computerConfigured,
   };
 }
 

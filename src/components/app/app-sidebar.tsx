@@ -2698,7 +2698,7 @@ function AgentRow({ agent, active, onNavigate }: { agent: ClientAgent; active: b
       )}
     >
       <Link
-        href={`/agents/${agent.id}`}
+        href={agent.conversationId ? `/chat/${agent.conversationId}` : `/agents/${agent.id}`}
         onClick={onNavigate}
         prefetch={false}
         aria-current={active ? "page" : undefined}

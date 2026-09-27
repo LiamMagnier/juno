@@ -101,7 +101,11 @@ export function AgentHire({ initialTemplate }: { initialTemplate: string | null 
       return;
     }
     announceAgentsChanged();
-    router.push(`/agents/${outcome.value.id}?hired=1`);
+    router.push(
+      outcome.value.conversationId
+        ? `/chat/${outcome.value.conversationId}`
+        : `/agents/${outcome.value.id}`
+    );
   };
 
   return (

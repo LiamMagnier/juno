@@ -14,10 +14,18 @@
  */
 
 import type { AgentAvatar } from "@/lib/agents/avatar";
-import type { AgentGoalCadence, AgentGoalStatus, AgentRoutineCadence, AgentStatus, AgentStyle } from "@/lib/agents/domain";
+import type {
+  AgentGoalCadence,
+  AgentGoalStatus,
+  AgentNotifyLevel,
+  AgentRoutineCadence,
+  AgentStatus,
+  AgentStyle,
+} from "@/lib/agents/domain";
 import type {
   ClientAgent,
   ClientAgentActivity,
+  ClientAgentComputer,
   ClientAgentDetail,
   ClientAgentGoal,
   ClientAgentIdea,
@@ -35,7 +43,10 @@ export type AgentOutcome<T> =
 export const AGENTS_CHANGED_EVENT = "juno:agents-changed";
 
 export function announceAgentsChanged(): void {
-  if (typeof window !== "undefined") window.dispatchEvent(new Event(AGENTS_CHANGED_EVENT));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AGENTS_CHANGED_EVENT));
+    window.dispatchEvent(new CustomEvent("juno:agent-updated"));
+  }
 }
 
 async function json(res: Response): Promise<Record<string, unknown>> {
@@ -92,14 +103,15 @@ export function fetchAgentDetail(id: string): Promise<AgentOutcome<ClientAgentDe
 }
 
 export interface HireAgentInput {
-  name: string;
-  role: string;
-  avatar: AgentAvatar;
-  style: AgentStyle;
-  instructions: string;
-  approvalMode: WorkPermissionPolicy;
-  connectorIds: string[];
-  template: string | null;
+  name?: string;
+  role?: string;
+  avatar?: AgentAvatar;
+  style?: AgentStyle;
+  instructions?: string;
+  approvalMode?: WorkPermissionPolicy;
+  notify?: AgentNotifyLevel;
+  connectorIds?: string[];
+  template?: string | null;
   firstGoal?: string;
 }
 
@@ -114,14 +126,55 @@ export interface AgentPatch {
   style?: AgentStyle;
   instructions?: string;
   approvalMode?: WorkPermissionPolicy;
+  notify?: AgentNotifyLevel;
+  pinned?: boolean;
   connectorIds?: string[];
   status?: AgentStatus;
   proactive?: boolean;
   model?: string | null;
+  reasoningEffort?: string | null;
 }
 
 export function updateAgent(id: string, patch: AgentPatch): Promise<AgentOutcome<ClientAgent>> {
   return call(base(id), { method: "PATCH", body: patch }, (d) => d.agent as ClientAgent);
+}
+
+export function duplicateAgent(id: string): Promise<AgentOutcome<ClientAgent>> {
+  return call(`${base(id)}/duplicate`, { method: "POST", body: {} }, (d) => d.agent as ClientAgent);
+}
+
+export function undoAgentEvent(id: string, eventId?: string): Promise<AgentOutcome<{ undone: boolean; summary?: string }>> {
+  return call(`${base(id)}/undo`, { method: "POST", body: eventId ? { eventId } : {} }, (d) => ({
+    undone: Boolean(d.undone ?? d.ok),
+    summary: typeof d.summary === "string" ? d.summary : undefined,
+  }));
+}
+
+export function computerAction(
+  id: string,
+  action: "enable" | "disable" | "wake" | "sleep" | "reset"
+): Promise<AgentOutcome<ClientAgentComputer | null>> {
+  return call(`${base(id)}/computer`, { method: "POST", body: { action } }, (d) => (d.computer ?? null) as ClientAgentComputer | null);
+}
+
+export interface ClientAgentComputerFile {
+  name: string;
+  sizeBytes: number;
+  modifiedAt: string;
+}
+
+export function fetchComputerFiles(id: string): Promise<AgentOutcome<ClientAgentComputerFile[]>> {
+  return call(`${base(id)}/computer/files`, {}, (d) =>
+    Array.isArray(d.files) ? (d.files as ClientAgentComputerFile[]) : []
+  );
+}
+
+export function updateRoutine(scheduleId: string, enabled: boolean): Promise<AgentOutcome<true>> {
+  return call(`/api/work/schedules/${encodeURIComponent(scheduleId)}`, { method: "PATCH", body: { enabled } }, () => true as const);
+}
+
+export function deleteRoutine(scheduleId: string): Promise<AgentOutcome<true>> {
+  return call(`/api/work/schedules/${encodeURIComponent(scheduleId)}`, { method: "DELETE" }, () => true as const);
 }
 
 export function retireAgent(id: string): Promise<AgentOutcome<true>> {
