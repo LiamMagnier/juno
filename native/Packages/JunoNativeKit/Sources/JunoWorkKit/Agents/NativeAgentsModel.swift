@@ -57,9 +57,17 @@ public final class NativeAgentsModel {
     /// the roster — never for the first read, which is a state and not a
     /// change. Each app decides what a rise is worth: a sidebar dot, a sound.
     @ObservationIgnored public var onNeedsYouRise: (@MainActor (NativeAgent) -> Void)?
+    /// Bumped to ask Agents home to put the caret in its composer: the Mac's
+    /// ⌘K "New agent" and the sidebar's plus, which have no form to open.
+    public private(set) var composeRequest = 0
+    /// Routines whose pause switch has been flipped and not answered yet.
+    public private(set) var togglingRoutineIDs: Set<String> = []
 
     private let client: NativeAgentsClient
     private let workClient: NativeWorkClient?
+    /// Pauses and resumes an agent's routines, which are Work schedules. Nil
+    /// leaves the switch out.
+    private let automationClient: NativeWorkAutomationClient?
     private var accountID: AccountID?
     private var pollTask: Task<Void, Never>?
     private var lastRefreshReachedNothing = false
@@ -86,18 +94,30 @@ public final class NativeAgentsModel {
 
     /// - Parameter workClient: reads and answers the gates of an agent's
     ///   tasks. Nil keeps the page read-only about them.
-    public init(client: NativeAgentsClient, workClient: NativeWorkClient? = nil) {
+    /// - Parameter automationClient: pauses and resumes an agent's routines.
+    ///   Nil leaves them read-only.
+    public init(
+        client: NativeAgentsClient,
+        workClient: NativeWorkClient? = nil,
+        automationClient: NativeWorkAutomationClient? = nil
+    ) {
         self.client = client
         self.workClient = workClient
+        self.automationClient = automationClient
     }
 
     // MARK: - Reading
 
-    /// The roster in the order a person scans it: the agents that need them
-    /// first, then the ones at work, then the rest as hired — the web's order.
+    /// Agents home's order: pinned first, then the agents that need the
+    /// person, then the ones at work, then the rest as hired.
     public var orderedAgents: [NativeAgent] {
+        Self.homeOrder(agents)
+    }
+
+    nonisolated static func homeOrder(_ agents: [NativeAgent]) -> [NativeAgent] {
         agents.enumerated()
             .sorted { lhs, rhs in
+                if lhs.element.isPinned != rhs.element.isPinned { return lhs.element.isPinned }
                 let left = Self.rank(lhs.element.state)
                 let right = Self.rank(rhs.element.state)
                 if left != right { return left < right }
@@ -125,6 +145,28 @@ public final class NativeAgentsModel {
     /// Whether gates can be read and answered on an agent's page.
     public var canAnswerInPlace: Bool {
         workClient != nil
+    }
+
+    /// Whether an agent's routines can be paused from its profile.
+    public var canPauseRoutines: Bool {
+        automationClient != nil
+    }
+
+    /// Its computer, when its profile has been read and it has one turned on.
+    public func computer(for agentID: String) -> NativeAgentCloudComputer? {
+        guard let computer = details[agentID]?.computer, computer.enabled else { return nil }
+        return computer
+    }
+
+    /// Whether it is at its computer right now: awake, and saying what it is
+    /// doing there. The thread header's quiet "Using its computer".
+    public func isUsingComputer(_ agentID: String) -> Bool {
+        guard let computer = computer(for: agentID), computer.status == "awake" else { return false }
+        return !(computer.usingNowSummary ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    public func isTogglingRoutine(_ routineID: String) -> Bool {
+        togglingRoutineIDs.contains(routineID)
     }
 
     public func isAnswering(_ id: String) -> Bool {
@@ -284,6 +326,72 @@ public final class NativeAgentsModel {
             guard self.accountID == accountID else { return false }
             record(error)
             return false
+        }
+    }
+
+    /// Agents home's send: a blank agent, and the thread its first message
+    /// goes to. The agent names itself and sets itself up from that message,
+    /// with its own tools. Nil when either step failed; the error is recorded.
+    public func startAgent() async -> (agent: NativeAgent, conversationID: String)? {
+        guard let agent = await hire(.blank) else { return nil }
+        lastMutationExplanation = nil
+        if let conversationID = agent.conversationID {
+            return (agent, conversationID)
+        }
+        guard let conversationID = await threadConversationID(for: agent.id) else { return nil }
+        return (agent, conversationID)
+    }
+
+    /// Asks Agents home to focus its composer.
+    public func requestCompose() {
+        composeRequest &+= 1
+    }
+
+    /// Pinned agents come first on Agents home.
+    public func setPinned(id: String, pinned: Bool) async {
+        _ = await update(id: id, NativeAgentPatch(pinned: pinned))
+        lastMutationExplanation = nil
+    }
+
+    /// Takes one app away from it. Adding one is done by asking the agent.
+    public func removeApp(agentID: String, connectorID: String) async {
+        guard let agent = agent(id: agentID) else { return }
+        let remaining = agent.connectorIDs.filter { $0 != connectorID }
+        guard remaining.count != agent.connectorIDs.count else { return }
+        _ = await update(id: agentID, NativeAgentPatch(connectorIDs: remaining))
+        lastMutationExplanation = nil
+    }
+
+    /// Pauses or resumes one of its routines, which is a Work schedule.
+    public func setRoutineEnabled(agentID: String, routineID: String, enabled: Bool) async {
+        guard let accountID, let automationClient, !togglingRoutineIDs.contains(routineID) else { return }
+        togglingRoutineIDs.insert(routineID)
+        defer { togglingRoutineIDs.remove(routineID) }
+        do {
+            _ = try await automationClient.setEnabled(id: routineID, enabled: enabled, for: accountID)
+            guard self.accountID == accountID else { return }
+            if let index = details[agentID]?.routines.firstIndex(where: { $0.id == routineID }),
+                let routine = details[agentID]?.routines[index]
+            {
+                details[agentID]?.routines[index] = NativeAgentRoutine(
+                    id: routine.id,
+                    sessionID: routine.sessionID,
+                    name: routine.name,
+                    instructions: routine.instructions,
+                    enabled: enabled,
+                    timezone: routine.timezone,
+                    schedule: routine.schedule,
+                    nextRunAt: enabled ? routine.nextRunAt : nil,
+                    lastRunAt: routine.lastRunAt
+                )
+            }
+            lastErrorDescription = nil
+            // Its "Next:" sentence is derived from its routines.
+            await refresh()
+            await loadDetail(id: agentID)
+        } catch {
+            guard self.accountID == accountID else { return }
+            record(error)
         }
     }
 
@@ -991,7 +1099,7 @@ public final class NativeAgentsModel {
 
     /// The web roster's `RANK`: needs you, then at work, then settled, then
     /// idle, then asleep.
-    private static func rank(_ state: JunoAgentState) -> Int {
+    nonisolated private static func rank(_ state: JunoAgentState) -> Int {
         switch state {
         case .waiting: 0
         case .working, .thinking, .listening: 1

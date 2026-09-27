@@ -4,8 +4,8 @@ import Observation
 import SwiftUI
 
 /// A page pushed on a destination's own `NavigationStack` (spec §9, Phase 4
-/// brief §2.5): a project, an artifact, and — as later stages build them — a
-/// skill, an automation, a host or an agent.
+/// brief §2.5): a project, an artifact, a skill, an automation or a host. An
+/// agent has no page: it is its thread, with its profile as a sheet.
 ///
 /// Every destination but Chat sits in a stack of its own
 /// (``DesktopDestinationView``), with **one** `navigationDestination(for:)`
@@ -20,7 +20,6 @@ enum DesktopPageRoute: Hashable, Codable {
     case skill(String), newSkill
     case automation(String), newAutomation
     case host(String)
-    case agent(String), newAgent(template: String?)
 }
 
 /// Pushes a page onto the enclosing destination's stack.
@@ -39,7 +38,7 @@ extension EnvironmentValues {
     /// The enclosing destination's push. Outside a page stack it does nothing.
     @Entry var desktopPush: DesktopPushAction = .none
     /// Replaces the page on top of the enclosing stack — New automation
-    /// becoming the automation it made, New agent the agent it hired — so
+    /// becoming the automation it made — so
     /// back returns to the list rather than to a spent form. Outside a page
     /// stack it does nothing.
     @Entry var desktopReplace: DesktopPushAction = .none

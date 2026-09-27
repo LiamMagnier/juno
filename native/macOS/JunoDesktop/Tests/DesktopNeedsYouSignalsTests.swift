@@ -172,11 +172,10 @@ struct DesktopNeedsYouSignalsTests {
     @Test
     func anAgentsThreadSpeaksInItsOwnVoice() {
         let iris = agent(role: "Research lead", status: .active)
-        #expect(DesktopAgentThread.greetingLine(for: iris) == "Research lead. What should I take on?")
-        #expect(DesktopAgentThread.greetingLine(for: agent(role: "  ", status: .active)) == "What should I take on?")
+        #expect(DesktopAgentThread.greetingLine(for: iris) == "Tell me what to take care of. I’ll set myself up.")
         #expect(
             DesktopAgentThread.greetingLine(for: agent(role: "Research lead", status: .paused))
-                == "I’m paused. Resume me from my page to start something new."
+                == "I’m paused. Resume me from my profile to start something new."
         )
         #expect(DesktopAgentThread.sentence(for: iris, state: nil) == "Sorting the vendor list")
         #expect(DesktopAgentThread.sentence(for: iris, state: .thinking) == "Thinking")

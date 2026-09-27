@@ -76,10 +76,10 @@ enum PageFixturesC {
         "host-this-mac-local-on",
         "host-other-mac",
         "host-revoked",
-        "agents-roster",
-        "agents-first-hire",
-        "agent-page",
-        "agent-hire",
+        "agents-home",
+        "agents-home-empty",
+        "agent-profile",
+        "agent-thread",
         "automations-list-narrow",
         "window-automations",
         "window-agents",
@@ -211,30 +211,40 @@ enum PageFixturesC {
                     await model.loadHost(id: id)
                 }
             )
-        case "agents-roster", "agents-first-hire":
-            let model = agentsModel(name == "agents-roster" ? .normal : .empty)
+        case "agents-home", "agents-home-empty":
+            let model = agentsModel(name == "agents-home" ? .normal : .empty)
             return FinalFixture(
                 name: name,
                 width: pageWidth,
                 view: {
                     AnyView(
-                        stack { DesktopAgentsRoster(model: model, apps: [], openConversation: { _ in }) }
-                            .frame(height: name == "agents-roster" ? 400 : 700)
+                        stack { DesktopAgentsHome(model: model, openThread: { _ in }, startThread: { _, _ in }) }
+                            .frame(height: name == "agents-home" ? 980 : 620)
+                            .environment(\.junoSnapshotOpaqueGlass, true)
                     )
                 },
                 prepare: { await model.start(for: account) }
             )
-        case "agent-page":
+        case "agent-profile":
             let model = agentsModel(.normal)
             return FinalFixture(
                 name: name,
-                width: pageWidth,
+                width: 580,
                 view: {
                     AnyView(
-                        stack {
-                            NativeAgentRoutePage(model: model, agentID: "agent-wren", openConversation: { _ in })
-                        }
-                        .frame(height: 620)
+                        NativeAgentProfileSheet(
+                            model: model,
+                            agentID: "agent-wren",
+                            apps: [
+                                NativeAgentAppChoice(id: "composio:gmail", label: "Gmail"),
+                                NativeAgentAppChoice(id: "apple-calendar", label: "Calendar"),
+                            ],
+                            message: {},
+                            openThread: { _ in },
+                            close: {}
+                        )
+                        .frame(height: 1_560)
+                        .junoToastHost(JunoToastCenter())
                     )
                 },
                 prepare: {
@@ -242,20 +252,31 @@ enum PageFixturesC {
                     await model.loadDetail(id: "agent-wren")
                 }
             )
-        case "agent-hire":
+        case "agent-thread":
             let model = agentsModel(.normal)
             return FinalFixture(
                 name: name,
                 width: pageWidth,
                 view: {
                     AnyView(
-                        stack {
-                            NativeAgentHirePage(model: model, templateID: nil, onCancel: {}, onHired: { _ in })
+                        VStack(spacing: 0) {
+                            if let wren = model.agent(id: "agent-wren"), let quill = model.agent(id: "agent-quill") {
+                                threadHeader(model: model, agent: wren)
+                                threadHeader(model: model, agent: quill)
+                                Spacer(minLength: 96)
+                                DesktopAgentGreeting(agent: quill, columnWidth: pageWidth, pick: { _ in })
+                                    .padding(.horizontal, JunoSpace.section)
+                                Spacer(minLength: 96)
+                            }
                         }
-                        .frame(height: 2_000)
+                        .frame(height: 860)
                     )
                 },
-                prepare: { await model.start(for: account) }
+                prepare: {
+                    await model.start(for: account)
+                    await model.loadDetail(id: "agent-wren")
+                    await model.loadDetail(id: "agent-quill")
+                }
             )
         case "window-automations":
             let model = automationModel(.normal)
@@ -279,7 +300,8 @@ enum PageFixturesC {
                 width: F.windowWidth,
                 view: {
                     AnyView(FoundationFixtures.page(world: world, selection: .destination(.agents)) {
-                        stack { DesktopAgentsRoster(model: model, apps: [], openConversation: { _ in }) }
+                        stack { DesktopAgentsHome(model: model, openThread: { _ in }, startThread: { _, _ in }) }
+                            .environment(\.junoSnapshotOpaqueGlass, true)
                     })
                 },
                 prepare: {
@@ -318,9 +340,25 @@ enum PageFixturesC {
         NativeWorkHostsModel(client: NativeWorkClient(transport: StageCPreviewServer(scenario)))
     }
 
+    /// A thread's presence header as the chat column draws it: at the
+    /// reading measure, over the column's hairline.
+    @MainActor
+    static func threadHeader(model: NativeAgentsModel, agent: NativeAgent) -> some View {
+        VStack(spacing: 0) {
+            DesktopAgentThreadHeader(model: model, agent: agent, openProfile: {})
+                .frame(maxWidth: DesktopChatMeasure.reading)
+                .padding(.horizontal, JunoSpace.section)
+                .padding(.vertical, JunoSpace.hairline)
+            Rectangle().fill(Color.junoHairline).frame(height: 1)
+        }
+    }
+
     @MainActor
     static func agentsModel(_ scenario: StageCPreviewServer.Scenario) -> NativeAgentsModel {
-        NativeAgentsModel(client: NativeAgentsClient(sender: StageCPreviewServer(scenario)))
+        NativeAgentsModel(
+            client: NativeAgentsClient(sender: StageCPreviewServer(scenario)),
+            automationClient: NativeWorkAutomationClient(sender: StageCPreviewServer(scenario))
+        )
     }
 }
 
@@ -360,8 +398,10 @@ actor StageCPreviewServer: NativeWorkTransport {
         case "/api/agents":
             return Self.json(scenario == .empty ? #"{"agents":[]}"# : "{\"agents\":[\(Self.agents.joined(separator: ","))]}")
         case "/api/agents/agent-wren":
-            return Self.json("{\"agent\":\(Self.agents[0]),\"goals\":[\(Self.goal)],\"ideas\":[],\"notes\":[],\"routines\":[],\"tasks\":[]}")
-        case "/api/agents/agent-wren/activity":
+            return Self.json(Self.wrenDetail)
+        case "/api/agents/agent-quill":
+            return Self.json("{\"agent\":\(Self.agents[1]),\"goals\":[],\"ideas\":[],\"notes\":[],\"routines\":[],\"tasks\":[]}")
+        case "/api/agents/agent-wren/activity", "/api/agents/agent-quill/activity":
             return Self.json(#"{"activity":[]}"#)
         default:
             if path.hasPrefix("/api/work/schedules/"), path.hasSuffix("/runs") {
@@ -510,44 +550,74 @@ actor StageCPreviewServer: NativeWorkTransport {
 
     private static func agent(
         id: String, name: String, role: String, state: String, sentence: String, needsYou: Int,
-        shape: String, tone: String, eyes: String, mark: String
+        shape: String, tone: String, eyes: String, mark: String,
+        connectors: [String] = [], status: String = "active", pinned: Bool = false,
+        conversation: String? = nil
     ) -> String {
-        """
+        let connectorList = connectors.map { "\"\($0)\"" }.joined(separator: ",")
+        let pinnedAt = pinned ? "\"\(iso(-2 * day))\"" : "null"
+        let thread = conversation.map { "\"\($0)\"" } ?? "null"
+        return """
         {"id":"\(id)","name":"\(name)","role":"\(role)",
          "avatar":{"shape":"\(shape)","tone":"\(tone)","eyes":"\(eyes)","mark":"\(mark)"},
-         "style":"warm","instructions":"","approvalMode":"balanced","connectorIds":[],"status":"active",
+         "style":"warm","instructions":"","approvalMode":"balanced","connectorIds":[\(connectorList)],"status":"\(status)",
          "proactive":true,"sortOrder":0,"createdAt":"\(iso(-20 * day))","updatedAt":"\(iso(-1 * hour))",
-         "state":"\(state)","stateSentence":"\(sentence)","needsYou":\(needsYou),"newIdeas":0}
+         "state":"\(state)","stateSentence":"\(sentence)","needsYou":\(needsYou),"newIdeas":0,
+         "pinnedAt":\(pinnedAt),"conversationId":\(thread)}
         """
     }
 
     private static var agents: [String] {
-        let shapes = JunoAgentShape.allCases.map(\.rawValue)
-        let tones = JunoAgentTone.allCases.map(\.rawValue)
-        let eyes = JunoAgentEyes.allCases.map(\.rawValue)
-        let marks = JunoAgentMark.allCases.map(\.rawValue)
-        return [
+        [
             agent(
                 id: "agent-wren", name: "Wren", role: "Inbox and calendar", state: "waiting",
                 sentence: "Wants your OK to send two replies.", needsYou: 1,
-                shape: shapes[0], tone: tones[min(2, tones.count - 1)], eyes: eyes[0], mark: marks[0]
+                shape: "pebble", tone: "juniper", eyes: "soft", mark: "ring",
+                connectors: ["composio:gmail", "apple-calendar"], conversation: "conv-wren"
             ),
             agent(
-                id: "agent-quill", name: "Quill", role: "Writer", state: "working",
+                id: "agent-quill", name: "Quill", role: "Writing and drafting", state: "working",
                 sentence: "Drafting the October newsletter.", needsYou: 0,
-                shape: shapes[min(1, shapes.count - 1)], tone: tones[min(4, tones.count - 1)],
-                eyes: eyes[min(1, eyes.count - 1)], mark: marks[min(1, marks.count - 1)]
+                shape: "bloom", tone: "violet", eyes: "soft", mark: "none",
+                pinned: true, conversation: "conv-quill"
             ),
             agent(
-                id: "agent-atlas", name: "Atlas", role: "Research", state: "idle",
+                id: "agent-atlas", name: "Atlas", role: "Research and briefings", state: "idle",
                 sentence: "Ready for the next question.", needsYou: 0,
-                shape: shapes[min(2, shapes.count - 1)], tone: tones[min(6, tones.count - 1)],
-                eyes: eyes[min(2, eyes.count - 1)], mark: marks[0]
+                shape: "orb", tone: "teal", eyes: "round", mark: "antenna"
+            ),
+            agent(
+                id: "agent-penny", name: "Penny", role: "Shopping and price watching", state: "idle",
+                sentence: "Watching three prices. Nothing has dropped yet.", needsYou: 0,
+                shape: "petal", tone: "amber", eyes: "wide", mark: "spark"
+            ),
+            agent(
+                id: "agent-kite", name: "Kite", role: "Travel planning", state: "sleeping",
+                sentence: "Paused.", needsYou: 0,
+                shape: "capsule", tone: "sage", eyes: "tall", mark: "leaf", status: "paused"
             ),
         ]
     }
 
-    private static var goal: String {
-        #"{"id":"goal-1","agentId":"agent-wren","title":"Inbox under fifty by Friday","detail":"","status":"active","cadence":"weekly"}"#
+    /// Wren's profile, with something in every section.
+    private static var wrenDetail: String {
+        let goals = [
+            #"{"id":"goal-1","agentId":"agent-wren","title":"Inbox under fifty by Friday","detail":"","status":"active","cadence":"weekly"}"#,
+            #"{"id":"goal-2","agentId":"agent-wren","title":"Nothing important waits more than a day","detail":"","status":"active","cadence":"daily"}"#,
+            #"{"id":"goal-3","agentId":"agent-wren","title":"Clear the backlog from the conference","detail":"","status":"achieved","cadence":"none"}"#,
+        ].joined(separator: ",")
+        let routines = [
+            "{\"id\":\"sched-brief\",\"sessionId\":\"s-1\",\"name\":\"Morning briefing\",\"instructions\":\"Brief me\",\"enabled\":true,\"timezone\":\"Europe/London\",\"schedule\":\"Weekdays at 08:30\",\"nextRunAt\":\"\(iso(14 * hour))\"}",
+            #"{"id":"sched-sweep","sessionId":"s-2","name":"Friday inbox sweep","instructions":"Sweep","enabled":false,"timezone":"Europe/London","schedule":"Fridays at 16:00"}"#,
+        ].joined(separator: ",")
+        let notes = [
+            #"{"id":"note-1","agentId":"agent-wren","content":"Liam prefers replies under five sentences, and never before 8am.","source":"user"}"#,
+            #"{"id":"note-2","agentId":"agent-wren","content":"Invoices from Northwind go to the accounts folder, not the inbox.","source":"agent"}"#,
+            #"{"id":"note-3","agentId":"agent-wren","content":"Tuesday afternoons are kept free for deep work.","source":"reflection"}"#,
+        ].joined(separator: ",")
+        let tasks = "{\"sessionId\":\"task-1\",\"title\":\"Reply to the Northwind thread\",\"status\":\"waiting_approval\",\"needsAttention\":true,\"lastActivityAt\":\"\(iso(-600))\",\"conversationId\":\"conv-wren\"}"
+        let computer = #"{"enabled":true,"status":"awake","usingNow":{"summary":"Filing receipts in the accounts folder"}}"#
+        return "{\"agent\":\(agents[0]),\"goals\":[\(goals)],\"ideas\":[],\"notes\":[\(notes)],\"routines\":[\(routines)],\"tasks\":[\(tasks)],\"computer\":\(computer),\"computerConfigured\":true}"
     }
+
 }

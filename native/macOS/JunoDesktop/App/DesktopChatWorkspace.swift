@@ -55,7 +55,8 @@ enum DesktopSidebarItem: Hashable {
     case conversation(String)
     /// A pinned project's own row, which opens that project's page.
     case project(String)
-    /// One agent's page — a row in the column's Agents fold.
+    /// One agent — a row in the column's Agents fold. Choosing it opens the
+    /// agent's thread: the thread is the agent.
     case agent(String)
 }
 
@@ -101,12 +102,9 @@ struct DesktopChatWorkspace: View {
     var consumeRoute: (() -> Void)? = nil
     @SceneStorage("juno.desktop.destination") private var storedDestination =
         DesktopDestination.chat.rawValue
-    /// The agent whose page is open on the Agents destination; empty for the
-    /// roster. The window's rather than the screen's, because the column
-    /// selects it — an agent's row, and the notification that names one — and
-    /// highlights the row of whichever is open. Scene storage for the reason
-    /// the destination is: coming back from Code returns to the same page.
-    @SceneStorage("juno.desktop.agent") private var storedAgentID = ""
+    /// The agent whose profile sheet is up, over the window: from the
+    /// presence header of its thread, or from a notification about it.
+    @State private var profileAgentID: String?
     /// Holds the launch override until the reader navigates somewhere themselves.
     ///
     /// Writing `storedDestination` from `onAppear` was not enough: scene storage
@@ -181,8 +179,6 @@ struct DesktopChatWorkspace: View {
     /// ``ChatDetail``, posted to from the sidebar, the transcript and every
     /// page through `@Environment(\.junoToast)`.
     @State private var toasts = JunoToastCenter()
-    /// The Agents fold's "New agent": the hiring sheet, over the window.
-    @State private var isHiringAgent = false
     /// Whether this window is the key one, so a rise in tasks needing the
     /// reader is toasted here and not in a window behind it.
     @Environment(\.appearsActive) private var appearsActive
@@ -259,11 +255,16 @@ struct DesktopChatWorkspace: View {
                 DesktopNavigationState.selection(
                     destination: currentDestination,
                     selectedConversationID: model.selectedConversationID,
-                    openProjectID: openPinnedProjectID,
-                    selectedAgentID: selectedAgentID
+                    openProjectID: openPinnedProjectID
                 )
             },
             set: { item in
+                // An agent's row is its thread: the thread opens in Chat, and
+                // its row reads as selected because the thread is on screen.
+                if case .agent(let id) = item {
+                    messageAgent(id)
+                    return
+                }
                 // Only a pinned project's row deep-links into a project; every
                 // other selection opens its destination's root.
                 if case .project(let id) = item {
@@ -275,31 +276,16 @@ struct DesktopChatWorkspace: View {
                 }
                 let resolved = DesktopNavigationState.resolve(
                     selection: item,
-                    current: (currentDestination, model.selectedConversationID, selectedAgentID)
+                    current: (currentDestination, model.selectedConversationID)
                 )
                 overrideDestination = nil
                 store(resolved.destination)
-                storedAgentID = resolved.agentID ?? ""
                 model.selectedConversationID = resolved.conversationID
                 model.isDraftingNewConversation = resolved.isDrafting
                 // Choosing anything in the column leaves a private chat — and
                 // leaving it is what erases it.
                 if item != nil { isPrivateChat = false }
             }
-        )
-    }
-
-    private var selectedAgentID: String? {
-        storedAgentID.isEmpty ? nil : storedAgentID
-    }
-
-    /// The open agent, as the Agents screen reads and writes it. The page's
-    /// back control writes nil, which hands the highlight back to the Agents
-    /// row.
-    private var agentSelection: Binding<String?> {
-        Binding(
-            get: { selectedAgentID },
-            set: { storedAgentID = $0 ?? "" }
         )
     }
 
@@ -320,8 +306,8 @@ struct DesktopChatWorkspace: View {
                 newChatInProject: startConversation(in:),
                 openSearch: openSearch,
                 agentsModel: configuration.agentsModel,
-                messageAgent: messageAgent,
-                hireAgent: configuration.agentsModel == nil ? nil : { isHiringAgent = true },
+                messageAgent: { messageAgent($0) },
+                hireAgent: newAgentAction,
                 runs: needsYouSignals.runs,
                 notificationsModel: configuration.notificationsModel,
                 showingNotifications: $showingNotifications,
@@ -330,6 +316,9 @@ struct DesktopChatWorkspace: View {
             .junoSidebarColumn()
         } detail: {
             detail
+                // An agent's profile, over the window: from its thread's
+                // presence header, or from a notification about it.
+                .sheet(item: profileSheet) { item in profileSheetContent(item) }
         }
         // The ⌘K / Search panel, over the whole window (Phase 3 B1).
         .desktopSearchPanel(
@@ -352,23 +341,6 @@ struct DesktopChatWorkspace: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("It won't be saved.")
-        }
-        // The hiring flow from the column's "New agent" — the web's
-        // `/agents/new`, starting from the first job as the roster's own
-        // button does. Hired, the new agent's page opens.
-        .sheet(isPresented: $isHiringAgent) {
-            if let agentsModel = configuration.agentsModel {
-                NativeAgentHireView(
-                    model: agentsModel,
-                    apps: agentApps,
-                    template: NativeAgentTemplate.all[0],
-                    onCancel: { isHiringAgent = false },
-                    onHired: { agent in
-                        isHiringAgent = false
-                        selection.wrappedValue = .agent(agent.id)
-                    }
-                )
-            }
         }
         // The key window hosts the toast a rise in waiting tasks posts.
         .onChange(of: appearsActive, initial: true) { _, active in
@@ -519,7 +491,7 @@ struct DesktopChatWorkspace: View {
             draftProjectID: $draftProjectID,
             draftPrompt: $draftPrompt,
             requestedProjectID: $requestedProjectID,
-            selectedAgentID: agentSelection,
+            profileAgentID: $profileAgentID,
             composerRequest: $composerRequest,
             findCommand: $findCommand,
             isPrivateChat: isPrivateChat,
@@ -857,7 +829,7 @@ struct DesktopChatWorkspace: View {
         // for New design its size menu, as the web's `?new=design`.
         case .designs: pageRouter.open(.design)
         case .newDesign: pageRouter.open(.design, opensNewMenu: true)
-        case .newAgent: pageRouter.open(.agents, route: .newAgent(template: nil))
+        case .newAgent: startNewAgent()
         }
     }
 
@@ -1077,12 +1049,79 @@ struct DesktopChatWorkspace: View {
             .map { NativeAgentAppChoice(id: $0.id, label: $0.label) }
     }
 
-    /// The Agents fold's Message: the agent's thread, created if it has none.
-    private func messageAgent(_ agentID: String) {
+    /// An agent's thread, created if it has none: its sidebar row, its
+    /// Message, a notification about it. `focus` puts the caret in the
+    /// composer, for the profile's Message.
+    private func messageAgent(_ agentID: String, focus: Bool = false) {
         guard let agentsModel = configuration.agentsModel else { return }
         Task {
             guard let id = await agentsModel.threadConversationID(for: agentID) else { return }
             await openThread(id)
+            if focus { composerRequest = ChatComposerRequest(kind: .focus) }
+        }
+    }
+
+    /// An agent's profile. Configuration is conversation, so the sheet's
+    /// Message returns to the thread with the caret in its composer.
+    @ViewBuilder
+    private func profileSheetContent(_ item: DesktopAgentProfileItem) -> some View {
+        if let agentsModel = configuration.agentsModel {
+            NativeAgentProfileSheet(
+                model: agentsModel,
+                agentID: item.id,
+                apps: agentApps,
+                localApprovals: localApprovals,
+                decideLocally: decideLocally,
+                message: {
+                    profileAgentID = nil
+                    messageAgent(item.id, focus: true)
+                },
+                openThread: { id in
+                    profileAgentID = nil
+                    Task { await openThread(id) }
+                },
+                close: { profileAgentID = nil }
+            )
+        }
+    }
+
+    /// ``profileAgentID`` as the sheet's item.
+    private var profileSheet: Binding<DesktopAgentProfileItem?> {
+        Binding(
+            get: { profileAgentID.map(DesktopAgentProfileItem.init(id:)) },
+            set: { profileAgentID = $0?.id }
+        )
+    }
+
+    /// The Agents fold's plus, where there are agents at all.
+    private var newAgentAction: (() -> Void)? {
+        guard configuration.agentsModel != nil else { return nil }
+        return { startNewAgent() }
+    }
+
+    /// ⌘K's New agent and the Agents fold's plus: there is no form to open.
+    /// Agents home, with the caret in its composer.
+    private func startNewAgent() {
+        pageRouter.open(.agents)
+        configuration.agentsModel?.requestCompose()
+    }
+
+    /// What a run executing on this Mac has stopped to ask, for an agent's
+    /// profile. Those approvals have no server row (the run is suspended in
+    /// this process), so the profile cannot read them from its task's run the
+    /// way it reads a cloud run's. Nil where this Mac hosts no Work.
+    private var localApprovals: (@MainActor (String) -> [WorkApprovalRequest])? {
+        guard let hostModel = configuration.workHostModel else { return nil }
+        return { runID in hostModel.localApprovals(forRun: runID) }
+    }
+
+    /// Answers one of those through the runtime holding the run, with the
+    /// digest of the action the card showed: the same call the Work thread's
+    /// card makes.
+    private var decideLocally: (@MainActor (WorkApprovalRequest, JunoWorkApprovalDecision) -> Void)? {
+        guard let hostModel = configuration.workHostModel else { return nil }
+        return { approval, decision in
+            hostModel.localApprovalDecider?(approval.id, decision, approval.actionDigest)
         }
     }
 
@@ -1092,7 +1131,10 @@ struct DesktopChatWorkspace: View {
         consumeRoute?()
         switch route.route {
         case .agent(let id):
-            selection.wrappedValue = .agent(id)
+            // The agent is its thread; what the notification is about is on
+            // its profile, over it.
+            messageAgent(id)
+            profileAgentID = id
         case .conversation(let id):
             Task { await openThread(id) }
         case .workSession(let id):
@@ -1408,7 +1450,8 @@ struct DesktopConversationView: View {
     /// Fork Privately: the window starts a private chat from these turns.
     /// Nil where there is no private chat to start.
     var forkPrivately: (([NativePrivateChatModel.Turn]) -> Void)? = nil
-    /// Opens an agent's page by id, from the header its thread carries.
+    /// Presents an agent's profile by id, from the presence header its thread
+    /// carries.
     var openAgent: ((String) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openSettings) private var openSettings
@@ -2084,8 +2127,8 @@ struct DesktopConversationView: View {
             // §5.3): the agent, what it is doing, and its page. Above rather
             // than an inset over it, so the composer's bar stays the
             // transcript's alone.
-            if privateChat == nil, let agent = threadAgent {
-                threadHeader(agent)
+            if privateChat == nil, let agent = threadAgent, let agentsModel = configuration.agentsModel {
+                threadHeader(agent, agentsModel: agentsModel)
             }
             transcriptGroup
         }
@@ -2124,7 +2167,8 @@ struct DesktopConversationView: View {
                     isPrivate: privateChat != nil,
                     columnWidth: columnWidth,
                     isShown: isLanding,
-                    agent: isAgentLanding ? threadAgent : nil
+                    agent: isAgentLanding ? threadAgent : nil,
+                    pickSuggestion: { text in composerRequest = ChatComposerRequest(kind: .seed(text)) }
                 )
                 .padding(.bottom, JunoSpace.region)
             } composer: {
@@ -2190,12 +2234,13 @@ struct DesktopConversationView: View {
     }
 
     /// Chrome, so it carries the hairline; the transcript under it stays flat.
-    private func threadHeader(_ agent: NativeAgent) -> some View {
+    private func threadHeader(_ agent: NativeAgent, agentsModel: NativeAgentsModel) -> some View {
         VStack(spacing: 0) {
             DesktopAgentThreadHeader(
+                model: agentsModel,
                 agent: agent,
                 state: threadAgentState,
-                openAgent: { openAgent?(agent.id) }
+                openProfile: { openAgent?(agent.id) }
             )
             .frame(maxWidth: DesktopChatMeasure.reading)
             .padding(.horizontal, DesktopChatMeasure.gutter(forColumnWidth: columnWidth))

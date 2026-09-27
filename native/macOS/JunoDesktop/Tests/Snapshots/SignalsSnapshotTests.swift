@@ -419,7 +419,12 @@ enum SignalsFixtures {
 
     private static func header(_ agent: NativeAgent, state: JunoAgentState?) -> some View {
         VStack(spacing: 0) {
-            DesktopAgentThreadHeader(agent: agent, state: state, openAgent: {})
+            DesktopAgentThreadHeader(
+                model: NativeAgentsModel(client: NativeAgentsClient(sender: SignalsNoAgentsSender())),
+                agent: agent,
+                state: state,
+                openProfile: {}
+            )
                 .frame(maxWidth: DesktopChatMeasure.reading)
                 .padding(.horizontal, JunoSpace.section)
                 .padding(.vertical, JunoSpace.hairline)
@@ -481,5 +486,12 @@ private struct SignalsAgentsSender: NativeAuthenticatedRequestSending {
 private struct SignalsNoNetwork: NativeAuthenticatedRequestSending {
     func send(_ request: NativeBearerRequest, for accountID: AccountID) async throws -> HTTPResponse {
         HTTPResponse(statusCode: 503, headers: HTTPHeaders(), body: Data("{}".utf8))
+    }
+}
+
+/// Answers nothing: the thread headers draw from the agents they are given.
+private struct SignalsNoAgentsSender: NativeAuthenticatedRequestSending {
+    func send(_ request: NativeBearerRequest, for accountID: AccountID) async throws -> HTTPResponse {
+        HTTPResponse(statusCode: 404, headers: try HTTPHeaders(["content-type": "application/json"]), body: Data("{}".utf8))
     }
 }

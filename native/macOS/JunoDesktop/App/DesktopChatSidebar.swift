@@ -51,8 +51,8 @@ struct DesktopChatSidebar: View {
     var agentsModel: NativeAgentsModel? = nil
     /// Opens an agent's thread by the agent's id, creating it if it has none.
     var messageAgent: ((String) -> Void)? = nil
-    /// Opens the hiring sheet: the Agents fold's "New agent" (the web's
-    /// `/agents/new`). Nil hides the button.
+    /// The Agents fold's "New agent": Agents home with the caret in its
+    /// composer. There is no form. Nil hides the button.
     var hireAgent: (() -> Void)? = nil
     /// Each chat's newest task, joined from the account's list (Phase 5 C1):
     /// the rows' status dots and the Needs-you fold.
@@ -404,29 +404,34 @@ struct DesktopChatSidebar: View {
         )
     }
 
-    /// One agent: its face, its name, and a dot while it needs the person —
-    /// the row's one trailing signal. The sentence the roster says is the
-    /// hover text and half of what the row says aloud, so the face itself is
-    /// decorative here.
+    /// One agent: its face and its name, and the accent hand while it needs
+    /// the person, the row's one trailing signal. Never a count. The live
+    /// sentence is the hover text and half of what the row says aloud, so the
+    /// face itself is decorative here.
     ///
-    /// Lit while its page is open, and while its thread is the conversation on
-    /// screen: the thread is the agent too, as the web's row says.
+    /// Choosing it opens its thread (the thread is the agent), and it is lit
+    /// while that thread is the conversation on screen.
     private func agentRow(_ agent: NativeAgent) -> some View {
         let sentence = NativeAgentFormat.stateSentence(for: agent)
-        let spoken = "\(agent.name). \(sentence)"
-        var selected = selection == .agent(agent.id)
+        let waiting = agent.state == .waiting
+        let spoken = waiting ? "\(agent.name). Needs you. \(sentence)" : "\(agent.name). \(sentence)"
+        var selected = false
         if let thread = agent.conversationID, selection == .conversation(thread) {
             selected = true
         }
 
         return HStack(spacing: JunoSpace.tight) {
-            JunoAgentFace(avatar: agent.avatar, state: agent.state, size: JunoAgentFaceSize.xs)
+            JunoAgentFace(
+                avatar: agent.avatar,
+                state: agent.isPaused ? .sleeping : agent.state,
+                size: JunoAgentFaceSize.xs
+            )
             Text(agent.name)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: JunoSpace.hairline)
             DesktopSidebarTrailingSlot {
-                if agent.state == .waiting {
+                if waiting {
                     NativeAgentNeedsYouDot()
                 }
             }
@@ -439,9 +444,8 @@ struct DesktopChatSidebar: View {
         .accessibilityLabel(spoken)
         .tag(DesktopSidebarItem.agent(agent.id))
         .contextMenu {
-            Button("Message") { messageAgent?(agent.id) }
+            Button("Open") { messageAgent?(agent.id) }
                 .disabled(messageAgent == nil)
-            Button("Open") { selection = .agent(agent.id) }
         }
     }
 

@@ -133,9 +133,9 @@ struct JunoMobileRootView: View {
   /// rather than the screen so the roster survives leaving it and the store
   /// can be stopped — and emptied — at sign-out like every other account model.
   @State private var agentsModel: NativeAgentsModel?
-  /// The agent whose page is open, held here so a notification or a thread's
-  /// header can open one from outside the Agents screen.
-  @State private var selectedAgentID: String?
+  /// The agent whose profile sheet is up: from its thread's presence header,
+  /// or from a notification about it, over its thread.
+  @State private var profileAgentID: String?
   #if DEBUG
     /// Set by `JUNO_START_OVERLAY=voice`, and acted on once the account is
     /// signed in — the launch flag fires before `restore()` finishes, and a
@@ -333,7 +333,11 @@ struct JunoMobileRootView: View {
         let agents =
           agentsModel
           ?? requestSender.map {
-            NativeAgentsModel(client: NativeAgentsClient(sender: $0), workClient: workClient)
+            NativeAgentsModel(
+              client: NativeAgentsClient(sender: $0),
+              workClient: workClient,
+              automationClient: NativeWorkAutomationClient(sender: $0)
+            )
           }
         agentsModel = agents
         if let agents {
@@ -386,7 +390,7 @@ struct JunoMobileRootView: View {
         // An agent's brief, goals and memory belong to the account that
         // hired it; nothing of them may be on screen for whoever signs in next.
         agentsModel?.stop()
-        selectedAgentID = nil
+        profileAgentID = nil
         // The server has already retired this session's tokens; this only
         // forgets the account so the next sign-in registers afresh.
         NativePushRegistrar.shared.stop()
@@ -491,6 +495,9 @@ struct JunoMobileRootView: View {
     .sheet(item: $drawerShare) { share in
       JunoMobileShareSheet(items: [share.url])
     }
+    // An agent's profile: from its thread's presence header, or from a
+    // notification about it, over its thread.
+    .sheet(item: profileSheetItem) { item in agentProfileSheet(item.id) }
     // Voice is **not** a presentation any more. It used to be a
     // `fullScreenCover`, on the argument that a spoken conversation is the
     // whole interaction while it lasts — and that argument is what made it
@@ -1123,9 +1130,6 @@ struct JunoMobileRootView: View {
     if destination != .chat, destination != .settings {
       conversationModel?.selectedConversationID = nil
     }
-    // Agents from the sidebar is the roster, not whichever page was last
-    // opened from a notification.
-    if destination == .agents { selectedAgentID = nil }
     show(destination)
   }
 
@@ -1242,7 +1246,7 @@ struct JunoMobileRootView: View {
         pendingPrompt: $pendingAskPrompt,
         startDictation: $pendingDictation,
         agentsModel: agentsModel,
-        openAgent: openAgent
+        openAgent: presentAgentProfile
       )
       .transition(.opacity)
     } else {
@@ -1262,9 +1266,8 @@ struct JunoMobileRootView: View {
     if let agentsModel {
       NativeAgentsScreen(
         model: agentsModel,
-        apps: agentApps,
-        selectedAgentID: $selectedAgentID,
-        openConversation: openAgentThread
+        openThread: openAgentThread,
+        startThread: startAgentThread
       )
       // The moment to ask about banners: an agent has just joined, and it is
       // the one who will need them. The roster growing while it is on screen
@@ -1310,11 +1313,76 @@ struct JunoMobileRootView: View {
     }
   }
 
-  /// Opens an agent's page from outside the Agents screen: a notification, a
-  /// link, or the header of its thread.
+  /// Opens an agent from outside Agents home: a notification or a link. The
+  /// agent is its thread, so the thread opens, with its profile over it.
   private func openAgent(_ id: String) {
-    selectedAgentID = id
-    show(.agents)
+    Task {
+      if let conversationID = await agentsModel?.threadConversationID(for: id) {
+        openAgentThread(conversationID)
+      }
+      profileAgentID = id
+    }
+  }
+
+  /// Presents an agent's profile, from the presence header of its thread.
+  private func presentAgentProfile(_ id: String) {
+    profileAgentID = id
+  }
+
+  /// ``profileAgentID`` as the sheet's item.
+  private var profileSheetItem: Binding<JunoMobileAgentProfileItem?> {
+    Binding(
+      get: { profileAgentID.map(JunoMobileAgentProfileItem.init(id:)) },
+      set: { profileAgentID = $0?.id }
+    )
+  }
+
+  @ViewBuilder
+  private func agentProfileSheet(_ id: String) -> some View {
+    if let agentsModel {
+      NativeAgentProfileSheet(
+        model: agentsModel,
+        agentID: id,
+        apps: agentApps,
+        message: {
+          profileAgentID = nil
+          Task {
+            if let conversationID = await agentsModel.threadConversationID(for: id) {
+              openAgentThread(conversationID)
+            }
+          }
+        },
+        openThread: { conversationID in
+          profileAgentID = nil
+          openAgentThread(conversationID)
+        },
+        close: { profileAgentID = nil }
+      )
+    }
+  }
+
+  /// Agents home's send: the new agent's thread, opened in Chat, with the
+  /// sentence sent as its first message through the chat's own send path.
+  /// The agent reads it, names itself and sets itself up.
+  private func startAgentThread(_ id: String, message: String) {
+    Task {
+      guard let conversationModel else { return }
+      if !conversationModel.conversations.contains(where: { $0.id == id }) {
+        await syncModel?.refresh()
+        await conversationModel.reload()
+      }
+      conversationModel.isDraftingNewConversation = false
+      openConversation(id)
+      _ = conversationModel.sendMessage(
+        conversationID: id,
+        prompt: message,
+        modelID: conversationModel.conversations.first { $0.id == id }?.model
+          ?? memorySettingsModel?.settings?.defaultModel
+          ?? conversationModel.selectableModels.first?.id
+          ?? "juno:auto",
+        reasoningEffort: nil
+      )
+    }
   }
 
   /// Opens a Work task's thread from a notification or a link.
@@ -1614,4 +1682,9 @@ private struct JunoMobileOfflineBanner: View {
     .background(.thinMaterial)
     .accessibilityIdentifier("juno.mobile.offline-banner")
   }
+}
+
+/// The agent whose profile sheet is up, as a sheet's item.
+private struct JunoMobileAgentProfileItem: Identifiable, Hashable {
+  let id: String
 }

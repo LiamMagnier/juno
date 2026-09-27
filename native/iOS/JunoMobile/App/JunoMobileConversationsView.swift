@@ -64,7 +64,7 @@ struct JunoMobileChatDetailScreen: View {
   /// The account's agents, to recognise an agent's own thread and put its
   /// face at the top of it. Nil where agents have not been built.
   var agentsModel: NativeAgentsModel?
-  /// Opens an agent's page by id: the thread header's way back to it.
+  /// Presents an agent's profile by id, from its thread's presence header.
   var openAgent: ((String) -> Void)?
 
   /// Fetches and caches the transcript's pictures for the life of the screen.
@@ -134,6 +134,7 @@ struct JunoMobileChatDetailScreen: View {
           imageLoader: imageLoader,
           pendingPrompt: pendingPrompt,
           threadAgent: threadAgent,
+          agentsModel: agentsModel,
           openAgent: openAgent
         )
       } else {
@@ -462,6 +463,8 @@ private struct JunoMobileConversationDetail: View {
   var pendingPrompt: Binding<String?> = .constant(nil)
   /// The agent this thread belongs to, drawn as the row above it.
   var threadAgent: NativeAgent? = nil
+  /// The account's agents, for the presence header's live state and menu.
+  var agentsModel: NativeAgentsModel? = nil
   var openAgent: ((String) -> Void)? = nil
   /// The artifact the reader tapped in the transcript, presented over it.
   @State private var openArtifact: NativeArtifact?
@@ -764,7 +767,18 @@ private struct JunoMobileConversationDetail: View {
       // `containerRelativeFrame` gives it the scroll view's own height so
       // it centres in the visible area — a fixed `minHeight` inside a
       // bottom-anchored scroll view pins it to the composer instead.
-      JunoMobileGreeting(name: profileName)
+      Group {
+        if let threadAgent {
+          // An agent's empty thread greets in its own voice.
+          NativeAgentGreeting(agent: threadAgent, displaySize: 30) { line in
+            prompt = line
+            composerFocused = true
+          }
+          .padding(.horizontal, JunoSpace.section)
+        } else {
+          JunoMobileGreeting(name: profileName)
+        }
+      }
       .frame(maxWidth: .infinity)
       .containerRelativeFrame(.vertical)
     } else {
@@ -1246,11 +1260,12 @@ private struct JunoMobileConversationDetail: View {
 
   @ViewBuilder
   private var agentHeader: some View {
-    if let threadAgent, let openAgent {
+    if let threadAgent, let openAgent, let agentsModel {
       NativeAgentThreadHeader(
+        model: agentsModel,
         agent: threadAgent,
         state: threadAgentState,
-        openAgent: { openAgent(threadAgent.id) }
+        openProfile: { openAgent(threadAgent.id) }
       )
       .padding(.horizontal, JunoSpace.regular)
     }

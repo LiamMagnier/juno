@@ -84,6 +84,44 @@ final class NativeAgentsGateTests: XCTestCase {
         XCTAssertEqual(NativeAgentsModel.sidebarOrder(agents).map(\.id), ["e", "c", "b", "d", "f", "a"])
     }
 
+    /// Agents home: pinned first, then the roster's rank by state.
+    func testHomePutsPinnedAgentsFirst() async throws {
+        let pinned = agentJSON(id: "p", sortOrder: 5, state: "idle")
+            .replacingOccurrences(of: #""needsYou":0"#, with: #""needsYou":0,"pinnedAt":"2026-09-01T09:00:00.000Z""#)
+        let agents = try await roster([
+            agentJSON(id: "a", sortOrder: 0, state: "idle"),
+            agentJSON(id: "w", sortOrder: 1, state: "waiting"),
+            pinned,
+        ])
+        XCTAssertEqual(agents.last?.isPinned, true)
+        XCTAssertEqual(NativeAgentsModel.homeOrder(agents).map(\.id), ["p", "w", "a"])
+    }
+
+    /// Sending a job from Agents home hires a blank agent (a name, the
+    /// defaults, and no face, which the server seeds) and answers with its
+    /// thread.
+    @MainActor
+    func testStartingAnAgentHiresABlankOneAndFindsItsThread() async throws {
+        let transport = AgentsTransport(routes: ["/api/agents": json(rosterJSON([]))])
+        let model = NativeAgentsModel(client: NativeAgentsClient(sender: transport))
+        await model.start(for: account)
+        await transport.setRoute("/api/agents", json(#"{"agent":"# + agentJSON(id: "n") + "}"))
+
+        let result = await model.startAgent()
+        let started = try XCTUnwrap(result)
+        XCTAssertEqual(started.agent.id, "n")
+        XCTAssertEqual(started.conversationID, "conv_n")
+
+        let requests = await transport.requests
+        let hire = try XCTUnwrap(requests.last(where: { $0.path == "/api/agents" && $0.method == .post }))
+        let fields = try object(hire.body)
+        XCTAssertEqual(fields["name"], .string("New agent"))
+        XCTAssertNil(fields["avatar"])
+        XCTAssertNil(fields["template"])
+        XCTAssertNil(fields["firstGoal"])
+        model.stop()
+    }
+
     /// The first read is a state, not a change: an app that opens onto an
     /// agent already waiting has not just been asked anything.
     func testTheFirstReadIsNotARise() async throws {

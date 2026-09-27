@@ -149,7 +149,7 @@ struct DesktopDesignLauncherTests {
     func openingDesignKeepsTheOpenConversation() {
         let resolved = DesktopNavigationState.resolve(
             selection: .destination(.design),
-            current: (.chat, "conv-4", nil)
+            current: (.chat, "conv-4")
         )
         #expect(resolved.destination == .design)
         #expect(resolved.conversationID == "conv-4")

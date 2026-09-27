@@ -19,9 +19,10 @@ struct DesktopDestinationView: View {
     @Binding var draftProjectID: String?
     @Binding var draftPrompt: String?
     @Binding var requestedProjectID: String?
-    /// The agent open on the Agents destination, owned by the window so its
-    /// sidebar row can open it and show it open. Nil is the roster.
-    @Binding var selectedAgentID: String?
+    /// The agent whose profile sheet the window presents: set by a thread's
+    /// presence header. The window owns the sheet, so a notification can
+    /// present it too.
+    @Binding var profileAgentID: String?
     /// ⌘U and drops, on their way to the chat route's composer.
     @Binding var composerRequest: ChatComposerRequest?
     /// ⌘F, ⌘G and ⇧⌘G, on their way to the chat route's find bar.
@@ -38,16 +39,6 @@ struct DesktopDestinationView: View {
     /// Fork Privately, which the window answers by starting a private chat.
     var forkPrivately: (([NativePrivateChatModel.Turn]) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// What the Agents destination's stack holds, as it last said: how the
-    /// window's open agent (its sidebar row) follows a back button, and how a
-    /// sidebar row knows whether its agent is already showing.
-    @State private var agentsPath: [DesktopPageRoute] = []
-    /// Bumped to give the Agents stack a fresh identity — back to the roster —
-    /// when the Agents row is chosen while an agent's page is up (the web's
-    /// `/agents`, never the last agent visited).
-    @State private var agentsStackGeneration = 0
-    /// The agent just hired, whose page opens with a word of welcome, once.
-    @State private var welcomedAgentID: String?
     /// The Artifacts page's Share… (seam 7), one per window like the chat's.
     @State private var artifactShare = DesktopShareState()
 
@@ -61,20 +52,6 @@ struct DesktopDestinationView: View {
             .id(destination)
             .transition(.junoPage)
             .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: destination)
-            // The window's open agent — a sidebar row, a notification, an
-            // agent's thread header — is `.agent(id)` pushed on the Agents
-            // stack (Phase 4 §2.5), once, unless it is already showing.
-            .onChange(of: selectedAgentID, initial: true) { _, agentID in
-                if let agentID {
-                    guard agentsPath.last != .agent(agentID) else { return }
-                    DesktopPageRouter.shared.open(.agents, route: .agent(agentID))
-                } else if destination == .agents, agentsPath.contains(where: Self.isAgentPage) {
-                    agentsPath = []
-                    agentsStackGeneration &+= 1
-                }
-            }
-            // A destination's stack starts empty; so does what it last said.
-            .onChange(of: destination) { _, _ in agentsPath = [] }
     }
 
     /// The chat route as it is; every page inside a `NavigationStack` of its
@@ -91,15 +68,6 @@ struct DesktopDestinationView: View {
     private var routed: some View {
         if destination == .chat {
             page
-        } else if destination == .agents {
-            DesktopPageStack(
-                destination: destination,
-                router: .shared,
-                root: { page },
-                page: { route in routePage(route) },
-                pathChanged: agentsPathChanged
-            )
-            .id(agentsStackGeneration)
         } else {
             DesktopPageStack(destination: destination, router: .shared) {
                 page
@@ -107,21 +75,6 @@ struct DesktopDestinationView: View {
                 routePage(route)
             }
         }
-    }
-
-    private static func isAgentPage(_ route: DesktopPageRoute) -> Bool {
-        if case .agent = route { return true }
-        return false
-    }
-
-    /// The Agents stack moved: the open agent is the last one pushed, or none.
-    private func agentsPathChanged(_ path: [DesktopPageRoute]) {
-        agentsPath = path
-        let open = path.reversed().lazy.compactMap { route -> String? in
-            if case .agent(let id) = route { return id }
-            return nil
-        }.first
-        if selectedAgentID != open { selectedAgentID = open }
     }
 
     /// The page a route pushes. One `navigationDestination` for all of them,
@@ -165,31 +118,6 @@ struct DesktopDestinationView: View {
                 )
             } else {
                 unavailable("Permissions", "Juno Work is unavailable.")
-            }
-        case .agent(let id):
-            if let model = configuration.agentsModel {
-                DesktopAgentRoute(
-                    model: model,
-                    agentID: id,
-                    apps: agentApps,
-                    localApprovals: localApprovals,
-                    decideLocally: decideLocally,
-                    openConversation: openAgentThread,
-                    welcomedAgentID: $welcomedAgentID
-                )
-            } else {
-                unavailable("Agents", "The agents service is unavailable.")
-            }
-        case .newAgent(let template):
-            if let model = configuration.agentsModel {
-                DesktopAgentHireRoute(
-                    model: model,
-                    apps: agentApps,
-                    templateID: template,
-                    welcomedAgentID: $welcomedAgentID
-                )
-            } else {
-                unavailable("Agents", "The agents service is unavailable.")
             }
         case .document:
             // The document inspector (Phase 4 A7) waits on the server; nothing
@@ -271,10 +199,10 @@ struct DesktopDestinationView: View {
             artifactsPage
         case .agents:
             if let model = configuration.agentsModel {
-                DesktopAgentsRoster(
+                DesktopAgentsHome(
                     model: model,
-                    apps: agentApps,
-                    openConversation: openAgentThread
+                    openThread: openAgentThread,
+                    startThread: startAgentThread
                 )
             } else {
                 unavailable("Agents", "The agents service is unavailable.")
@@ -517,36 +445,32 @@ struct DesktopDestinationView: View {
         }
     }
 
-    /// Opens an agent's page, from the header of its thread.
-    private func openAgent(_ id: String) {
-        selectedAgentID = id
-        destination = .agents
-    }
-
-    /// What a run executing on this Mac has stopped to ask, for an agent's
-    /// page. Those approvals have no server row — the run is suspended in this
-    /// process — so the page cannot read them from its task's run the way it
-    /// reads a cloud run's. Nil where this Mac hosts no Work.
-    private var localApprovals: (@MainActor (String) -> [WorkApprovalRequest])? {
-        guard let hostModel = configuration.workHostModel else { return nil }
-        return { runID in hostModel.localApprovals(forRun: runID) }
-    }
-
-    /// Answers one of those through the runtime holding the run, with the
-    /// digest of the action the card showed — the same call the Work thread's
-    /// card makes.
-    private var decideLocally: (@MainActor (WorkApprovalRequest, JunoWorkApprovalDecision) -> Void)? {
-        guard let hostModel = configuration.workHostModel else { return nil }
-        return { approval, decision in
-            hostModel.localApprovalDecider?(approval.id, decision, approval.actionDigest)
+    /// Agents home's send: the new agent's thread, opened in Chat, with the
+    /// sentence sent as its first message through the chat's own send path.
+    /// The agent reads it, names itself and sets itself up.
+    private func startAgentThread(_ id: String, message: String) {
+        Task {
+            if !conversationModel.conversations.contains(where: { $0.id == id }) {
+                await configuration.syncModel?.refresh()
+                await conversationModel.reload()
+            }
+            openConversation(id)
+            let modelID = conversationModel.conversations.first { $0.id == id }?.model
+                ?? configuration.memorySettingsModel?.settings?.defaultModel
+                ?? conversationModel.selectableModels.first?.id
+                ?? "juno:auto"
+            _ = conversationModel.sendMessage(
+                conversationID: id,
+                prompt: message,
+                modelID: modelID,
+                reasoningEffort: nil
+            )
         }
     }
 
-    /// The apps an agent may be given: only the connected ones, by name.
-    private var agentApps: [NativeAgentAppChoice] {
-        (configuration.connectorModel?.linked ?? [])
-            .filter(\.connected)
-            .map { NativeAgentAppChoice(id: $0.id, label: $0.label) }
+    /// Presents an agent's profile, from the presence header of its thread.
+    private func openAgent(_ id: String) {
+        profileAgentID = id
     }
 
     private func startConversation(in projectID: String, prompt: String?) {

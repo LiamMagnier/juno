@@ -292,8 +292,9 @@ enum FinalSnapshotFixtures {
                 width: windowWidth,
                 view: {
                     AnyView(window(world: world, fixedHeight: windowHeight, selection: .destination(.agents)) {
-                        NativeAgentsScreen(model: agents, openConversation: { _ in })
+                        NativeAgentsScreen(model: agents, openThread: { _ in }, startThread: { _, _ in })
                             .frame(height: windowHeight - toolbarHeight)
+                            .environment(\.junoSnapshotOpaqueGlass, true)
                     })
                 },
                 prepare: {

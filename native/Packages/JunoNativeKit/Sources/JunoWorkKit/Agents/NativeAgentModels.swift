@@ -211,6 +211,9 @@ public struct NativeAgent: Identifiable, Equatable, Sendable {
     public let nextRoutine: NativeAgentRoutineGlance?
     /// Ideas it raised that nobody has started or dismissed.
     public let newIdeas: Int
+    /// When the person pinned it; nil while it is not pinned. Pinned agents
+    /// come first on Agents home.
+    public let pinnedAt: Date?
 
     public init(
         id: String,
@@ -237,7 +240,8 @@ public struct NativeAgent: Identifiable, Equatable, Sendable {
         task: NativeAgentTask?,
         needsYou: Int,
         nextRoutine: NativeAgentRoutineGlance?,
-        newIdeas: Int
+        newIdeas: Int,
+        pinnedAt: Date? = nil
     ) {
         self.id = id
         self.name = name
@@ -264,9 +268,11 @@ public struct NativeAgent: Identifiable, Equatable, Sendable {
         self.needsYou = needsYou
         self.nextRoutine = nextRoutine
         self.newIdeas = newIdeas
+        self.pinnedAt = pinnedAt
     }
 
     public var isPaused: Bool { status == .paused }
+    public var isPinned: Bool { pinnedAt != nil }
 }
 
 /// `ClientAgentGoal`.
@@ -591,7 +597,9 @@ public enum NativeAgentIdeaAction: String, Sendable {
 public struct NativeAgentDraft: Equatable, Sendable {
     public var name: String
     public var role: String
-    public var avatar: JunoAgentAvatar
+    /// Nil leaves the face to the server, which seeds it from the new
+    /// agent's id: the same face every client derives for that id.
+    public var avatar: JunoAgentAvatar?
     public var style: NativeAgentStyle
     public var instructions: String
     public var approvalMode: JunoWorkPermissionPolicy
@@ -602,7 +610,7 @@ public struct NativeAgentDraft: Equatable, Sendable {
     public init(
         name: String,
         role: String = "",
-        avatar: JunoAgentAvatar,
+        avatar: JunoAgentAvatar? = nil,
         style: NativeAgentStyle = .warm,
         instructions: String = "",
         approvalMode: JunoWorkPermissionPolicy = .balanced,
@@ -620,6 +628,12 @@ public struct NativeAgentDraft: Equatable, Sendable {
         self.template = template
         self.firstGoal = firstGoal
     }
+
+    /// The agent Agents home creates for a job typed as a sentence: a name
+    /// the agent replaces as soon as it reads the job, and nothing else. The
+    /// server defaults the rest and seeds the face; the agent sets its own
+    /// role, goal and tools from the first message.
+    public static let blank = NativeAgentDraft(name: "New agent")
 
     /// A starting point's defaults, every one of them editable before Hire.
     public init(template: NativeAgentTemplate) {
@@ -661,6 +675,7 @@ public struct NativeAgentPatch: Equatable, Sendable {
     public var connectorIDs: [String]?
     public var status: NativeAgentStatus?
     public var proactive: Bool?
+    public var pinned: Bool?
 
     public init(
         name: String? = nil,
@@ -671,7 +686,8 @@ public struct NativeAgentPatch: Equatable, Sendable {
         approvalMode: JunoWorkPermissionPolicy? = nil,
         connectorIDs: [String]? = nil,
         status: NativeAgentStatus? = nil,
-        proactive: Bool? = nil
+        proactive: Bool? = nil,
+        pinned: Bool? = nil
     ) {
         self.name = name
         self.role = role
@@ -682,12 +698,14 @@ public struct NativeAgentPatch: Equatable, Sendable {
         self.connectorIDs = connectorIDs
         self.status = status
         self.proactive = proactive
+        self.pinned = pinned
     }
 
     /// The server refuses an empty patch ("Nothing to change").
     public var isEmpty: Bool {
         name == nil && role == nil && avatar == nil && style == nil && instructions == nil
             && approvalMode == nil && connectorIDs == nil && status == nil && proactive == nil
+            && pinned == nil
     }
 }
 

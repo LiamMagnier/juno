@@ -1,12 +1,14 @@
 import Foundation
+import JunoCore
 import JunoDesignSystem
 import SwiftUI
 
-/// A control's target in the Agents views, which both apps share: a
-/// pointer's 28pt on the Mac (§0.6, §10.2.10), a finger's 44pt on the phone.
-/// A literal 44 here shipped phone rows to the Mac and put them out of rhythm.
-/// A menu item's words: the web's, in Title Case on the Mac (§0.7, register
-/// #5) and as they are on the phone.
+// The small vocabulary every Agents surface shares on both platforms: the
+// halo and the face on it, a section in prose, a suggestion line, the quiet
+// icon button, and the words for times and task states. One place, so home,
+// the thread and the profile cannot each grow their own idea of them.
+
+/// A menu item's words: Title Case on the Mac (§0.7), as written on the phone.
 func nativeAgentMenuTitle(_ words: String) -> String {
     #if os(macOS)
     words.split(separator: " ").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
@@ -15,27 +17,29 @@ func nativeAgentMenuTitle(_ words: String) -> String {
     #endif
 }
 
+/// A control's target in the Agents views: a pointer's 28pt on the Mac, a
+/// finger's 44pt on the phone.
 public enum NativeAgentMetrics {
     #if os(macOS)
     public static let target: CGFloat = 28
     #else
     public static let target: CGFloat = 44
     #endif
-}
 
-// The small vocabulary every Agents screen shares on both platforms: the
-// page container, a section heading, the flat tile, and the words for times
-// and task states. One place, so the roster, the page and the hire flow
-// cannot each grow their own idea of what a tile is.
+    /// The face in a thread's presence header.
+    public static let headerFace: CGFloat = 40
+    /// The face on a home tile.
+    public static let tileFace: CGFloat = 72
+    /// The face at the top of the profile and an empty thread.
+    public static let profileFace: CGFloat = JunoAgentFaceSize.lg
+}
 
 // MARK: - Words
 
 /// How Agents says a time, a task state and a cost.
 public enum NativeAgentFormat {
-    /// "today at 09:00", "tomorrow at 09:00", "Mon at 09:00", "12 Oct" — in
-    /// the reader's own zone. The server says the same sentence in UTC because
-    /// it does not know the zone; the device does, so it says it again,
-    /// correctly (`formatLocalWhen` on the web).
+    /// "today at 09:00", "tomorrow at 09:00", "Mon at 09:00", "12 Oct", in
+    /// the reader's own zone.
     static func upcoming(_ date: Date, now: Date = Date()) -> String {
         let calendar = Calendar.current
         let days = calendar.dateComponents(
@@ -62,10 +66,9 @@ public enum NativeAgentFormat {
         return date.formatted(.dateTime.day().month(.abbreviated))
     }
 
-    /// The sentence beside the face, re-said locally when it names a time.
-    /// Every other state's sentence is the server's, which names the task.
-    /// Public because every place that shows an agent's face says it: the
-    /// roster, its page, the sidebar row and the header of its thread.
+    /// The live sentence beside the face, re-said locally when it names a
+    /// time. Every other state's sentence is the server's, which names the
+    /// task.
     public static func stateSentence(for agent: NativeAgent) -> String {
         if agent.state == .idle, let next = agent.nextRoutine, let at = next.nextRunAt {
             return "Next: \(next.name), \(upcoming(at))"
@@ -100,14 +103,319 @@ public enum NativeAgentFormat {
         return dollars.formatted(.currency(code: "USD"))
     }
 
-    static let weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    /// How much it asks, as one sentence about the agent by name.
+    public static func autonomySentence(_ mode: JunoWorkPermissionPolicy, name: String) -> String {
+        switch mode {
+        case .conservative:
+            "\(name) asks before it changes anything. Reading and research go ahead."
+        case .balanced:
+            "\(name) makes changes it can undo, and asks before anything risky or private."
+        case .permissive:
+            "\(name) gets on with the work, and asks only before things it cannot take back."
+        }
+    }
+
+    /// The name an agent is greeted by before it has named itself.
+    static let placeholderName = "New agent"
+
+    /// "Hi, I'm Wren." An agent that has not named itself yet says so.
+    public static func greeting(for agent: NativeAgent) -> String {
+        agent.name == placeholderName ? "Hi, I’m new here." : "Hi, I’m \(agent.name)."
+    }
+}
+
+// MARK: - Suggestions
+
+/// The three lines under a composer, drawn from the starting points' first
+/// goals. Pressing one fills the composer; it never sends.
+public enum NativeAgentSuggestions {
+    /// The home's three.
+    public static let home: [String] = Array(
+        NativeAgentTemplate.all.map(\.firstGoal).filter { !$0.isEmpty }.prefix(3)
+    )
+
+    /// An agent's own three, for its empty thread: its starting point's goal
+    /// first, when it was hired from one, then the others.
+    public static func forAgent(_ agent: NativeAgent) -> [String] {
+        let own = NativeAgentTemplate.named(agent.template)?.firstGoal ?? ""
+        var lines = own.isEmpty ? [] : [own]
+        for goal in NativeAgentTemplate.all.map(\.firstGoal) where !goal.isEmpty && !lines.contains(goal) {
+            lines.append(goal)
+        }
+        return Array(lines.prefix(3))
+    }
+}
+
+/// One suggestion: plain text with an arrow, secondary until the pointer or a
+/// finger is on it. A button, never a chip.
+struct NativeAgentSuggestionLine: View {
+    let text: String
+    let action: () -> Void
+
+    @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                JunoIconView(.arrowRight, size: 12)
+                    .foregroundStyle(isHovering ? Color.junoForeground : Color.junoTertiaryInk)
+                    .accessibilityHidden(true)
+                Text(text)
+                    .junoType(.ui)
+                    .foregroundStyle(isHovering ? Color.junoForeground : Color.junoSecondaryInk)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(minHeight: NativeAgentMetrics.target, alignment: .leading)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint)) {
+                isHovering = hovering
+            }
+        }
+        .accessibilityHint("Fills in the message")
+    }
+}
+
+/// The suggestion lines, stacked tight.
+struct NativeAgentSuggestionList: View {
+    let lines: [String]
+    let pick: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(lines, id: \.self) { line in
+                NativeAgentSuggestionLine(text: line) { pick(line) }
+            }
+        }
+    }
+}
+
+// MARK: - The halo
+
+/// The signature detail: a soft radial wash of the agent's own tone behind
+/// its face, about 14% at the face's edge and clear at its rim. Static; only
+/// the face animates, and only for a live state. You recognise an agent by
+/// its colour before you read its name.
+public struct NativeAgentHalo: View {
+    private let tone: JunoAgentTone
+    private let diameter: CGFloat
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    public init(tone: JunoAgentTone, diameter: CGFloat) {
+        self.tone = tone
+        self.diameter = diameter
+    }
+
+    public var body: some View {
+        // A touch stronger on the dark ground, where the same alpha reads
+        // quieter against the charcoal.
+        let strength = colorScheme == .dark ? 0.18 : 0.14
+        Circle()
+            .fill(
+                RadialGradient(
+                    stops: [
+                        .init(color: tone.color.opacity(strength), location: 0),
+                        .init(color: tone.color.opacity(strength), location: 0.46),
+                        .init(color: tone.color.opacity(strength * 0.45), location: 0.7),
+                        .init(color: tone.color.opacity(0), location: 1),
+                    ],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: diameter / 2
+                )
+            )
+            .frame(width: diameter, height: diameter)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+/// An agent's face on its halo. The halo spreads past the face without
+/// taking layout, so a face sits in a row at its own size.
+public struct NativeAgentPresence: View {
+    private let avatar: JunoAgentAvatar
+    private let state: JunoAgentState
+    private let size: CGFloat
+    private let name: String?
+
+    public init(avatar: JunoAgentAvatar, state: JunoAgentState = .idle, size: CGFloat, name: String? = nil) {
+        self.avatar = avatar
+        self.state = state
+        self.size = size
+        self.name = name
+    }
+
+    public var body: some View {
+        JunoAgentFace(avatar: avatar, state: state, size: size, name: name)
+            .frame(width: size, height: size)
+            .background {
+                NativeAgentHalo(tone: avatar.tone, diameter: size * 2.1)
+            }
+    }
+}
+
+// MARK: - Needs you
+
+/// "Needs you": the accent hand and the words, as plain text. Never a pill,
+/// never a count.
+public struct NativeAgentNeedsYouLine: View {
+    private let text: String
+
+    public init(_ text: String = "Needs you") {
+        self.text = text
+    }
+
+    public var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
+            JunoIconView(.hand, size: 12)
+                .accessibilityHidden(true)
+            Text(text)
+                .junoType(JunoType.ui.weight(.medium))
+        }
+        .foregroundStyle(Color.junoAccentInk)
+    }
+}
+
+/// The one trailing signal a row may carry while the agent needs the person:
+/// a raised hand in the accent. Hidden from assistive technology, because the
+/// row it sits in says "Needs you" in words. The name is kept for its call
+/// sites.
+public struct NativeAgentNeedsYouDot: View {
+    public init() {}
+
+    public var body: some View {
+        JunoIconView(.hand, size: 12)
+            .foregroundStyle(Color.junoAccentInk)
+            .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Sections
+
+/// A section of the profile in prose: a sentence-case title in the
+/// secondary ink, then its content. Space separates sections, never a rule.
+struct NativeAgentSection<Content: View>: View {
+    let title: String
+    let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            Text(title)
+                .junoType(JunoType.ui.weight(.medium))
+                .foregroundStyle(Color.junoSecondaryInk)
+                .accessibilityAddTraits(.isHeader)
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Controls
+
+/// A quiet icon button: the glyph in the secondary ink on a hover fill, with
+/// a tooltip. The presence header's Computer and Profile.
+struct NativeAgentIconButton: View {
+    let icon: JunoIcon
+    let label: String
+    let action: () -> Void
+
+    @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button(action: action) {
+            JunoIconView(icon, size: 16)
+                .foregroundStyle(isHovering ? Color.junoForeground : Color.junoSecondaryInk)
+                .frame(width: NativeAgentMetrics.target, height: NativeAgentMetrics.target)
+                .background {
+                    RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                        .fill(isHovering ? Color.junoHover : Color.clear)
+                }
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint)) {
+                isHovering = hovering
+            }
+        }
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
+/// A plain text action in the secondary ink, lifting to the foreground under
+/// the pointer: Open, Remove, Show in thread.
+struct NativeAgentTextButton: View {
+    let title: String
+    var role: ButtonRole? = nil
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(role: role, action: action) {
+            Text(title)
+                .junoType(.ui)
+                .foregroundStyle(
+                    role == .destructive
+                        ? Color.junoDanger
+                        : (isHovering ? Color.junoForeground : Color.junoSecondaryInk)
+                )
+                .frame(minHeight: NativeAgentMetrics.target)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+}
+
+/// A line that says something went wrong, in the server's own words: the
+/// caution mark and the sentence, as plain text.
+struct NativeAgentsProblem: View {
+    let message: String
+    var dismiss: (() -> Void)? = nil
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+            JunoIconView(.triangleAlert, size: 12)
+                .foregroundStyle(Color.junoCaution)
+                .accessibilityHidden(true)
+            Text(message)
+                .junoType(.ui)
+                .foregroundStyle(Color.junoForeground)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let dismiss {
+                Button(action: dismiss) {
+                    JunoIconView(.close, size: 12)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .frame(width: NativeAgentMetrics.target, height: NativeAgentMetrics.target)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss")
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
 }
 
 // MARK: - Page
 
-/// A page of agent content. `JunoDetailPage` on the Mac — which is what keeps
-/// a tall page from resizing the window's split view — and a plain scrolling
-/// column on the phone, where the navigation stack owns the edges.
+/// A page of agent content. `JunoDetailPage` on the Mac, which keeps a tall
+/// page from resizing the window's split view, and a plain scrolling column
+/// on the phone, where the navigation stack owns the edges.
 struct NativeAgentsScroll<Content: View>: View {
     private let maxWidth: CGFloat
     private let content: Content
@@ -131,184 +439,5 @@ struct NativeAgentsScroll<Content: View>: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         #endif
-    }
-}
-
-/// A section's heading: sentence case, semibold, one step above body — the
-/// hierarchy is carried by weight, not by capitals.
-struct NativeAgentHeading: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .junoFont(size: 15, relativeTo: .headline, weight: .semibold)
-            .junoInk()
-            .accessibilityAddTraits(.isHeader)
-    }
-}
-
-/// A quiet field label, the web's `font-mono text-label` eyebrow.
-struct NativeAgentFieldLabel: View {
-    let title: String
-
-    var body: some View {
-        #if os(macOS)
-        // A field's name in SF at the controls' rung, above its field: the
-        // pages set no mono or uppercase labels (Phase 4 §2.10).
-        Text(title)
-            .junoType(JunoType.ui.weight(.medium))
-            .foregroundStyle(Color.junoForeground)
-        #else
-        Text(title)
-            .junoCodeSmall()
-            .junoSecondaryInk()
-        #endif
-    }
-}
-
-/// The one trailing signal a row may carry while the agent needs the person:
-/// a raised hand in the accent — a mark, never a dot (owner directive,
-/// premium pass). Hidden from assistive technology, because the row it sits
-/// in says "Needs you" in words. The name is kept for its call sites.
-public struct NativeAgentNeedsYouDot: View {
-    public init() {}
-
-    public var body: some View {
-        JunoIconView(.hand, size: 12)
-            .foregroundStyle(Color.junoAccent)
-            .accessibilityHidden(true)
-    }
-}
-
-/// A line's state as a small mark in a fixed 12pt box, or an empty box when
-/// the state needs none, so the words beside it stay on one column.
-struct NativeAgentStateGlyph: View {
-    let icon: JunoIcon?
-    let tint: Color
-
-    var body: some View {
-        Group {
-            if let icon {
-                JunoIconView(icon, size: 11)
-                    .foregroundStyle(tint)
-            } else {
-                Color.clear
-            }
-        }
-        .frame(width: 12, height: 12)
-        .accessibilityHidden(true)
-    }
-}
-
-/// A line that says something went wrong, with the server's own sentence and
-/// the one thing to do about it.
-struct NativeAgentsProblem: View {
-    let message: String
-    let dismiss: () -> Void
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            JunoIconView(.error, size: 14)
-                .foregroundStyle(Color.junoCaution)
-            Text(message)
-                .font(.callout)
-                .junoInk()
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button(action: dismiss) {
-                JunoIconView(.close, size: 12)
-                    .junoSecondaryInk()
-                    .frame(minWidth: NativeAgentMetrics.target, minHeight: NativeAgentMetrics.target)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss")
-        }
-        .padding(.leading, JunoSpace.cozy)
-        .background {
-            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                .fill(Color.junoCaution.opacity(0.10))
-        }
-        .accessibilityElement(children: .contain)
-    }
-}
-
-// MARK: - Tiles
-
-extension View {
-    /// A single-line field on the Mac's pages: the web's `Input` — 32pt at
-    /// the field radius, the `--input` hairline, on the raised fill. The
-    /// iPhone keeps its rounded-border field.
-    @ViewBuilder
-    func nativeAgentField() -> some View {
-        #if os(macOS)
-        self
-            .textFieldStyle(.plain)
-            .junoType(.ui)
-            .padding(.horizontal, JunoSpace.cozy)
-            .frame(height: 32)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
-                    .fill(Color.junoRaised)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
-                    .strokeBorder(Color.junoInput, lineWidth: 1)
-            )
-        #else
-        self.textFieldStyle(.roundedBorder)
-        #endif
-    }
-
-    /// A bordered button's outline and label in the neutral ink on the Mac,
-    /// where the detail column's accent tint would otherwise draw it coral
-    /// (Phase 4 C3: coral is the send disc, switches, links, the live dot and
-    /// one prominent button). The iPhone keeps its tint.
-    @ViewBuilder
-    func nativeAgentNeutralTint() -> some View {
-        #if os(macOS)
-        self.tint(nil)
-        #else
-        self
-        #endif
-    }
-}
-
-extension View {
-    /// A flat tile: the surface fill and a hairline, with the chosen state
-    /// carried by tone — the `--selected` fill and a darker edge — never by a
-    /// shadow (FLAT_UI.md §2).
-    func nativeAgentTile(selected: Bool = false, padding: CGFloat = JunoSpace.cozy) -> some View {
-        self
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                    .fill(selected ? Color.junoMuted : Color.junoSurface)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                    .strokeBorder(
-                        selected ? Color.junoForeground.opacity(0.35) : Color.junoBorder,
-                        lineWidth: selected ? 1 : 0.5
-                    )
-            }
-    }
-
-    /// A multi-line text field's frame: the same hairline well on both
-    /// platforms, so a brief reads as something you can write in.
-    func nativeAgentWell(minHeight: CGFloat) -> some View {
-        self
-            .scrollContentBackground(.hidden)
-            .padding(JunoSpace.snug)
-            .frame(minHeight: minHeight)
-            .background {
-                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                    .fill(Color.junoSurface)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                    .strokeBorder(Color.junoBorder, lineWidth: 0.5)
-            }
     }
 }

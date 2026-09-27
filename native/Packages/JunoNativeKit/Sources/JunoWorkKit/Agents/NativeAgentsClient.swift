@@ -341,12 +341,14 @@ public struct NativeAgentsClient: Sendable {
         var body: [String: JunoJSONValue] = [
             "name": .string(draft.name.trimmingCharacters(in: .whitespacesAndNewlines)),
             "role": .string(draft.role.trimmingCharacters(in: .whitespacesAndNewlines)),
-            "avatar": avatarBody(draft.avatar),
             "style": .string(draft.style.rawValue),
             "instructions": .string(draft.instructions.trimmingCharacters(in: .whitespacesAndNewlines)),
             "approvalMode": .string(draft.approvalMode.rawValue),
             "connectorIds": .array(draft.connectorIDs.map { .string($0) }),
         ]
+        // Absent rather than a face picked here: the server seeds one from the
+        // new agent's id, which is the face every client derives for it.
+        if let avatar = draft.avatar { body["avatar"] = avatarBody(avatar) }
         if let template = draft.template, !template.isEmpty {
             body["template"] = .string(template)
         }
@@ -378,6 +380,7 @@ public struct NativeAgentsClient: Sendable {
         }
         if let status = patch.status { body["status"] = .string(status.rawValue) }
         if let proactive = patch.proactive { body["proactive"] = .bool(proactive) }
+        if let pinned = patch.pinned { body["pinned"] = .bool(pinned) }
         return body
     }
 
@@ -581,7 +584,8 @@ public struct NativeAgentsClient: Sendable {
             task: root["task"].flatMap { try? decodeTask($0) },
             needsYou: integer(root["needsYou"]),
             nextRoutine: root["nextRoutine"].flatMap { try? decodeRoutineGlance($0) },
-            newIdeas: integer(root["newIdeas"])
+            newIdeas: integer(root["newIdeas"]),
+            pinnedAt: root["pinnedAt"]?.date
         )
     }
 

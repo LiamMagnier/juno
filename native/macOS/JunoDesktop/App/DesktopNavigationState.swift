@@ -24,15 +24,13 @@ enum DesktopNavigationState {
     /// project's row opened it: that row, not the Projects row, is then the
     /// selection.
     ///
-    /// An open agent is the Agents page's selection and nobody else's. A page
-    /// reached other than through this column — a thread opened from the
-    /// agent's page — leaves the id set, and the column must not light an
-    /// agent's row while that page is on screen.
+    /// An agent has no page of its own: its row is lit while its thread is
+    /// the conversation on screen, which the column works out itself. The
+    /// Agents destination is always the Agents row.
     static func selection(
         destination: DesktopDestination,
         selectedConversationID: String?,
-        openProjectID: String? = nil,
-        selectedAgentID: String? = nil
+        openProjectID: String? = nil
     ) -> DesktopSidebarItem? {
         switch destination {
         case .chat:
@@ -41,8 +39,6 @@ enum DesktopNavigationState {
             return nil
         case .projects:
             return openProjectID.map(DesktopSidebarItem.project) ?? .destination(.projects)
-        case .agents:
-            return selectedAgentID.map(DesktopSidebarItem.agent) ?? .destination(.agents)
         default:
             return .destination(destination)
         }
@@ -61,29 +57,28 @@ enum DesktopNavigationState {
     /// value exists and a caller holding one should get the obvious answer,
     /// but the column no longer tags a row with it.
     ///
-    /// An agent's row opens its page, which is the Agents destination with that
-    /// agent pushed. The Agents row itself is the roster, so it closes whichever
-    /// agent was open — the same row on the web is `/agents`, not the last
-    /// agent visited.
+    /// An agent's row opens its thread, which is a conversation the window
+    /// has to look up (and may have to sync) first, so the window handles it
+    /// before these rules; here it changes nothing.
     static func resolve(
         selection: DesktopSidebarItem?,
-        current: (destination: DesktopDestination, conversationID: String?, agentID: String?)
-    ) -> (destination: DesktopDestination, conversationID: String?, isDrafting: Bool, agentID: String?) {
+        current: (destination: DesktopDestination, conversationID: String?)
+    ) -> (destination: DesktopDestination, conversationID: String?, isDrafting: Bool) {
         switch selection {
         case .conversation(let id):
-            return (.chat, id, false, nil)
+            return (.chat, id, false)
         case .project:
             // The page opens on that project; which one is the caller's to
             // carry, because it is a route into Projects, not window state.
-            return (.projects, current.conversationID, false, nil)
-        case .agent(let id):
-            return (.agents, current.conversationID, false, id)
+            return (.projects, current.conversationID, false)
+        case .agent:
+            return (current.destination, current.conversationID, false)
         case .destination(.chat):
-            return (.chat, nil, true, nil)
+            return (.chat, nil, true)
         case .destination(let value):
-            return (value, current.conversationID, false, nil)
+            return (value, current.conversationID, false)
         case nil:
-            return (current.destination, current.conversationID, false, current.agentID)
+            return (current.destination, current.conversationID, false)
         }
     }
 

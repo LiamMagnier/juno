@@ -92,6 +92,8 @@ struct ChatGreeting: View {
     /// The agent whose empty thread this is: it greets in its own voice
     /// (``DesktopAgentGreeting``) instead of Juno's.
     var agent: NativeAgent? = nil
+    /// Fills the composer with one of the agent's suggestions.
+    var pickSuggestion: ((String) -> Void)? = nil
 
     var body: some View {
         // A fresh identity for each mode, so turning a draft private (or back),
@@ -102,7 +104,8 @@ struct ChatGreeting: View {
             isPrivate: isPrivate,
             columnWidth: columnWidth,
             isShown: isShown,
-            agent: agent
+            agent: agent,
+            pickSuggestion: pickSuggestion
         )
         .id("\(isPrivate):\(agent?.id ?? "")")
     }
@@ -131,6 +134,7 @@ private struct ChatGreetingBody: View {
     let columnWidth: CGFloat
     let isShown: Bool
     let agent: NativeAgent?
+    let pickSuggestion: ((String) -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.junoTextScale) private var textScale
@@ -148,7 +152,7 @@ private struct ChatGreetingBody: View {
             if isPrivate {
                 privateHeader
             } else if let agent {
-                DesktopAgentGreeting(agent: agent, columnWidth: columnWidth)
+                DesktopAgentGreeting(agent: agent, columnWidth: columnWidth, pick: pickSuggestion)
             } else {
                 greeting
             }

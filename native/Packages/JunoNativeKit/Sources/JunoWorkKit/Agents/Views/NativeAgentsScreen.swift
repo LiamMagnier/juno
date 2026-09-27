@@ -3,833 +3,367 @@ import JunoCore
 import JunoDesignSystem
 import SwiftUI
 
-/// **Agents** — the roster, each agent's page, and hiring (docs/design/AGENTS.md
-/// §3.1 and §5), shared by the Mac and the iPhone.
+/// **Agents home** (docs/design/agents-rework/DIRECTION.md), shared by the Mac
+/// and the iPhone.
 ///
-/// The roster is a tile per agent — face, name, role and one sentence of
-/// state — and a New agent button. Nothing else. The agents that need the
-/// person come first, so the first tile is always the one to look at, which is
-/// the question this page is opened to answer.
+/// You never hire; you ask. The page is one sentence field under a display
+/// headline, three suggestions drawn from the starting points, and the agents
+/// you already have. Sending the sentence creates a blank agent, opens its
+/// thread in the app's own chat and delivers the sentence as the first
+/// message; the agent names itself and sets itself up from there with its
+/// own tools. There is no form, no template grid and no hire sheet.
 ///
-/// **An agent is pushed, on both platforms.** On the Mac this screen is a
-/// page inside the Chat window's detail column, which gives every page a
-/// navigation stack of its own (MACOS_LIQUID_GLASS_REDESIGN.md §9), so opening
-/// an agent pushes its page and the system's back button returns; on the
-/// iPhone the screen sits in the app's stack. The page draws no back control
-/// of its own on either.
-///
-/// "Message" hands the agent's thread to `openConversation`, which each app
-/// wires to its own chat: the thread is an ordinary conversation.
-///
-/// **Which agent is open** can be owned outside: the Mac's sidebar opens an
-/// agent by its row and highlights the row of the one open, and a
-/// notification opens the agent it is about. Given no binding, the screen
-/// keeps the choice itself.
+/// Each app wires the two hand-offs to its own chat: `openThread` opens a
+/// conversation by id, and `startThread` opens one and sends the sentence
+/// through the chat's own send path.
 public struct NativeAgentsScreen: View {
     private let model: NativeAgentsModel
-    private let apps: [NativeAgentAppChoice]
-    private let externalSelection: Binding<String?>?
-    private let localApprovals: (@MainActor (String) -> [WorkApprovalRequest])?
-    private let decideLocally: (@MainActor (WorkApprovalRequest, JunoWorkApprovalDecision) -> Void)?
-    private let openConversation: (String) -> Void
-    /// The Mac's page stack: an agent's page and hiring are pushed as the
-    /// app's own routes (`.agent(id)`, `.newAgent(template:)`) rather than
-    /// through this screen's navigation destination and sheet. Nil keeps
-    /// the screen's own.
-    private let openAgent: ((String) -> Void)?
-    private let openHire: ((String?) -> Void)?
+    private let openThread: (String) -> Void
+    private let startThread: (String, String) -> Void
 
-    @State private var ownSelection: String?
-    @State private var hiringFrom: NativeAgentTemplate?
-    /// The agent just hired, whose page opens with a word of welcome.
-    @State private var welcomedAgentID: String?
-
-    /// - Parameters:
-    ///   - apps: the apps this account has connected, offered to an agent by
-    ///     name. Empty hides the choice rather than offering nothing.
-    ///   - selectedAgentID: the open agent's id, owned by the caller. Nil
-    ///     keeps it inside the screen.
-    ///   - localApprovals: the approvals a run executing on this Mac has
-    ///     raised, by run id — they have no server row, so the Now tab cannot
-    ///     read them any other way.
-    ///   - decideLocally: answers one of those, through the coordinator
-    ///     holding the run. Both nil anywhere but the Mac.
-    ///   - openConversation: opens a conversation by id in the app's chat.
-    public init(
-        model: NativeAgentsModel,
-        apps: [NativeAgentAppChoice] = [],
-        selectedAgentID: Binding<String?>? = nil,
-        localApprovals: (@MainActor (String) -> [WorkApprovalRequest])? = nil,
-        decideLocally: (@MainActor (WorkApprovalRequest, JunoWorkApprovalDecision) -> Void)? = nil,
-        openConversation: @escaping (String) -> Void,
-        openAgent: ((String) -> Void)? = nil,
-        openHire: ((String?) -> Void)? = nil
-    ) {
-        self.model = model
-        self.apps = apps
-        self.externalSelection = selectedAgentID
-        self.localApprovals = localApprovals
-        self.decideLocally = decideLocally
-        self.openConversation = openConversation
-        self.openAgent = openAgent
-        self.openHire = openHire
-    }
-
-    /// The caller's binding when there is one, the screen's own otherwise.
-    private var selection: Binding<String?> {
-        externalSelection ?? $ownSelection
-    }
-
-    public var body: some View {
-        content
-            .sheet(item: $hiringFrom) { template in
-                NativeAgentHireView(
-                    model: model,
-                    apps: apps,
-                    template: template,
-                    onCancel: { hiringFrom = nil },
-                    onHired: { agent in
-                        hiringFrom = nil
-                        welcomedAgentID = agent.id
-                        selection.wrappedValue = agent.id
-                    }
-                )
-            }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        #if os(macOS)
-        if openAgent != nil {
-            // Routed by the app: the page and hiring are its routes, pushed
-            // on the destination's one stack (Phase 4 §2.5).
-            roster
-        } else {
-            // Pushed on the page's own stack (the foundations' `routed`
-            // NavigationStack); the caller's selection drives the push, so the
-            // sidebar's agent rows and a notification open the same page. One
-            // page per agent: opening another starts on its Now tab.
-            roster
-                .navigationDestination(item: selection) { agentID in
-                    page(agentID, back: nil)
-                        .id(agentID)
-                        .navigationTitle(model.agents.first { $0.id == agentID }?.name ?? "Agent")
-                }
-        }
-        #else
-        roster
-            .navigationTitle("Agents")
-            .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(item: selection) { agentID in
-                page(agentID, back: nil)
-            }
-            .refreshable { await model.refresh() }
-        #endif
-    }
-
-    private func page(_ agentID: String, back: (() -> Void)?) -> NativeAgentPage {
-        NativeAgentPage(
-            model: model,
-            agentID: agentID,
-            apps: apps,
-            openConversation: openConversation,
-            back: back,
-            localApprovals: localApprovals,
-            decideLocally: decideLocally,
-            welcome: welcomedAgentID == agentID,
-            dismissWelcome: { dismissWelcome(agentID) }
-        )
-    }
-
-    private func dismissWelcome(_ agentID: String) {
-        if welcomedAgentID == agentID {
-            welcomedAgentID = nil
-        }
-    }
-
-    @ViewBuilder
-    private var roster: some View {
-        #if os(macOS)
-        // The page template draws every state under one header.
-        NativeAgentRoster(model: model, open: open, hire: hire, hireFromScratch: hireFromScratch, newAgent: newAgent)
-        #else
-        switch model.phase {
-        case .idle, .loading:
-            ProgressView()
-                .controlSize(.small)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityLabel("Loading agents")
-        case .failed, .offline:
-            if model.agents.isEmpty {
-                NativeAgentsNotice(
-                    title: "Couldn’t load your agents",
-                    message: model.lastErrorDescription ?? "Juno could not reach your agents.",
-                    icon: .agents,
-                    actionLabel: "Try again",
-                    action: { Task { await model.refresh() } }
-                )
-            } else {
-                NativeAgentRoster(model: model, open: open, hire: hire)
-            }
-        case .ready:
-            NativeAgentRoster(model: model, open: open, hire: hire)
-        }
-        #endif
-    }
-
-    private func open(_ agentID: String) {
-        if let openAgent {
-            openAgent(agentID)
-        } else {
-            selection.wrappedValue = agentID
-        }
-    }
-
-    private func hire(_ template: NativeAgentTemplate) {
-        if let openHire {
-            openHire(template.id)
-        } else {
-            hiringFrom = template
-        }
-    }
-
-    private func hireFromScratch() {
-        if let custom = NativeAgentTemplate.named("custom") { hire(custom) }
-    }
-
-    /// The header's New agent: the web's `/agents/new`, on the first
-    /// starting point.
-    private func newAgent() {
-        if let openHire {
-            openHire(nil)
-        } else {
-            hiringFrom = NativeAgentTemplate.all[0]
-        }
-    }
-}
-
-// MARK: - Routed pages (the Mac)
-
-#if os(macOS)
-/// An agent's page, as the Mac's page stack pushes it (`.agent(id)`).
-public struct NativeAgentRoutePage: View {
-    private let model: NativeAgentsModel
-    private let agentID: String
-    private let apps: [NativeAgentAppChoice]
-    private let localApprovals: (@MainActor (String) -> [WorkApprovalRequest])?
-    private let decideLocally: (@MainActor (WorkApprovalRequest, JunoWorkApprovalDecision) -> Void)?
-    private let openConversation: (String) -> Void
-    private let welcome: Bool
-    private let dismissWelcome: () -> Void
-    private let allAgents: () -> Void
-
-    /// - Parameters:
-    ///   - welcome: just hired — the page opens with a word of welcome, once.
-    ///   - allAgents: the missing-agent state's way back to the roster.
-    public init(
-        model: NativeAgentsModel,
-        agentID: String,
-        apps: [NativeAgentAppChoice] = [],
-        localApprovals: (@MainActor (String) -> [WorkApprovalRequest])? = nil,
-        decideLocally: (@MainActor (WorkApprovalRequest, JunoWorkApprovalDecision) -> Void)? = nil,
-        openConversation: @escaping (String) -> Void,
-        welcome: Bool = false,
-        dismissWelcome: @escaping () -> Void = {},
-        allAgents: @escaping () -> Void = {}
-    ) {
-        self.model = model
-        self.agentID = agentID
-        self.apps = apps
-        self.localApprovals = localApprovals
-        self.decideLocally = decideLocally
-        self.openConversation = openConversation
-        self.welcome = welcome
-        self.dismissWelcome = dismissWelcome
-        self.allAgents = allAgents
-    }
-
-    public var body: some View {
-        NativeAgentPage(
-            model: model,
-            agentID: agentID,
-            apps: apps,
-            openConversation: openConversation,
-            back: nil,
-            localApprovals: localApprovals,
-            decideLocally: decideLocally,
-            welcome: welcome,
-            dismissWelcome: dismissWelcome,
-            allAgents: allAgents
-        )
-        .navigationTitle(model.agent(id: agentID)?.name ?? "Agent")
-    }
-}
-
-/// Hiring, as the Mac's page stack pushes it (`.newAgent(template:)`): the
-/// web's `/agents/new?template=`, a page rather than a sheet (register #66).
-public struct NativeAgentHirePage: View {
-    private let model: NativeAgentsModel
-    private let apps: [NativeAgentAppChoice]
-    private let templateID: String?
-    private let onCancel: () -> Void
-    private let onHired: (NativeAgent) -> Void
-
-    public init(
-        model: NativeAgentsModel,
-        apps: [NativeAgentAppChoice] = [],
-        templateID: String?,
-        onCancel: @escaping () -> Void,
-        onHired: @escaping (NativeAgent) -> Void
-    ) {
-        self.model = model
-        self.apps = apps
-        self.templateID = templateID
-        self.onCancel = onCancel
-        self.onHired = onHired
-    }
-
-    public var body: some View {
-        NativeAgentHireView(
-            model: model,
-            apps: apps,
-            template: templateID.flatMap(NativeAgentTemplate.named) ?? NativeAgentTemplate.all[0],
-            onCancel: onCancel,
-            onHired: onHired,
-            presentation: .page
-        )
-        .navigationTitle("New agent")
-    }
-}
-#endif
-
-/// The roster itself: a page head, then either the tiles or — on a first visit
-/// — the starting points, each a press away from a pre-filled hire. Muse's
-/// lesson was that a blank canvas is the wrong first screen for an agent.
-struct NativeAgentRoster: View {
-    let model: NativeAgentsModel
-    let open: (String) -> Void
-    let hire: (NativeAgentTemplate) -> Void
-    /// "Or start from scratch", and the header's New agent. Nil falls back
-    /// to hiring from the custom and the first starting points.
-    var hireFromScratch: (() -> Void)? = nil
-    var newAgent: (() -> Void)? = nil
-
-    #if os(macOS)
-    @Environment(\.junoPageLayout) private var layout
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var draft = ""
+    @State private var isStarting = false
+    @State private var startError: String?
     @State private var dealt = false
-    #endif
+    @FocusState private var composerFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
-        #if os(macOS)
-        JunoPage(measure: .wide) {
-            JunoPageHeader(
-                "Agents",
-                lede: "Teammates that take on work, keep going when you leave, and come back only when they need you."
-            ) {
-                if !model.agents.isEmpty {
-                    Button {
-                        startNew()
-                    } label: {
-                        Label("New agent", icon: .plus)
-                    }
-                    // The one prominent action on the page, in the Juno
-                    // accent; it was `.bordered`, which drew the column's coral
-                    // as an outline.
-                    .buttonStyle(.junoProminent)
-                    .contentShape(.rect)
-                    .accessibilityIdentifier("juno.agents.new")
+    /// - Parameters:
+    ///   - openThread: opens a conversation by id in the app's chat.
+    ///   - startThread: opens a conversation by id and sends the message as
+    ///     its first, through the app's chat.
+    public init(
+        model: NativeAgentsModel,
+        openThread: @escaping (String) -> Void,
+        startThread: @escaping (_ conversationID: String, _ message: String) -> Void
+    ) {
+        self.model = model
+        self.openThread = openThread
+        self.startThread = startThread
+    }
+
+    private var trimmedDraft: String {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    public var body: some View {
+        NativeAgentsScroll(maxWidth: Self.measure) {
+            VStack(spacing: 0) {
+                headline
+                composer
+                    .padding(.top, Self.headlineGap)
+                NativeAgentSuggestionList(lines: NativeAgentSuggestions.home) { line in
+                    draft = line
+                    composerFocused = true
                 }
+                .frame(maxWidth: Self.composerMeasure, alignment: .leading)
+                .padding(.top, JunoSpace.cozy)
+                .padding(.horizontal, JunoSpace.snug)
+                if let startError {
+                    NativeAgentsProblem(message: startError, dismiss: { self.startError = nil })
+                        .frame(maxWidth: Self.composerMeasure, alignment: .leading)
+                        .padding(.top, JunoSpace.cozy)
+                        .transition(.opacity)
+                }
+                yourAgents
+                    .padding(.top, Self.rosterGap)
             }
-        } content: {
-            macContent
+            .frame(maxWidth: .infinity)
+            .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion, tier: .tint), value: startError)
         }
-        // A failure while the roster is showing is a standing condition in
-        // the window's toast host, rather than a box in the page: posted when
-        // it changes, taken down when a later read succeeds.
-        .junoToastStatus(
-            id: "agents.roster.error",
-            model.agents.isEmpty ? nil : model.lastErrorDescription
-        ) { .error($0) }
-        .accessibilityIdentifier("juno.agents.roster")
-        #else
-        NativeAgentsScroll(maxWidth: JunoReadingMeasure.wide) {
-            VStack(alignment: .leading, spacing: JunoSpace.section) {
-                header
-                if let error = model.lastErrorDescription {
-                    NativeAgentsProblem(message: error, dismiss: { model.clearError() })
-                }
-                if model.agents.isEmpty {
-                    firstHire
-                } else {
-                    tiles
-                }
-            }
-        }
-        .accessibilityIdentifier("juno.agents.roster")
+        #if os(iOS)
+        .navigationTitle("Agents")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await model.refresh() }
         #endif
+        .onChange(of: model.composeRequest) { _, _ in composerFocused = true }
+        .accessibilityIdentifier("juno.agents.home")
     }
 
-    private func startNew() {
-        if let newAgent {
-            newAgent()
-        } else {
-            hire(NativeAgentTemplate.all[0])
-        }
+    // MARK: Layout
+
+    #if os(macOS)
+    private static let measure: CGFloat = 960
+    private static let topInset: CGFloat = 56
+    private static let headlineSize: CGFloat = 44
+    private static let headlineGap: CGFloat = JunoSpace.section
+    private static let rosterGap: CGFloat = 72
+    #else
+    private static let measure: CGFloat = JunoReadingMeasure.reading
+    private static let topInset: CGFloat = JunoSpace.section
+    private static let headlineSize: CGFloat = 34
+    private static let headlineGap: CGFloat = JunoSpace.roomy
+    private static let rosterGap: CGFloat = 48
+    #endif
+    private static let composerMeasure: CGFloat = 680
+
+    // MARK: Headline
+
+    private var headline: some View {
+        Text("Who should take care of it?")
+            .junoDisplayItalic(Self.headlineSize)
+            .foregroundStyle(Color.junoForeground)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+            .padding(.top, Self.topInset)
+            .accessibilityAddTraits(.isHeader)
     }
 
-    private func startFromScratch() {
-        if let hireFromScratch {
-            hireFromScratch()
-        } else if let custom = NativeAgentTemplate.named("custom") {
-            hire(custom)
+    // MARK: Composer
+
+    private var composer: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            TextField(
+                "Describe a job",
+                text: $draft,
+                prompt: Text("Describe a job. An agent will set itself up.").foregroundStyle(Color.junoTertiaryInk),
+                axis: .vertical
+            )
+                .textFieldStyle(.plain)
+                .junoType(.bodyLarge)
+                .foregroundStyle(Color.junoForeground)
+                .lineLimit(2...8)
+                .focused($composerFocused)
+                .disabled(isStarting)
+                .onSubmit(send)
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
+                .accessibilityIdentifier("juno.agents.home.composer")
+            HStack {
+                if isStarting {
+                    Text("Setting up your agent")
+                        .junoType(.ui)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .transition(.opacity)
+                }
+                Spacer(minLength: 0)
+                sendButton
+            }
+            .padding(.leading, 20)
+            .padding(.trailing, JunoSpace.cozy)
+            .padding(.bottom, JunoSpace.cozy)
+            .padding(.top, JunoSpace.snug)
         }
+        .frame(maxWidth: Self.composerMeasure)
+        .junoComposerGlass()
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: isStarting)
+    }
+
+    private var sendButton: some View {
+        let ready = !trimmedDraft.isEmpty && !isStarting
+        return Button(action: send) {
+            ZStack {
+                Circle()
+                    .fill(ready ? Color.junoAccent : Color.junoSecondary)
+                if isStarting {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    JunoIconView(.arrowUp, size: 16)
+                        .foregroundStyle(ready ? Color.junoOnAccent : Color.junoTertiaryInk)
+                }
+            }
+            .frame(width: Self.discSize, height: Self.discSize)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!ready)
+        .keyboardShortcut(.return, modifiers: .command)
+        .help("Send")
+        .accessibilityLabel("Send")
+        .accessibilityIdentifier("juno.agents.home.send")
     }
 
     #if os(macOS)
-    // MARK: The Mac's page
-
-    @ViewBuilder
-    private var macContent: some View {
-        if model.agents.isEmpty, model.phase == .idle || model.phase == .loading {
-            skeletonCards
-        } else if model.agents.isEmpty, model.phase == .failed || model.phase == .offline {
-            JunoEmptyState(
-                title: "Couldn’t load your agents",
-                message: model.lastErrorDescription ?? "Juno could not reach your agents.",
-                icon: .agents,
-                actionLabel: "Try again",
-                action: { Task { await model.refresh() } },
-                tone: .error
-            )
-        } else if model.agents.isEmpty {
-            macFirstHire
-        } else {
-            LazyVGrid(columns: gridColumns, alignment: .leading, spacing: JunoSpace.cozy) {
-                ForEach(Array(model.orderedAgents.enumerated()), id: \.element.id) { index, agent in
-                    NativeAgentRosterCard(agent: agent) { open(agent.id) }
-                        .opacity(dealt || reduceMotion ? 1 : 0)
-                        .offset(y: dealt || reduceMotion ? 0 : JunoMotion.riseDistance)
-                        .animation(JunoMotion.riseIn.delay(Double(min(index, 10)) * 0.045), value: dealt)
-                }
-            }
-            .onAppear { dealt = true }
-        }
-    }
-
-    /// One column below 576pt of page, two to 896, three above: the web's
-    /// `sm:grid-cols-2 lg:grid-cols-3`, stepped on the page's own width.
-    private var gridColumns: [GridItem] {
-        let width = layout?.columnWidth ?? 900
-        let count = width >= 896 ? 3 : width >= 576 ? 2 : 1
-        return Array(
-            repeating: GridItem(.flexible(), spacing: JunoSpace.cozy, alignment: .top),
-            count: count
-        )
-    }
-
-    /// Cards shaped like the roster's — a face and three lines — breathing
-    /// while the roster is read.
-    private var skeletonCards: some View {
-        LazyVGrid(columns: gridColumns, alignment: .leading, spacing: JunoSpace.cozy) {
-            ForEach(0..<3, id: \.self) { _ in
-                HStack(alignment: .top, spacing: JunoSpace.regular) {
-                    JunoSkeleton(height: JunoAgentFaceSize.md, width: JunoAgentFaceSize.md, cornerRadius: JunoAgentFaceSize.md / 2)
-                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                        JunoSkeleton(height: 14, width: 96)
-                        JunoSkeleton(height: 12, width: 140)
-                        JunoSkeleton(height: 12, width: 180)
-                    }
-                    .padding(.top, JunoSpace.micro)
-                    Spacer(minLength: 0)
-                }
-                .padding(JunoSpace.regular)
-                .junoCard(cornerRadius: JunoRadius.card)
-            }
-        }
-        .accessibilityElement()
-        .accessibilityLabel("Loading agents")
-    }
-
-    /// "Hire your first agent": four starting faces overlapping, the title,
-    /// the promise, the starting points and — for anyone who wants none of
-    /// them — a way to start from scratch.
-    private var macFirstHire: some View {
-        let templates = NativeAgentTemplate.all.filter { $0.id != "custom" }
-        return VStack(alignment: .leading, spacing: JunoSpace.section) {
-            VStack(spacing: JunoSpace.cozy) {
-                HStack(spacing: -JunoSpace.cozy) {
-                    ForEach(0..<min(4, templates.count), id: \.self) { index in
-                        JunoAgentFace(
-                            avatar: templates[index].avatar,
-                            state: index == 1 ? .working : .idle,
-                            size: JunoAgentFaceSize.md
-                        )
-                    }
-                }
-                .accessibilityHidden(true)
-                Text("Hire your first agent")
-                    .junoType(.title)
-                    .foregroundStyle(Color.junoForeground)
-                    .accessibilityAddTraits(.isHeader)
-                Text("Start from a job. Everything is editable before you hire, and nothing it does that sends, pays or deletes happens without you.")
-                    .junoType(.body)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 480)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity)
-
-            LazyVGrid(columns: gridColumns, alignment: .leading, spacing: JunoSpace.cozy) {
-                ForEach(templates) { template in
-                    NativeAgentTemplateCard(template: template) { hire(template) }
-                }
-            }
-
-            HStack(spacing: 0) {
-                Text("Or ")
-                    .junoType(.ui)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                Button(action: startFromScratch) {
-                    Text("start from scratch")
-                        .junoType(.ui)
-                        .foregroundStyle(Color.junoAccentInk)
-                        .underline()
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Hire an agent with a blank brief")
-                Text(".")
-                    .junoType(.ui)
-                    .foregroundStyle(Color.junoSecondaryInk)
-            }
-            .frame(maxWidth: .infinity)
-        }
-    }
+    private static let discSize: CGFloat = 30
+    #else
+    private static let discSize: CGFloat = 36
     #endif
 
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.regular) {
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                #if os(macOS)
-                Text("Agents")
-                    .junoPageHeading()
-                    .accessibilityAddTraits(.isHeader)
-                #else
-                Text("Agents")
-                    .junoPageHeading(compact: true)
-                    .accessibilityAddTraits(.isHeader)
-                #endif
-                Text("Teammates that take on work, keep going when you leave, and come back only when they need you.")
-                    .font(.callout)
-                    .junoSecondaryInk()
-                    .fixedSize(horizontal: false, vertical: true)
+    private func send() {
+        let text = trimmedDraft
+        guard !text.isEmpty, !isStarting else { return }
+        isStarting = true
+        startError = nil
+        Task {
+            defer { isStarting = false }
+            guard let started = await model.startAgent() else {
+                startError = model.lastErrorDescription ?? "Juno couldn’t set up an agent just now. Try again."
+                model.clearError()
+                return
             }
-            Spacer(minLength: JunoSpace.snug)
-            if !model.agents.isEmpty {
-                Button {
-                    hire(NativeAgentTemplate.all[0])
-                } label: {
-                    Label("New agent", icon: .plus)
-                }
-                .buttonStyle(.bordered)
-                .nativeAgentNeutralTint()
-                .frame(minHeight: 44)
-                .contentShape(.rect)
-                .accessibilityIdentifier("juno.agents.new")
-            }
+            draft = ""
+            startThread(started.conversationID, text)
         }
     }
 
+    // MARK: Your agents
+
+    @ViewBuilder
+    private var yourAgents: some View {
+        if !model.agents.isEmpty {
+            VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                Text("Your agents")
+                    .junoType(JunoType.ui.weight(.medium))
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .accessibilityAddTraits(.isHeader)
+                tiles
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onAppear { dealt = true }
+        } else if model.phase == .failed || model.phase == .offline {
+            NativeAgentsProblem(
+                message: model.lastErrorDescription ?? "Juno couldn’t reach your agents."
+            )
+            .frame(maxWidth: Self.composerMeasure, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
     private var tiles: some View {
-        LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 280), spacing: JunoSpace.cozy, alignment: .top)],
-            alignment: .leading,
-            spacing: JunoSpace.cozy
-        ) {
-            ForEach(model.orderedAgents) { agent in
-                Button {
-                    open(agent.id)
-                } label: {
-                    NativeAgentRosterTile(agent: agent)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.junoPress)
-            }
-        }
-    }
-
-    private var firstHire: some View {
-        let templates = NativeAgentTemplate.all.filter { $0.id != "custom" }
-        return VStack(alignment: .leading, spacing: JunoSpace.roomy) {
-            VStack(spacing: JunoSpace.snug) {
-                HStack(spacing: -JunoSpace.cozy) {
-                    ForEach(0..<min(4, templates.count), id: \.self) { index in
-                        JunoAgentFace(
-                            avatar: templates[index].avatar,
-                            state: index == 1 ? .working : .idle,
-                            size: JunoAgentFaceSize.md
-                        )
-                    }
-                }
-                .accessibilityHidden(true)
-                Text("Hire your first agent")
-                    .junoEmptyTitle()
-                    .junoInk()
-                    .accessibilityAddTraits(.isHeader)
-                Text("Start from a job. Everything is editable before you hire, and nothing it does that sends, pays or deletes happens without you.")
-                    .font(.callout)
-                    .junoSecondaryInk()
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 440)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity)
-
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 260), spacing: JunoSpace.cozy, alignment: .top)],
-                alignment: .leading,
-                spacing: JunoSpace.cozy
-            ) {
-                ForEach(templates) { template in
-                    Button {
-                        hire(template)
-                    } label: {
-                        NativeAgentTemplateTile(template: template, selected: false)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.junoPress)
-                }
-            }
-
-            Button {
-                if let custom = NativeAgentTemplate.named("custom") { hire(custom) }
-            } label: {
-                Text("Or start from scratch")
-                    .font(.callout)
-                    .junoInk()
-                    .underline()
-                    .frame(minHeight: 44)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity)
-        }
-    }
-}
-
-/// One agent on the roster: face, name, role and the state sentence. The dot
-/// is there only while it needs you.
-struct NativeAgentRosterTile: View {
-    let agent: NativeAgent
-
-    private var sentence: String { NativeAgentFormat.stateSentence(for: agent) }
-    private var waiting: Bool { agent.state == .waiting }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: JunoSpace.regular) {
-            JunoAgentFace(avatar: agent.avatar, state: agent.state, size: JunoAgentFaceSize.md)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: JunoSpace.snug) {
-                    Text(agent.name)
-                        .font(.body.weight(.medium))
-                        .junoInk()
-                        .lineLimit(1)
-                    if waiting {
-                        NativeAgentNeedsYouDot()
-                    }
-                }
-                if !agent.role.isEmpty {
-                    Text(agent.role)
-                        .font(.callout)
-                        .junoSecondaryInk()
-                        .lineLimit(1)
-                }
-                Text(sentence)
-                    .font(.callout)
-                    .foregroundStyle(waiting ? Color.junoForeground : Color.junoMutedForeground)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .padding(.top, JunoSpace.hairline)
-            }
-            Spacer(minLength: 0)
-        }
-        .nativeAgentTile(padding: JunoSpace.regular)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "\(agent.name). \(sentence)"))
-        .accessibilityAddTraits(.isButton)
-    }
-}
-
-/// A starting point: its face, its name and its one-line promise.
-struct NativeAgentTemplateTile: View {
-    let template: NativeAgentTemplate
-    let selected: Bool
-
-    var body: some View {
-        HStack(alignment: .top, spacing: JunoSpace.cozy) {
-            JunoAgentFace(avatar: template.avatar, size: JunoAgentFaceSize.sm)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(template.label)
-                    .font(.callout.weight(.medium))
-                    .junoInk()
-                Text(template.promise)
-                    .font(.callout)
-                    .junoSecondaryInk()
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .nativeAgentTile(selected: selected)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : [.isButton])
-    }
-}
-
-/// A screen with nothing to show but a reason: `JunoEmptyState` on the Mac,
-/// the system's unavailable view on the phone, as each app's own pages do.
-struct NativeAgentsNotice: View {
-    let title: String
-    let message: String
-    let icon: JunoIcon
-    var actionLabel: String?
-    var action: (() -> Void)?
-
-    var body: some View {
+        let ordered = model.orderedAgents
         #if os(macOS)
-        JunoEmptyState(
-            title: title,
-            message: message,
-            icon: icon,
-            actionLabel: actionLabel,
-            action: action
-        )
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 200, maximum: 320), spacing: JunoSpace.regular, alignment: .top)],
+            alignment: .leading,
+            spacing: JunoSpace.regular
+        ) {
+            ForEach(Array(ordered.enumerated()), id: \.element.id) { index, agent in
+                NativeAgentTile(agent: agent) { open(agent) }
+                    .opacity(dealt || reduceMotion ? 1 : 0)
+                    .offset(y: dealt || reduceMotion ? 0 : JunoMotion.riseDistance)
+                    .animation(JunoMotion.riseIn.delay(Double(min(index, 10)) * 0.04), value: dealt)
+            }
+        }
         #else
-        ContentUnavailableView {
-            JunoIconLabel(verbatim: title, icon: icon, size: 28)
-        } description: {
-            Text(message)
-        } actions: {
-            if let actionLabel, let action {
-                Button(actionLabel, action: action)
-                    .buttonStyle(.bordered)
-                    .nativeAgentNeutralTint()
-                    .frame(minHeight: 44)
-                    .contentShape(.rect)
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            ForEach(ordered) { agent in
+                NativeAgentRow(agent: agent) { open(agent) }
             }
         }
         #endif
     }
+
+    private func open(_ agent: NativeAgent) {
+        Task {
+            guard let conversationID = await model.threadConversationID(for: agent.id) else { return }
+            openThread(conversationID)
+        }
+    }
 }
 
-#if os(macOS)
-/// One agent on the Mac's roster (`AgentCard`): an opaque card with the 48pt
-/// face, the name, the role and the state sentence, a tonal fill under the
-/// pointer. Nothing lifts. The dot is there only while it needs you.
-struct NativeAgentRosterCard: View {
+// MARK: - A tile (the Mac)
+
+/// One agent on the Mac's home: a real object, so a card. The face at 72 on
+/// its halo, the name, and the live sentence; "Needs you" in the accent with
+/// the hand while it waits on the person.
+struct NativeAgentTile: View {
     let agent: NativeAgent
     let open: () -> Void
 
     @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var sentence: String { NativeAgentFormat.stateSentence(for: agent) }
     private var waiting: Bool { agent.state == .waiting }
 
     var body: some View {
         Button(action: open) {
-            HStack(alignment: .top, spacing: JunoSpace.regular) {
-                JunoAgentFace(avatar: agent.avatar, state: agent.state, size: JunoAgentFaceSize.md)
+            VStack(spacing: 0) {
+                NativeAgentPresence(
+                    avatar: agent.avatar,
+                    state: agent.isPaused ? .sleeping : agent.state,
+                    size: NativeAgentMetrics.tileFace
+                )
+                .padding(.top, JunoSpace.section)
+                .padding(.bottom, JunoSpace.regular)
+                Text(agent.name)
+                    .junoType(JunoType.bodyLarge.weight(.medium))
+                    .foregroundStyle(Color.junoForeground)
+                    .lineLimit(1)
+                if waiting {
+                    NativeAgentNeedsYouLine()
+                        .padding(.top, JunoSpace.tight)
+                }
+                Text(sentence)
+                    .junoType(.ui)
+                    .foregroundStyle(waiting ? Color.junoForeground : Color.junoSecondaryInk)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2, reservesSpace: true)
+                    .padding(.top, JunoSpace.tight)
+                    .padding(.horizontal, JunoSpace.regular)
+            }
+            .padding(.bottom, JunoSpace.roomy)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .fill(isHovering ? Color.junoHover : Color.junoCard)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .strokeBorder(Color.junoBorder.opacity(0.7), lineWidth: 1)
+            )
+            .contentShape(.rect(cornerRadius: JunoRadius.card))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint)) {
+                isHovering = hovering
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: waiting ? "\(agent.name). Needs you. \(sentence)" : "\(agent.name). \(sentence)"))
+        .accessibilityHint("Opens its thread")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("juno.agents.tile.\(agent.id)")
+    }
+}
+
+// MARK: - A row (the iPhone)
+
+/// One agent on the iPhone's home: the face at 72 on its halo, then the
+/// name and the live sentence beside it. No container; space between rows.
+struct NativeAgentRow: View {
+    let agent: NativeAgent
+    let open: () -> Void
+
+    private var sentence: String { NativeAgentFormat.stateSentence(for: agent) }
+    private var waiting: Bool { agent.state == .waiting }
+
+    var body: some View {
+        Button(action: open) {
+            HStack(alignment: .center, spacing: JunoSpace.roomy) {
+                NativeAgentPresence(
+                    avatar: agent.avatar,
+                    state: agent.isPaused ? .sleeping : agent.state,
+                    size: NativeAgentMetrics.tileFace
+                )
+                .padding(JunoSpace.snug)
                 VStack(alignment: .leading, spacing: JunoSpace.micro) {
-                    HStack(spacing: JunoSpace.snug) {
-                        Text(agent.name)
-                            .junoType(JunoType.ui.weight(.medium))
-                            .foregroundStyle(Color.junoForeground)
-                            .lineLimit(1)
-                        if waiting {
-                            NativeAgentNeedsYouDot()
-                        }
-                    }
-                    if !agent.role.isEmpty {
-                        Text(agent.role)
-                            .junoType(.ui)
-                            .foregroundStyle(Color.junoSecondaryInk)
-                            .lineLimit(1)
+                    Text(agent.name)
+                        .junoType(JunoType.bodyLarge.weight(.medium))
+                        .foregroundStyle(Color.junoForeground)
+                        .lineLimit(1)
+                    if waiting {
+                        NativeAgentNeedsYouLine()
                     }
                     Text(sentence)
                         .junoType(.ui)
                         .foregroundStyle(waiting ? Color.junoForeground : Color.junoSecondaryInk)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, JunoSpace.tight)
                 }
-                .padding(.top, JunoSpace.micro)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: 0)
             }
-            .padding(JunoSpace.regular)
-            // Every card in a row as tall as the tallest, so the grid reads
-            // as rows rather than as a ragged edge.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                    .fill(isHovering ? Color.junoHover : Color.junoRaised)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                    .strokeBorder(Color.junoBorder, lineWidth: 1)
-            )
-            .contentShape(.rect(cornerRadius: JunoRadius.card))
+            .frame(minHeight: 44)
+            .contentShape(.rect)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
+        .buttonStyle(.junoPress)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "\(agent.name). \(sentence)"))
+        .accessibilityLabel(Text(verbatim: waiting ? "\(agent.name). Needs you. \(sentence)" : "\(agent.name). \(sentence)"))
+        .accessibilityHint("Opens its thread")
         .accessibilityAddTraits(.isButton)
-        .accessibilityIdentifier("juno.agents.card.\(agent.id)")
+        .accessibilityIdentifier("juno.agents.tile.\(agent.id)")
     }
 }
-
-/// A starting point on the first-hire page: its face, its label, its promise.
-struct NativeAgentTemplateCard: View {
-    let template: NativeAgentTemplate
-    let hire: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: hire) {
-            HStack(alignment: .top, spacing: JunoSpace.cozy) {
-                JunoAgentFace(avatar: template.avatar, size: JunoAgentFaceSize.sm)
-                VStack(alignment: .leading, spacing: JunoSpace.micro) {
-                    Text(template.label)
-                        .junoType(JunoType.ui.weight(.medium))
-                        .foregroundStyle(Color.junoForeground)
-                    Text(template.promise)
-                        .junoType(.ui)
-                        .foregroundStyle(Color.junoSecondaryInk)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(JunoSpace.comfy)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                    .fill(isHovering ? Color.junoHover : Color.junoRaised)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                    .strokeBorder(Color.junoBorder, lineWidth: 1)
-            )
-            .contentShape(.rect(cornerRadius: JunoRadius.card))
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-    }
-}
-#endif
