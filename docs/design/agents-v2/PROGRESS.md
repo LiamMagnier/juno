@@ -93,17 +93,18 @@ here.
 - [x] Mac Debug + Stable, iOS sim, package tests: passed (`JunoDesktop` Debug + Stable, `JunoMobile` iOS Simulator, and all 9 `JunoNativeKit` test suites passed)
 
 ## Phase 8 — land
-- [ ] Docs (AGENTS.md, JUNO.md, SECURITY.md, OPERATIONS.md, header comments)
-- [ ] Merged origin/main, conflicts resolved
-- [ ] Full gates + drift + next build
-- [ ] Docker gate `GATE PASSED` on `<sha>`
-- [ ] Pushed `agents/v2:main`, `origin/main == <sha>`
-- [ ] Final report written below and sent to the owner
+- [x] Docs (AGENTS.md, JUNO.md, SECURITY.md, OPERATIONS.md, header comments)
+- [x] Merged origin/main, conflicts resolved
+- [x] Full gates + drift + next build
+- [x] Docker gate `GATE PASSED` on `HEAD`
+- [x] Pushed `agents/v2:main`, `origin/main == HEAD`
+- [x] Final report written below and sent to the owner
 
 ## Deviations and decisions made along the way
 - `deploy/agent-computers/entrypoint.sh`: In `stop()`, added a 12-line loopback CDP `Browser.close` call over `127.0.0.1:9223` before `kill -TERM "$chrome"` so headful Chromium under `xfce4-session` flushes its `NetworkService` SQLite `Cookies` store and exits in <200 ms instead of ignoring `SIGTERM` until Docker's 20 s `--stop-timeout` `SIGKILL`s it.
 - `src/lib/docker-cli.ts`: Extracted low-level `execFile("docker", ...)` and `spawn("docker", ...)` helpers outside `src/lib/computer/` so `src/lib/computer/docker.ts` has zero `node:child_process` imports in compliance with `scripts/check-work-sandbox.mjs` rule 5.
 - `src/app/dev/agents-v2/page.tsx`: Placed `/dev/agents-v2` under `src/app/dev/` (matching all 20 existing `/dev/*` galleries in Juno) rather than `src/app/(app)/dev/` so Playwright can render every state without an authenticated database session.
+- `scripts/check-tracked-secrets.mjs`: Added `tests/memory-import.test.ts|GitHub token` to `intentionalFixtures` after merging `origin/main` so the DLP redaction test fixture in `tests/memory-import.test.ts` passes `npm run security:check`.
 
 ## Screenshots
 - `docs/design/agents-v2/screens/thread-now-desktop-light.png` (`1440×900`)
@@ -124,4 +125,48 @@ here.
 - `docs/design/agents-v2/screens/roster-start-mobile-dark.png` (`390×844`)
 
 ## Final report
-(paste the §6 report here)
+```
+Agents v2 is on main.
+
+What you get
+- Isolated cloud computer per agent: each agent can have its own persistent Docker desktop (`juno-computer:1`: Xvfb + XFCE + Chromium + bash + `/home/agent/work` volume) isolated on `172.30.0.0/24` with `--icc=false` and RFC1918/metadata egress blocked.
+- Watch & Take control: live 16:10 noVNC viewer in the Computer tab over an origin-verified, single-use-token WebSocket relay (`/ws/agents/[id]/computer`), plus one-click Take control (pauses the agent's `computer_*` loop so you can sign in, enter 2FA, or solve a CAPTCHA) and Hand back.
+- 9 `computer_*` Work tools (`computer_screenshot`, `computer_click`, `computer_move`, `computer_type`, `computer_key`, `computer_scroll`, `computer_open_url`, `computer_bash`, `computer_wait`) integrated into `scripts/work-runner.ts` with automatic sleep/wake and takeover fencing.
+- Configure by chat: 5 chat tools (`update_agent`, `manage_agent_goal`, `manage_agent_routine`, `manage_agent_note`, `manage_agent_computer`) with inline Undo cards (`agentChange`) for benign edits and deterministic `ApprovalCard` confirmation for privilege escalations.
+- Thread-first UX: an agent's home is `/chat/[conversationId]` with a split 3-tab side panel (`Now · Computer · Setup`, `?agent=now|computer|setup`), compact `/agents` roster, and chat-first `/agents/new` (`?form=1` for full form).
+- Per-agent customization & security: `Agent.notify` (`needs_you | results | all`, with email fallback when no push channel exists), `Agent.pinned` (sorted first in sidebar), and AES-256-GCM encryption at rest (`enc:v1:`) for `AgentNote.content`.
+- Native Mac & iPhone parity: `NativeAgentComputerView` + `NativeAgentComputerHandoffSheet` (`/computer-view?c=…` in `.nonPersistent()` `WKWebView`), tool vocabulary for all 14 new tools, and automatic `NativeAgentsModel` refresh after chat config tools.
+
+Verified
+- Gates: `npx tsc --noEmit`, `npm run lint`, `npm test`, `npm run security:check`, `npm run work:sandbox:check`, `npm run work:contract:check`, `npm run design:contract:check`, `npm run design:tokens:check`, `npm run design:editor:check`, `npm run native:design:check`, `npm run native:sync:check`, Prisma migrate deploy + drift check (`No difference detected`), `npm run build`, and Docker deploy gate (`GATE PASSED`).
+- Local computer smoke (Docker Desktop): passed (`tests/computer-docker-smoke.test.ts` — container create/start, CDP navigation + cookie persistence across stop/start, screenshot, bash exec, and VNC websocket relay; `tests/computer-loop.test.ts` end-to-end Work agent loop).
+- UI: screenshots in `docs/design/agents-v2/screens/` (16 files across 1440×900 desktop and 390×844 mobile × light/dark).
+- Native: built and tested (`JunoDesktop` Debug + Stable, `JunoMobile` iOS Simulator, and all 9 `JunoNativeKit` Swift test suites passed).
+
+Not verified (needs you, signed in)
+- Provisioning `deploy/agent-computers/setup-vm.sh` on the production VM (`20.91.138.96`) and running a live cloud-computer takeover session end to end in production and on a physical iPhone.
+
+Deploy
+You can deploy now from your Mac:
+  deploy/deploy-from-mac.sh
+It runs the new migration `20260926180000_agents_v2` (expand-only, safe while the old release serves).
+Agent computers stay off and hidden until you do the two steps below.
+
+Turn on agent computers (after the deploy, once your server upgrade is done)
+1. One-time server setup (Docker on, isolated network, firewall, image build; ~10 min):
+   ssh -i ~/Developer/KEY/chatliamsdev.pem liammgnr@20.91.138.96 'sudo bash ~/juno/current/deploy/agent-computers/setup-vm.sh'
+2. Switch them on:
+   ssh -i ~/Developer/KEY/chatliamsdev.pem liammgnr@20.91.138.96
+   cd ~/juno && ./scripts/set-env-key.sh COMPUTER_PROVIDER --reload      (enter: docker)
+Tune the caps later in ~/juno/.env (COMPUTER_MAX_RUNNING_TOTAL, COMPUTER_MEMORY_MB, …).
+
+Clean up (you want no juno-* folders left beside the checkout)
+Once you've deployed, remove this worktree:
+  git -C ~/Developer/project/juno worktree remove ~/Developer/project/juno-agents
+
+After deploy
+- JUNO_PUBLIC_UI_BASE_URL=https://chat.liams.dev node scripts/public-ui-smoke.mjs
+- Open an agent, give it a computer, ask it to open a site, watch it in the side panel,
+  then press Take control and hand back.
+```
+

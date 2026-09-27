@@ -23,6 +23,7 @@ const intentionalFixtures = new Set([
   "tests/dlp-policy.test.ts|OpenAI secret",
   "tests/dlp.test.ts|GitHub token",
   "tests/dlp.test.ts|OpenAI secret",
+  "tests/memory-import.test.ts|GitHub token",
 ]);
 
 const findings = [];
