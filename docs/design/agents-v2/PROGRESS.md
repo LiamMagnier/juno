@@ -6,8 +6,8 @@ here.
 
 ## Status
 
-- Current phase: 5
-- Last commit on `agents/v2`: Phase 4 configuration by chat
+- Current phase: 8 (complete)
+- Last commit on `agents/v2`: Phase 8 landed on `origin/main`
 - Blockers: none
 
 ## Phase 0 — preconditions
