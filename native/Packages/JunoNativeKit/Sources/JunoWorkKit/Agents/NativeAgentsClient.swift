@@ -59,7 +59,9 @@ public struct NativeAgentsClient: Sendable {
             ideas: list(root["ideas"], decodeIdea),
             notes: list(root["notes"], decodeNote),
             routines: list(root["routines"], decodeRoutine),
-            tasks: list(root["tasks"], decodeTask)
+            tasks: list(root["tasks"], decodeTask),
+            computer: root["computer"].flatMap(decodeComputer),
+            computerConfigured: root["computerConfigured"]?.boolValue ?? (root["computer"] != nil && root["computer"] != .null)
         )
     }
 
@@ -715,5 +717,117 @@ public struct NativeAgentsClient: Sendable {
     private func strings(_ value: JunoJSONValue?) -> [String] {
         guard case .array(let values)? = value else { return [] }
         return values.compactMap(\.stringValue)
+    }
+
+    // MARK: - Computer
+
+    public func computer(agentID: String, for accountID: AccountID) async throws -> NativeAgentCloudComputer? {
+        try validate(agentID)
+        let response = try await get("/api/agents/\(agentID)/computer", for: accountID)
+        guard let root = try object(response) else { throw WorkRemoteError.malformedResponse }
+        return root["computer"].flatMap(decodeComputer)
+    }
+
+    public func computerAction(
+        agentID: String,
+        action: String,
+        for accountID: AccountID
+    ) async throws -> NativeAgentCloudComputer? {
+        try validate(agentID)
+        let response = try await send(
+            .post,
+            "/api/agents/\(agentID)/computer",
+            body: .object(["action": .string(action)]),
+            for: accountID
+        )
+        guard let root = try object(response) else { throw WorkRemoteError.malformedResponse }
+        return root["computer"].flatMap(decodeComputer)
+    }
+
+    public func computerView(
+        agentID: String,
+        mode: String,
+        handoff: Bool = true,
+        for accountID: AccountID
+    ) async throws -> (wsURL: String, handoffURL: String?) {
+        try validate(agentID)
+        let response = try await send(
+            .post,
+            "/api/agents/\(agentID)/computer/view",
+            body: .object([
+                "mode": .string(mode),
+                "handoff": .bool(handoff),
+            ]),
+            for: accountID
+        )
+        guard let root = try object(response) else { throw WorkRemoteError.malformedResponse }
+        let wsURL = try string(root, "wsUrl")
+        let handoffURL = optionalString(root["handoffUrl"])
+        return (wsURL: wsURL, handoffURL: handoffURL)
+    }
+
+    public func computerHeartbeat(
+        agentID: String,
+        watching: Bool,
+        releasingControl: Bool = false,
+        for accountID: AccountID
+    ) async throws -> NativeAgentCloudComputer? {
+        try validate(agentID)
+        let response = try await send(
+            .post,
+            "/api/agents/\(agentID)/computer/heartbeat",
+            body: .object([
+                "watching": .bool(watching),
+                "releasingControl": .bool(releasingControl),
+            ]),
+            for: accountID
+        )
+        guard let root = try object(response) else { throw WorkRemoteError.malformedResponse }
+        return root["computer"].flatMap(decodeComputer)
+    }
+
+    public func computerPoster(agentID: String, for accountID: AccountID) async throws -> Data? {
+        try validate(agentID)
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/agents/\(agentID)/computer/poster",
+                method: .get,
+                headers: try HTTPHeaders(["accept": "image/jpeg"]),
+                body: nil
+            ),
+            for: accountID
+        )
+        if response.statusCode == 204 || response.statusCode == 404 {
+            return nil
+        }
+        try requireSuccess(response)
+        return response.body.isEmpty ? nil : response.body
+    }
+
+    private func decodeComputer(_ value: JunoJSONValue) -> NativeAgentCloudComputer? {
+        guard case .object(let raw) = value else { return nil }
+        let enabled = raw["enabled"]?.boolValue ?? false
+        let status = optionalString(raw["status"]) ?? (enabled ? "asleep" : "disabled")
+        let streamOn = raw["streamOn"]?.boolValue ?? false
+        let lastActiveAt = raw["lastActiveAt"]?.date
+        let activeSeconds = integer(raw["activeSeconds"])
+        let hasPoster = raw["hasPoster"]?.boolValue ?? false
+        let usingNowSummary: String?
+        if case .object(let usingNow)? = raw["usingNow"] {
+            usingNowSummary = optionalString(usingNow["summary"])
+        } else {
+            usingNowSummary = nil
+        }
+        let error = optionalString(raw["error"])
+        return NativeAgentCloudComputer(
+            enabled: enabled,
+            status: status,
+            streamOn: streamOn,
+            lastActiveAt: lastActiveAt,
+            activeSeconds: activeSeconds,
+            hasPoster: hasPoster,
+            usingNowSummary: usingNowSummary,
+            error: error
+        )
     }
 }

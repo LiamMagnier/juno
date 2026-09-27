@@ -542,26 +542,14 @@
         "/api/agents": "native",
         "/api/agents/[id]": "native",
         "/api/agents/[id]/activity": "native",
-        "/api/agents/[id]/computer": {
-          "status": "planned",
-          "note": "Agent computer lifecycle and status; wired into AgentClient.swift in Phase 7."
-        },
+        "/api/agents/[id]/computer": "native",
         "/api/agents/[id]/computer/files": {
           "status": "planned",
-          "note": "Agent computer file listing and download; wired into AgentClient.swift in Phase 7."
+          "note": "Agent computer file listing and download; web panel disclosure."
         },
-        "/api/agents/[id]/computer/heartbeat": {
-          "status": "planned",
-          "note": "Agent computer live-view heartbeat and takeover rotation; called by ComputerViewer."
-        },
-        "/api/agents/[id]/computer/poster": {
-          "status": "planned",
-          "note": "Agent computer last-frame poster JPEG; wired into native computer view in Phase 7."
-        },
-        "/api/agents/[id]/computer/view": {
-          "status": "planned",
-          "note": "Agent computer live-view token and native WKWebView handoff URL; wired into AgentClient.swift in Phase 7."
-        },
+        "/api/agents/[id]/computer/heartbeat": "native",
+        "/api/agents/[id]/computer/poster": "native",
+        "/api/agents/[id]/computer/view": "native",
         "/api/agents/[id]/duplicate": {
           "status": "planned",
           "note": "Agent duplication; wired into AgentClient.swift in Phase 7."

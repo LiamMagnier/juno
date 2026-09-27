@@ -88,9 +88,9 @@ here.
 - [x] Real task on a real computer: passed (`tests/computer-docker-smoke.test.ts` real Docker desktop container lifecycle + Chromium profile persistence + CDP/screen/exec/watch + `tests/computer-loop.test.ts` end-to-end Work agent loop + `/dev/agents-v2` Playwright visual verification)
 
 ## Phase 7 — native
-- [ ] Contract (route set, OpenAPI, regenerate, parity)
-- [ ] Computer view (Mac + iOS), tool labels, refresh after config tools, "Live" removed
-- [ ] Mac Debug + Stable, iOS sim, package tests: passed / deferred (reason)
+- [x] Contract (route set, OpenAPI, regenerate, parity)
+- [x] Computer view (Mac + iOS), tool labels, refresh after config tools, "Live" removed
+- [x] Mac Debug + Stable, iOS sim, package tests: passed (`JunoDesktop` Debug + Stable, `JunoMobile` iOS Simulator, and all 9 `JunoNativeKit` test suites passed)
 
 ## Phase 8 — land
 - [ ] Docs (AGENTS.md, JUNO.md, SECURITY.md, OPERATIONS.md, header comments)

@@ -1556,6 +1556,130 @@ paths:
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
         '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}/computer:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeAgentComputer
+      summary: Read the agent's cloud computer status
+      responses:
+        '200':
+          description: Current computer status or null when unconfigured.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [computer]
+                properties:
+                  computer: { type: [object, 'null'] }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: postNativeAgentComputerAction
+      summary: Enable, disable, wake, sleep or reset the agent's computer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [enable, disable, wake, sleep, reset] }
+      responses:
+        '200':
+          description: Updated computer status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [computer]
+                properties:
+                  computer: { type: [object, 'null'] }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}/computer/view:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+    post:
+      servers: [{ url: /api }]
+      operationId: createNativeAgentComputerView
+      summary: Mint a short-lived view token or native WKWebView handoff code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode: { type: string, enum: [watch, control] }
+                handoff: { type: boolean }
+      responses:
+        '200':
+          description: Short-lived relay token and optional one-time handoff URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [wsUrl, mode, expiresAt]
+                properties:
+                  wsUrl: { type: string }
+                  mode: { type: string, enum: [watch, control] }
+                  expiresAt: { type: string, format: date-time }
+                  handoffUrl: { type: string }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}/computer/heartbeat:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+    post:
+      servers: [{ url: /api }]
+      operationId: heartbeatNativeAgentComputer
+      summary: Keep the computer awake while watched and release human control on hand-back
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [watching]
+              properties:
+                watching: { type: boolean }
+                releasingControl: { type: boolean }
+      responses:
+        '200':
+          description: Updated computer status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [computer]
+                properties:
+                  computer: { type: [object, 'null'] }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /agents/{agentId}/computer/poster:
+    parameters:
+      - { in: path, name: agentId, required: true, schema: { type: string } }
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeAgentComputerPoster
+      summary: Read the most recent JPEG poster frame of the agent's computer
+      responses:
+        '200':
+          description: JPEG image bytes.
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        '204':
+          description: No poster cached yet.
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
   /agents/{agentId}/tasks:
     parameters:
       - { in: path, name: agentId, required: true, schema: { type: string } }

@@ -864,6 +864,68 @@ public final class NativeAgentsModel {
         )
     }
 
+    // MARK: - Cloud computer
+
+    public func computerAction(agentID: String, action: String) async {
+        guard let accountID else { return }
+        do {
+            let updated = try await client.computerAction(agentID: agentID, action: action, for: accountID)
+            guard self.accountID == accountID else { return }
+            if var detail = details[agentID] {
+                detail.computer = updated
+                detail.computerConfigured = true
+                details[agentID] = detail
+            }
+        } catch {
+            record(error)
+        }
+    }
+
+    public func computerHandoffURL(agentID: String, mode: String) async -> String? {
+        guard let accountID else { return nil }
+        do {
+            let view = try await client.computerView(agentID: agentID, mode: mode, handoff: true, for: accountID)
+            return view.handoffURL
+        } catch {
+            record(error)
+            return nil
+        }
+    }
+
+    public func computerHandBack(agentID: String) async {
+        guard let accountID else { return }
+        do {
+            let updated = try await client.computerHeartbeat(
+                agentID: agentID,
+                watching: false,
+                releasingControl: true,
+                for: accountID
+            )
+            guard self.accountID == accountID else { return }
+            if var detail = details[agentID] {
+                detail.computer = updated
+                details[agentID] = detail
+            }
+            if let gate = (gates[agentID] ?? []).first(where: { $0.question != nil }),
+                let question = gate.question
+            {
+                await answer(
+                    agentID: agentID,
+                    sessionID: gate.task.sessionID,
+                    question: question,
+                    text: "Done. I've finished on your computer; continue."
+                )
+            }
+        } catch {
+            record(error)
+        }
+    }
+
+    public func computerPoster(agentID: String) async -> Data? {
+        guard let accountID else { return nil }
+        return try? await client.computerPoster(agentID: agentID, for: accountID)
+    }
+
     /// Waiting first, then the order they were hired in. Ties keep the
     /// server's order, so rows never swap on a read that changed nothing.
     nonisolated static func sidebarOrder(_ agents: [NativeAgent]) -> [NativeAgent] {

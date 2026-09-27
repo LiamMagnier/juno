@@ -167,6 +167,16 @@ struct JunoMobileChatDetailScreen: View {
       // over a different conversation is the one thing this must not do.
       readAloud?.stop()
     }
+    .onChange(of: model.latestCompletedAgentConfigMessageID, initial: false) { oldID, newID in
+      guard let newID, newID != oldID, let agentsModel else { return }
+      let activeAgentID = threadAgent?.id
+      Task {
+        await agentsModel.refresh()
+        if let activeAgentID {
+          await agentsModel.loadDetail(id: activeAgentID)
+        }
+      }
+    }
     .task(id: "\(accountID?.rawValue ?? ""):\(model.selectedConversationID ?? "")") {
       await model.refreshChatApprovals(
         conversationID: model.selectedConversationID,

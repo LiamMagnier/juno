@@ -908,19 +908,24 @@ struct NativeAgentNowTab: View {
         }
     }
 
-    /// Its computer: the calls its newest run made, in words (AGENTS.md
-    /// §5.2). Shown only for the run the page is about, and only once it has
-    /// done something.
+    /// Its computer: the cloud desktop when the feature is on (BRIEF.md §4.9),
+    /// or the calls its newest run made in words as the fallback.
     @ViewBuilder
     private var computer: some View {
-        if let feed = model.computers[agent.id],
+        if detail?.computerConfigured == true || detail?.computer != nil {
+            NativeAgentComputerView(
+                model: model,
+                agent: agent,
+                computer: detail?.computer
+            )
+        } else if let feed = model.computers[agent.id],
             feed.sessionID == tasks.first?.sessionID,
             !feed.lines.isEmpty
         {
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
                 HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                     NativeAgentHeading(title: "Its computer")
-                    Text(feed.isLive ? "Live" : "Last run")
+                    Text(feed.isLive ? "Running" : "Last run")
                         .junoCodeSmall()
                         .junoSecondaryInk()
                 }

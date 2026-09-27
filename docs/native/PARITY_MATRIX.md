@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-262 routes: 165 native, 35 planned, 49 web only, 13 internal. 44 pages: on the Mac 33 native, 2 partial, 2 planned, 7 web only; on iOS 17 native, 6 partial, 14 planned, 7 web only.
+262 routes: 169 native, 31 planned, 49 web only, 13 internal. 44 pages: on the Mac 33 native, 2 partial, 2 planned, 7 web only; on iOS 17 native, 6 partial, 14 planned, 7 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -41,7 +41,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 0 | 2 | 0 |
 | [Automations](#automations) | 3/3 | 0/3 | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
-| [Agents](#agents) | 3/3 | 3/3 | 12 | 7 | 0 | 0 |
+| [Agents](#agents) | 3/3 | 3/3 | 16 | 3 | 0 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
 | [Juno Code](#code) | 2/4 (+2 partial) | 0/4 (+3 partial) | 15 | 13 | 3 | 0 |
@@ -390,11 +390,11 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/agents` | GET, POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]` | GET, PATCH, DELETE | Native | JunoWorkKit |  |
 | `/api/agents/[id]/activity` | GET | Native | JunoWorkKit |  |
-| `/api/agents/[id]/computer` | GET, POST | Planned |  | Agent computer lifecycle and status; wired into AgentClient.swift in Phase 7. |
-| `/api/agents/[id]/computer/files` | GET | Planned |  | Agent computer file listing and download; wired into AgentClient.swift in Phase 7. |
-| `/api/agents/[id]/computer/heartbeat` | POST | Planned |  | Agent computer live-view heartbeat and takeover rotation; called by ComputerViewer. |
-| `/api/agents/[id]/computer/poster` | GET | Planned |  | Agent computer last-frame poster JPEG; wired into native computer view in Phase 7. |
-| `/api/agents/[id]/computer/view` | POST | Planned |  | Agent computer live-view token and native WKWebView handoff URL; wired into AgentClient.swift in Phase 7. |
+| `/api/agents/[id]/computer` | GET, POST | Native | JunoWorkKit |  |
+| `/api/agents/[id]/computer/files` | GET | Planned |  | Agent computer file listing and download; web panel disclosure. |
+| `/api/agents/[id]/computer/heartbeat` | POST | Native | JunoWorkKit |  |
+| `/api/agents/[id]/computer/poster` | GET | Native | JunoWorkKit |  |
+| `/api/agents/[id]/computer/view` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/duplicate` | POST | Planned |  | Agent duplication; wired into AgentClient.swift in Phase 7. |
 | `/api/agents/[id]/goals` | GET, POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/goals/[goalId]` | PATCH, DELETE | Native | JunoWorkKit |  |
