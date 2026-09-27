@@ -146,6 +146,14 @@ export const AGENT_EVENT_KINDS = [
   "takeover_ended",
   "duplicated",
   "undone",
+  // Rooms (src/lib/agents/rooms.ts): joining a room, and asking another member.
+  "room_joined",
+  "room_asked",
+  // Payments (src/lib/payments): a limit changed, a card issued for a purchase.
+  "spend_limit_changed",
+  "payment_issued",
+  // iMessage (src/lib/channels): a text reached this agent.
+  "channel_message",
 ] as const;
 export type AgentEventKind = (typeof AGENT_EVENT_KINDS)[number];
 

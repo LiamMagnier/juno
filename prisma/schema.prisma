@@ -152,6 +152,11 @@ model User {
   agentNotes                  AgentNote[]
   agentEvents                 AgentEvent[]
   agentComputers              AgentComputer[]
+  agentRoomMembers            AgentRoomMember[]
+  agentRoomTurns              AgentRoomTurn[]
+  channelLinks                ChannelLink[]
+  agentSpendLimits            AgentSpendLimit[]
+  agentPayments               AgentPayment[]
 
   @@index([image])
 }
@@ -3929,4 +3934,143 @@ model AgentComputer {
 
   @@index([userId, status])
   @@index([status, lastActiveAt])
+}
+
+/// A room (docs/design/agents-rework/FEATURES.md §1): an ordinary chat
+/// conversation with two to six member agents. Membership lives here so the
+/// conversation keeps `kind = "chat"` and `agentId = null`; `agentId` and
+/// `conversationId` are plain pointers for the reason `Conversation.agentId`
+/// gives (either side may be retired or deleted first).
+model AgentRoomMember {
+  id             String   @id @default(cuid())
+  userId         String
+  conversationId String
+  agentId        String
+  position       Int      @default(0)
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, agentId])
+  @@index([userId, conversationId])
+  @@index([userId, agentId])
+}
+
+/// One agent turn in a room, planned per user message. The unique pair
+/// (userMessageId, agentId) is the loop guard: an agent answers a message at
+/// most once, so a handoff can never come back to it. (userMessageId,
+/// position) is the cap: positions run 0..2 and a fourth insert conflicts.
+model AgentRoomTurn {
+  id             String   @id @default(cuid())
+  userId         String
+  conversationId String
+  userMessageId  String
+  agentId        String
+  /// The member that asked for this turn with `ask_room_member`, or null.
+  fromAgentId    String?
+  /// "addressed" | "routed" | "asked"
+  reason         String
+  /// encryptField(what the asking member wants), only for reason "asked".
+  request        String?  @db.Text
+  position       Int
+  /// "pending" | "running" | "answered" | "failed" | "skipped"
+  status         String   @default("pending")
+  /// The assistant message this turn wrote, once answered.
+  messageId      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userMessageId, agentId])
+  @@unique([userMessageId, position])
+  @@index([userId, conversationId, createdAt])
+  @@index([messageId])
+}
+
+/// A phone number linked to an account for messaging agents over iMessage
+/// (src/lib/channels). `phoneHash` is an HMAC of the E.164 number, used for the
+/// webhook lookup; `phone` is the number itself, encrypted.
+model ChannelLink {
+  id             String    @id @default(cuid())
+  userId         String
+  /// "sendblue" | "mac_relay"
+  provider       String
+  phoneHash      String
+  phone          String    @db.Text
+  /// The agent a text without an @name reaches.
+  defaultAgentId String?
+  /// "pending" | "verified"
+  status         String    @default("pending")
+  /// HMAC of the six-digit code, only while pending.
+  codeHash       String?
+  codeExpiresAt  DateTime?
+  codeAttempts   Int       @default(0)
+  verifiedAt     DateTime?
+  lastInboundAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, phoneHash])
+  @@index([userId])
+}
+
+/// Replay ledger for inbound channel messages: one row per provider message
+/// handle (hashed). Holds no user content and no owner.
+model ChannelInbound {
+  id         String   @id @default(cuid())
+  provider   String
+  handleHash String
+  receivedAt DateTime @default(now())
+
+  @@unique([provider, handleHash])
+  @@index([receivedAt])
+}
+
+/// How much an agent may spend in a calendar month (UTC), in minor units.
+/// No row means zero: an agent cannot spend until the person says so.
+model AgentSpendLimit {
+  id                String   @id @default(cuid())
+  userId            String
+  agentId           String   @unique
+  monthlyLimitMinor Int      @default(0)
+  currency          String   @default("usd")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// One payment an agent asked for (src/lib/payments): the approval, the
+/// single-use card the provider issued for it, and the receipt. The card's
+/// number and CVC are never stored; they are fetched from the provider only by
+/// `fillPaymentCard` and handed straight to the computer fill path.
+model AgentPayment {
+  id                String    @id @default(cuid())
+  userId            String
+  agentId           String
+  conversationId    String?
+  merchant          String
+  amountMinor       Int
+  currency          String
+  /// encryptField(the agent's reason)
+  reason            String    @db.Text
+  /// "stripe_issuing" | "test"
+  provider          String
+  providerCardId    String?
+  last4             String?
+  /// "pending" | "declined" | "issued" | "held" | "filled" | "spent" | "expired" | "canceled" | "failed"
+  status            String    @default("pending")
+  approvalReceiptId String?
+  idempotencyKey    String
+  expiresAt         DateTime?
+  spentMinor        Int?
+  spentAt           DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, agentId, createdAt])
+  @@index([providerCardId])
 }

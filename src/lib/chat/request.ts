@@ -159,6 +159,15 @@ export const chatBodySchema = z
      * would otherwise start runs it has nowhere to draw.
      */
     workHandoff: z.boolean().optional(),
+    /**
+     * A follow-up agent turn in a room (src/lib/agents/rooms.ts): answer the
+     * room's newest message as this member, appended as a new reply. Sent with
+     * `regenerate: true` (the turn answers the stored transcript and adds no
+     * message of the person's). The server runs it only when this member is
+     * the next planned or asked turn of that message, so a client cannot use
+     * it to add turns past the cap or loop an agent back.
+     */
+    roomTurn: z.object({ agentId: z.string().cuid() }).optional(),
     privateMode: z.boolean().optional(),
     // Which surface sent the request — tags the spend ledger so admin can split
     // website vs native-app spending. Defaults to "web".
