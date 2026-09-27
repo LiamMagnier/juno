@@ -442,11 +442,11 @@ export function actionPreview(input: {
       input.args.preview && typeof input.args.preview === "object" && !Array.isArray(input.args.preview)
         ? (input.args.preview as Record<string, unknown>)
         : null;
-    const headline =
-      previewObj && typeof previewObj.headline === "string" && previewObj.headline.trim()
-        ? previewObj.headline.trim().replace(/[.!?]+$/, "")
-        : "";
-    if (headline) return `${headline}.`;
+    const rawHeadline =
+      previewObj && typeof previewObj.headline === "string" ? previewObj.headline.trim() : "";
+    const headline = rawHeadline.replace(/[.!?]+$/, "");
+    // Agent changes are asked as questions ("Give Mira its own computer?"); keep the mark.
+    if (headline) return `${headline}${rawHeadline.endsWith("?") ? "?" : "."}`;
     if (input.toolName === "create_routine" || input.toolName === "agent_routine") {
       const name = typeof input.args.name === "string" ? input.args.name.trim() : "a recurring routine";
       return `Schedule ${name}.`;

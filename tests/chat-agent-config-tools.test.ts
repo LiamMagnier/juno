@@ -303,7 +303,7 @@ test("actionPreview and approval-card render structured juno_agents diffs with D
   const cardSource = read("../src/components/chat/approval-card.tsx");
   assert.match(cardSource, /function isAgentConfig\(/);
   assert.match(cardSource, /approval\.connectorId === "juno_agents"/);
-  assert.match(cardSource, /agentConfig \? "Deny" : "Don’t allow"/);
+  assert.match(cardSource, /agentConfig \? "Not now" : "Don’t allow"/);
   assert.match(cardSource, /canAllowScope && !agentConfig/);
 });
 

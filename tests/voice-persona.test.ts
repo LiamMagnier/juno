@@ -249,6 +249,6 @@ test("hiring lands directly in the agent's thread and /agents/[id] redirects to 
   assert.match(page, /redirect\(`\/chat\/\$\{encodeURIComponent\(conversationId\)\}/);
 
   const greeting = src("src/components/agents/agent-thread-header.tsx");
-  assert.match(greeting, /Tell me what you'd like me to take on and I'll set myself up\./);
+  assert.match(greeting, /Tell me the job\. I’ll name myself and set myself up\./);
 });
 

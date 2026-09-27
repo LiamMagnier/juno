@@ -1,6 +1,6 @@
-import { AgentsRoster } from "@/components/agents/agents-roster";
+import { AgentsHome } from "@/components/agents/agents-home";
 
-/** The roster. The page is a client component because it polls its agents' state (use-agents.ts). */
+/** Agents home: describe a job and an agent sets itself up (docs/design/agents-rework/DIRECTION.md). */
 export default function AgentsPage() {
-  return <AgentsRoster />;
+  return <AgentsHome />;
 }

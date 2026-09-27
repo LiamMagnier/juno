@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,8 +19,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Monitor, MoreHorizontal, PanelRight } from "@/components/ui/icons";
-import { AgentFace } from "@/components/agents/agent-face";
+import { ArrowRight, Monitor, MoreHorizontal, User } from "@/components/ui/icons";
+import { AgentPresence } from "@/components/agents/agent-presence";
 import { localStateSentence } from "@/components/agents/agent-bits";
 import type { AgentPanelTab } from "@/components/agents/agent-panel";
 import {
@@ -88,10 +87,10 @@ export function getTemplateSuggestions(templateId: string | null | undefined): r
 }
 
 /**
- * The one row an agent's thread gains (docs/design/agents-v2/BRIEF.md §4.8.1):
- * face `sm` (live state) · name · state sentence · right side: Computer button
- * (when computer feature is available), Agent panel button, and overflow menu
- * with Pause/Resume, Pin, Duplicate and Retire.
+ * The agent's presence at the top of its thread (docs/design/agents-rework/
+ * DIRECTION.md): face on its halo, name, and one live sentence. Computer (when it
+ * has one) and Profile sit on the right; Pause, Pin, Duplicate and Retire are in
+ * the menu. No labels, no badges: the face carries the state.
  */
 export function AgentThreadHeader({
   agent,
@@ -129,93 +128,80 @@ export function AgentThreadHeader({
     };
   }, [listening, levelRef]);
 
+  const usingComputer = agent.computer?.status === "awake" && (state === "working" || state === "waiting");
   const sentence =
     state === "thinking"
       ? "Thinking"
-      : localStateSentence(
-          taskTitle ? { ...agent, task: agent.task ? { ...agent.task, title: taskTitle } : agent.task } : agent,
-          state
-        );
+      : usingComputer && state === "working"
+        ? "Using its computer"
+        : localStateSentence(
+            taskTitle ? { ...agent, task: agent.task ? { ...agent.task, title: taskTitle } : agent.task } : agent,
+            state
+          );
+  const hasComputer = Boolean(agent.computer?.enabled);
 
-  const computerFeatureOn = agent.computer !== null;
+  const run = async (label: string, action: () => Promise<{ kind: string; message?: string }>) => {
+    const res = await action();
+    if (res.kind === "failed") {
+      toast.error(res.message ?? `Couldn’t ${label.toLowerCase()}.`);
+      return false;
+    }
+    announceAgentsChanged();
+    return true;
+  };
 
   const handlePauseResume = async () => {
     const nextStatus = agent.status === "paused" ? "active" : "paused";
-    const res = await updateAgent(agent.id, { status: nextStatus });
-    if (res.kind === "failed") {
-      toast.error(res.message);
-      return;
+    if (await run(nextStatus === "paused" ? "Pause" : "Resume", () => updateAgent(agent.id, { status: nextStatus }))) {
+      toast.success(nextStatus === "paused" ? `${agent.name} is paused.` : `${agent.name} is back.`);
     }
-    toast.success(nextStatus === "paused" ? `Paused ${agent.name}.` : `Resumed ${agent.name}.`);
-    announceAgentsChanged();
-  };
-
-  const handleTogglePin = async () => {
-    const isPinned = Boolean(agent.pinnedAt);
-    const res = await updateAgent(agent.id, { pinned: !isPinned });
-    if (res.kind === "failed") {
-      toast.error(res.message);
-      return;
-    }
-    toast.success(!isPinned ? `Pinned ${agent.name}.` : `Unpinned ${agent.name}.`);
-    announceAgentsChanged();
   };
 
   const handleDuplicate = async () => {
     const res = await duplicateAgent(agent.id);
     if (res.kind !== "ok") {
-      toast.error(res.message);
+      toast.error(res.kind === "failed" ? res.message : "Couldn’t duplicate.");
       return;
     }
-    toast.success(`Duplicated as ${res.value.name}.`);
     announceAgentsChanged();
-    if (res.value.conversationId) {
-      router.push(`/chat/${res.value.conversationId}`);
-    }
+    if (res.value.conversationId) router.push(`/chat/${encodeURIComponent(res.value.conversationId)}`);
   };
 
   const handleRetire = async () => {
-    const res = await retireAgent(agent.id);
-    if (res.kind === "failed") {
-      toast.error(res.message);
-      return;
+    if (await run("Retire", () => retireAgent(agent.id))) {
+      toast.success(`${agent.name} is retired.`);
+      router.push("/agents");
     }
-    toast.success(`Retired ${agent.name}.`);
-    announceAgentsChanged();
-    router.push("/agents");
   };
 
   return (
-    <div className="flex shrink-0 justify-center border-b border-border/70 px-4 py-2">
-      <div className="flex w-full max-w-3xl items-center gap-3">
+    <div className="flex shrink-0 justify-center px-4 pb-1 pt-3">
+      <div className="flex w-full max-w-3xl items-center gap-3.5">
         <button
           ref={faceRef}
           type="button"
-          onClick={() => onTogglePanel?.("now")}
+          onClick={() => onTogglePanel?.("profile")}
           data-face-trigger
-          className="shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={`Open ${agent.name} panel`}
+          className="-m-1 flex min-w-0 flex-1 items-center gap-3.5 rounded-field p-1 text-left outline-none transition-colors duration-fast ease-out-soft focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`${agent.name}, open profile`}
         >
-          <AgentFace avatar={agent.avatar} state={state} size="sm" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onTogglePanel?.("now")}
-          className="min-w-0 flex-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <p className="truncate text-ui font-medium text-foreground">{agent.name}</p>
-          <p className="truncate text-caption text-muted-foreground" aria-live="polite">
-            {sentence}
-          </p>
+          <AgentPresence avatar={agent.avatar} state={state} size={40} haloScale={1.7} />
+          <span className="min-w-0">
+            <span className="block truncate text-body font-medium leading-tight text-foreground">{agent.name}</span>
+            <span className="mt-0.5 block truncate text-ui text-muted-foreground" aria-live="polite">
+              {sentence}
+            </span>
+          </span>
         </button>
 
-        <div className="flex shrink-0 items-center gap-1">
-          {computerFeatureOn ? (
+        <div className="flex shrink-0 items-center gap-0.5">
+          {hasComputer ? (
             <Button
               type="button"
               size="icon-sm"
               variant="ghost"
-              aria-label="Computer"
+              aria-label={`${agent.name}’s computer`}
+              title="Computer"
               aria-pressed={activePanelTab === "computer"}
               onClick={() => onTogglePanel?.("computer")}
               className={cn(
@@ -223,42 +209,45 @@ export function AgentThreadHeader({
                 activePanelTab === "computer" && "bg-selected text-foreground"
               )}
             >
-              <Monitor className="size-4" aria-hidden="true" />
+              <Monitor className="size-[1.125rem]" aria-hidden="true" />
             </Button>
           ) : null}
-
           <Button
             type="button"
             size="icon-sm"
             variant="ghost"
-            aria-label="Agent panel"
-            aria-pressed={activePanelTab === "now" || activePanelTab === "setup"}
-            onClick={() => onTogglePanel?.("now")}
+            aria-label={`${agent.name}’s profile`}
+            title="Profile"
+            aria-pressed={activePanelTab === "profile"}
+            onClick={() => onTogglePanel?.("profile")}
             className={cn(
               "text-muted-foreground hover:text-foreground",
-              (activePanelTab === "now" || activePanelTab === "setup") && "bg-selected text-foreground"
+              activePanelTab === "profile" && "bg-selected text-foreground"
             )}
           >
-            <PanelRight className="size-4" aria-hidden="true" />
+            <User className="size-[1.125rem]" aria-hidden="true" />
           </Button>
-
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
                 size="icon-sm"
                 variant="ghost"
-                aria-label={`${agent.name} actions`}
+                aria-label={`More for ${agent.name}`}
                 className="text-muted-foreground hover:text-foreground"
               >
-                <MoreHorizontal className="size-4" aria-hidden="true" />
+                <MoreHorizontal className="size-[1.125rem]" aria-hidden="true" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={() => void handlePauseResume()}>
                 {agent.status === "paused" ? "Resume" : "Pause"}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void handleTogglePin()}>
+              <DropdownMenuItem
+                onSelect={() =>
+                  void run("Pin", () => updateAgent(agent.id, { pinned: !agent.pinnedAt }))
+                }
+              >
                 {agent.pinnedAt ? "Unpin" : "Pin"}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void handleDuplicate()}>Duplicate</DropdownMenuItem>
@@ -279,7 +268,7 @@ export function AgentThreadHeader({
           <DialogHeader>
             <DialogTitle>Retire {agent.name}?</DialogTitle>
             <DialogDescription>
-              Retiring {agent.name} stops all of its routines and tasks and removes it from your roster.
+              Its routines stop and it leaves your agents. This conversation stays in your history.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -294,7 +283,7 @@ export function AgentThreadHeader({
                 void handleRetire();
               }}
             >
-              Retire {agent.name}
+              Retire
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -304,9 +293,8 @@ export function AgentThreadHeader({
 }
 
 /**
- * The empty thread greets in the agent's own voice (BRIEF.md §4.8.4):
- * "Hi, I'm <name>. Tell me what you'd like me to take on and I'll set myself up."
- * Plus 3 suggestion chips drawn from the template and a "Set up with a form" link.
+ * An empty thread greets in the agent's own voice. A brand new agent has no job
+ * yet: the first message sets it up (docs/design/agents-rework/DIRECTION.md).
  */
 export function AgentGreeting({
   agent,
@@ -315,56 +303,50 @@ export function AgentGreeting({
   agent: ClientAgent;
   onSelectSuggestion?: (text: string) => void;
 }) {
-  const suggestions = getTemplateSuggestions(agent.template);
-  const templateObj = AGENT_TEMPLATES.find((t) => t.id === agent.template);
-  const chips = React.useMemo(() => {
-    if (templateObj && templateObj.firstGoal) {
-      const rest = suggestions.filter((s) => s !== templateObj.firstGoal);
-      return [templateObj.firstGoal, ...rest].slice(0, 3);
-    }
-    return suggestions.slice(0, 3);
-  }, [suggestions, templateObj]);
+  const suggestions = React.useMemo(() => {
+    const template = AGENT_TEMPLATES.find((t) => t.id === agent.template);
+    const pool = getTemplateSuggestions(agent.template);
+    const first = template?.firstGoal ? [template.firstGoal] : [];
+    return [...first, ...pool.filter((s) => s !== template?.firstGoal)].slice(0, 3);
+  }, [agent.template]);
+  const fresh = !agent.role.trim() && !agent.instructions.trim();
+  const paused = agent.status === "paused";
 
   return (
-    <div className="flex flex-col items-center text-center" data-face-trigger>
-      <AgentFace
-        avatar={agent.avatar}
-        state={agent.status === "paused" ? "sleeping" : "idle"}
-        size="lg"
-        name={agent.name}
-      />
-      <h1 className="mt-5 font-serif text-display text-foreground">
-        Hi, I’m <span className="italic">{agent.name}</span>.
+    <div className="flex w-full max-w-xl flex-col items-center text-center" data-face-trigger>
+      <AgentPresence avatar={agent.avatar} state={paused ? "sleeping" : "idle"} size={88} haloScale={2.2} name={agent.name} />
+      <h1 className="mt-8 font-serif text-display italic leading-[1.1] text-foreground">
+        {fresh ? "Hi. What should I take care of?" : `Hi, I’m ${agent.name}.`}
       </h1>
-      <p className="mt-2 max-w-md text-body text-muted-foreground">
-        {agent.status === "paused"
-          ? "I’m paused. Resume me from the menu above to start something new."
-          : "Tell me what you’d like me to take on and I’ll set myself up."}
+      <p className="mt-3 max-w-md text-body-lg text-muted-foreground">
+        {paused
+          ? "I’m paused. Resume me from the menu to pick up where I left off."
+          : fresh
+            ? "Tell me the job. I’ll name myself and set myself up."
+            : agent.role.trim()
+              ? `${agent.role.trim()}. What should I take on next?`
+              : "What should I take on next?"}
       </p>
 
-      {agent.status !== "paused" ? (
-        <div className="mt-6 flex max-w-lg flex-wrap justify-center gap-2">
-          {chips.map((chip) => (
-            <button
-              key={chip}
-              type="button"
-              onClick={() => onSelectSuggestion?.(chip)}
-              className="rounded-control border border-border bg-card px-3 py-1.5 text-left text-ui text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent"
-            >
-              {chip}
-            </button>
+      {!paused ? (
+        <ul className="mt-8 w-full space-y-1 text-left">
+          {suggestions.map((suggestion) => (
+            <li key={suggestion}>
+              <button
+                type="button"
+                onClick={() => onSelectSuggestion?.(suggestion)}
+                className="group flex w-full items-center gap-3 rounded-control px-2 py-1.5 text-left text-body text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
+              >
+                <ArrowRight
+                  className="size-4 shrink-0 opacity-60 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 group-hover:opacity-100"
+                  aria-hidden="true"
+                />
+                <span>{suggestion}</span>
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
       ) : null}
-
-      <p className="mt-4 text-caption text-muted-foreground">
-        <Link
-          href={agent.template ? `/agents/new?form=1&template=${encodeURIComponent(agent.template)}` : "/agents/new?form=1"}
-          className="underline-offset-4 hover:text-foreground hover:underline"
-        >
-          Set up with a form
-        </Link>
-      </p>
     </div>
   );
 }

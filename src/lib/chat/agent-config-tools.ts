@@ -405,7 +405,7 @@ export function classifyAgentConfigApproval(
       return {
         requiresApproval: true,
         ruleName: "create_routine",
-        headline: `${targetName} wants to add a recurring routine`,
+        headline: `Let ${targetName} run a routine on its own?`,
         changes: [
           { label: "Agent", to: targetName },
           {
@@ -420,7 +420,7 @@ export function classifyAgentConfigApproval(
       return {
         requiresApproval: true,
         ruleName: "raise_autonomy",
-        headline: `${targetName} wants to run with permissive autonomy`,
+        headline: `Let ${targetName} work without asking first?`,
         changes: [
           {
             label: "Autonomy",
@@ -434,7 +434,7 @@ export function classifyAgentConfigApproval(
       return {
         requiresApproval: true,
         ruleName: "enable_computer",
-        headline: `${targetName} wants to enable its persistent computer`,
+        headline: `Give ${targetName} its own computer?`,
         changes: [{ label: "Computer", from: "Off", to: "Enabled" }],
       };
     }
@@ -442,7 +442,7 @@ export function classifyAgentConfigApproval(
       return {
         requiresApproval: true,
         ruleName: "add_connectors",
-        headline: `${targetName} wants access to ${(rawArgs.apps as string[]).join(", ")}`,
+        headline: `Let ${targetName} use ${(rawArgs.apps as string[]).join(", ")}?`,
         changes: [{ label: "Connected apps", from: "None", to: (rawArgs.apps as string[]).join(", ") }],
       };
     }
@@ -461,7 +461,7 @@ export function classifyAgentConfigApproval(
       return {
         requiresApproval: true,
         ruleName: "create_routine",
-        headline: `${targetName} wants to add a recurring routine`,
+        headline: `Let ${targetName} run a routine on its own?`,
         changes: [
           {
             label: "Routine",
@@ -475,7 +475,7 @@ export function classifyAgentConfigApproval(
       return {
         requiresApproval: true,
         ruleName: "create_routine",
-        headline: `${targetName} wants to ${action} routine ${rName}`,
+        headline: action === "resume" ? `Resume “${rName}”?` : `Delete “${rName}”?`,
         changes: [
           {
             label: "Routine",
@@ -530,25 +530,25 @@ export function classifyAgentConfigApproval(
 
     const approvalChanges: ClientAgentChangeItem[] = [];
     let ruleName: AgentConfigApprovalRule | null = null;
-    let headline = `${targetName} wants to update its permissions`;
+    let headline = `Change what ${targetName} is allowed to do?`;
 
     if (enablingComputer) {
       ruleName = "enable_computer";
-      headline = `${targetName} wants to enable its persistent computer`;
+      headline = `Give ${targetName} its own computer?`;
       approvalChanges.push({ label: "Computer", from: "Off", to: "Enabled" });
     } else if (resettingComputer) {
       ruleName = "reset_computer";
-      headline = `${targetName} wants to reset its computer (sign-ins and files will be cleared)`;
+      headline = `Reset ${targetName}’s computer? Its sign-ins and files are cleared.`;
       approvalChanges.push({ label: "Computer", from: "Enabled", to: "Reset (clears sign-ins & files)" });
     } else if (disablingComputer) {
       ruleName = "disable_computer";
-      headline = `${targetName} wants to turn off its computer (sign-ins and files will be deleted)`;
+      headline = `Turn off ${targetName}’s computer? Its sign-ins and files are deleted.`;
       approvalChanges.push({ label: "Computer", from: "Enabled", to: "Off (deletes sign-ins & files)" });
     }
     if (raisingAutonomy && nextMode) {
       ruleName = ruleName ?? "raise_autonomy";
       if (!enablingComputer) {
-        headline = `${targetName} wants to raise its autonomy`;
+        headline = `Let ${targetName} ask you less often?`;
       }
       approvalChanges.push({
         label: "Autonomy",
@@ -563,7 +563,7 @@ export function classifyAgentConfigApproval(
     if (addedConnectors.length > 0) {
       ruleName = ruleName ?? "add_connectors";
       if (!enablingComputer && !raisingAutonomy) {
-        headline = `${targetName} wants access to ${addedConnectors.join(", ")}`;
+        headline = `Let ${targetName} use ${addedConnectors.join(", ")}?`;
       }
       approvalChanges.push({
         label: "Connected apps",
@@ -574,7 +574,7 @@ export function classifyAgentConfigApproval(
     if (changingModel) {
       ruleName = ruleName ?? "change_model";
       if (approvalChanges.length === 0) {
-        headline = `${targetName} wants to change its model or reasoning effort`;
+        headline = `Change ${targetName}’s model?`;
       }
       if (typeof rawArgs.model === "string" && rawArgs.model !== (agent.model ?? "")) {
         approvalChanges.push({

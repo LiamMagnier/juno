@@ -430,7 +430,8 @@ test("onboarding, selfConfig, recent work untrusted wrapping, and paused state i
     },
     "Liam"
   );
-  assert.match(onboardingBlock, /This is a new hire with almost nothing set up yet/);
+  assert.match(onboardingBlock, /## Setting yourself up/);
+  assert.match(onboardingBlock, /Never ask more than one\./);
   assert.match(onboardingBlock, /## Configuring yourself/);
   assert.match(onboardingBlock, /<<<JUNO_UNTRUSTED_BEGIN>>> source=recent_work/);
   assert.match(onboardingBlock, /<untrusted source="recent_work">/);

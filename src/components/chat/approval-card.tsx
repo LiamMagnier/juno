@@ -602,8 +602,8 @@ export function ApprovalCard({
                 : "Background task"
               : agentConfig
                 ? answerable
-                  ? "Allow this agent setup change?"
-                  : "Agent setup change"
+                  ? "Your answer is needed"
+                  : "Agent change"
                 : answerable
                   ? "Juno needs your approval"
                   : "Approval request"}
@@ -622,7 +622,7 @@ export function ApprovalCard({
             {risk.label}
           </span>
         )}
-        {answerable && remaining !== null && (
+        {answerable && remaining !== null && !agentConfig && (
           <span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-micro text-muted-foreground">
             <Clock className="size-3" aria-hidden="true" />
             <span aria-hidden="true">Expires in {formatCountdown(remaining)}</span>
@@ -674,7 +674,7 @@ export function ApprovalCard({
             </div>
           ))}
         </dl>
-      ) : (
+      ) : agentConfig ? null : (
         <p className="mt-1 font-mono text-micro text-muted-foreground">
           {current.connectorLabel} · {current.toolName}
         </p>
@@ -756,10 +756,10 @@ export function ApprovalCard({
             onClick={() => decide("deny")}
             className="h-11 px-4"
           >
-            {handoff ? "Don’t hand off" : task ? "Don’t start" : agentConfig ? "Deny" : "Don’t allow"}
+            {handoff ? "Don’t hand off" : task ? "Don’t start" : agentConfig ? "Not now" : "Don’t allow"}
           </Button>
           <Button disabled={sending} onClick={() => decide("allow_once")} className="h-11 px-4">
-            {handoff ? "Hand off" : task ? "Start task" : "Allow once"}
+            {handoff ? "Hand off" : task ? "Start task" : agentConfig ? "Allow" : "Allow once"}
           </Button>
           {canAllowScope && !agentConfig && (
             <Button
@@ -788,7 +788,7 @@ export function ApprovalCard({
         {resultText}
       </p>
 
-      {answerable && !sending && untouched && (
+      {answerable && !sending && untouched && !agentConfig && (
         <p className="mt-2 flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
           <Clock className="size-3" aria-hidden="true" />
           {task ? taskCopy.footnote : "Unanswered, this expires and Juno stops rather than acting on it."}
