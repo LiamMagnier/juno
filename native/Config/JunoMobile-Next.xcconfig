@@ -9,3 +9,6 @@ SUPPORTED_PLATFORMS = iphoneos iphonesimulator
 TARGETED_DEVICE_FAMILY = 1,2
 SUPPORTS_MACCATALYST = NO
 ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
+
+// The app target signs with this file (project.yml reads the variable).
+JUNO_MOBILE_ENTITLEMENTS = Resources/JunoMobile.entitlements

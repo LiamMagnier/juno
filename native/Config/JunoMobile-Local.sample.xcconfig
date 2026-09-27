@@ -1,0 +1,19 @@
+// Personal signing for Debug builds from Xcode (the Run button), on your own
+// iPhone with a free Apple ID. Copy this file to JunoMobile-Local.xcconfig
+// (git-ignored) next to it and fill in the two values; JunoMobile-Debug.xcconfig
+// includes it when it exists. Stable and Next builds never read it.
+//
+// A free "Personal Team" cannot sign Push Notifications, so the app signs
+// without its entitlements file here: everything works except push.
+
+// Your Personal Team ID (Xcode > Settings > Accounts > your Apple ID).
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+CODE_SIGN_STYLE = Automatic
+
+// A reverse-DNS prefix of your own: a free team cannot use IDs registered to
+// another team. The widget follows as "<this>.widgets".
+JUNO_MOBILE_BUNDLE_IDENTIFIER = com.example.personal.juno
+PRODUCT_BUNDLE_IDENTIFIER = $(JUNO_MOBILE_BUNDLE_IDENTIFIER)
+
+// No push entitlement for a personal team.
+JUNO_MOBILE_ENTITLEMENTS =
