@@ -65,6 +65,15 @@ export interface VoiceCallParts {
   end: React.ReactNode;
   /** The live level (0-1) of whoever is talking, read once per frame by the glow. */
   level: () => number;
+  /**
+   * The audio of whoever holds the floor, when there is one to hear: your
+   * microphone while you talk, Juno's output AS IT PLAYS while Juno talks.
+   * The glow analyses it in low / mid / high bands, so its lobes move with
+   * the syllables rather than a single volume. Wins over `level` when set.
+   */
+  stream: MediaStream | null;
+  /** Gain on the analysed stream: Juno's output is hotter than a microphone. */
+  sensitivity?: number;
   /** The gap after you stop, while the reply is thought through. */
   processing: boolean;
   /** No call up (connecting, ended, muted): the glow holds still. */
@@ -88,6 +97,27 @@ function toneFor(phase: VoicePhase): VoiceGlowTone {
   }
 }
 
+/** Juno's voice arrives mastered, near full scale; a room microphone doesn't. */
+const OUTPUT_SENSITIVITY = 2.2;
+
+/** Whose audio the glow should listen to in a phase, if any. */
+function streamFor(
+  phase: VoicePhase,
+  streams: { mic: MediaStream | null; output: MediaStream | null }
+): MediaStream | null {
+  switch (phase) {
+    case "speaking":
+      return streams.output;
+    case "listening":
+    case "user-speaking":
+      return streams.mic;
+    default:
+      // Thinking gathers into a beam, muted holds a low grey: neither is
+      // driven by audio.
+      return null;
+  }
+}
+
 /** Everything the composer needs to become the call. */
 export function voiceCallParts({
   voice,
@@ -104,6 +134,8 @@ export function voiceCallParts({
     // Muted: a low, even grey band, visibly on and visibly quiet, rather than
     // a frozen frame of whatever was said last.
     level: phase === "muted" ? () => 0.12 : () => levelRef.current,
+    stream: streamFor(phase, voice.audioStreams),
+    sensitivity: phase === "speaking" ? OUTPUT_SENSITIVITY : undefined,
     processing: phase === "thinking",
     paused: phase === "idle" || phase === "connecting" || phase === "error",
     tone: toneFor(phase),
@@ -269,7 +301,15 @@ export function RealtimeVoice({
   return (
     <section aria-label="Voice call" className="relative mx-auto mb-3 flex w-full flex-col items-center px-2 motion-safe:animate-fade-in sm:px-0">
       <VoiceCallNotices voice={voice} />
-      <JunoVoiceGlow level={parts.level} processing={parts.processing} paused={parts.paused} tone={parts.tone} className="relative rounded-full">
+      <JunoVoiceGlow
+        stream={parts.stream}
+        sensitivity={parts.sensitivity}
+        level={parts.level}
+        processing={parts.processing}
+        paused={parts.paused}
+        tone={parts.tone}
+        className="relative rounded-full"
+      >
         <div className="voice-glow-host flex items-center gap-1 rounded-full border border-border bg-popover p-1.5 shadow-float">
           {parts.status}
           {parts.controls}

@@ -106,6 +106,10 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
     private var storedAssistantSpeaking = false
     private var playbackDrain = RealtimePlaybackDrain()
     private var storedMicLevel: Double = 0
+    private var storedMicSpectrum = JunoVoiceSpectrum.silent
+    /// Touched only from the tap, which AVAudioEngine calls serially.
+    private var micSplitter: JunoVoiceBandSplitter?
+    private var micSplitterRate: Double = 0
     private var storedPlaybackLevel: Double = 0
 
     var socket: URLSessionWebSocketTask? {
@@ -170,6 +174,12 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
         set { lock.lock(); defer { lock.unlock() }; storedMicLevel = newValue }
     }
 
+    /// The microphone's bands, measured on the same pass as ``micLevel``.
+    var micSpectrum: JunoVoiceSpectrum {
+        get { lock.lock(); defer { lock.unlock() }; return storedMicSpectrum }
+        set { lock.lock(); defer { lock.unlock() }; storedMicSpectrum = newValue }
+    }
+
     var playbackLevel: Double {
         get { lock.lock(); defer { lock.unlock() }; return storedPlaybackLevel }
         set { lock.lock(); defer { lock.unlock() }; storedPlaybackLevel = newValue }
@@ -188,6 +198,7 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
         storedCaptureFormat = nil
         storedSpeechRequest = nil
         storedMicLevel = 0
+        storedMicSpectrum = .silent
         storedPlaybackLevel = 0
         playbackDrain.clear()
         // A session that ends mid-answer leaves this true, and a stale true is a
@@ -209,12 +220,20 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
         let ch0 = floatData[0]
         let ch1 = channelCount > 1 ? floatData[1] : nil
 
+        // One pass for the level and the bands the glow's lobes follow.
+        let rate = buffer.format.sampleRate
+        if micSplitter == nil || micSplitterRate != rate {
+            micSplitter = JunoVoiceBandSplitter(sampleRate: rate)
+            micSplitterRate = rate
+        }
         var sum: Float = 0
-        for index in 0..<frames {
+        let spectrum = micSplitter!.measure(count: frames) { index in
             let sample = ch1 != nil ? (ch0[index] + ch1![index]) * 0.5 : ch0[index]
             sum += sample * sample
+            return sample
         }
         micLevel = Double((sum / Float(frames)).squareRoot())
+        micSpectrum = spectrum
 
         // Metering continues above this line and the send stops below it.
         lock.lock()
@@ -372,6 +391,16 @@ public final class JunoRealtimeVoiceController {
     /// and the playback level while the model does. One number, because the orb
     /// only ever shows whoever currently holds the floor.
     public private(set) var level: Double = 0
+    /// The bands of whoever holds the floor, smoothed like ``level`` but
+    /// faster, so the glow's lobes articulate syllables: lows and mids swell on
+    /// vowels, highs flick on sibilants. Juno's are read at the playhead, not
+    /// on arrival — see ``JunoVoicePlaybackEnvelope``.
+    public private(set) var spectrum: JunoVoiceSpectrum = .silent
+    /// Juno's audio is still coming out of the speaker. Outlives
+    /// ``assistantSpeaking``, which ends when the relay has finished *sending*
+    /// the answer, often a second or more before the listener has heard it.
+    /// The call reads as Juno's turn until this drops.
+    public private(set) var playbackAudible = false
     /// Mirrored onto the audio shuttle on every change, because the uplink reads
     /// it from the audio thread to hold half-duplex — see
     /// ``VoiceRelayShuttle/assistantSpeaking``. A `didSet` rather than an
@@ -458,6 +487,8 @@ public final class JunoRealtimeVoiceController {
     private var playbackEngine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?
     private var playbackFormat: AVAudioFormat?
+    /// Juno's decoded speech, filed by where it will play. Main-actor only.
+    private var playbackEnvelope = JunoVoicePlaybackEnvelope(sampleRate: 24_000)
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var pingTask: Task<Void, Never>?
@@ -1554,6 +1585,8 @@ public final class JunoRealtimeVoiceController {
         playbackEngine = outputEngine
         playerNode = player
         playbackFormat = playback
+        // A new player starts a new timeline at zero.
+        playbackEnvelope.clear()
         installAudioConfigurationObservers(captureEngine: engine, playbackEngine: outputEngine)
         // Read from the node, never from what was asked for: `setVoiceProcessingEnabled`
         // only sets a flag, and on the Macs whose input and output are different
@@ -1734,6 +1767,7 @@ public final class JunoRealtimeVoiceController {
         playbackEngine = nil
         playerNode = nil
         playbackFormat = nil
+        playbackEnvelope.clear()
         // Back to the third answer, not to a pessimistic second one: "no graph"
         // and "a graph with no canceller" want different UI, and the policy that
         // falls out of both is manual either way.
@@ -1920,9 +1954,10 @@ public final class JunoRealtimeVoiceController {
     }
 
     /// Decodes one relay binary frame (PCM16 LE mono 24 kHz) into Float32 and
-    /// queues it, tracking a playback level on the way through — measuring here
-    /// costs one pass over samples that are already being touched, where a tap
-    /// on the output would cost a second one.
+    /// queues it, measuring it on the way through — one pass over samples that
+    /// are already being touched, where a tap on the output would cost a second
+    /// one — and filing the measurement under the sample it will *play* at, so
+    /// the light follows what is heard rather than what has arrived.
     private func schedulePlayback(_ data: Data) {
         guard let playerNode, let playbackFormat else { return }
         let frames = data.count / MemoryLayout<Int16>.size
@@ -1934,18 +1969,14 @@ public final class JunoRealtimeVoiceController {
             let channel = buffer.floatChannelData
         else { return }
         buffer.frameLength = AVAudioFrameCount(frames)
-        var energy: Float = 0
         data.withUnsafeBytes { raw in
             let samples = raw.bindMemory(to: Int16.self)
             for index in 0..<frames {
-                let sample = Float(Int16(littleEndian: samples[index])) / 32_768
-                channel[0][index] = sample
-                energy += sample * sample
+                channel[0][index] = Float(Int16(littleEndian: samples[index])) / 32_768
             }
         }
-        // `max`, because several frames arrive per meter tick and the loudest is
-        // the one the ear registers; averaging them flattens every consonant.
-        box.playbackLevel = max(box.playbackLevel, Double((energy / Float(frames)).squareRoot()))
+        let decoded = channel[0]
+        playbackEnvelope.append(frames: frames, playhead: playerSample()) { decoded[$0] }
         box.playbackBufferScheduled()
         Self.schedulePlaybackBuffer(buffer, on: playerNode, box: box)
     }
@@ -1968,7 +1999,24 @@ public final class JunoRealtimeVoiceController {
         playerNode.stop()
         box.clearPlaybackBuffers()
         box.playbackLevel = 0
+        playbackEnvelope.clear()
         playerNode.play()
+    }
+
+    /// The player's playhead in its own timeline (24 kHz samples), nudged
+    /// forward by the output's latency so it names the sample coming out of the
+    /// speaker now rather than the one the engine last rendered. Nil before the
+    /// first render cycle.
+    private func playerSample() -> Int64? {
+        guard let playerNode,
+            let nodeTime = playerNode.lastRenderTime, nodeTime.isSampleTimeValid,
+            let playerTime = playerNode.playerTime(forNodeTime: nodeTime)
+        else { return nil }
+        var latency = 0.0
+        if let output = playbackEngine?.outputNode {
+            latency = output.presentationLatency
+        }
+        return playerTime.sampleTime + Int64((latency * playerTime.sampleRate).rounded())
     }
 
     /// 30Hz metering pump.
@@ -2004,19 +2052,46 @@ public final class JunoRealtimeVoiceController {
                 // buffer size the hardware chose.
                 self.noticeBargeIn(micLoudness)
                 let micTarget = self.muted ? 0 : micLoudness
-                // Playback decays rather than being cleared: the relay's audio
-                // arrives in bursts, and resetting between them would strobe the
-                // field through zero while the model is still mid-word.
-                let playbackTarget = Self.loudness(self.box.playbackLevel)
-                self.box.playbackLevel *= 0.86
-                let target = max(micTarget, playbackTarget)
+                // Juno's voice at the playhead: what the listener is hearing
+                // this instant, not the chunk that just arrived.
+                let playhead = self.playerSample()
+                let heard = playhead.map { self.playbackEnvelope.spectrum(at: $0) } ?? .silent
+                let audible = playhead.map { self.playbackEnvelope.hasAudio(after: $0) } ?? false
+                if audible != self.playbackAudible { self.playbackAudible = audible }
+                let target = max(micTarget, heard.level)
                 let rate = target > self.level ? Self.attackRate : Self.decayRate
                 self.level += (target - self.level) * (1 - exp(-rate * Self.meterInterval))
+                // Whoever is louder holds the floor for the bands too.
+                let source: JunoVoiceSpectrum = heard.level >= micTarget
+                    ? heard
+                    : (self.muted ? .silent : self.box.micSpectrum)
+                self.spectrum = Self.smoothed(self.spectrum, toward: source)
             }
         }
     }
 
     nonisolated static let meterInterval: Double = 0.033
+    /// Bands move faster than the level: they carry the articulation, and a
+    /// syllable is ~150 ms. Up in ~25 ms, down in ~110 ms.
+    nonisolated static let bandAttackRate: Double = 40
+    nonisolated static let bandDecayRate: Double = 9
+
+    nonisolated static func smoothed(
+        _ current: JunoVoiceSpectrum,
+        toward target: JunoVoiceSpectrum,
+        interval: Double = meterInterval
+    ) -> JunoVoiceSpectrum {
+        func ease(_ from: Double, _ to: Double) -> Double {
+            let rate = to > from ? bandAttackRate : bandDecayRate
+            return from + (to - from) * (1 - exp(-rate * interval))
+        }
+        return JunoVoiceSpectrum(
+            level: ease(current.level, target.level),
+            low: ease(current.low, target.low),
+            mid: ease(current.mid, target.mid),
+            high: ease(current.high, target.high)
+        )
+    }
     /// Per second. The field climbs on a syllable and falls away over a word.
     nonisolated static let attackRate: Double = 21
     nonisolated static let decayRate: Double = 3.6
@@ -2173,6 +2248,8 @@ public final class JunoRealtimeVoiceController {
         disposeAudioGraph()
         box.reset()
         level = 0
+        spectrum = .silent
+        playbackAudible = false
         assistantSpeaking = false
         #if os(iOS)
         // Deactivated here, unlike dictation: a voice session held
@@ -2249,6 +2326,15 @@ extension JunoRealtimeVoiceController {
                 let envelope = 0.5 + 0.5 * sin(t * 1.7) * sin(t * 0.6 + 1)
                 let tremor = 0.5 + 0.5 * sin(t * 11)
                 level = self.muted ? 0 : 0.18 + 0.55 * envelope * (0.6 + 0.4 * tremor)
+                // Vowels in the lows, a sibilant flick in the highs every
+                // half-second or so, so previews show the lobes articulating.
+                let sibilant = max(0, sin(t * 7.3) * sin(t * 2.1 + 0.4))
+                spectrum = self.muted ? .silent : JunoVoiceSpectrum(
+                    level: level,
+                    low: level * (0.7 + 0.3 * tremor),
+                    mid: level * (0.55 + 0.45 * envelope),
+                    high: min(1, level * 0.35 + 0.6 * sibilant)
+                )
             }
         }
     }

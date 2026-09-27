@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { getAudioContext } from "voice-glow";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import {
   MIC_SAMPLE_RATE,
@@ -242,6 +243,23 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const micStreamRef = React.useRef<MediaStream | null>(null);
   const micNodeRef = React.useRef<AudioWorkletNode | null>(null);
   const playCtxRef = React.useRef<AudioContext | null>(null);
+  /**
+   * Every scheduled chunk plays through this bus, which feeds the speakers,
+   * an analyser, and a MediaStream of exactly what is heard. The glow reads
+   * that stream (level plus low / mid / high bands) instead of a level taken
+   * as each chunk ARRIVES: the relay streams faster than real time, so the
+   * arrival level ran ahead of the voice by whatever was queued, often a
+   * second or more — the light peaked on words not yet spoken and went dark
+   * mid-sentence.
+   */
+  const playBusRef = React.useRef<GainNode | null>(null);
+  const playAnalyserRef = React.useRef<AnalyserNode | null>(null);
+  const playSamplesRef = React.useRef<Float32Array<ArrayBuffer> | null>(null);
+  /** The live mic and Juno's audible output, for the glow to analyse. */
+  const [audioStreams, setAudioStreams] = React.useState<{ mic: MediaStream | null; output: MediaStream | null }>({
+    mic: null,
+    output: null,
+  });
   const playCursorRef = React.useRef(0);
   const playSourcesRef = React.useRef<Set<AudioBufferSourceNode>>(new Set());
   const playRmsRef = React.useRef(0);
@@ -382,13 +400,22 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
+      // Juno's level at the speaker, not at arrival (see `playBusRef`).
+      const analyser = playAnalyserRef.current;
+      const samples = playSamplesRef.current;
+      if (analyser && samples) {
+        analyser.getFloatTimeDomainData(samples);
+        let sum = 0;
+        for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+        playLevelRef.current = Math.min(1, Math.sqrt(sum / samples.length) * 4);
+      }
       const target = speakingRef.current ? playLevelRef.current : mutedRef.current ? 0 : micLevelRef.current;
       levelRef.current += (target - levelRef.current) * (1 - Math.exp(-14 * dt));
       // τ = 0.2s is exactly `* 0.92` at 60Hz, which is what these were, minus
       // the frame-rate dependence — these feed the barge-in detector, so the
       // number had to stay the same where it was already tuned.
       const decay = Math.exp(-dt / 0.2);
-      playLevelRef.current *= decay;
+      if (!analyser) playLevelRef.current *= decay;
       playRmsRef.current *= decay;
       raf = requestAnimationFrame(tick);
     };
@@ -524,6 +551,11 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     micCtxRef.current = null;
 
     flushPlayback();
+    playBusRef.current?.disconnect();
+    playBusRef.current = null;
+    playAnalyserRef.current = null;
+    playSamplesRef.current = null;
+    setAudioStreams((prev) => (prev.mic || prev.output ? { mic: null, output: null } : prev));
     void playCtxRef.current?.close().catch(() => {});
     playCtxRef.current = null;
     speakingRef.current = false;
@@ -577,14 +609,17 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       sum += v * v;
     }
     const rms = Math.sqrt(sum / int16.length);
-    playLevelRef.current = Math.max(playLevelRef.current, Math.min(1, rms * 4));
+    // The arrival level is only the fallback for a context with no bus. The
+    // barge-in echo guard keeps reading arrival RMS on purpose: it has to
+    // stay armed even when a hidden tab stops animation frames.
+    if (!playBusRef.current) playLevelRef.current = Math.max(playLevelRef.current, Math.min(1, rms * 4));
     playRmsRef.current = Math.max(playRmsRef.current, rms);
 
     const buffer = ctx.createBuffer(1, float.length, PLAYBACK_SAMPLE_RATE);
     buffer.copyToChannel(float, 0);
     const src = ctx.createBufferSource();
     src.buffer = buffer;
-    src.connect(ctx.destination);
+    src.connect(playBusRef.current ?? ctx.destination);
     const startAt = Math.max(ctx.currentTime + 0.04, playCursorRef.current);
     src.start(startAt);
     playCursorRef.current = startAt + buffer.duration;
@@ -841,6 +876,11 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       history?: VoiceHistoryEntry[],
       opts?: { memory?: { projectId: string | null } | null; conversationId?: string | null }
     ) => {
+      // The glow analyses the call's streams on voice-glow's own page-wide
+      // AudioContext. Wake it here, still inside the click that started the
+      // call: Safari only lets a context start in a gesture, and a suspended
+      // one reads silence, leaving the light flat for the whole call.
+      getAudioContext();
       const generation = ++generationRef.current;
       providerEpochRef.current += 1;
       // Re-entry from the reconnect timer keeps the visible "reconnecting"
@@ -903,6 +943,22 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
 
         const playContext = new AudioContext({ sampleRate: PLAYBACK_SAMPLE_RATE });
         playCtxRef.current = playContext;
+        const bus = playContext.createGain();
+        bus.connect(playContext.destination);
+        const analyser = playContext.createAnalyser();
+        analyser.fftSize = 512;
+        bus.connect(analyser);
+        let output: MediaStream | null = null;
+        try {
+          const tap = playContext.createMediaStreamDestination();
+          bus.connect(tap);
+          output = tap.stream;
+        } catch {
+          /* no MediaStream output here: the glow falls back to the level getter */
+        }
+        playBusRef.current = bus;
+        playAnalyserRef.current = analyser;
+        playSamplesRef.current = new Float32Array(analyser.fftSize);
         await playContext.resume();
         if (generationRef.current !== generation) {
           await playContext.close().catch(() => {});
@@ -910,6 +966,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
         }
         await startMic(generation);
         if (generationRef.current !== generation) return;
+        setAudioStreams({ mic: micStreamRef.current, output });
 
         const ws = new WebSocket(`${normalizeRelayUrl(data.url)}/?token=${encodeURIComponent(data.token)}`);
         ws.binaryType = "arraybuffer";
@@ -1304,6 +1361,11 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     persona: personaOn,
     closedReason,
     levelRef,
+    /**
+     * The microphone and Juno's audible output as streams, for the glow to
+     * analyse in bands. Null outside a call, or where a stream can't be made.
+     */
+    audioStreams,
     speechInterim: speech.interim,
     start,
     retry,

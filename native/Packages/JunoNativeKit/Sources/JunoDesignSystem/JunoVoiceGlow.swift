@@ -28,6 +28,11 @@ import SwiftUI
 ///
 /// - INPUT. `level` is a getter, read once per frame by the timeline, never
 ///   state: at display rate, state would re-render the composer to move light.
+///   `bands`, when the host can measure them, makes the light articulate: the
+///   centre lobe follows the lows, its neighbours the mids, the outer pair the
+///   highs, so a vowel swells the middle and an "s" flicks the edges — the
+///   motion follows the words, not a volume knob. Without them the lobes are
+///   synthesised from the level, as before.
 /// - REDUCE MOTION. A still, low band that brightens with the level. No flow,
 ///   no travel, no breathing.
 /// - REDUCE TRANSPARENCY. The same band, quieter and without additive light.
@@ -35,6 +40,7 @@ import SwiftUI
 /// Decorative to assistive technology: the host announces each phase in words.
 public struct JunoVoiceGlow: View {
     private let level: () -> Double
+    private let bands: (() -> JunoVoiceGlowBands)?
     private let processing: Bool
     private let paused: Bool
     private let tone: JunoVoiceGlowTone
@@ -50,12 +56,14 @@ public struct JunoVoiceGlow: View {
     ///     fades there, so on a phone the light never ends on a hard cut.
     public init(
         level: @escaping () -> Double,
+        bands: (() -> JunoVoiceGlowBands)? = nil,
         processing: Bool = false,
         paused: Bool = false,
         tone: JunoVoiceGlowTone = .mixed,
         edgeInset: CGFloat = 0
     ) {
         self.level = level
+        self.bands = bands
         self.processing = processing
         self.paused = paused
         self.tone = tone
@@ -92,6 +100,7 @@ public struct JunoVoiceGlow: View {
                 let frame = engine.step(
                     to: timeline.date,
                     level: paused ? 0 : level(),
+                    bands: paused ? nil : bands?(),
                     processing: processing && !paused,
                     still: reduceMotion || paused,
                     palette: JunoVoiceGlowPalette.palette(for: tone, dark: isDark)
@@ -110,6 +119,22 @@ public struct JunoVoiceGlow: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
+}
+
+/// The voice's low / mid / high bands, each 0...1 (see the web's
+/// `voice-glow` `bands`). The lobes follow these when the host has them.
+public struct JunoVoiceGlowBands: Equatable, Sendable {
+    public var low: Double
+    public var mid: Double
+    public var high: Double
+
+    public init(low: Double, mid: Double, high: Double) {
+        self.low = low
+        self.mid = mid
+        self.high = high
+    }
+
+    public static let silent = JunoVoiceGlowBands(low: 0, mid: 0, high: 0)
 }
 
 /// Whose light the glow is showing.
@@ -259,6 +284,15 @@ struct JunoVoiceGlowFrame: Equatable {
     var colors: [JunoVoiceGlowRGB]
     /// The palette's strength, faded with its colours.
     var strength: Double
+    /// Each lobe's lift, 0...~1.2, centre first then the pairs outward. The
+    /// renderer multiplies the rise by it.
+    var lobes: [Double] = []
+    /// How much of `lobes` is real audio (1) rather than synthesised (0):
+    /// the ripple that fakes articulation fades out as real bands take over.
+    var articulated: Double = 0
+    /// The band's bell leans toward the highs on a sibilant and back on a
+    /// vowel, -1...1 of a small offset.
+    var lean: Double = 0
 }
 
 /// Smooths the raw level into light: a quick rise, a slower settle, the way
@@ -282,6 +316,11 @@ public final class JunoVoiceGlowEngine {
 
     private(set) var level: Double = 0
     private(set) var gathered: Double = 0
+    /// Smoothed bands and how much they are in use.
+    private var low: Double = 0
+    private var mid: Double = 0
+    private var high: Double = 0
+    private var articulated: Double = 0
     private var flow: Double = 0
     private var travel: Double = 0
     private var clock: Double = 0
@@ -296,9 +335,17 @@ public final class JunoVoiceGlowEngine {
     /// A tone change cross-fades over the slow rung, `--dur-slow`.
     static let toneFade = JunoMotion.Duration.slow
 
+    /// Each lobe's response to one level when there are no bands: the centre
+    /// loudest, the outer pair quietest.
+    static let lobeGain: [Double] = [1, 0.82, 0.82, 0.66, 0.66, 0.5, 0.5]
+    /// Bands are already smoothed by the meter; this only hides its 30 Hz
+    /// steps at display rate.
+    static let bandSmoothing: Double = 0.035
+
     func step(
         to date: Date,
         level target: Double,
+        bands: JunoVoiceGlowBands? = nil,
         processing: Bool,
         still: Bool,
         palette: JunoVoiceGlowPalette
@@ -328,6 +375,29 @@ public final class JunoVoiceGlowEngine {
         let breath = reduceMotion ? 0 : 0.03 * sin(clock * 1.3)
         let spoken = max(Self.idle + breath, level)
         let lit = spoken + (Self.processingLevel - spoken) * gathered
+
+        // Bands: eased toward what was heard, and the share of real
+        // articulation eased in and out so a call that loses its bands (muted,
+        // paused) slides back to the synthesised lobes instead of snapping.
+        let k = dt == 0 ? 1 : 1 - exp(-dt / Self.bandSmoothing)
+        let heardBands = bands ?? .silent
+        low += (clamp(heardBands.low) - low) * k
+        mid += (clamp(heardBands.mid) - mid) * k
+        high += (clamp(heardBands.high) - high) * k
+        let wantsBands: Double = bands != nil && !reduceMotion ? 1 : 0
+        articulated += (wantsBands - articulated) * (dt == 0 ? 1 : 1 - exp(-dt / 0.25))
+        let real = articulated * (1 - gathered)
+        let perLobe = [low, mid, mid, (mid + high) / 2, (mid + high) / 2, high, high]
+        let lobes = Self.lobeGain.indices.map { index -> Double in
+            let synthetic = lit * Self.lobeGain[index]
+            // A floor of the overall level keeps every lobe lit while anyone
+            // talks; the band on top is what makes one side of the glow move
+            // without the other.
+            let measured = min(1.2, 0.3 * lit + 0.85 * perLobe[index] * (0.6 + 0.4 * Self.lobeGain[index]) + 0.1)
+            return synthetic + (max(synthetic * 0.6, measured) - synthetic) * real
+        }
+        let lean = (high - low) * real
+
         return JunoVoiceGlowFrame(
             lit: min(1, max(0, lit)),
             gathered: gathered,
@@ -335,8 +405,15 @@ public final class JunoVoiceGlowEngine {
             beam: reduceMotion ? 0 : Self.beamPosition(at: travel),
             clock: clock,
             colors: colors,
-            strength: strength
+            strength: strength,
+            lobes: lobes,
+            articulated: real,
+            lean: lean
         )
+    }
+
+    private func clamp(_ value: Double) -> Double {
+        value.isFinite ? min(1, max(0, value)) : 0
     }
 
     /// Moves the colour fade on by `dt`, restarting it from wherever it is
@@ -393,10 +470,6 @@ struct JunoVoiceGlowRenderer {
     let reduceMotion: Bool
     let reduceTransparency: Bool
 
-    /// Each lobe's response: the centre follows the lows, its neighbours the
-    /// mids, the outer pair the highs (`bands`), synthesised from one level.
-    private static let lobeGain: [Double] = [1, 0.82, 0.82, 0.66, 0.66, 0.5, 0.5]
-
     func draw(_ frame: JunoVoiceGlowFrame, in context: inout GraphicsContext, size: CGSize) {
         guard size.width > 8, size.height > 8 else { return }
         let width = size.width
@@ -443,12 +516,18 @@ struct JunoVoiceGlowRenderer {
 
             // Fade at the range's ends so a wrapping lobe never pops.
             let edge = smoothstep(range, range * 0.72, abs(x - centre))
+            // The ripple fakes articulation when all there is is a level; with
+            // real bands it drops to a shimmer so the voice leads.
+            let rippleDepth = 0.22 - 0.16 * frame.articulated
             let ripple = reduceMotion
                 ? 1
-                : 0.78 + 0.22 * sin(frame.clock * (2.4 + Double(pair) * 0.9) + Double(index) * 1.7)
-            let gain = Self.lobeGain[index] * ripple
-            let lobeHeight = (10 + rise * lit * gain) * (1 - 0.25 * frame.gathered)
-            let lobeWidth = spacing * 1.35 * (1 - 0.45 * frame.gathered)
+                : 1 - rippleDepth + rippleDepth * sin(frame.clock * (2.4 + Double(pair) * 0.9) + Double(index) * 1.7)
+            let lift = index < frame.lobes.count ? frame.lobes[index] : lit * JunoVoiceGlowEngine.lobeGain[index]
+            let lobeHeight = (10 + rise * lift * ripple) * (1 - 0.25 * frame.gathered)
+            // A loud band also widens its lobe a touch, so a vowel reads as
+            // the light opening rather than only climbing.
+            let swell = 1 + 0.22 * frame.articulated * max(0, lift - lit)
+            let lobeWidth = spacing * 1.35 * swell * (1 - 0.45 * frame.gathered)
             let rect = CGRect(
                 x: x - lobeWidth,
                 y: height - lobeHeight,
@@ -487,13 +566,15 @@ struct JunoVoiceGlowRenderer {
         guard presence > 0.02 else { return }
         let peak = 4 + rise * 0.55 * frame.lit
         let bellSpread = range * 0.87
+        // Sibilants pull the crest a little to the right, vowels back.
+        let crest = centre + frame.lean * range * 0.12
         let steps = 64
         var points: [CGPoint] = []
         points.reserveCapacity(steps + 1)
         for step in 0...steps {
             let t = Double(step) / Double(steps)
             let x = centre - range + t * range * 2
-            let bell = exp(-pow(abs(x - centre) / bellSpread, 1.75))
+            let bell = exp(-pow(abs(x - crest) / bellSpread, 1.75))
             points.append(CGPoint(x: x, y: height - 2 - peak * bell))
         }
         var curve = Path()
@@ -554,6 +635,12 @@ struct JunoVoiceGlowRenderer {
                         let t = Date().timeIntervalSince(start)
                         let syllable = max(0, sin(t * 5.2))
                         return min(1, syllable * syllable * (0.55 + 0.45 * (0.5 + 0.5 * sin(t * 21))))
+                    },
+                    bands: {
+                        let t = Date().timeIntervalSince(start)
+                        let vowel = max(0, sin(t * 5.2))
+                        let sibilant = max(0, sin(t * 9.1 + 1)) * max(0, sin(t * 1.3))
+                        return JunoVoiceGlowBands(low: vowel, mid: vowel * 0.8, high: sibilant)
                     },
                     processing: processing
                 )

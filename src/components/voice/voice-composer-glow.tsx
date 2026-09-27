@@ -19,9 +19,11 @@ import type { VoiceCallParts } from "@/components/voice/realtime-voice";
  *   travelling beam while Juno thinks, a still grey when muted.
  * - STRENGTH. Fuller on the dark ground, a notch softer on cream paper, where
  *   the same light reads louder.
- * - INPUT. A live `stream` (dictation's own microphone, analysed, never played)
- *   or a per-frame `level` getter (a call, whose level is whoever is talking:
- *   you, then Juno). Never React state: a getter is read once per frame.
+ * - INPUT. A live `stream`, analysed (never played) into a level plus low /
+ *   mid / high bands so the lobes articulate: dictation's microphone, or in a
+ *   call whoever holds the floor — your microphone, then Juno's output as it
+ *   is HEARD. Otherwise a per-frame `level` getter (never React state).
+ *   Thinking and muted have no stream and use the getter.
  * - STATE. `processing` for the thinking gap; `paused` freezes the light on its
  *   last frame (connecting, ended, closing) instead of fading it out mid-word.
  *
@@ -32,6 +34,7 @@ import type { VoiceCallParts } from "@/components/voice/realtime-voice";
 export function JunoVoiceGlow({
   stream,
   level,
+  sensitivity,
   processing = false,
   paused = false,
   tone = "you",
@@ -40,6 +43,7 @@ export function JunoVoiceGlow({
 }: {
   stream?: MediaStream | null;
   level?: () => number;
+  sensitivity?: number;
   processing?: boolean;
   paused?: boolean;
   tone?: VoiceGlowTone;
@@ -52,6 +56,7 @@ export function JunoVoiceGlow({
     <VoiceBeam
       stream={stream ?? undefined}
       level={level}
+      sensitivity={sensitivity}
       processing={processing}
       paused={paused}
       theme={theme ?? "light"}
@@ -72,7 +77,11 @@ export function JunoVoiceGlow({
 export function VoiceComposerGlow({ call, children }: { call?: VoiceCallParts; children: React.ReactNode }) {
   if (!call) return <>{children}</>;
   return (
-    <JunoVoiceGlow level={call.level} processing={call.processing} paused={call.paused} tone={call.tone}>
+    <JunoVoiceGlow
+      stream={call.stream}
+      sensitivity={call.sensitivity}
+      level={call.level}
+      processing={call.processing} paused={call.paused} tone={call.tone}>
       {children}
     </JunoVoiceGlow>
   );
