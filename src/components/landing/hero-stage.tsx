@@ -87,7 +87,7 @@ function LivePreview() {
             {MODEL.name}
           </span>
           <span className="tabular-nums">{TURN.usage.input + TURN.usage.output} tokens</span>
-          <span className="tabular-nums text-primary-ink">
+          <span className="tabular-nums text-primary">
             ~{cost}
           </span>
         </div>

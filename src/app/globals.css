@@ -959,59 +959,8 @@
 }
 
 @layer components {
-  /*
-   * The voice call meter: five bars reading one number.
-   *
-   * Same mechanism as the dictation meter below — the caller's rAF loop writes
-   * `--level` once per frame and CSS does the rest — but the fill direction
-   * carries whose turn it is, so the two are not the same rule.
-   *
-   *   speaking       centre-out. Juno is talking; the shape radiates.
-   *   user-speaking  left to right, like text arriving.
-   *   thinking       detached from the level entirely and breathing on its
-   *                  own, because there is no audio to show and animating
-   *                  silence as though there were is the lie the old
-   *                  hardcoded bars told.
-   *   listening      a low resting tick, so a quiet room reads as "on and
-   *                  quiet" rather than "off".
-   */
-  .voice-meter {
-    --level: 0;
-  }
-  .voice-meter > span {
-    transform: scaleY(calc(0.16 + 0.84 * var(--level) * var(--gain, 1)));
-    transition: transform var(--dur-fast) var(--ease-out-soft);
-  }
-  .voice-meter[data-phase="user-speaking"] > span:nth-child(1) { --gain: 1; }
-  .voice-meter[data-phase="user-speaking"] > span:nth-child(2) { --gain: 0.86; }
-  .voice-meter[data-phase="user-speaking"] > span:nth-child(3) { --gain: 0.72; }
-  .voice-meter[data-phase="user-speaking"] > span:nth-child(4) { --gain: 0.58; }
-  .voice-meter[data-phase="user-speaking"] > span:nth-child(5) { --gain: 0.44; }
-  .voice-meter[data-phase="thinking"] > span {
-    transform: none;
-    animation: voice-think 1.4s var(--ease-breathe) infinite;
-  }
-  .voice-meter[data-phase="thinking"] > span:nth-child(2) { animation-delay: 0.12s; }
-  .voice-meter[data-phase="thinking"] > span:nth-child(3) { animation-delay: 0.24s; }
-  .voice-meter[data-phase="thinking"] > span:nth-child(4) { animation-delay: 0.36s; }
-  .voice-meter[data-phase="thinking"] > span:nth-child(5) { animation-delay: 0.48s; }
-  @keyframes voice-think {
-    0%, 100% { transform: scaleY(0.26); }
-    50% { transform: scaleY(0.72); }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    /* The level is state, not decoration — it is the proof the microphone is
-       hearing you — so the bars keep a fixed height and the colour carries it.
-       The thinking loop is decorative and stops outright (Tier C). */
-    .voice-meter > span {
-      transform: scaleY(0.5);
-      transition: none;
-    }
-    .voice-meter[data-phase="thinking"] > span {
-      animation: none;
-      transform: scaleY(0.5);
-    }
-  }
+  /* The voice call meter is retired: in a call the composer's glow is the
+     state (voice-composer-glow.tsx), with a live region for screen readers. */
 
   /*
    * The dictation level meter: five bars reading one number.

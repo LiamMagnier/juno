@@ -4,7 +4,6 @@ import * as React from "react";
 import { AppProvider } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
 import { EmptyGreeting } from "@/components/chat/empty-state";
-import { StarterChips } from "@/components/chat/starter-chips";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
 import type { ConversationWork } from "@/components/chat/use-conversation-work";
 import { AUTO_MODEL_ID } from "@/lib/auto-model";
@@ -226,7 +225,6 @@ export function ComposerLandingFixture() {
           </div>
           <div className="relative isolate w-full max-w-3xl">
             <Composer {...common} frame="landing" />
-            <StarterChips className="mt-3" />
           </div>
         </section>
 

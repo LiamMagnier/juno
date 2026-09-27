@@ -179,7 +179,7 @@ function SourceInspector({
                 one mark for "this is the bit that matched", rather than a
                 second highlight style invented for this panel. */}
             <mark
-              className="rounded-micro bg-primary/15 px-0.5 text-primary-ink"
+              className="rounded-micro bg-primary/15 px-0.5 text-primary"
               title={AUDIT_COPY.quoteFound}
             >
               {link.passage.slice(quoteRange[0], quoteRange[1])}

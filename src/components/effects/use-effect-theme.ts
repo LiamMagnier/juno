@@ -48,24 +48,65 @@ export function useHeldFor(flag: boolean, ms: number): boolean {
 }
 
 /**
- * The Voice glow's band in Juno's clay-coral family.
+ * THE VOICE GLOW'S PALETTES: the call's state, told in colour.
  *
- * `colorVariant="sunset"` recolours the glow's lobes, but the bright band
- * along the edge keeps the package's own theme colours (a pink core with
- * rose, lavender and sky fringes on light; white with RGB fringes on dark),
- * and that band is most of what the eye reads. Same accent family on both
- * themes, a touch lighter on dark so it reads as light rather than paint.
+ * The composer shows no meter and no status line during a call; the glow is
+ * the state (with a live region for assistive technology). So each state has
+ * its own light, drawn from the painted plates the front door is built on:
+ *
+ * - `you`: warm dawn (apricot, clay, gold, rose). You are talking, or Juno is
+ *   listening for you. Rises with your voice.
+ * - `juno`: cool dusk (sky, teal, sage, periwinkle). Juno is talking. Rises
+ *   with Juno's voice.
+ * - `thinking`: both, gathered by the glow's `processing` into one beam that
+ *   travels side to side. Motion as much as colour says "working".
+ * - `muted`: a quiet grey, held still.
+ *
+ * Tuned per theme: the package's stock rainbow turns candy pink on Juno's
+ * cream paper, and a single clay family read as an orange shine. `colors` is
+ * centre first, then the pairs outward (the package's order).
  */
-export function voiceBandColors(theme: "light" | "dark" | null) {
-  return theme === "dark"
-    ? { core: "#f3c2a8", above: "#e8875f", mid: "#f0a56f", below: "#c65a3c" }
-    : { core: "#e07a55", above: "#f2a47a", mid: "#e9b26b", below: "#b9502f" };
-}
+export type VoiceGlowTone = "you" | "juno" | "thinking" | "muted";
 
-/** The glow's lobes in the same family (the sunset lobes drift to olive on
- *  the light paper). Centre first, then the pairs outward. */
-export function voiceLobeColors(theme: "light" | "dark" | null) {
-  return theme === "dark"
-    ? ["#e8875f", "#f0a56f", "#d96a48", "#f3c2a8", "#c65a3c", "#eeb08c", "#d97a58"]
-    : ["#e07a55", "#ec9a74", "#d8694a", "#f1b490", "#c95c3f", "#f3c6a8", "#e38a6a"];
+const VOICE_PALETTES: Record<"light" | "dark", Record<VoiceGlowTone, { colors: string[]; bandColors: { core: string; above: string; mid: string; below: string } }>> = {
+  light: {
+    you: {
+      colors: ["#f07f52", "#f2ad3f", "#ec6f5f", "#e8839b", "#f29a6e", "#e3a24c", "#d9765a"],
+      bandColors: { core: "#ffd9bf", above: "#f07f52", mid: "#ec6f5f", below: "#f2ad3f" },
+    },
+    juno: {
+      colors: ["#6f9fd8", "#5fb3ab", "#8b93dc", "#6fb383", "#7cb6e0", "#76a9c9", "#63a79a"],
+      bandColors: { core: "#d6e6f7", above: "#6f9fd8", mid: "#5fb3ab", below: "#6fb383" },
+    },
+    thinking: {
+      colors: ["#f07f52", "#6f9fd8", "#f2ad3f", "#5fb3ab", "#e8839b", "#6fb383", "#8b93dc"],
+      bandColors: { core: "#f3e3d6", above: "#f07f52", mid: "#6f9fd8", below: "#5fb3ab" },
+    },
+    muted: {
+      colors: ["#b8b3aa", "#c6c1b8", "#aca79e", "#cfcac2", "#b0aba2", "#c2bdb4", "#a8a39a"],
+      bandColors: { core: "#e6e2da", above: "#bdb8af", mid: "#c9c4bb", below: "#aca79e" },
+    },
+  },
+  dark: {
+    you: {
+      colors: ["#ff9a6b", "#ffc15f", "#ff7f73", "#f59bb0", "#ffab7f", "#f2b866", "#ec8a6c"],
+      bandColors: { core: "#fff1e4", above: "#ff9a6b", mid: "#ff7f73", below: "#ffc15f" },
+    },
+    juno: {
+      colors: ["#86b9f2", "#79d0c8", "#a3aaf5", "#86d19a", "#95c9f0", "#8cc0dc", "#77c2b3"],
+      bandColors: { core: "#e8f3ff", above: "#86b9f2", mid: "#79d0c8", below: "#86d19a" },
+    },
+    thinking: {
+      colors: ["#ff9a6b", "#86b9f2", "#ffc15f", "#79d0c8", "#f59bb0", "#86d19a", "#a3aaf5"],
+      bandColors: { core: "#fff4ea", above: "#ff9a6b", mid: "#86b9f2", below: "#79d0c8" },
+    },
+    muted: {
+      colors: ["#77736d", "#86827b", "#6c6863", "#8f8b84", "#716d67", "#817d77", "#66625d"],
+      bandColors: { core: "#a39f98", above: "#7d7973", mid: "#8a867f", below: "#6c6863" },
+    },
+  },
+};
+
+export function junoVoicePalette(theme: "light" | "dark" | null, tone: VoiceGlowTone = "you") {
+  return VOICE_PALETTES[theme ?? "light"][tone];
 }

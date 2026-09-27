@@ -46,7 +46,6 @@ import { defaultReasoning, reasoningOptions, type ReasoningEffort } from "@/lib/
 import { setPendingCodePrompt } from "@/lib/code-session-handoff";
 import type { CodePrefill, CodePrefillNote } from "@/lib/code-prefill";
 import { cn } from "@/lib/utils";
-import { ComposerBeam } from "@/components/effects/composer-beam";
 import { CODE_COMPOSER_SEED_EVENT } from "@/components/code/code-seed";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
 
@@ -700,10 +699,6 @@ export function CodeComposer({
           }}
           className="relative w-full"
         >
-          {/* The same two lights as Chat's composer (effects/composer-beam):
-              a low bloom on the empty landing, the travelling beam once a
-              start has been working for more than 3 s. */}
-          <ComposerBeam idle={!prompt.trim() && !dictating && !submitting} streaming={submitting}>
           <ComposerShell
             className={cn("max-h-[600px]", dragging && "border-primary/55 ring-2 ring-primary/20")}
             dimmed={submitting}
@@ -838,7 +833,6 @@ export function CodeComposer({
               </Tooltip>
             }
           />
-          </ComposerBeam>
 
           {dragging && <ComposerDropOverlay />}
 

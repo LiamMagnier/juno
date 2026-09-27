@@ -162,7 +162,7 @@ export function SkillSourceGroup({
               <button
                 type="button"
                 onClick={onCheckUpdates}
-                className="relative z-10 inline-flex items-center gap-1.5 whitespace-nowrap rounded-xs font-medium text-primary-ink underline-offset-2 hover:underline"
+                className="relative z-10 inline-flex items-center gap-1.5 whitespace-nowrap rounded-xs font-medium text-primary underline-offset-2 hover:underline"
               >
                 Update available
               </button>

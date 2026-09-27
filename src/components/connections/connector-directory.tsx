@@ -703,7 +703,7 @@ function ComposioSetupCallout() {
                 href="https://dashboard.composio.dev"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-0.5 font-medium text-primary-ink underline-offset-2 hover:underline"
+                className="inline-flex items-center gap-0.5 font-medium text-primary underline-offset-2 hover:underline"
               >
                 dashboard.composio.dev
                 <ActionIcons.external className="size-3" />

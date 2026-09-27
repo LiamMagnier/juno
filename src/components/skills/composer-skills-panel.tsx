@@ -142,7 +142,7 @@ export function ComposerSkillsPanel({
             <button
               type="button"
               onClick={onRetry}
-              className="mt-1 text-caption font-medium text-primary-ink underline-offset-2 hover:underline"
+              className="mt-1 text-caption font-medium text-primary underline-offset-2 hover:underline"
             >
               Try again
             </button>

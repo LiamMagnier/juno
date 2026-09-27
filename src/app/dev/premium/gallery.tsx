@@ -1,18 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { VoiceBeam } from "voice-glow";
+import { JunoVoiceGlow } from "@/components/voice/voice-composer-glow";
 
 import { AppProvider } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
 import { CodeComposer } from "@/components/code/code-composer";
-import { CodeStartingPoints } from "@/components/code/code-starting-points";
 import { EmptyGreeting } from "@/components/chat/empty-state";
-import { StarterChips } from "@/components/chat/starter-chips";
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 import { MessageItem } from "@/components/chat/message-item";
-import { useEffectTheme, voiceBandColors, voiceLobeColors } from "@/components/effects/use-effect-theme";
-import { RealtimeVoice } from "@/components/voice/realtime-voice";
+import { RealtimeVoice, voiceCallParts } from "@/components/voice/realtime-voice";
 import { TeamStatus } from "@/components/agents/team-status";
 import { MetalCta } from "@/components/effects/metal-cta";
 import { Button } from "@/components/ui/button";
@@ -187,19 +184,37 @@ function CallDemo({ thinking }: { thinking: boolean }) {
   return <RealtimeVoice voice={voice} onClose={noop} />;
 }
 
+/** The call drawn into the real Composer: status left, controls right, End in the primary slot. */
+function CallComposerDemo({
+  common,
+  speaking = false,
+  muted = false,
+  thinking = false,
+}: {
+  common: Omit<React.ComponentProps<typeof Composer>, "isBusy" | "status">;
+  speaking?: boolean;
+  muted?: boolean;
+  thinking?: boolean;
+}) {
+  const base = useFakeCall({ userSpeaking: !speaking && !muted && !thinking, awaitingResponse: thinking });
+  const voice = { ...base, assistantSpeaking: speaking, muted } as typeof base;
+  return (
+    <Composer
+      {...common}
+      isBusy={false}
+      status="idle"
+      frame="dock"
+      voiceActive
+      placeholder="Type while you talk…"
+      voiceCall={voiceCallParts({ voice, onClose: noop })}
+    />
+  );
+}
+
 function VoiceDemo({ processing }: { processing: boolean }) {
-  const theme = useEffectTheme();
   const level = useDemoLevel();
   return (
-    <VoiceBeam
-      level={level}
-      processing={processing}
-      theme={theme ?? "light"}
-      colorVariant="sunset"
-      bandColors={voiceBandColors(theme)}
-      colors={voiceLobeColors(theme)}
-      className="w-full rounded-composer"
-    >
+    <JunoVoiceGlow level={level} processing={processing} className="w-full rounded-composer">
       <div className="composer-surface relative flex w-full flex-col rounded-composer">
         <p className="voice-glow-content block min-h-[3.25rem] px-4 pb-2 pt-3.5 text-body-lg text-foreground">
           Book a table for four on Friday, somewhere quiet near the office
@@ -208,7 +223,7 @@ function VoiceDemo({ processing }: { processing: boolean }) {
           {processing ? "Transcribing" : "Listening"}
         </p>
       </div>
-    </VoiceBeam>
+    </JunoVoiceGlow>
   );
 }
 
@@ -245,7 +260,6 @@ export function PremiumGallery({ only }: { only?: string }) {
                   </div>
                   <div className="relative isolate w-full">
                     <Composer {...common} isBusy={false} status="idle" frame="landing" />
-                    <StarterChips className="mt-3" />
                   </div>
                 </div>
                 <div className="flex flex-col items-center pt-24">
@@ -254,7 +268,6 @@ export function PremiumGallery({ only }: { only?: string }) {
                   </h1>
                   <div className="w-full">
                     <CodeComposer />
-                    <CodeStartingPoints />
                   </div>
                 </div>
               </div>
@@ -344,6 +357,29 @@ export function PremiumGallery({ only }: { only?: string }) {
                       <Button className="w-full">Upgrade to Pro</Button>
                     </MetalCta>
                   </div>
+                </div>
+              </div>
+            </Section>
+          )}
+
+          {show("call") && (
+            <Section id="call" title="Voice call in the composer" note="No floating bar and no page wash: the composer becomes the call.">
+              <div className="space-y-8">
+                <div>
+                  <Label>Listening</Label>
+                  <CallComposerDemo common={common} />
+                </div>
+                <div>
+                  <Label>Juno is speaking (Stop appears)</Label>
+                  <CallComposerDemo common={common} speaking />
+                </div>
+                <div>
+                  <Label>Thinking (the glow gathers into one beam travelling side to side)</Label>
+                  <CallComposerDemo common={common} thinking />
+                </div>
+                <div>
+                  <Label>Muted</Label>
+                  <CallComposerDemo common={common} muted />
                 </div>
               </div>
             </Section>

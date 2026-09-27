@@ -17,7 +17,6 @@ import { ConversationFind } from "@/components/chat/conversation-find";
 import { Composer } from "@/components/chat/composer";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
-import { StarterChips } from "@/components/chat/starter-chips";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 /*
@@ -62,10 +61,7 @@ import { delegatedComposerPlaceholder } from "@/lib/work/delegation";
 import { WORK_SYNC_EVENT } from "@/components/work/work-transport";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import { ShareDialog } from "@/components/share/share-dialog";
-const RealtimeVoice = nextDynamic(
-  () => import("@/components/voice/realtime-voice").then((m) => m.RealtimeVoice),
-  { ssr: false },
-);
+import { VoiceCallNotices, voiceCallParts } from "@/components/voice/realtime-voice";
 import { resolveModel, type ModelId } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
@@ -1925,6 +1921,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onSubmitClarification={(answers) => chat.resolvePendingClarification(answers)}
       onSkipClarification={() => chat.resolvePendingClarification([], true)}
       onCancelClarification={chat.cancelPendingClarification}
+      voiceCall={voiceOpen ? voiceCallParts({ voice: realtimeVoice, onClose: closeVoice, speakerName: agent?.name }) : undefined}
       onOpenVoiceMode={planAllowsVoice && !privateMode && !voiceOpen && !voiceSaving && !voiceSaveError && !voiceTurnSending && !chat.pendingClarification ? openVoice : undefined}
       quotaReached={quotaReached}
       planIncludesNoMessages={planIncludesNoMessages}
@@ -1955,7 +1952,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               : voiceTurnSending
                 ? "Sending this voice turn…"
                 : voiceOpen
-                  ? "Type or attach an image while voice is active…"
+                  ? "Type while you talk…"
                   : agent
                     ? `Message ${agent.name}…`
                     : undefined
@@ -2047,7 +2044,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // carries its own two-line header, the clarify gate owns the column while it
   // is waiting for an answer, and the handoff needs the row to leave with the
   // greeting rather than blink out when the branch unmounts.
-  const showStarterChips = !privateMode && !chat.pendingClarification && handoff !== "leaving";
 
   const headerConversation = currentConversationId ? conversations.find((c) => c.id === currentConversationId) : undefined;
   const headerTitle = headerConversation?.title ?? "";
@@ -2397,7 +2393,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   privateMode && "px-2 sm:px-4"
                 )}
               >
-                {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} speakerName={agent?.name} />}
+                {voiceOpen && <VoiceCallNotices voice={realtimeVoice} />}
                 {voiceSaveNotice}
                 {composer}
               </div>
@@ -2465,31 +2461,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     ref={emptyComposerRef}
                     className="relative isolate w-full max-w-3xl"
                   >
-                    {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} speakerName={agent?.name} />}
+                    {voiceOpen && <VoiceCallNotices voice={realtimeVoice} />}
                     {voiceSaveNotice}
                     {composer}
-                    {/* Inside THIS wrapper, below the composer, on purpose. The
-                        handoff measures the wrapper's TOP to plan the
-                        composer's travel, so a row added underneath changes
-                        nothing about that; put anywhere outside it and the
-                        chips would hang in place while the greeting and the
-                        composer moved away from them.
-
-                        Same `duration-slow ease-out-soft` cross-fade the
-                        greeting pair above uses, so incognito and the clarify
-                        gate take the row out on the same beat that swaps the
-                        heading — and `handoff === "leaving"` fades it with
-                        them rather than letting it blink out at unmount. */}
-                    <div
-                      aria-hidden={!showStarterChips}
-                      inert={!showStarterChips}
-                      className={cn(
-                        "transition-opacity duration-slow ease-out-soft",
-                        showStarterChips ? "opacity-100" : "pointer-events-none opacity-0"
-                      )}
-                    >
-                      <StarterChips className="mt-3" />
-                    </div>
                   </div>
                 </div>
               </div>

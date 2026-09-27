@@ -225,8 +225,6 @@ private struct JunoMobileDraftChat: View {
   @State private var attachments = JunoMobileAttachmentCoordinator()
 
   @State private var showingLibrary = false
-  /// The column's height, for the voice field — see the conversation screen.
-  @State private var chatColumnHeight: CGFloat = 0
   /// The call in progress. It reaches the home screen because that is where
   /// most calls are started: nothing is selected, so the spoken turns have no
   /// conversation to appear in until the save route makes one on hang-up.
@@ -235,8 +233,8 @@ private struct JunoMobileDraftChat: View {
   @Environment(\.horizontalSizeClass) private var sizeClass
   @FocusState private var composerFocused: Bool
 
-  /// The iPad's home: one centred block (greeting, composer, starting
-  /// points) at a reading measure, where the phone docks the composer to the
+  /// The iPad's home: one centred block (greeting and composer) at a
+  /// reading measure, where the phone docks the composer to the
   /// bottom edge for the thumb. A composer pinned to the foot of a 13-inch
   /// screen, under a greeting a foot away from it, is two things; centred
   /// together they are the one object the screen is about.
@@ -280,10 +278,6 @@ private struct JunoMobileDraftChat: View {
           JunoMobileGreeting(name: profileName, alignment: .center)
             .padding(.bottom, JunoSpace.snug)
           composer
-          if prompt.isEmpty, !startingPoints.isEmpty {
-            JunoMobileStartingPoints(points: startingPoints)
-              .transition(.opacity.combined(with: .offset(y: -JunoSpace.snug)))
-          }
         }
         .frame(maxWidth: JunoMobileMeasure.home)
         // Two spacers under, one over: the block sits a little above the
@@ -293,21 +287,16 @@ private struct JunoMobileDraftChat: View {
       }
       .frame(maxWidth: .infinity)
       .padding(.horizontal, JunoSpace.region)
-      .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: prompt.isEmpty)
     } else if voiceMessages.isEmpty {
-      // The home: greeting low in the column and the starting points under
-      // it, so both sit near the composer (the hero) and the thumb, not in
-      // the middle of an empty screen.
+      // The home: the greeting low in the column, near the composer (the
+      // hero) and the thumb, and nothing else. No starting-point cards: the
+      // `+`, the voice action and the model are already one tap away in the
+      // composer, and a row of cards under it was a second, weaker menu.
       VStack(alignment: .leading, spacing: JunoSpace.region) {
         Spacer(minLength: 0)
         JunoMobileGreeting(name: profileName)
-        if prompt.isEmpty, !startingPoints.isEmpty {
-          JunoMobileStartingPoints(points: startingPoints)
-            .transition(.opacity.combined(with: .move(edge: .bottom)))
-        }
       }
       .padding(.bottom, JunoSpace.regular)
-      .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: prompt.isEmpty)
     } else {
       ScrollView {
         // The transcript's own metrics, so a spoken turn is the same
@@ -329,48 +318,6 @@ private struct JunoMobileDraftChat: View {
     voiceSession?.liveMessages() ?? []
   }
 
-  /// Real starting points: each one opens a picker, starts a call or arms a
-  /// tool on the composer below. Only what this screen can actually do is
-  /// offered.
-  private var startingPoints: [JunoMobileStartingPoint] {
-    var points: [JunoMobileStartingPoint] = []
-    if let openVoiceMode {
-      points.append(
-        JunoMobileStartingPoint(
-          id: "voice", icon: .audioLines, title: "Talk it through",
-          detail: "Voice conversation", action: openVoiceMode
-        )
-      )
-    }
-    if attachmentModel?.hasCapacity ?? false {
-      points.append(
-        JunoMobileStartingPoint(
-          id: "photo", icon: .photos, title: "Ask about a photo",
-          detail: "Camera or library",
-          action: { attachments.present(.photos, reduceMotion: reduceMotion) }
-        )
-      )
-      points.append(
-        JunoMobileStartingPoint(
-          id: "document", icon: .fileSearch, title: "Read a document",
-          detail: "PDF, doc or text",
-          action: { attachments.present(.files, reduceMotion: reduceMotion) }
-        )
-      )
-    }
-    points.append(
-      JunoMobileStartingPoint(
-        id: "research", icon: .research, title: "Research a topic",
-        detail: "Sources, then a report",
-        action: {
-          tools.deepResearch = true
-          composerFocused = true
-        }
-      )
-    )
-    return points
-  }
-
   var body: some View {
     column
       .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -381,11 +328,6 @@ private struct JunoMobileDraftChat: View {
           composerFocused = false
         }
       )
-      .onGeometryChange(for: CGFloat.self) {
-        $0.size.height
-      } action: {
-        chatColumnHeight = $0
-      }
       .accessibilityIdentifier("juno.mobile.chat-draft")
       // No visible title: the greeting names this screen. The title stays
       // for VoiceOver and the back menu.
@@ -457,7 +399,6 @@ private struct JunoMobileDraftChat: View {
           model: selectedModelID.isEmpty ? nil : selectedModelID
         )
       },
-      chatColumnHeight: chatColumnHeight,
       composerFocused: $composerFocused,
       sendSwell: sendSwell,
       // The greeting holds the bloom whenever it is on screen, so
@@ -579,10 +520,6 @@ private struct JunoMobileConversationDetail: View {
   @State private var runStartedAt: Date?
   @State private var settledRunID: String?
   @State private var settledRunDuration: TimeInterval?
-  /// The chat column's own height, handed to the composer so the voice field
-  /// can be sized from the conversation instead of from the composer's strip.
-  /// See ``JunoMobileComposer/auraLayer``.
-  @State private var chatColumnHeight: CGFloat = 0
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// Regular width docks the artifact canvas beside the thread instead of
   /// covering it, which is what the browser does.
@@ -1060,16 +997,6 @@ private struct JunoMobileConversationDetail: View {
           composerFocused = false
         }
       )
-      // The chat column, measured where it is: this scroll view spans the
-      // whole column — the composer is a safe-area inset *inside* it, not a
-      // sibling below it — so its height is the column's height, and the voice
-      // field takes its 46% from here. Measuring anything the composer can
-      // reach on its own would only ever measure the composer.
-      .onGeometryChange(for: CGFloat.self) {
-        $0.size.height
-      } action: {
-        chatColumnHeight = $0
-      }
       // Both are needed and they do different jobs. `defaultScrollAnchor`
       // keeps the bottom pinned as the answer grows — that is what makes a
       // streaming reply stay in view without anyone asking it to. The
@@ -1256,7 +1183,6 @@ private struct JunoMobileConversationDetail: View {
           attachmentCoordinator: attachments,
           openPlugins: openPlugins,
           openVoiceMode: openVoiceMode,
-          chatColumnHeight: chatColumnHeight,
           composerFocused: $composerFocused,
           sendSwell: sendSwell,
           greetingVisible: greetingVisible

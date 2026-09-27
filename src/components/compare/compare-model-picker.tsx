@@ -120,11 +120,11 @@ export function CompareModelPicker({
                     {PROVIDERS[m.provider].label.split(" · ")[0]}
                   </span>
                   {locked ? (
-                    <span className="flex shrink-0 items-center gap-1 font-mono text-caption font-medium text-primary-ink">
+                    <span className="flex shrink-0 items-center gap-1 font-mono text-caption font-medium text-primary">
                       <Lock className="size-3 shrink-0" /> {PLANS[effectiveMinPlan(m.minPlan)].name}
                     </span>
                   ) : active ? (
-                    <StatusIcons.success className={cn("size-3.5 shrink-0 text-primary-ink")} />
+                    <StatusIcons.success className={cn("size-3.5 shrink-0 text-primary")} />
                   ) : null}
                 </Pressable>
               );

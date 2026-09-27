@@ -238,9 +238,9 @@ final class JunoMobileVoiceScreenShare {
 
 /// The self-view: a small picture-in-picture of what the model is being sent.
 ///
-/// Small, and above the dock rather than over the chat, because the dock exists
-/// so the conversation stays readable during a call — ``JunoMobileVoiceDock``
-/// replaced a full-screen cover for exactly that reason. Reusing
+/// Small, and above the composer rather than over the chat, because the call
+/// lives in the composer so the conversation stays readable during it; that
+/// replaced a full-screen cover for exactly this reason. Reusing
 /// ``JunoMobileCameraPanel`` here would have undone it: that panel covers the
 /// lower half of the screen and carries a shutter and a dismiss-drag, neither of
 /// which means anything when the camera is not taking a photo.

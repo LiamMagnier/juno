@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import type { VoiceCallParts } from "@/components/voice/realtime-voice";
+import { VoiceComposerGlow } from "@/components/voice/voice-composer-glow";
 import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "framer-motion";
@@ -25,7 +27,6 @@ import {
   StatusIcons,
 } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import { ComposerBeam } from "@/components/effects/composer-beam";
 import {
   ComposerAttachmentRow,
   ComposerPrimaryAction,
@@ -202,6 +203,12 @@ interface ComposerProps {
   onSkipClarification?: () => Promise<SendResult> | SendResult | void;
   onCancelClarification?: () => void;
   onOpenVoiceMode?: () => void;
+  /**
+   * A live voice call, drawn INTO the composer: its status on the left, its
+   * controls on the right, End in the primary slot while nothing is typed
+   * (components/voice/realtime-voice.tsx, `voiceCallParts`).
+   */
+  voiceCall?: VoiceCallParts;
   quotaReached?: boolean;
   /** The plan grants no messages at all, rather than having exhausted them. */
   planIncludesNoMessages?: boolean;
@@ -628,6 +635,7 @@ export function Composer({
   onSkipClarification,
   onCancelClarification,
   onOpenVoiceMode,
+  voiceCall,
   quotaReached,
   planIncludesNoMessages,
   webSearchEnabled = false,
@@ -1116,18 +1124,6 @@ export function Composer({
     window.addEventListener("juno:composer-seed", seed);
     return () => window.removeEventListener("juno:composer-seed", seed);
   }, []);
-
-  // The other half of that conversation: the starter chips step aside while
-  // there is a draft (starter-chips.tsx). Typing reaches them as a native
-  // `input` event, but a seed, dictation or the clear after a send writes
-  // `text` without one, so the draft announces its emptiness here, once per
-  // flip rather than per keystroke. `/\S/` rather than `trim()` because it
-  // stops at the first non-space character instead of copying the whole
-  // draft, and a pasted curriculum is 50k of them.
-  const draftEmpty = !/\S/.test(text);
-  React.useEffect(() => {
-    window.dispatchEvent(new CustomEvent("juno:composer-draft", { detail: { empty: draftEmpty } }));
-  }, [draftEmpty]);
 
   // Files handed over by another surface — the document viewer's "ask about
   // this area" crop. Through the same door a drop or a paste uses, so the
@@ -2690,7 +2686,7 @@ export function Composer({
         icon={Plus}
         disabled={creatingProject}
         onSelect={() => void createProjectAndPick()}
-        className="text-primary-ink"
+        className="text-primary"
       >
         {creatingProject ? "Creating…" : "New project"}
       </PlusMenuRow>
@@ -2736,7 +2732,7 @@ export function Composer({
             <button
               type="button"
               onClick={() => void refreshConnectors()}
-              className="mt-1 text-caption font-medium text-primary-ink underline-offset-2 hover:underline"
+              className="mt-1 text-caption font-medium text-primary underline-offset-2 hover:underline"
             >
               Try again
             </button>
@@ -3063,10 +3059,7 @@ export function Composer({
           // DictationSwap; this wrapper only carries the drop target.
           className="w-full"
         >
-        <ComposerBeam
-          idle={frame === "landing" && !text.trim() && !privateMode && !dictating && !quotaReached}
-          streaming={isBusy}
-        >
+        <VoiceComposerGlow call={voiceCall}>
         <ComposerShell
           // The palette's containing block: it carries `relative`, so this — not
           // the surface — is what its `bottom-full` resolves against, and so this
@@ -3075,6 +3068,8 @@ export function Composer({
           dimmed={controlsLocked && !steerMode}
           className={cn(
             "max-h-[600px]",
+            // In a call the glow's layers sit under the shell's contents.
+            voiceCall && "voice-glow-host",
             // Private mode redraws the edge dashed; every other state's border
             // and focus lift come from `.composer-surface` itself.
             privateMode && "border-dashed border-foreground/25",
@@ -3587,17 +3582,20 @@ export function Composer({
             )
           }
           leading={
-            <PlusMenu
-              open={plusOpen}
-              onOpenChange={setPlusOpen}
-              disabled={plusLocked}
-              label={armedSummary ? `Add: ${armedSummary}` : "Add"}
-              tooltip={armedSummary ? `Add: ${armedSummary}` : "Add files, tools and context"}
-              sections={plusSections}
-            />
+            <>
+              <PlusMenu
+                open={plusOpen}
+                onOpenChange={setPlusOpen}
+                disabled={plusLocked}
+                label={armedSummary ? `Add: ${armedSummary}` : "Add"}
+                tooltip={armedSummary ? `Add: ${armedSummary}` : "Add files, tools and context"}
+                sections={plusSections}
+              />
+              {voiceCall?.status}
+            </>
           }
           trailing={
-            <>
+            voiceCall ? voiceCall.controls : <>
               {/* The model chip — and, inside its popover, the thinking effort
                   for that model (`thinkingControl`). One chip for one decision. */}
               <div className={cn("min-w-0", controlsLocked && "pointer-events-none")}>
@@ -3635,7 +3633,7 @@ export function Composer({
             </>
           }
           action={
-                <Tooltip>
+                voiceCall && !canSend ? voiceCall.end : <Tooltip>
                   <TooltipTrigger asChild>
                     <ComposerPrimaryAction
                       face={PRIMARY_FACES[primaryFace]}
@@ -3693,7 +3691,7 @@ export function Composer({
                 </Tooltip>
           }
         />
-        </ComposerBeam>
+        </VoiceComposerGlow>
 
             <input
               ref={fileInputRef}

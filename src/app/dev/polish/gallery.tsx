@@ -8,7 +8,6 @@ import AppGroupLoading from "@/app/(app)/loading";
 import { AppPageHeaderSkeleton } from "@/components/app/app-page";
 import { CHAT_COMPOSER_FIELD_ID } from "@/components/chat/composer";
 import { MessageItem } from "@/components/chat/message-item";
-import { StarterChips } from "@/components/chat/starter-chips";
 import { Button } from "@/components/ui/button";
 import {
   ComposerPrimaryAction,
@@ -217,7 +216,6 @@ function Landing() {
           action={<ComposerPrimaryAction face={draft.trim() ? "send" : "voice"} aria-label={draft.trim() ? "Send" : "Voice"} />}
         />
         <div ref={chipsRef}>
-          <StarterChips />
         </div>
       </div>
     </div>

@@ -1,5 +1,4 @@
 import { requireUser } from "@/lib/session";
-import { CodeStartingPoints } from "@/components/code/code-starting-points";
 import { CodeComposer } from "@/components/code/code-composer";
 import { parseCodePrefill, type PrefillParams } from "@/lib/code-prefill";
 
@@ -123,7 +122,6 @@ export default async function CodePage({ searchParams }: { searchParams: Promise
         </h1>
         <div className="w-full">
           <CodeComposer prefill={prefill} />
-          <CodeStartingPoints />
         </div>
       </div>
     </div>

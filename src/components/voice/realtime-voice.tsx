@@ -1,22 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Settings2, Square } from "@/components/ui/icons";
-import { ActionIcons, ComposerIcons, StatusIcons } from "@/lib/app-icons";
+import { CallEnd, CallMic, CallMicOff, CallSettings, CallStop, MonitorUp, MonitorX } from "@/components/ui/icons";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { VoiceMeter } from "@/components/voice/voice-meter";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
-import { PHASE_LABEL, announcementFor, voicePhaseOf, type VoicePhase } from "@/lib/voice-phase";
+import { announcementFor, voicePhaseOf, type VoicePhase } from "@/lib/voice-phase";
 import {
   VOICE_PROVIDER_LABELS,
   VOICE_PROVIDERS,
   type VoiceProviderId,
 } from "@/lib/voice-relay-protocol";
 import { cn } from "@/lib/utils";
-import { VoiceBeam } from "voice-glow";
-import { useEffectTheme, voiceBandColors, voiceLobeColors } from "@/components/effects/use-effect-theme";
+import type { VoiceGlowTone } from "@/components/effects/use-effect-theme";
+import { JunoVoiceGlow } from "@/components/voice/voice-composer-glow";
 
 type VoiceController = ReturnType<typeof useRealtimeVoice>;
 
@@ -36,75 +35,99 @@ const PROVIDER_BLURB: Record<VoiceProviderId, string> = {
 };
 
 /**
- * The voice call bar.
+ * THE VOICE CALL, AS PARTS OF THE COMPOSER.
  *
- * WHY IT IS STILL A BAR. Both of the products this is measured against
- * retired their full-screen voice mode: ChatGPT moved voice into the chat
- * window in November 2025 and left the orb behind a setting, and Gemini
- * dismantled its dedicated Live screen through 2026 in favour of an inline,
- * collapsible layer. A takeover destroys the context the conversation is
- * about, and shipping one in 2026 would be shipping the thing both of them
- * just removed. So voice stays a mode of the conversation, and the work went
- * into making that bar tell the truth.
+ * Voice is a mode of the conversation, not a place (ChatGPT and Gemini both
+ * retired their takeover screens for the same reason), so a call no longer
+ * stacks a second floating bar on top of the composer. The composer itself
+ * becomes the call: its left side says what the call is doing, its right side
+ * holds the controls, and its primary button ends the call (or sends, when
+ * something has been typed). Chat mounts the parts into the composer's slots
+ * (`voiceCall` on <Composer>); surfaces without a composer of their own still
+ * use <RealtimeVoice>, the same parts in one quiet bar.
  *
- * WHAT IT TELLS YOU NOW. The bar used to say "Listening…" from the moment the
- * socket opened until the call ended, beside three bars at hardcoded heights
- * that never read the audio. There was no way to see that you had been heard,
- * that an answer was being composed, that a mid-call error had already killed
- * the session, or which reconnect attempt was in flight. Muted, idle and a
- * dead session were the same grey dot. `interrupt()` existed on the hook and
- * no button called it, while the label instructed you to "Speak to interrupt".
+ * What the call says is still the phase (`src/lib/voice-phase.ts`): the meter
+ * reads the real level, Stop exists exactly while there is speech to stop,
+ * mute is struck through, and every change is announced, because this is the
+ * one mode designed to be used without looking at the screen.
  *
- * Now the phase drives everything (`src/lib/voice-phase.ts`): the meter reads
- * the real level, the thinking gap has its own state, Stop appears exactly
- * while there is speech to stop, mute is struck through rather than dimmed,
- * and every change is announced to assistive technology — which matters more
- * here than anywhere else in the product, because this is the one mode
- * designed to be used without looking at the screen.
- *
- * The live cost meter is gone. It rendered four decimal places and ticked
- * upward mid-sentence, which made a conversation feel like a taxi ride; usage
- * is still recorded and still shown where spending belongs.
+ * No glow, no page wash. The ambient aura that tinted the whole column during
+ * a call and the light along the old bar's edge made the screen look busy
+ * without saying anything the label and the meter do not.
  */
-export function RealtimeVoice({
+
+export interface VoiceCallParts {
+  /** Left of the composer: the level meter and the phase, plus the live region. */
+  status: React.ReactNode;
+  /** Right of the composer: Stop, Mute, Share, call settings. */
+  controls: React.ReactNode;
+  /** The composer's primary slot while the draft is empty. */
+  end: React.ReactNode;
+  /** The live level (0-1) of whoever is talking, read once per frame by the glow. */
+  level: () => number;
+  /** The gap after you stop, while the reply is thought through. */
+  processing: boolean;
+  /** No call up (connecting, ended, muted): the glow holds still. */
+  paused: boolean;
+  /** Whose light: warm while you talk, cool while Juno talks, both while it thinks. */
+  tone: VoiceGlowTone;
+}
+
+/** The glow's light for a phase: the call's state, told in colour. */
+function toneFor(phase: VoicePhase): VoiceGlowTone {
+  switch (phase) {
+    case "speaking":
+      return "juno";
+    case "thinking":
+      return "thinking";
+    case "listening":
+    case "user-speaking":
+      return "you";
+    default:
+      return "muted";
+  }
+}
+
+/** Everything the composer needs to become the call. */
+export function voiceCallParts({
   voice,
   onClose,
   speakerName,
 }: {
   voice: VoiceController;
   onClose: () => void;
-  /**
-   * Who answers, when the call is in an agent's thread. Used only once the
-   * relay confirms the call is that agent (`voice.persona`): until then, or if
-   * its persona could not be had, the voice answering is Juno's, and the bar
-   * says so rather than naming someone who is not there.
-   */
   speakerName?: string;
-}) {
-  const phase: VoicePhase = voicePhaseOf(voice);
-  const speaker = voice.persona && speakerName ? speakerName : "Juno";
-
-  const meterRef = React.useRef<HTMLSpanElement | null>(null);
+}): VoiceCallParts {
+  const phase = voicePhaseOf(voice);
   const levelRef = voice.levelRef;
-  const readLevel = React.useCallback(() => levelRef.current, [levelRef]);
-  const effectTheme = useEffectTheme();
+  return {
+    // Muted: a low, even grey band, visibly on and visibly quiet, rather than
+    // a frozen frame of whatever was said last.
+    level: phase === "muted" ? () => 0.12 : () => levelRef.current,
+    processing: phase === "thinking",
+    paused: phase === "idle" || phase === "connecting" || phase === "error",
+    tone: toneFor(phase),
+    status: <VoiceCallStatus voice={voice} speakerName={speakerName} />,
+    controls: <VoiceCallControls voice={voice} speakerName={speakerName} />,
+    end: <VoiceCallEnd onClose={onClose} />,
+  };
+}
 
-  // One rAF loop for the whole bar, writing one custom property. The level
-  // never enters React state: at 60fps that would re-render the bar and every
-  // control in it sixty times a second to move five bars.
-  React.useEffect(() => {
-    let raf = 0;
-    const tick = () => {
-      meterRef.current?.style.setProperty("--level", levelRef.current.toFixed(3));
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [levelRef]);
+function speakerOf(voice: VoiceController, speakerName?: string) {
+  return voice.persona && speakerName ? speakerName : "Juno";
+}
 
-  // Announce phase changes. A voice mode is used without looking at it, and
-  // the old bar announced nothing at all — the indicator was aria-hidden and
-  // the status sat in a plain span.
+/**
+ * What the call is doing, for assistive technology only. On screen the glow
+ * is the state (warm while you talk, cool while Juno talks, a travelling beam
+ * while it thinks, still grey when muted); no meter or status line competes
+ * with it. A voice mode is used without looking at the screen, so every phase
+ * change is still announced, and which provider and model are answering is
+ * said once the call is up.
+ */
+export function VoiceCallStatus({ voice, speakerName }: { voice: VoiceController; speakerName?: string }) {
+  const phase: VoicePhase = voicePhaseOf(voice);
+  const speaker = speakerOf(voice, speakerName);
   const [announcement, setAnnouncement] = React.useState("");
   const prevPhase = React.useRef<VoicePhase | null>(null);
   React.useEffect(() => {
@@ -114,189 +137,145 @@ export function RealtimeVoice({
   }, [phase, speaker]);
 
   const live = voice.status === "live";
-  const restartable = voice.status === "ended" || voice.status === "error";
-  const reconnecting = voice.status === "reconnecting";
-  const label = reconnecting && voice.reconnectAttempt > 0
-    ? `Reconnecting · attempt ${voice.reconnectAttempt}`
-    : PHASE_LABEL[phase];
-  // Named only once the relay has confirmed a session; before that there is
-  // nothing true to say, and a provider name shown while connecting to it is
-  // a claim the call has not earned yet.
-  const subtitle =
-    live && voice.model
-      ? `${VOICE_PROVIDER_LABELS[voice.provider]} · ${voice.model}`
-      : live
-        ? VOICE_PROVIDER_LABELS[voice.provider]
-        : null;
+  const detail = live
+    ? [VOICE_PROVIDER_LABELS[voice.provider], voice.model, voice.memory ? "remembers you" : null]
+        .filter(Boolean)
+        .join(", ")
+    : null;
 
   return (
-    <section
-      aria-label="Voice call"
-      className="relative z-toolbar mx-auto mb-3 flex w-full flex-col items-center gap-2 px-2 motion-safe:animate-fade-in sm:px-0"
-    >
-      {/* Errors render whenever there is one, not only in one status. A relay
-          failure mid-call used to set a message that nothing displayed. */}
-      {voice.error && (
-        <div
-          role="alert"
-          className="flex max-w-full items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-3 py-1 text-caption text-warning-foreground motion-safe:animate-rise-in"
-        >
-          <StatusIcons.warning className="size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">{voice.error}</span>
-        </div>
-      )}
+    <span role="status" aria-live="polite" className="sr-only">
+      {announcement}
+      {detail ? ` ${detail}.` : null}
+    </span>
+  );
+}
 
-      {/* A notice is not a failure: the call is up and usable, it just came up
-          some way other than the one that was asked for. Muted rather than
-          warning-coloured, and not an alert — nothing here needs acting on. */}
-      {!voice.error && voice.notice && (
-        <div
-          role="status"
-          className="flex max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/60 px-3 py-1 text-caption text-muted-foreground motion-safe:animate-rise-in"
-        >
-          <StatusIcons.info className="size-3.5 shrink-0" />
-          <span className="min-w-0">{voice.notice}</span>
-        </div>
-      )}
+/** The verbs of a call, as the composer's icon buttons. */
+export function VoiceCallControls({ voice, speakerName }: { voice: VoiceController; speakerName?: string }) {
+  const live = voice.status === "live";
+  const restartable = voice.status === "ended" || voice.status === "error";
+  const speaker = speakerOf(voice, speakerName);
 
-      {/*
-       * THE VOICE GLOW (Libraries.dev Voice, premium brief), on the call bar
-       * itself: a light along its bottom edge driven by `levelRef`, the same
-       * smoothed amplitude the meter reads (the mic while you speak, the
-       * model while it answers), gathering into the travelling beam in the
-       * dead air after you stop (`thinking`). A getter, so the level never
-       * enters React state. Decorative: the phase label, the meter and the
-       * live region carry the state. The bar's popovers are portalled, so the
-       * glow's clip cannot cut them.
-       */}
-      <VoiceBeam
-        level={readLevel}
-        processing={phase === "thinking"}
-        paused={phase === "idle"}
-        theme={effectTheme ?? "light"}
-        colorVariant="sunset"
-        bandColors={voiceBandColors(effectTheme)}
-        colors={voiceLobeColors(effectTheme)}
-        strength={0.75}
-        className="w-full max-w-[min(100%,34rem)] rounded-full shadow-float sm:w-auto"
-      >
-      <div
-        className={cn(
-          "voice-glow-host flex w-full items-center gap-1 rounded-full border border-border",
-          "bg-popover p-1.5 sm:w-auto"
-        )}
-      >
-        {/* The status cluster OWNS the flexible width and everything else is
-            shrink-0, so a long phase label truncates instead of pushing End
-            off a narrow screen — which is what used to happen, because every
-            child was equally willing to shrink. */}
-        <div className="flex min-w-0 flex-1 items-center gap-2.5 pl-2.5 pr-1 sm:flex-initial">
-          <VoiceMeter ref={meterRef} phase={phase} />
-          <span className="flex min-w-0 flex-col leading-tight">
-            <span className="truncate text-ui font-medium text-foreground">{label}</span>
-            {/* Which model is actually answering. It was knowable only from a
-                relay log before, so a call that had quietly fallen back to
-                another protocol looked identical to one that had not. */}
-            {subtitle && (
-              <span className="flex min-w-0 items-center gap-1 text-micro text-muted-foreground">
-                <span className="truncate">{subtitle}</span>
-                {/* Said, not left to be discovered by being remembered. Only
-                    once the relay confirms it: a call that asked and could not
-                    reach memory must not claim it. */}
-                {voice.memory && (
-                  <span
-                    className="flex shrink-0 items-center gap-1 motion-safe:animate-fade-in"
-                    title="This call knows what Juno remembers about you"
-                  >
-                    <span aria-hidden="true">·</span>
-                    <ComposerIcons.memory className="size-3" aria-hidden="true" />
-                    <span>Memory</span>
-                  </span>
-                )}
-              </span>
-            )}
-          </span>
-        </div>
-
-        {/* The one live region for the call. */}
-        <span role="status" aria-live="polite" className="sr-only">
-          {announcement}
-        </span>
-
-        <div className="flex shrink-0 items-center gap-0.5">
-          {restartable ? (
-            <BarButton onClick={() => void voice.retry()} label="Try the call again">
-              <ActionIcons.refresh className="size-4" />
-              <span>Retry</span>
-            </BarButton>
-          ) : (
-            <>
-              {/* Stop exists exactly while there is speech to stop. `interrupt`
-                  was on the hook from the start with no caller: on a device
-                  where echo cancellation is off, or where the detector misses,
-                  a caller had no way to halt a monologue while the label told
-                  them to talk over it. */}
-              {voice.assistantSpeaking && (
-                <BarButton
-                  onClick={voice.interrupt}
-                  label={`Stop ${speaker} speaking`}
-                  // It arrives with the speech it stops, so it fades in rather
-                  // than landing in the bar in one frame.
-                  className="motion-safe:animate-fade-in"
-                >
-                  <Square className="size-3 fill-current" />
-                  <span className="hidden md:inline">Stop</span>
-                </BarButton>
-              )}
-
-              <BarButton
-                onClick={voice.toggleMute}
-                disabled={!live}
-                pressed={voice.muted}
-                label={voice.muted ? "Turn your microphone back on" : "Mute your microphone"}
-              >
-                <SwapGlyph on={voice.muted} onGlyph={<MicOff className="size-4" />} offGlyph={<Mic className="size-4" />} />
-                <span className="hidden md:inline">{voice.muted ? "Unmute" : "Mute"}</span>
-              </BarButton>
-
-              {/* Screen share is a thing you DO mid-call, so it is a control,
-                  not a settings row. It spent a release buried three items
-                  deep in a menu that also held provider choice, where the one
-                  action you might want mid-sentence was the hardest to reach. */}
-              {voice.capabilities?.screenInput && live && (
-                <BarButton
-                  onClick={() => {
-                    if (voice.screenSharing) voice.stopScreenShare();
-                    else void voice.startScreenShare();
-                  }}
-                  pressed={voice.screenSharing}
-                  label={voice.screenSharing ? "Stop sharing your screen" : "Share your screen"}
-                >
-                  <SwapGlyph
-                    on={voice.screenSharing}
-                    onGlyph={<MonitorX className="size-4" />}
-                    offGlyph={<MonitorUp className="size-4" />}
-                  />
-                  <span className="hidden md:inline">{voice.screenSharing ? "Sharing" : "Share"}</span>
-                </BarButton>
-              )}
-            </>
+  return (
+    <div className="flex shrink-0 items-center gap-0.5">
+      {restartable ? (
+        <CallButton onClick={() => void voice.retry()} label="Try the call again">
+          <ActionIcons.refresh className="size-4" />
+        </CallButton>
+      ) : (
+        <>
+          {voice.assistantSpeaking && (
+            <CallButton onClick={voice.interrupt} label={`Stop ${speaker} speaking`} className="motion-safe:animate-fade-in">
+              <CallStop className="size-4" />
+            </CallButton>
           )}
+          <CallButton
+            onClick={voice.toggleMute}
+            disabled={!live}
+            pressed={voice.muted}
+            label={voice.muted ? "Turn your microphone back on" : "Mute your microphone"}
+          >
+            <SwapGlyph on={voice.muted} onGlyph={<CallMicOff className="size-[18px]" />} offGlyph={<CallMic className="size-[18px]" />} />
+          </CallButton>
+          {voice.capabilities?.screenInput && live && (
+            <CallButton
+              onClick={() => {
+                if (voice.screenSharing) voice.stopScreenShare();
+                else void voice.startScreenShare();
+              }}
+              pressed={voice.screenSharing}
+              label={voice.screenSharing ? "Stop sharing your screen" : "Share your screen"}
+            >
+              <SwapGlyph
+                on={voice.screenSharing}
+                onGlyph={<MonitorX className="size-4" />}
+                offGlyph={<MonitorUp className="size-4" />}
+              />
+            </CallButton>
+          )}
+        </>
+      )}
+      <VoiceSettings voice={voice} />
+    </div>
+  );
+}
 
-          <VoiceSettings voice={voice} />
+/**
+ * End, in the composer's primary slot: the same size and place as Send, so
+ * the hand already knows where it is, and the only coloured control in a call.
+ */
+export function VoiceCallEnd({ onClose }: { onClose: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="End the call"
+          className={cn(
+            "pressable inline-flex size-9 shrink-0 items-center justify-center rounded-full",
+            "bg-destructive text-destructive-foreground shadow-sm hover:brightness-[1.06]",
+            "motion-reduce:active:scale-100 coarse:size-11"
+          )}
+        >
+          <CallEnd className="size-5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>End call</TooltipContent>
+    </Tooltip>
+  );
+}
 
-          {/* A hairline before End. It is the only irreversible control here,
-              and grouping it with the toggles made it one more identical pill
-              to mis-tap on a phone. */}
-          <span aria-hidden className="mx-0.5 h-5 w-px shrink-0 bg-border" />
+/**
+ * A call's error or notice, as one plain line above the composer: colour and
+ * a glyph where it needs acting on, muted where it does not. No pill.
+ */
+export function VoiceCallNotices({ voice }: { voice: VoiceController }) {
+  if (voice.error) {
+    return (
+      <p role="alert" className="mb-2 flex items-center justify-center gap-1.5 px-3 text-caption text-destructive-ink motion-safe:animate-fade-in">
+        <StatusIcons.warning className="size-3.5 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 truncate">{voice.error}</span>
+      </p>
+    );
+  }
+  if (voice.notice) {
+    return (
+      <p role="status" className="mb-2 flex items-center justify-center gap-1.5 px-3 text-caption text-muted-foreground motion-safe:animate-fade-in">
+        <StatusIcons.info className="size-3.5 shrink-0" aria-hidden="true" />
+        <span className="min-w-0">{voice.notice}</span>
+      </p>
+    );
+  }
+  return null;
+}
 
-          <BarButton onClick={onClose} label="End the call" tone="danger">
-            <PhoneOff className="size-4" />
-            <span className="hidden sm:inline">End</span>
-          </BarButton>
+/**
+ * The call for surfaces with no composer of their own (Code's voice briefing,
+ * Work): the same parts in one quiet bar, on the popover material, with no
+ * glow along its edge.
+ */
+export function RealtimeVoice({
+  voice,
+  onClose,
+  speakerName,
+}: {
+  voice: VoiceController;
+  onClose: () => void;
+  speakerName?: string;
+}) {
+  const parts = voiceCallParts({ voice, onClose, speakerName });
+  return (
+    <section aria-label="Voice call" className="relative mx-auto mb-3 flex w-full flex-col items-center px-2 motion-safe:animate-fade-in sm:px-0">
+      <VoiceCallNotices voice={voice} />
+      <JunoVoiceGlow level={parts.level} processing={parts.processing} paused={parts.paused} tone={parts.tone} className="relative rounded-full">
+        <div className="voice-glow-host flex items-center gap-1 rounded-full border border-border bg-popover p-1.5 shadow-float">
+          {parts.status}
+          {parts.controls}
+          {parts.end}
         </div>
-      </div>
-      </VoiceBeam>
+      </JunoVoiceGlow>
     </section>
   );
 }
@@ -337,7 +316,7 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
               "motion-reduce:active:scale-100"
             )}
           >
-            <Settings2 className="size-4" />
+            <CallSettings className="size-[18px]" />
           </PopoverTrigger>
         </TooltipTrigger>
         <TooltipContent>Call settings</TooltipContent>
@@ -417,19 +396,15 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
 }
 
 /**
- * One control on the bar.
- *
- * Every control is the same height and the same shape, and a disabled one
- * looks disabled — the old Mute was `disabled` during connect with no
- * disabled styling at all, so for the first seconds of every call it was
- * pixel-identical to a working button.
+ * One control in a call: an icon button the size of the composer's own, with
+ * its name in the tooltip and the accessible label. A pressed toggle (muted,
+ * sharing) takes the ink fill, so its state reads without its label.
  */
-function BarButton({
+function CallButton({
   onClick,
   label,
   disabled,
   pressed,
-  tone = "default",
   className,
   children,
 }: {
@@ -437,7 +412,6 @@ function BarButton({
   label: string;
   disabled?: boolean;
   pressed?: boolean;
-  tone?: "default" | "danger";
   className?: string;
   children: React.ReactNode;
 }) {
@@ -451,17 +425,10 @@ function BarButton({
           aria-label={label}
           aria-pressed={pressed}
           className={cn(
-            // `.pressable` owns the timing: colour on --dur-fast, the dip on
-            // --dur-press. The `transition-colors` that used to sit here
-            // replaced its list, so every control on the bar pressed untimed.
-            "pressable inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-ui font-medium",
+            "pressable inline-flex size-9 shrink-0 items-center justify-center rounded-full",
             "disabled:pointer-events-none disabled:opacity-40",
-            "motion-reduce:active:scale-100 coarse:h-11",
-            pressed
-              ? "bg-foreground text-background"
-              : tone === "danger"
-                ? "text-foreground hover:bg-destructive/10 hover:text-destructive"
-                : "text-foreground hover:bg-accent",
+            "motion-reduce:active:scale-100 coarse:size-11",
+            pressed ? "bg-foreground text-background" : "text-muted-foreground hover:bg-accent hover:text-foreground",
             className
           )}
         >

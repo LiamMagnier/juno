@@ -149,7 +149,7 @@ export function ComposerDropOverlay() {
     <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-panel border border-dashed border-primary/60 bg-card motion-safe:animate-fade-in">
       <div className="pointer-events-none absolute inset-0 rounded-panel bg-primary/5" aria-hidden="true" />
       <ComposerIcons.files className="relative size-6 text-primary" aria-hidden="true" />
-      <span className="relative font-mono text-label text-primary-ink">Drop to attach</span>
+      <span className="relative font-mono text-label text-primary">Drop to attach</span>
     </div>
   );
 }

@@ -9,8 +9,7 @@ import { Button } from "@/components/ui/button";
 import { composerFieldClass, composerIconButtonClass } from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { VoiceBeam } from "voice-glow";
-import { useEffectTheme, voiceBandColors, voiceLobeColors } from "@/components/effects/use-effect-theme";
+import { JunoVoiceGlow } from "@/components/voice/voice-composer-glow";
 
 /**
  * Dictation — the composer, listening.
@@ -173,7 +172,6 @@ export function ComposerDictation({
   const [recognitionLost, setRecognitionLost] = React.useState(false);
 
   const { features } = useApp();
-  const effectTheme = useEffectTheme();
   const serverStt = features.serverStt;
 
   const phaseRef = React.useRef<Phase>("active");
@@ -468,16 +466,7 @@ export function ComposerDictation({
      * drops the drift and sweep, which the package does itself. The content
      * sits at z-index 5 over the glow's layers (1-4), as the package asks.
      */
-    <VoiceBeam
-      stream={micStream}
-      processing={transcribing}
-      theme={effectTheme ?? "light"}
-      colorVariant="sunset"
-      bandColors={voiceBandColors(effectTheme)}
-      colors={voiceLobeColors(effectTheme)}
-      paused={closing}
-      className="w-full rounded-composer"
-    >
+    <JunoVoiceGlow stream={micStream} processing={transcribing} paused={closing} tone={transcribing ? "thinking" : "you"} className="w-full rounded-composer">
     <div
       role="group"
       aria-label="Dictation"
@@ -613,6 +602,6 @@ export function ComposerDictation({
         </div>
       </div>
     </div>
-    </VoiceBeam>
+    </JunoVoiceGlow>
   );
 }

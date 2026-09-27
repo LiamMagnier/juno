@@ -2,7 +2,6 @@ import { PrivateGreeting } from "@/components/chat/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { composerRestHeightClass } from "@/components/ui/composer-shell";
 import { cn } from "@/lib/utils";
-import { startingGridClass } from "@/components/ui/starting-tile";
 
 /**
  * The new-chat page in its own frame: the header band, the greeting, the
@@ -31,11 +30,8 @@ import { startingGridClass } from "@/components/ui/starting-tile";
  *    no padding of its own. It was a hand-written 68px against a 98px
  *    composer, and then the dock frame's gutter and bottom padding, which the
  *    landing does not have.
- *  - The starting points are StarterChips' tiles at the `mt-3` chat-view
- *    gives them, on the same grid (`startingGridClass`): four across from
- *    `sm`, two by two on a phone. A tile is 54px (the 32px mark well, 10px
- *    padding, the hairline) and 56 from `sm`, where the hint line adds a
- *    line under the label.
+ *  - Nothing under the composer: the empty screen is the greeting and the
+ *    composer alone (the starting-point row was retired, 2026-09-26).
  *
  * Measured against a replica of the real frame, the composer used to arrive
  * 38px lower than its placeholder on a laptop and 19px lower, and 32px
@@ -61,11 +57,6 @@ export default function NewChatLoading() {
         <div className="w-full max-w-3xl">
           <div className="mx-auto max-w-[calc(48rem-2*var(--page-gutter,0px))]">
             <Skeleton className={cn(composerRestHeightClass, "w-full rounded-composer")} />
-          </div>
-          <div className={cn(startingGridClass, "mt-3 max-w-[calc(48rem-2*var(--page-gutter,0px))]")}>
-            {[0, 1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-[54px] rounded-card sm:h-14" />
-            ))}
           </div>
         </div>
       </div>

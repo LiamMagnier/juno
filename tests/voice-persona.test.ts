@@ -147,10 +147,11 @@ test("a chat names its thread for its calls, kept across reconnects and retries,
   assert.match(hook, /start\(undefined, undefined, \{ memory: memoryRef\.current, conversationId: conversationRef\.current \}\)/);
   const chat = src("src/components/chat/chat-view.tsx");
   assert.match(chat, /privateMode \? undefined : \{ memory: \{ projectId: activeProjectId \}, conversationId: currentConversationId \?\? null \}/);
-  // The bar names the agent only once the relay confirms the call is it.
-  assert.equal(chat.match(/<RealtimeVoice voice=\{realtimeVoice\} onClose=\{closeVoice\} speakerName=\{agent\?\.name\} \/>/g)?.length, 2);
+  // The call (drawn into the composer) names the agent only once the relay
+  // confirms the call is it.
+  assert.match(chat, /voiceCallParts\(\{ voice: realtimeVoice, onClose: closeVoice, speakerName: agent\?\.name \}\)/);
   const bar = src("src/components/voice/realtime-voice.tsx");
-  assert.match(bar, /const speaker = voice\.persona && speakerName \? speakerName : "Juno";/);
+  assert.match(bar, /return voice\.persona && speakerName \? speakerName : "Juno";/);
   assert.match(bar, /label=\{`Stop \$\{speaker\} speaking`\}/);
   assert.match(bar, /announcementFor\(phase, prevPhase\.current, speaker\)/);
   // Both copies of the protocol carry the flag.

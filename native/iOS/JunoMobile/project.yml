@@ -73,7 +73,13 @@ targets:
       Next: ../../Config/JunoMobile-Next.xcconfig
     settings:
       base:
-        CODE_SIGN_ENTITLEMENTS: Resources/JunoMobile.entitlements
+        # Through a variable the xcconfigs set, so a personal (free) team can
+        # sign without push from JunoMobile-Local.xcconfig (see that file's
+        # sample in native/Config). Target settings outrank xcconfigs, which is
+        # why the path itself cannot live here. It also keeps xcodegen from
+        # recognising the file: given the literal path, it rewrote the
+        # entitlements on every generate and silently dropped push.
+        CODE_SIGN_ENTITLEMENTS: $(JUNO_MOBILE_ENTITLEMENTS)
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Resources/Info.plist
   JunoMobileWidgets:

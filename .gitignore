@@ -121,3 +121,6 @@ e2e/.auth/
 # The Mac transcript's offscreen snapshots (`npm run native:snapshots:transcript`)
 # are review evidence, regenerated on demand, never committed.
 /.snapshots/
+
+# Personal iOS signing for Xcode Debug builds (see native/Config/JunoMobile-Local.sample.xcconfig)
+native/Config/JunoMobile-Local.xcconfig
