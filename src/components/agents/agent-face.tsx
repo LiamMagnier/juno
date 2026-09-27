@@ -177,6 +177,10 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, labelStat
           <Body shape={avatar.shape} />
         </g>
         {detailed && avatar.mark === "visor" ? <Mark mark="visor" eyes={spec.eyes} /> : null}
+        {/* Gaze: the eyes (and the happy arcs) follow the pointer through two
+            custom properties set by AgentPresence. A wrapper, so the state
+            animations on the eyes themselves are untouched. */}
+        <g className="agent-face__gaze">
         <g className="agent-face__eyes">
           {spec.eyes.map(([cx, cy], i) => (
             <rect
@@ -200,6 +204,7 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, labelStat
               strokeLinecap="round"
             />
           ))}
+        </g>
         </g>
         {detailed && avatar.mark !== "visor" ? <Mark mark={avatar.mark} eyes={spec.eyes} /> : null}
         {detailed ? (

@@ -3875,6 +3875,15 @@
   .agent-face__body { fill: hsl(var(--face-tone)); transform-box: fill-box; transform-origin: center; }
   .agent-face__all,
   .agent-face__eyes { transform-box: fill-box; transform-origin: center; }
+  /* Gaze (components/agents/agent-presence.tsx): a small, springy offset toward
+     the pointer. Only transform moves; still under reduced motion. */
+  .agent-face__gaze {
+    transform: translate(calc(var(--gaze-x, 0) * 2.4px), calc(var(--gaze-y, 0) * 1.8px));
+    transition: transform 260ms var(--ease-out-soft);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agent-face__gaze { transform: none; transition: none; }
+  }
   .agent-face__eye {
     fill: hsl(var(--agent-ink));
     transform-box: fill-box;

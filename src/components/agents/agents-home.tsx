@@ -126,7 +126,7 @@ function AgentTile({ agent }: { agent: ClientAgent }) {
         "active:translate-y-0 active:scale-[0.99] motion-reduce:transform-none"
       )}
     >
-      <AgentPresence avatar={agent.avatar} state={agent.state} size={56} />
+      <AgentPresence avatar={agent.avatar} state={agent.state} size={56} gaze />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-body-lg font-medium text-foreground">{agent.name}</span>
         {needsYou ? (
@@ -147,6 +147,7 @@ export function AgentComposer({ autoFocus = true }: { autoFocus?: boolean }) {
   const router = useRouter();
   const [value, setValue] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const [arriving, setArriving] = React.useState<ClientAgent | null>(null);
   const ref = React.useRef<HTMLTextAreaElement | null>(null);
 
   const fit = React.useCallback(() => {
@@ -184,13 +185,19 @@ export function AgentComposer({ autoFocus = true }: { autoFocus?: boolean }) {
     }
     announceAgentsChanged();
     const conversationId = outcome.value.conversationId;
-    router.push(
-      conversationId ? agentFirstMessageHref(conversationId, message) : `/agents/${encodeURIComponent(outcome.value.id)}`
-    );
+    const href = conversationId
+      ? agentFirstMessageHref(conversationId, message)
+      : `/agents/${encodeURIComponent(outcome.value.id)}`;
+    // The arrival: the new face springs in for a beat before its thread opens.
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    setArriving(outcome.value);
+    router.prefetch(href);
+    window.setTimeout(() => router.push(href), reduce ? 0 : 720);
   };
 
   return (
     <div className="motion-safe:animate-rise-in">
+      {arriving ? <AgentArrival agent={arriving} /> : null}
       <h1 className="font-serif text-display italic leading-[1.1] text-foreground">
         Who should take care of it?
       </h1>
@@ -254,6 +261,26 @@ export function AgentComposer({ autoFocus = true }: { autoFocus?: boolean }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** A new agent arriving: its face springs in over the page, then the thread opens. */
+function AgentArrival({ agent }: { agent: ClientAgent }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed inset-0 z-modal grid place-items-center bg-background/80 backdrop-blur-md motion-safe:animate-fade-in"
+    >
+      <div className="flex flex-col items-center">
+        <span className="motion-safe:animate-agent-arrive">
+          <AgentPresence avatar={agent.avatar} state="done" size={112} haloScale={2.4} />
+        </span>
+        <p className="mt-8 text-body-lg text-muted-foreground motion-safe:animate-rise-in [animation-delay:220ms] [animation-fill-mode:backwards]">
+          Setting itself up
+        </p>
+      </div>
     </div>
   );
 }

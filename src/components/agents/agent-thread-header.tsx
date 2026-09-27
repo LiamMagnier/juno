@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { ArrowRight, Monitor, MoreHorizontal, User } from "@/components/ui/icons";
 import { AgentPresence } from "@/components/agents/agent-presence";
+import { AgentFaceStudio } from "@/components/agents/agent-face-studio";
 import { localStateSentence } from "@/components/agents/agent-bits";
 import type { AgentPanelTab } from "@/components/agents/agent-panel";
 import {
@@ -111,6 +112,7 @@ export function AgentThreadHeader({
   const faceRef = React.useRef<HTMLButtonElement | null>(null);
   const listening = state === "listening" && !!levelRef;
   const [confirmRetire, setConfirmRetire] = React.useState(false);
+  const [studio, setStudio] = React.useState(false);
 
   React.useEffect(() => {
     const face = faceRef.current;
@@ -175,7 +177,15 @@ export function AgentThreadHeader({
   };
 
   return (
-    <div className="flex shrink-0 justify-center px-4 pb-1 pt-3">
+    <div className="relative isolate flex shrink-0 justify-center px-4 pb-1 pt-3">
+      {/* The thread carries the agent's colour: a faint wash of its tone behind the header. */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={{
+          background: `radial-gradient(70% 140% at 50% -40%, hsl(var(--agent-${agent.avatar.tone}) / 0.13), transparent 70%)`,
+        }}
+      />
       <div className="flex w-full max-w-3xl items-center gap-3.5">
         <button
           ref={faceRef}
@@ -185,7 +195,7 @@ export function AgentThreadHeader({
           className="-m-1 flex min-w-0 flex-1 items-center gap-3.5 rounded-field p-1 text-left outline-none transition-colors duration-fast ease-out-soft focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={`${agent.name}, open profile`}
         >
-          <AgentPresence avatar={agent.avatar} state={state} size={40} haloScale={1.7} />
+          <AgentPresence avatar={agent.avatar} state={state} size={40} haloScale={1.7} gaze />
           <span className="min-w-0">
             <span className="block truncate text-body font-medium leading-tight text-foreground">{agent.name}</span>
             <span className="mt-0.5 block truncate text-ui text-muted-foreground" aria-live="polite">
@@ -240,6 +250,7 @@ export function AgentThreadHeader({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setStudio(true)}>Customize</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void handlePauseResume()}>
                 {agent.status === "paused" ? "Resume" : "Pause"}
               </DropdownMenuItem>
@@ -262,6 +273,8 @@ export function AgentThreadHeader({
           </DropdownMenu>
         </div>
       </div>
+
+      <AgentFaceStudio agent={agent} open={studio} onOpenChange={setStudio} />
 
       <Dialog open={confirmRetire} onOpenChange={setConfirmRetire}>
         <DialogContent>
@@ -314,7 +327,9 @@ export function AgentGreeting({
 
   return (
     <div className="flex w-full max-w-xl flex-col items-center text-center" data-face-trigger>
-      <AgentPresence avatar={agent.avatar} state={paused ? "sleeping" : "idle"} size={88} haloScale={2.2} name={agent.name} />
+      <span className="motion-safe:animate-agent-arrive">
+        <AgentPresence avatar={agent.avatar} state={paused ? "sleeping" : "idle"} size={88} haloScale={2.2} name={agent.name} gaze />
+      </span>
       <h1 className="mt-8 font-serif text-display italic leading-[1.1] text-foreground">
         {fresh ? "Hi. What should I take care of?" : `Hi, I’m ${agent.name}.`}
       </h1>

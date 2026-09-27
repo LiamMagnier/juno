@@ -593,6 +593,18 @@ const config: Config = {
         // 6px (SOFT_UI.md §2.4), down from 8: the workhorse entrance should be
         // felt as settling, not as arriving from somewhere. `src/lib/motion.ts`
         // mirrors the offset (SHIFT.rise) — change both.
+        // Agents (docs/design/agents-rework/DIRECTION.md): a face changing its
+        // look in the studio, and a new agent arriving. Spring overshoot, once.
+        "studio-swap": {
+          "0%": { opacity: "0.55", transform: "scale(0.9)" },
+          "60%": { opacity: "1", transform: "scale(1.04)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
+        "agent-arrive": {
+          "0%": { opacity: "0", transform: "scale(0.6) translateY(12px)" },
+          "55%": { opacity: "1", transform: "scale(1.06) translateY(0)" },
+          "100%": { opacity: "1", transform: "scale(1) translateY(0)" },
+        },
         "rise-in": {
           from: {
             opacity: "0",
@@ -832,6 +844,8 @@ const config: Config = {
         // 6px of travel is a --dur-base move on the default decelerate; the
         // old slow/out-strong pairing was sized for the 8px it no longer has.
         "rise-in": "rise-in var(--dur-base) var(--ease-out-soft)",
+        "studio-swap": "studio-swap var(--dur-emphasis) var(--ease-spring) both",
+        "agent-arrive": "agent-arrive 640ms var(--ease-spring) both",
         // Drawers (sheet.tsx). Enter on the drawer curve at --dur-base — a
         // 280px panel wants ~240ms — and leave faster on the accelerate, as
         // every exit here does.

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Hand, Monitor, X } from "@/components/ui/icons";
 import { AgentPresence } from "@/components/agents/agent-presence";
+import { AgentFaceStudio } from "@/components/agents/agent-face-studio";
 import { formatLocalWhen, localStateSentence } from "@/components/agents/agent-bits";
 import { useAgentDetail } from "@/components/agents/use-agents";
 import { useCostConfirmation } from "@/components/agents/confirm-cost-dialog";
@@ -119,6 +120,7 @@ export function AgentProfile({
 }) {
   const { agent } = detail;
   const [confirm, setConfirm] = React.useState<null | "retire" | "computer-off">(null);
+  const [studio, setStudio] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
   const activeGoals = detail.goals.filter((goal) => goal.status === "active");
   const needsYou = agent.state === "waiting" || agent.needsYou > 0;
@@ -152,8 +154,25 @@ export function AgentProfile({
   return (
     <div className="px-6 pb-10 pt-12">
       <header className="flex flex-col items-center text-center">
-        <AgentPresence avatar={agent.avatar} state={agent.state} size={96} haloScale={2.1} name={agent.name} />
-        <h2 className="mt-7 font-serif text-title italic leading-[1.15] text-foreground">{agent.name}</h2>
+        <button
+          type="button"
+          onClick={() => setStudio(true)}
+          className="group flex flex-col items-center rounded-panel outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`Customize ${agent.name}`}
+        >
+          <AgentPresence
+            avatar={agent.avatar}
+            state={agent.state}
+            size={96}
+            haloScale={2.1}
+            gaze
+            className="transition-transform duration-base ease-spring group-hover:scale-[1.04] group-active:scale-[0.98] motion-reduce:transform-none"
+          />
+          <span className="mt-3 text-caption text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 coarse:opacity-100">
+            Customize
+          </span>
+        </button>
+        <h2 className="mt-3 font-serif text-title italic leading-[1.15] text-foreground">{agent.name}</h2>
         {agent.role.trim() ? <p className="mt-1 text-body text-muted-foreground">{agent.role.trim()}</p> : null}
         <p className="mt-4 max-w-xs text-ui text-muted-foreground">Change anything by telling {agent.name}.</p>
         <Button type="button" size="sm" className="mt-4 rounded-full px-5" onClick={message}>
@@ -338,6 +357,8 @@ export function AgentProfile({
           Retire
         </Button>
       </footer>
+
+      <AgentFaceStudio agent={agent} open={studio} onOpenChange={setStudio} onSaved={() => onChanged()} />
 
       <Dialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)}>
         <DialogContent>

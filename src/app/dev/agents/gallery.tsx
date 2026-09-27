@@ -6,6 +6,7 @@ import { AgentsHome } from "@/components/agents/agents-home";
 import { AgentGreeting, AgentThreadHeader } from "@/components/agents/agent-thread-header";
 import { AgentPanel } from "@/components/agents/agent-panel";
 import { AgentComputerOverlay } from "@/components/agents/agent-computer";
+import { AgentFaceStudio } from "@/components/agents/agent-face-studio";
 import { AgentChangeCard } from "@/components/chat/agent-change-card";
 import { ApprovalCard } from "@/components/chat/approval-card";
 import { ArrowUp } from "@/components/ui/icons";
@@ -279,6 +280,7 @@ export function AgentsGallery() {
         </div>
       </div>
     );
+  if (view === "studio") return <AgentFaceStudio agent={MIRA} open onOpenChange={() => {}} />;
   if (view === "computer")
     return <AgentComputerOverlay agent={MIRA} open initialMode="watch" onClose={() => {}} />;
   return null;
