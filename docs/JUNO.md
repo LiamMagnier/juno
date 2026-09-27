@@ -2044,35 +2044,54 @@ code. It is **not a third product** and does not reopen `TWO_PRODUCTS.md`: a
 conversation still decides when an ask becomes work, and an agent is *who* it is
 delegated to.
 
-**An identity layer, no second runtime.** Five tables (`Agent`, `AgentGoal`,
-`AgentIdea`, `AgentNote`, `AgentEvent`) and two nullable pointers:
+**An identity layer + isolated cloud computers, no second runtime.** Six tables
+(`Agent`, `AgentComputer`, `AgentGoal`, `AgentIdea`, `AgentNote`, `AgentEvent`)
+and two nullable pointers:
 
 | Piece | Is | Where |
 | --- | --- | --- |
 | Its thread | an ordinary `kind: "chat"` conversation with `Conversation.agentId` (and `Agent.conversationId`, unique) | `ensureAgentThread` — race-safe create-then-claim |
-| Its tasks | ordinary `WorkSession`s with `WorkSession.agentId`, in its thread | `start_task` from the thread, `startAgentTask` from the page |
+| Its tasks | ordinary `WorkSession`s with `WorkSession.agentId`, in its thread | `start_task` from the thread, `startAgentTask` from the panel |
 | Its routines | ordinary `WorkSchedule`s whose session belongs to it, firing into its thread | `createAgentRoutine` (cloud, five clocks; everything else in Automations) |
+| Its computer | optional per-agent Docker desktop (`AgentComputer`, `juno-computer:1`: Xvfb + XFCE + Chromium + `x11vnc` + `xdotool` + `scrot`, volume `juno-comp-<agentId>`, network `juno_computers` with `--icc=false`) | `src/lib/computer/`, `deploy/agent-computers/`, `scripts/work-runner.ts` |
 | Its autonomy | a `WorkPermissionPolicy` every task it starts runs under, narrowed by project and host as usual | `Agent.approvalMode` |
 | Its apps | provider ids intersected with the account's linked `Connection`s at every write and dispatch | `Agent.connectorIds` |
-| Its memory | `AgentNote`, encrypted at rest with the field keyring, never copied into the log | `readNote`, `rotate-message-keys.ts` |
-| Its state | derived on read from the agent and its newest task — never stored | `deriveAgentState` (`src/lib/agents/domain.ts`) |
+| Its memory | `AgentNote`, AES-256-GCM encrypted at rest (`enc:v1:`) with the field keyring, never copied into the log | `readNote`, `rotate-message-keys.ts` |
+| Its notifications | `Agent.notify` (`needs_you | results | all`) + `Agent.pinned`; email fallback when `needs_you` and no push channel is registered | `src/lib/work/notify/dispatch.ts` |
+| Its state | derived on read from the agent, its newest task, and its computer (`taking_over` → `waiting`) — never stored | `deriveAgentState` (`src/lib/agents/domain.ts`) |
 
 `src/lib/agents/`: `avatar.ts` (the face vocabulary and the FNV-1a seeded
 default the Swift face reproduces bit for bit), `domain.ts` (states, input
 schemas, the state sentence, reflection due-ness), `templates.ts` (the seven
-starting points), `prompt.ts` (the thread's system-prompt block), `reflection.ts`
-(pure prompt and parser), `reflect.ts`, `store.ts` (server), `types.ts` (wire
-shapes). All five models are in `OWNER_COLUMN` (`src/lib/db.ts`).
+starting points), `prompt.ts` (the thread's system-prompt block), `chat-tools.ts`
+(the five chat self-configuration tools: `update_agent`, `manage_agent_goal`,
+`manage_agent_routine`, `manage_agent_note`, `manage_agent_computer`),
+`reflection.ts` (pure prompt and parser), `reflect.ts`, `store.ts` (server),
+`types.ts` (wire shapes). `src/lib/computer/`: `types.ts`, `tokens.ts` (HMAC-SHA256
+single-use 60s `view`/`takeover` tokens), `provider.ts`, `docker-provider.ts`,
+`fake-provider.ts`, `store.ts`, `ws-relay.ts` (origin-verified WebSocket relay
+at `/ws/agents/[id]/computer`), `reaper.ts` (idle rest/sleep reaper and orphan
+cleanup), `setup-host.ts` (`DOCKER-USER` iptables egress blocks to RFC1918,
+link-local, metadata and host). All six models are in `OWNER_COLUMN`
+(`src/lib/db.ts`).
 
 **A turn in its thread.** `/api/chat` reads `conversation.agentId` and, for a
 live agent, appends `buildAgentPromptBlock` after everything else in the system
 prompt (it is the most specific statement in the turn): who it is, its brief and
-style, its active goals with their last check-in, its notes, its teammates, and
-how it works. It never widens the turn — the block restates the approval floor
-and only describes `start_task` when the turn carries it. A task the model
-starts there is stamped with `agentId` before anything runs and uses the
-agent's `approvalMode` instead of the model-started default. A retired agent's
-thread answers as Juno.
+style, its active goals with their last check-in, its notes, its teammates, its
+computer status, and how it works. It also exposes the five chat
+self-configuration tools (`src/lib/agents/chat-tools.ts`): benign edits on
+trusted turns apply immediately and emit an inline **Undo** card (`agentChange`);
+privilege escalations (widening autonomy, enabling the computer, adding
+connectors, or any tool call after an untrusted tool result) emit a pending
+`ApprovalCard`. A task the model starts there is stamped with `agentId` before
+anything runs and uses the agent's `approvalMode` instead of the model-started
+default; when `AgentComputer` is enabled, `scripts/work-runner.ts` registers the
+nine `computer_*` tools (`computer_screenshot`, `computer_click`,
+`computer_move`, `computer_type`, `computer_key`, `computer_scroll`,
+`computer_open_url`, `computer_bash`, `computer_wait`) and pauses execution
+cleanly while `status === "taking_over"`. A retired agent's thread answers as
+Juno.
 
 **The face** (`src/components/agents/agent-face.tsx`, `JunoAgentFace.swift`) is
 the status bar: `idle · thinking · working · waiting · blocked · done ·
@@ -2092,26 +2111,31 @@ idea is a card with Start, and Start goes through Work dispatch with the cost
 preflight asked on the page (`409 confirm_expensive`).
 
 **Pausing** switches off the routines the agent owns and records which, and
-resuming switches back on only those. **Retiring** stops its routines and leaves
-its thread and tasks as ordinary chats and tasks.
+resuming switches back on only those. **Retiring** stops its routines, destroys
+its `AgentComputer` container and volume, and leaves its thread and tasks as
+ordinary chats and tasks.
 
-**Web.** A sidebar destination (`/agents`, the `JunoAgents` glyph) and an
-**Agents** fold of live 20px faces with the one trailing dot while an agent needs
-you; `/agents` (roster, waiting-first; the empty roster is the starting points),
-`/agents/new` (four questions on one page, face builder with a live state
-preview), `/agents/[id]` (face, state sentence, Message, Pause, and five tabs:
-**Now** embeds `WorkRunPanel` and `WorkActivity` over the thread's run, so its
-questions and approval cards are the Work ones; **Goals**; **Routines**;
-**Activity**; **Profile** with *What it knows*). The thread (`/chat/[id]`) gains
-one header row and greets in the agent's voice.
+**Web & Native.** A sidebar destination (`/agents`, the `JunoAgents` glyph) and
+an **Agents** fold of live 20px faces (`pinned` first, with a raised hand glyph
+while an agent needs you) that open `/chat/<conversationId>`; `/agents` (compact
+roster list); `/agents/new` (chat-first `AgentStart` by default, `?form=1` for
+the full four-step form); `/agents/[id]` (server redirect to
+`/chat/<conversationId>?agent=now|computer|setup`); and the split `AgentPanel`
+(**Now · Computer · Setup**) beside `/chat/[id]`, including `ComputerView`
+(noVNC Watch/Takeover/Hand-back) on web and `NativeAgentComputerView`
+(`/computer-view?c=…` one-time handoff sheet) on Mac and iPhone.
 
 | Route | Does |
 | --- | --- |
 | `GET/POST /api/agents` | roster · hire (20/h) |
-| `GET/PATCH/DELETE /api/agents/[id]` | page payload · edit, pause/resume · retire |
+| `GET/PATCH/DELETE /api/agents/[id]` | panel payload (with `computer` + `computerConfigured`) · edit, pause/resume, pin, notify · retire |
 | `POST /api/agents/[id]/thread` | its thread, created on first use |
+| `GET/POST /api/agents/[id]/computer` | computer status · `ensure` / `wake` / `sleep` / `takeover` / `handback` / `reset` / `destroy` |
+| `POST /api/agents/[id]/computer/view` | mint single-use 60s WebSocket/handoff token (`wsPath`, `viewUrl`, `mode`, `expiresAt`) |
+| `POST /api/agents/[id]/computer/heartbeat` | keepalive while watching or taking over |
+| `GET /api/agents/[id]/computer/poster` | latest JPEG poster (`Cache-Control: private, no-store`, `204` if none) |
 | `GET/POST …/goals`, `PATCH/DELETE …/goals/[goalId]` | goals |
-| `GET/POST …/notes`, `PATCH/DELETE …/notes/[noteId]` | what it knows |
+| `GET/POST …/notes`, `PATCH/DELETE …/notes/[noteId]` | what it knows (encrypted at rest) |
 | `PATCH …/ideas/[ideaId]` | start (via Work dispatch) · dismiss |
 | `GET/POST …/routines` | its automations (30/h) |
 | `GET …/activity` | its log merged with one line per task |

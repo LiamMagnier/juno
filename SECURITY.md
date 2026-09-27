@@ -124,7 +124,8 @@ columns, and nothing else — read the code, not this list, if they disagree
 | `Account.access_token`, `Account.refresh_token`, `Account.id_token` | Auth.js OAuth tokens | `crypto.ts` (`encryptAccountTokens`) |
 | `Connection` token columns (`accessToken`, `refreshToken`, `clientSecret`, credential blobs) | Connector / MCP OAuth credentials and stored client secrets | `crypto.ts` (`encryptSecret`) |
 | Composio session references, MCP OAuth flow cookies | Connector session state | `crypto.ts` (`encryptSecret`) |
-| `AgentComputer.containerRef`, `AgentComputer.secrets` | Agent computer Docker container handle and per-container VNC password / CDP authentication token | `crypto.ts` (`encryptSecret`) |
+| `AgentNote.content` | What an agent remembers (`What it knows` notes) | `field-crypto.ts` (`encryptField`, keyring-versioned `enc:v1:`/`enc:v2:`) |
+| `AgentComputer.vncPasswordEnc` (`AgentComputer.containerRef`, `AgentComputer.secrets`) | Agent computer per-container VNC password and container handle / CDP authentication token | `crypto.ts` (`encryptSecret`) |
 
 Conversation search is title-only as a direct consequence.
 

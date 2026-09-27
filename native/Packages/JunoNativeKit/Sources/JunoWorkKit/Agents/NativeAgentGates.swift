@@ -92,10 +92,9 @@ public struct NativeAgentGate: Identifiable, Equatable, Sendable {
 
 // MARK: - Its computer
 
-/// One call the run made, told in words (AGENTS.md §5.2, the web's
-/// `WorkActivity` under "Its computer"). Never a picture: the cloud browser
-/// renders no pixels for a person, and a placeholder shaped like a screenshot
-/// would be a picture of something that did not happen.
+/// One call the run made, told in words (AGENTS.md §5.2) as the fallback
+/// activity feed under "Its computer" when the agent does not have a dedicated
+/// cloud computer enabled.
 public struct NativeAgentComputerLine: Identifiable, Equatable, Sendable {
     public enum State: Equatable, Sendable {
         case running
