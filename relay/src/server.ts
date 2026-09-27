@@ -4,6 +4,7 @@ import { verifyRelayToken, type RelayGrant } from "./auth.js";
 import { RelaySession } from "./session.js";
 import { PROVIDERS } from "./providers/registry.js";
 import { isAllowedRelayOrigin, parseAllowedOrigins } from "./origin.js";
+import { createComputerViewUpgradeHandler } from "./computer-view.js";
 
 /**
  * Juno voice relay. Standalone service (NOT deployable on Vercel serverless —
@@ -38,8 +39,12 @@ const server = createServer((req, res) => {
 });
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 });
+const computerView = createComputerViewUpgradeHandler({ allowedOrigins });
 
 server.on("upgrade", (req, socket, head) => {
+  if (computerView.handleUpgrade(req, socket, head)) {
+    return;
+  }
   const url = new URL(req.url ?? "/", "http://relay");
   const origin = req.headers.origin;
   if (!isAllowedRelayOrigin(origin, allowedOrigins)) {

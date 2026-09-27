@@ -118,7 +118,8 @@ async function deriveForAgents(userId: string, agents: readonly Agent[], now: Da
   const result = new Map<string, AgentDerived>();
   if (ids.length === 0) return result;
 
-  const [newest, attention, schedules, ideas] = await Promise.all([
+  const { isAgentComputerConfigured } = await import("@/lib/computer/provider");
+  const [newest, attention, schedules, ideas, computerConfigured, computers] = await Promise.all([
     Promise.all(
       ids.map((agentId) =>
         prisma.workSession.findFirst({
@@ -149,10 +150,18 @@ async function deriveForAgents(userId: string, agents: readonly Agent[], now: Da
       where: { userId, agentId: { in: ids }, status: "new" },
       _count: { _all: true },
     }),
+    isAgentComputerConfigured(),
+    prisma.agentComputer
+      .findMany({
+        where: { userId, agentId: { in: ids } },
+        select: { agentId: true, status: true },
+      })
+      .catch(() => [] as Array<{ agentId: string; status: string }>),
   ]);
 
   const attentionBy = new Map(attention.map((row) => [row.agentId, row._count._all]));
   const ideasBy = new Map(ideas.map((row) => [row.agentId, row._count._all]));
+  const computerBy = new Map(computers.map((row) => [row.agentId, row.status]));
   const nextBy = new Map<string, { scheduleId: string; name: string; nextRunAt: Date }>();
   for (const schedule of schedules) {
     const agentId = schedule.session.agentId;
@@ -173,6 +182,7 @@ async function deriveForAgents(userId: string, agents: readonly Agent[], now: Da
       : null;
     const state = deriveAgentState({ status: agent.status, task: glance, now });
     const next = nextBy.get(agent.id) ?? null;
+    const compStatus = computerBy.get(agent.id);
     result.set(agent.id, {
       state,
       stateSentence: agentStateSentence({ state, task: glance, nextRoutine: next, now }),
@@ -182,6 +192,9 @@ async function deriveForAgents(userId: string, agents: readonly Agent[], now: Da
         ? { scheduleId: next.scheduleId, name: next.name, nextRunAt: next.nextRunAt.toISOString() }
         : null,
       newIdeas: ideasBy.get(agent.id) ?? 0,
+      computer: computerConfigured
+        ? { enabled: compStatus !== undefined, status: compStatus ?? "asleep" }
+        : null,
     });
   });
   return result;
@@ -205,6 +218,7 @@ const NO_DERIVED: AgentDerived = {
   needsYou: 0,
   nextRoutine: null,
   newIdeas: 0,
+  computer: null,
 };
 
 export async function serializeAgents(userId: string, agents: readonly Agent[], now = new Date()): Promise<ClientAgent[]> {
@@ -217,7 +231,19 @@ export async function listAgentsForUser(userId: string, now = new Date()): Promi
     where: { userId, deletedAt: null },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
   });
-  return serializeAgents(userId, agents, now);
+  const sorted = [...agents].sort((a, b) => {
+    const aPinned = (a as Agent & { pinnedAt?: Date | null }).pinnedAt;
+    const bPinned = (b as Agent & { pinnedAt?: Date | null }).pinnedAt;
+    if (aPinned && !bPinned) return -1;
+    if (!aPinned && bPinned) return 1;
+    if (aPinned && bPinned) {
+      const diff = bPinned.getTime() - aPinned.getTime();
+      if (diff !== 0) return diff;
+    }
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    return a.createdAt.getTime() - b.createdAt.getTime();
+  });
+  return serializeAgents(userId, sorted, now);
 }
 
 export async function findAgent(userId: string, agentId: string): Promise<Agent | null> {
@@ -573,6 +599,7 @@ export async function createAgentForUser(user: AgentActor, input: CreateAgentInp
       connectorIds,
       projectId: projectId ?? null,
       proactive: input.proactive,
+      notify: input.notify ?? "results",
       template: input.template ?? null,
       sortOrder: count,
     },
@@ -642,7 +669,7 @@ export async function updateAgentForUser(
   user: AgentActor,
   agentId: string,
   patch: PatchAgentInput
-): Promise<AgentResult<ClientAgent>> {
+): Promise<AgentResult<ClientAgent> & { eventId?: string }> {
   const agent = await findAgent(user.id, agentId);
   if (!agent) return refusal(404, "not_found", "That agent no longer exists.");
 
@@ -653,6 +680,73 @@ export async function updateAgentForUser(
   const modelChanged = patch.model !== undefined && patch.model !== agent.model;
   if (modelChanged && !(await modelInPlan(user.id, patch.model))) return refusal(403, "plan_locked", MODEL_NOT_IN_PLAN);
   const connectorIds = patch.connectorIds ? await linkedConnectorIds(user.id, patch.connectorIds) : undefined;
+
+  const rawAgent = agent as Agent & { notify?: string | null; pinnedAt?: Date | null };
+  const before: Record<string, unknown> = {};
+  const after: Record<string, unknown> = {};
+  if (patch.name !== undefined && patch.name !== agent.name) {
+    before.name = agent.name;
+    after.name = patch.name;
+  }
+  if (patch.role !== undefined && patch.role !== agent.role) {
+    before.role = agent.role;
+    after.role = patch.role;
+  }
+  if (patch.avatar !== undefined) {
+    before.avatar = normalizeAgentAvatar(agent.avatar, agent.id);
+    after.avatar = patch.avatar;
+  }
+  if (patch.style !== undefined && patch.style !== agent.style) {
+    before.style = agent.style;
+    after.style = patch.style;
+  }
+  if (patch.instructions !== undefined && patch.instructions !== agent.instructions) {
+    before.instructions = agent.instructions;
+    after.instructions = patch.instructions;
+  }
+  if (patch.model !== undefined && patch.model !== agent.model) {
+    before.model = agent.model;
+    after.model = patch.model;
+  }
+  if (patch.reasoningEffort !== undefined && patch.reasoningEffort !== agent.reasoningEffort) {
+    before.reasoningEffort = agent.reasoningEffort;
+    after.reasoningEffort = patch.reasoningEffort;
+  }
+  if (patch.approvalMode !== undefined && patch.approvalMode !== agent.approvalMode) {
+    before.approvalMode = agent.approvalMode;
+    after.approvalMode = patch.approvalMode;
+  }
+  if (connectorIds !== undefined) {
+    before.connectorIds = agent.connectorIds;
+    after.connectorIds = connectorIds;
+  }
+  if (projectId !== undefined && projectId !== agent.projectId) {
+    before.projectId = agent.projectId;
+    after.projectId = projectId;
+  }
+  if (patch.status !== undefined && patch.status !== agent.status) {
+    before.status = agent.status;
+    after.status = patch.status;
+  }
+  if (patch.proactive !== undefined && patch.proactive !== agent.proactive) {
+    before.proactive = agent.proactive;
+    after.proactive = patch.proactive;
+  }
+  if (patch.notify !== undefined && patch.notify !== rawAgent.notify) {
+    before.notify = rawAgent.notify ?? "results";
+    after.notify = patch.notify;
+  }
+  if (patch.pinned !== undefined && Boolean(rawAgent.pinnedAt) !== patch.pinned) {
+    before.pinnedAt = rawAgent.pinnedAt ? rawAgent.pinnedAt.toISOString() : null;
+    after.pinnedAt = patch.pinned ? new Date().toISOString() : null;
+  }
+
+  const nextPinnedAt =
+    patch.pinned === undefined
+      ? undefined
+      : patch.pinned
+        ? rawAgent.pinnedAt ?? new Date()
+        : null;
 
   const updated = await prisma.agent.update({
     where: { id: agent.id, userId: user.id },
@@ -669,6 +763,8 @@ export async function updateAgentForUser(
       ...(projectId !== undefined ? { projectId } : {}),
       ...(patch.status !== undefined ? { status: patch.status } : {}),
       ...(patch.proactive !== undefined ? { proactive: patch.proactive } : {}),
+      ...(patch.notify !== undefined ? { notify: patch.notify } : {}),
+      ...(nextPinnedAt !== undefined ? { pinnedAt: nextPinnedAt } : {}),
       ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}),
     },
   });
@@ -695,35 +791,252 @@ export async function updateAgentForUser(
     });
   }
 
+  let eventId: string | undefined;
   if (patch.status && patch.status !== agent.status) {
     if (patch.status === "paused") {
       const routineIds = await pauseRoutines(user.id, agent.id);
-      await recordAgentEvent({
-        userId: user.id,
-        agentId: agent.id,
-        kind: "paused",
-        title: `${updated.name} was paused`,
-        detail: { routineIds },
-      });
+      const evt = await prisma.agentEvent
+        .create({
+          data: {
+            userId: user.id,
+            agentId: agent.id,
+            kind: "paused",
+            title: `${updated.name} was paused`,
+            detail: { routineIds, before, after },
+          },
+        })
+        .catch(() => null);
+      eventId = evt?.id;
     } else {
       await resumeRoutines(user.id, agent.id);
-      await recordAgentEvent({ userId: user.id, agentId: agent.id, kind: "resumed", title: `${updated.name} is back` });
+      const evt = await prisma.agentEvent
+        .create({
+          data: {
+            userId: user.id,
+            agentId: agent.id,
+            kind: "resumed",
+            title: `${updated.name} is back`,
+            detail: { before, after },
+          },
+        })
+        .catch(() => null);
+      eventId = evt?.id;
     }
   } else {
     const changed = Object.keys(patch).filter((key) => key !== "sortOrder" && key !== "status");
     if (changed.length > 0) {
-      await recordAgentEvent({
-        userId: user.id,
-        agentId: agent.id,
-        kind: "updated",
-        title: "Profile updated",
-        detail: { fields: changed },
-      });
+      const evt = await prisma.agentEvent
+        .create({
+          data: {
+            userId: user.id,
+            agentId: agent.id,
+            kind: "updated",
+            title: "Profile updated",
+            detail: { fields: changed, before, after },
+          },
+        })
+        .catch(() => null);
+      eventId = evt?.id;
     }
   }
 
   const [serialized] = await serializeAgents(user.id, [updated]);
+  return {
+    status: 200,
+    body: { agent: serialized, ...(eventId ? { eventId } : {}) },
+    value: serialized,
+    eventId,
+  };
+}
+
+export async function undoAgentEventForUser(
+  user: AgentActor,
+  agentId: string,
+  eventId: string
+): Promise<AgentResult<ClientAgent>> {
+  const agent = await findAgent(user.id, agentId);
+  if (!agent) return refusal(404, "not_found", "That agent no longer exists.");
+
+  const event = await prisma.agentEvent.findFirst({
+    where: { id: eventId, userId: user.id, agentId: agent.id },
+  });
+  if (!event) {
+    return refusal(404, "event_not_found", "That change could not be found.");
+  }
+
+  const detail =
+    event.detail && typeof event.detail === "object" && !Array.isArray(event.detail)
+      ? (event.detail as Record<string, unknown>)
+      : {};
+
+  if (detail.undoneAt) {
+    return refusal(409, "already_undone", "That change was already undone.");
+  }
+
+  const before =
+    detail.before && typeof detail.before === "object" && !Array.isArray(detail.before)
+      ? (detail.before as Record<string, unknown>)
+      : null;
+
+  if (!before || Object.keys(before).length === 0) {
+    return refusal(400, "not_undoable", "That event has no previous state to restore.");
+  }
+
+  // Handle sub-resource undo (goals, notes, routines) if recorded by agent-config-tools
+  if (typeof before.__entity === "string") {
+    const entity = before.__entity;
+    if (entity === "goal_created" && typeof before.goalId === "string") {
+      await prisma.agentGoal.deleteMany({ where: { id: before.goalId, userId: user.id, agentId: agent.id } });
+    } else if (entity === "goal_updated" && typeof before.goalId === "string" && before.fields && typeof before.fields === "object") {
+      await prisma.agentGoal.updateMany({
+        where: { id: before.goalId, userId: user.id, agentId: agent.id },
+        data: before.fields as Record<string, unknown>,
+      });
+    } else if (entity === "note_created" && typeof before.noteId === "string") {
+      await prisma.agentNote.updateMany({
+        where: { id: before.noteId, userId: user.id, agentId: agent.id },
+        data: { deletedAt: new Date() },
+      });
+    } else if (entity === "note_deleted" && typeof before.noteId === "string") {
+      await prisma.agentNote.updateMany({
+        where: { id: before.noteId, userId: user.id, agentId: agent.id },
+        data: { deletedAt: null },
+      });
+    } else if (entity === "routine_created" && typeof before.scheduleId === "string") {
+      await prisma.workSchedule.deleteMany({ where: { id: before.scheduleId, userId: user.id } });
+    } else if (entity === "routine_updated" && typeof before.scheduleId === "string" && typeof before.enabled === "boolean") {
+      await prisma.workSchedule.updateMany({
+        where: { id: before.scheduleId, userId: user.id },
+        data: { enabled: before.enabled },
+      });
+    }
+  } else {
+    const agentUpdate: Record<string, unknown> = {};
+    for (const key of [
+      "name",
+      "role",
+      "avatar",
+      "style",
+      "instructions",
+      "model",
+      "reasoningEffort",
+      "approvalMode",
+      "connectorIds",
+      "projectId",
+      "status",
+      "proactive",
+      "notify",
+    ] as const) {
+      if (key in before) {
+        agentUpdate[key] = before[key];
+      }
+    }
+    if ("pinnedAt" in before) {
+      agentUpdate.pinnedAt = typeof before.pinnedAt === "string" ? new Date(before.pinnedAt) : null;
+    }
+    if (Object.keys(agentUpdate).length > 0) {
+      await prisma.agent.update({
+        where: { id: agent.id, userId: user.id },
+        data: agentUpdate,
+      });
+    }
+  }
+
+  const undoneAt = new Date().toISOString();
+  await prisma.agentEvent.update({
+    where: { id: event.id, userId: user.id },
+    data: {
+      detail: {
+        ...detail,
+        undoneAt,
+      },
+    },
+  });
+
+  await recordAgentEvent({
+    userId: user.id,
+    agentId: agent.id,
+    kind: "undone",
+    title: `Reverted: ${event.title}`,
+    detail: { targetEventId: event.id },
+  });
+
+  const fresh = await findAgent(user.id, agent.id);
+  const [serialized] = await serializeAgents(user.id, [fresh ?? agent]);
   return { status: 200, body: { agent: serialized }, value: serialized };
+}
+
+export async function duplicateAgentForUser(
+  user: AgentActor,
+  agentId: string
+): Promise<AgentResult<ClientAgent>> {
+  const source = await findAgent(user.id, agentId);
+  if (!source) return refusal(404, "not_found", "That agent no longer exists.");
+
+  const count = await prisma.agent.count({ where: { userId: user.id, deletedAt: null } });
+  if (count >= MAX_AGENTS_PER_ACCOUNT) {
+    return refusal(
+      409,
+      "too_many_agents",
+      `You have ${MAX_AGENTS_PER_ACCOUNT} agents, which is the most one account keeps. Retire one to hire another.`
+    );
+  }
+
+  const rawSource = source as Agent & { notify?: string | null };
+  const dupName = `${source.name.slice(0, 38).trim()} 2`;
+  const activeGoals = await prisma.agentGoal.findMany({
+    where: { userId: user.id, agentId: source.id, status: "active" },
+    orderBy: { createdAt: "asc" },
+    take: MAX_AGENT_GOALS,
+  });
+
+  const created = await prisma.agent.create({
+    data: {
+      userId: user.id,
+      name: dupName,
+      role: source.role,
+      avatar: normalizeAgentAvatar(source.avatar, source.id),
+      style: source.style,
+      instructions: source.instructions,
+      model: source.model,
+      reasoningEffort: source.reasoningEffort,
+      approvalMode: source.approvalMode,
+      connectorIds: source.connectorIds,
+      projectId: source.projectId,
+      proactive: source.proactive,
+      notify: rawSource.notify ?? "results",
+      template: source.template,
+      sortOrder: count,
+    },
+  });
+
+  await ensureAgentThread(user.id, created);
+
+  for (const goal of activeGoals) {
+    await prisma.agentGoal.create({
+      data: {
+        userId: user.id,
+        agentId: created.id,
+        title: goal.title,
+        detail: goal.detail,
+        status: "active",
+        cadence: goal.cadence,
+        dueAt: goal.dueAt,
+      },
+    });
+  }
+
+  await recordAgentEvent({
+    userId: user.id,
+    agentId: created.id,
+    kind: "duplicated",
+    title: `Duplicated from ${source.name}`,
+    detail: { sourceAgentId: source.id },
+  });
+
+  const fresh = await findAgent(user.id, created.id);
+  const [serialized] = await serializeAgents(user.id, [fresh ?? created]);
+  return { status: 201, body: { agent: serialized }, value: serialized };
 }
 
 /**
@@ -735,6 +1048,8 @@ export async function retireAgentForUser(user: AgentActor, agentId: string): Pro
   const agent = await findAgent(user.id, agentId);
   if (!agent) return refusal(404, "not_found", "That agent no longer exists.");
   await pauseRoutines(user.id, agent.id);
+  const { disableComputer } = await import("@/lib/computer/store");
+  await disableComputer(user.id, agent.id).catch(() => {});
   await prisma.agent.updateMany({
     where: { id: agent.id, userId: user.id },
     data: { deletedAt: new Date(), status: "paused" },

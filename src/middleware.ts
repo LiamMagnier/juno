@@ -70,7 +70,7 @@ function withRequestContext(req: NextRequest, applyCsp: boolean): NextResponse {
     const nonce = crypto.randomUUID();
     csp = buildCsp({
       nonce,
-      relayUrl: process.env.NEXT_PUBLIC_VOICE_RELAY_URL,
+      relayUrl: process.env.NEXT_PUBLIC_VOICE_RELAY_URL || process.env.VOICE_RELAY_URL,
       sandboxOrigin: sandboxOrigin(),
     });
     // Next reads the nonce off the REQUEST header to stamp its own script tags.
@@ -83,6 +83,11 @@ function withRequestContext(req: NextRequest, applyCsp: boolean): NextResponse {
   const res = NextResponse.next({ request: { headers } });
   res.headers.set(RESPONSE_REQUEST_ID_HEADER, requestId);
   if (csp) res.headers.set("Content-Security-Policy", csp);
+  if (req.nextUrl.pathname === "/computer-view") {
+    res.headers.set("Cache-Control", "no-store");
+    res.headers.set("Referrer-Policy", "no-referrer");
+    res.headers.set("X-Robots-Tag", "noindex");
+  }
   return res;
 }
 

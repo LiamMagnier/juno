@@ -104,6 +104,17 @@ export type AgentIdeaStatus = (typeof AGENT_IDEA_STATUSES)[number];
 export const AGENT_NOTE_SOURCES = ["user", "agent", "reflection"] as const;
 export type AgentNoteSource = (typeof AGENT_NOTE_SOURCES)[number];
 
+export const AGENT_NOTIFY_LEVELS = ["needs_you", "results", "all"] as const;
+export type AgentNotifyLevel = (typeof AGENT_NOTIFY_LEVELS)[number];
+
+export function agentNotifyLevel(value: string | null | undefined): AgentNotifyLevel {
+  if (value === "needs_you" || value === "results" || value === "all") {
+    return value;
+  }
+  if (value === "quiet") return "needs_you";
+  return "results";
+}
+
 /**
  * What the agent's own log records. Task progress is not here: it is read from
  * Work's sessions, which already record it (`AgentEvent` says why).
@@ -128,6 +139,13 @@ export const AGENT_EVENT_KINDS = [
   // that gave the work away and the teammate whose thread it now runs in.
   "handed_off",
   "handoff_received",
+  "computer_enabled",
+  "computer_disabled",
+  "computer_reset",
+  "takeover_started",
+  "takeover_ended",
+  "duplicated",
+  "undone",
 ] as const;
 export type AgentEventKind = (typeof AGENT_EVENT_KINDS)[number];
 
@@ -414,6 +432,7 @@ export const createAgentSchema = z.object({
   connectorIds: connectorListSchema.default([]),
   projectId: z.string().trim().min(1).max(200).nullable().optional(),
   proactive: z.boolean().default(true),
+  notify: z.enum(AGENT_NOTIFY_LEVELS).default("results"),
   template: z.string().trim().min(1).max(40).nullable().optional(),
   firstGoal: z.string().trim().min(1).max(MAX_GOAL_TITLE_CHARS).optional(),
 });
@@ -433,6 +452,8 @@ export const patchAgentSchema = z
     projectId: z.string().trim().min(1).max(200).nullable().optional(),
     status: z.enum(AGENT_STATUSES).optional(),
     proactive: z.boolean().optional(),
+    notify: z.enum(AGENT_NOTIFY_LEVELS).optional(),
+    pinned: z.boolean().optional(),
     sortOrder: z.int().min(0).max(10_000).optional(),
   })
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change" });

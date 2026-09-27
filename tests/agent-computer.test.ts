@@ -713,5 +713,76 @@ describe("agent-computer provider and lifecycle", () => {
     assert.equal(selection.target, "cloud");
     assert.equal(selection.degradation.length, 0);
   });
+
+  it("verifies handoff codes, view sessions, and control password rotation on heartbeat ended", async () => {
+    const store = req("../src/lib/computer/store") as typeof import("../src/lib/computer/store");
+    const liveView = req("../src/lib/computer/live-view") as typeof import("../src/lib/computer/live-view");
+    const domain = req("../src/lib/agents/domain") as typeof import("../src/lib/agents/domain");
+
+    // 1. Handoff code HMAC verification
+    const { code } = liveView.mintHandoffCode({
+      agentId: "agent_1",
+      userId: "user_1",
+      mode: "control",
+      ttlSeconds: 60,
+      authSecret: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    });
+    const verified = liveView.verifyHandoffCode(code, {
+      authSecret: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    });
+    assert.ok(verified);
+    assert.equal(verified.agentId, "agent_1");
+    assert.equal(verified.userId, "user_1");
+    assert.equal(verified.mode, "control");
+
+    assert.equal(
+      liveView.verifyHandoffCode(`${code}bad`, {
+        authSecret: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      }),
+      null
+    );
+
+    // 2. Asleep computer refuses openComputerViewSession with AsleepComputerError
+    await enableComputer("user_1", "agent_view");
+    await assert.rejects(
+      () => store.openComputerViewSession("user_1", "agent_view", "watch"),
+      store.AsleepComputerError
+    );
+
+    // 3. Resting computer unpauses when viewed, and ending control mode rotates VNC passwords
+    await ensureAwake("user_1", "agent_view");
+    await restComputer("user_1", "agent_view");
+
+    const watchSession = await store.openComputerViewSession("user_1", "agent_view", "watch");
+    assert.equal(watchSession.kind, "direct");
+    if (watchSession.kind === "direct") {
+      assert.equal(watchSession.mode, "watch");
+      assert.ok(watchSession.token.includes("."));
+      assert.equal(watchSession.password.length, 8);
+    }
+
+    const controlSession1 = await store.openComputerViewSession("user_1", "agent_view", "control");
+    assert.equal(controlSession1.kind, "direct");
+    const firstControlPassword = controlSession1.kind === "direct" ? controlSession1.password : "";
+
+    // Ending control mode via heartbeat rotates the control password so the old one dies
+    await store.heartbeatComputerViewSession("user_1", "agent_view", {
+      mode: "control",
+      ended: true,
+    });
+
+    const controlSession2 = await store.openComputerViewSession("user_1", "agent_view", "control");
+    assert.equal(controlSession2.kind, "direct");
+    const secondControlPassword = controlSession2.kind === "direct" ? controlSession2.password : "";
+    assert.notEqual(secondControlPassword, firstControlPassword);
+
+    // 4. patchAgentSchema accepts notify and pinned
+    const parsedPatch = domain.patchAgentSchema.safeParse({
+      notify: "needs_you",
+      pinned: true,
+    });
+    assert.equal(parsedPatch.success, true);
+  });
 });
+
 

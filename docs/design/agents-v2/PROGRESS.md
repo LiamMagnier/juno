@@ -57,12 +57,12 @@ here.
 - [x] Gates: full (without next build)
 
 ## Phase 3 — API
-- [ ] Computer routes, undo, duplicate, PATCH notify/pinned, list/detail extra keys
-- [ ] Relay `computer-view.ts` + tests; CSP connect-src covers the relay (no other CSP change)
-- [ ] `/computer-view` page for native handoff
-- [ ] Parity classification
-- [ ] Tests (ownership, off, no secrets in responses/events, rate limits, path traversal)
-- [ ] Gates: quick + native:sync:check
+- [x] Computer routes, undo, duplicate, PATCH notify/pinned, list/detail extra keys
+- [x] Relay `computer-view.ts` + tests; CSP connect-src covers the relay (no other CSP change)
+- [x] `/computer-view` page for native handoff
+- [x] Parity classification
+- [x] Tests (ownership, off, no secrets in responses/events, rate limits, path traversal)
+- [x] Gates: quick + native:sync:check
 
 ## Phase 4 — configuration by chat
 - [ ] Five tools, gate, route wiring, pinned regex updated

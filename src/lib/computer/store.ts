@@ -3,7 +3,13 @@ import { randomBytes } from "node:crypto";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { env } from "@/lib/env";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
-import { stopStream } from "./live-view";
+import {
+  ensureStream,
+  mintHandoffCode,
+  mintViewToken,
+  resolveComputerRelayUrl,
+  stopStream,
+} from "./live-view";
 import { computerProvider, isAgentComputerConfigured } from "./provider";
 import type {
   ComputerHandle,
@@ -570,6 +576,77 @@ export async function getPublicComputerState(
   };
 }
 
+export interface AgentComputerApiPayload {
+  enabled: boolean;
+  status: ComputerStatus;
+  streamOn: boolean;
+  lastActiveAt: string | null;
+  activeSeconds: number;
+  hasPoster: boolean;
+  usingNow: { summary: string } | null;
+  error: string | null;
+  diskMb?: number | null;
+  diskQuotaMb?: number;
+}
+
+export async function loadAgentComputerStatusPayload(
+  userId: string,
+  agentId: string
+): Promise<AgentComputerApiPayload | null> {
+  if (!(await isAgentComputerConfigured())) {
+    return null;
+  }
+  const state = await getPublicComputerState(userId, agentId);
+  const poster = await getPosterBytes(userId, agentId);
+  let usingNow: { summary: string } | null = null;
+
+  if (activePersistence === prismaPersistence) {
+    try {
+      const { prisma } = await import("@/lib/db");
+      const runId =
+        state.leaseRunId ??
+        (
+          await prisma.workRun.findFirst({
+            where: {
+              userId,
+              status: { in: ["queued", "preparing", "running", "waiting_input", "waiting_approval"] },
+              session: { userId, agentId, deletedAt: null },
+            },
+            orderBy: { createdAt: "desc" },
+            select: { id: true },
+          })
+        )?.id;
+
+      if (runId) {
+        const latestTool = await prisma.workEvent.findFirst({
+          where: { userId, runId, kind: "tool_started" },
+          orderBy: { seq: "desc" },
+          select: { payload: true },
+        });
+        const payload = latestTool?.payload as { summary?: unknown } | null;
+        if (payload && typeof payload.summary === "string" && payload.summary.trim()) {
+          usingNow = { summary: payload.summary.trim() };
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return {
+    enabled: state.enabled,
+    status: state.status,
+    streamOn: state.streamOn,
+    lastActiveAt: state.lastActiveAt,
+    activeSeconds: state.activeSeconds,
+    hasPoster: Boolean(poster && poster.byteLength > 0),
+    usingNow,
+    error: state.lastError,
+    diskMb: state.diskMb,
+    diskQuotaMb: state.diskQuotaMb,
+  };
+}
+
 export async function enableComputer(
   userId: string,
   agentId: string
@@ -1067,4 +1144,271 @@ export async function resolveRunComputerSession(input: {
     };
   }
 }
+
+export class AsleepComputerError extends Error {
+  constructor() {
+    super("asleep");
+    this.name = "AsleepComputerError";
+  }
+}
+
+export async function openComputerViewSession(
+  userId: string,
+  agentId: string,
+  mode: "watch" | "control",
+  opts?: {
+    handoff?: boolean;
+    rotatePasswords?: boolean;
+    fallbackOrigin?: string;
+  }
+): Promise<
+  | {
+      kind: "direct";
+      mode: "watch" | "control";
+      relayUrl: string;
+      token: string;
+      password: string;
+    }
+  | {
+      kind: "handoff";
+      url: string;
+      code: string;
+    }
+> {
+  const existing = await activePersistence.findByAgent(userId, agentId);
+  if (!existing || (existing.status !== "awake" && existing.status !== "resting")) {
+    throw new AsleepComputerError();
+  }
+
+  if (opts?.handoff) {
+    const { code } = mintHandoffCode({
+      agentId,
+      userId,
+      mode,
+    });
+    const base =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.AUTH_URL ||
+      opts.fallbackOrigin ||
+      "http://localhost:3000";
+    const url = new URL("/computer-view", base.trim());
+    url.searchParams.set("c", code);
+    return {
+      kind: "handoff",
+      url: url.toString(),
+      code,
+    };
+  }
+
+  const awake = await ensureAwake(userId, agentId, { touchView: true });
+  const existingControl = awake.secrets.vncControlPassword;
+  const existingView = awake.secrets.vncViewPassword;
+  const needRotate =
+    Boolean(opts?.rotatePasswords) ||
+    !awake.row.streamOn ||
+    !existingControl ||
+    !existingView;
+
+  const stream = await ensureStream({
+    handle: awake.handle,
+    provider: awake.provider,
+    existingPasswords: {
+      controlPassword: existingControl,
+      viewPassword: existingView,
+    },
+    rotatePasswords: needRotate,
+  });
+
+  const now = new Date();
+  await activePersistence.updateByAgent(userId, agentId, {
+    streamOn: true,
+    lastViewedAt: now,
+    lastActiveAt: now,
+    secrets: encodeSecrets({
+      cdpToken: awake.secrets.cdpToken,
+      vncControlPassword: stream.controlPassword,
+      vncViewPassword: stream.viewPassword,
+    }),
+  });
+
+  const { token } = mintViewToken({
+    agentId,
+    userId,
+    host: stream.endpoints.vncHost,
+    port: stream.endpoints.vncPort,
+    mode,
+  });
+
+  return {
+    kind: "direct",
+    mode,
+    relayUrl: resolveComputerRelayUrl(opts?.fallbackOrigin),
+    token,
+    password: mode === "control" ? stream.controlPassword : stream.viewPassword,
+  };
+}
+
+export async function heartbeatComputerViewSession(
+  userId: string,
+  agentId: string,
+  input: { mode: "watch" | "control"; ended?: boolean }
+): Promise<PublicAgentComputerState> {
+  const existing = await activePersistence.findByAgent(userId, agentId);
+  if (!existing) {
+    return getPublicComputerState(userId, agentId);
+  }
+
+  const now = new Date();
+  if (input.ended && input.mode === "control") {
+    const provider = computerProvider();
+    if (provider && existing.status === "awake") {
+      try {
+        const handle = decodeHandle(existing.containerRef, agentId);
+        const secrets = decodeSecrets(existing.secrets);
+        const rotated = await ensureStream({
+          handle,
+          provider,
+          rotatePasswords: true,
+        });
+        await activePersistence.updateByAgent(userId, agentId, {
+          streamOn: true,
+          lastViewedAt: now,
+          lastActiveAt: now,
+          secrets: encodeSecrets({
+            cdpToken: secrets.cdpToken,
+            vncControlPassword: rotated.controlPassword,
+            vncViewPassword: rotated.viewPassword,
+          }),
+        });
+      } catch {
+        await activePersistence.updateByAgent(userId, agentId, {
+          lastViewedAt: now,
+        });
+      }
+    } else {
+      await activePersistence.updateByAgent(userId, agentId, {
+        lastViewedAt: now,
+      });
+    }
+  } else {
+    await activePersistence.updateByAgent(userId, agentId, {
+      lastViewedAt: now,
+    });
+  }
+
+  return getPublicComputerState(userId, agentId);
+}
+
+export interface ComputerDirectoryEntry {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  sizeBytes: number;
+  modifiedAt: string;
+}
+
+function shellQuote(arg: string): string {
+  return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+export async function listOrDownloadComputerFiles(
+  userId: string,
+  agentId: string,
+  rawPath = "/home/agent/work",
+  download = false
+): Promise<
+  | {
+      kind: "directory";
+      path: string;
+      entries: ComputerDirectoryEntry[];
+    }
+  | {
+      kind: "file";
+      path: string;
+      name: string;
+      sizeBytes: number;
+      bytes: Buffer;
+    }
+> {
+  const existing = await activePersistence.findByAgent(userId, agentId);
+  if (!existing || (existing.status !== "awake" && existing.status !== "resting")) {
+    throw new AsleepComputerError();
+  }
+
+  const awake = await ensureAwake(userId, agentId);
+  const targetInput = rawPath.trim() || "/home/agent/work";
+  const resolvedRes = await awake.provider.exec(
+    awake.handle,
+    `realpath -m -- ${shellQuote(targetInput)}`,
+    { timeoutSeconds: 10 }
+  );
+  const resolved = resolvedRes.stdout.trim();
+  if (
+    resolvedRes.exitCode !== 0 ||
+    !resolved ||
+    (resolved !== "/home/agent" && !resolved.startsWith("/home/agent/"))
+  ) {
+    throw new Error("Path must stay inside /home/agent/.");
+  }
+
+  if (download) {
+    const statRes = await awake.provider.exec(
+      awake.handle,
+      `stat -c '%s:%F' -- ${shellQuote(resolved)}`,
+      { timeoutSeconds: 10 }
+    );
+    if (statRes.exitCode !== 0) {
+      throw new Error("File not found.");
+    }
+    const [sizeStr, fileType] = statRes.stdout.trim().split(":");
+    const sizeBytes = Number(sizeStr ?? 0);
+    if (!fileType?.includes("regular")) {
+      throw new Error("Only regular files can be downloaded.");
+    }
+    if (!Number.isFinite(sizeBytes) || sizeBytes > 25 * 1024 * 1024) {
+      throw new Error("File exceeds the 25 MB download limit.");
+    }
+    const bytes = await awake.provider.readFile(awake.handle, resolved);
+    const name = resolved.split("/").filter(Boolean).pop() ?? "download";
+    return {
+      kind: "file",
+      path: resolved,
+      name,
+      sizeBytes: bytes.byteLength,
+      bytes,
+    };
+  }
+
+  const listRes = await awake.provider.exec(
+    awake.handle,
+    `mkdir -p -- ${shellQuote(resolved)} && find ${shellQuote(resolved)} -mindepth 1 -maxdepth 1 -printf '%f\\t%s\\t%TY-%Tm-%TdT%TH:%TM:%TSZ\\t%y\\n' | sort`,
+    { timeoutSeconds: 10 }
+  );
+  if (listRes.exitCode !== 0) {
+    throw new Error("Unable to list directory.");
+  }
+
+  const entries: ComputerDirectoryEntry[] = [];
+  for (const line of listRes.stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const [name, sizeRaw, mtimeRaw, kindCode] = trimmed.split("\t");
+    if (!name) continue;
+    const type: "file" | "directory" = kindCode === "d" ? "directory" : "file";
+    entries.push({
+      name,
+      path: `${resolved.replace(/\/+$/, "")}/${name}`,
+      type,
+      sizeBytes: Number(sizeRaw) || 0,
+      modifiedAt: mtimeRaw || new Date().toISOString(),
+    });
+  }
+
+  return {
+    kind: "directory",
+    path: resolved,
+    entries,
+  };
+}
+
 
