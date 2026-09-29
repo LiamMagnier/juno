@@ -133,3 +133,35 @@
 .agent-card__more:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
 @media (pointer: coarse) { .agent-card__more { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .agent-card__link { transition: none; } .agent-card__link:hover { transform: none; } }
+
+/* A busy agent's card carries a slow light along its lower edge, in its own
+   tone: the one moving thing on a card, and only while it is working. */
+.agent-card__link::after {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 0;
+  height: 1.5px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, hsl(var(--card-tone) / 0.9), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 400ms var(--ease-out-soft);
+}
+.agent-card:is([data-state="working"], [data-state="thinking"]) .agent-card__link::after { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .agent-card:is([data-state="working"], [data-state="thinking"]) .agent-card__link::after { animation: agent-card-work 2.6s var(--ease-in-out) infinite; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-card:is([data-state="working"], [data-state="thinking"]) .agent-card__link::after { background-size: 100% 100%; opacity: 0.4; }
+}
+@keyframes agent-card-work {
+  from { background-position: -40% 0; }
+  to { background-position: 140% 0; }
+}
+@container page (max-width: 39.99rem) {
+  .agent-card__link { padding: 16px 44px 16px 16px; }
+  .agent-card__more { top: 50%; transform: translateY(-50%); }
+}

@@ -15,11 +15,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { AGENT_EYES, AGENT_SHAPES, AGENT_TONES, type AgentAvatar } from "@/lib/agents/avatar";
 import type { AgentState } from "@/lib/agents/domain";
 import type { ClientAgent } from "@/lib/agents/types";
-import { AGENT_TEMPLATES } from "@/lib/agents/templates";
-import { agentStarterInput } from "@/lib/agents/starter";
+import { AGENT_JOB_EXAMPLES as EXAMPLES, agentNeedsYou as needsYou, newAgentInput, nextAgentFace as nextFace, nextAgentName as nextName, sortRosterAgents } from "@/lib/agents/new-agent";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { AgentPresence, AgentStatusLine } from "./agent-presence";
@@ -41,58 +39,10 @@ import { useAgents } from "./use-agents";
  * filters, no counts, no chips under the composer.
  */
 
-/** Waiting on you first, then busy, then pinned, then the rest in order. */
-const RANK: Record<string, number> = { waiting: 0, blocked: 0, working: 1, thinking: 1, done: 2, idle: 3, sleeping: 4 };
-
-export function sortRosterAgents(agents: readonly ClientAgent[]): ClientAgent[] {
-  return [...agents].sort(
-    (a, b) =>
-      (RANK[a.state] ?? 3) - (RANK[b.state] ?? 3) ||
-      Number(!!b.pinnedAt) - Number(!!a.pinnedAt) ||
-      a.sortOrder - b.sortOrder
-  );
-}
-
-function needsYou(agent: ClientAgent): boolean {
-  return agent.needsYou > 0 || agent.state === "waiting" || agent.state === "blocked";
-}
-
 function agentHref(agent: ClientAgent): string {
   return agent.conversationId
     ? `/chat/${encodeURIComponent(agent.conversationId)}`
     : `/agents/${encodeURIComponent(agent.id)}`;
-}
-
-/** Examples the empty field cycles through. Never chips: the field is the page. */
-const EXAMPLES = [
-  "Keep my inbox at zero and draft the replies I should send",
-  "Every Monday, brief me on what my competitors shipped",
-  "Watch flights to Tokyo in March and tell me when fares drop",
-  "Prepare my week every Sunday evening: calendar, deadlines, travel",
-];
-
-const NAMES = ["Nova", "Pip", "Orion", "Wren", "Juno", "Sol", "Ivy", "Kit", "Remy", "Tess", "Arlo", "Nell"];
-
-/** A face nobody on the team has yet: the least-used tone, a fresh shape. */
-function nextFace(team: readonly ClientAgent[], salt: number): AgentAvatar {
-  const used = new Map<string, number>();
-  for (const a of team) used.set(a.avatar.tone, (used.get(a.avatar.tone) ?? 0) + 1);
-  const tones = [...AGENT_TONES].sort((a, b) => (used.get(a) ?? 0) - (used.get(b) ?? 0));
-  const quiet = tones.filter((t) => (used.get(t) ?? 0) === (used.get(tones[0]) ?? 0));
-  const shapes = AGENT_SHAPES.filter((s) => !team.some((a) => a.avatar.shape === s));
-  const pick = <T,>(list: readonly T[], n: number) => list[Math.abs(n) % list.length];
-  return {
-    shape: pick(shapes.length ? shapes : AGENT_SHAPES, salt * 7 + team.length),
-    tone: pick(quiet, salt * 3 + 1),
-    eyes: pick(AGENT_EYES, salt + team.length * 5),
-    mark: "none",
-  };
-}
-
-function nextName(team: readonly ClientAgent[], salt: number): string {
-  const free = NAMES.filter((n) => !team.some((a) => a.name === n));
-  const list = free.length ? free : NAMES;
-  return list[Math.abs(salt) % list.length];
 }
 
 export function AgentsHome({
@@ -178,10 +128,16 @@ function AgentCard({ agent, onChanged }: { agent: ClientAgent; onChanged: () => 
       className="agent-card group relative"
       style={{ "--card-tone": `var(--agent-${agent.avatar.tone})` } as React.CSSProperties}
       data-attention={attention ? "" : undefined}
+      data-state={agent.state}
     >
-      <Link href={agentHref(agent)} data-face-trigger className="agent-card__link" aria-label={`${agent.name}. ${attention ? "Needs you. " : ""}${sentence}`}>
+      <Link
+        href={agentHref(agent)}
+        data-face-trigger
+        className="agent-card__link flex items-center gap-4 @[40rem]/page:block"
+        aria-label={`${agent.name}. ${attention ? "Needs you. " : ""}${sentence}`}
+      >
         <AgentPresence avatar={agent.avatar} state={agent.state} size={52} />
-        <span className="mt-5 block min-w-0">
+        <span className="block min-w-0 flex-1 @[40rem]/page:mt-5">
           <span className="flex items-baseline gap-2">
             <span className="truncate text-body-lg font-medium text-foreground">{agent.name}</span>
             {agent.role ? <span className="truncate text-ui text-muted-foreground">{agent.role}</span> : null}
@@ -194,7 +150,7 @@ function AgentCard({ agent, onChanged }: { agent: ClientAgent; onChanged: () => 
           ) : (
             <AgentStatusLine text={sentence} state={agent.state} className="mt-1.5 text-ui text-foreground/80" />
           )}
-          <span className="mt-4 block h-4 truncate text-caption text-muted-foreground">{footnote}</span>
+          <span className="mt-1 block truncate text-caption text-muted-foreground empty:hidden @[40rem]/page:mt-4 @[40rem]/page:h-4 @[40rem]/page:empty:block">{footnote}</span>
         </span>
       </Link>
       <DropdownMenu>
@@ -288,15 +244,8 @@ function JobComposer({
     setBusy(true);
     setError(null);
     if (!request.current || request.current.text !== text) request.current = { key: crypto.randomUUID(), text };
-    const custom = AGENT_TEMPLATES.find((t) => t.id === "custom") ?? AGENT_TEMPLATES[0];
     try {
-      const outcome = await hireAgent({
-        ...agentStarterInput(custom),
-        name,
-        avatar: face,
-        creationKey: request.current.key,
-        starterMessage: text,
-      });
+      const outcome = await hireAgent(newAgentInput({ text, name, avatar: face, creationKey: request.current.key }));
       if (outcome.kind !== "ok") {
         setError(outcome.message);
         setBusy(false);
@@ -365,7 +314,13 @@ function JobComposer({
           }
           leading={
             <span className="pl-1.5 text-caption text-muted-foreground">
-              {busy ? `${name} is setting up…` : value.trim() ? `${name} will take this on` : "Describe a job. An agent sets itself up."}
+              {busy ? (
+                <span key="busy" className="motion-safe:animate-fade-in">{name} is setting up…</span>
+              ) : value.trim() ? (
+                <span key="who" className="motion-safe:animate-fade-in">{name} will take this on</span>
+              ) : hero ? null : (
+                <span key="hint" className="coarse:hidden">Press Tab to use the example</span>
+              )}
             </span>
           }
           action={

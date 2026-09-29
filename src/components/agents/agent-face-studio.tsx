@@ -174,7 +174,7 @@ export function AgentFaceStudio({
             <Choice label="Shape">
               {AGENT_SHAPES.map((shape) => (
                 <Swatch key={shape} selected={avatar.shape === shape} label={AGENT_SHAPE_LABEL[shape]} onClick={() => pick("shape", shape)}>
-                  <AgentFace avatar={{ ...avatar, shape, mark: "none" }} size={30} />
+                  <AgentFace avatar={{ ...avatar, shape, mark: "none" }} size={30} live={false} />
                 </Swatch>
               ))}
             </Choice>
@@ -182,7 +182,7 @@ export function AgentFaceStudio({
             <Choice label="Eyes">
               {AGENT_EYES.map((eyes) => (
                 <Swatch key={eyes} selected={avatar.eyes === eyes} label={AGENT_EYES_LABEL[eyes]} onClick={() => pick("eyes", eyes)}>
-                  <AgentFace avatar={{ ...avatar, eyes, mark: "none" }} size={30} />
+                  <AgentFace avatar={{ ...avatar, eyes, mark: "none" }} size={30} live={false} />
                 </Swatch>
               ))}
             </Choice>
@@ -190,7 +190,7 @@ export function AgentFaceStudio({
             <Choice label="Detail">
               {AGENT_MARKS.map((mark) => (
                 <Swatch key={mark} selected={avatar.mark === mark} label={AGENT_MARK_LABEL[mark]} onClick={() => pick("mark", mark)}>
-                  <AgentFace avatar={{ ...avatar, mark }} size={30} />
+                  <AgentFace avatar={{ ...avatar, mark }} size={30} live={false} />
                 </Swatch>
               ))}
             </Choice>

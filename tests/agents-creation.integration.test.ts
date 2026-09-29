@@ -5,6 +5,7 @@ import { PrismaClient } from "@prisma/client";
 import { createAgentTransaction } from "../src/lib/agents/creation";
 import { createAgentSchema, MAX_AGENTS_PER_ACCOUNT } from "../src/lib/agents/domain";
 import { decryptField } from "../src/lib/field-crypto";
+import { newAgentInput } from "../src/lib/agents/new-agent";
 
 // Explicit opt-in: never connects to, truncates, or modifies a developer/production database.
 const url = process.env.JUNO_AGENTS_TEST_DATABASE_URL;
@@ -40,6 +41,30 @@ test("atomic creation: concurrent retry, ownership, rollback, encrypted request,
     assert.equal((await create(owners[0]))?.id, results[0]?.id, "retry still works at cap");
   } finally {
     await db.user.deleteMany({ where: { id: { in: owners } } });
+    await db.$disconnect();
+  }
+});
+
+test("Agents home's request creates the agent it showed: face, name, blank brief, first message", { skip: !url }, async () => {
+  assert.match(url!, /127\.0\.0\.1:65439\/juno_agents_test$/);
+  const db = new PrismaClient({ datasourceUrl: url });
+  const owner = `agents-home-${randomUUID()}`;
+  process.env.AUTH_SECRET ??= "juno-agents-isolated-integration-test-key";
+  try {
+    await db.user.create({ data: { id: owner, email: `${owner}@example.invalid` } });
+    const avatar = { shape: "petal", tone: "violet", eyes: "wide", mark: "none" } as const;
+    const input = createAgentSchema.parse(newAgentInput({ text: "Watch flights to Tokyo in March", name: "Wren", avatar, creationKey: randomUUID() }));
+    const agent = await db.$transaction(tx => createAgentTransaction(tx, owner, input, [], null, "claude-opus-4-8"), { timeout: 20000 });
+    assert.ok(agent?.conversationId, "it opens straight onto its own thread");
+    assert.equal(agent.name, "Wren");
+    assert.deepEqual(agent.avatar, avatar);
+    assert.equal(agent.instructions, "");
+    assert.deepEqual(agent.connectorIds, []);
+    const hired = await db.agentEvent.findFirstOrThrow({ where: { userId: owner, agentId: agent.id, kind: "hired" } });
+    assert.equal(decryptField((hired.detail as { starterMessage: string }).starterMessage), "Watch flights to Tokyo in March");
+  } finally {
+    await db.agent.deleteMany({ where: { userId: owner } }).catch(() => {});
+    await db.user.deleteMany({ where: { id: owner } }).catch(() => {});
     await db.$disconnect();
   }
 });

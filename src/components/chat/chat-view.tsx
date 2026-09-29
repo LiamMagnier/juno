@@ -200,18 +200,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     }
   }, []);
 
-  const toggleAgentTab = React.useCallback((target: AgentPanelTab) => {
-    setAgentPanelTab((prev) => {
-      const next = prev === target ? null : target;
-      if (typeof window !== "undefined") {
-        const url = new URL(window.location.href);
-        if (next) url.searchParams.set("agent", next);
-        else url.searchParams.delete("agent");
-        window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-      }
-      return next;
-    });
-  }, []);
+  // The URL is written outside the state updater: Next patches replaceState
+  // and updates its router, which must not happen while React is rendering.
+  const toggleAgentTab = React.useCallback(
+    (target: AgentPanelTab) => setAgentTab(agentPanelTab === target ? null : target),
+    [agentPanelTab, setAgentTab]
+  );
 
   const refreshThreadAgent = React.useCallback(() => {
     if (!agent?.id) return;
