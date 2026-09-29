@@ -10,7 +10,7 @@ import ArtifactsPage from "@/app/(app)/artifacts/page";
 import ConnectionsPage from "@/app/(app)/connections/page";
 import AutomationsPage from "@/app/(app)/automations/page";
 import SettingsPage from "@/app/(app)/settings/page";
-import { AgentsRoster } from "@/components/agents/agents-roster";
+import { AgentsHome } from "@/components/agents/agents-home";
 import { CompareView } from "@/components/compare/compare-view";
 import { AppPage } from "@/components/app/app-page";
 import { MemoryManager } from "@/components/memory/memory-manager";
@@ -150,7 +150,7 @@ function Page({ page }: { page: PageName }) {
     case "connections":
       return <ConnectionsPage />;
     case "agents":
-      return <AgentsRoster />;
+      return <AgentsHome />;
     case "automations":
       return <AutomationsPage />;
     case "compare":

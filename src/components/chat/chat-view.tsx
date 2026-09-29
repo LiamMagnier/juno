@@ -53,6 +53,8 @@ import { useConversationWork } from "@/components/chat/use-conversation-work";
 import type { ClientAgent } from "@/lib/agents/types";
 import { AgentGreeting, AgentThreadHeader, threadAgentState } from "@/components/agents/agent-thread-header";
 import { AgentPanel, normalizeAgentPanelTab, type AgentPanelTab } from "@/components/agents/agent-panel";
+import { AgentComputerOverlay, AgentComputerPip } from "@/components/agents/agent-computer";
+import { AgentThreadContext, type AgentThreadIdentity } from "@/components/agents/agent-thread-context";
 import { AGENTS_CHANGED_EVENT, fetchAgentDetail } from "@/components/agents/agents-transport";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
 import { SessionOutputs } from "@/components/chat/session-outputs";
@@ -1493,6 +1495,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const agentState = agent
     ? threadAgentState(agent, chat.isBusy, work.session, voiceOpen ? voicePhaseOf(realtimeVoice) : null)
     : null;
+  const agentThreadIdentity = React.useMemo<AgentThreadIdentity | null>(
+    () => (agent && !privateMode ? { name: agent.name, avatar: agent.avatar, state: agentState ?? "idle" } : null),
+    [agent, privateMode, agentState]
+  );
   const wasBusyRef = React.useRef(false);
   React.useEffect(() => {
     if (wasBusyRef.current && !chat.isBusy && agent?.id) {
@@ -2309,6 +2315,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               {findOpen && (
                 <ConversationFind messages={displayMessages} onClose={() => setFindOpen(false)} />
               )}
+              <AgentThreadContext.Provider value={agentThreadIdentity}>
               <MessageList
                 /*
                  * KEYED ON THE ROUTE'S CONVERSATION, which does two things
@@ -2374,6 +2381,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 // until the band has something to show.
                 titleShownInHeader={topActionsSlotOwner && !privateMode && !!headerTitle}
               />
+              </AgentThreadContext.Provider>
               {currentConversationId && !privateMode && (
                 // Same width cap, centring and gutter as the composer's root
                 // (composer.tsx) — otherwise these sit inside the composer's
@@ -2395,6 +2403,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   privateMode && "px-2 sm:px-4"
                 )}
               >
+                {agent && !privateMode && agentPanelTab !== "computer" ? (
+                  <div className="pointer-events-none absolute bottom-full right-4 z-10 mb-3 hidden @[50rem]/split:block">
+                    <AgentComputerPip agent={agent} onOpen={() => setAgentTab("computer")} />
+                  </div>
+                ) : null}
                 {voiceOpen && <VoiceCallNotices voice={realtimeVoice} />}
                 {voiceSaveNotice}
                 {composer}
@@ -2647,7 +2660,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
 
       {/* Agent side panel — uses the same split slot as CanvasPanel and DocumentViewer
           (open artifact or document takes precedence). */}
-      {agent && !privateMode && !openArtifact && !openDocument && agentPanelTab !== null && (
+      {agent && !privateMode && !openArtifact && !openDocument && agentPanelTab === "profile" && (
         <div
           style={{ "--juno-canvas-width": `${canvas.width ?? CANVAS_SSR_WIDTH}px` } as React.CSSProperties}
           className={cn(
@@ -2670,12 +2683,15 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           </button>
           <AgentPanel
             agentId={agent.id}
-            tab={agentPanelTab}
-            onTabChange={(next) => setAgentTab(next)}
             onClose={() => setAgentTab(null)}
+            onOpenComputer={() => setAgentTab("computer")}
           />
         </div>
       )}
+
+      {agent && !privateMode ? (
+        <AgentComputerOverlay agent={agent} open={agentPanelTab === "computer"} onClose={() => setAgentTab(null)} />
+      ) : null}
 
       {currentConversationId && (
         <ShareDialog kind="CHAT" conversationId={currentConversationId} open={shareOpen} onOpenChange={setShareOpen} />

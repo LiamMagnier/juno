@@ -228,9 +228,9 @@ test("the pupils follow the level only while listening, and only where motion is
   assert.match(chat, /threadAgentState\(agent, chat\.isBusy, work\.session, voiceOpen \? voicePhaseOf\(realtimeVoice\) : null\)/);
   assert.match(chat, /levelRef=\{voiceOpen \? realtimeVoice\.levelRef : undefined\}/);
 
-  const css = src("src/app/globals.css");
+  const css = src("src/components/agents/agent-face.css");
   const still = css.indexOf('.agent-face[data-state="listening"] .agent-face__eye { transform: scale(1.15); }');
-  const motion = css.indexOf("@media (prefers-reduced-motion: no-preference)", css.indexOf("AGENT FACES"));
+  const motion = css.indexOf("@media (prefers-reduced-motion: no-preference)", still);
   const driven = css.indexOf('.agent-face[data-state="listening"] .agent-face__eye { transform: scale(calc(1.15 + var(--level, 0) * 0.3)); }');
   assert.ok(still > 0 && motion > still && driven > motion, "the level-driven scale sits inside the motion block, after the still one");
 });
@@ -249,6 +249,6 @@ test("hiring lands directly in the agent's thread and /agents/[id] redirects to 
   assert.match(page, /redirect\(`\/chat\/\$\{encodeURIComponent\(conversationId\)\}/);
 
   const greeting = src("src/components/agents/agent-thread-header.tsx");
-  assert.match(greeting, /Tell me what you'd like me to take on and I'll set myself up\./);
+  assert.match(greeting, /Tell me what to take care of\. I’ll set myself up and start\./);
 });
 

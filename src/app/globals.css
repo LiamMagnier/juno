@@ -1,4 +1,5 @@
 @import "../components/agents/agents.css";
+@import "../components/agents/agent-face.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -3875,107 +3876,6 @@
      never selected through an ancestor the portal has left behind. */
 }
 /* A quiet document surface shared by research planning, progress and reports. */
-/*
- * AGENT FACES (docs/design/AGENTS.md §4, drawn by components/agents/agent-face.tsx).
- *
- * The face is an agent's status bar, so its motion is state, never decoration:
- * only transform and opacity move (ICONS_AND_MOTION.md §2.2 rule 8), a state
- * change cross-fades the eyes on the fast rung (rule 7), and only the three
- * live states loop (rule 9) — `working` looks left and right and breathes,
- * `waiting` lifts the whole face every 2.4s (the one state that asks for the
- * reader), `thinking` runs the three-dot rhythm. `idle` is still, and blinks
- * only while the pointer is over the control that holds it. Every loop sits
- * behind `prefers-reduced-motion: no-preference`, so under the preference the
- * face stops and the eyes' SHAPE carries the state.
- *
- * `transform-box: fill-box` on every moving part, so an eye scales about its
- * own centre rather than the svg's origin, and `px` inside these transforms is
- * the drawing's own 64-unit space.
- */
-@layer components {
-  .agent-face__body { fill: hsl(var(--face-tone)); transform-box: fill-box; transform-origin: center; }
-  .agent-face__all,
-  .agent-face__eyes { transform-box: fill-box; transform-origin: center; }
-  .agent-face__eye {
-    fill: hsl(var(--agent-ink));
-    transform-box: fill-box;
-    transform-origin: center;
-    transition:
-      transform var(--dur-fast) var(--ease-out-soft),
-      opacity var(--dur-fast) var(--ease-out-soft);
-  }
-  .agent-face__happy {
-    stroke: hsl(var(--agent-ink));
-    opacity: 0;
-    transform: scale(0.8);
-    transform-box: fill-box;
-    transform-origin: center;
-    transition:
-      transform var(--dur-fast) var(--ease-spring),
-      opacity var(--dur-fast) var(--ease-out-soft);
-  }
-  .agent-face__mark { fill: hsl(var(--agent-mark)); stroke: hsl(var(--agent-mark)); }
-  .agent-face__visor { fill: hsl(var(--agent-ink) / 0.18); }
-  .agent-face__dots circle { fill: hsl(var(--agent-mark)); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out-soft); }
-  .agent-face__prop { stroke: hsl(var(--agent-mark)); opacity: 0; transition: opacity var(--dur-base) var(--ease-out-soft); }
-  .agent-face__prop rect { fill: hsl(var(--background)); }
-
-  .agent-face[data-state="thinking"] .agent-face__eye { transform: translate(2px, -2px) scale(1, 0.7); }
-  .agent-face[data-state="working"] .agent-face__eye { transform: scale(1, 0.75); }
-  .agent-face[data-state="waiting"] .agent-face__eye { transform: scale(1.2); }
-  .agent-face[data-state="listening"] .agent-face__eye { transform: scale(1.15); }
-  .agent-face[data-state="blocked"] .agent-face__eye { transform: scale(1.3, calc(2 / var(--eye-h))); }
-  .agent-face[data-state="sleeping"] .agent-face__eye { transform: translate(0, 2px) scale(1.3, calc(2 / var(--eye-h))); }
-  .agent-face[data-state="done"] .agent-face__eye { opacity: 0; transform: scale(0.8); }
-  .agent-face[data-state="done"] .agent-face__happy { opacity: 1; transform: none; }
-  .agent-face[data-state="working"] .agent-face__prop { opacity: 1; }
-  /* Reduced motion keeps the dots, still: they are the state, not the loop. */
-  .agent-face[data-state="thinking"] .agent-face__dots circle { opacity: 0.55; }
-
-  @media (prefers-reduced-motion: no-preference) {
-    .agent-face[data-state="working"] .agent-face__eyes { animation: agent-face-look 2.4s var(--ease-in-out) infinite; }
-    .agent-face[data-state="working"] .agent-face__body { animation: agent-face-breathe 2.4s var(--ease-breathe) infinite; }
-    .agent-face[data-state="waiting"] .agent-face__all { animation: agent-face-lift 2.4s var(--ease-breathe) infinite; }
-    .agent-face[data-state="done"] .agent-face__all { animation: agent-face-settle var(--dur-emphasis) var(--ease-spring) 1 both; }
-    .agent-face[data-state="thinking"] .agent-face__dots circle { animation: agent-face-dot 1.2s var(--ease-in-out) infinite; }
-    .agent-face[data-state="thinking"] .agent-face__dots circle:nth-child(2) { animation-delay: 0.2s; }
-    .agent-face[data-state="thinking"] .agent-face__dots circle:nth-child(3) { animation-delay: 0.4s; }
-    :is(a, button, [role="link"], [role="button"], [data-face-trigger]):hover .agent-face[data-state="idle"] .agent-face__eyes {
-      animation: agent-face-blink 180ms var(--ease-in-out) 1;
-    }
-    /* `listening` is driven by audio, not a timer: the pupils widen with the
-       caller's level, which an open call writes as `--level` (0..1) on an
-       ancestor (agent-thread-header.tsx). No level, and it rests at the
-       static listening size above. */
-    .agent-face[data-state="listening"] .agent-face__eye { transform: scale(calc(1.15 + var(--level, 0) * 0.3)); }
-  }
-}
-
-@keyframes agent-face-look {
-  0%, 100% { transform: translateX(-2.5px); }
-  50% { transform: translateX(2.5px); }
-}
-@keyframes agent-face-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.015); }
-}
-@keyframes agent-face-lift {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-1.5px); }
-}
-@keyframes agent-face-settle {
-  0% { transform: scale(0.94); }
-  60% { transform: scale(1.03); }
-  100% { transform: scale(1); }
-}
-@keyframes agent-face-dot {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
-}
-@keyframes agent-face-blink {
-  0%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(0.1); }
-}
 
 @layer components {
   .research-surface { @apply rounded-card border border-border bg-card p-4 sm:p-5; }

@@ -2,7 +2,6 @@ import nextDynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/session";
 import { getConversationThread } from "@/lib/queries";
-import { AgentWorkspaceFrame } from "@/components/agents/agent-workspace-frame";
 import { ChatView } from "@/components/chat/chat-view";
 import { agentForThread, pendingAgentStarter } from "@/lib/agents/store";
 
@@ -83,5 +82,5 @@ export default async function ConversationPage({
       initialFocusMessageId={typeof m === "string" && m ? m : undefined}
     />
   );
-  return agent ? <AgentWorkspaceFrame currentAgentId={agent.id}>{chat}</AgentWorkspaceFrame> : chat;
+  return chat;
 }

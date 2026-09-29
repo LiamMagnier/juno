@@ -1,6 +1,6 @@
-import { AgentsRoster } from "@/components/agents/agents-roster";
+import { AgentsHome } from "@/components/agents/agents-home";
 
-/** The roster. The page is a client component because it polls its agents' state (use-agents.ts). */
+/** The team: live cards, and the one field that starts a new agent (agents-home.tsx). */
 export default function AgentsPage() {
-  return <AgentsRoster />;
+  return <AgentsHome />;
 }

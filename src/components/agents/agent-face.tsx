@@ -1,26 +1,30 @@
+"use client";
+
 /**
  * An agent's face: its identity and its status bar in one drawing.
  *
  * Grok Bot's insight, taken whole (docs/design/AGENTS.md §4): the face is
  * how a roster is read peripherally, and the eyes are how it says what the
- * agent is doing — so there is no spinner beside it. Muse's, taken in part: a
- * prop says what KIND of work (the tiny laptop while a task runs).
+ * agent is doing, so there is no spinner beside it.
  *
  * Every number is from the table in AGENTS.md §4.2b, which the Swift face
  * (`JunoAgentFace.swift`) draws from too. Nothing is traced from a picture.
  *
- * Motion obeys ICONS_AND_MOTION.md §2.2: only transform and opacity move, a
- * state change cross-fades on the fast rung, loops exist only for live states
- * (working, waiting, thinking), `idle` never loops and blinks only under the
- * pointer, and reduced motion stops every loop while the eyes' SHAPE still
- * carries the state. The keyframes are the `.agent-face` block in
- * globals.css. No hooks: safe to render on the server.
+ * Three layers of motion (docs/design/agents-rework/MOTION.md):
+ *  - the rig (face-rig.ts) makes every face present: it blinks, glances
+ *    around, looks at the pointer, and notices when you hover it;
+ *  - the state is a behaviour, drawn in agent-face.css: working reads and
+ *    bobs, thinking looks up with rising thought dots, waiting looks at you
+ *    and lifts, done squints happily and hops once;
+ *  - a change of state is a visible reaction (`data-react`), not a cut.
+ * Reduced motion stops all of it; the eyes' SHAPE still carries the state.
  */
 
 import * as React from "react";
 import type { AgentAvatar, AgentShape, AgentEyes } from "@/lib/agents/avatar";
 import { AGENT_STATE_LABEL, type AgentState } from "@/lib/agents/domain";
 import { cn } from "@/lib/utils";
+import { attachFaceRig, type FaceRigHandle } from "./face-rig";
 
 export type AgentFaceSize = "xs" | "sm" | "md" | "lg" | "xl";
 
@@ -154,22 +158,75 @@ export interface AgentFaceProps {
    * told the agent's real state, not the choreography.
    */
   labelState?: AgentState;
+  /**
+   * On the rig (face-rig.ts): blinks, glances, and looks at the pointer. On by
+   * default; off for faces that are pictures of a choice (the face studio's
+   * swatches), where twenty blinking faces would be noise.
+   */
+  live?: boolean;
   className?: string;
 }
 
-export function AgentFace({ avatar, state = "idle", size = "md", name, labelState, className }: AgentFaceProps) {
+/** The body's light: a soft top-left key, the tone itself, a deeper rim. */
+function Shading({ id }: { id: string }) {
+  return (
+    <defs>
+      <radialGradient id={id} cx="0.34" cy="0.26" r="0.86">
+        <stop offset="0" className="agent-face__lit" />
+        <stop offset="0.52" className="agent-face__tone" />
+        <stop offset="1" className="agent-face__rim" />
+      </radialGradient>
+    </defs>
+  );
+}
+
+export function AgentFace({ avatar, state = "idle", size = "md", name, labelState, live = true, className }: AgentFaceProps) {
   const px = typeof size === "number" ? size : PX[size];
   const spec = SHAPES[avatar.shape];
   const cut = EYES[avatar.eyes];
   const w = cut.w * spec.scale;
   const h = cut.h * spec.scale;
   const r = cut.r * spec.scale;
-  // The mark and the prop are dropped below 28px; the eyes never are.
+  // The mark and the thinking/working details are dropped below 28px; the
+  // eyes never are. Light, catchlights and the ground shadow need room to read.
   const detailed = px >= 28;
+  const rich = px >= 40;
   const label = name ? `${name}, ${AGENT_STATE_LABEL[labelState ?? state].toLowerCase()}` : undefined;
+  const gradientId = `agent-face-${React.useId().replace(/:/g, "")}`;
+  const ref = React.useRef<SVGSVGElement | null>(null);
+  const rig = React.useRef<FaceRigHandle | null>(null);
+
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el || !live) return;
+    const handle = attachFaceRig(el, state, px);
+    rig.current = handle;
+    return () => {
+      handle.release();
+      rig.current = null;
+    };
+    // The rig is attached once per element; state reaches it below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, px]);
+
+  // A change of state is a small visible reaction (a settle), not a cut.
+  const previous = React.useRef(state);
+  React.useEffect(() => {
+    rig.current?.setState(state);
+    const el = ref.current;
+    if (!el || previous.current === state) return;
+    previous.current = state;
+    el.removeAttribute("data-react");
+    // Restart the one-shot even when two changes land in a row.
+    void el.getBoundingClientRect();
+    el.setAttribute("data-react", "");
+    const timer = window.setTimeout(() => el.removeAttribute("data-react"), 700);
+    return () => window.clearTimeout(timer);
+  }, [state]);
 
   return (
     <svg
+      ref={ref}
       viewBox="0 0 64 64"
       width={px}
       height={px}
@@ -178,49 +235,63 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, labelStat
       aria-hidden={label ? undefined : true}
       focusable="false"
       data-state={state}
+      data-rich={rich ? "" : undefined}
       className={cn("agent-face shrink-0 overflow-visible", className)}
       style={{ "--face-tone": `var(--agent-${avatar.tone})` } as React.CSSProperties}
     >
-      <g className="agent-face__all">
-        <g className="agent-face__body">
-          <Body shape={avatar.shape} />
-        </g>
-        {detailed && avatar.mark === "visor" ? <Mark mark="visor" eyes={spec.eyes} /> : null}
-        <g className="agent-face__eyes">
-          {spec.eyes.map(([cx, cy], i) => (
-            <rect
-              key={i}
-              className="agent-face__eye"
-              x={cx - w / 2}
-              y={cy - h / 2}
-              width={w}
-              height={h}
-              rx={r}
-              style={{ "--eye-h": h } as React.CSSProperties}
-            />
-          ))}
-        </g>
-        <g className="agent-face__happy" fill="none">
-          {spec.eyes.map(([cx, cy], i) => (
-            <path
-              key={i}
-              d={`M${cx - 4} ${cy + 1.5} Q${cx} ${cy - 3.5} ${cx + 4} ${cy + 1.5}`}
-              strokeWidth={2.4}
-              strokeLinecap="round"
-            />
-          ))}
-        </g>
-        {detailed && avatar.mark !== "visor" ? <Mark mark={avatar.mark} eyes={spec.eyes} /> : null}
-        {detailed ? (
-          <g className="agent-face__dots">
-            <circle cx={50} cy={12} r={1.6} />
-            <circle cx={55} cy={12} r={1.6} />
-            <circle cx={60} cy={12} r={1.6} />
+      {rich ? <Shading id={gradientId} /> : null}
+      {rich ? <ellipse className="agent-face__ground" cx={32} cy={62.5} rx={16} ry={2.4} /> : null}
+      <g className="agent-face__rig">
+        <g className="agent-face__all">
+          <g className="agent-face__body" style={rich ? { fill: `url(#${gradientId})` } : undefined}>
+            <Body shape={avatar.shape} />
           </g>
-        ) : null}
-        {detailed ? <g className="agent-face__workbars">
-          {[25, 31, 37].map(x => <rect key={x} x={x} y={44} width={3} height={3} rx={1.5} />)}
-        </g> : null}
+          {detailed && avatar.mark === "visor" ? <Mark mark="visor" eyes={spec.eyes} /> : null}
+          <g className="agent-face__gaze">
+            <g className="agent-face__eyes">
+              <g className="agent-face__lids">
+                {spec.eyes.map(([cx, cy], i) => (
+                  <g key={i} className="agent-face__eye" style={{ "--eye-h": h } as React.CSSProperties}>
+                    <rect className="agent-face__pupil" x={cx - w / 2} y={cy - h / 2} width={w} height={h} rx={r} />
+                    {rich ? (
+                      <circle
+                        className="agent-face__glint"
+                        cx={cx - w / 2 + Math.min(w, h) * 0.34}
+                        cy={cy - h / 2 + Math.min(w, h) * 0.34}
+                        r={Math.max(0.8, Math.min(w, h) * 0.17)}
+                      />
+                    ) : null}
+                  </g>
+                ))}
+              </g>
+              <g className="agent-face__happy" fill="none">
+                {spec.eyes.map(([cx, cy], i) => (
+                  <path
+                    key={i}
+                    d={`M${cx - 4} ${cy + 1.5} Q${cx} ${cy - 3.5} ${cx + 4} ${cy + 1.5}`}
+                    strokeWidth={2.4}
+                    strokeLinecap="round"
+                  />
+                ))}
+              </g>
+            </g>
+          </g>
+          {detailed && avatar.mark !== "visor" ? <Mark mark={avatar.mark} eyes={spec.eyes} /> : null}
+          {detailed ? (
+            <g className="agent-face__thought">
+              <circle cx={49} cy={13} r={1.5} />
+              <circle cx={54} cy={8.5} r={2} />
+              <circle cx={60} cy={3.5} r={2.6} />
+            </g>
+          ) : null}
+          {detailed ? (
+            <g className="agent-face__workbars">
+              {[25, 30.5, 36].map((x) => (
+                <rect key={x} x={x} y={45} width={3} height={3} rx={1.5} />
+              ))}
+            </g>
+          ) : null}
+        </g>
       </g>
     </svg>
   );

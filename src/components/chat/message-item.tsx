@@ -91,6 +91,8 @@ const ImageEditOverlay = nextDynamic(
   { ssr: false },
 );
 import { PhaseOrb } from "@/components/effects/phase-orb";
+import { AgentFace } from "@/components/agents/agent-face";
+import { useAgentThread } from "@/components/agents/agent-thread-context";
 import { splitMessageContent, stripMemoryTags } from "@/lib/message-content";
 import { resolveModel } from "@/lib/models";
 import { MESSAGE_DISPLAY_COLLAPSE_CHARS, sampleLineCount } from "@/lib/prompt-limits";
@@ -178,9 +180,17 @@ function StreamStatus({
   }
 
   const showClock = !writing && !checking && !submitting && elapsedSec > 0;
+  // In an agent's thread the agent is the one thinking: its face, not the orb,
+  // and the sentence names it.
+  const agentThread = useAgentThread();
+  if (agentThread && !recovering && !label && statusCopy === "Thinking") statusCopy = `${agentThread.name} is thinking`;
+  if (agentThread && !recovering && !label && writing) statusCopy = `${agentThread.name} is writing`;
 
   return (
     <div className="flex min-h-10 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
+      {agentThread ? (
+        <AgentFace avatar={agentThread.avatar} state={recovering ? "blocked" : writing || label || checking ? "working" : "thinking"} size={28} />
+      ) : (
       <PhaseOrb
         state={
           recovering || submitting
@@ -192,6 +202,7 @@ function StreamStatus({
                 : "breathing"
         }
       />
+      )}
       {/* Plain muted text beside the dots; the dots are the one moving thing
           in this row. The sentence used to shimmer as well, which put two
           animations on one line and a fifth "working" signal on the reply
@@ -934,6 +945,7 @@ export const MessageItem = React.memo(function MessageItem({
     target?.focus({ preventScroll: true });
   }, [editing]);
   const isUser = message.role === "USER";
+  const agentThread = useAgentThread();
   const isVoice = message.voice === true;
 
   // ---- Version carousel (regenerate / edit-and-resend history) ----
@@ -1315,7 +1327,13 @@ export const MessageItem = React.memo(function MessageItem({
       className={cn("group flex scroll-mt-24 flex-col gap-2", animateIn && "motion-safe:animate-rise-in")}
     >
       {/* Turn marker — see the note on the user branch. */}
-      <h2 className="sr-only">Juno replied</h2>
+      <h2 className="sr-only">{agentThread ? `${agentThread.name} replied` : "Juno replied"}</h2>
+      {agentThread && !showCursor ? (
+        <div className="flex items-center gap-2 text-ui font-medium text-foreground" aria-hidden="true">
+          <AgentFace avatar={agentThread.avatar} state="idle" size={20} live={false} />
+          {agentThread.name}
+        </div>
+      ) : null}
       {/*
         NOT a live region. The turn's polite region is the answer body further
         down, and it used to be this root — which meant everything that lands

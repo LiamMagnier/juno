@@ -20,8 +20,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Monitor, MoreHorizontal, PanelRight } from "@/components/ui/icons";
-import { AgentFace } from "@/components/agents/agent-face";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Hand, Monitor, MoreHorizontal, PanelRight } from "@/components/ui/icons";
+import { AgentPresence, AgentStatusLine } from "@/components/agents/agent-presence";
 import { localStateSentence } from "@/components/agents/agent-bits";
 import type { AgentPanelTab } from "@/components/agents/agent-panel";
 import {
@@ -30,68 +31,17 @@ import {
   retireAgent,
   updateAgent,
 } from "@/components/agents/agents-transport";
-import { AGENT_TEMPLATES } from "@/lib/agents/templates";
 import type { AgentState } from "@/lib/agents/domain";
 import type { ClientAgent } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
 
 export { threadAgentState } from "@/components/agents/thread-agent-state";
 
-const TEMPLATE_CHIPS: Record<string, readonly string[]> = {
-  "chief-of-staff": [
-    "Triage my inbox and flag what needs me today",
-    "Check my calendar for tomorrow and prepare a morning brief",
-    "Set up a weekday 8am routine to review my schedule",
-  ],
-  researcher: [
-    "Track our top 3 competitors and brief me every Monday",
-    "Research the latest papers on this topic with citations",
-    "Summarise industry news for me every morning at 9am",
-  ],
-  "deal-finder": [
-    "Watch prices on a product I want and alert me when it drops",
-    "Compare the best options under my budget before I buy",
-    "Check weekly for renewal or subscription savings",
-  ],
-  writer: [
-    "Draft a weekly update in my voice from my recent notes",
-    "Turn rough bullet points into a clear client memo",
-    "Help me outline and edit an upcoming article",
-  ],
-  coach: [
-    "Check in with me every evening on my top three priorities",
-    "Review my week every Friday afternoon and spot patterns",
-    "Keep a running log of my habits and milestones",
-  ],
-  analyst: [
-    "Pull our key metrics and write a weekly summary",
-    "Audit our spreadsheet data and flag anomalies",
-    "Give yourself a computer so you can run Python scripts on CSVs",
-  ],
-  ops: [
-    "Monitor our support queue and summarise urgent tickets",
-    "Run a daily checklist and alert me only when something breaks",
-    "Keep our team documentation organised and up to date",
-  ],
-  custom: [
-    "Watch our competitors' pricing pages every Monday morning",
-    "Check my inbox each morning and draft replies for my approval",
-    "Give yourself a computer and help me automate browser tasks",
-  ],
-};
-
-export function getTemplateSuggestions(templateId: string | null | undefined): readonly string[] {
-  if (templateId && TEMPLATE_CHIPS[templateId]) {
-    return TEMPLATE_CHIPS[templateId];
-  }
-  return TEMPLATE_CHIPS.custom;
-}
-
 /**
- * The one row an agent's thread gains (docs/design/agents-v2/BRIEF.md §4.8.1):
- * face `sm` (live state) · name · state sentence · right side: Computer button
- * (when computer feature is available), Agent panel button, and overflow menu
- * with Pause/Resume, Pin, Duplicate and Retire.
+ * The presence bar an agent's thread gains: its live face on its halo, its
+ * name and the one sentence it is living right now, over a faint wash of its
+ * own colour. Pressing the face opens the profile. Right side: its computer
+ * (when it has one), the profile, and Pause, Pin, Duplicate, Retire.
  */
 export function AgentThreadHeader({
   agent,
@@ -185,62 +135,73 @@ export function AgentThreadHeader({
     router.push("/agents");
   };
 
+  const attention = state === "waiting" || state === "blocked" || agent.needsYou > 0;
+  const profileOpen = activePanelTab === "profile";
+
   return (
-    <div className="flex shrink-0 agent-thread-bar justify-center border-b border-border/70 px-4 py-3">
+    <div
+      className="agent-thread-bar flex shrink-0 justify-center px-4 py-2.5"
+      style={{ "--bar-tone": `var(--agent-${agent.avatar.tone})` } as React.CSSProperties}
+    >
       <div className="flex w-full max-w-3xl items-center gap-3">
         <button
           ref={faceRef}
           type="button"
-          onClick={() => onTogglePanel?.("now")}
+          onClick={() => onTogglePanel?.("profile")}
           data-face-trigger
-          className="shrink-0 rounded-control outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={`Open ${agent.name} panel`}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-control py-0.5 pr-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`${agent.name}. ${sentence}. Open profile`}
+          aria-expanded={profileOpen}
         >
-          <AgentFace avatar={agent.avatar} state={state} size={36} />
-        </button>
-        <button
-          type="button"
-          onClick={() => onTogglePanel?.("now")}
-          className="min-w-0 flex-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <p className="truncate text-ui font-medium text-foreground">{agent.name}</p>
-          <p className="truncate text-caption text-muted-foreground" aria-live="polite">
-            {sentence}
-          </p>
-        </button>
-
-        <div className="flex shrink-0 items-center gap-1">
-          {computerFeatureOn ? (
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Computer"
-              aria-pressed={activePanelTab === "computer"}
-              onClick={() => onTogglePanel?.("computer")}
-              className={cn(
-                "text-muted-foreground hover:text-foreground",
-                activePanelTab === "computer" && "bg-selected text-foreground"
-              )}
-            >
-              <Monitor className="size-4" aria-hidden="true" />
-            </Button>
-          ) : null}
-
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Agent panel"
-            aria-pressed={activePanelTab === "now" || activePanelTab === "setup"}
-            onClick={() => onTogglePanel?.("now")}
-            className={cn(
-              "text-muted-foreground hover:text-foreground",
-              (activePanelTab === "now" || activePanelTab === "setup") && "bg-selected text-foreground"
+          <AgentPresence avatar={agent.avatar} state={state} size={34} spread={0.4} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-ui font-medium text-foreground">{agent.name}</span>
+            {attention ? (
+              <span className="flex items-center gap-1 text-caption font-medium text-primary">
+                <Hand className="size-3 shrink-0" aria-hidden="true" />
+                <span className="truncate">{sentence}</span>
+              </span>
+            ) : (
+              <AgentStatusLine text={sentence} state={state} className="text-caption text-muted-foreground" />
             )}
-          >
-            <PanelRight className="size-4" aria-hidden="true" />
-          </Button>
+          </span>
+        </button>
+
+        <div className="flex shrink-0 items-center gap-0.5">
+          {computerFeatureOn ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={`${agent.name}’s computer`}
+                  aria-pressed={activePanelTab === "computer"}
+                  onClick={() => onTogglePanel?.("computer")}
+                  className={cn("text-muted-foreground hover:text-foreground", activePanelTab === "computer" && "bg-selected text-foreground")}
+                >
+                  <Monitor className="size-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Computer</TooltipContent>
+            </Tooltip>
+          ) : null}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Profile"
+                aria-pressed={profileOpen}
+                onClick={() => onTogglePanel?.("profile")}
+                className={cn("text-muted-foreground hover:text-foreground", profileOpen && "bg-selected text-foreground")}
+              >
+                <PanelRight className="size-4" aria-hidden="true" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Profile</TooltipContent>
+          </Tooltip>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -254,7 +215,7 @@ export function AgentThreadHeader({
                 <MoreHorizontal className="size-4" aria-hidden="true" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="min-w-44">
               <DropdownMenuItem onSelect={() => void handlePauseResume()}>
                 {agent.status === "paused" ? "Resume" : "Pause"}
               </DropdownMenuItem>
@@ -279,7 +240,7 @@ export function AgentThreadHeader({
           <DialogHeader>
             <DialogTitle>Retire {agent.name}?</DialogTitle>
             <DialogDescription>
-              Retiring {agent.name} stops all of its routines and tasks and removes it from your roster.
+              Its routines and tasks stop and it leaves your team. This conversation stays in your history.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -304,60 +265,27 @@ export function AgentThreadHeader({
 }
 
 /**
- * The empty thread greets in the agent's own voice (BRIEF.md §4.8.4):
- * "Hi, I'm <name>. Tell me what you'd like me to take on and I'll set myself up."
- * Plus 3 suggestion chips drawn from the template and a "Set up with a form" link.
+ * The empty thread greets in the agent's own voice. No suggestion chips: the
+ * composer below is the invitation, and its placeholder says what to type.
  */
 export function AgentGreeting({
   agent,
-  onSelectSuggestion,
 }: {
   agent: ClientAgent;
   onSelectSuggestion?: (text: string) => void;
 }) {
-  const suggestions = getTemplateSuggestions(agent.template);
-  const templateObj = AGENT_TEMPLATES.find((t) => t.id === agent.template);
-  const chips = React.useMemo(() => {
-    if (templateObj && templateObj.firstGoal) {
-      const rest = suggestions.filter((s) => s !== templateObj.firstGoal);
-      return [templateObj.firstGoal, ...rest].slice(0, 3);
-    }
-    return suggestions.slice(0, 3);
-  }, [suggestions, templateObj]);
-
+  const paused = agent.status === "paused";
   return (
-    <div className="flex flex-col items-center text-center" data-face-trigger>
-      <AgentFace
-        avatar={agent.avatar}
-        state={agent.status === "paused" ? "sleeping" : "idle"}
-        size="lg"
-        name={agent.name}
-      />
-      <h1 className="mt-5 text-display font-medium tracking-tight text-foreground">
-        Meet {agent.name}.
+    <div className="flex flex-col items-center text-center motion-safe:animate-rise-in" data-face-trigger>
+      <AgentPresence avatar={agent.avatar} state={paused ? "sleeping" : "idle"} size={88} spread={0.6} name={agent.name} />
+      <h1 className="mt-8 text-balance font-serif text-display font-normal text-foreground">
+        Hi, I’m <span className="italic">{agent.name}</span>.
       </h1>
-      <p className="mt-2 max-w-md text-body text-muted-foreground">
-        {agent.status === "paused"
-          ? "I’m paused. Resume me from the menu above to start something new."
-          : "Tell me what you’d like me to take on and I’ll set myself up."}
+      <p className="mt-3 max-w-md text-body-lg text-muted-foreground">
+        {paused
+          ? "I’m paused. Resume me from the menu above when you need me."
+          : "Tell me what to take care of. I’ll set myself up and start."}
       </p>
-
-      {agent.status !== "paused" ? (
-        <div className="mt-6 flex max-w-lg flex-wrap justify-center gap-2">
-          {chips.map((chip) => (
-            <button
-              key={chip}
-              type="button"
-              onClick={() => onSelectSuggestion?.(chip)}
-              className="rounded-control border border-border bg-card px-3 py-1.5 text-left text-ui text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent"
-            >
-              {chip}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-
     </div>
   );
 }
