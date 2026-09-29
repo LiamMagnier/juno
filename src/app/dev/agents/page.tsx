@@ -9,6 +9,7 @@ import { AgentsStage } from "./stage";
  *   ?view=motion   every face state, large, light and dark (hover them)
  *   ?view=thread   Mira's thread in the real shell   (&panel=1 opens her profile)
  *   ?state=<AgentState>  forces Mira's state in the thread
+ *   &fresh=1       an empty thread (the greeting)
  *
  * Not linked from anywhere and 404s outside development.
  */
@@ -20,5 +21,5 @@ export default async function AgentsDevPage({
   if (process.env.NODE_ENV === "production") notFound();
   const params = await searchParams;
   const view = params.view === "thread" ? "thread" : "motion";
-  return <AgentsStage view={view} panel={params.panel === "1"} state={typeof params.state === "string" ? params.state : null} />;
+  return <AgentsStage view={view} fresh={params.fresh === "1"} panel={params.panel === "1"} state={typeof params.state === "string" ? params.state : null} />;
 }

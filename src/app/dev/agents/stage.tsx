@@ -38,7 +38,7 @@ function installFetch(state: AgentState | null): () => void {
   };
 }
 
-export function AgentsStage({ view, panel, state }: { view: "motion" | "thread"; panel: boolean; state: string | null }) {
+export function AgentsStage({ view, panel, state, fresh = false }: { view: "motion" | "thread"; panel: boolean; state: string | null; fresh?: boolean }) {
   const forced = (AGENT_STATES as readonly string[]).includes(state ?? "") ? (state as AgentState) : null;
   const [ready, setReady] = React.useState(false);
   React.useEffect(() => {
@@ -54,14 +54,15 @@ export function AgentsStage({ view, panel, state }: { view: "motion" | "thread";
   const data = React.useMemo(() => bootstrap(), []);
   if (!ready) return null;
   if (view === "motion") return <MotionLab />;
-  const agent = forced ? { ...MIRA, state: forced } : MIRA;
+  const base = fresh ? { ...MIRA, state: "idle" as const, needsYou: 0, task: null, stateSentence: "Ready when you are" } : MIRA;
+  const agent = forced ? { ...base, state: forced } : base;
   return (
     <AppProvider bootstrap={data}>
       <AppShell>
         <ChatView
           conversationId={MIRA.conversationId ?? "conv-mira"}
           agent={agent}
-          initialMessages={MIRA_THREAD}
+          initialMessages={fresh ? [] : MIRA_THREAD}
           initialArtifacts={[]}
           initialModel="claude-opus-5-5"
           initialConnectors={[]}
