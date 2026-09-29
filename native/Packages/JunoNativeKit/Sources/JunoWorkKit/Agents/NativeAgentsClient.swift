@@ -47,6 +47,14 @@ public struct NativeAgentsClient: Sendable {
         return try decodeAgent(try require(response, named: "agent"))
     }
 
+    public func pendingStarter(id: String, for accountID: AccountID) async throws -> String? {
+        try validate(id)
+        let response = try await get("/api/agents/\(id)/starter", for: accountID)
+        guard let root = try object(response) else { throw WorkRemoteError.malformedResponse }
+        if case .string(let message)? = root["message"] { return message }
+        return nil
+    }
+
     public func detail(id: String, for accountID: AccountID) async throws -> NativeAgentDetail {
         try validate(id)
         let response = try await get("/api/agents/\(id)", for: accountID)
@@ -347,6 +355,8 @@ public struct NativeAgentsClient: Sendable {
             "approvalMode": .string(draft.approvalMode.rawValue),
             "connectorIds": .array(draft.connectorIDs.map { .string($0) }),
         ]
+        if let key = draft.creationKey { body["creationKey"] = .string(key) }
+        if let message = draft.starterMessage { body["starterMessage"] = .string(message.trimmingCharacters(in: .whitespacesAndNewlines)) }
         if let template = draft.template, !template.isEmpty {
             body["template"] = .string(template)
         }

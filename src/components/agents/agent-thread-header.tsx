@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
+
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -137,7 +137,7 @@ export function AgentThreadHeader({
           state
         );
 
-  const computerFeatureOn = agent.computer !== null;
+  const computerFeatureOn = agent.computer != null;
 
   const handlePauseResume = async () => {
     const nextStatus = agent.status === "paused" ? "active" : "paused";
@@ -186,17 +186,17 @@ export function AgentThreadHeader({
   };
 
   return (
-    <div className="flex shrink-0 justify-center border-b border-border/70 px-4 py-2">
+    <div className="flex shrink-0 agent-thread-bar justify-center border-b border-border/70 px-4 py-3">
       <div className="flex w-full max-w-3xl items-center gap-3">
         <button
           ref={faceRef}
           type="button"
           onClick={() => onTogglePanel?.("now")}
           data-face-trigger
-          className="shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="shrink-0 rounded-control outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={`Open ${agent.name} panel`}
         >
-          <AgentFace avatar={agent.avatar} state={state} size="sm" />
+          <AgentFace avatar={agent.avatar} state={state} size={36} />
         </button>
         <button
           type="button"
@@ -333,8 +333,8 @@ export function AgentGreeting({
         size="lg"
         name={agent.name}
       />
-      <h1 className="mt-5 font-serif text-display text-foreground">
-        Hi, I’m <span className="italic">{agent.name}</span>.
+      <h1 className="mt-5 text-display font-medium tracking-tight text-foreground">
+        Meet {agent.name}.
       </h1>
       <p className="mt-2 max-w-md text-body text-muted-foreground">
         {agent.status === "paused"
@@ -357,14 +357,7 @@ export function AgentGreeting({
         </div>
       ) : null}
 
-      <p className="mt-4 text-caption text-muted-foreground">
-        <Link
-          href={agent.template ? `/agents/new?form=1&template=${encodeURIComponent(agent.template)}` : "/agents/new?form=1"}
-          className="underline-offset-4 hover:text-foreground hover:underline"
-        >
-          Set up with a form
-        </Link>
-      </p>
+
     </div>
   );
 }

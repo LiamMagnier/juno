@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTheme } from "next-themes";
 import { JunoVoiceGlow } from "@/components/voice/voice-composer-glow";
 
 import { AppProvider } from "@/components/app/app-provider";
@@ -9,7 +10,7 @@ import { CodeComposer } from "@/components/code/code-composer";
 import { EmptyGreeting } from "@/components/chat/empty-state";
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 import { MessageItem } from "@/components/chat/message-item";
-import { RealtimeVoice, voiceCallParts } from "@/components/voice/realtime-voice";
+import { voiceCallParts } from "@/components/voice/realtime-voice";
 import { TeamStatus } from "@/components/agents/team-status";
 import { MetalCta } from "@/components/effects/metal-cta";
 import { Button } from "@/components/ui/button";
@@ -136,20 +137,20 @@ function useDemoLevel() {
   }, []);
 }
 
-/** A stand-in call controller: only what the call bar reads, with a live
+/** A stand-in call controller: only what the composer reads, with a live
  *  demo level in `levelRef` the way the hook fills it from the mic. */
-function useFakeCall(state: { userSpeaking: boolean; awaitingResponse: boolean }) {
+function useFakeCall(state: { userSpeaking: boolean; awaitingResponse: boolean; peak?: boolean }) {
   const level = useDemoLevel();
   const levelRef = React.useRef(0);
   React.useEffect(() => {
     let raf = 0;
     const tick = () => {
-      levelRef.current = state.awaitingResponse ? 0 : level();
+      levelRef.current = state.awaitingResponse ? 0 : state.peak ? 1 : level();
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [level, state.awaitingResponse]);
+  }, [level, state.awaitingResponse, state.peak]);
   return {
     status: "live",
     provider: "qwen",
@@ -176,27 +177,24 @@ function useFakeCall(state: { userSpeaking: boolean; awaitingResponse: boolean }
     stopScreenShare: noop,
     start: noop,
     stop: noop,
-  } as unknown as Parameters<typeof RealtimeVoice>[0]["voice"];
+  } as unknown as Parameters<typeof voiceCallParts>[0]["voice"];
 }
 
-function CallDemo({ thinking }: { thinking: boolean }) {
-  const voice = useFakeCall({ userSpeaking: !thinking, awaitingResponse: thinking });
-  return <RealtimeVoice voice={voice} onClose={noop} />;
-}
-
-/** The call drawn into the real Composer: status left, controls right, End in the primary slot. */
+/** The call drawn into the real Composer, with inline controls and End in the primary slot. */
 function CallComposerDemo({
   common,
   speaking = false,
   muted = false,
   thinking = false,
+  peak = false,
 }: {
   common: Omit<React.ComponentProps<typeof Composer>, "isBusy" | "status">;
   speaking?: boolean;
   muted?: boolean;
   thinking?: boolean;
+  peak?: boolean;
 }) {
-  const base = useFakeCall({ userSpeaking: !speaking && !muted && !thinking, awaitingResponse: thinking });
+  const base = useFakeCall({ userSpeaking: !speaking && !muted && !thinking, awaitingResponse: thinking, peak });
   const voice = { ...base, assistantSpeaking: speaking, muted } as typeof base;
   return (
     <Composer
@@ -227,7 +225,8 @@ function VoiceDemo({ processing }: { processing: boolean }) {
   );
 }
 
-export function PremiumGallery({ only }: { only?: string }) {
+export function PremiumGallery({ only, voicePeak = false }: { only?: string; voicePeak?: boolean }) {
+  const { resolvedTheme, setTheme } = useTheme();
   const [model, setModel] = React.useState<ModelId>(AUTO_MODEL_ID);
   const [effort, setEffort] = React.useState<ReasoningEffort | null>(null);
   const common = {
@@ -250,6 +249,11 @@ export function PremiumGallery({ only }: { only?: string }) {
         <div className="page-gutter mx-auto w-full max-w-3xl py-12">
           <h1 className="font-serif text-page-title">Premium pass</h1>
           <p className="mt-1 text-body text-muted-foreground">Libraries.dev placements on the real components.</p>
+          {(only === "call" || only === "voice") && (
+            <Button variant="outline" className="mt-4" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}>
+              Switch to {resolvedTheme === "dark" ? "light" : "dark"} theme
+            </Button>
+          )}
 
           {show("landings") && (
             <Section id="landings" title="Empty states" note="Chat and Code, one display system: the greeting in the display face, the composer as the hero, four starting points.">
@@ -367,11 +371,11 @@ export function PremiumGallery({ only }: { only?: string }) {
               <div className="space-y-8">
                 <div>
                   <Label>Listening</Label>
-                  <CallComposerDemo common={common} />
+                  <CallComposerDemo common={common} peak={voicePeak} />
                 </div>
                 <div>
                   <Label>Juno is speaking (Stop appears)</Label>
-                  <CallComposerDemo common={common} speaking />
+                  <CallComposerDemo common={common} speaking peak={voicePeak} />
                 </div>
                 <div>
                   <Label>Thinking (the glow gathers into one beam travelling side to side)</Label>
@@ -397,12 +401,16 @@ export function PremiumGallery({ only }: { only?: string }) {
                   <VoiceDemo processing />
                 </div>
                 <div>
-                  <Label>Voice mode call bar, caller speaking (the product reads the call&apos;s level)</Label>
-                  <CallDemo thinking={false} />
+                  <Label>Voice mode in the composer, you speaking</Label>
+                  <CallComposerDemo common={common} peak={voicePeak} />
                 </div>
                 <div>
-                  <Label>Voice mode call bar, waiting for the answer (processing)</Label>
-                  <CallDemo thinking />
+                  <Label>Voice mode in the composer, Juno speaking</Label>
+                  <CallComposerDemo common={common} speaking peak={voicePeak} />
+                </div>
+                <div>
+                  <Label>Voice mode in the composer, thinking</Label>
+                  <CallComposerDemo common={common} thinking />
                 </div>
               </div>
             </Section>

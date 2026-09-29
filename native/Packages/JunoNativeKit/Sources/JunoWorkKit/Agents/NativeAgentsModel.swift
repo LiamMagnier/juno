@@ -333,6 +333,15 @@ public final class NativeAgentsModel {
         }
     }
 
+    public func pendingStarter(for agentID: String) async -> String? {
+        guard let accountID else { return nil }
+        do {
+            let message = try await client.pendingStarter(id: agentID, for: accountID)
+            guard self.accountID == accountID else { return nil }
+            return message
+        } catch { record(error); return nil }
+    }
+
     // MARK: - Goals
 
     @discardableResult

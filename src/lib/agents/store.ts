@@ -15,9 +15,10 @@ import "server-only";
  * Every query carries the account's id (src/lib/db.ts guards all five models).
  */
 
-import type { Agent } from "@prisma/client";
+import { createAgentTransaction } from "@/lib/agents/creation";
+import type { Agent, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { decryptField, encryptField } from "@/lib/field-crypto";
+import { decryptField, encryptField, FIELD_DECRYPT_PLACEHOLDER } from "@/lib/field-crypto";
 import { DEFAULT_MODEL } from "@/lib/models";
 import { canUseModel } from "@/lib/plans";
 import { getUserPlan } from "@/lib/usage";
@@ -615,60 +616,29 @@ async function ownedProjectId(userId: string, projectId: string | null | undefin
 }
 
 export async function createAgentForUser(user: AgentActor, input: CreateAgentInput): Promise<AgentResult<ClientAgent>> {
-  const count = await prisma.agent.count({ where: { userId: user.id, deletedAt: null } });
-  if (count >= MAX_AGENTS_PER_ACCOUNT) {
-    return refusal(
-      409,
-      "too_many_agents",
-      `You have ${MAX_AGENTS_PER_ACCOUNT} agents, which is the most one account keeps. Retire one to hire another.`
-    );
-  }
   const projectId = await ownedProjectId(user.id, input.projectId);
   if (input.projectId && projectId === undefined) return refusal(404, "project_not_found", "That project no longer exists.");
   if (!(await modelInPlan(user.id, input.model))) return refusal(403, "plan_locked", MODEL_NOT_IN_PLAN);
   const connectorIds = await linkedConnectorIds(user.id, input.connectorIds);
-
-  const agent = await prisma.agent.create({
-    data: {
-      userId: user.id,
-      name: input.name,
-      role: input.role,
-      avatar: {},
-      style: input.style,
-      instructions: input.instructions,
-      model: input.model ?? null,
-      reasoningEffort: input.reasoningEffort ?? null,
-      approvalMode: input.approvalMode,
-      connectorIds,
-      projectId: projectId ?? null,
-      proactive: input.proactive,
-      notify: input.notify ?? "results",
-      template: input.template ?? null,
-      sortOrder: count,
-    },
-  });
-  // The face is written after the id exists, so a hire with no face chosen
-  // gets the one seeded from its id — the same one a client would draw.
-  const withFace = await prisma.agent.update({
-    where: { id: agent.id, userId: user.id },
-    data: { avatar: { ...normalizeAgentAvatar(input.avatar ?? null, agent.id) } },
-  });
-  await ensureAgentThread(user.id, withFace);
-  await recordAgentEvent({ userId: user.id, agentId: agent.id, kind: "hired", title: `${agent.name} joined` });
-  if (input.firstGoal) {
-    await prisma.agentGoal.create({
-      data: { userId: user.id, agentId: agent.id, title: input.firstGoal, cadence: "weekly" },
-    });
-    await recordAgentEvent({
-      userId: user.id,
-      agentId: agent.id,
-      kind: "goal_set",
-      title: `New goal: ${input.firstGoal}`,
-    });
-  }
-  const fresh = await findAgent(user.id, agent.id);
-  const [serialized] = await serializeAgents(user.id, fresh ? [fresh] : [withFace]);
+  const settings = await prisma.settings.findFirst({ where: { userId: user.id }, select: { defaultModel: true } });
+  const agent = await prisma.$transaction(tx => createAgentTransaction(tx as unknown as Prisma.TransactionClient, user.id, input, connectorIds,
+    projectId ?? null, settings?.defaultModel ?? DEFAULT_MODEL), { timeout: 15000 });
+  if (!agent) return refusal(409, "too_many_agents", `You have ${MAX_AGENTS_PER_ACCOUNT} agents. Retire one to start another.`);
+  const [serialized] = await serializeAgents(user.id, [agent]);
   return { status: 201, body: { agent: serialized }, value: serialized };
+}
+
+/** A durable opening request, only while this owned thread has no user message. */
+export async function pendingAgentStarter(userId: string, agentId: string): Promise<string | null> {
+  const agent = await findAgent(userId, agentId);
+  if (!agent?.conversationId) return null;
+  const started = await prisma.message.findFirst({ where: { conversation: { userId }, conversationId: agent.conversationId, role: "USER" }, select: { id: true } });
+  if (started) return null;
+  const event = await prisma.agentEvent.findFirst({ where: { userId, agentId, kind: "hired" }, orderBy: { createdAt: "asc" }, select: { detail: true } });
+  const detail = event?.detail;
+  const message = detail && typeof detail === "object" && !Array.isArray(detail) ? detail.starterMessage : null;
+  const plain = typeof message === "string" ? decryptField(message) : null;
+  return plain === FIELD_DECRYPT_PLACEHOLDER ? null : plain;
 }
 
 /**

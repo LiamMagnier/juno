@@ -264,7 +264,8 @@ export class OpenAICompatAdapter implements ProviderAdapter {
         const choice = chunk.choices?.[0];
         const delta = choice?.delta;
         if (delta?.content) yield { type: 'text_delta', text: delta.content };
-        const reasoning = (delta as unknown as { reasoning_content?: string })?.reasoning_content;
+        const reasoningDelta = delta as unknown as { reasoning_content?: string; reasoning?: string; thinking?: string };
+        const reasoning = reasoningDelta?.reasoning_content ?? reasoningDelta?.reasoning ?? reasoningDelta?.thinking;
         if (reasoning) yield { type: 'thinking_delta', text: reasoning };
         for (const tc of delta?.tool_calls ?? []) {
           const cur = calls.get(tc.index) ?? { id: '', name: '', args: '' };

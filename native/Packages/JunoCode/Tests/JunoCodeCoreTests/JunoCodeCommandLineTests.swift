@@ -3,6 +3,42 @@ import XCTest
 @testable import JunoCodeCore
 
 final class JunoCodeCommandLineTests: XCTestCase {
+    func testExecAliasAndPermissionUseTheSameHostSession() async throws {
+        let host = CLIHost()
+        _ = try await JunoCodeCommandLine(host: host).execute(arguments: [
+            "exec", "host-a", "workspace-a", "implement", "--permission", "workspaceWrite",
+        ])
+        let submitted = await host.submitted
+        XCTAssertEqual(submitted.count, 1)
+        XCTAssertEqual(submitted.first?.kind, .createSession)
+        XCTAssertEqual(submitted.first?.payload["permissionMode"], .string("workspaceWrite"))
+    }
+
+    func testInvalidInputsNeverReachTheHost() async throws {
+        let host = CLIHost()
+        let cli = JunoCodeCommandLine(host: host)
+        for arguments in [
+            ["run", "host-a", "workspace-a", "   "],
+            ["run", "host-a", "workspace-a", "fix", "--reasoning", "banana"],
+            ["run", "host-a", "workspace-a", "fix", "--permission", "unsafe"],
+            ["run", "host-a", "workspace-a", "fix", "--model", "a", "--model", "b"],
+            ["events", "session-a", "0", "unexpected"],
+            ["queue", "host-a", "session-a", " "],
+        ] {
+            do { _ = try await cli.execute(arguments: arguments); XCTFail("accepted \(arguments)") }
+            catch let error as JunoCodeCLIError { guard case .usage = error else { return XCTFail("expected usage") } }
+        }
+        let submitted = await host.submitted
+        XCTAssertTrue(submitted.isEmpty)
+    }
+
+    func testHelpDoesNotCallTheHost() async throws {
+        let host = CLIHost()
+        let result = try await JunoCodeCommandLine(host: host).execute(arguments: ["run", "--help"])
+        guard case .usage = result else { return XCTFail("expected usage") }
+        let submitted = await host.submitted
+        XCTAssertTrue(submitted.isEmpty)
+    }
     func testSessionsAndStatusReadOnlyUseHostInventory() async throws {
         let host = CLIHost()
         let client = JunoCodeCommandLine(host: host)

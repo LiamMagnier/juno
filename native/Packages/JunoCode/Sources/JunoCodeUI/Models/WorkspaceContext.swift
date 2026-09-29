@@ -393,6 +393,10 @@ public final class WorkspaceContext: Sendable {
         offset/limit, there is no base_sha256: edit with apply_patch.
         - Prefer apply_patch for changes to existing files; write whole files \
         only when creating them or rewriting most of their content.
+        - Implementation requests require real file edits in the workspace \
+        above. Call apply_patch or write_file; a code block in chat does not \
+        create a file. Do not return full source files or patches as your answer. \
+        Use short code snippets only to explain a question or a material detail.
         - Match the surrounding code's style, naming and comment density. Do not \
         add comments that narrate the change.
         - After meaningful changes, run the project's own tests or build and \
@@ -404,10 +408,15 @@ public final class WorkspaceContext: Sendable {
         - If a tool call is denied, do not retry it unchanged: adjust, or ask.\(previewInstruction)
 
         How to communicate:
+        - Keep internal reasoning in the provider's thinking channel. Never \
+        print deliberation, scratch work or thinking tags in the answer.
+        - Before tool work, give one brief progress sentence about what you \
+        will inspect or change. During longer work, report meaningful findings \
+        and actions in short updates. The tools supply the activity details.
         - Be direct and brief. Lead with the outcome, not the process.
         - When you finish, summarise what changed and why in a few sentences, \
         naming files as `path/to/file.swift:42`. Mention anything left undone.
-        - Use Markdown sparingly: short paragraphs, code in fenced blocks, \
+        - Use Markdown sparingly: short paragraphs, brief explanatory snippets, \
         lists only for genuinely parallel items.\(userSection)\(repositorySection)
         """
     }

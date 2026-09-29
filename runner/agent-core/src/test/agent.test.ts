@@ -40,6 +40,33 @@ function mockProvider(turns: ProviderStreamEvent[][]): ProviderAdapter {
   };
 }
 
+test('reasoning stays separate and a tool call with end_turn still writes the selected workspace', async () => {
+  process.env.JUNO_HOME = tmpdir();
+  const cwd = tmpdir();
+  fs.writeFileSync(path.join(cwd, 'greet.txt'), 'hello');
+  const events: AgentEvent[] = [];
+  const provider = mockProvider([
+    [
+      { type: 'text_delta', text: '<thi' },
+      { type: 'text_delta', text: 'nk>Inspect files.</think>Updating the greeting.' },
+      { type: 'tool_call', id: 'edit-1', name: 'edit_file', input: { path: 'greet.txt', old_string: 'hello', new_string: 'goodbye' } },
+      { type: 'done', stopReason: 'end_turn', usage: { inputTokens: 10, outputTokens: 5 } },
+    ],
+    [
+      { type: 'thinking_delta', text: 'Check the result.' },
+      { type: 'text_delta', text: 'Updated greet.txt.' },
+      { type: 'done', stopReason: 'end_turn', usage: { inputTokens: 10, outputTokens: 5 } },
+    ],
+  ]);
+  const session = AgentSession.create({ provider, cwd, mode: 'auto-edit', callbacks: { onEvent: e => events.push(e), requestApproval: async () => 'allow' } });
+  await session.prompt('change the greeting');
+  assert.equal(fs.readFileSync(path.join(cwd, 'greet.txt'), 'utf8'), 'goodbye');
+  const text = events.filter(e => e.type === 'assistant_delta').map(e => e.text).join('');
+  assert.equal(text, 'Updating the greeting.Updated greet.txt.');
+  assert.deepEqual(events.filter(e => e.type === 'thinking_message').map(e => e.text), ['Inspect files.', 'Check the result.']);
+  assert.ok(events.some(e => e.type === 'tool_finished'));
+});
+
 test('agent loop executes tools, gates approvals, checkpoints, and undoes', async () => {
   process.env.JUNO_HOME = tmpdir();
   const cwd = tmpdir();

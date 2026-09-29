@@ -430,7 +430,7 @@ test("onboarding, selfConfig, recent work untrusted wrapping, and paused state i
     },
     "Liam"
   );
-  assert.match(onboardingBlock, /This is a new hire with almost nothing set up yet/);
+  assert.match(onboardingBlock, /This teammate was created without a configuration form/);
   assert.match(onboardingBlock, /## Configuring yourself/);
   assert.match(onboardingBlock, /<<<JUNO_UNTRUSTED_BEGIN>>> source=recent_work/);
   assert.match(onboardingBlock, /<untrusted source="recent_work">/);
@@ -452,7 +452,7 @@ test("onboarding, selfConfig, recent work untrusted wrapping, and paused state i
     "Liam"
   );
   assert.doesNotMatch(voiceBlock, /## Configuring yourself/);
-  assert.doesNotMatch(voiceBlock, /This is a new hire with almost nothing set up yet/);
+  assert.doesNotMatch(voiceBlock, /This teammate was created without a configuration form/);
 
   const pausedBlock = buildAgentPromptBlock(
     {

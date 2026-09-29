@@ -158,7 +158,7 @@ export function VoiceCallControls({ voice, speakerName }: { voice: VoiceControll
   const speaker = speakerOf(voice, speakerName);
 
   return (
-    <div className="flex shrink-0 items-center gap-0.5">
+    <div className="voice-call-controls flex shrink-0 items-center gap-0.5">
       {restartable ? (
         <CallButton onClick={() => void voice.retry()} label="Try the call again">
           <ActionIcons.refresh className="size-4" />

@@ -10,6 +10,24 @@ import XCTest
 /// The skills library's wire, its refusal/failure split, and the rules the
 /// pages and the composer share (Phase 4 Stage B3).
 final class NativeSkillsClientTests: XCTestCase {
+    func testLocalFilePreviewAndImportKeepTheToolRequestWithoutGrantingTrust() async throws {
+        let transport = SkillsTransport(routes: [
+            "POST /api/skills/import/file": (200, #"{"skill":{"name":"review-code","description":"Review","instructions":"Read the diff.","allowedTools":["read_file"],"hostKeys":["context"],"ignoredKeys":[]}}"#),
+            "POST /api/work/skills": (201, #"{"skill":{"id":"local","name":"review-code","slug":"review-code"}}"#),
+        ])
+        let client = NativeSkillsClient(sender: transport)
+        let result = await client.previewFile(content: "fixture", for: account)
+        let preview = try XCTUnwrap(result.value)
+        XCTAssertEqual(preview.ignoredSettings, ["context"])
+        _ = await client.create(name: preview.name, description: preview.description, instructions: preview.instructions,
+            imported: true, requestedTools: preview.requestedTools, for: account)
+        let requests = await transport.recorded()
+        let create = try body(requests[1])
+        XCTAssertEqual(create["origin"], .string("imported"))
+        XCTAssertEqual(create["requestedTools"], .array([.string("read_file")]))
+        XCTAssertEqual(create["autoSelect"], .bool(false))
+        XCTAssertNil(create["trust"])
+    }
     private let account = try! AccountID("account-skills")
 
     // MARK: Decoding

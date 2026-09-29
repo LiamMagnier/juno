@@ -589,6 +589,8 @@ public enum NativeAgentIdeaAction: String, Sendable {
 
 /// A new hire. `createAgentSchema`.
 public struct NativeAgentDraft: Equatable, Sendable {
+    public var creationKey: String?
+    public var starterMessage: String?
     public var name: String
     public var role: String
     public var avatar: JunoAgentAvatar
@@ -601,6 +603,8 @@ public struct NativeAgentDraft: Equatable, Sendable {
 
     public init(
         name: String,
+        creationKey: String? = nil,
+        starterMessage: String? = nil,
         role: String = "",
         avatar: JunoAgentAvatar,
         style: NativeAgentStyle = .warm,
@@ -610,6 +614,8 @@ public struct NativeAgentDraft: Equatable, Sendable {
         template: String? = nil,
         firstGoal: String = ""
     ) {
+        self.creationKey = creationKey
+        self.starterMessage = starterMessage
         self.name = name
         self.role = role
         self.avatar = avatar
@@ -636,6 +642,18 @@ public struct NativeAgentDraft: Equatable, Sendable {
         )
     }
 
+    /// Create the teammate now; its brief and schedule are learned in chat.
+    public static func conversationStarter(_ template: NativeAgentTemplate) -> NativeAgentDraft {
+        NativeAgentDraft(
+            name: template.names.first ?? "New agent",
+            role: template.id == "custom" ? "" : template.role,
+            avatar: template.avatar,
+            style: template.style,
+            approvalMode: .balanced,
+            template: template.id
+        )
+    }
+
     /// The limits the server enforces (`MAX_AGENT_NAME_CHARS` and friends),
     /// checked here so Hire is disabled rather than answered with a 400.
     public var isValid: Bool {
@@ -645,6 +663,7 @@ public struct NativeAgentDraft: Equatable, Sendable {
         guard instructions.trimmingCharacters(in: .whitespacesAndNewlines).count <= NativeAgentLimits.instructions else {
             return false
         }
+        if let starterMessage, starterMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || starterMessage.count > NativeAgentLimits.instructions { return false }
         return firstGoal.trimmingCharacters(in: .whitespacesAndNewlines).count <= NativeAgentLimits.goalTitle
     }
 }
@@ -804,7 +823,7 @@ public struct NativeAgentTemplate: Identifiable, Equatable, Sendable {
             role: "Inbox, calendar and follow-ups",
             style: .direct,
             approvalMode: .balanced,
-            avatar: JunoAgentAvatar(shape: .pebble, tone: .juniper, eyes: .soft, mark: .ring),
+            avatar: JunoAgentAvatar(shape: .tile, tone: .juniper, eyes: .soft, mark: .none),
             instructions: [
                 "You look after my inbox, my calendar and the follow-ups that fall between them.",
                 "Triage what came in, tell me what needs me today, draft replies in my voice, and find times for meetings.",
@@ -821,7 +840,7 @@ public struct NativeAgentTemplate: Identifiable, Equatable, Sendable {
             role: "Research and briefings",
             style: .direct,
             approvalMode: .balanced,
-            avatar: JunoAgentAvatar(shape: .orb, tone: .teal, eyes: .round, mark: .antenna),
+            avatar: JunoAgentAvatar(shape: .halo, tone: .teal, eyes: .round, mark: .none),
             instructions: [
                 "You research questions for me thoroughly and report back with what you found and where you found it.",
                 "Prefer primary sources, say when evidence is thin or sources disagree, and lead every report with the answer in two sentences.",
@@ -838,7 +857,7 @@ public struct NativeAgentTemplate: Identifiable, Equatable, Sendable {
             role: "Shopping and price watching",
             style: .warm,
             approvalMode: .balanced,
-            avatar: JunoAgentAvatar(shape: .petal, tone: .amber, eyes: .wide, mark: .spark),
+            avatar: JunoAgentAvatar(shape: .prism, tone: .amber, eyes: .wide, mark: .none),
             instructions: [
                 "You find the best price for things I want to buy and watch for drops on things I am waiting on.",
                 "Compare the exact model, size and colour I asked for across reputable shops, include shipping and returns, and flag anything that looks like a grey-market listing.",

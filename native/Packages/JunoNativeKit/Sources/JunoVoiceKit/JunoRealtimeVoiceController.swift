@@ -1522,6 +1522,7 @@ public final class JunoRealtimeVoiceController {
         }
         outputEngine.attach(player)
         outputEngine.connect(player, to: outputEngine.mainMixerNode, format: playback)
+        Self.installPlaybackTap(on: player, format: playback, box: box)
 
         let inputFormat = Self.usableInputFormat(of: input)
         guard RealtimeInputFormat.isUsable(
@@ -1706,6 +1707,7 @@ public final class JunoRealtimeVoiceController {
         player: AVAudioPlayerNode?
     ) {
         captureEngine.inputNode.removeTap(onBus: 0)
+        player?.removeTap(onBus: 0)
         player?.stop()
         playbackEngine.stop()
         if playbackEngine !== captureEngine { captureEngine.stop() }
@@ -1934,20 +1936,30 @@ public final class JunoRealtimeVoiceController {
             let channel = buffer.floatChannelData
         else { return }
         buffer.frameLength = AVAudioFrameCount(frames)
-        var energy: Float = 0
         data.withUnsafeBytes { raw in
             let samples = raw.bindMemory(to: Int16.self)
             for index in 0..<frames {
                 let sample = Float(Int16(littleEndian: samples[index])) / 32_768
                 channel[0][index] = sample
-                energy += sample * sample
             }
         }
-        // `max`, because several frames arrive per meter tick and the loudest is
-        // the one the ear registers; averaging them flattens every consonant.
-        box.playbackLevel = max(box.playbackLevel, Double((energy / Float(frames)).squareRoot()))
         box.playbackBufferScheduled()
         Self.schedulePlaybackBuffer(buffer, on: playerNode, box: box)
+    }
+
+    /// Meter audio on the playback clock, not when a network chunk arrives.
+    private nonisolated static func installPlaybackTap(
+        on player: AVAudioPlayerNode, format: AVAudioFormat, box: VoiceRelayShuttle
+    ) {
+        player.installTap(onBus: 0, bufferSize: 768, format: format) { buffer, _ in
+            guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
+            var energy: Double = 0
+            for index in 0..<Int(buffer.frameLength) {
+                let sample = Double(samples[index])
+                energy += sample * sample
+            }
+            box.playbackLevel = (energy / Double(buffer.frameLength)).squareRoot()
+        }
     }
 
     private nonisolated static func schedulePlaybackBuffer(
@@ -1983,7 +1995,7 @@ public final class JunoRealtimeVoiceController {
     ///
     /// **Attack is fast and decay is slow**, and deliberately not symmetric: the
     /// light has to jump on a syllable and fall away over a word, matching the
-    /// web's aura (`21` up, `3.6` down, per second). A single rate flickers on
+    /// web's audio envelope. A single rate flickers on
     /// every consonant, which is what the old `0.25` both ways did.
     private func startMetering() {
         meterTask?.cancel()
@@ -2004,12 +2016,11 @@ public final class JunoRealtimeVoiceController {
                 // buffer size the hardware chose.
                 self.noticeBargeIn(micLoudness)
                 let micTarget = self.muted ? 0 : micLoudness
-                // Playback decays rather than being cleared: the relay's audio
-                // arrives in bursts, and resetting between them would strobe the
-                // field through zero while the model is still mid-word.
+                // The render tap follows audible samples. Decay covers the
+                // short gaps between buffers and the final silent buffer.
                 let playbackTarget = Self.loudness(self.box.playbackLevel)
                 self.box.playbackLevel *= 0.86
-                let target = max(micTarget, playbackTarget)
+                let target = self.assistantSpeaking || playbackTarget > 0.01 ? playbackTarget : micTarget
                 let rate = target > self.level ? Self.attackRate : Self.decayRate
                 self.level += (target - self.level) * (1 - exp(-rate * Self.meterInterval))
             }
@@ -2019,7 +2030,7 @@ public final class JunoRealtimeVoiceController {
     nonisolated static let meterInterval: Double = 0.033
     /// Per second. The field climbs on a syllable and falls away over a word.
     nonisolated static let attackRate: Double = 21
-    nonisolated static let decayRate: Double = 3.6
+    nonisolated static let decayRate: Double = 9
     /// The quietest speech worth showing, and the loudest worth scaling to.
     /// −52 dBFS is a soft voice across a desk; −12 is close and emphatic.
     nonisolated static var quietFloorDB: Double { RealtimeLoudness.quietFloorDB }

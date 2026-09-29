@@ -19,12 +19,15 @@ import SwiftUI
 
 /// The body a face is drawn on. `avatar.ts` `AGENT_SHAPES`, in order.
 public enum JunoAgentShape: String, CaseIterable, Identifiable, Sendable {
-    case orb, pebble, capsule, petal, bloom, spark
+    case orb, pebble, capsule, petal, bloom, spark, tile, halo, prism
 
     public var id: String { rawValue }
 
     public var label: String {
         switch self {
+        case .tile: "Tile"
+        case .halo: "Halo"
+        case .prism: "Prism"
         case .orb: "Orb"
         case .pebble: "Pebble"
         case .capsule: "Capsule"
@@ -195,7 +198,7 @@ public struct JunoAgentAvatar: Hashable, Sendable {
         let tones = JunoAgentTone.allCases
         let eyes = JunoAgentEyes.allCases
         return JunoAgentAvatar(
-            shape: shapes[Int(hash % UInt32(shapes.count))],
+            shape: shapes[Int(hash % 6)],
             tone: tones[Int((hash / 7) % UInt32(tones.count))],
             eyes: eyes[Int((hash / 53) % UInt32(eyes.count))],
             mark: JunoAgentMark.none
@@ -262,6 +265,12 @@ struct JunoAgentShapeSpec {
 extension JunoAgentShape {
     var spec: JunoAgentShapeSpec {
         switch self {
+        case .tile:
+            JunoAgentShapeSpec(leftEye: CGPoint(x: 24, y: 32), rightEye: CGPoint(x: 40, y: 32), eyeScale: 0.9, center: CGPoint(x: 32, y: 32))
+        case .halo:
+            JunoAgentShapeSpec(leftEye: CGPoint(x: 25, y: 33), rightEye: CGPoint(x: 39, y: 33), eyeScale: 0.85, center: CGPoint(x: 32, y: 32))
+        case .prism:
+            JunoAgentShapeSpec(leftEye: CGPoint(x: 25, y: 32), rightEye: CGPoint(x: 39, y: 32), eyeScale: 0.85, center: CGPoint(x: 32, y: 32))
         case .orb:
             JunoAgentShapeSpec(
                 leftEye: CGPoint(x: 24, y: 31), rightEye: CGPoint(x: 40, y: 31),
@@ -353,6 +362,7 @@ struct JunoAgentEyePose {
 struct JunoAgentFacePath: Shape {
     enum Kind: Equatable, Sendable {
         case petal
+        case prism
         case spark
         case leaf
         case sparkMark
@@ -370,6 +380,20 @@ struct JunoAgentFacePath: Shape {
     nonisolated func path(in rect: CGRect) -> Path {
         var path = Path()
         switch kind {
+        case .prism:
+            path.move(to: CGPoint(x: 27, y: 5))
+            path.addQuadCurve(to: CGPoint(x: 37, y: 5), control: CGPoint(x: 32, y: 2))
+            path.addLine(to: CGPoint(x: 55, y: 16))
+            path.addQuadCurve(to: CGPoint(x: 60, y: 25), control: CGPoint(x: 60, y: 19))
+            path.addLine(to: CGPoint(x: 60, y: 40))
+            path.addQuadCurve(to: CGPoint(x: 55, y: 49), control: CGPoint(x: 60, y: 46))
+            path.addLine(to: CGPoint(x: 37, y: 60))
+            path.addQuadCurve(to: CGPoint(x: 27, y: 60), control: CGPoint(x: 32, y: 63))
+            path.addLine(to: CGPoint(x: 9, y: 49))
+            path.addQuadCurve(to: CGPoint(x: 4, y: 40), control: CGPoint(x: 4, y: 46))
+            path.addLine(to: CGPoint(x: 4, y: 25))
+            path.addQuadCurve(to: CGPoint(x: 9, y: 16), control: CGPoint(x: 4, y: 19))
+            path.closeSubpath()
         case .petal:
             // M8 9 H34 C48 9 58 21 58 35 C58 49 47 59 33 59 C19 59 8 48 8 34 Z
             path.move(to: CGPoint(x: 8, y: 9))
@@ -470,6 +494,7 @@ struct JunoAgentFaceMotion {
     var liftY: CGFloat = 0
     var settle: CGFloat = 1
     var blink: CGFloat = 1
+    var workBars: [Double] = [0.5, 0.5, 0.5]
     var dots: [Double] = [0.55, 0.55, 0.55]
 
     /// 0 → 1 → 0 over one period, eased in and out: a raised cosine, which is
@@ -522,6 +547,7 @@ struct JunoAgentFaceMotion {
 /// technology, because a caller that omits the name is printing the name and
 /// the state sentence beside it — the web's rule too.
 public struct JunoAgentFace: View {
+    @State private var hovering = false
     private let avatar: JunoAgentAvatar
     private let state: JunoAgentState
     private let size: CGFloat
@@ -565,7 +591,11 @@ public struct JunoAgentFace: View {
         // gesture ICONS_AND_MOTION.md §2.2 allows a state swap — and Reduce
         // Motion keeps its timing.
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: state)
+        .scaleEffect(hovering && !reduceMotion ? 1.045 : 1)
+        .offset(y: hovering && !reduceMotion ? -1 : 0)
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: hovering)
         .onHover { hovering in
+            self.hovering = hovering
             guard hovering, state == .idle, !reduceMotion else { return }
             blinkStartedAt = Date()
         }
@@ -601,11 +631,14 @@ public struct JunoAgentFace: View {
         switch state {
         case .working:
             let wave = JunoAgentFaceMotion.wave(time, period: 2.4)
-            motion.lookX = -2.5 + 5 * wave
-            motion.breathe = 1 + 0.015 * wave
+            motion.lookX = -1.8 + 3.6 * wave
+            motion.breathe = 1 + 0.02 * wave
+            motion.workBars = (0..<3).map { 0.25 + 0.55 * Double(JunoAgentFaceMotion.wave(time - Double($0) * 0.18, period: 1.4)) }
         case .waiting:
             motion.liftY = -1.5 * JunoAgentFaceMotion.wave(time, period: 2.4)
         case .thinking:
+            motion.liftY = -0.8 * JunoAgentFaceMotion.wave(time, period: 3.2)
+            motion.breathe = 1 + 0.012 * JunoAgentFaceMotion.wave(time, period: 3.2)
             motion.dots = (0..<3).map { index in
                 0.3 + 0.7 * Double(JunoAgentFaceMotion.wave(time - 0.2 * Double(index), period: 1.2))
             }
@@ -648,8 +681,14 @@ public struct JunoAgentFace: View {
             if isDetailed {
                 thinkingDots(motion: motion)
             }
-            if size >= 40 {
-                laptop
+            if isDetailed, state == .working {
+                ForEach(0..<3, id: \.self) { index in
+                    RoundedRectangle(cornerRadius: 1.5 * unit)
+                        .fill(Color.junoAgentInk)
+                        .frame(width: 3 * unit, height: 3 * unit)
+                        .position(x: (26.5 + 6 * CGFloat(index)) * unit, y: 45.5 * unit)
+                        .opacity(motion.workBars[index])
+                }
             }
         }
         .frame(width: size, height: size, alignment: .topLeading)
@@ -661,6 +700,16 @@ public struct JunoAgentFace: View {
     private var bodyShape: some View {
         let tone = avatar.tone.color
         switch avatar.shape {
+        case .tile:
+            RoundedRectangle(cornerRadius: 15 * unit, style: .circular)
+                .fill(tone).frame(width: 52 * unit, height: 52 * unit).position(x: 32 * unit, y: 32 * unit)
+        case .halo:
+            Path { path in
+                path.addEllipse(in: CGRect(x: 4 * unit, y: 4 * unit, width: 56 * unit, height: 56 * unit))
+                path.addEllipse(in: CGRect(x: 27 * unit, y: 9 * unit, width: 10 * unit, height: 10 * unit))
+            }.fill(tone, style: FillStyle(eoFill: true))
+        case .prism:
+            JunoAgentFacePath(kind: .prism).fill(tone)
         case .orb:
             Circle()
                 .fill(tone)
@@ -806,22 +855,7 @@ public struct JunoAgentFace: View {
         }
     }
 
-    /// Muse's tiny laptop, in Juno's line weight: shown only while working.
-    /// It overhangs the body onto the page, so its strokes are
-    /// `junoAgentMark` and its screen is the page colour (`.agent-face__prop`).
-    private var laptop: some View {
-        let screen = RoundedRectangle(cornerRadius: 1.5 * unit, style: .circular)
-        return ZStack(alignment: .topLeading) {
-            screen
-                .fill(Color.junoCanvas)
-                .overlay { screen.stroke(Color.junoAgentMark, lineWidth: 1.6 * unit) }
-                .frame(width: 12 * unit, height: 8 * unit)
-                .position(x: 52 * unit, y: 49 * unit)
-            JunoAgentFacePath(kind: .laptopBase)
-                .stroke(Color.junoAgentMark, style: StrokeStyle(lineWidth: 2 * unit, lineCap: .round))
-        }
-        .opacity(state == .working ? 1 : 0)
-    }
+
 }
 
 /// A point in the design box that can be a `ForEach` identity. `CGPoint` is

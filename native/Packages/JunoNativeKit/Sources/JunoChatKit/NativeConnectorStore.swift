@@ -43,6 +43,15 @@ public struct NativeConnector: Identifiable, Equatable, Sendable {
     /// in the list payload — the catalog is filtered server-side instead — so
     /// this is populated only for the first-party set.
     public let categories: [String]
+    public let mcpURL: String?
+    public let hasAuthHeader: Bool
+    public let toolCount: Int?
+    public let mcpStatus: String?
+    public let lastError: String?
+    public var isCustomMCP: Bool { kind == "user_mcp" }
+    public var mcpRowID: String? {
+        isCustomMCP && id.hasPrefix("user_mcp:") ? String(id.dropFirst("user_mcp:".count)) : nil
+    }
 
     public init(
         id: String,
@@ -56,7 +65,12 @@ public struct NativeConnector: Identifiable, Equatable, Sendable {
         configured: Bool = true,
         managedAuth: Bool = true,
         accountLabel: String? = nil,
-        categories: [String] = []
+        categories: [String] = [],
+        mcpURL: String? = nil,
+        hasAuthHeader: Bool = false,
+        toolCount: Int? = nil,
+        mcpStatus: String? = nil,
+        lastError: String? = nil
     ) {
         self.id = id
         self.slug = slug
@@ -70,6 +84,11 @@ public struct NativeConnector: Identifiable, Equatable, Sendable {
         self.managedAuth = managedAuth
         self.accountLabel = accountLabel
         self.categories = categories
+        self.mcpURL = mcpURL
+        self.hasAuthHeader = hasAuthHeader
+        self.toolCount = toolCount
+        self.mcpStatus = mcpStatus
+        self.lastError = lastError
     }
 
     /// Whether Connect can plausibly succeed right now. A row that cannot
@@ -156,7 +175,12 @@ public struct NativeConnectorClient: Sendable {
                 connected: item.connected,
                 configured: item.configured,
                 accountLabel: item.accountLabel,
-                categories: NativeConnectorCatalog.nativeCategories[item.id] ?? []
+                categories: item.kind == "user_mcp" ? ["developer-tools"] : NativeConnectorCatalog.nativeCategories[item.id] ?? [],
+                mcpURL: item.url,
+                hasAuthHeader: item.hasAuthHeader ?? false,
+                toolCount: item.toolCount,
+                mcpStatus: item.status,
+                lastError: item.lastError
             )
         }
         return (connectors, wire.composioConfigured ?? false)
@@ -221,12 +245,15 @@ public struct NativeConnectorClient: Sendable {
 
     public func disconnect(_ connector: NativeConnector, for accountID: AccountID) async throws {
         let path: String
-        switch connector.source {
+        if let rowID = connector.mcpRowID {
+            path = "/api/mcp/servers/\(rowID)"
+        } else { switch connector.source {
         case .native:
             path = "/api/connectors/\(connector.id)"
         case .composio:
             guard let slug = connector.slug else { throw NativeConnectorError.malformedResponse }
             path = "/api/connectors/composio/\(slug)"
+        }
         }
         let response = try await sender.send(
             try NativeBearerRequest(
@@ -236,6 +263,46 @@ public struct NativeConnectorClient: Sendable {
             ),
             for: accountID
         )
+        try requireSuccess(response)
+    }
+
+    public func saveMCP(name: String, url: String, authHeader: String?, clearAuth: Bool = false,
+                        editing: NativeConnector? = nil, for accountID: AccountID) async throws {
+        var body: [String: Any] = ["name": name, "url": url]
+        if clearAuth { body["authHeader"] = NSNull() }
+        else if let authHeader, !authHeader.isEmpty { body["authHeader"] = authHeader }
+        let rowID = editing?.mcpRowID
+        let response = try await sender.send(try NativeBearerRequest(
+            path: rowID.map { "/api/mcp/servers/\($0)" } ?? "/api/mcp/servers",
+            method: rowID == nil ? .post : .patch,
+            headers: try HTTPHeaders(["content-type": "application/json"]),
+            body: try JSONSerialization.data(withJSONObject: body)
+        ), for: accountID)
+        try requireSuccess(response)
+    }
+
+    public func testMCP(url: String, authHeader: String?, clearAuth: Bool = false,
+                        editing: NativeConnector? = nil, for accountID: AccountID) async throws -> NativeMCPProbe {
+        var body: [String: Any] = ["url": url]
+        if clearAuth { body["authHeader"] = NSNull() }
+        else if let authHeader, !authHeader.isEmpty { body["authHeader"] = authHeader }
+        let response = try await sender.send(try NativeBearerRequest(
+            path: editing?.mcpRowID.map { "/api/mcp/servers/\($0)/test" } ?? "/api/mcp/servers/test",
+            method: .post,
+            headers: try HTTPHeaders(["content-type": "application/json"]),
+            body: try JSONSerialization.data(withJSONObject: body)
+        ), for: accountID)
+        try requireSuccess(response)
+        return try JSONDecoder().decode(MCPProbeWire.self, from: response.body).result
+    }
+
+    public func setMCPEnabled(_ connector: NativeConnector, enabled: Bool, for accountID: AccountID) async throws {
+        guard let rowID = connector.mcpRowID else { throw NativeConnectorError.malformedResponse }
+        let response = try await sender.send(try NativeBearerRequest(
+            path: "/api/mcp/servers/\(rowID)", method: .patch,
+            headers: try HTTPHeaders(["content-type": "application/json"]),
+            body: try JSONSerialization.data(withJSONObject: ["enabled": enabled])
+        ), for: accountID)
         try requireSuccess(response)
     }
 
@@ -428,6 +495,45 @@ public final class NativeConnectorModel {
         await refresh()
     }
 
+    @discardableResult
+    public func saveMCP(name: String, url: String, authHeader: String?, clearAuth: Bool = false,
+                        editing: NativeConnector? = nil) async -> Bool {
+        guard let accountID, !isMutating else { return false }
+        isMutating = true
+        defer { isMutating = false }
+        do {
+            try await client.saveMCP(name: name, url: url, authHeader: authHeader, clearAuth: clearAuth, editing: editing, for: accountID)
+            guard self.accountID == accountID else { return false }
+            await refresh()
+            return true
+        } catch {
+            guard self.accountID == accountID else { return false }
+            lastErrorDescription = NativeFailureMessage.presentable(error)
+            return false
+        }
+    }
+
+    public func testMCP(url: String, authHeader: String?, clearAuth: Bool = false,
+                        editing: NativeConnector? = nil) async throws -> NativeMCPProbe {
+        guard let accountID else { throw NativeConnectorError.malformedResponse }
+        return try await client.testMCP(url: url, authHeader: authHeader, clearAuth: clearAuth, editing: editing, for: accountID)
+    }
+
+    public func setMCPEnabled(_ connector: NativeConnector, enabled: Bool) async {
+        guard let accountID, !isMutating else { return }
+        isMutating = true
+        defer { isMutating = false }
+        do {
+            try await client.setMCPEnabled(connector, enabled: enabled, for: accountID)
+            guard self.accountID == accountID else { return }
+            apply(connected: enabled, to: connector.id)
+            await refresh()
+        } catch {
+            guard self.accountID == accountID else { return }
+            lastErrorDescription = NativeFailureMessage.presentable(error)
+        }
+    }
+
     public func loadMoreCatalog() {
         guard composioConfigured, catalogCursor != nil, !isLoadingCatalog else { return }
         loadCatalog(reset: false)
@@ -507,6 +613,11 @@ private struct ConnectorListWire: Decodable {
         let configured: Bool
         let connected: Bool
         let accountLabel: String?
+        let url: String?
+        let hasAuthHeader: Bool?
+        let toolCount: Int?
+        let status: String?
+        let lastError: String?
     }
 
     let connectors: [Item]
@@ -537,4 +648,14 @@ private struct CatalogWire: Decodable {
 private struct ErrorWire: Decodable {
     let error: String?
     let message: String?
+}
+
+public struct NativeMCPProbe: Decodable, Equatable, Sendable {
+    public let ok: Bool
+    public let toolNames: [String]?
+    public let error: String?
+}
+
+private struct MCPProbeWire: Decodable {
+    let result: NativeMCPProbe
 }

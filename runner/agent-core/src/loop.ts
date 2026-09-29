@@ -9,6 +9,7 @@ import type { ProviderAdapter, ReasoningEffort } from './providers/types.js';
 import { ProviderCallError, type ProviderFailureKind } from './providers/errors.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './providers/timeouts.js';
 import { decodeComputerScreenshot } from './computer.js';
+import { LeadingThinkingFilter } from './providers/leading-thinking.js';
 
 /**
  * How long the loop will listen to a stream that is saying nothing.
@@ -76,6 +77,8 @@ export interface AgentLoopOptions {
   silenceTimeoutMs?: number;
   onAssistantDelta?: (text: string) => void;
   onAssistantMessage?: (text: string) => void;
+  onThinkingDelta?: (text: string) => void;
+  onThinkingMessage?: (text: string) => void;
   executeToolCall: (call: {
     id: string;
     name: string;
@@ -273,6 +276,18 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       };
 
       let retryable: ProviderCallError | null = null;
+      const thinkingFilter = new LeadingThinkingFilter();
+      let thinkingAcc = '';
+      const deliver = (parts: { text: string; thinking: string }) => {
+        if (parts.text) {
+          textAcc += parts.text;
+          opts.onAssistantDelta?.(parts.text);
+        }
+        if (parts.thinking) {
+          thinkingAcc = (thinkingAcc + parts.thinking).slice(-12_000);
+          opts.onThinkingDelta?.(parts.thinking);
+        }
+      };
 
       try {
         listen();
@@ -286,8 +301,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
         })) {
           listen();
           if (ev.type === 'text_delta') {
-            textAcc += ev.text;
-            opts.onAssistantDelta?.(ev.text);
+            deliver(thinkingFilter.push(ev.text));
+          } else if (ev.type === 'thinking_delta') {
+            deliver({ text: '', thinking: ev.text });
           } else if (ev.type === 'tool_call') {
             toolCalls.push({
               id: ev.id,
@@ -320,7 +336,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
           // of the reply twice and leave a transcript that reads as a stutter.
           // A rate limit — the failure this retry exists for — is refused before
           // the first token, so the case that matters is always the clean one.
-          textAcc === '' &&
+          textAcc === '' && thinkingAcc === '' &&
           toolCalls.length === 0 &&
           retries < MAX_TURN_RETRIES &&
           waitedMs < MAX_TURN_RETRY_WAIT_MS
@@ -333,6 +349,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
         if (deadline) clearTimeout(deadline);
         opts.signal.removeEventListener('abort', chain);
       }
+
+      deliver(thinkingFilter.finish());
+      if (thinkingAcc) opts.onThinkingMessage?.(thinkingAcc);
 
       if (retryable === null) break;
 
@@ -389,7 +408,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       stopReason = 'budget';
       break;
     }
-    if (stopReason !== 'tool_use' || toolCalls.length === 0) break;
+    // Tool calls are the instruction to execute. Some compatible providers
+    // incorrectly finish them with `stop` instead of `tool_calls`.
+    if (toolCalls.length === 0) break;
 
     // No early break on abort here: the assistant message above already
     // carries tool_call blocks, so the transcript MUST answer each one —

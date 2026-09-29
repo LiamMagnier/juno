@@ -121,6 +121,8 @@ export function fetchAgentDetail(id: string): Promise<AgentOutcome<ClientAgentDe
 }
 
 export interface HireAgentInput {
+  creationKey?: string;
+  starterMessage?: string;
   name?: string;
   role?: string;
   avatar?: AgentAvatar;
@@ -134,7 +136,14 @@ export interface HireAgentInput {
 }
 
 export function hireAgent(input: HireAgentInput): Promise<AgentOutcome<ClientAgent>> {
-  return call("/api/agents", { method: "POST", body: input }, (d) => d.agent as ClientAgent);
+  return call("/api/agents", { method: "POST", body: input }, (d) => d.agent).then(outcome => {
+    if (outcome.kind !== "ok") return outcome;
+    const agent = outcome.value;
+    if (!agent || typeof agent !== "object" || !("id" in agent) || typeof agent.id !== "string") {
+      return { kind: "failed", status: 0, error: "malformed", message: "Couldn’t read the new agent. Try again to reopen the same request." } as const;
+    }
+    return { kind: "ok", value: agent as ClientAgent } as const;
+  });
 }
 
 /** One turn of the hire conversation: free text in, a draft patch and a reply out. */

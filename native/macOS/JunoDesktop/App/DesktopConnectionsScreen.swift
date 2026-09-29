@@ -36,6 +36,8 @@ struct DesktopConnectionsScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var disconnectTarget: NativeConnector?
+    @State private var showsMCP = false
+    @State private var editingMCP: NativeConnector?
     /// The connector whose authorisation page this app has opened in the browser.
     ///
     /// Held so the card can say "waiting" without claiming a result, and so
@@ -84,6 +86,9 @@ struct DesktopConnectionsScreen: View {
                 guard phase == .active, let awaited = awaitingAuthorization else { return }
                 Task { await settle(awaited) }
             }
+            .sheet(isPresented: $showsMCP) {
+                DesktopMCPServerSheet(model: model, editing: editingMCP)
+            }
             .accessibilityIdentifier("juno.desktop.connections")
     }
 
@@ -104,6 +109,12 @@ struct DesktopConnectionsScreen: View {
                 "Connections",
                 lede: "Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
             ) {
+                Button {
+                    editingMCP = nil
+                    showsMCP = true
+                } label: { Label("Add MCP server", icon: .plus) }
+                .buttonStyle(.junoProminent)
+                .accessibilityIdentifier("connections.add-mcp")
                 // A Mac extra: the browser hand-off reports nothing back, so
                 // re-reading is the reader's to ask for. Also the way out of a
                 // stuck wait.
@@ -367,7 +378,20 @@ struct DesktopConnectionsScreen: View {
 
     @ViewBuilder
     private func action(_ connector: NativeConnector, state: DesktopConnectorState) -> some View {
-        switch state {
+        if connector.isCustomMCP {
+            HStack {
+                Toggle("Use in chats", isOn: Binding(
+                    get: { connector.connected },
+                    set: { enabled in Task { await model.setMCPEnabled(connector, enabled: enabled) } }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .disabled(model.isMutating)
+                Spacer()
+                Button("Manage") { editingMCP = connector; showsMCP = true }
+                    .buttonStyle(.bordered)
+            }
+        } else { switch state {
         case .connected:
             wideButton("Disconnect", role: .destructive) { disconnectTarget = connector }
                 .disabled(model.isMutating)
@@ -406,6 +430,7 @@ struct DesktopConnectionsScreen: View {
                 .junoCaption()
                 .fixedSize(horizontal: false, vertical: true)
         }
+        }
     }
 
     /// The same actions for a right-click, plus the identifier the retired
@@ -413,7 +438,11 @@ struct DesktopConnectionsScreen: View {
     /// answering to one identifier makes a UI test ambiguous.
     @ViewBuilder
     private func cardMenu(_ connector: NativeConnector, state: DesktopConnectorState) -> some View {
-        switch state {
+        if connector.isCustomMCP {
+            Button("Manage MCP server") { editingMCP = connector; showsMCP = true }
+            Button("Remove server", role: .destructive) { disconnectTarget = connector }
+                .disabled(model.isMutating)
+        } else { switch state {
         case .connected:
             Button("Disconnect \(connector.label)", role: .destructive) {
                 disconnectTarget = connector
@@ -428,6 +457,7 @@ struct DesktopConnectionsScreen: View {
             }
         case .unavailable:
             EmptyView()
+        }
         }
         Divider()
         Button("Copy Identifier") {
@@ -648,6 +678,11 @@ struct DesktopConnectionsScreen: View {
         _ connector: NativeConnector,
         state: DesktopConnectorState
     ) -> String {
+        if connector.isCustomMCP {
+            if connector.mcpStatus == "error" { return connector.lastError ?? "Connection failed. Manage this server to test again." }
+            let count = connector.toolCount ?? 0
+            return "\(count) \(count == 1 ? "tool" : "tools") · \(connector.connected ? "Enabled" : "Disabled")"
+        }
         switch state {
         case .connected:
             if let account = connector.accountLabel, !account.isEmpty,
@@ -922,5 +957,102 @@ private struct DesktopConnectorTileSkeleton: View {
         .frame(minHeight: DesktopConnectorGrid.cardMinimumHeight, alignment: .top)
         .junoCard(cornerRadius: JunoRadius.card)
         .accessibilityHidden(true)
+    }
+}
+
+/// Native management for account MCP servers; credentials stay write-only.
+struct DesktopMCPServerSheet: View {
+    let model: NativeConnectorModel
+    let editing: NativeConnector?
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var url = ""
+    @State private var credential = ""
+    @State private var clearAuth = false
+    @State private var testing = false
+    @State private var saving = false
+    @State private var probe: NativeMCPProbe?
+    @State private var error: String?
+
+    private var busy: Bool { testing || saving }
+    private var validURL: Bool {
+        guard let endpoint = URL(string: url.trimmingCharacters(in: .whitespacesAndNewlines)),
+              endpoint.host != nil, endpoint.user == nil, endpoint.password == nil else { return false }
+        return endpoint.scheme == "https"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.roomy) {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                Text(editing == nil ? "Add MCP server" : "Manage MCP server").junoType(.heading)
+                Text("Connect tools from your own remote server. Juno stores your credential encrypted.")
+                    .junoType(.ui).foregroundStyle(Color.junoSecondaryInk)
+            }
+            Form {
+                TextField("Name", text: $name)
+                TextField("Server URL", text: $url)
+                SecureField(editing?.hasAuthHeader == true ? "Replacement credential (optional)" : "Authorization header (optional)", text: $credential)
+                if editing?.hasAuthHeader == true {
+                    Toggle("Remove stored credential", isOn: $clearAuth)
+                }
+            }
+            .textFieldStyle(.roundedBorder)
+            .disabled(busy)
+            Text("Use a public HTTPS endpoint reachable by Juno. For a local server, use the project’s MCP settings in Juno Code.")
+                .junoType(.caption).foregroundStyle(Color.junoSecondaryInk)
+            HStack(spacing: JunoSpace.snug) {
+                Button(testing ? "Testing…" : "Test connection") { test() }
+                    .disabled(busy || !validURL)
+                if testing { ProgressView().controlSize(.small) }
+                else if let probe {
+                    Text(probe.ok ? "\(probe.toolNames?.count ?? 0) tools found" : "Connection failed")
+                        .junoType(.ui)
+                        .foregroundStyle(probe.ok ? Color.junoSecondaryInk : Color.junoDestructiveInk)
+                }
+            }
+            if let probe, probe.ok, let names = probe.toolNames, !names.isEmpty {
+                ScrollView { Text(names.joined(separator: "\n")).junoType(.caption).textSelection(.enabled) }
+                    .frame(maxHeight: 100)
+            }
+            if let error { Text(error).junoType(.ui).foregroundStyle(Color.junoDestructiveInk) }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction).disabled(busy)
+                Button(saving ? "Saving…" : editing == nil ? "Add server" : "Save changes") { save() }
+                    .buttonStyle(.junoProminent).keyboardShortcut(.defaultAction)
+                    .disabled(busy || !validURL || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(JunoSpace.roomy)
+        .frame(width: 480)
+        .interactiveDismissDisabled(busy)
+        .onAppear { name = editing?.label ?? ""; url = editing?.mcpURL ?? "" }
+        .onChange(of: url) { _, _ in probe = nil; error = nil }
+        .onChange(of: credential) { _, _ in probe = nil; error = nil }
+        .onChange(of: clearAuth) { _, _ in probe = nil; error = nil }
+    }
+
+    private func test() {
+        guard !busy else { return }
+        testing = true; error = nil; probe = nil
+        Task {
+            do {
+                let result = try await model.testMCP(url: url.trimmingCharacters(in: .whitespacesAndNewlines), authHeader: credential, clearAuth: clearAuth, editing: editing)
+                probe = result
+                error = result.ok ? nil : result.error
+            } catch { self.error = error.localizedDescription }
+            testing = false
+        }
+    }
+
+    private func save() {
+        guard !busy else { return }
+        saving = true; error = nil
+        Task {
+            if await model.saveMCP(name: name.trimmingCharacters(in: .whitespacesAndNewlines), url: url.trimmingCharacters(in: .whitespacesAndNewlines), authHeader: credential, clearAuth: clearAuth, editing: editing) {
+                dismiss()
+            } else { error = model.lastErrorDescription ?? "Couldn’t save this server. Try again." }
+            saving = false
+        }
     }
 }

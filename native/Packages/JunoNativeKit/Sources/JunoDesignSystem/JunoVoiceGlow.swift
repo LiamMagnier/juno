@@ -262,15 +262,15 @@ struct JunoVoiceGlowFrame: Equatable {
 }
 
 /// Smooths the raw level into light: a quick rise, a slower settle, the way
-/// `voice-glow` answers a voice (`attack` 0.1s, `release` 0.5s), and eases the
+/// the web's composer glow (`attack` 0.06s, `release` 0.18s), and eases the
 /// processing morph in and out over its `processingEase` 0.6s.
 public final class JunoVoiceGlowEngine {
-    static let attack: Double = 0.1
-    static let release: Double = 0.5
+    static let attack: Double = 0.06
+    static let release: Double = 0.18
     static let processingEase: Double = 0.6
     /// `idle`: a soft presence while nobody is talking, so the call never
     /// looks dead.
-    static let idle: Double = 0.18
+    static let idle: Double = 0.06
     /// `processingLevel`: how lit the glow is held while it thinks.
     static let processingLevel: Double = 0.55
     /// `processingDuration`: seconds per pass of the beam.
@@ -325,7 +325,7 @@ public final class JunoVoiceGlowEngine {
         }
 
         let (colors, strength) = fadeColors(toward: palette, dt: dt)
-        let breath = reduceMotion ? 0 : 0.03 * sin(clock * 1.3)
+        let breath = reduceMotion ? 0 : 0.008 * sin(clock * 1.3)
         let spoken = max(Self.idle + breath, level)
         let lit = spoken + (Self.processingLevel - spoken) * gathered
         return JunoVoiceGlowFrame(

@@ -11,10 +11,13 @@ public struct JunoCodeCommandLine: Sendable {
     public func execute(arguments: [String]) async throws -> JunoCodeCLIResult {
         let args = Array(arguments.drop(while: { $0 == "juno" }))
         guard let command = args.first else { return .usage }
+        if command == "help" || command == "--help" || command == "-h" || args.last == "--help" { return .usage }
         switch command {
         case "targets", "devices":
+            guard args.count == 1 else { throw JunoCodeCLIError.usage("targets") }
             return .targets(try await host.executionTargets())
         case "sessions":
+            guard args.count == 1 else { throw JunoCodeCLIError.usage("sessions") }
             return .sessions(try await host.sessions())
         case "status":
             guard args.count == 2 else { throw JunoCodeCLIError.usage("status <session-id>") }
@@ -24,15 +27,15 @@ public struct JunoCodeCommandLine: Sendable {
             }
             return .sessions([session])
         case "events", "resume":
-            guard args.count >= 2 else { throw JunoCodeCLIError.usage("events <session-id> [after-seq]") }
+            guard (2...3).contains(args.count) else { throw JunoCodeCLIError.usage("events <session-id> [after-seq]") }
             let after = args.count == 3 ? try sequence(args[2]) : 0
             let events = try await host.events(after: .init(
                 sessionID: CodeSessionID(value: args[1]), afterSequence: after
             ))
             return .events(events)
-        case "run":
+        case "run", "exec":
             return try await run(arguments: args)
-        case "cancel":
+        case "cancel", "stop":
             return try await submit(kind: .cancel, arguments: args)
         case "steer":
             return try await instruction(kind: .steer, arguments: args)
@@ -61,6 +64,9 @@ public struct JunoCodeCommandLine: Sendable {
         guard arguments.count == 4 else {
             throw JunoCodeCLIError.usage("\(kind.rawValue) <target-id> <session-id> <message>")
         }
+        guard !arguments[3].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw JunoCodeCLIError.usage("message must not be empty")
+        }
         let receipt = try await host.submit(.init(
             targetID: .init(value: arguments[1]),
             sessionID: .init(value: arguments[2]),
@@ -80,7 +86,10 @@ public struct JunoCodeCommandLine: Sendable {
     /// before creation.
     private func run(arguments: [String]) async throws -> JunoCodeCLIResult {
         guard arguments.count >= 4 else {
-            throw JunoCodeCLIError.usage("run <target-id> <workspace-id> <prompt> [--model id] [--reasoning level]")
+            throw JunoCodeCLIError.usage("run <target-id> <workspace-id> <prompt> [--model id] [--reasoning level] [--permission mode]")
+        }
+        guard !arguments[3].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw JunoCodeCLIError.usage("prompt must not be empty")
         }
         let targetID = ExecutionTargetID(value: arguments[1])
         var payload: [String: JSONValue] = [
@@ -88,11 +97,26 @@ public struct JunoCodeCommandLine: Sendable {
             "initialMessage": .string(arguments[3]),
         ]
         var index = 4
+        var seen = Set<String>()
         while index < arguments.count {
             guard index + 1 < arguments.count else { throw JunoCodeCLIError.usage("missing value for \(arguments[index])") }
+            guard seen.insert(arguments[index]).inserted else { throw JunoCodeCLIError.usage("duplicate option: \(arguments[index])") }
+            let value = arguments[index + 1]
+            guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw JunoCodeCLIError.usage("empty value for \(arguments[index])")
+            }
             switch arguments[index] {
-            case "--model": payload["modelId"] = .string(arguments[index + 1])
-            case "--reasoning": payload["reasoning"] = .string(arguments[index + 1])
+            case "--model": payload["modelId"] = .string(value)
+            case "--reasoning":
+                guard ReasoningEffort(rawValue: value) != nil else {
+                    throw JunoCodeCLIError.usage("reasoning must be minimal, low, medium, high, xhigh, or max")
+                }
+                payload["reasoning"] = .string(value)
+            case "--permission":
+                guard PermissionMode(rawValue: value) != nil else {
+                    throw JunoCodeCLIError.usage("permission must be readOnly, askBeforeChanges, workspaceWrite, or fullAccess")
+                }
+                payload["permissionMode"] = .string(value)
             default: throw JunoCodeCLIError.usage("unknown run option: \(arguments[index])")
             }
             index += 2

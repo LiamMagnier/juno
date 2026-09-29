@@ -863,11 +863,17 @@ final class AgentOrchestratorTests: XCTestCase {
             .events([
                 .reasoningSummary("Inspect "),
                 .reasoningSummary("the files."),
+                .textDelta("<thi"),
+                .textDelta("nk>Then verify.</think>"),
                 .textDelta("Done."),
                 .turnCompleted(.endTurn),
             ]),
         ])
         let (orchestrator, _) = makeOrchestrator(model: model)
+        let liveText = CodeObservedText()
+        let liveReasoning = CodeObservedText()
+        await orchestrator.observeLiveText { liveText.append($0) }
+        await orchestrator.observeLiveReasoning { liveReasoning.append($0) }
 
         try await orchestrator.submit(prompt: "Inspect")
         await orchestrator.awaitCompletion()
@@ -876,7 +882,27 @@ final class AgentOrchestratorTests: XCTestCase {
             guard case let .reasoningSummary(event) = payload else { return nil }
             return event.summary
         }
-        XCTAssertEqual(summaries, ["Inspect the files."])
+        XCTAssertEqual(summaries, ["Inspect the files.Then verify."])
+        XCTAssertTrue(liveText.values.contains("Done."))
+        XCTAssertFalse(liveText.values.contains { $0.contains("Inspect") })
+        XCTAssertTrue(liveReasoning.values.contains { $0.contains("Inspect") })
+    }
+
+    func testEndTurnWithAValidToolStillChangesTheWorkspace() async throws {
+        let model = ScriptedModelClient(steps: [
+            .events([
+                .toolCallRequested(id: "write", name: "write_file", input: ["path": "src/fixed.swift", "content": "// fixed\n"]),
+                .turnCompleted(.endTurn),
+            ]),
+            .text("Created src/fixed.swift."),
+        ])
+        let (orchestrator, _) = makeOrchestrator(model: model)
+        try await orchestrator.submit(prompt: "Create the file")
+        await orchestrator.awaitCompletion()
+        let content = try String(contentsOf: workspaceURL.appendingPathComponent("src/fixed.swift"), encoding: .utf8)
+        XCTAssertEqual(content, "// fixed\n")
+        let final = try await store.session(id: session.id)
+        XCTAssertEqual(final.status, .completed)
     }
 
     func testMissingCompletionReasonFailsInsteadOfCompleting() async throws {
@@ -1207,4 +1233,11 @@ final class AgentOrchestratorTests: XCTestCase {
         let eventsAfterSecondReload = await reloadedAgain.events(for: session.id)
         XCTAssertEqual(eventsAfterSecondReload, repairedEvents)
     }
+}
+
+private final class CodeObservedText: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
+    func append(_ text: String) { lock.lock(); storage.append(text); lock.unlock() }
+    var values: [String] { lock.lock(); defer { lock.unlock() }; return storage }
 }

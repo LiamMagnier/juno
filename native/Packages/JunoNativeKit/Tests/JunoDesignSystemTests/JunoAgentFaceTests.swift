@@ -16,7 +16,7 @@ final class JunoAgentFaceTests: XCTestCase {
     func testTheVocabularyIsTheWebsVocabularyInTheWebsOrder() {
         XCTAssertEqual(
             JunoAgentShape.allCases.map(\.rawValue),
-            ["orb", "pebble", "capsule", "petal", "bloom", "spark"]
+            ["orb", "pebble", "capsule", "petal", "bloom", "spark", "tile", "halo", "prism"]
         )
         XCTAssertEqual(
             JunoAgentTone.allCases.map(\.rawValue),

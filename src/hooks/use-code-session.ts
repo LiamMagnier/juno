@@ -381,6 +381,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
   const liveRef = React.useRef<{
     taskId: string;
     content: string;
+    reasoning: string;
     activity: CodeActivityEvent[];
     errorMessage: string | null;
     bubbleShown: boolean;
@@ -424,7 +425,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     setMessages((prev) =>
       prev.map((m) =>
         m.id === id
-          ? { ...m, content: live.content, activity: [...live.activity], streaming, errorMessage: live.errorMessage }
+          ? { ...m, content: live.content, reasoning: live.reasoning, activity: [...live.activity], streaming, errorMessage: live.errorMessage }
           : m
       )
     );
@@ -438,6 +439,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
       id: liveId(live.taskId),
       role: "ASSISTANT",
       content: live.content,
+      reasoning: live.reasoning,
       createdAt: new Date().toISOString(),
       attachments: [],
       activity: [...live.activity],
@@ -456,6 +458,11 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
         switch (event.kind) {
           case "text": {
             live.content += str(event.payload, "text") ?? "";
+            break;
+          }
+          case "reasoning":
+          case "reasoning_delta": {
+            live.reasoning = (live.reasoning + (str(event.payload, "text") ?? "")).slice(-24_000);
             break;
           }
           case "tool": {
@@ -873,7 +880,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
           prev.map((m) => (m.id === userTempId && data.userMessage ? { ...data.userMessage, pending: false } : m))
         );
         lastSeqRef.current = 0;
-        liveRef.current = { taskId: task.id, content: "", activity: [], errorMessage: null, bubbleShown: false };
+        liveRef.current = { taskId: task.id, content: "", reasoning: "", activity: [], errorMessage: null, bubbleShown: false };
         setAgents([]);
         resetRollback();
         setSteering(null);
@@ -1011,7 +1018,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     (task: RemoteTask) => {
       if (TERMINAL.has(task.status)) return;
       lastSeqRef.current = 0;
-      liveRef.current = { taskId: task.id, content: "", activity: [], errorMessage: null, bubbleShown: false };
+      liveRef.current = { taskId: task.id, content: "", reasoning: "", activity: [], errorMessage: null, bubbleShown: false };
       setAgents([]);
       resetRollback();
       setSteering(null);

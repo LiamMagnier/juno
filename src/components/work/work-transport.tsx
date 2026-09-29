@@ -1374,6 +1374,7 @@ export function fetchWorkSkill(id: string): Promise<WorkResult<WorkSkillDetail>>
 }
 
 export interface CreateWorkSkillInput {
+  requestedTools?: string[];
   name: string;
   description: string;
   instructions: string;

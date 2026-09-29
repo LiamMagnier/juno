@@ -1,4 +1,12 @@
 import Foundation
+
+public struct NativeSkillFilePreview: Equatable, Sendable {
+    public let name: String
+    public let description: String
+    public let instructions: String
+    public let requestedTools: [String]
+    public let ignoredSettings: [String]
+}
 import JunoCore
 
 // MARK: - The library

@@ -11,11 +11,11 @@ enum NativeAgentTab: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .now: "Now"
+        case .now: "Overview"
         case .goals: "Goals"
         case .routines: "Routines"
         case .activity: "Activity"
-        case .profile: "Profile"
+        case .profile: "Details"
         }
     }
 }
@@ -145,7 +145,6 @@ struct NativeAgentPage: View {
         // more than one.
         .task(id: agentID) {
             await reload()
-            await model.reflect(agentID: agentID, force: false)
         }
         // Seen once: leaving the page is enough of an answer to the welcome.
         .onDisappear { dismissWelcome?() }

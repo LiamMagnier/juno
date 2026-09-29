@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import NewSkillPage from "@/app/(app)/skills/new/page";
 import { Dialog } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { chatSkillsFromLibrary } from "@/components/chat/use-chat-skills";
@@ -66,6 +67,8 @@ export function SkillsGallery({ view }: { view: SkillsGalleryView }) {
 
 function View({ view }: { view: SkillsGalleryView }) {
   switch (view) {
+    case "write":
+      return <NewSkillPage />;
     case "library":
       return <LibraryFixture initial={FIXTURE_LIBRARY} />;
     case "empty":

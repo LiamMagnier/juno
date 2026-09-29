@@ -1,6 +1,7 @@
 /** The gallery's views, one per `?view=`. Plain module: the server page reads it too. */
 export const SKILLS_GALLERY_VIEWS = [
   "library",
+  "write",
   "empty",
   "loading",
   "error",

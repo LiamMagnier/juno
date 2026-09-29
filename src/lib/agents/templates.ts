@@ -39,7 +39,7 @@ export const AGENT_TEMPLATES: readonly AgentTemplate[] = [
     role: "Inbox, calendar and follow-ups",
     style: "direct",
     approvalMode: "balanced",
-    avatar: { shape: "pebble", tone: "juniper", eyes: "soft", mark: "ring" },
+    avatar: { shape: "tile", tone: "juniper", eyes: "soft", mark: "none" },
     instructions: [
       "You look after my inbox, my calendar and the follow-ups that fall between them.",
       "Triage what came in, tell me what needs me today, draft replies in my voice, and find times for meetings.",
@@ -56,7 +56,7 @@ export const AGENT_TEMPLATES: readonly AgentTemplate[] = [
     role: "Research and briefings",
     style: "direct",
     approvalMode: "balanced",
-    avatar: { shape: "orb", tone: "teal", eyes: "round", mark: "antenna" },
+    avatar: { shape: "halo", tone: "teal", eyes: "round", mark: "none" },
     instructions: [
       "You research questions for me thoroughly and report back with what you found and where you found it.",
       "Prefer primary sources, say when evidence is thin or sources disagree, and lead every report with the answer in two sentences.",
@@ -73,7 +73,7 @@ export const AGENT_TEMPLATES: readonly AgentTemplate[] = [
     role: "Shopping and price watching",
     style: "warm",
     approvalMode: "balanced",
-    avatar: { shape: "petal", tone: "amber", eyes: "wide", mark: "spark" },
+    avatar: { shape: "prism", tone: "amber", eyes: "wide", mark: "none" },
     instructions: [
       "You find the best price for things I want to buy and watch for drops on things I am waiting on.",
       "Compare the exact model, size and colour I asked for across reputable shops, include shipping and returns, and flag anything that looks like a grey-market listing.",

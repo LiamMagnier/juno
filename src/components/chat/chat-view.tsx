@@ -920,8 +920,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       autoSentRef.current = true;
       chat.send(initialPrompt, [], initialPromptResearch ? { deepResearch: true } : undefined);
       // Clear ?q= so a refresh doesn't resend.
-      window.history.replaceState({}, "", "/chat");
-      window.__junoSoftRoutePath = null;
+      if (!conversationId) {
+        window.history.replaceState({}, "", "/chat");
+        window.__junoSoftRoutePath = null;
+      }
     }
     // Deliberately fires only on the prompt arriving. autoSentRef already makes
     // this once-only, and depending on `chat` would re-run it every time the

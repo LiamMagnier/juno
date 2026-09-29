@@ -61,6 +61,14 @@ const NOTIFY_SUMMARY: Record<AgentNotifyLevel, string> = {
   all: "Finished tasks, questions, and ideas from reflection.",
 };
 
+type DetailGroup = "identity" | "work" | "memory";
+const DetailGroupContext = React.createContext<DetailGroup>("identity");
+const ROW_GROUP: Record<string, DetailGroup> = {
+  "Name and role": "identity", Face: "identity", "Style and brief": "identity",
+  Autonomy: "work", "Connected apps": "work", Computer: "work", "Model and effort": "work",
+  Notifications: "work", "What it knows": "memory", Routines: "memory",
+};
+
 function ExpandRow({
   label,
   summary,
@@ -74,6 +82,8 @@ function ExpandRow({
   onToggle: () => void;
   children: React.ReactNode;
 }) {
+  const group = React.useContext(DetailGroupContext);
+  if (ROW_GROUP[label] !== group) return null;
   return (
     <div className="border-b border-border last:border-b-0">
       <button
@@ -113,6 +123,8 @@ export function AgentPanelSetup({
   const router = useRouter();
   const { agent } = detail;
   const connectors = useLinkedConnectors();
+  const [group, setGroup] = React.useState<DetailGroup>(initialExpandedRow === "memory" || initialExpandedRow === "routines" ? "memory" : initialExpandedRow && !["name", "face", "style"].includes(initialExpandedRow) ? "work" : "identity");
+  const saving = React.useRef(false);
   const [expanded, setExpanded] = React.useState<string | null>(initialExpandedRow ?? null);
   const [savingRow, setSavingRow] = React.useState<string | null>(null);
   const [confirmRetire, setConfirmRetire] = React.useState(false);
@@ -145,15 +157,20 @@ export function AgentPanelSetup({
     setModel(agent.model);
     setReasoningEffort(agent.reasoningEffort);
     setNotify(agent.notify ?? "results");
-  }, [agent]);
+  // A background refresh must not overwrite edits on the same agent.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.id]);
 
   const toggle = (key: string) => setExpanded((prev) => (prev === key ? null : key));
 
   const savePatch = async (rowKey: string, patch: AgentPatch) => {
+    if (saving.current) return;
+    saving.current = true;
     setSavingRow(rowKey);
     const outcome = await updateAgent(agent.id, patch);
     setSavingRow(null);
-    if (outcome.kind === "failed") {
+    saving.current = false;
+    if (outcome.kind !== "ok") {
       toast.error(outcome.message);
       return;
     }
@@ -211,9 +228,17 @@ export function AgentPanelSetup({
 
   return (
     <div className="space-y-4">
-      <p className="text-caption text-muted-foreground">
-        You can change any of this by telling {agent.name} in the chat.
-      </p>
+      <div className="agent-detail-intro">
+        <AgentFace avatar={agent.avatar} state={agent.state} size={64} />
+        <h2>{agent.name}, in detail.</h2>
+        <p>{agent.instructions || "Tell your agent the outcome you want. It saves its brief as you work together."}</p>
+        <p>Change any of this by telling {agent.name} in the conversation, or make a specific adjustment here.</p>
+      </div>
+      <div className="agent-detail-groups" role="group" aria-label="Agent details">
+        {(["identity", "work", "memory"] as const).map(value => <button type="button" key={value} aria-pressed={group === value}
+          onClick={() => { setGroup(value); setExpanded(null); }}>{value === "identity" ? "Identity" : value === "work" ? "How it works" : "Memory & routines"}</button>)}
+      </div>
+      <DetailGroupContext.Provider value={group}>
 
       <div className="overflow-hidden rounded-card border border-border bg-card">
         {/* 1. Name and role */}
@@ -474,7 +499,7 @@ export function AgentPanelSetup({
         </ExpandRow>
 
         {/* 9. Suggests ideas */}
-        <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-3">
+        <div className={cn("flex items-center justify-between gap-3 border-b border-border px-3.5 py-3", group !== "work" && "hidden")}>
           <span className="min-w-0 flex-1">
             <span className="block text-ui font-medium text-foreground">Suggests ideas</span>
             <span className="mt-0.5 block text-caption text-muted-foreground">
@@ -672,6 +697,7 @@ export function AgentPanelSetup({
         </ExpandRow>
       </div>
 
+      </DetailGroupContext.Provider>
       {/* Footer: Pause/Resume · Duplicate · Retire */}
       <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
         <div className="flex items-center gap-2">

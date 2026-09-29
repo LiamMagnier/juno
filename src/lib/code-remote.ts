@@ -31,6 +31,8 @@ export const EVENT_KINDS = [
   "status",
   "user",
   "text",
+  "reasoning",
+  "reasoning_delta",
   "tool",
   "file_change",
   "approval_request",
@@ -331,4 +333,3 @@ export function serializeTaskEvent(event: CodeTaskEvent) {
     createdAt: event.createdAt.toISOString(),
   };
 }
-

@@ -233,6 +233,17 @@ struct StudioThreadTail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            if !controller.liveReasoningSummary.isEmpty {
+                DisclosureGroup("Thinking") {
+                    Text(controller.liveReasoningSummary)
+                        .font(Studio.Font.meta)
+                        .foregroundStyle(Studio.Ink.tertiary)
+                        .textSelection(.enabled)
+                }
+                .font(Studio.Font.label)
+                .foregroundStyle(Studio.Ink.tertiary)
+                .accessibilityIdentifier("juno.code.transcript.thinking")
+            }
             if !controller.liveAssistantText.isEmpty {
                 StudioAssistantMessage(text: controller.liveAssistantText, streaming: true)
             }

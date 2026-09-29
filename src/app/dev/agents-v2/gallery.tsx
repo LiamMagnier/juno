@@ -5,12 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { useTheme } from "next-themes";
 import { AgentThreadHeader, AgentGreeting } from "@/components/agents/agent-thread-header";
 import { AgentPanel, type AgentPanelTab } from "@/components/agents/agent-panel";
+import { AgentFace } from "@/components/agents/agent-face";
+import { AGENT_STATES, AGENT_STATE_LABEL, type AgentState } from "@/lib/agents/domain";
+import { AgentsRoster } from "@/components/agents/agents-roster";
 import { AgentStart } from "@/components/agents/agent-start";
 import { AgentChangeCard } from "@/components/chat/agent-change-card";
 import { ApprovalCard } from "@/components/chat/approval-card";
-import { AgentFace } from "@/components/agents/agent-face";
-import { Button } from "@/components/ui/button";
-import { Hand, Pin, Plus } from "@/components/ui/icons";
 import type {
   ClientAgent,
   ClientAgentActivity,
@@ -27,7 +27,7 @@ function makeFixtureAgent(overrides: Partial<ClientAgent> = {}): ClientAgent {
     id: "agent-mira",
     name: "Mira",
     role: "Chief of staff",
-    avatar: { shape: "orb", tone: "coral", eyes: "soft", mark: "ring" },
+    avatar: { shape: "tile", tone: "teal", eyes: "soft", mark: "none" },
     style: "warm",
     instructions:
       "Triage incoming vendor threads, keep weekly goals on track, and prepare morning briefings before 8:30am.",
@@ -273,6 +273,8 @@ export function AgentsV2Gallery() {
     }
   }, [forcedTheme, setTheme]);
 
+  const [previewState, setPreviewState] = React.useState<AgentState>("working");
+  const [panelOpen, setPanelOpen] = React.useState(true);
   const [activeTab, setActiveTab] = React.useState<AgentPanelTab>("now");
 
   const miraDetail = React.useMemo(() => makeFixtureDetail(), []);
@@ -321,6 +323,38 @@ export function AgentsV2Gallery() {
 
   const showSection = (name: string) => !view || view === name;
 
+  if (view === "motion") return <main className="min-h-screen bg-background p-8 text-foreground">
+    <div className="mx-auto max-w-4xl space-y-10">
+      <h1 className="text-page-title font-medium">An agent, in motion.</h1>
+      <p className="text-ui text-muted-foreground">Preview · These are illustrative states, rendered by the production identity component. Hover or focus a teammate to see its response.</p>
+      <div className="flex flex-wrap gap-4">{AGENT_STATES.map(state => <button type="button" key={state} aria-pressed={previewState === state}
+        className="flex flex-col items-center gap-4 rounded-card px-5 py-6 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+        data-face-trigger onClick={() => setPreviewState(state)}>
+        <AgentFace avatar={{ shape: "tile", tone: "teal", eyes: "soft", mark: "none" }} state={state} size={72} />
+        <span className="text-ui">{AGENT_STATE_LABEL[state]}</span>
+      </button>)}</div>
+      <div className="flex items-center gap-8"><AgentFace avatar={{ shape: "halo", tone: "violet", eyes: "round", mark: "none" }} state={previewState} size={144} name="Preview agent" />
+        <div><h2 className="text-heading font-medium">{AGENT_STATE_LABEL[previewState]}</h2><p className="mt-2 text-ui text-muted-foreground">Motion follows state changes. Reduced motion keeps the expression and stops the loops.</p></div></div>
+    </div>
+  </main>;
+  if (view === "workspace") return <main className="min-h-screen bg-background text-foreground">
+    <AgentThreadHeader agent={miraDetail.agent} state={previewState} taskTitle={null} onTogglePanel={tab => { setActiveTab(tab); setPanelOpen(p => activeTab === tab ? !p : true); }} activePanelTab={panelOpen ? activeTab : null} />
+    <div className={panelOpen ? "grid min-h-[720px] md:grid-cols-[minmax(0,1fr)_360px]" : "min-h-[720px]"}>
+      <div className="flex min-w-0 flex-col justify-between px-6 py-10">
+        <div className="mx-auto flex w-full max-w-2xl flex-1 items-center justify-center"><AgentGreeting agent={miraDetail.agent} onSelectSuggestion={() => {}} /></div>
+        <div className="mx-auto w-full max-w-2xl space-y-4"><div role="group" aria-label="Preview agent state" className="agent-detail-groups">
+          {(["working", "thinking", "waiting", "idle"] as const).map(state => <button type="button" key={state} aria-pressed={previewState === state} onClick={() => setPreviewState(state)}>{AGENT_STATE_LABEL[state]}</button>)}
+        </div><p className="text-caption text-muted-foreground">Preview · Illustrative agent and activity. Use the live conversation to send a request.</p></div>
+      </div>
+      {panelOpen && <div className="h-[720px] border-l border-border"><AgentPanel agentId={miraDetail.agent.id} initialDetail={miraDetail} staticPreview mockActivity={MOCK_ACTIVITY}
+        mockFiles={MOCK_FILES} tab={activeTab} onTabChange={setActiveTab} onClose={() => setPanelOpen(false)} /></div>}
+    </div>
+  </main>;
+  if (view === "start") return <main className="min-h-screen bg-background"><AgentStart initialTemplate={null} /></main>;
+  if (view === "roster") return <main className="min-h-screen bg-background">
+    <AgentsRoster initialAgents={[miraDetail.agent, { ...noComputerDetail.agent, avatar: { shape: "halo", tone: "violet", eyes: "round", mark: "none" } }, makeFixtureAgent({ id: "agent-ledger", name: "Ledger", role: "Operations", pinnedAt: null, status: "paused", state: "sleeping", needsYou: 0, avatar: { shape: "prism", tone: "sage", eyes: "wide", mark: "none" } })]} />
+    <p className="px-8 text-caption text-muted-foreground">Preview · Illustrative team data</p>
+  </main>;
   return (
     <main className="min-h-dvh bg-background px-4 py-8 text-foreground">
       <div className="mx-auto max-w-[78rem] space-y-8">
@@ -514,56 +548,12 @@ export function AgentsV2Gallery() {
         {showSection("roster-start") && (
           <Section
             id="roster-start"
-            title="4. Compact Roster & Chat-first Start"
-            note="/agents is a compact scannable list (pinned first, face sm + name + role · state sentence + trailing hand icon when waiting). /agents/new starts a conversation in one click."
+            title="4. Team workspace & Conversation-first Start"
+            note="Illustrative team data. Both panels render the real production components. Start with one request; configure in conversation."
           >
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <div className="rounded-card border border-border bg-card p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-ui font-semibold text-foreground">Agents</h3>
-                    <p className="text-label text-muted-foreground">1 waiting on you · 2 active</p>
-                  </div>
-                  <Button size="sm" variant="default">
-                    <Plus className="size-4" />
-                    New agent
-                  </Button>
-                </div>
-                <ul className="divide-y divide-border overflow-hidden rounded-card border border-border bg-background">
-                  {[
-                    miraDetail.agent,
-                    noComputerDetail.agent,
-                    makeFixtureAgent({
-                      id: "agent-ledger",
-                      name: "Ledger",
-                      role: "Operations",
-                      pinnedAt: null,
-                      status: "paused",
-                      state: "sleeping",
-                      stateSentence: "Paused",
-                      needsYou: 0,
-                    }),
-                  ].map((agent) => (
-                    <li key={agent.id} className="flex items-center gap-3 px-4 py-3">
-                      <AgentFace avatar={agent.avatar} state={agent.state} size="sm" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="truncate text-ui font-medium text-foreground">{agent.name}</span>
-                          {agent.pinnedAt && <Pin className="size-3 shrink-0 text-muted-foreground" />}
-                        </div>
-                        <p className="mt-0.5 truncate text-label text-muted-foreground">
-                          {agent.role} · {agent.stateSentence}
-                        </p>
-                      </div>
-                      {agent.state === "waiting" && (
-                        <span className="inline-flex items-center gap-1 text-label font-medium text-foreground">
-                          <Hand className="size-3.5" />
-                          <span className="font-mono text-caption">1</span>
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+              <div className="min-w-0 rounded-card border border-border bg-background">
+                <AgentsRoster initialAgents={[miraDetail.agent, noComputerDetail.agent, makeFixtureAgent({ id: "agent-ledger", name: "Ledger", role: "Operations", pinnedAt: null, status: "paused", state: "sleeping", needsYou: 0, avatar: { shape: "prism", tone: "sage", eyes: "wide", mark: "none" } })]} />
               </div>
 
               <div className="overflow-hidden rounded-card border border-border bg-card p-2">

@@ -295,19 +295,36 @@ class EventSink {
     /** Rolling assistant-prose buffer; coalesced into one `text` event so a
      *  chatty turn's stream deltas don't become hundreds of tiny events. */
     this.textBuffer = "";
+    this.reasoningBuffer = "";
   }
 
   push(kind, payload) {
     // Any non-text event flushes buffered prose first to preserve ordering.
     if (kind !== "text") this.flushText();
+    if (kind !== "reasoning_delta") this.flushReasoning();
     this.outbox.add(kind, redactPayload(payload));
     if (this.outbox.size >= FLUSH_AT_COUNT) this.kick();
     else this.scheduleFlush();
   }
 
   appendText(delta) {
+    this.flushReasoning();
     this.textBuffer += delta;
     if (this.textBuffer.length >= 1024) this.flushText();
+  }
+
+  appendReasoning(delta) {
+    this.flushText();
+    this.reasoningBuffer += delta;
+    if (this.reasoningBuffer.length >= 1024) this.flushReasoning();
+    this.scheduleFlush();
+  }
+
+  flushReasoning() {
+    if (!this.reasoningBuffer) return;
+    const text = this.reasoningBuffer;
+    this.reasoningBuffer = "";
+    this.push("reasoning_delta", { text });
   }
 
   flushText() {
@@ -340,6 +357,7 @@ class EventSink {
    * decides whether the task shows as finished or as stuck forever.
    */
   async flush(finalStatus) {
+    this.flushReasoning();
     const notice = this.outbox.dropNotice();
     if (notice) {
       this.outbox.dropped = 0;
@@ -516,6 +534,7 @@ class EventSink {
 
   /** Final flush + terminal status in one drain. */
   async finalize(status) {
+    this.flushReasoning();
     this.flushText();
     if (this.timer) {
       clearTimeout(this.timer);
@@ -1305,6 +1324,9 @@ async function notePullRequestFollowUp({ repoOwner, repoName, cloneToken, number
 /** Translate one AgentEvent into task events. */
 function onAgentEvent(sink, event) {
   switch (event.type) {
+    case "thinking_delta":
+      if (event.text) sink.appendReasoning(event.text);
+      break;
     case "assistant_delta":
       if (event.text) sink.appendText(event.text);
       break;

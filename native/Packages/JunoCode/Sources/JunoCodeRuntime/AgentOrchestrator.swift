@@ -123,6 +123,8 @@ public actor AgentOrchestrator {
     private var approvalObserverToken: UUID?
     private var restored = false
     private var liveTextObserver: (@Sendable (String) -> Void)?
+    private var liveReasoningObserver: (@Sendable (String) -> Void)?
+    private var lastLiveReasoningEmit = Date.distantPast
     private var lastLiveTextEmit = Date.distantPast
     /// The size of the prompt the provider last billed — system prompt, tool
     /// schemas and the whole conversation — which is what a context meter shows.
@@ -217,6 +219,18 @@ public actor AgentOrchestrator {
         liveTextObserver = observer
     }
 
+    /// Provider summaries have their own channel and never become answer text.
+    public func observeLiveReasoning(_ observer: (@Sendable (String) -> Void)?) {
+        liveReasoningObserver = observer
+    }
+
+    private func emitLiveReasoning(_ text: String, force: Bool = false) {
+        let now = Date()
+        guard force || now.timeIntervalSince(lastLiveReasoningEmit) >= 0.05 else { return }
+        lastLiveReasoningEmit = now
+        liveReasoningObserver?(text)
+    }
+
     /// Observes token accounting as the provider reports it: the prompt size that
     /// is the session's current context, and the last turn's completion size.
     ///
@@ -266,6 +280,7 @@ public actor AgentOrchestrator {
             approvalObserverToken = nil
         }
         liveTextObserver = nil
+        liveReasoningObserver = nil
         usageObserver = nil
         callUsageObserver = nil
         compactionObserver = nil
@@ -724,6 +739,21 @@ public actor AgentOrchestrator {
             var stopReason: ModelStopReason?
             lastLiveTextEmit = .distantPast
             emitLiveText("", force: true)
+            emitLiveReasoning("", force: true)
+            lastLiveTextEmit = .distantPast
+            lastLiveReasoningEmit = .distantPast
+            var thinkingFilter = LeadingThinkingFilter()
+            func consumeText(_ parts: (text: String, reasoning: String)) {
+                if !parts.text.isEmpty {
+                    turnText += parts.text
+                    pendingSegment += parts.text
+                    emitLiveText(turnText)
+                }
+                if !parts.reasoning.isEmpty {
+                    turnReasoningSummary = String((turnReasoningSummary + parts.reasoning).suffix(12_000))
+                    emitLiveReasoning(turnReasoningSummary)
+                }
+            }
 
             var modelRetriesLeft = 1
             var fallbackAttempted = false
@@ -752,6 +782,7 @@ public actor AgentOrchestrator {
                 turnItems.removeAll()
                 pendingSegment = ""
                 toolCalls.removeAll()
+                thinkingFilter = LeadingThinkingFilter()
                 stopReason = nil
                 // This call's own usage, per field, newest wins; summed into
                 // the session's totals once the call ends, however it ends.
@@ -770,9 +801,7 @@ public actor AgentOrchestrator {
                         if Task.isCancelled { break }
                         switch event {
                         case let .textDelta(delta):
-                            turnText += delta
-                            pendingSegment += delta
-                            emitLiveText(turnText)
+                            consumeText(thinkingFilter.push(delta))
                         case let .thinkingBlock(text, signature):
                             closeSegment()
                             turnItems.append(.assistantThinking(text: text, signature: signature))
@@ -784,10 +813,7 @@ public actor AgentOrchestrator {
                             // deltas. Keep those private to the active turn and
                             // persist one bounded, readable summary instead of one
                             // transcript event per delta.
-                            turnReasoningSummary += summary
-                            if turnText.isEmpty {
-                                emitLiveText(turnReasoningSummary)
-                            }
+                            consumeText(("", summary))
                         case let .toolCallRequested(id, name, input):
                             closeSegment()
                             toolCalls.append((id, name, input, nil))
@@ -943,6 +969,7 @@ public actor AgentOrchestrator {
             // through the top-of-loop cancellation branch instead of
             // mistaking it for a completed turn.
             if Task.isCancelled { continue }
+            consumeText(thinkingFilter.finish())
             modelTurnsSinceCompaction += 1
             // Images are intentionally one-turn context. Once a successful
             // model turn has consumed them, retain only the redacted tool
@@ -953,6 +980,7 @@ public actor AgentOrchestrator {
                 in: .whitespacesAndNewlines
             )
             if !normalizedReasoning.isEmpty {
+                emitLiveReasoning("", force: true)
                 _ = try? await store.appendEvent(
                     sessionID: sessionID,
                     payload: .reasoningSummary(
@@ -995,6 +1023,9 @@ public actor AgentOrchestrator {
                 return
             }
 
+            // A valid tool call defines the work even when a compatible
+            // provider labels its completion as a normal end of turn.
+            if stopReason == .endTurn, !toolCalls.isEmpty { stopReason = .toolUse }
             guard let stopReason else {
                 try? await store.saveConversation(sessionID: sessionID, messages: conversation)
                 _ = try? await store.appendEvent(
@@ -1015,6 +1046,7 @@ public actor AgentOrchestrator {
                 )
                 return
             }
+
 
             if stopReason == .toolUse, toolCalls.isEmpty {
                 try? await store.saveConversation(sessionID: sessionID, messages: conversation)
@@ -1583,6 +1615,7 @@ public actor AgentOrchestrator {
         // screenshot when this orchestrator is reused.
         conversation = ConversationIntegrity.repaired(conversation.map(\.persistenceSafe))
         emitLiveText("", force: true)
+        emitLiveReasoning("", force: true)
         _ = try? await store.appendEvent(
             sessionID: sessionID,
             payload: .runCompleted(

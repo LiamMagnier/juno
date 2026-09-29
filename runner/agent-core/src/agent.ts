@@ -353,6 +353,8 @@ export class AgentSession {
         takeQueuedUserText: () => this.takeQueuedUserMessages(),
         onAssistantDelta: (text) => this.callbacks.onEvent({ type: 'assistant_delta', text }),
         onAssistantMessage: (text) => this.emit({ type: 'assistant_message', text }),
+        onThinkingDelta: (text) => this.callbacks.onEvent({ type: 'thinking_delta', text }),
+        onThinkingMessage: (text) => this.emit({ type: 'thinking_message', text }),
         executeToolCall: (call) => this.executeToolCall(turnIndex, call),
         onMessagesChanged: () => this.store.saveMessages(this.messages),
       });

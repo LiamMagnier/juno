@@ -19,6 +19,8 @@ struct NativeAgentProfileTab: View {
     let apps: [NativeAgentAppChoice]
     let delete: () -> Void
 
+    @State private var section = "identity"
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var name: String
     @State private var role: String
     @State private var avatar: JunoAgentAvatar
@@ -55,15 +57,25 @@ struct NativeAgentProfileTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.region) {
-            identity
-            talk
-            brief
-            autonomy
-            appsSection
-            initiative
-            saveBar
-            Divider()
-            knows
+            HStack(spacing: JunoSpace.regular) {
+                JunoAgentFace(avatar: avatar, state: agent.state, size: 64)
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    Text("\(agent.name), in detail.").junoType(.title)
+                    Text("Change its identity or how it works here, or just tell it in the conversation.")
+                        .junoType(.ui).foregroundStyle(Color.junoSecondaryInk)
+                }
+            }
+            Picker("Agent details", selection: $section) {
+                Text("Identity").tag("identity")
+                Text("How it works").tag("work")
+                Text("Memory").tag("memory")
+            }.pickerStyle(.segmented).frame(maxWidth: 480)
+            Group {
+                if section == "identity" { identity; talk; brief; saveBar }
+                else if section == "work" { autonomy; appsSection; initiative; saveBar }
+                else { knows }
+            }
+            .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: section)
             Divider()
             retire
         }

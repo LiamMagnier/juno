@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import { testUserMcpConnection } from "@/lib/user-mcp";
 import type { McpProbeResult } from "@/lib/mcp-probe";
+import { mcpConnectionInput } from "@/lib/mcp-server-input";
 
 export const runtime = "nodejs";
 
@@ -22,13 +23,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Too many connection tests just now. Try again later." }, { status: 429 });
   }
 
-  const body = (await req.json().catch(() => null)) as { url?: string; authHeader?: string } | null;
-  const url = body?.url?.trim() ?? "";
-  if (!url) return NextResponse.json({ error: "Server URL is required." }, { status: 400 });
+  const parsed = mcpConnectionInput.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
+  }
 
   const result: McpProbeResult = await testUserMcpConnection({
-    url,
-    authHeader: body?.authHeader ?? null,
+    url: parsed.data.url,
+    authHeader: parsed.data.authHeader ?? null,
   });
   return NextResponse.json({ result });
 }

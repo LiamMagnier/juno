@@ -65,6 +65,7 @@ struct DesktopAgentHireRoute: View {
     let model: NativeAgentsModel
     let apps: [NativeAgentAppChoice]
     let templateID: String?
+    let openConversation: (String) -> Void
     @Binding var welcomedAgentID: String?
 
     @Environment(\.desktopReplace) private var replace
@@ -77,6 +78,10 @@ struct DesktopAgentHireRoute: View {
             templateID: templateID,
             onCancel: { dismiss() },
             onHired: { agent in
+                if let conversationID = agent.conversationID {
+                    openConversation(conversationID)
+                    return
+                }
                 welcomedAgentID = agent.id
                 replace(.agent(agent.id))
             }

@@ -62,6 +62,8 @@ export type AgentEvent =
   | { type: 'turn_started'; turnIndex: number }
   | { type: 'assistant_delta'; text: string }
   | { type: 'assistant_message'; text: string }
+  | { type: 'thinking_delta'; text: string }
+  | { type: 'thinking_message'; text: string }
   | { type: 'tool_started'; callId: string; name: string; input: unknown; risk: RiskLevel; agentId?: string }
   | {
       type: 'tool_finished';

@@ -32,6 +32,9 @@ interface ShapeSpec {
 }
 
 const SHAPES: Record<AgentShape, ShapeSpec> = {
+  tile: { eyes: [[24, 32], [40, 32]], scale: 0.9 },
+  halo: { eyes: [[25, 33], [39, 33]], scale: 0.85 },
+  prism: { eyes: [[25, 32], [39, 32]], scale: 0.85 },
   orb: { eyes: [[24, 31], [40, 31]], scale: 1 },
   pebble: { eyes: [[24, 32], [40, 32]], scale: 1 },
   capsule: { eyes: [[26, 29], [38, 29]], scale: 0.9 },
@@ -49,6 +52,12 @@ const EYES: Record<AgentEyes, { w: number; h: number; r: number }> = {
 
 function Body({ shape }: { shape: AgentShape }) {
   switch (shape) {
+    case "tile":
+      return <path d="M21 6 H43 Q58 6 58 21 V43 Q58 58 43 58 H21 Q6 58 6 43 V21 Q6 6 21 6 Z" />;
+    case "halo":
+      return <path fillRule="evenodd" d="M32 4 A28 28 0 1 1 31.99 4 Z M32 9 A5 5 0 1 0 32.01 9 Z" />;
+    case "prism":
+      return <path d="M27 5 Q32 2 37 5 L55 16 Q60 19 60 25 V40 Q60 46 55 49 L37 60 Q32 63 27 60 L9 49 Q4 46 4 40 V25 Q4 19 9 16 Z" />;
     case "orb":
       return <circle cx={32} cy={33} r={26} />;
     case "pebble":
@@ -209,12 +218,9 @@ export function AgentFace({ avatar, state = "idle", size = "md", name, labelStat
             <circle cx={60} cy={12} r={1.6} />
           </g>
         ) : null}
-        {px >= 40 ? (
-          <g className="agent-face__prop" fill="none">
-            <rect x={46} y={45} width={12} height={8} rx={1.5} strokeWidth={1.6} />
-            <path d="M43.5 55.5 H60.5" strokeWidth={2} strokeLinecap="round" />
-          </g>
-        ) : null}
+        {detailed ? <g className="agent-face__workbars">
+          {[25, 31, 37].map(x => <rect key={x} x={x} y={44} width={3} height={3} rx={1.5} />)}
+        </g> : null}
       </g>
     </svg>
   );

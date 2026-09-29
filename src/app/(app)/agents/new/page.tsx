@@ -1,5 +1,5 @@
 import { AgentHire } from "@/components/agents/agent-hire";
-import { AgentHireConversation } from "@/components/agents/agent-hire-conversation";
+import { AgentStart } from "@/components/agents/agent-start";
 
 /**
  * Hiring an agent (`docs/design/agents-v2/BRIEF.md` §4.8.4).
@@ -17,5 +17,5 @@ export default async function NewAgentPage({
   if (form === "1" || form === "true") {
     return <AgentHire initialTemplate={initialTemplate} />;
   }
-  return <AgentHireConversation initialTemplate={initialTemplate} />;
+  return <AgentStart initialTemplate={initialTemplate} />;
 }

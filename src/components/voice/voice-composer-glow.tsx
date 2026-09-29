@@ -25,7 +25,7 @@ import type { VoiceCallParts } from "@/components/voice/realtime-voice";
  * - STATE. `processing` for the thinking gap; `paused` freezes the light on its
  *   last frame (connecting, ended, closing) instead of fading it out mid-word.
  *
- * Decorative: every surface keeps a text status and a visible control state,
+ * Decorative: every surface keeps an accessible status and a visible control state,
  * and the package keeps its own reduced-motion handling. The glow auto-detects
  * the child's radius, so it follows the composer's corners exactly.
  */
@@ -58,6 +58,9 @@ export function JunoVoiceGlow({
       colors={palette.colors}
       bandColors={palette.bandColors}
       strength={theme === "dark" ? 0.95 : 0.8}
+      attack={0.06}
+      release={0.18}
+      idle={0.06}
       className={className ?? "relative w-full rounded-composer"}
     >
       {children}

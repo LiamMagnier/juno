@@ -1,226 +1,78 @@
 "use client";
-
-/**
- * Hiring as a job board (docs/design/AGENTS.md §5.1): the seven starting
- * points are jobs, not feature cards. A tight row list on the left; one
- * selected row fills the brief on the right so the whole combination (face,
- * name, role, style, brief, autonomy) is visible before Hire.
- *
- * "Start from scratch" is its own row under a hairline, not a seventh equal tile.
- */
-
 import * as React from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, Plus } from "@/components/ui/icons";
-import { AgentFace } from "@/components/agents/agent-face";
-import { announceAgentsChanged, hireAgent } from "@/components/agents/agents-transport";
-import { AGENT_TEMPLATES, type AgentTemplate } from "@/lib/agents/templates";
-import { AGENT_STYLE_LABEL } from "@/lib/agents/domain";
-import { WORK_APPROVAL_MODE_LABEL } from "@/lib/work/domain";
-import { staggerDelay } from "@/lib/motion";
+import { ArrowUp, Plus } from "@/components/ui/icons";
+import { announceAgentsChanged, hireAgent } from "./agents-transport";
+import { AGENT_TEMPLATES } from "@/lib/agents/templates";
+import { agentStarterInput } from "@/lib/agents/starter";
 import { cn } from "@/lib/utils";
 
-export function AgentJobBoard({
-  initialTemplateId,
-  formHref,
-  className,
-}: {
-  initialTemplateId?: string | null;
-  /** Where "Set up with a form" goes. Omit to hide the link (empty roster already has New agent). */
-  formHref?: string;
-  className?: string;
+/** One request creates a persistent teammate; configuration continues in its thread. */
+export function AgentJobBoard({ initialTemplateId, className }: {
+  initialTemplateId?: string | null; formHref?: string; className?: string;
 }) {
   const router = useRouter();
-  const jobs = React.useMemo(() => AGENT_TEMPLATES.filter((t) => t.id !== "custom"), []);
-  const scratch = React.useMemo(() => AGENT_TEMPLATES.find((t) => t.id === "custom"), []);
-  const [selected, setSelected] = React.useState<AgentTemplate>(() => {
-    return (
-      AGENT_TEMPLATES.find((t) => t.id === initialTemplateId) ??
-      jobs[0] ??
-      AGENT_TEMPLATES[0]
-    );
-  });
-  const [busyId, setBusyId] = React.useState<string | null>(null);
-
-  const hire = async (template: AgentTemplate) => {
-    if (busyId) return;
-    setBusyId(template.id);
-    const isScratch = template.id === "custom";
-    const outcome = await hireAgent({
-      name: template.names[0] ?? "New agent",
-      role: isScratch ? "" : template.role,
-      avatar: template.avatar,
-      style: template.style,
-      instructions: isScratch ? "" : template.instructions,
-      approvalMode: template.approvalMode,
-      connectorIds: [],
-      template: template.id,
-      ...(template.firstGoal ? { firstGoal: template.firstGoal } : {}),
-    });
-    setBusyId(null);
-    if (outcome.kind !== "ok") {
-      toast.error(outcome.message);
-      return;
+  const initial = AGENT_TEMPLATES.find(t => t.id === initialTemplateId);
+  const [prompt, setPrompt] = React.useState("");
+  const [selected, setSelected] = React.useState(initial?.id ?? "custom");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const request = React.useRef<{ key: string; text: string; template: string } | null>(null);
+  const inFlight = React.useRef(false);
+  const input = React.useRef<HTMLTextAreaElement>(null);
+  const template = AGENT_TEMPLATES.find(t => t.id === selected) ?? AGENT_TEMPLATES[0];
+  const start = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const text = prompt.trim();
+    if (!text || inFlight.current) return;
+    inFlight.current = true; setBusy(true); setError(null);
+    if (!request.current || request.current.text !== text || request.current.template !== selected) {
+      request.current = { key: crypto.randomUUID(), text, template: selected };
     }
-    announceAgentsChanged();
-    const target = outcome.value.conversationId
-      ? `/chat/${encodeURIComponent(outcome.value.conversationId)}`
-      : `/agents/${encodeURIComponent(outcome.value.id)}`;
-    router.push(target);
+    try {
+      const outcome = await hireAgent({ ...agentStarterInput(template), creationKey: request.current.key, starterMessage: text });
+      if (outcome.kind !== "ok") { setError(outcome.message); return; }
+      announceAgentsChanged();
+      const agent = outcome.value;
+      router.push(agent.conversationId ? `/chat/${encodeURIComponent(agent.conversationId)}` : `/agents/${encodeURIComponent(agent.id)}`);
+    } catch { setError("Couldn’t open your agent. Your request is still here; try again."); }
+    finally { inFlight.current = false; setBusy(false); }
   };
-
-  const rows = scratch ? [...jobs, scratch] : jobs;
-  const busy = busyId !== null;
-
-  return (
-    <div className={cn("@container grid grid-cols-1 gap-6 @[48rem]:grid-cols-[minmax(0,1fr)_20rem] @[48rem]:gap-8", className)}>
-      {/* The job board */}
-      <ul className="overflow-hidden rounded-card border border-border bg-card" role="radiogroup" aria-label="Starting points">
-        {rows.map((template, index) => {
-          const isScratch = template.id === "custom";
-          const isSelected = selected.id === template.id;
-          const isBusy = busyId === template.id;
-          return (
-            <li
-              key={template.id}
-              style={staggerDelay(index, "tight")}
-              className="motion-safe:animate-rise-in [animation-fill-mode:backwards]"
-            >
-              {isScratch ? <div className="h-px bg-border" aria-hidden="true" /> : null}
-              <button
-                type="button"
-                role="radio"
-                aria-checked={isSelected}
-                disabled={busy}
-                onMouseEnter={() => setSelected(template)}
-                onFocus={() => setSelected(template)}
-                onClick={() => {
-                  setSelected(template);
-                  void hire(template);
-                }}
-                data-face-trigger
-                className={cn(
-                  "flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors duration-fast ease-out-soft",
-                  "hover:bg-accent",
-                  isSelected ? "bg-selected" : undefined,
-                  isBusy && "bg-selected"
-                )}
-              >
-                <AgentFace
-                  avatar={template.avatar}
-                  size="sm"
-                  state={isBusy ? "working" : "idle"}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-ui font-medium text-foreground">
-                    {isScratch ? "Start from scratch" : template.label}
-                  </span>
-                  <span className="mt-0.5 block truncate text-caption text-muted-foreground">
-                    {template.promise}
-                  </span>
-                </span>
-                <ChevronRight
-                  className="size-4 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                  motion="none"
-                />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-
-      {/* The brief: the combination whole, before Hire */}
-      <aside className="@[48rem]:sticky @[48rem]:top-6 @[48rem]:self-start">
-        <div className="rounded-card border border-border bg-card p-4">
-          <div
-            data-face-trigger
-            className="mx-auto grid size-24 place-items-center rounded-control bg-muted/40"
-          >
-            <AgentFace
-              avatar={selected.avatar}
-              state={busyId === selected.id ? "working" : "idle"}
-              size="lg"
-              name={selected.names[0] ?? "New agent"}
-            />
-          </div>
-          <p className="mt-3 text-center text-body font-medium text-foreground">
-            {selected.names[0] ?? "New agent"}
-          </p>
-          <p className="mt-0.5 text-center text-ui text-muted-foreground">
-            {selected.id === "custom" ? "You decide the job" : selected.role}
-          </p>
-
-          <p className="mt-3 text-ui text-foreground">{selected.promise}</p>
-
-          {selected.id === "custom" ? null : (
-            <p className="mt-2 line-clamp-4 text-caption text-muted-foreground">
-              {selected.instructions}
-            </p>
-          )}
-
-          <dl className="mt-3 space-y-1 border-t border-border pt-3 text-caption text-muted-foreground">
-            <div className="flex items-baseline justify-between gap-3">
-              <dt className="font-mono text-label">Voice</dt>
-              <dd className="text-foreground">{AGENT_STYLE_LABEL[selected.style]}</dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-3">
-              <dt className="font-mono text-label">Autonomy</dt>
-              <dd className="text-foreground">{WORK_APPROVAL_MODE_LABEL[selected.approvalMode]}</dd>
-            </div>
-          </dl>
-
-          <p className="mt-3 text-caption text-muted-foreground">
-            It always asks before it sends, publishes, pays or deletes.
-          </p>
-
-          <Button
-            className="mt-4 w-full"
-            loading={busyId === selected.id}
-            disabled={busy}
-            onClick={() => void hire(selected)}
-          >
-            {busyId === selected.id ? "Hiring" : "Hire"}
-          </Button>
-
-          {formHref ? (
-            <p className="mt-3 text-center text-caption text-muted-foreground">
-              <Link href={formHref} className="text-foreground underline-offset-4 hover:underline">
-                Set up with a form
-              </Link>
-            </p>
-          ) : null}
-        </div>
-      </aside>
+  return <div className={cn("agent-studio-start", className)}>
+    <div className="agent-create-intro">
+      <h2>Give your agent a job.</h2>
+      <p>Tell it what to handle and what a good result looks like. It’ll save its brief and work out the details with you.</p>
     </div>
-  );
+    <form onSubmit={start} className="agent-request">
+      <label htmlFor="agent-request" className="agent-request-label">Your first message</label>
+      <textarea id="agent-request" ref={input} value={prompt} onChange={e => setPrompt(e.target.value)} maxLength={6000}
+        disabled={busy} rows={3} placeholder="For example: review my inbox each morning, flag urgent messages, and draft replies for my approval."
+        onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} />
+      <div className="agent-request-footer">
+        <span>{busy ? "Starting your conversation…" : "⌘ / Ctrl + Enter to send"}</span>
+        <Button type="submit" disabled={busy || !prompt.trim()} aria-busy={busy} className="gap-2">
+          {busy ? "Starting…" : "Create & start"}<ArrowUp className="size-4" aria-hidden="true" />
+        </Button>
+      </div>
+    </form>
+    {error && <p role="alert" className="text-ui text-destructive">{error}</p>}
+    <div className="agent-start-prompts">
+      <p className="text-ui text-muted-foreground">Try a request</p>
+      <div className="agent-prompt-list">{AGENT_TEMPLATES.filter(t => ["chief-of-staff", "researcher", "monitor"].includes(t.id)).map(t =>
+        <button type="button" key={t.id} disabled={busy} aria-pressed={selected === t.id}
+          onClick={() => { setSelected(t.id); setPrompt(t.firstGoal || t.promise); input.current?.focus(); }}>
+          <span>{t.firstGoal || t.promise}</span><ArrowUp className="size-3.5" aria-hidden="true" />
+        </button>)}</div>
+    </div>
+    <div className="agent-create-boundary"><span>Your permissions stay in control.</span><p>Connected apps require access. Sending, publishing, paying, and deleting require your approval.</p></div>
+  </div>;
 }
-
-/** The empty roster's opening: a short serif line, then the board. */
-export function FirstHireBoard({ formHref }: { formHref?: string }) {
-  return (
-    <section aria-labelledby="first-hire" className="motion-safe:animate-rise-in">
-      <h2 id="first-hire" className="text-title font-serif font-medium">
-        Hire your first agent
-      </h2>
-      <p className="mt-1 max-w-prose text-body text-muted-foreground">
-        Pick a job to open a thread right away. Nothing it does that sends, pays or deletes happens without you.
-      </p>
-      <AgentJobBoard className="mt-5" formHref={formHref ?? "/agents/new?form=1"} />
-    </section>
-  );
+export function FirstHireBoard(_props: { formHref?: string }) {
+  return <section aria-labelledby="first-hire"><h2 id="first-hire" className="text-title font-medium">Create your first agent</h2>
+    <p className="mt-2 text-body text-muted-foreground">Start with a request. Keep working in the same conversation.</p><AgentJobBoard className="mt-8" /></section>;
 }
-
-/** Quiet primary for headers that hire. */
 export function NewAgentButton() {
-  return (
-    <Button asChild size="sm" className="gap-1.5">
-      <Link href="/agents/new">
-        <Plus className="size-3.5" aria-hidden="true" /> New agent
-      </Link>
-    </Button>
-  );
+  return <Button asChild size="sm" className="gap-1.5"><Link href="/agents/new"><Plus className="size-3.5" aria-hidden="true" /> New agent</Link></Button>;
 }

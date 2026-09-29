@@ -25,6 +25,6 @@ export default async function PremiumDevPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   if (process.env.NODE_ENV === "production") notFound();
-  const { only } = await searchParams;
-  return <PremiumGallery only={typeof only === "string" ? only : undefined} />;
+  const { only, peak } = await searchParams;
+  return <PremiumGallery only={typeof only === "string" ? only : undefined} voicePeak={peak === "1"} />;
 }

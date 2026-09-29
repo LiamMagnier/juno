@@ -43,6 +43,7 @@ export function AddMcpServerDialog({
   const [name, setName] = React.useState("");
   const [url, setUrl] = React.useState("");
   const [authHeader, setAuthHeader] = React.useState("");
+  const [clearAuth, setClearAuth] = React.useState(false);
   const [testState, setTestState] = React.useState<TestState>("idle");
   const [testTools, setTestTools] = React.useState<string[]>([]);
   const [testError, setTestError] = React.useState<string | null>(null);
@@ -58,6 +59,7 @@ export function AddMcpServerDialog({
     // Never prefill the secret. An edit keeps the stored header unless the
     // field is typed into; the placeholder says so.
     setAuthHeader("");
+    setClearAuth(false);
     setTestState(editing?.status === "ok" ? "ok" : editing?.status === "error" ? "error" : "idle");
     setTestTools(editing?.tools ?? []);
     setTestError(editing?.lastError ?? null);
@@ -77,9 +79,11 @@ export function AddMcpServerDialog({
       const r = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Saved-row test reads the sealed header from the row; the draft test
-        // takes the field value. Both answer with the same McpProbeResult.
-        body: isEdit ? undefined : JSON.stringify({ url: url.trim(), authHeader: authHeader.trim() || null }),
+        body: JSON.stringify({
+          url: url.trim(),
+          ...(clearAuth ? { authHeader: null } : authHeader.trim()
+            ? { authHeader: authHeader.trim() } : isEdit ? {} : { authHeader: null }),
+        }),
       });
       const data = (await r.json().catch(() => ({}))) as {
         result?: { ok: boolean; toolNames?: string[]; error?: string };
@@ -115,7 +119,8 @@ export function AddMcpServerDialog({
           url: url.trim(),
           // Omit when blank on edit so the stored header is kept; send null only
           // when the field is used to clear. Create always sends the field.
-          ...(authHeader.trim() ? { authHeader: authHeader.trim() } : isEdit ? {} : { authHeader: null }),
+          ...(clearAuth ? { authHeader: null } : authHeader.trim()
+            ? { authHeader: authHeader.trim() } : isEdit ? {} : { authHeader: null }),
         }),
       });
       const data = (await r.json().catch(() => ({}))) as { server?: UserMcpServerStatus; error?: string };
@@ -189,6 +194,8 @@ export function AddMcpServerDialog({
                     // A new URL is a new endpoint: the last test is no longer
                     // evidence about it.
                     if (testState !== "testing") setTestState("idle");
+                    setTestError(null);
+                    setTestTools([]);
                   }}
                   disabled={busy}
                   autoComplete="off"
@@ -212,12 +219,30 @@ export function AddMcpServerDialog({
                     isEdit && editing?.hasAuthHeader ? "Stored header kept unless you type" : "Bearer … (optional)"
                   }
                   value={authHeader}
-                  onChange={(e) => setAuthHeader(e.target.value)}
+                  onChange={(e) => {
+                    setAuthHeader(e.target.value);
+                    setClearAuth(false);
+                    setTestState("idle");
+                    setTestError(null);
+                  }}
                   disabled={busy}
                 />
                 <p className="text-caption text-muted-foreground">
-                  Sent as the Authorization request header. Leave blank for an open server.
+                  {isEdit && editing?.hasAuthHeader && !clearAuth
+                    ? "Leave blank to keep the stored credential."
+                    : "Leave blank for a server that needs no credential."}
                 </p>
+                {isEdit && editing?.hasAuthHeader && (
+                  <Button type="button" variant="ghost" size="sm" className="justify-self-start" disabled={busy}
+                    onClick={() => {
+                      setClearAuth(!clearAuth);
+                      setAuthHeader("");
+                      setTestState("idle");
+                      setTestError(null);
+                    }}>
+                    {clearAuth ? "Keep stored credential" : "Remove stored credential"}
+                  </Button>
+                )}
               </div>
 
               <div className="surface-inset rounded-field p-3.5">

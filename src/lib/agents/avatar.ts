@@ -18,7 +18,7 @@
  * component, not of this file.
  */
 
-export const AGENT_SHAPES = ["orb", "pebble", "capsule", "petal", "bloom", "spark"] as const;
+export const AGENT_SHAPES = ["orb", "pebble", "capsule", "petal", "bloom", "spark", "tile", "halo", "prism"] as const;
 export type AgentShape = (typeof AGENT_SHAPES)[number];
 
 /**
@@ -46,6 +46,9 @@ export interface AgentAvatar {
 
 /** What each choice is called where a person picks it. */
 export const AGENT_SHAPE_LABEL: Record<AgentShape, string> = {
+  tile: "Tile",
+  halo: "Halo",
+  prism: "Prism",
   orb: "Orb",
   pebble: "Pebble",
   capsule: "Capsule",
@@ -108,7 +111,7 @@ function hash(seed: string): number {
 export function defaultAgentAvatar(seed: string): AgentAvatar {
   const h = hash(seed || "agent");
   return {
-    shape: AGENT_SHAPES[h % AGENT_SHAPES.length],
+    shape: AGENT_SHAPES[h % 6],
     tone: AGENT_TONES[Math.floor(h / 7) % AGENT_TONES.length],
     eyes: AGENT_EYES[Math.floor(h / 53) % AGENT_EYES.length],
     mark: "none",

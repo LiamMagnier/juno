@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
+import { createMcpServerInput } from "@/lib/mcp-server-input";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
@@ -14,16 +14,6 @@ export const runtime = "nodejs";
 
 /** Soft ceiling so the directory stays bounded and the pickers stay readable. */
 const MAX_USER_MCP_SERVERS = 50;
-
-const nameSchema = z.string().trim().min(1).max(80);
-
-const createSchema = z.object({
-  name: nameSchema,
-  url: z.string().trim().min(1).max(2000),
-  // The full Authorization header value ("Bearer …" or a raw token the server
-  // accepts). Stored sealed; empty means anonymous.
-  authHeader: z.string().max(4000).optional(),
-});
 
 /**
  * List the account's user MCP servers.
@@ -53,7 +43,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Too many servers added just now. Try again later." }, { status: 429 });
   }
 
-  const parsed = createSchema.safeParse(await req.json().catch(() => null));
+  const parsed = createMcpServerInput.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
   }

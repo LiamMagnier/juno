@@ -57,11 +57,11 @@ export function AgentPanel({
   const activeTab: AgentPanelTab = !showComputerTab && tab === "computer" ? "now" : tab;
 
   const options = React.useMemo<SegmentedOption<AgentPanelTab>[]>(() => {
-    const list: SegmentedOption<AgentPanelTab>[] = [{ value: "now", label: "Now" }];
+    const list: SegmentedOption<AgentPanelTab>[] = [{ value: "now", label: "Activity" }];
     if (showComputerTab) {
       list.push({ value: "computer", label: "Computer" });
     }
-    list.push({ value: "setup", label: "Setup" });
+    list.push({ value: "setup", label: "Details" });
     return list;
   }, [showComputerTab]);
 
@@ -73,7 +73,7 @@ export function AgentPanel({
   return (
     <aside
       aria-label={detail ? `${detail.agent.name} panel` : "Agent panel"}
-      className="flex h-full w-full flex-col bg-background"
+      className="agent-inspector flex h-full w-full flex-col"
     >
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/70 px-4 py-2.5">
@@ -114,7 +114,7 @@ export function AgentPanel({
       </div>
 
       {/* Body */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div key={activeTab} className="agent-inspector-content min-h-0 flex-1 overflow-y-auto px-5 py-5">
         {error && !detail ? (
           <LoadError title="Couldn’t load agent" description={error} onRetry={refresh} />
         ) : !detail ? (

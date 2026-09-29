@@ -43,6 +43,14 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_input", message: "That agent could not be read." }, { status: 400 });
   }
-  const result = await createAgentForUser(user, parsed.data);
-  return NextResponse.json(result.body, { status: result.status });
+  try {
+    const result = await createAgentForUser(user, parsed.data);
+    return NextResponse.json(result.body, { status: result.status });
+  } catch (err) {
+    if (err instanceof Error && err.message === "agent_creation_retired") {
+      return NextResponse.json({ error: "retired", message: "That agent was retired. Start a new request." }, { status: 409 });
+    }
+    console.error("[agents] creation failed");
+    return NextResponse.json({ error: "creation_failed", message: "Couldn’t start your agent. Your request is kept here; try again." }, { status: 500 });
+  }
 }

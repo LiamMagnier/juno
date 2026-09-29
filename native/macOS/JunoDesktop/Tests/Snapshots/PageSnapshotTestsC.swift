@@ -551,3 +551,20 @@ actor StageCPreviewServer: NativeWorkTransport {
         #"{"id":"goal-1","agentId":"agent-wren","title":"Inbox under fifty by Friday","detail":"","status":"active","cadence":"weekly"}"#
     }
 }
+
+
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["JUNO_SNAPSHOT_DIR"] != nil, "Set JUNO_SNAPSHOT_DIR for Agents snapshots."), .serialized)
+@MainActor
+struct AgentsStudioSnapshotTests {
+    @Test(arguments: ["agents-roster", "agent-hire", "agent-page"])
+    func drawsStudio(_ name: String) async throws {
+        let world = try await SnapshotPreviewWorld.shared()
+        let fixture = try #require(await PageFixturesC.fixture(named: name, world: world))
+        if let prepare = fixture.prepare { try await prepare() }
+        let directory = URL(fileURLWithPath: ProcessInfo.processInfo.environment["JUNO_SNAPSHOT_DIR"]!)
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let url = try await TranscriptSnapshotRenderer.render(fixture.view(), name: fixture.name, width: fixture.width, appearance: appearance, into: directory)
+            #expect(FileManager.default.fileExists(atPath: url.path))
+        }
+    }
+}

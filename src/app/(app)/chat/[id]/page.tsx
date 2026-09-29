@@ -2,8 +2,9 @@ import nextDynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/session";
 import { getConversationThread } from "@/lib/queries";
+import { AgentWorkspaceFrame } from "@/components/agents/agent-workspace-frame";
 import { ChatView } from "@/components/chat/chat-view";
-import { agentForThread } from "@/lib/agents/store";
+import { agentForThread, pendingAgentStarter } from "@/lib/agents/store";
 
 /**
  * Split, not imported. This route renders ONE of two surfaces and the chat one
@@ -67,10 +68,11 @@ export default async function ConversationPage({
   // which reads as the ordinary chat it now is.
   const agent = await agentForThread(user.id, thread.conversation.id);
 
-  return (
+  const chat = (
     <ChatView
       conversationId={thread.conversation.id}
       agent={agent ?? undefined}
+      initialPrompt={agent ? await pendingAgentStarter(user.id, agent.id) ?? undefined : undefined}
       initialMessages={thread.messages}
       initialArtifacts={thread.artifacts}
       initialModel={thread.conversation.model}
@@ -81,4 +83,5 @@ export default async function ConversationPage({
       initialFocusMessageId={typeof m === "string" && m ? m : undefined}
     />
   );
+  return agent ? <AgentWorkspaceFrame currentAgentId={agent.id}>{chat}</AgentWorkspaceFrame> : chat;
 }

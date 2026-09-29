@@ -132,6 +132,7 @@ final class StageBPageWorld {
 
 enum StageBPageFixtures {
     static let names = [
+        "mcp-server",
         "memory",
         "memory-welcome",
         "memory-off",
@@ -188,6 +189,10 @@ enum StageBPageFixtures {
         }
 
         switch name {
+        case "mcp-server":
+            return FinalFixture(name: name, width: 480, view: {
+                AnyView(DesktopMCPServerSheet(model: world.world.connectorModel, editing: nil).junoAccentTint())
+            })
         case "memory":
             return memory(pages.memoryPage(), height: 2060)
         case "memory-narrow":

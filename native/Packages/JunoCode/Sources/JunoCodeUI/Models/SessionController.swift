@@ -467,6 +467,7 @@ public final class SessionController {
     /// and empty whenever nothing is streaming. Never persisted: the
     /// `assistantMessage` event is the record, and this is replaced by it.
     public private(set) var liveAssistantText = ""
+    public private(set) var liveReasoningSummary = ""
     /// What each running sub-agent is doing at this moment, keyed by its own
     /// session.
     ///
@@ -728,6 +729,11 @@ public final class SessionController {
         await next.observeLiveText { [weak self] text in
             Task { @MainActor [weak self] in
                 self?.liveAssistantText = text
+            }
+        }
+        await next.observeLiveReasoning { [weak self] text in
+            Task { @MainActor [weak self] in
+                self?.liveReasoningSummary = text
             }
         }
         await next.observeUsage { [weak self] context, output in
@@ -1376,6 +1382,7 @@ public final class SessionController {
     ) async throws {
         guard !isRewinding else { throw RewindInProgress() }
         liveAssistantText = ""
+        liveReasoningSummary = ""
         let configuration = session.configuration
         // Written before the prompt, so the transcript reads contract-then-turn
         // and a past turn's permissions can still be read off the record long
@@ -1658,6 +1665,7 @@ public final class SessionController {
         remoteHandover?.cancel()
         await orchestrator?.stop()
         liveAssistantText = ""
+        liveReasoningSummary = ""
     }
 
     /// Reader-owned lifecycle control for the durable goal. The same validated
@@ -2656,6 +2664,7 @@ public final class SessionController {
             orchestratorContract = nil
         }
         liveAssistantText = ""
+        liveReasoningSummary = ""
         // The next request reports the new size; the old number describes a
         // history that no longer exists.
         contextTokens = nil
@@ -3824,8 +3833,10 @@ public final class SessionController {
             // The persisted message is the same text that was streaming into
             // `liveAssistantText`; keeping both would render the reply twice.
             liveAssistantText = ""
+            liveReasoningSummary = ""
         case .runCompleted:
             liveAssistantText = ""
+            liveReasoningSummary = ""
             Task { await refreshWorkspacePanels() }
         default:
             break

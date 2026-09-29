@@ -17,7 +17,6 @@ import {
   announceAgentsChanged,
   createGoal,
   decideIdea,
-  reflect,
   updateGoal,
 } from "@/components/agents/agents-transport";
 import { useCostConfirmation } from "@/components/agents/confirm-cost-dialog";
@@ -42,16 +41,6 @@ export function AgentPanelNow({
   const [addingGoal, setAddingGoal] = React.useState(false);
   const [goalBusyId, setGoalBusyId] = React.useState<string | null>(null);
 
-  // Keep the reflect-on-open call when this tab opens, never forced.
-  React.useEffect(() => {
-    if (mockActivity) return;
-    void reflect(agent.id, false).then((res) => {
-      if (res.kind === "ok" && res.value.kind === "reflected") {
-        onChanged();
-        setRefreshKey((k) => k + 1);
-      }
-    });
-  }, [agent.id, mockActivity, onChanged]);
 
   const live = work.session !== null && !isTerminalStatus(work.session.status);
   const needsAttention = Boolean(work.session?.needsAttention || agent.needsYou > 0);

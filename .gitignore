@@ -124,3 +124,6 @@ e2e/.auth/
 
 # Personal iOS signing for Xcode Debug builds (see native/Config/JunoMobile-Local.sample.xcconfig)
 native/Config/JunoMobile-Local.xcconfig
+
+# Local UI review captures, regenerated from development fixtures.
+/.impeccable/

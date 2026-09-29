@@ -186,6 +186,7 @@ struct DesktopDestinationView: View {
                     model: model,
                     apps: agentApps,
                     templateID: template,
+                    openConversation: openAgentThread,
                     welcomedAgentID: $welcomedAgentID
                 )
             } else {
@@ -514,6 +515,14 @@ struct DesktopDestinationView: View {
                 await conversationModel.reload()
             }
             openConversation(id)
+            if let agents = configuration.agentsModel,
+               let agent = agents.agents.first(where: { $0.conversationID == id }),
+               let message = await agents.pendingStarter(for: agent.id),
+               let conversation = conversationModel.conversations.first(where: { $0.id == id }),
+               conversationModel.messages(for: id).isEmpty, !conversationModel.isGenerating {
+                _ = conversationModel.sendMessage(conversationID: id, prompt: message, modelID: conversation.model,
+                    reasoningEffort: nil, connectors: agent.connectorIDs)
+            }
         }
     }
 

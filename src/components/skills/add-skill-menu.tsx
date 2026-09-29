@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { ChevronDown, Plus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,6 +48,9 @@ export function AddSkillMenu({
         <DropdownMenuItem onSelect={onImport}>
           <GitHubMark className="size-4 shrink-0" />
           Import from GitHub…
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/skills/new?import=file">Import SKILL.md…</Link>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onCreateWithJuno}>
           <AppIcons.conversation aria-hidden="true" />

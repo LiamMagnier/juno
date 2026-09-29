@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
+import { testSavedMcpServerInput } from "@/lib/mcp-server-input";
 import {
   decryptAuthHeader,
   recordUserMcpTest,
@@ -20,7 +21,7 @@ export const runtime = "nodejs";
  * writing the outcome onto the row. Draft tests (before a row exists) live at
  * POST /api/mcp/servers/test.
  */
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -33,10 +34,23 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const row = await prisma.userMcpServer.findFirst({ where: { id, userId: user.id } });
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  const raw = await req.text();
+  let body: unknown = {};
+  try { if (raw) body = JSON.parse(raw); } catch { body = null; }
+  const parsed = testSavedMcpServerInput.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
+  }
+  const draft = parsed.data;
+
   const result = await testUserMcpConnection({
-    url: row.url,
-    authHeader: decryptAuthHeader(row.authHeader),
+    url: draft.url ?? row.url,
+    authHeader: draft.authHeader === undefined ? decryptAuthHeader(row.authHeader) : draft.authHeader,
   });
+  // Testing unsaved edits must not mark the saved definition healthy or broken.
+  if (draft.url !== undefined || draft.authHeader !== undefined) {
+    return NextResponse.json({ result });
+  }
   await recordUserMcpTest(user.id, row.id, result);
 
   const updated = await prisma.userMcpServer.findFirst({ where: { id, userId: user.id } });

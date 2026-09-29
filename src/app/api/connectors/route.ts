@@ -51,6 +51,8 @@ export async function GET() {
     return {
       id: userMcpConnectorId(row.id),
       kind: "user_mcp",
+      url: dto.url,
+      hasAuthHeader: dto.hasAuthHeader,
       label: row.name,
       description: row.url,
       capability: `Let the model use tools from your ${row.name} MCP server.`,

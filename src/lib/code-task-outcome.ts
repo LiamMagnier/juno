@@ -95,6 +95,7 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
   });
 
   const textParts: string[] = [];
+  const reasoningParts: string[] = [];
   const activity: WriteActivityEvent[] = [];
   const agentSnapshots = new Map<string, { event: CodeTaskEvent; agent: Record<string, unknown> }>();
   let promptTokens: number | null = null;
@@ -109,6 +110,12 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
       case "text": {
         const text = payloadStr(event.payload, "text");
         if (text) textParts.push(text);
+        break;
+      }
+      case "reasoning":
+      case "reasoning_delta": {
+        const text = payloadStr(event.payload, "text");
+        if (text) reasoningParts.push(event.kind === "reasoning" ? `${text}\n\n` : text);
         break;
       }
       case "tool": {
@@ -241,6 +248,7 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
 
   const base = {
     content: encryptMessageText(textParts.join("")),
+    reasoning: reasoningParts.length ? encryptMessageText(reasoningParts.join("").slice(-24_000)) : null,
     model: null,
     promptTokens,
     completionTokens,

@@ -4,6 +4,7 @@ import JunoCore
 import JunoDesignSystem
 import JunoWorkKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The state of one skill's page.
 @MainActor
@@ -1009,6 +1010,9 @@ struct DesktopNewSkillPage: View {
     @State private var description = ""
     @State private var instructions = ""
     @State private var saving = false
+    @State private var reading = false
+    @State private var imported: NativeSkillFilePreview?
+    @State private var fileError: String?
 
     @State private var didSeed = false
 
@@ -1016,7 +1020,7 @@ struct DesktopNewSkillPage: View {
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && slug != nil && !saving
+            && slug != nil && !saving && !reading
     }
 
     var body: some View {
@@ -1031,6 +1035,20 @@ struct DesktopNewSkillPage: View {
             }
         } content: {
             VStack(alignment: .leading, spacing: JunoSpace.section) {
+                VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                    Button(reading ? "Reading…" : "Import SKILL.md") { pickSkillFile() }
+                        .buttonStyle(.bordered)
+                        .disabled(saving || reading)
+                    Text(imported == nil ? "Bring a skill from your computer, or write one below." : "File loaded. Review the instructions before saving. Attach referenced files separately.")
+                        .junoType(.caption).foregroundStyle(Color.junoSecondaryInk)
+                    if let imported, !imported.ignoredSettings.isEmpty {
+                        Text("Settings that don’t apply in Juno: \(imported.ignoredSettings.joined(separator: ", ")).")
+                            .junoType(.caption).foregroundStyle(Color.junoSecondaryInk)
+                    }
+                    if let fileError {
+                        DesktopNoteBand(icon: .error, tone: Color.junoDestructiveInk) { Text(fileError) }
+                    }
+                }
                 DesktopSkillField(
                     label: "Name",
                     text: $name,
@@ -1069,6 +1087,7 @@ struct DesktopNewSkillPage: View {
                         .contentShape(.rect)
                 }
             }
+            .disabled(saving || reading)
         }
         .onAppear {
             guard !didSeed else { return }
@@ -1085,6 +1104,8 @@ struct DesktopNewSkillPage: View {
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             description: description.trimmingCharacters(in: .whitespacesAndNewlines),
             instructions: instructions.trimmingCharacters(in: .whitespacesAndNewlines),
+            imported: imported != nil,
+            requestedTools: imported?.requestedTools ?? [],
             for: accountID
         )
         saving = false
@@ -1098,6 +1119,39 @@ struct DesktopNewSkillPage: View {
             toast(.error("You already have a skill called /\(slug ?? ""). Give this one a different name."))
         default:
             toast(.error(result.message(fallback: "Couldn’t save this skill. Nothing was created.")))
+        }
+    }
+
+    private func pickSkillFile() {
+        guard let accountID = model.currentAccountID else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "md") ?? .plainText]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.prompt = "Import"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in
+                reading = true
+                fileError = nil
+                defer { reading = false }
+                do {
+                    let access = url.startAccessingSecurityScopedResource()
+                    defer { if access { url.stopAccessingSecurityScopedResource() } }
+                    let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                    guard size <= 232_000 else { fileError = "This SKILL.md is too large to import."; return }
+                    let content = try String(contentsOf: url, encoding: .utf8)
+                    let result = await model.skillsClient.previewFile(content: content, for: accountID)
+                    switch result {
+                    case .ok(let preview):
+                        imported = preview
+                        name = preview.name
+                        description = preview.description
+                        instructions = preview.instructions
+                    default: fileError = result.message(fallback: "Couldn’t read this SKILL.md.")
+                    }
+                } catch { fileError = "Couldn’t read this file as UTF-8 text." }
+            }
         }
     }
 }

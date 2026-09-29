@@ -148,6 +148,18 @@ public struct NativeSkillsClient: Sendable {
 
     // MARK: Importing from GitHub
 
+    public func previewFile(content: String, for accountID: AccountID) async -> NativeSkillResult<NativeSkillFilePreview> {
+        await request(.post, "/api/skills/import/file", body: .object(["content": .string(content)]), for: accountID) { root in
+            guard case .object(let skill)? = root["skill"],
+                  let name = skill["name"]?.stringValue,
+                  let description = skill["description"]?.stringValue,
+                  let instructions = skill["instructions"]?.stringValue else { throw SkillDecodeError() }
+            return NativeSkillFilePreview(name: name, description: description, instructions: instructions,
+                requestedTools: Self.strings(skill["allowedTools"]),
+                ignoredSettings: Self.strings(skill["hostKeys"]) + Self.strings(skill["ignoredKeys"]))
+        }
+    }
+
     /// Walks a repository and reports what is in it. Writes nothing.
     public func previewImport(
         source: String,
@@ -319,13 +331,16 @@ public struct NativeSkillsClient: Sendable {
         name: String,
         description: String,
         instructions: String,
+        imported: Bool = false,
+        requestedTools: [String] = [],
         for accountID: AccountID
     ) async -> NativeSkillResult<NativeSkill> {
         let body: JunoJSONValue = .object([
             "name": .string(name),
             "description": .string(description),
             "instructions": .string(instructions),
-            "origin": .string("authored"),
+            "origin": .string(imported ? "imported" : "authored"),
+            "requestedTools": .array(requestedTools.map(JunoJSONValue.string)),
             "autoSelect": .bool(false),
         ])
         return await request(.post, "/api/work/skills", body: body, for: accountID) { root in

@@ -277,7 +277,6 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   /** Raw mic RMS from the worklet, before envelope smoothing. */
   const micLevelRef = React.useRef(0);
   /** Raw play peak-hold from PCM, kept for the barge detector. */
-  const playLevelRef = React.useRef(0);
   const releaseEnvelopeRef = React.useRef<(() => void) | null>(null);
   const cursorRef = React.useRef(emptyCursor());
   const turnAttachmentsRef = React.useRef(new Map<string, ClientAttachment[]>());
@@ -430,17 +429,18 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       // the frame-rate dependence — these feed the barge-in detector, so the
       // number had to stay the same where it was already tuned.
       const decay = Math.exp(-dt / 0.2);
-      playLevelRef.current *= decay;
       playRmsRef.current *= decay;
 
       // Sample the graph that is actually audible. Playback first: while the
       // model talks its bands are the meter's, so the morpheme of the reply
       // reads even when the microphone is still open underneath it.
-      let playRaw = playLevelRef.current;
+      let playRaw = 0;
       const playAnalyser = playAnalyserRef.current;
       if (playAnalyser) {
         playAnalyser.getByteTimeDomainData(timeDomain.subarray(0, playAnalyser.fftSize));
-        playRaw = Math.max(playRaw, Math.min(1, timeDomainRms(timeDomain.subarray(0, playAnalyser.fftSize)) * 4));
+        const rms = timeDomainRms(timeDomain.subarray(0, playAnalyser.fftSize));
+        playRmsRef.current = rms;
+        playRaw = normalizedSpeechLoudness(rms);
         if (speakingRef.current) {
           playAnalyser.getByteFrequencyData(freq.subarray(0, playAnalyser.frequencyBinCount));
           foldSpeechBands(
@@ -469,8 +469,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       // Zero when not talking: the assistant envelope must fall with its own
       // silence, never hold the last word under the next thing that happens.
       const assistantTarget = speakingRef.current ? playRaw : 0;
-      userLevelRef.current += (userTarget - userLevelRef.current) * (1 - Math.exp(-14 * dt));
-      assistantLevelRef.current += (assistantTarget - assistantLevelRef.current) * (1 - Math.exp(-14 * dt));
+      userLevelRef.current += (userTarget - userLevelRef.current) * (1 - Math.exp(-(userTarget > userLevelRef.current ? 28 : 9) * dt));
+      assistantLevelRef.current += (assistantTarget - assistantLevelRef.current) * (1 - Math.exp(-(assistantTarget > assistantLevelRef.current ? 28 : 9) * dt));
 
       const active = speakingRef.current ? assistantLevelRef.current : userLevelRef.current;
       levelRef.current += (active - levelRef.current) * (1 - Math.exp(-14 * dt));
@@ -583,7 +583,6 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     playSourcesRef.current.clear();
     const ctx = playCtxRef.current;
     playCursorRef.current = ctx ? ctx.currentTime : 0;
-    playLevelRef.current = 0;
   }, []);
 
   const stopScreenShare = React.useCallback(() => {
@@ -627,10 +626,12 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     micStreamRef.current = null;
     void micCtxRef.current?.close().catch(() => {});
     micCtxRef.current = null;
+    micAnalyserRef.current = null;
 
     flushPlayback();
     void playCtxRef.current?.close().catch(() => {});
     playCtxRef.current = null;
+    playAnalyserRef.current = null;
     speakingRef.current = false;
     providerTurnActiveRef.current = false;
     echoCancellationRef.current = null;
@@ -638,7 +639,6 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     bargeFramesRef.current = [];
     bargeSamplesRef.current = 0;
     micLevelRef.current = 0;
-    playLevelRef.current = 0;
     playRmsRef.current = 0;
     setAssistantSpeaking(false);
   }, [flushPlayback, stopScreenShare]);
@@ -675,21 +675,13 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     if (!ctx || data.byteLength < 2) return;
     const int16 = new Int16Array(data);
     const float = new Float32Array(int16.length);
-    let sum = 0;
-    for (let i = 0; i < int16.length; i++) {
-      const v = int16[i] / 32768;
-      float[i] = v;
-      sum += v * v;
-    }
-    const rms = Math.sqrt(sum / int16.length);
-    playLevelRef.current = Math.max(playLevelRef.current, Math.min(1, rms * 4));
-    playRmsRef.current = Math.max(playRmsRef.current, rms);
+    for (let i = 0; i < int16.length; i++) float[i] = int16[i] / 32768;
 
     const buffer = ctx.createBuffer(1, float.length, PLAYBACK_SAMPLE_RATE);
     buffer.copyToChannel(float, 0);
     const src = ctx.createBufferSource();
     src.buffer = buffer;
-    src.connect(ctx.destination);
+    src.connect(playAnalyserRef.current ?? ctx.destination);
     const startAt = Math.max(ctx.currentTime + 0.04, playCursorRef.current);
     src.start(startAt);
     playCursorRef.current = startAt + buffer.duration;
@@ -748,6 +740,11 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       throw new DOMException("Voice start was superseded", "AbortError");
     }
     const source = ctx.createMediaStreamSource(stream);
+    const micAnalyser = ctx.createAnalyser();
+    micAnalyser.fftSize = 512;
+    micAnalyser.smoothingTimeConstant = 0.35;
+    micAnalyserRef.current = micAnalyser;
+    source.connect(micAnalyser);
     const node = new AudioWorkletNode(ctx, "juno-mic-tap", { numberOfInputs: 1, numberOfOutputs: 0 });
     micNodeRef.current = node;
 
@@ -759,7 +756,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       let sum = 0;
       for (let i = 0; i < chunk.length; i++) sum += chunk[i] * chunk[i];
       const rms = Math.sqrt(sum / chunk.length);
-      micLevelRef.current = Math.min(1, rms * 5);
+      micLevelRef.current = normalizedSpeechLoudness(rms);
       if (mutedRef.current) {
         bargeDetectorRef.current.reset();
         bargeFramesRef.current = [];
@@ -1008,6 +1005,11 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
 
         const playContext = new AudioContext({ sampleRate: PLAYBACK_SAMPLE_RATE });
         playCtxRef.current = playContext;
+        const playbackAnalyser = playContext.createAnalyser();
+        playbackAnalyser.fftSize = 512;
+        playbackAnalyser.smoothingTimeConstant = 0.35;
+        playbackAnalyser.connect(playContext.destination);
+        playAnalyserRef.current = playbackAnalyser;
         await playContext.resume();
         if (generationRef.current !== generation) {
           await playContext.close().catch(() => {});

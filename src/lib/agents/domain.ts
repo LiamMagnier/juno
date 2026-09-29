@@ -421,6 +421,8 @@ const connectorListSchema = z
   .transform((ids) => [...new Set(ids)]);
 
 export const createAgentSchema = z.object({
+  creationKey: z.string().uuid().optional(),
+  starterMessage: z.string().trim().min(1).max(MAX_AGENT_INSTRUCTIONS_CHARS).optional(),
   name: nameSchema,
   role: z.string().trim().max(MAX_AGENT_ROLE_CHARS).default(""),
   avatar: avatarSchema.optional(),
