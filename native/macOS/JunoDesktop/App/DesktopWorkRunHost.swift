@@ -254,14 +254,19 @@ actor DesktopWorkRunHost: WorkRunHosting {
             for said in takeInbound(request.runID) { messages.append(.user(said.modelText)) }
             turn += 1
 
-            var reply = ""
-            var calls: [(id: String, name: String, input: JSONValue)] = []
-            // Calls whose arguments did not parse, answered with the parser's
-            // complaint rather than run with nothing.
-            var malformed: [String: String] = [:]
-            var stop = ModelStopReason.endTurn
+            // Every request goes out in the shape providers accept, whatever
+            // a stop or a cancelled call left behind — the same repair the
+            // Code loop runs before each of its requests.
+            messages = ConversationIntegrity.repaired(messages)
+            let reply: ModelTurnCollector.Turn
             do {
-                let stream = dependencies.model.streamTurn(
+                // The Code loop's retry policy: a rate limit or an overload is
+                // waited out with backoff, honouring the provider's
+                // retry-after, where this loop used to fail the run on the
+                // first one. The waits are not transcript events — Work's event
+                // vocabulary is a shipped contract with no kind for them, the
+                // same reason the cloud runner only logs its retries.
+                reply = try await ModelTurnCollector.collect(
                     ModelTurnRequest(
                         sessionID: sessionID,
                         systemPrompt: Self.systemPrompt(for: request, bindings: bindings),
@@ -274,64 +279,63 @@ actor DesktopWorkRunHost: WorkRunHosting {
                         // outright, and an omitted one costs a shallower answer
                         // where a wrong one fails the whole turn.
                         reasoningEffort: nil
-                    )
+                    ),
+                    model: dependencies.model
                 )
-                for try await event in stream {
-                    switch event {
-                    case .textDelta(let delta):
-                        reply += delta
-                    case .toolCallRequested(let id, let name, let input),
-                         .toolCallRequestedWithExtra(let id, let name, let input, _):
-                        calls.append((id: id, name: name, input: input))
-                    case .toolCallMalformed(let id, let name, let rawArguments, let error, _):
-                        calls.append((id: id, name: name, input: .object([:])))
-                        malformed[id] = ToolArguments.malformedResult(
-                            toolName: name,
-                            rawArguments: rawArguments,
-                            error: error
-                        )
-                    case .turnCompleted(let reason):
-                        stop = reason
-                    case .reasoningSummary, .thinkingBlock, .redactedThinking, .usage, .cacheUsage:
-                        // Neither belongs in a Work transcript: the summary is
-                        // the model talking to itself, and usage is an account
-                        // fact the relay already bills from its own side.
-                        break
-                    }
-                }
             } catch is CancellationError {
+                return
+            } catch let failure as ModelTurnCollector.Failure {
+                await emit(request.runID, "error", ["message": .string(failure.sentence)])
+                await finish(request.runID, outcome: "failed", reason: failure.sentence)
                 return
             } catch {
                 await emit(request.runID, "error", ["message": .string(error.localizedDescription)])
                 await finish(request.runID, outcome: "failed", reason: error.localizedDescription)
                 return
             }
+            if Task.isCancelled { return }
 
-            if !reply.isEmpty {
-                messages.append(.assistant(reply))
-                await emit(request.runID, "assistant_message", ["text": .string(reply)])
+            // The turn goes back into the history as the model wrote it, its
+            // reasoning included and in stream order, so the thinking a model
+            // replays within its tool loop stays valid.
+            messages.append(contentsOf: reply.items)
+            if !reply.text.isEmpty {
+                await emit(request.runID, "assistant_message", ["text": .string(reply.text)])
             }
 
-            guard stop == .toolUse, !calls.isEmpty else {
-                let outcome = stop == .maxTokens ? "truncated" : "succeeded"
+            switch reply.stopReason {
+            case .toolUse where !reply.toolCalls.isEmpty:
+                break
+            case .pauseTurn where reply.toolCalls.isEmpty:
+                // Sent back as it stands, for the model to carry on.
+                continue
+            case .pauseTurn:
+                break
+            case .refusal:
+                await finish(request.runID, outcome: "failed", reason: "The model declined to continue with this task.")
+                return
+            case .contextWindowExceeded:
                 await finish(
                     request.runID,
-                    outcome: outcome,
-                    reason: stop == .maxTokens
-                        ? "The model ran out of room before it finished."
-                        : "Finished."
+                    outcome: "truncated",
+                    reason: "The task's conversation no longer fits the model's context window."
                 )
+                return
+            case .maxTokens:
+                await finish(request.runID, outcome: "truncated", reason: "The model ran out of room before it finished.")
+                return
+            case .endTurn, .toolUse, nil:
+                await finish(request.runID, outcome: "succeeded", reason: "Finished.")
                 return
             }
 
-            for call in calls {
+            for call in reply.toolCalls {
                 if Task.isCancelled { return }
-                messages.append(.toolCall(id: call.id, name: call.name, input: call.input))
-                if let answer = malformed[call.id] {
+                if let answer = reply.malformedResults[call.id] {
                     messages.append(.toolResult(id: call.id, content: answer, isError: true))
                     continue
                 }
-                let result = await perform(call, in: request, bindings: bindings)
+                let result = await perform((id: call.id, name: call.name, input: call.input), in: request, bindings: bindings)
                 messages.append(
                     .toolResult(id: call.id, content: result.content, isError: result.isError)
                 )
