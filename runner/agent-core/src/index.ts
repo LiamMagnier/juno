@@ -32,7 +32,16 @@ export {
 export { CheckpointStore, type FileRollback } from './checkpoints.js';
 export { SessionStore, junoHome, sessionsDir } from './session.js';
 export { AgentSession, type AgentCallbacks, type AgentOptions } from './agent.js';
-export { runAgentLoop, type AgentLoopOptions, type AgentLoopResult } from './loop.js';
+export {
+  runAgentLoop,
+  failureCodeOf,
+  ProviderSilenceError,
+  ToolExecutionError,
+  type AgentFailureCode,
+  type AgentLoopOptions,
+  type AgentLoopResult,
+} from './loop.js';
+export { ProviderCallError, classifyProviderError, type ProviderFailureKind } from './providers/errors.js';
 export {
   SubagentManager,
   isOrchestrationTool,

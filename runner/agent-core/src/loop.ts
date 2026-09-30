@@ -134,6 +134,68 @@ export class ProviderSilenceError extends Error {
 }
 
 /**
+ * Raised when a tool's own code threw, as opposed to returning an error result.
+ *
+ * Kept apart from `ProviderCallError` and `ProviderSilenceError` because a
+ * caller does opposite things with them: a provider failure may be retried,
+ * failed over or reported as the lab's fault, and a tool that threw is none of
+ * those — it is this process's code (or the Work runner's deliberate pause) and
+ * trying the model again would only reach the same tool. The original throw is
+ * the `cause`, and the message is its message, so a caller that only reads the
+ * text sees what it always saw.
+ *
+ * Provider failures that surface through a tool — a delegated child's model
+ * call, for one — are passed through unwrapped: they are still provider
+ * failures, and wrapping them would hide the kind a caller decides on.
+ */
+export class ToolExecutionError extends Error {
+  override readonly name = 'ToolExecutionError';
+
+  constructor(
+    readonly toolName: string,
+    readonly callId: string,
+    override readonly cause: unknown,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause));
+  }
+}
+
+/**
+ * What kind of failure ended a turn, in the vocabulary the agent protocol's
+ * `error` event uses. One function so every host reports the same code for the
+ * same failure rather than each re-deriving it from the message.
+ */
+export type AgentFailureCode =
+  | 'plan_limit'
+  | 'rate_limited'
+  | 'provider_overload'
+  | 'context_overflow'
+  | 'provider_error'
+  | 'provider_silence'
+  | 'tool_error'
+  | 'internal';
+
+export function failureCodeOf(error: unknown): AgentFailureCode {
+  if (error instanceof ToolExecutionError) return 'tool_error';
+  if (error instanceof ProviderSilenceError) return 'provider_silence';
+  if (error instanceof ProviderCallError) {
+    switch (error.kind) {
+      case 'plan_limit':
+        return 'plan_limit';
+      case 'rate_limit':
+        return 'rate_limited';
+      case 'overloaded':
+        return 'provider_overload';
+      case 'context_overflow':
+        return 'context_overflow';
+      default:
+        return 'provider_error';
+    }
+  }
+  return 'internal';
+}
+
+/**
  * How many times one step may be attempted again before the run gives up on
  * this model.
  *
@@ -446,7 +508,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       try {
         results.content.push(...normalizeToolResult(await opts.executeToolCall(call)));
       } catch (err) {
-        toolFailure = { error: err };
+        toolFailure = {
+          error:
+            err instanceof ProviderCallError || err instanceof ProviderSilenceError || err instanceof ToolExecutionError
+              ? err
+              : new ToolExecutionError(call.name, call.id, err),
+        };
         results.content.push({
           type: 'tool_result',
           toolCallId: call.id,

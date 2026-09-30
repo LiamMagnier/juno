@@ -107,6 +107,7 @@ export function createProxyProvider(config: BackendConfig, backendProviderId: st
       headers,
       models: Object.fromEntries(entries.map((m) => [m.model, capsFor(m)])),
       defaultModel,
+      viaJunoProxy: true,
     });
   }
   return new OpenAICompatAdapter(
@@ -118,6 +119,6 @@ export function createProxyProvider(config: BackendConfig, backendProviderId: st
       defaultModel,
       models,
     },
-    { apiKey: 'proxy', headers, id },
+    { apiKey: 'proxy', headers, id, viaJunoProxy: true },
   );
 }

@@ -89,7 +89,13 @@ export type AgentEvent =
       /** Aggregated child-agent usage for the turn (absent when none ran). */
       subagentUsage?: Usage;
     }
-  | { type: 'error'; message: string }
+  | {
+      type: 'error';
+      message: string;
+      /** What kind of failure it was (`failureCodeOf` in loop.ts), when the
+       *  engine knows: a plan limit and a tool crash want different words. */
+      code?: string;
+    }
   | { type: 'subagent_update'; agent: SubagentSnapshot };
 
 /** Structural mirror of subagents.ts SubagentPublicState (kept loose here so

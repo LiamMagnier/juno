@@ -87,6 +87,12 @@ export interface AnthropicOverride {
   defaultModel?: string;
   /** Wall-clock ceiling for one request. See timeouts.ts for why it is set. */
   timeoutMs?: number;
+  /** The base URL is Juno's `/api/agent` proxy, whose own 402 is the person's
+   *  plan limit rather than a lab out of credit. See providers/errors.ts. */
+  viaJunoProxy?: boolean;
+  /** The transport, for a host that has its own; tests replay recorded
+   *  streams through it. Defaults to the global `fetch`. */
+  fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 }
 
 export const THINKING_BINDING_BETA = 'thinking-binding-controls-2026-08-01';
@@ -154,9 +160,11 @@ export class AnthropicAdapter implements ProviderAdapter {
   private client: Anthropic;
   private modelCaps: Record<string, ModelCapabilities>;
   private defaultHeaders?: Record<string, string>;
+  private readonly viaJunoProxy: boolean;
 
   constructor(apiKey?: string, override?: AnthropicOverride) {
     this.defaultHeaders = override?.headers;
+    this.viaJunoProxy = override?.viaJunoProxy === true;
     this.client = new Anthropic({
       // In proxy mode the key is a placeholder the proxy replaces server-side.
       apiKey: override?.baseURL ? (apiKey ?? 'proxy') : resolveAnthropicKey(apiKey),
@@ -165,6 +173,7 @@ export class AnthropicAdapter implements ProviderAdapter {
       // The SDK's own default is ten minutes, which is ten minutes of a run
       // looking alive and doing nothing when a host stops answering.
       timeout: override?.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+      ...(override?.fetch ? { fetch: override.fetch } : {}),
     });
     if (override?.id) this.id = override.id;
     if (override?.name) this.name = override.name;
@@ -227,7 +236,7 @@ export class AnthropicAdapter implements ProviderAdapter {
     } catch (err) {
       // A stop the user asked for is not a provider failure.
       if (req.signal?.aborted) throw err;
-      throw classifyProviderError(err, this.name);
+      throw classifyProviderError(err, this.name, { viaJunoProxy: this.viaJunoProxy });
     }
 
     for (const block of final.content) {

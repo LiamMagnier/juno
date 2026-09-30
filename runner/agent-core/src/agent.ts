@@ -19,7 +19,7 @@ import { CheckpointStore, type FileRollback } from './checkpoints.js';
 import { SessionStore } from './session.js';
 import { defaultTools } from './tools/registry.js';
 import type { UsageReporter } from './usage.js';
-import { runAgentLoop } from './loop.js';
+import { failureCodeOf, runAgentLoop } from './loop.js';
 import type { ReasoningEffort } from './providers/types.js';
 import {
   SubagentManager,
@@ -376,7 +376,7 @@ export class AgentSession {
       stopReason = result.stopReason;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.emit({ type: 'error', message });
+      this.emit({ type: 'error', message, code: failureCodeOf(err) });
       stopReason = 'error';
     }
 
