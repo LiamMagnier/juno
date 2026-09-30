@@ -1,20 +1,22 @@
 import Foundation
+import JunoAgentProtocol
 import JunoCodeCore
 import JunoCodeKit
 import JunoCodeRuntime
 import JunoCore
 
-/// What a phone sees of a Mac session: each local transcript event, projected
-/// into the relay's event vocabulary.
+/// What a phone sees of a Mac session: each local transcript event, as the
+/// relay's event vocabulary — derived from the canonical agent protocol.
 ///
-/// A projection rather than the raw event, for three reasons.
+/// The meaning of each event is decided once, by `AgentProtocolProjection`
+/// (what leaves the Mac, bounded and redacted). This file only spells those
+/// protocol events in the relay's older kinds, for the phones that read them,
+/// and carries the protocol events themselves beside them under the payload key
+/// `protocol` — added, never replacing, so a shipped phone sees exactly the
+/// payload it always saw. The checklist, questions and plan reviews have no
+/// older kind and go as the typed `canonical_session_event` the phone already
+/// unwraps, with the protocol events beside them the same way.
 ///
-/// - **What leaves the Mac is decided here, field by field.** The local record
-///   holds things a phone has no business with: a tool call's full input (a
-///   file being written, whole), a worktree's absolute path, a sub-agent's
-///   brief. The projection carries what the Mac's own thread shows — prompts,
-///   replies, one-line tool summaries, command output, file names with their
-///   line counts — and redacts likely credentials from all of it.
 /// - **Deterministic numbering.** Relay sequence *n* is the local event with
 ///   sequence *n − 1*, one for one; an event with nothing to show a phone
 ///   still occupies its number as a `heartbeat`. The same history therefore
@@ -28,11 +30,19 @@ import JunoCore
 ///   relay lets one move the list only when it is newer than the list's own
 ///   statement (`appendedStatusFields` in `src/lib/code-remote-sessions.ts`).
 public enum CodeRelayEventProjection {
-    /// Bounds per field. A phone renders a paragraph and a terminal tail, not a
-    /// log file, and the relay refuses an event over 64 KB.
-    static let maximumTextCharacters = 12_000
-    static let maximumOutputCharacters = 8_000
-    static let maximumSummaryCharacters = 1_000
+    /// Bounds per field — the protocol projection's, which are the relay's.
+    static let maximumTextCharacters = AgentProtocolProjection.maximumTextCharacters
+    static let maximumOutputCharacters = AgentProtocolProjection.maximumOutputCharacters
+    static let maximumSummaryCharacters = AgentProtocolProjection.maximumSummaryCharacters
+
+    /// The payload key the protocol events ride under.
+    public static let protocolKey = "protocol"
+
+    /// How much of the relay's 64 KB per-event limit an event may use once its
+    /// protocol events ride along. Past this the protocol copy is left off that
+    /// one event — its legacy payload is complete on its own — rather than
+    /// risk a refusal that would stall every upload after it.
+    static let protocolPayloadBudget = 48 * 1024
 
     private static let redactor = SecretRedactor()
 
@@ -51,12 +61,15 @@ public enum CodeRelayEventProjection {
         {
             return restart
         }
+        let events = AgentProtocolProjection.events(for: event)
+        var kind: String
+        var payload: [String: JunoJSONValue]
         // The checklist, questions and plan reviews have no legacy relay kind,
         // and the relay refuses kinds it does not know. They go as the
         // canonical typed event — everything a phone needs to draw the card
         // and send the answer back under its id — with their text redacted
         // and bounded as every other projection's is.
-        if let payload = canonicalInteraction(event.payload),
+        if let interaction = canonicalInteraction(event.payload),
            let typed = try? CodeRelayProtocolAdapter.relayEvent(
                from: CodeSessionStoreProtocolAdapter.envelope(
                    from: SessionEvent(
@@ -64,14 +77,18 @@ public enum CodeRelayEventProjection {
                        sessionID: event.sessionID,
                        sequence: event.sequence,
                        timestamp: event.timestamp,
-                       payload: payload
+                       payload: interaction
                    )
                )
            )
         {
-            return typed
+            (kind, payload) = (typed.kind, typed.payload)
+        } else {
+            (kind, payload) = legacy(events, for: event)
         }
-        let (kind, payload) = project(event.payload)
+        if !events.isEmpty, let carried = carriedProtocol(events, beside: payload) {
+            payload[protocolKey] = carried
+        }
         return CodeRemoteSessionEvent(
             seq: event.sequence + 1,
             kind: kind,
@@ -103,17 +120,10 @@ public enum CodeRelayEventProjection {
         }
     }
 
-    /// The relay's word for a session status. The relay knows six; the Mac's
-    /// finer states are all either working or waiting on somebody.
+    /// The relay's word for a session status, through the protocol's state so
+    /// the list and the journal can never disagree about it.
     public static func relayStatus(_ status: SessionStatus) -> String {
-        switch status {
-        case .idle: "idle"
-        case .planning, .running, .waitingForProvider, .degraded, .stopping: "running"
-        case .waitingForApproval: "awaiting_approval"
-        case .completed: "completed"
-        case .failed: "failed"
-        case .cancelled: "interrupted"
-        }
+        relayWord(AgentProtocolProjection.state(status))
     }
 
     // MARK: - Interactions
@@ -192,88 +202,88 @@ public enum CodeRelayEventProjection {
         }
     }
 
-    // MARK: - Mapping
+    // MARK: - The relay's spelling of the protocol
 
-    private static func project(
-        _ payload: SessionEventPayload
+    /// The relay's kind and payload for the protocol events of one journal
+    /// entry. The relay has one row per entry, so the entry's first event that
+    /// the relay has a word for is the one spelled; an entry with none is a
+    /// heartbeat.
+    static func legacy(
+        _ events: [AgentEvent], for event: SessionEvent
     ) -> (String, [String: JunoJSONValue]) {
+        for projected in events {
+            if let spelled = legacy(projected.payload) { return spelled }
+        }
+        // The phone opened the step at the proposal; a second start would
+        // draw it twice, so a start holds its number as a heartbeat.
+        if case .toolStarted(let tool) = event.payload {
+            return ("heartbeat", ["toolCallId": .string(tool.toolCallID)])
+        }
+        return ("heartbeat", [:])
+    }
+
+    private static func legacy(_ payload: AgentEventPayload) -> (String, [String: JunoJSONValue])? {
         switch payload {
         case .sessionCreated(let created):
-            // The workspace's name only. `executionRootPath` is an absolute
-            // path on this Mac and never leaves it.
-            var body: [String: JunoJSONValue] = [
-                "modelID": .string(created.configuration.modelID),
-                "permissionMode": .string(created.configuration.permissionMode.rawValue),
-            ]
+            var body: [String: JunoJSONValue] = [:]
+            if let model = created.model { body["modelID"] = .string(model) }
+            if let mode = created.mode.flatMap(AgentProtocolProjection.permissionMode) {
+                body["permissionMode"] = .string(mode.rawValue)
+            }
             if let name = created.workspaceName { body["workspaceName"] = .string(name) }
             return ("session_created", body)
 
-        case .turnConfiguration(let turn):
-            var body: [String: JunoJSONValue] = [
-                "modelID": .string(turn.modelID),
-                "permissionMode": .string(turn.effectivePermissionMode.rawValue),
-                "behavior": .string(turn.behavior.rawValue),
-            ]
-            if let effort = turn.reasoningEffort { body["reasoningEffort"] = .string(effort.rawValue) }
+        case .sessionConfigured(let configured):
+            var body: [String: JunoJSONValue] = [:]
+            if let model = configured.model { body["modelID"] = .string(model) }
+            if let mode = configured.mode.flatMap(AgentProtocolProjection.permissionMode) {
+                body["permissionMode"] = .string(mode.rawValue)
+            }
+            if let behavior = configured.behavior { body["behavior"] = .string(behavior.rawValue) }
+            if let effort = configured.effort { body["reasoningEffort"] = .string(effort.rawValue) }
             return ("session_updated", body)
 
-        case .userPrompt(let prompt):
-            return ("user_message", ["text": text(prompt.text, limit: maximumTextCharacters)])
+        case .itemUserMessage(let message):
+            var body: [String: JunoJSONValue] = ["text": .string(message.text)]
+            if message.delivery == .steer || message.delivery == .queue {
+                body["delivery"] = .string(message.delivery.rawValue)
+            }
+            return ("user_message", body)
 
-        case .userInstruction(let instruction):
-            return (
-                "user_message",
-                [
-                    "text": text(instruction.text, limit: maximumTextCharacters),
-                    "delivery": .string(instruction.kind.rawValue),
-                ]
-            )
+        case .itemAssistantText(let text):
+            return ("text_delta", ["text": .string(text.text)])
 
-        case .userInstructionApplied:
-            return ("heartbeat", [:])
+        case .itemThinking(let thinking):
+            return ("reasoning_delta", ["text": .string(thinking.summary)])
 
-        case .assistantMessage(let message):
-            return ("text_delta", ["text": text(message.text, limit: maximumTextCharacters)])
+        case .itemToolCall(let call):
+            var body: [String: JunoJSONValue] = [
+                "toolCallId": .string(call.itemId),
+                "name": .string(call.toolName),
+                "summary": .string(call.title),
+            ]
+            if let risk = call.risk { body["risk"] = .string(risk.rawValue) }
+            return ("tool_start", body)
 
-        case .reasoningSummary(let reasoning):
-            return ("reasoning_delta", ["text": text(reasoning.summary, limit: maximumTextCharacters)])
-
-        case .toolProposed(let tool):
-            // The summary, never the input: a write's input is the whole file.
-            return (
-                "tool_start",
-                [
-                    "toolCallId": .string(tool.toolCallID),
-                    "name": .string(tool.toolName),
-                    "summary": text(tool.summary, limit: maximumSummaryCharacters),
-                    "risk": .string(tool.risk.rawValue),
-                ]
-            )
-
-        case .toolStarted(let tool):
-            // The phone opened the step at the proposal; a second start would
-            // draw it twice.
-            return ("heartbeat", ["toolCallId": .string(tool.toolCallID)])
-
-        case .toolOutput(let output):
+        case .itemToolOutput(let output):
             return (
                 "command_output",
                 [
-                    "toolCallId": .string(output.toolCallID),
+                    "toolCallId": .string(output.itemId),
                     "channel": .string(output.channel.rawValue),
-                    "text": text(output.text, limit: maximumOutputCharacters),
+                    "text": .string(output.text),
                 ]
             )
 
-        case .toolCompleted(let tool):
+        case .itemToolResult(let result):
             return (
                 "tool_result",
                 [
-                    "toolCallId": .string(tool.toolCallID),
-                    "status": .string(tool.status.rawValue),
-                    "summary": text(tool.resultSummary, limit: maximumSummaryCharacters),
-                    "isError": .bool(tool.status != .succeeded),
-                    "durationSeconds": .number(tool.durationSeconds),
+                    "toolCallId": .string(result.itemId),
+                    "status": .string(completionWord(result.status)),
+                    "summary": .string(result.summary ?? ""),
+                    "isError": .bool(result.status != .ok),
+                    "durationSeconds": .number(Double(result.durationMs ?? 0) / 1000),
                 ]
             )
 
@@ -281,10 +291,10 @@ public enum CodeRelayEventProjection {
             return (
                 "approval_request",
                 [
-                    "requestId": .string(approval.id),
-                    "summary": text(approval.summary, limit: maximumSummaryCharacters),
+                    "requestId": .string(approval.approvalId),
+                    "summary": .string(approval.summary),
                     "risk": .string(approval.risk.rawValue),
-                    "detail": .string(approval.toolName),
+                    "detail": .string(approval.action),
                 ]
             )
 
@@ -292,104 +302,124 @@ public enum CodeRelayEventProjection {
             return (
                 "approval_response",
                 [
-                    "requestId": .string(resolved.approvalID),
-                    "approved": .bool(resolved.decision == .approved),
+                    "requestId": .string(resolved.approvalId),
+                    "approved": .bool(resolved.decision == .allowOnce || resolved.decision == .allowAlways),
                 ]
             )
 
-        case .fileChanged(let change):
-            // The workspace-relative path and its size, not its contents. The
-            // checkpoint id is what lets the phone ask for exactly this change
-            // to be undone.
+        case .itemFileChange(let change):
             var body: [String: JunoJSONValue] = [
-                "path": .string(change.path.value),
-                "changeKind": .string(change.kind.rawValue),
+                "path": .string(change.path),
+                "changeKind": .string(change.change.rawValue),
                 "linesAdded": .number(Double(change.linesAdded)),
                 "linesRemoved": .number(Double(change.linesRemoved)),
             ]
-            if let checkpoint = change.checkpointID { body["checkpointId"] = .string(checkpoint) }
+            if let checkpoint = change.checkpointId { body["checkpointId"] = .string(checkpoint) }
             return ("file_change", body)
 
-        case .testRunCompleted(let run):
+        case .itemTestRun(let run):
             var body: [String: JunoJSONValue] = [
                 "status": .string(run.passed ? "passed" : "failed"),
-                "detail": text(run.command, limit: maximumSummaryCharacters),
-                "durationSeconds": .number(run.durationSeconds),
+                "detail": .string(run.command),
+                "durationSeconds": .number(Double(run.durationMs ?? 0) / 1000),
             ]
             if let total = run.testsRun { body["total"] = .number(Double(total)) }
             if let failed = run.failures { body["failed"] = .number(Double(failed)) }
             return ("test_update", body)
 
-        case .subagentUpdated(let update):
-            // Its title, state and result — not the brief it was given.
-            var agent: [String: JunoJSONValue] = [
-                "id": .string(update.agentID),
-                "title": text(update.title, limit: maximumSummaryCharacters),
-                "status": .string(update.status.rawValue),
+        case .itemSubagent(let agent):
+            var body: [String: JunoJSONValue] = [
+                "id": .string(agent.itemId),
+                "title": .string(agent.title),
+                "status": .string(agent.status.rawValue),
             ]
-            let summary = update.summary ?? (update.currentActivity.isEmpty ? nil : update.currentActivity)
-            if let summary { agent["summary"] = text(summary, limit: maximumSummaryCharacters) }
-            return ("subagent_update", ["agent": .object(agent)])
+            if let summary = agent.summary ?? agent.activity { body["summary"] = .string(summary) }
+            return ("subagent_update", ["agent": .object(body)])
 
-        case .goalUpdated(let goal):
-            return (
-                "session_updated",
-                ["goal": text(goal.goal.objective, limit: maximumSummaryCharacters)]
-            )
+        case .planUpdated(let plan):
+            // The goal's steps carry its objective. A checklist has none, and
+            // spelled as a goal it would blank the phone's; it travels as the
+            // canonical `todosUpdated` event instead.
+            guard let objective = plan.objective else { return nil }
+            return ("session_updated", ["goal": .string(objective)])
 
-        case .statusChanged(let status):
-            return ("status_update", ["status": .string(relayStatus(status.status))])
+        case .sessionState(let state):
+            return ("status_update", ["status": .string(relayWord(state.state))])
 
-        case .errorOccurred(let error):
+        case .sessionError(let failure):
             return (
                 "error",
-                [
-                    "message": text(error.message, limit: maximumSummaryCharacters),
-                    "recoverable": .bool(error.isRecoverable),
-                ]
+                ["message": .string(failure.error.message), "recoverable": .bool(failure.error.retryable)]
             )
 
-        case .runCompleted(let run):
+        case .turnCompleted(let completed):
             return (
                 "completed",
                 [
-                    "summary": text(run.summary, limit: maximumTextCharacters),
-                    "filesChanged": .number(Double(run.filesChanged)),
-                    "durationSeconds": .number(run.durationSeconds),
+                    "summary": .string(completed.summary ?? ""),
+                    "filesChanged": .number(Double(completed.filesChanged ?? 0)),
+                    "durationSeconds": .number(Double(completed.durationMs ?? 0) / 1000),
                 ]
             )
 
-        case .compaction(let compaction):
-            return ("session_updated", ["compaction": .string(compaction.messageCountSummary)])
-
-        case .transcriptRewound:
-            // Sent as the canonical event by `relayEvent(_:)`; this is only
-            // what stands in its number should that encoding ever fail.
-            return ("heartbeat", [:])
-
-        case .hookActivity(let activity):
-            // A quiet note, as a compaction is: which hook stepped in and
-            // why. What it blocked already reaches the phone as that tool's
-            // result, and a hook's output is redacted and bounded like any.
+        case .itemCompaction(let compaction):
             return (
                 "session_updated",
-                [
-                    "hook": .string("\(activity.hookEvent) hook \(activity.outcome.rawValue)"),
-                    "detail": text(activity.message, limit: maximumSummaryCharacters),
-                ]
+                ["compaction": .string("\(compaction.beforeMessages ?? 0) → \(compaction.afterMessages ?? 0) messages")]
             )
 
-        case .todosUpdated, .questionRequested, .questionResolved, .planSubmitted, .planResolved:
-            // Sent as canonical events by `relayEvent(_:)`, which a phone can
-            // decode whole and answer by id; this only stands in their number
-            // should that encoding ever fail.
-            return ("heartbeat", [:])
+        case .itemNotice(let notice):
+            // A quiet note, as a compaction is: which hook stepped in and why.
+            var body: [String: JunoJSONValue] = ["hook": .string(notice.text)]
+            if let detail = notice.detail { body["detail"] = .string(detail) }
+            return ("session_updated", body)
+
+        // Opened by the prompt's own row; spelled by the entries that follow.
+        case .turnStarted, .turnFailed, .turnInterrupted, .transcriptRestarted,
+             .itemAssistantTextDelta, .itemThinkingDelta, .questionAsked, .questionAnswered,
+             .planProposed, .planResolved, .usageUpdated, .codePullRequest, .unknown:
+            return nil
         }
     }
 
-    private static func text(_ value: String, limit: Int) -> JunoJSONValue {
-        let redacted = redactor.redact(value)
-        guard redacted.count > limit else { return .string(redacted) }
-        return .string(String(redacted.prefix(limit)) + "\n… [shortened on the way to your phone]")
+    /// The relay's word for a session state. The relay knows six; the rest are
+    /// working or waiting on somebody.
+    static func relayWord(_ state: AgentSessionState) -> String {
+        switch state {
+        case .idle: "idle"
+        case .running, .awaitingInput: "running"
+        case .awaitingApproval: "awaiting_approval"
+        case .completed: "completed"
+        case .failed: "failed"
+        case .cancelled, .interrupted: "interrupted"
+        case .unknown: "running"
+        }
     }
+
+    /// The Swift completion words the relay has always carried.
+    private static func completionWord(_ status: AgentToolResultStatus) -> String {
+        switch status {
+        case .ok: "succeeded"
+        case .error: "failed"
+        case .denied: "denied"
+        case .notExecuted, .unknown: "cancelled"
+        }
+    }
+
+    /// The protocol events, as JSON the relay stores, when they fit beside the
+    /// legacy payload within the per-event budget.
+    private static func carriedProtocol(
+        _ events: [AgentEvent], beside payload: [String: JunoJSONValue]
+    ) -> JunoJSONValue? {
+        guard let values = try? events.map({ try decoder.decode(JunoJSONValue.self, from: AgentProtocolProjection.jsonData($0)) })
+        else { return nil }
+        let carried = JunoJSONValue.array(values)
+        var combined = payload
+        combined[protocolKey] = carried
+        guard let size = try? encoder.encode(combined).count, size <= protocolPayloadBudget else { return nil }
+        return carried
+    }
+
+    private static let encoder = JSONEncoder()
+    private static let decoder = JSONDecoder()
 }

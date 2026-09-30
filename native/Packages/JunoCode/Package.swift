@@ -63,6 +63,9 @@ let package = Package(
             dependencies: [
                 "JunoCodeCore",
                 "JunoCodeRuntime",
+                // The canonical agent protocol: the one projection of a Mac
+                // session every wire (relay, device task) is spelled from.
+                .product(name: "JunoAgentProtocol", package: "JunoNativeKit"),
                 .product(name: "JunoCodeKit", package: "JunoNativeKit"),
                 .product(name: "JunoCore", package: "JunoNativeKit"),
                 .product(name: "JunoAPI", package: "JunoNativeKit"),
@@ -102,6 +105,7 @@ let package = Package(
                 "JunoCodeLocal",
                 "JunoCodeRuntime",
                 "JunoCodeBridge",
+                .product(name: "JunoAgentProtocol", package: "JunoNativeKit"),
             ]
         ),
     ],

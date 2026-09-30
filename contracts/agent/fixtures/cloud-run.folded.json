@@ -1,0 +1,149 @@
+{
+  "state": "completed",
+  "turns": [
+    {
+      "turnId": "cr1:turn:0",
+      "origin": "user",
+      "status": "completed",
+      "itemIds": [
+        "u1",
+        "n1",
+        "th1",
+        "toolu_01",
+        "a1",
+        "toolu_02",
+        "toolu_03",
+        "toolu_04",
+        "a2"
+      ],
+      "stopReason": "end_turn",
+      "durationMs": 98144
+    }
+  ],
+  "items": [
+    {
+      "kind": "user_message",
+      "itemId": "u1",
+      "text": "The login test fails about one run in five. Find out why and fix it.",
+      "delivery": "prompt",
+      "turnId": "cr1:turn:0"
+    },
+    {
+      "kind": "notice",
+      "itemId": "n1",
+      "source": "host",
+      "text": "Cloud Code run started on liam/juno with Claude Sonnet 5.",
+      "turnId": "cr1:turn:0"
+    },
+    {
+      "kind": "thinking",
+      "itemId": "th1",
+      "text": "Probably timing; running the test first to see the failure.",
+      "turnId": "cr1:turn:0"
+    },
+    {
+      "kind": "tool",
+      "itemId": "toolu_01",
+      "toolName": "bash",
+      "toolKind": "execute",
+      "title": "$ npm test -- login",
+      "status": "error",
+      "turnId": "cr1:turn:0",
+      "risk": "execute",
+      "exitCode": 1,
+      "durationMs": 8412,
+      "output": "FAIL tests/login.test.ts\n  ✕ signs in (5003 ms)\n    Timeout waiting for #session"
+    },
+    {
+      "kind": "assistant_text",
+      "itemId": "a1",
+      "text": "The test timed out waiting for the session cookie. Reading the helper it uses.",
+      "turnId": "cr1:turn:0"
+    },
+    {
+      "kind": "tool",
+      "itemId": "toolu_02",
+      "toolName": "read_file",
+      "toolKind": "read",
+      "title": "Read tests/helpers/session.ts",
+      "status": "ok",
+      "turnId": "cr1:turn:0",
+      "risk": "read",
+      "durationMs": 12
+    },
+    {
+      "kind": "tool",
+      "itemId": "toolu_03",
+      "toolName": "edit_file",
+      "toolKind": "edit",
+      "title": "Edit tests/helpers/session.ts",
+      "status": "ok",
+      "turnId": "cr1:turn:0",
+      "inputSummary": "Await the cookie write before resolving",
+      "risk": "write",
+      "durationMs": 31
+    },
+    {
+      "kind": "tool",
+      "itemId": "toolu_04",
+      "toolName": "bash",
+      "toolKind": "execute",
+      "title": "$ npm test -- login --repeat 20",
+      "status": "ok",
+      "turnId": "cr1:turn:0",
+      "risk": "execute",
+      "exitCode": 0,
+      "durationMs": 61220,
+      "output": "Tests: 20 passed, 20 total"
+    },
+    {
+      "kind": "assistant_text",
+      "itemId": "a2",
+      "text": "Fixed: the helper resolved before the cookie was written. Twenty runs in a row now pass.",
+      "turnId": "cr1:turn:0"
+    },
+    {
+      "kind": "file_change",
+      "itemId": "fc1",
+      "path": "tests/helpers/session.ts",
+      "change": "modified",
+      "linesAdded": 4,
+      "linesRemoved": 1,
+      "patch": "@@ -12,3 +12,6 @@\n-  resolve();\n+  await writeCookie();\n+  resolve();\n"
+    },
+    {
+      "kind": "notice",
+      "itemId": "n2",
+      "source": "host",
+      "text": "Opened pull request: https://github.com/liam/juno/pull/412"
+    }
+  ],
+  "usage": {
+    "inputTokens": 18234,
+    "outputTokens": 1422,
+    "cacheReadTokens": 61020,
+    "cacheWriteTokens": 9120,
+    "reasoningTokens": 388,
+    "costMicroUsd": 94310,
+    "model": "claude-sonnet-5"
+  },
+  "lastSeq": 26,
+  "eventCount": 26,
+  "unknownEventCount": 0,
+  "sessionId": "task_cloud_1",
+  "target": "cloud",
+  "repository": {
+    "owner": "liam",
+    "name": "juno",
+    "baseRef": "main"
+  },
+  "model": "claude-sonnet-5",
+  "effort": "high",
+  "mode": "full",
+  "title": "Fix the flaky login test",
+  "pullRequest": {
+    "branch": "juno/cloud-task_cloud_1",
+    "prUrl": "https://github.com/liam/juno/pull/412",
+    "prNumber": 412
+  }
+}

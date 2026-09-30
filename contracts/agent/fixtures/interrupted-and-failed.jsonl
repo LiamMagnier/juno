@@ -1,0 +1,11 @@
+{"v":"1.0","id":"in-1","sessionId":"mac_session_6","seq":1,"at":"2026-09-30T09:00:00.850Z","type":"session.created","target":"local","workspaceName":"juno","model":"claude-sonnet-5","mode":"full"}
+{"v":"1.0","id":"in-2","sessionId":"mac_session_6","seq":2,"at":"2026-09-30T09:00:01.700Z","turnId":"turn:in-2","type":"turn.started","origin":"user"}
+{"v":"1.0","id":"in-3","sessionId":"mac_session_6","seq":3,"at":"2026-09-30T09:00:02.550Z","turnId":"turn:in-2","type":"item.user_message","itemId":"u1","text":"Run the full test suite.","delivery":"prompt"}
+{"v":"1.0","id":"in-4","sessionId":"mac_session_6","seq":4,"at":"2026-09-30T09:00:03.400Z","turnId":"turn:in-2","type":"item.tool_call","itemId":"c1","toolName":"run_tests","toolKind":"other","title":"Run npm test","risk":"execute"}
+{"v":"1.0","id":"in-5","sessionId":"mac_session_6","seq":5,"at":"2026-09-30T09:00:04.250Z","turnId":"turn:in-2","type":"turn.interrupted","reason":"The Mac quit while the command ran."}
+{"v":"1.0","id":"in-6","sessionId":"mac_session_6","seq":6,"at":"2026-09-30T09:00:05.100Z","turnId":"turn:in-7","type":"turn.started","origin":"user"}
+{"v":"1.0","id":"in-7","sessionId":"mac_session_6","seq":7,"at":"2026-09-30T09:00:05.950Z","turnId":"turn:in-7","type":"item.user_message","itemId":"u2","text":"Try again.","delivery":"prompt"}
+{"v":"1.0","id":"in-8","sessionId":"mac_session_6","seq":8,"at":"2026-09-30T09:00:06.800Z","turnId":"turn:in-7","type":"item.tool_call","itemId":"c2","toolName":"run_tests","toolKind":"other","title":"Run npm test","risk":"execute"}
+{"v":"1.0","id":"in-9","sessionId":"mac_session_6","seq":9,"at":"2026-09-30T09:00:07.650Z","turnId":"turn:in-7","type":"session.error","error":{"code":"provider_overload","message":"The provider is overloaded. Try again in a minute.","retryable":true}}
+{"v":"1.0","id":"in-10","sessionId":"mac_session_6","seq":10,"at":"2026-09-30T09:00:08.500Z","turnId":"turn:in-7","type":"turn.failed","error":{"code":"provider_overload","message":"The provider is overloaded. Try again in a minute.","retryable":true}}
+{"v":"1.0","id":"in-11","sessionId":"mac_session_6","seq":11,"at":"2026-09-30T09:00:09.350Z","type":"session.state","state":"failed","reason":"The provider is overloaded."}

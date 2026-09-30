@@ -3,8 +3,9 @@
 import * as React from "react";
 import { toast } from "sonner";
 import type { ChatMessage } from "@/hooks/use-chat";
-import type { ClientActivityEvent, ClientAttachment, ClientMessage } from "@/types/chat";
+import type { ClientAttachment, ClientMessage } from "@/types/chat";
 import { canSteerRun } from "@/lib/code-steer-policy";
+import { CodeTaskTranscript, type CodeActivityRow } from "@/lib/agent-protocol/code-task-transcript";
 
 /*
  * State for one Juno Code session (a kind:"code" conversation): persisted
@@ -24,14 +25,16 @@ import { canSteerRun } from "@/lib/code-steer-policy";
 export type CodeSessionStatus = "idle" | "submitting" | "queued" | "running" | "awaiting_approval" | "stopping";
 
 /**
- * A Code activity row: the chat vocabulary plus the two keys only Juno Code
- * writes. `patch` is a write row's unified diff; `exitCode` is a tool row's
- * process status. Both ride as extra keys rather than widening the shared
- * `ClientActivityEvent` — a chat reader that does not know them sees exactly
- * the row it always saw — and both now survive persistence (see the
- * additive read in src/lib/serializers.ts).
+ * A Code activity row: the chat vocabulary plus the keys only Juno Code
+ * writes. `patch` is a write row's unified diff, `exitCode` a tool row's
+ * process status and `toolStatus` how its call ended, typed by the producer
+ * (the agent protocol's tool_result status). They ride as extra keys rather
+ * than widening the shared `ClientActivityEvent` — a chat reader that does not
+ * know them sees exactly the row it always saw — and all three survive
+ * persistence (see the additive read in src/lib/serializers.ts). The rows are
+ * built by CodeTaskTranscript, the same fold the persisted outcome uses.
  */
-export type CodeActivityEvent = ClientActivityEvent & { patch?: string; exitCode?: number };
+export type CodeActivityEvent = CodeActivityRow;
 
 /**
  * An instruction sent to a task that is already running, from the press to
@@ -266,6 +269,16 @@ let tempCounter = 0;
 const tempId = () => `code-temp-${Date.now()}-${tempCounter++}`;
 const LIVE_ID_PREFIX = "code-live-";
 const liveId = (taskId: string) => `${LIVE_ID_PREFIX}${taskId}`;
+/** A fresh live task: nothing folded yet, and rollback asks shown as the reader makes them. */
+const newLiveTask = (taskId: string) => ({
+  taskId,
+  transcript: new CodeTaskTranscript(taskId, { includeRollbackAsks: true }),
+  content: "",
+  reasoning: "",
+  activity: [] as CodeActivityRow[],
+  errorMessage: null as string | null,
+  bubbleShown: false,
+});
 /** True for an optimistic streaming bubble: a client-minted id with no
  *  persisted Message row behind it, so server-side affordances (feedback and
  *  anything else keyed by message id) must not be offered or POSTed for it. */
@@ -286,14 +299,6 @@ const ROLLBACK_ANSWER_TIMEOUT_MS = 90_000;
 const str = (payload: RemoteEvent["payload"], key: string): string | null => {
   const value = payload?.[key];
   return typeof value === "string" ? value : null;
-};
-const num = (payload: RemoteEvent["payload"], key: string): number | null => {
-  const value = payload?.[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-};
-const bool = (payload: RemoteEvent["payload"], key: string): boolean | null => {
-  const value = payload?.[key];
-  return typeof value === "boolean" ? value : null;
 };
 /** A string array from a payload, or null. Anything non-string in the array is
  *  dropped rather than rendered as `undefined` beside real paths. */
@@ -380,12 +385,17 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
   // read loop parses many frames synchronously) and mirrored into `messages`.
   const liveRef = React.useRef<{
     taskId: string;
+    /** The task's events, folded: every row below is read off it. */
+    transcript: CodeTaskTranscript;
     content: string;
     reasoning: string;
     activity: CodeActivityEvent[];
     errorMessage: string | null;
     bubbleShown: boolean;
   } | null>(null);
+  /** The approval the fold last said was pending, so a batch that does not
+   *  change it cannot bring back a card the reader has just answered. */
+  const pendingApprovalIdRef = React.useRef<string | null>(null);
   const statusRef = React.useRef(status);
   statusRef.current = status;
   /** Answer deadlines, by requestId, so a request that outlives the component
@@ -404,6 +414,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     setMessages(opts.initialMessages);
     setStatus("idle");
     setPendingApproval(null);
+    pendingApprovalIdRef.current = null;
     setActiveTask(null);
     setAgents([]);
     setFileChanges([]);
@@ -452,118 +463,18 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     (events: RemoteEvent[]) => {
       const live = liveRef.current;
       if (!live) return;
+      let applied = false;
       for (const event of events) {
         if (event.seq <= lastSeqRef.current) continue;
         lastSeqRef.current = event.seq;
+        applied = true;
+        // Every row — a canonical `protocol` event, or a legacy kind from a
+        // host or a stored task that predates it — goes through the one fold.
+        // The rows, the reply, the thinking and the error below are read off
+        // it, and a tool's outcome is its typed status, never its title.
+        live.transcript.apply(event);
+        // What is not transcript: host capabilities and control replies.
         switch (event.kind) {
-          case "text": {
-            live.content += str(event.payload, "text") ?? "";
-            break;
-          }
-          case "reasoning":
-          case "reasoning_delta": {
-            live.reasoning = (live.reasoning + (str(event.payload, "text") ?? "")).slice(-24_000);
-            break;
-          }
-          case "tool": {
-            const title = str(event.payload, "summary") ?? str(event.payload, "name");
-            // The status as a number, so the inline command card can say a
-            // test run failed without parsing its own title.
-            const exitCode = num(event.payload, "exitCode");
-            if (title)
-              live.activity.push({
-                id: `evt-${event.seq}`,
-                kind: "tool",
-                title,
-                detail: str(event.payload, "detail") ?? undefined,
-                createdAt: event.createdAt,
-                ...(exitCode !== null ? { exitCode } : {}),
-              });
-            break;
-          }
-          case "file_change": {
-            const path = str(event.payload, "path");
-            if (!path) break;
-            const added = num(event.payload, "added") ?? 0;
-            const removed = num(event.payload, "removed") ?? 0;
-            const changeKind = str(event.payload, "changeKind") ?? "edit";
-            /*
-             * TWO SPELLINGS FOR ONE FIELD, AND BOTH ARE LOAD-BEARING.
-             *
-             * `patch` is the name this payload documents; `diff` is the key the
-             * runner that is deployed RIGHT NOW actually writes
-             * (scripts/cloud-code-runner.mjs emits `{path, changeKind, added,
-             * removed, diff}` from `git diff --cached -- <file>`). Reading only
-             * `patch` would have shipped a diff viewer that never once fired,
-             * against the single producer in the tree that already sends hunks.
-             *
-             * Absent stays absent. A host that sends neither key lands here with
-             * null and keeps the summary row it has always had.
-             */
-            const patch = str(event.payload, "patch") ?? str(event.payload, "diff");
-            // The diff rides on the transcript row too, so the inline file row
-            // can open it — the same key the persisted row carries after reload.
-            live.activity.push({
-              id: `evt-${event.seq}`,
-              kind: "write",
-              title: `${changeKind} ${path}`,
-              detail: `+${added} −${removed}`,
-              createdAt: event.createdAt,
-              ...(patch ? { patch } : {}),
-            });
-            setFileChanges((prev) => {
-              const next = { path, changeKind, added, removed, patch: patch || null };
-              const index = prev.findIndex((change) => change.path === path);
-              if (index === -1) return [...prev, next];
-              const merged = [...prev];
-              // Last write per path wins on everything EXCEPT the patch, which
-              // is kept if the newer event has none: a run that writes a file
-              // twice, and whose second event lost its hunks (size cap, a
-              // failed `git diff`), must not silently lose the diff it already
-              // showed.
-              merged[index] = { ...next, patch: next.patch ?? prev[index].patch };
-              return merged;
-            });
-            break;
-          }
-          case "approval_request": {
-            const requestId = str(event.payload, "requestId");
-            const summary = str(event.payload, "summary");
-            if (requestId && summary) {
-              setPendingApproval({
-                requestId,
-                summary,
-                risk: str(event.payload, "risk") ?? "neutral",
-                detail: str(event.payload, "detail"),
-              });
-              live.activity.push({
-                id: `evt-${event.seq}`,
-                kind: "warning",
-                title: "Approval requested",
-                detail: summary,
-                createdAt: event.createdAt,
-              });
-            }
-            break;
-          }
-          case "approval_response": {
-            const requestId = str(event.payload, "requestId");
-            const approve = bool(event.payload, "approve");
-            setPendingApproval((cur) => (cur && cur.requestId === requestId ? null : cur));
-            if (requestId != null && approve != null) {
-              live.activity.push({
-                id: `evt-${event.seq}`,
-                kind: approve ? "done" : "warning",
-                title: approve ? "Approved" : "Denied",
-                createdAt: event.createdAt,
-              });
-            }
-            break;
-          }
-          case "error": {
-            live.errorMessage = str(event.payload, "message") ?? live.errorMessage;
-            break;
-          }
           case "agent": {
             const snapshot = (event.payload?.agent ?? null) as CodeAgentState | null;
             if (snapshot && typeof snapshot.id === "string") {
@@ -583,29 +494,8 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
             setRollbackSupport({ announced: true, paths: strList(event.payload, "paths") });
             break;
           }
-          case "accept_change":
-          case "reject_change":
-          case "undo_change": {
-            // Echoed back from our own POST (the route appends the verb to this
-            // same stream). Logged as an ASK, in the past tense of requesting
-            // rather than of doing: the host has not answered yet, and the two
-            // must not read alike in a transcript someone reads later.
-            const path = str(event.payload, "path");
-            live.activity.push({
-              id: `evt-${event.seq}`,
-              kind: "tool",
-              title:
-                event.kind === "undo_change"
-                  ? "Asked to undo the last turn"
-                  : event.kind === "reject_change"
-                    ? "Asked to revert a file"
-                    : "Asked to keep a file",
-              detail: path ?? undefined,
-              createdAt: event.createdAt,
-            });
-            break;
-          }
           case "rollback_result": {
+            // The transcript row is the fold's; this is the request's state.
             const requestId = str(event.payload, "requestId");
             if (!requestId) break;
             const raw = str(event.payload, "status");
@@ -625,20 +515,6 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
                   : entry,
               ),
             );
-            live.activity.push({
-              id: `evt-${event.seq}`,
-              kind: status === "applied" ? "done" : "warning",
-              title:
-                status === "applied"
-                  ? paths && paths.length > 0
-                    ? `Rolled back ${paths.length === 1 ? paths[0] : `${paths.length} files`}`
-                    : "Rolled back"
-                  : status === "unsupported"
-                    ? "Nothing to roll back"
-                    : "Rollback failed",
-              detail: message ?? undefined,
-              createdAt: event.createdAt,
-            });
             break;
           }
           case "steer_ack": {
@@ -653,11 +529,38 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
             break;
           }
           default:
-            // status/user/done/cancel_request carry no transcript content here.
-            // Neither does the `steer` echo of our own POST: the instruction is
-            // already in the transcript as the USER row the route returned.
             break;
         }
+      }
+      if (!applied) return;
+
+      const transcript = live.transcript;
+      live.content = transcript.content;
+      live.reasoning = transcript.reasoning.slice(-24_000);
+      live.activity = transcript.activity();
+      live.errorMessage = transcript.errorMessage ?? live.errorMessage;
+
+      const pending = transcript.pendingApproval;
+      if ((pending?.requestId ?? null) !== pendingApprovalIdRef.current) {
+        pendingApprovalIdRef.current = pending?.requestId ?? null;
+        setPendingApproval(pending);
+      }
+
+      const changes = transcript.fileChanges;
+      if (changes.length > 0) {
+        setFileChanges((prev) => {
+          const merged = [...prev];
+          for (const next of changes) {
+            const index = merged.findIndex((change) => change.path === next.path);
+            if (index === -1) merged.push(next);
+            // Last write per path wins on everything EXCEPT the patch, which
+            // is kept if the newer report has none: a run that writes a file
+            // twice, and whose second event lost its hunks (size cap, a failed
+            // `git diff`), must not silently lose the diff it already showed.
+            else merged[index] = { ...next, patch: next.patch ?? merged[index].patch };
+          }
+          return merged;
+        });
       }
     },
     []
@@ -715,6 +618,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
       });
       liveRef.current = null;
       setPendingApproval(null);
+      pendingApprovalIdRef.current = null;
       setActiveTask(null);
       setStatus("idle");
       // A run that has ended cannot take or acknowledge an instruction.
@@ -880,7 +784,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
           prev.map((m) => (m.id === userTempId && data.userMessage ? { ...data.userMessage, pending: false } : m))
         );
         lastSeqRef.current = 0;
-        liveRef.current = { taskId: task.id, content: "", reasoning: "", activity: [], errorMessage: null, bubbleShown: false };
+        liveRef.current = newLiveTask(task.id);
         setAgents([]);
         resetRollback();
         setSteering(null);
@@ -1018,7 +922,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     (task: RemoteTask) => {
       if (TERMINAL.has(task.status)) return;
       lastSeqRef.current = 0;
-      liveRef.current = { taskId: task.id, content: "", reasoning: "", activity: [], errorMessage: null, bubbleShown: false };
+      liveRef.current = newLiveTask(task.id);
       setAgents([]);
       resetRollback();
       setSteering(null);

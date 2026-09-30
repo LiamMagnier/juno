@@ -43,6 +43,11 @@ let package = Package(
         // decoded natively, plus the validated Swift<->JavaScript bridge the
         // hosted editor speaks. No editor engine lives here — that is shared.
         .library(name: "JunoDesignKit", targets: ["JunoDesignKit"]),
+        // The canonical agent session protocol, generated from
+        // contracts/agent/juno-agent-protocol-v1.json: the same events and
+        // commands the cloud runner and the web speak, and the reducer that
+        // folds them. Dependency-free, so JunoCode's core can take it too.
+        .library(name: "JunoAgentProtocol", targets: ["JunoAgentProtocol"]),
         .library(name: "JunoChatKit", targets: ["JunoChatKit"]),
         .library(name: "JunoCodeKit", targets: ["JunoCodeKit"]),
         .library(name: "JunoWorkKit", targets: ["JunoWorkKit"]),
@@ -101,6 +106,9 @@ let package = Package(
         // without dragging in auth, storage or sync, so a test can round-trip a
         // document with nothing else running.
         .target(name: "JunoDesignKit"),
+        // Deliberately dependency-free for the same reason, and so the Mac's
+        // runtime packages can depend on it without pulling in JunoCore.
+        .target(name: "JunoAgentProtocol"),
         .target(
             name: "JunoChatKit",
             dependencies: [
@@ -180,6 +188,9 @@ let package = Package(
                 "JunoLearningBlocksTests 2.swift",
             ], relativeTo: "Tests/JunoDesignSystemTests")
         ),
+        // Reads the golden transcripts from contracts/agent/fixtures by path,
+        // so the Swift and TypeScript folds are held to the same files.
+        .testTarget(name: "JunoAgentProtocolTests", dependencies: ["JunoAgentProtocol"]),
         .testTarget(
             name: "JunoDesignKitTests",
             dependencies: ["JunoDesignKit"],
@@ -208,7 +219,11 @@ let package = Package(
             dependencies: [
                 "JunoCore", "JunoAPI", "JunoAuth", "JunoStorage", "JunoSync",
                 "JunoCodeKit",
-            ]
+            ],
+            // `code-task-wire.json` is written by the server's own
+            // serializeTask (scripts/generate-code-task-wire-fixtures.ts), so
+            // the decoder is tested against what a Mac is actually handed.
+            resources: [.copy("Fixtures")]
         ),
         .testTarget(
             name: "JunoWorkKitTests",

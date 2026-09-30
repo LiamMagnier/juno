@@ -295,6 +295,31 @@ public actor CodeRemoteSessionSync {
     /// Per session per pass, so one long transcript being backfilled cannot
     /// hold up the session somebody is actually watching.
     static let maximumBatchesPerSessionPerPass = 5
+    /// About the most JSON one POST carries. The relay refuses a body over
+    /// 1 MB, and a refused batch is re-sent one event at a time — a hundred
+    /// requests where one would do. Events carry their protocol copy now, so a
+    /// hundred of them reach that limit far more easily than they used to.
+    static let maximumBatchBytes = 768 * 1024
+
+    /// The longest prefix of `events` within `maximumBytes` of payload, and
+    /// never less than one event: the prefix keeps the batch contiguous, which
+    /// the relay requires, and one event too large on its own still goes, to
+    /// be refused and stood in for alone.
+    static func withinByteBudget(
+        _ events: [CodeRemoteSessionEvent], maximumBytes: Int = maximumBatchBytes
+    ) -> [CodeRemoteSessionEvent] {
+        let encoder = JSONEncoder()
+        var total = 0
+        var count = 0
+        for event in events {
+            // The payload, plus the seq, kind and timestamp around it.
+            let size = ((try? encoder.encode(JunoJSONValue.object(event.payload)).count) ?? maximumBytes) + 96
+            if count > 0, total + size > maximumBytes { break }
+            total += size
+            count += 1
+        }
+        return Array(events.prefix(count))
+    }
     static let baseBackoff = Duration.seconds(2)
     static let maximumBackoff = Duration.seconds(120)
 
@@ -592,9 +617,9 @@ public actor CodeRemoteSessionSync {
         var batches = 0
         var rewinds = 0
         while cursor < session.eventCount, batches < Self.maximumBatchesPerSessionPerPass {
-            let events = await source.relayEvents(
+            let events = Self.withinByteBudget(await source.relayEvents(
                 sessionID: sessionID, after: cursor, limit: Self.maximumBatch
-            )
+            ))
             guard let last = events.last, events.first?.seq == cursor + 1 else { break }
             guard await isEnabled() else { return false }
             do {

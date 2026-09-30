@@ -57,7 +57,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { AgentSession, createProxyProvider } from "../runner/agent-core/dist/index.js";
+import {
+  AgentProtocolProjector,
+  AgentSession,
+  LegacyTaskDowncast,
+  createProxyProvider,
+  protocolMode,
+} from "../runner/agent-core/dist/index.js";
 import { containerSandboxFromEnv } from "../runner/agent-core/dist/tools/container-sandbox.js";
 import {
   DurableOutbox,
@@ -149,6 +155,8 @@ const SECRETS = new Set();
  *  every callback after the exchange, including the fatal-handler's failure post.
  *  Held ONLY here in memory, never in process.env or on disk. */
 let FRESH_TOKEN = null;
+/** The run's event sink, once it exists — the fatal handler reports through its protocol. */
+let ACTIVE_SINK = null;
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -238,6 +246,8 @@ async function getRunnerContext(oidcToken) {
 // ─── Event streaming (batched) ───────────────────────────────────────────────
 
 const MAX_BODY_BYTES = 240 * 1024; // stay clear of the route's 256KB reject
+/** The task event kind a canonical protocol event rides under (src/lib/code-remote.ts). */
+const PROTOCOL_KIND = "protocol";
 const FLUSH_INTERVAL_MS = 750;
 const FLUSH_AT_COUNT = 20;
 
@@ -247,8 +257,30 @@ const FLUSH_AT_COUNT = 20;
  * server returns so the runner can stop a cancelled task.
  */
 class EventSink {
-  constructor(token) {
+  /**
+   * @param {string} token
+   * @param {{ negotiated: boolean; projector: AgentProtocolProjector; downcast: LegacyTaskDowncast }} protocol
+   */
+  constructor(token, protocol) {
     this.token = token;
+    /*
+     * THE CANONICAL AGENT PROTOCOL (contracts/agent/juno-agent-protocol-v1.json).
+     *
+     * Everything this run reports is a protocol event first — projected from
+     * the engine's events by agent-core's AgentProtocolProjector, or emitted by
+     * this driver for what it does itself (the clone, the setup step, the pull
+     * request). Each goes up as a `protocol` row when the server said it stores
+     * them (`negotiated`, from runner-context), and ALWAYS as the legacy rows
+     * derived from it (LegacyTaskDowncast), because every reader shipped before
+     * the protocol reads only those. When negotiated, the legacy rows name
+     * their protocol event, which is how a protocol reader knows to skip them.
+     *
+     * Outcomes are typed there: a tool's status is `item.tool_result.status`,
+     * and a refusal by the permission mode is `approval.resolved` with
+     * `by: "mode"`. The ` — ok` / ` — failed` suffixes this driver used to
+     * append, and the string prefixes the web parsed back out, are gone.
+     */
+    this.protocol = protocol;
     /**
      * Durable buffer. Events leave it only when the backend acknowledges them,
      * so a failed POST is retried instead of dropped — which is what the old
@@ -275,18 +307,6 @@ class EventSink {
      */
     this.consumedSteers = new Set();
 
-    /*
-     * Denials this driver's `requestApproval` has already written a row for.
-     *
-     * The engine follows a `deny` from that callback with its own `tool_denied`
-     * event whose reason is "The user declined this action." (agent.ts). In a
-     * cloud run there is no user: that sentence is the same invented human the
-     * approval callback's comment says it removed from the allow path, and it
-     * would arrive as a SECOND row right after the honest one that names the
-     * permission mode. Counted rather than flagged because several tool calls
-     * in one step can each be denied before any event is drained.
-     */
-    this.denialsAnswered = 0;
     /** When controls were last read, by a POST or a poll — see pollControls. */
     this.lastControlSyncAt = Date.now();
     this.polling = false;
@@ -298,19 +318,79 @@ class EventSink {
     this.reasoningBuffer = "";
   }
 
+  /**
+   * One row into the outbox, after any prose still buffered — so the stream
+   * keeps the order things happened in. Protocol rows and sub-agent snapshots
+   * are redacted all the way down, since their payloads nest.
+   */
   push(kind, payload) {
-    // Any non-text event flushes buffered prose first to preserve ordering.
     if (kind !== "text") this.flushText();
     if (kind !== "reasoning_delta") this.flushReasoning();
-    this.outbox.add(kind, redactPayload(payload));
+    this.outbox.add(kind, kind === PROTOCOL_KIND || kind === "agent" ? redactDeep(payload) : redactPayload(payload));
     if (this.outbox.size >= FLUSH_AT_COUNT) this.kick();
     else this.scheduleFlush();
+  }
+
+  /** Protocol events: as `protocol` rows when the server stores them, and always as their legacy twins. */
+  emitProtocol(events) {
+    for (const event of events) {
+      if (this.protocol.negotiated) this.push(PROTOCOL_KIND, event);
+      for (const row of this.protocol.downcast.rows(event)) this.push(row.kind, row.payload);
+    }
+  }
+
+  /**
+   * One engine event. Streamed text and thinking are buffered and go up as one
+   * delta per kilobyte or so; anything else flushes them first.
+   */
+  engineEvent(event) {
+    if (event.type === "assistant_delta") {
+      if (event.text) this.appendText(event.text);
+      return;
+    }
+    if (event.type === "thinking_delta") {
+      if (event.text) this.appendReasoning(event.text);
+      return;
+    }
+    this.flushText();
+    this.flushReasoning();
+    const events = this.protocol.projector.project(event);
+    this.emitProtocol(events);
+    if (event.type === "subagent_update" && event.agent && typeof event.agent.id === "string") {
+      /*
+       * The sub-agent's whole snapshot, as the `agent` row every reader has
+       * always drawn its cards from — the web's agents panel, the iPhone's task
+       * view — and which the protocol's `item.subagent` does not replace for
+       * them: it carries the transcript's part (title, state, result), not the
+       * model, the worktree or the files. Marked like any twin when the server
+       * stores protocol rows, so the fold reads the sub-agent once.
+       */
+      const source = events.find((projected) => projected.type === "item.subagent");
+      this.push("agent", {
+        agent: event.agent,
+        ...(this.protocol.negotiated && source ? { protocolEventId: source.id } : {}),
+      });
+    }
+  }
+
+  /**
+   * An event this driver originates rather than the engine: the clone, the
+   * setup step, a steer taken, the files, the pull request, the end.
+   * `extra.turnId: null` places it outside any turn.
+   */
+  hostEvent(body, extra) {
+    this.flushText();
+    this.flushReasoning();
+    const event = this.protocol.projector.emit(body, extra);
+    this.emitProtocol([event]);
+    return event;
   }
 
   appendText(delta) {
     this.flushReasoning();
     this.textBuffer += delta;
     if (this.textBuffer.length >= 1024) this.flushText();
+    else this.scheduleFlush();
   }
 
   appendReasoning(delta) {
@@ -324,14 +404,14 @@ class EventSink {
     if (!this.reasoningBuffer) return;
     const text = this.reasoningBuffer;
     this.reasoningBuffer = "";
-    this.push("reasoning_delta", { text });
+    this.emitProtocol(this.protocol.projector.project({ type: "thinking_delta", text }));
   }
 
   flushText() {
     if (!this.textBuffer) return;
     const text = this.textBuffer;
     this.textBuffer = "";
-    this.push("text", { text });
+    this.emitProtocol(this.protocol.projector.project({ type: "assistant_delta", text }));
   }
 
   scheduleFlush() {
@@ -357,7 +437,10 @@ class EventSink {
    * decides whether the task shows as finished or as stuck forever.
    */
   async flush(finalStatus) {
+    // Prose waiting in a buffer goes up on the timer too, so a short reply is
+    // on screen within a flush interval rather than when the next tool starts.
     this.flushReasoning();
+    this.flushText();
     const notice = this.outbox.dropNotice();
     if (notice) {
       this.outbox.dropped = 0;
@@ -554,6 +637,18 @@ function redactPayload(payload) {
   return out;
 }
 
+/** The same, for a protocol event, whose strings nest (an error's message, a question's options). */
+function redactDeep(value) {
+  if (typeof value === "string") return redact(value);
+  if (Array.isArray(value)) return value.map(redactDeep);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = redactDeep(v);
+    return out;
+  }
+  return value;
+}
+
 function chunkBySize(events, maxBytes) {
   const chunks = [];
   let cur = [];
@@ -615,35 +710,6 @@ async function git(args, { cwd, env } = {}) {
   } catch (err) {
     const e = /** @type {any} */ (err);
     return { ok: false, stdout: e.stdout ?? "", stderr: e.stderr ?? "", code: e.code, message: e.message };
-  }
-}
-
-// ─── Mapping the agent's events onto the task event log ──────────────────────
-
-function riskToTaskRisk(risk) {
-  if (risk === "sensitive") return "destructive";
-  if (risk === "command") return "outside";
-  return "neutral";
-}
-
-/** Human one-liner for a tool call (matches docs/code-remote.md examples). */
-function summarizeTool(name, input) {
-  const p = input && typeof input === "object" ? /** @type {any} */ (input) : {};
-  switch (name) {
-    case "bash":
-      return `$ ${String(p.command ?? "").slice(0, 200)}`;
-    case "read_file":
-      return `Read ${p.path ?? ""}`;
-    case "write_file":
-      return `Write ${p.path ?? ""}`;
-    case "edit_file":
-      return `Edit ${p.path ?? ""}`;
-    case "glob":
-      return `Glob ${p.pattern ?? ""}`;
-    case "grep":
-      return `Grep /${p.pattern ?? ""}/${p.glob ? ` in ${p.glob}` : ""}`;
-    default:
-      return name;
   }
 }
 
@@ -755,7 +821,38 @@ async function main() {
     );
   }
 
-  const sink = new EventSink(freshToken);
+  /*
+   * The protocol this run speaks. `negotiated` is the server saying it stores
+   * `protocol` rows: an older server checks `kind` against a closed list and
+   * refuses a whole batch that carries one, so without it only the legacy rows
+   * go up. The ids are this attempt's (RUN_NONCE), so a retried run never
+   * collides with the one before it.
+   */
+  const repository = { owner: repoOwner, name: repoName, ...(baseRef ? { baseRef } : {}) };
+  const sessionTitle = firstLine(prompt).slice(0, 200);
+  const negotiated = typeof ctx.agentProtocol === "string" && /^1\.\d+$/.test(ctx.agentProtocol);
+  const protocol = {
+    negotiated,
+    projector: new AgentProtocolProjector({
+      sessionId: TASK_ID,
+      runId: RUN_NONCE,
+      target: "cloud",
+      repository,
+      ...(reasoningEffort ? { effort: reasoningEffort } : {}),
+      ...(sessionTitle ? { title: sessionTitle } : {}),
+      // Announced below, at the claim, rather than when the engine starts
+      // after the clone: the transcript has things to say before then.
+      announceSession: false,
+      // This driver answers every approval by its mode the moment it is
+      // asked, so no request is ever pending for a reader.
+      approvalsAnsweredByMode: true,
+    }),
+    // Nobody is attached to a cloud run: every approval is the mode's answer,
+    // and never a request a reader could act on.
+    downcast: new LegacyTaskDowncast({ approvalsAnsweredByMode: true, markDerived: negotiated }),
+  };
+  const sink = new EventSink(freshToken, protocol);
+  ACTIVE_SINK = sink;
   // Before a single control is polled, so the rows that carried these can never
   // be delivered a second time (see EventSink#consumedSteers).
   for (const steer of pendingSteers) sink.consumedSteers.add(steer.requestId);
@@ -765,8 +862,39 @@ async function main() {
   if (!claimRes.ok) {
     throw new Error(`claim failed: HTTP ${claimRes.status} ${redact(await claimRes.text().catch(() => ""))}`);
   }
-  sink.push("user", { text: prompt });
-  sink.push("text", { text: `Cloud Code run started on ${repoOwner}/${repoName} with ${chosen.label ?? chosen.model}.\n` });
+  sink.hostEvent(
+    {
+      type: "session.created",
+      target: "cloud",
+      repository,
+      model: chosen.model,
+      ...(reasoningEffort ? { effort: reasoningEffort } : {}),
+      mode: protocolMode(permissionMode),
+      ...(sessionTitle ? { title: sessionTitle } : {}),
+    },
+    { turnId: null },
+  );
+  sink.hostEvent({ type: "session.state", state: "running" }, { turnId: null });
+  // The reader's words open the run's turn now, first in the transcript as
+  // they have always been — and there even if the clone or the setup step
+  // fails before the engine exists. The engine's first turn continues it.
+  sink.emitProtocol(protocol.projector.openTurn([{ text: prompt, delivery: "prompt" }]));
+  sink.hostEvent({
+    type: "item.notice",
+    itemId: protocol.projector.itemId("notice"),
+    source: "host",
+    text: `Cloud Code run started on ${repoOwner}/${repoName} with ${chosen.label ?? chosen.model}.`,
+  });
+  // An instruction sent while this machine was starting is folded into the
+  // same opening prompt, and is shown as the steer it was when the engine
+  // takes it — "delivered" means the far side has the words.
+  for (const steer of pendingSteers) {
+    protocol.projector.queueTurnMessage({
+      text: steer.displayText ?? steer.text,
+      delivery: "steer",
+      commandId: steer.requestId,
+    });
+  }
   await sink.flush("running");
 
   // 3. Clone the repo into ./workdir using a TRANSIENT askpass (token never in
@@ -1009,20 +1137,18 @@ async function main() {
     // How hard to think, as the composer asked. Absent means Instant.
     ...(reasoningEffort ? { reasoningEffort } : {}),
     callbacks: {
-      onEvent: (event) => onAgentEvent(sink, event),
+      onEvent: (event) => sink.engineEvent(event),
       /*
        * No human is attached, so this callback IS the answer — and which answer
        * it gives is what makes the permission mode a real setting rather than a
        * label on the composer.
        *
        * Under `full`, allow, and SAY SO. The agent holds no secrets and runs
-       * inside a container on a throwaway VM, so allowing is safe — but this
-       * used to emit an `approval_request` followed in the same batch by an
-       * `approval_response approve:true`, and the transcript then read
-       * "Approval requested … Approved" as if somebody had been asked. Nobody
-       * was. One tool row that names what happened is the honest record; the
-       * risk rides along so a reader can still see which commands the engine
-       * would have stopped a Mac on.
+       * inside a container on a throwaway VM, so allowing is safe — but a
+       * request followed by an approval read "Approval requested … Approved"
+       * as if somebody had been asked. Nobody was. The resolution is recorded
+       * as the MODE's (`approval.resolved` with `by: "mode"`), which every
+       * reader renders as one row saying it was automatic.
        *
        * Under any NARROWER mode, deny. This is the half that could not be left
        * out: the engine sends everything it cannot decide here, so a callback
@@ -1030,25 +1156,16 @@ async function main() {
        * would edit files AND run every command, under a control that said it
        * would only do the first. Denying is also the only answer available,
        * since the alternative is to wait for a person who does not exist. The
-       * row says which mode refused it, so the fix is one dropdown away.
+       * reason names the mode that refused, so the fix is one dropdown away —
+       * and it replaces the engine's "The user declined this action.", which is
+       * untrue of a run nobody is watching, as the refused call's summary.
        */
       requestApproval: async (request) => {
         const allowed = permissionMode === "full";
-        sink.push("tool", {
-          name: "approval",
-          // `Denied ` is the prefix the transcript already reads as a failed
-          // row (toolOutcome in src/components/code/code-activity.tsx), so the
-          // refusal draws itself without a new vocabulary word — and the
-          // sentence after it says which setting refused, because "denied" with
-          // no reason is the least actionable thing a run can say.
-          summary: allowed
-            ? `Auto-allowed in sandbox: ${request.summary}`
-            : `Denied — this run is set to ${PERMISSION_MODE_LABELS[permissionMode]}: ${request.summary}`,
-          risk: riskToTaskRisk(request.risk),
-          ...(allowed ? { autoAllowed: true } : {}),
-          ...(request.agentLabel ? { agentLabel: request.agentLabel } : {}),
+        protocol.projector.noteApprovalAnswer(request.callId, {
+          by: "mode",
+          ...(allowed ? {} : { feedback: `this run is set to ${PERMISSION_MODE_LABELS[permissionMode]}` }),
         });
-        if (!allowed) sink.denialsAnswered += 1;
         return allowed ? "allow" : "deny";
       },
     },
@@ -1069,23 +1186,27 @@ async function main() {
   // moment "the run has your instruction" is true.
   const takeSteer = (steer) => {
     void session.queueUserMessage(steer.text).then(() => {
-      sink.push("user", { text: steer.displayText ?? steer.text, requestId: steer.requestId, steer: true });
-      sink.push("steer_ack", { requestId: steer.requestId });
+      // Taken: the words are in the run. The reader's message carries the
+      // request as its command, and its legacy twins are the echo and the
+      // `steer_ack` that marks it delivered.
+      sink.hostEvent({
+        type: "item.user_message",
+        itemId: protocol.projector.itemId("steer"),
+        text: steer.displayText ?? steer.text,
+        delivery: "steer",
+        commandId: steer.requestId,
+      });
     });
   };
   sink.onSteer = takeSteer;
   for (const steer of sink.steerBacklog.splice(0)) takeSteer(steer);
   /*
-   * The acknowledgement for an instruction that arrived while this machine was
-   * starting. It is posted HERE and not at the handshake because "delivered"
-   * has one meaning on this surface — the far side has the words — and until
-   * the session existed nothing could have taken them. `openingPrompt` already
-   * carries the text, so this is the moment that becomes true.
+   * Instructions that arrived while this machine was starting are already in
+   * `openingPrompt`, and were queued above as steers of the first turn: they
+   * are acknowledged when that turn starts, because "delivered" has one
+   * meaning on this surface — the far side has the words — and until the
+   * session existed nothing could have taken them.
    */
-  for (const steer of pendingSteers) {
-    sink.push("user", { text: steer.displayText ?? steer.text, requestId: steer.requestId, steer: true });
-    sink.push("steer_ack", { requestId: steer.requestId });
-  }
 
   let finalStopReason = "end_turn";
   const controlWatch = setInterval(() => {
@@ -1099,6 +1220,7 @@ async function main() {
     // its own, rather than being left queued for a session that has ended.
     while (!sink.cancelled && session.hasQueuedUserMessages) {
       const next = session.takeQueuedUserMessages();
+      protocol.projector.nextTurnOrigin = "steer";
       await session.prompt(next.join("\n\n"));
     }
   } finally {
@@ -1110,7 +1232,11 @@ async function main() {
   await sink.flush();
 
   if (sink.cancelled) {
-    sink.push("error", { message: "Cancelled by user before completion." });
+    sink.hostEvent(
+      { type: "session.error", error: { code: "cancelled", message: "Cancelled by user before completion.", retryable: false } },
+      { turnId: null },
+    );
+    sink.hostEvent({ type: "session.state", state: "cancelled" }, { turnId: null });
     await sink.finalize("cancelled");
     log("task cancelled");
     return;
@@ -1123,23 +1249,32 @@ async function main() {
   await git(["add", "-A"], { cwd: workdir, env: gitEnv });
   const status = await git(["status", "--porcelain"], { cwd: workdir, env: gitEnv });
   if (status.ok && status.stdout.trim() === "") {
-    sink.push("text", {
-      text: continuation
-        ? "The agent made no further file changes; the pull request is as it was."
-        : "The agent made no file changes, so there is nothing to open a PR for.",
-    });
+    sink.hostEvent(
+      {
+        type: "item.notice",
+        itemId: protocol.projector.itemId("notice"),
+        source: "host",
+        text: continuation
+          ? "The agent made no further file changes; the pull request is as it was."
+          : "The agent made no file changes, so there is nothing to open a PR for.",
+      },
+      { turnId: null },
+    );
     // A continuation that changed nothing still points at the branch and pull
     // request it continued, so the task links to them like its predecessor.
-    sink.push("done", {
-      finishReason: "no_changes",
-      ...(continuation
-        ? {
-            branch: continuation.branch,
-            ...(continuation.prUrl ? { prUrl: continuation.prUrl } : {}),
-            ...(continuation.prNumber ? { prNumber: continuation.prNumber } : {}),
-          }
-        : {}),
-    });
+    if (continuation) {
+      sink.hostEvent(
+        {
+          type: "code.pull_request",
+          branch: continuation.branch,
+          ...(continuation.prUrl ? { prUrl: continuation.prUrl } : {}),
+          ...(continuation.prNumber ? { prNumber: continuation.prNumber } : {}),
+          reused: true,
+        },
+        { turnId: null },
+      );
+    }
+    sink.hostEvent({ type: "session.state", state: "completed", reason: "no_changes" }, { turnId: null });
     await sink.finalize("done");
     log("no changes; done");
     return;
@@ -1208,24 +1343,37 @@ async function main() {
     await notePullRequestFollowUp({ ...github, number: pr.number, prompt });
   }
 
-  sink.push("text", {
-    text: pr
-      ? reused
-        ? `Pushed to the open pull request: ${pr.url}`
-        : `Opened pull request: ${pr.url}`
-      : pullRequestPolicy === "never"
-        ? // NOT a failure, and it must not read like one. The branch is on
-          // origin and the session above this transcript can open a pull
-          // request from it in three shapes; saying which control does that is
-          // the difference between a finished run and an abandoned one.
-          `Pushed branch ${branch}. Open a pull request from the review panel in this session when you are ready.`
-        : `Pushed branch ${branch}, but the pull request could not be created automatically.`,
-  });
-  sink.push("done", {
-    finishReason: finalStopReason,
-    branch,
-    ...(pr ? { prUrl: pr.url, prNumber: pr.number } : {}),
-  });
+  sink.hostEvent(
+    {
+      type: "item.notice",
+      itemId: protocol.projector.itemId("notice"),
+      source: "host",
+      text: pr
+        ? reused
+          ? `Pushed to the open pull request: ${pr.url}`
+          : `Opened pull request: ${pr.url}`
+        : pullRequestPolicy === "never"
+          ? // NOT a failure, and it must not read like one. The branch is on
+            // origin and the session above this transcript can open a pull
+            // request from it in three shapes; saying which control does that is
+            // the difference between a finished run and an abandoned one.
+            `Pushed branch ${branch}. Open a pull request from the review panel in this session when you are ready.`
+          : `Pushed branch ${branch}, but the pull request could not be created automatically.`,
+    },
+    { turnId: null },
+  );
+  // The branch and the pull request, typed. Its legacy twin is the `done`
+  // row the server lifts them from (src/lib/code-task-events.ts).
+  sink.hostEvent(
+    {
+      type: "code.pull_request",
+      branch,
+      ...(pr ? { prUrl: pr.url, prNumber: pr.number } : {}),
+      ...(reused ? { reused: true } : {}),
+    },
+    { turnId: null },
+  );
+  sink.hostEvent({ type: "session.state", state: "completed", reason: finalStopReason }, { turnId: null });
   await sink.finalize("done");
   log(pr ? `done, PR #${pr.number}` : `done, pushed the branch (pull request ${pullRequestPolicy})`);
 }
@@ -1331,63 +1479,6 @@ async function notePullRequestFollowUp({ repoOwner, repoName, cloneToken, number
   }
 }
 
-/** Translate one AgentEvent into task events. */
-function onAgentEvent(sink, event) {
-  switch (event.type) {
-    case "thinking_delta":
-      if (event.text) sink.appendReasoning(event.text);
-      break;
-    case "assistant_delta":
-      if (event.text) sink.appendText(event.text);
-      break;
-    case "tool_finished": {
-      const summary = summarizeTool(event.name, event.input);
-      const suffix = event.name === "bash" ? (event.isError ? " — failed" : " — ok") : "";
-      sink.push("tool", {
-        name: event.name,
-        summary: `${summary}${suffix}`,
-        ...(event.output ? { detail: String(event.output).slice(0, 2000) } : {}),
-        // The status as a number, beside the suffix that spells it. The web
-        // receipt reads this to say whether a test command passed; the suffix
-        // stays for hosts and transcripts that predate the field.
-        ...(typeof event.exitCode === "number" ? { exitCode: event.exitCode } : {}),
-        ...(event.isError && typeof event.exitCode !== "number" ? { failed: true } : {}),
-        ...(event.agentId ? { agentId: event.agentId } : {}),
-      });
-      break;
-    }
-    case "tool_denied":
-      // The row this driver's approval callback already pushed says which mode
-      // refused the call. The engine's follow-up says "The user declined this
-      // action.", which is untrue of a run nobody is watching — so the honest
-      // row is the only one, and this one is swallowed. Denials the engine
-      // reached on its own (plan mode, project rules) never touched the
-      // callback, so their counter is zero and their row still arrives.
-      if (sink.denialsAnswered > 0) {
-        sink.denialsAnswered -= 1;
-        break;
-      }
-      sink.push("tool", {
-        name: event.name,
-        summary: `Denied ${event.name}: ${event.reason}`,
-        ...(event.agentId ? { agentId: event.agentId } : {}),
-      });
-      break;
-    case "subagent_update":
-      // Child-agent lifecycle snapshot → the web UI's live agent cards.
-      sink.push("agent", { agent: event.agent });
-      break;
-    case "error":
-      sink.push("error", { message: event.message });
-      break;
-    default:
-      // session_started / turn_started / assistant_message / tool_started /
-      // approval_* / files_changed / mode_changed / turn_finished carry no
-      // extra transcript value here (deltas + git diff cover the content).
-      break;
-  }
-}
-
 /** Emit file_change events from the staged diff (capped diff per docs). */
 async function emitFileChanges(sink, workdir, gitEnv) {
   const DIFF_CAP = 40 * 1024;
@@ -1417,7 +1508,18 @@ async function emitFileChanges(sink, workdir, gitEnv) {
     const diffRes = await git(["diff", "--cached", "--", file], { cwd: workdir, env: gitEnv });
     let diff = diffRes.ok ? diffRes.stdout : "";
     if (diff.length > DIFF_CAP) diff = diff.slice(0, DIFF_CAP) + "\n…[diff truncated]";
-    sink.push("file_change", { path: file, changeKind, added, removed, ...(diff ? { diff } : {}) });
+    sink.hostEvent(
+      {
+        type: "item.file_change",
+        itemId: sink.protocol.projector.itemId("file"),
+        path: file,
+        change: changeKind === "create" ? "created" : changeKind === "delete" ? "deleted" : "modified",
+        linesAdded: added,
+        linesRemoved: removed,
+        ...(diff ? { patch: diff } : {}),
+      },
+      { turnId: null },
+    );
   }
 }
 
@@ -1527,7 +1629,18 @@ function readEnvironment(raw) {
  */
 async function runSetupScript(script, { cwd, env, sink }) {
   log("running the environment's setup script");
-  sink.push("tool", { name: "bash", summary: "Setup script", detail: firstLine(script) });
+  const itemId = sink.protocol.projector.itemId("setup");
+  sink.hostEvent(
+    {
+      type: "item.tool_call",
+      itemId,
+      toolName: "bash",
+      toolKind: "execute",
+      title: "Setup script",
+      inputSummary: firstLine(script).slice(0, 200),
+    },
+    { turnId: null },
+  );
   // Announced before it runs, and flushed now: a ten-minute `npm ci` would
   // otherwise be ten minutes in which the transcript says nothing at all.
   sink.kick();
@@ -1536,12 +1649,18 @@ async function runSetupScript(script, { cwd, env, sink }) {
   const { exitCode, output, timedOut } = await runSetupScriptProcess(script, { cwd, env });
 
   const seconds = Math.round((Date.now() - started) / 1000);
-  sink.push("tool", {
-    name: "bash",
-    summary: `Setup script — ${exitCode === 0 ? "ok" : timedOut ? "timed out" : "failed"} (${seconds}s)`,
-    detail: output,
-    exitCode,
-  });
+  sink.hostEvent(
+    {
+      type: "item.tool_result",
+      itemId,
+      status: exitCode === 0 ? "ok" : "error",
+      ...(Number.isSafeInteger(exitCode) ? { exitCode } : {}),
+      durationMs: Date.now() - started,
+      summary: `${exitCode === 0 ? "Finished" : timedOut ? "Timed out" : "Failed"} after ${seconds}s`,
+      ...(output ? { output } : {}),
+    },
+    { turnId: null },
+  );
   // Drained before the throw below. The fatal handler posts its terminal
   // `failed` with its own fetch, bypassing this sink entirely — so a row left
   // buffered here is a row nobody ever sees, and it is the row holding the
@@ -1746,6 +1865,29 @@ function firstLine(text) {
   return "";
 }
 
+/**
+ * The rows that report a fatal error, posted directly because the sink may be
+ * what failed: the protocol's error and terminal state when the run got far
+ * enough to speak it, and always the legacy `error` row old readers show.
+ */
+function failureRows(message) {
+  const protocol = ACTIVE_SINK?.protocol;
+  if (!protocol) return [{ kind: "error", payload: { message } }];
+  const events = [
+    protocol.projector.emit(
+      { type: "session.error", error: { code: "internal", message, retryable: false } },
+      { turnId: null },
+    ),
+    protocol.projector.emit({ type: "session.state", state: "failed", reason: message }, { turnId: null }),
+  ];
+  const rows = [];
+  for (const event of events) {
+    if (protocol.negotiated) rows.push({ kind: PROTOCOL_KIND, payload: redactDeep(event) });
+    for (const row of protocol.downcast.rows(event)) rows.push({ kind: row.kind, payload: redactPayload(row.payload) });
+  }
+  return rows;
+}
+
 // ─── Entry ───────────────────────────────────────────────────────────────────
 
 main()
@@ -1767,7 +1909,7 @@ main()
           method: "POST",
           headers: { Authorization: `Bearer ${FRESH_TOKEN}`, "content-type": "application/json" },
           body: JSON.stringify({
-            events: [{ kind: "error", payload: { message: redact(err?.message ?? String(err)) } }],
+            events: failureRows(redact(err?.message ?? String(err))),
             status: "failed",
             afterControlSeq: 0,
           }),

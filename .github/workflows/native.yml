@@ -157,6 +157,17 @@ jobs:
       - name: Swift shell contract has not drifted
         run: npm run shell:contract:check
 
+      # The canonical agent session protocol (contracts/agent) is generated into
+      # runner/agent-core, the web and the JunoAgentProtocol Swift target; the
+      # golden transcripts' folded views are what both reducers are tested
+      # against. A contract edit nobody regenerated fails here, on Linux.
+      - name: Agent protocol has not drifted
+        run: npm run agent:protocol:check
+      # The Swift device-task decoder is tested against serializeTask's own
+      # output, not a fixture typed from memory.
+      - name: Device task wire fixtures are current
+        run: npm run code:task-wire:check
+
   # ---------------------------------------------------------------------------
   # The four design rules from docs/native/REWORK_PLAN.md, as build failures.
   #

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import type { Prisma } from "@prisma/client";
+import type { CodeTask, CodeTaskEvent, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { codeTaskMessageId, appendTaskEvents, EVENT_KINDS, isTerminalTaskStatus, persistCodeTaskOutcome, requireTaskAuth, requireUser, serializeTask, serializeTaskEvent, TASK_STATUSES } from "@/lib/code-remote";
+import { taskEventFrames } from "@/lib/code-task-wire";
 import { serializeMessage } from "@/lib/serializers";
 
 export const runtime = "nodejs";
@@ -122,6 +123,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     async start(controller) {
       const send = (frame: Record<string, unknown>) =>
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`));
+      // A page of rows in frames a phone will read (see taskEventFrames).
+      const sendPage = (type: "snapshot" | "events", task: CodeTask, rows: CodeTaskEvent[]) => {
+        for (const frame of taskEventFrames(type, rows.map(serializeTaskEvent))) {
+          send({ type: frame.type, task: serializeTask(task), events: frame.events });
+        }
+      };
       const readEvents = () =>
         prisma.codeTaskEvent.findMany({
           where: { taskId: id, seq: { gt: cursor } },
@@ -140,7 +147,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         let current = task;
         const initial = await readEvents();
         if (initial.length > 0) cursor = initial[initial.length - 1].seq;
-        send({ type: "snapshot", task: serializeTask(current), events: initial.map(serializeTaskEvent) });
+        sendPage("snapshot", current, initial);
 
         const deadline = Date.now() + STREAM_WINDOW_MS;
         let lastBeat = Date.now();
@@ -155,7 +162,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           current = fresh;
           if (events.length > 0) {
             cursor = events[events.length - 1].seq;
-            send({ type: "events", task: serializeTask(current), events: events.map(serializeTaskEvent) });
+            sendPage("events", current, events);
             lastBeat = Date.now();
           }
           if (isTerminalTaskStatus(current.status)) {
@@ -163,7 +170,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
             const tail = await readEvents();
             if (tail.length > 0) {
               cursor = tail[tail.length - 1].seq;
-              send({ type: "events", task: serializeTask(current), events: tail.map(serializeTaskEvent) });
+              sendPage("events", current, tail);
             }
             let message = null;
             if (current.conversationId) {

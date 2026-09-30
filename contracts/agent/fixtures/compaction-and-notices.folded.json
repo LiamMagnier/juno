@@ -1,0 +1,87 @@
+{
+  "state": "idle",
+  "turns": [
+    {
+      "turnId": "turn:cp-2",
+      "origin": "user",
+      "status": "completed",
+      "itemIds": [
+        "u1",
+        "k1",
+        "h1",
+        "c1",
+        "c2"
+      ],
+      "stopReason": "max_steps",
+      "durationMs": 301200
+    }
+  ],
+  "items": [
+    {
+      "kind": "user_message",
+      "itemId": "u1",
+      "text": "Keep going with the migration.",
+      "delivery": "prompt",
+      "turnId": "turn:cp-2"
+    },
+    {
+      "kind": "compaction",
+      "itemId": "k1",
+      "source": "model",
+      "turnId": "turn:cp-2",
+      "beforeMessages": 212,
+      "afterMessages": 14,
+      "requestedByUser": false
+    },
+    {
+      "kind": "notice",
+      "itemId": "h1",
+      "source": "hook",
+      "text": "PreToolUse hook blocked",
+      "turnId": "turn:cp-2",
+      "detail": "scripts/guard.sh: migrations/ is read-only on Fridays"
+    },
+    {
+      "kind": "tool",
+      "itemId": "c1",
+      "toolName": "run_command",
+      "toolKind": "execute",
+      "title": "$ npm run migrate",
+      "status": "denied",
+      "turnId": "turn:cp-2",
+      "risk": "critical",
+      "summary": "Blocked by the PreToolUse hook."
+    },
+    {
+      "kind": "tool",
+      "itemId": "c2",
+      "toolName": "run_command",
+      "toolKind": "execute",
+      "title": "$ npm run lint",
+      "status": "ok",
+      "turnId": "turn:cp-2",
+      "risk": "execute",
+      "output": "Linting 412 files\nwarning: unused variable\n",
+      "outputChannel": "stderr",
+      "exitCode": 0,
+      "durationMs": 7020
+    }
+  ],
+  "usage": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "cacheReadTokens": 0,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 0,
+    "costMicroUsd": 0
+  },
+  "lastSeq": 13,
+  "eventCount": 13,
+  "unknownEventCount": 0,
+  "sessionId": "mac_session_4",
+  "target": "local",
+  "workspaceName": "juno",
+  "model": "claude-sonnet-5",
+  "mode": "plan",
+  "effort": "low"
+}

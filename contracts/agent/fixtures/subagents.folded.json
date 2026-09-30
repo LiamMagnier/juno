@@ -1,0 +1,96 @@
+{
+  "state": "completed",
+  "turns": [
+    {
+      "turnId": "sa:turn:0",
+      "origin": "user",
+      "status": "completed",
+      "itemIds": [
+        "u1",
+        "toolu_d",
+        "agent-1",
+        "agent-2",
+        "toolu_c1"
+      ],
+      "stopReason": "end_turn",
+      "durationMs": 99000
+    }
+  ],
+  "items": [
+    {
+      "kind": "user_message",
+      "itemId": "u1",
+      "text": "Add tests for the three billing helpers.",
+      "delivery": "prompt",
+      "turnId": "sa:turn:0"
+    },
+    {
+      "kind": "tool",
+      "itemId": "toolu_d",
+      "toolName": "delegate_tasks",
+      "toolKind": "think",
+      "title": "Delegate 2 tasks",
+      "status": "ok",
+      "turnId": "sa:turn:0",
+      "risk": "read",
+      "summary": "1 of 2 delegated tasks completed",
+      "durationMs": 91200
+    },
+    {
+      "kind": "subagent",
+      "itemId": "agent-1",
+      "title": "Tests for proration",
+      "status": "completed",
+      "turnId": "sa:turn:0",
+      "role": "builder",
+      "toolItemId": "toolu_d",
+      "summary": "Added 6 cases to tests/billing/prorate.test.ts; all pass.",
+      "usage": {
+        "inputTokens": 4200,
+        "outputTokens": 900
+      }
+    },
+    {
+      "kind": "subagent",
+      "itemId": "agent-2",
+      "title": "Tests for refunds",
+      "status": "failed",
+      "turnId": "sa:turn:0",
+      "role": "builder",
+      "toolItemId": "toolu_d",
+      "error": "The refund helper has no exported entry point."
+    },
+    {
+      "kind": "tool",
+      "itemId": "toolu_c1",
+      "toolName": "read_file",
+      "toolKind": "read",
+      "title": "Read src/billing/prorate.ts",
+      "status": "ok",
+      "turnId": "sa:turn:0",
+      "agentId": "agent-1",
+      "risk": "read",
+      "durationMs": 9
+    }
+  ],
+  "usage": {
+    "inputTokens": 13300,
+    "outputTokens": 1540,
+    "cacheReadTokens": 20400,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 0,
+    "costMicroUsd": 0,
+    "model": "claude-sonnet-5"
+  },
+  "lastSeq": 16,
+  "eventCount": 16,
+  "unknownEventCount": 0,
+  "sessionId": "task_cloud_2",
+  "target": "cloud",
+  "repository": {
+    "owner": "liam",
+    "name": "juno"
+  },
+  "model": "claude-sonnet-5",
+  "mode": "full"
+}
