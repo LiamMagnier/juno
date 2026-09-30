@@ -395,6 +395,29 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/researchtest
           DIRECT_URL: postgresql://postgres:postgres@localhost:5432/researchtest
 
+      # The artifact lifecycle (PRODUCT_REFOUNDATION §10): ownership that
+      # survives a chat, immutable versions and drafts, trash and purge,
+      # publish, and the re-emit guard. Its promises live in foreign keys and
+      # triggers (the owner fill, the immutable-version guard, change capture)
+      # as much as in code, so they run against Postgres. Four suites, each in
+      # its own database and its own process: they stand modules in with
+      # mock.module and seed overlapping fixtures. artifact-lifecycle had never
+      # run in CI before this step.
+      - name: The artifact lifecycle, against a real database
+        run: |
+          for suite in artifactown:artifact-ownership-lifecycle.integration artifacttrash:artifact-trash artifactguard:artifact-reemit-guard artifactlife:artifact-lifecycle; do
+            db="${suite%%:*}"
+            file="tests/${suite#*:}.test.ts"
+            psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE $db"
+            DATABASE_URL="$BASE_URL/$db" DIRECT_URL="$BASE_URL/$db" npx prisma migrate deploy
+            ARTIFACT_TEST_DATABASE_URL="$BASE_URL/$db" DATABASE_URL="$BASE_URL/$db" DIRECT_URL="$BASE_URL/$db" \
+              npx tsx --test --experimental-test-module-mocks "$file"
+          done
+        env:
+          ADMIN_URL: postgresql://postgres:postgres@localhost:5432/shadow
+          BASE_URL: postgresql://postgres:postgres@localhost:5432
+          NODE_OPTIONS: --conditions=react-server
+
   # The vendored Cloud Code runner drives arbitrary agent-authored bash, so its
   # containment tests are a release gate rather than a nicety: they are what
   # prove a timed-out command cannot leave children running, and that a

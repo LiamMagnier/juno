@@ -630,7 +630,10 @@ paths:
     get:
       servers: [{ url: /api }]
       operationId: listNativeArtifacts
-      description: Existing owner-scoped artifact index across all conversations.
+      description: >-
+        The owner's artifacts, by the artifact's own owner: one whose chat was
+        deleted, or that never had one, is listed with null conversationId and
+        conversationTitle. ?deleted=1 lists Recently deleted instead.
       responses:
         '200':
           description: Up to 200 artifacts ordered by most recent update.
@@ -647,14 +650,22 @@ paths:
       operationId: getNativeArtifact
       responses:
         '200':
-          description: Full artifact and append-only version history.
+          description: >-
+            The artifact with its newest 50 versions (immutable, sealed only;
+            hasOlderVersions says there are more, paged from
+            /api/artifacts/{artifactId}/versions). A trashed artifact is 404.
           content: { application/json: { schema: { $ref: '#/components/schemas/ArtifactResponse' } } }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
     post:
       servers: [{ url: /api }]
       operationId: appendNativeArtifactVersion
-      description: Append a manual edit or restore with optimistic base-version protection.
+      description: >-
+        Append a manual edit or restore as a new immutable version. With
+        baseVersion, 409 when the head (after any unsealed web draft is sealed)
+        is not that version. Without it, last writer wins as a new version; no
+        version is ever overwritten. A DESIGN body is validated (422 when the
+        web editor could not open it).
       requestBody:
         required: true
         content:
@@ -677,6 +688,8 @@ paths:
         '409':
           description: The base version is stale; the response includes the latest artifact.
           content: { application/json: { schema: { $ref: '#/components/schemas/StaleArtifactResponse' } } }
+        '422': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
     patch:
       servers: [{ url: /api }]
       operationId: renameNativeArtifact
@@ -699,15 +712,24 @@ paths:
     delete:
       servers: [{ url: /api }]
       operationId: deleteNativeArtifact
+      description: >-
+        Moves the artifact to Recently deleted (idempotent; the sync feed
+        tombstones it and restoring re-delivers it). ?now=1 removes one that is
+        already in Recently deleted for good (409 not_in_trash on a live one).
       responses:
         '200':
-          description: Artifact and its versions were deleted.
+          description: Moved to Recently deleted (trashed, deletedAt, purgeAt), or removed for good with ?now=1 (deleted).
           content:
             application/json:
               schema:
                 type: object
                 required: [ok]
-                properties: { ok: { const: true } }
+                properties:
+                  ok: { const: true }
+                  trashed: { const: true }
+                  deleted: { const: true }
+                  deletedAt: { type: string, format: date-time }
+                  purgeAt: { type: string, format: date-time }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
   /artifacts/{artifactId}/export:
@@ -4302,6 +4324,18 @@ components:
         messageId: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        hasOlderVersions: { const: true }
+        deletedAt: { type: [string, 'null'], format: date-time }
+        pendingSuggestion:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [id, baseVersion, messageId, summary, createdAt]
+          properties:
+            id: { type: string }
+            baseVersion: { type: integer, minimum: 1 }
+            messageId: { type: [string, 'null'] }
+            summary: { type: string }
+            createdAt: { type: string, format: date-time }
     ArtifactResponse:
       type: object
       additionalProperties: false
@@ -4328,10 +4362,15 @@ components:
         type: { $ref: '#/components/schemas/ArtifactKind' }
         language: { type: [string, 'null'] }
         version: { type: integer, minimum: 1 }
-        conversationId: { type: string }
-        conversationTitle: { type: string }
+        conversationId: { type: [string, 'null'] }
+        conversationTitle: { type: [string, 'null'] }
+        projectId: { type: [string, 'null'] }
+        derivedFromId: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        deletedAt: { type: string, format: date-time }
+        purgeAt: { type: string, format: date-time }
+        preview: { type: [string, 'null'] }
     ArtifactIndexResponse:
       type: object
       additionalProperties: false

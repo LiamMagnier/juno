@@ -228,6 +228,10 @@
         },
         "/api/library": "native",
         "/api/library/[id]": "native",
+        "/api/library/made": {
+          "status": "planned",
+          "note": "Everything Juno made in one paged list: chat artifacts and task deliverables (docx, xlsx, pptx…), each with a kind and a type. The apps list artifacts from sync and deliverables from /api/work/artifacts."
+        },
         "/api/library/attach": "native",
         "/api/prompts": {
           "status": "planned",
@@ -276,8 +280,56 @@
           "note": "The apps list artifacts from sync; the web's grid asks for previews here."
         },
         "/api/artifacts/[id]": "native",
+        "/api/artifacts/[id]/download": {
+          "status": "planned",
+          "note": "Download one version as a file, or a design (or any artifact, format=zip) as a ZIP bundle with a README and optional history. The apps still share a design's source through the system share sheet."
+        },
+        "/api/artifacts/[id]/draft": {
+          "status": "web-only",
+          "note": "Seals or discards the web design editor's working copy (ArtifactDraft). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version."
+        },
+        "/api/artifacts/[id]/duplicate": {
+          "status": "planned",
+          "note": "Duplicate an artifact into a new one in the same project, with derivedFrom provenance. No Duplicate command in the apps yet."
+        },
         "/api/artifacts/[id]/export": "native",
         "/api/artifacts/[id]/poster": "native",
+        "/api/artifacts/[id]/proposals/[proposalId]": {
+          "status": "planned",
+          "note": "Compare a held re-emit (the re-emit guard's suggestion) with the current version. The apps show neither the suggestion bar nor Compare yet; a held tag draws no card there."
+        },
+        "/api/artifacts/[id]/proposals/[proposalId]/apply": {
+          "status": "planned",
+          "note": "Apply a held re-emit as the next version, against the version the person compared."
+        },
+        "/api/artifacts/[id]/proposals/[proposalId]/dismiss": {
+          "status": "planned",
+          "note": "Dismiss a held re-emit."
+        },
+        "/api/artifacts/[id]/proposals/[proposalId]/poster": {
+          "status": "planned",
+          "note": "The picture of a suggested design, for Compare."
+        },
+        "/api/artifacts/[id]/publication": {
+          "status": "planned",
+          "note": "Publish (pinned to a version or to latest), Update, Roll back, Unpublish. The apps still make the legacy snapshot link through /api/share; the Publish panel is web-only until the native lane adds it."
+        },
+        "/api/artifacts/[id]/publication/reset": {
+          "status": "planned",
+          "note": "Reset a published link: the old token answers link gone, a new token serves."
+        },
+        "/api/artifacts/[id]/restore": {
+          "status": "planned",
+          "note": "Restore from Recently deleted. A delete from the apps now moves the artifact to Recently deleted (the sync feed tombstones it); the apps have no Recently deleted view yet."
+        },
+        "/api/artifacts/[id]/versions": {
+          "status": "planned",
+          "note": "Paginated version history (newest first, bodies on request). The apps read versions from sync and the windowed /api/artifacts/[id]."
+        },
+        "/api/artifacts/[id]/versions/[version]": {
+          "status": "planned",
+          "note": "One version's body, for paged history."
+        },
         "/api/design": "native",
         "/api/design/[artifactId]": {
           "status": "web-only",

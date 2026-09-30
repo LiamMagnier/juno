@@ -11,8 +11,8 @@
   },
   "x-native-summary": {
     "native": 159,
-    "planned": 65,
-    "web-only": 32,
+    "planned": 77,
+    "web-only": 33,
     "unclassified": 0
   },
   "x-native-only": {
@@ -1227,6 +1227,13 @@
                 ]
               },
               "x-native": "planned"
+            },
+            "notes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ClientArtifactVerificationNote"
+              },
+              "x-native": "planned"
             }
           },
           "required": [
@@ -1369,6 +1376,32 @@
         "updatedAt": {
           "type": "string",
           "x-native": "native"
+        },
+        "hasOlderVersions": {
+          "type": "boolean",
+          "const": true,
+          "x-native": "planned",
+          "x-native-note": "Set only when a read carries a window of a longer history; the apps page older versions from sync today and will page them from GET /api/artifacts/{id}/versions."
+        },
+        "deletedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "planned",
+          "x-native-note": "Set only while the artifact is in Recently deleted, so a chat card can offer Restore. The apps drop a trashed artifact through its sync tombstone and have no Recently deleted view yet."
+        },
+        "pendingSuggestion": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClientArtifactSuggestion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-native": "planned",
+          "x-native-note": "The re-emit guard's waiting suggestion (Apply / Dismiss / Compare). The apps draw no card for a held tag and have no suggestion bar yet."
         }
       },
       "required": [
@@ -1381,6 +1414,64 @@
         "versions",
         "createdAt",
         "updatedAt"
+      ]
+    },
+    "ClientArtifactSuggestion": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "baseVersion": {
+          "type": "number",
+          "x-native": "planned"
+        },
+        "messageId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "planned"
+        },
+        "summary": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "createdAt": {
+          "type": "string",
+          "x-native": "planned"
+        }
+      },
+      "required": [
+        "id",
+        "baseVersion",
+        "messageId",
+        "summary",
+        "createdAt"
+      ]
+    },
+    "ClientArtifactVerificationNote": {
+      "type": "object",
+      "properties": {
+        "identifier": {
+          "type": "string",
+          "x-native": "planned"
+        },
+        "code": {
+          "type": "string",
+          "const": "image_placeholder",
+          "x-native": "planned"
+        },
+        "detail": {
+          "type": "string",
+          "x-native": "planned"
+        }
+      },
+      "required": [
+        "identifier",
+        "code",
+        "detail"
       ]
     },
     "ClientArtifactVersion": {
@@ -1410,6 +1501,12 @@
         "createdAt": {
           "type": "string",
           "x-native": "native"
+        },
+        "draft": {
+          "type": "boolean",
+          "const": true,
+          "x-native": "web-only",
+          "x-native-note": "Marks the web design editor's unsealed working copy, presented as the version it will become. Only owner web reads include it; the apps edit designs in their own hosted editor and save whole documents with a base version."
         }
       },
       "required": [

@@ -234,11 +234,27 @@
     "ClientArtifact.messageId": "native",
     "ClientArtifact.createdAt": "native",
     "ClientArtifact.updatedAt": "native",
+    "ClientArtifact.hasOlderVersions": {
+      "status": "planned",
+      "note": "Set only when a read carries a window of a longer history; the apps page older versions from sync today and will page them from GET /api/artifacts/{id}/versions."
+    },
+    "ClientArtifact.deletedAt": {
+      "status": "planned",
+      "note": "Set only while the artifact is in Recently deleted, so a chat card can offer Restore. The apps drop a trashed artifact through its sync tombstone and have no Recently deleted view yet."
+    },
+    "ClientArtifact.pendingSuggestion": {
+      "status": "planned",
+      "note": "The re-emit guard's waiting suggestion (Apply / Dismiss / Compare). The apps draw no card for a held tag and have no suggestion bar yet."
+    },
 
     "ClientArtifactVersion.version": "native",
     "ClientArtifactVersion.content": "native",
     "ClientArtifactVersion.origin": "native",
     "ClientArtifactVersion.createdAt": "native",
+    "ClientArtifactVersion.draft": {
+      "status": "web-only",
+      "note": "Marks the web design editor's unsealed working copy, presented as the version it will become. Only owner web reads include it; the apps edit designs in their own hosted editor and save whole documents with a base version."
+    },
 
     "ClientActivityEvent.id": "native",
     "ClientActivityEvent.kind": "native",
