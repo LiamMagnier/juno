@@ -324,7 +324,10 @@ test("the list routes use the shared views and restore brings a hidden file stra
   // Only a tombstone's link is withheld; a hidden file's bytes are live.
   assert.match(list, /placement\.withheld \? \{ url: "" \}/);
   assert.doesNotMatch(list, /a\.deletedAt \? \{ url: "" \}/);
-  assert.match(read("src/app/api/library/attach/route.ts"), /libraryViewWhere\("library"\)/);
+  // "Add from library" and a file token in a chat message share one clone,
+  // and it reads only files still in the Library.
+  assert.match(read("src/app/api/library/attach/route.ts"), /cloneLibraryAttachments\(/);
+  assert.match(read("src/lib/library-attach.ts"), /libraryViewWhere\("library"\)/);
   const restore = read("src/app/api/attachments/[id]/restore/route.ts");
   assert.match(restore, /libraryViewWhere\("deleted"\)/);
   assert.match(restore, /data: \{ libraryRemovedAt: null \}/);
