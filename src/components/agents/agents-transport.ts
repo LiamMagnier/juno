@@ -14,7 +14,6 @@
  */
 
 import type { AgentAvatar } from "@/lib/agents/avatar";
-import type { HireDraftFields, HireDraftResult, HireDraftTurn } from "@/lib/agents/hire-draft";
 import type {
   AgentGoalCadence,
   AgentGoalStatus,
@@ -145,21 +144,6 @@ export function hireAgent(input: HireAgentInput): Promise<AgentOutcome<ClientAge
     return { kind: "ok", value: agent as ClientAgent } as const;
   });
 }
-
-/** One turn of the hire conversation: free text in, a draft patch and a reply out. */
-export function draftHireAgent(input: {
-  message: string;
-  draft: HireDraftFields;
-  turns: HireDraftTurn[];
-}): Promise<AgentOutcome<HireDraftResult>> {
-  return call("/api/agents/hire-draft", { method: "POST", body: input }, (d) => ({
-    draft: (d.draft ?? {}) as HireDraftFields,
-    reply: typeof d.reply === "string" ? d.reply : "",
-    changed: Array.isArray(d.changed) ? (d.changed as HireDraftResult["changed"]) : [],
-  }));
-}
-
-export type { HireDraftFields, HireDraftResult, HireDraftTurn };
 
 export interface AgentPatch {
   name?: string;
