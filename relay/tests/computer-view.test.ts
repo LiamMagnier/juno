@@ -6,7 +6,9 @@ import { describe, it } from "node:test";
 import { WebSocket } from "ws";
 import {
   createComputerViewUpgradeHandler,
+  createViewTokenLedger,
   isAllowedComputerEndpoint,
+  presentedViewToken,
   isHostInCidr,
   mintComputerViewToken,
   verifyComputerViewToken,
@@ -26,6 +28,7 @@ describe("relay/computer-view token & CIDR checks", () => {
         p: 5900,
         m: "watch",
         exp,
+        j: "jti-watch-0001",
       },
       TEST_SECRET
     );
@@ -52,6 +55,7 @@ describe("relay/computer-view token & CIDR checks", () => {
         p: 5900,
         m: "watch",
         exp,
+        j: "jti-watch-0001",
       },
       TEST_SECRET
     );
@@ -75,6 +79,7 @@ describe("relay/computer-view token & CIDR checks", () => {
         p: 5900,
         m: "watch",
         exp: Math.floor(Date.now() / 1000) - 5,
+        j: "jti-expired-01",
       },
       TEST_SECRET
     );
@@ -96,6 +101,7 @@ describe("relay/computer-view token & CIDR checks", () => {
         p: 5900,
         m: "watch",
         exp,
+        j: "jti-watch-0001",
       },
       TEST_SECRET
     );
@@ -117,6 +123,7 @@ describe("relay/computer-view token & CIDR checks", () => {
         p: 45123,
         m: "control",
         exp,
+        j: "jti-loopback-1",
       },
       TEST_SECRET
     );
@@ -141,6 +148,43 @@ describe("relay/computer-view token & CIDR checks", () => {
     assert.equal(isHostInCidr("172.30.1.2", "172.30.0.0/24"), false);
     assert.equal(isAllowedComputerEndpoint("172.30.0.12", 5900, { nodeEnv: "production" }), true);
     assert.equal(isAllowedComputerEndpoint("172.30.0.12", 5901, { nodeEnv: "production" }), false);
+  });
+});
+
+describe("relay/computer-view single-use tokens", () => {
+  it("a token without a one-time id is refused, and the ledger accepts an id once", () => {
+    const exp = Math.floor(Date.now() / 1000) + 60;
+    const withoutId = mintComputerViewToken(
+      { v: 1, a: "agent_123", u: "user_456", h: "172.30.0.10", p: 5900, m: "watch", exp } as never,
+      TEST_SECRET
+    );
+    assert.equal(verifyComputerViewToken(withoutId, { authSecret: TEST_SECRET, nodeEnv: "production" }), null);
+
+    const ledger = createViewTokenLedger(() => 1_000_000);
+    assert.equal(ledger.accept({ j: "jti-once-0001", exp: 2_000 }), true);
+    assert.equal(ledger.accept({ j: "jti-once-0001", exp: 2_000 }), false);
+    assert.equal(ledger.accept({ j: "jti-once-0002", exp: 2_000 }), true);
+  });
+
+  it("a token for one agent cannot be re-pointed at another agent's computer", () => {
+    const exp = Math.floor(Date.now() / 1000) + 60;
+    const token = mintComputerViewToken(
+      { v: 1, a: "agent_a", u: "user_1", h: "172.30.0.10", p: 5900, m: "control", exp, j: "jti-agent-a-01" },
+      TEST_SECRET
+    );
+    const [body, sig] = token.split(".");
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    const forged = Buffer.from(JSON.stringify({ ...payload, a: "agent_b", h: "172.30.0.11" }), "utf8").toString("base64url");
+    assert.equal(verifyComputerViewToken(`${forged}.${sig}`, { authSecret: TEST_SECRET, nodeEnv: "production" }), null);
+  });
+
+  it("reads the token from the juno-view subprotocol before the query string", () => {
+    assert.equal(
+      presentedViewToken({ url: "/computer?t=from-query", headers: { "sec-websocket-protocol": "binary, juno-view.from-protocol" } }),
+      "from-protocol"
+    );
+    assert.equal(presentedViewToken({ url: "/computer?t=from-query", headers: {} }), "from-query");
+    assert.equal(presentedViewToken({ url: "/computer", headers: {} }), null);
   });
 });
 
@@ -181,18 +225,22 @@ describe("relay/computer-view WebSocket <-> TCP bridge", () => {
     const httpPort = (httpServer.address() as AddressInfo).port;
 
     try {
-      const validToken = mintComputerViewToken(
-        {
-          v: 1,
-          a: "agent_bridge_1",
-          u: "user_1",
-          h: "127.0.0.1",
-          p: tcpPort,
-          m: "control",
-          exp: Math.floor(Date.now() / 1000) + 60,
-        },
-        TEST_SECRET
-      );
+      let serial = 0;
+      const mint = () =>
+        mintComputerViewToken(
+          {
+            v: 1,
+            a: "agent_bridge_1",
+            u: "user_1",
+            h: "127.0.0.1",
+            p: tcpPort,
+            m: "control",
+            exp: Math.floor(Date.now() / 1000) + 60,
+            j: `jti-bridge-${String((serial += 1)).padStart(4, "0")}`,
+          },
+          TEST_SECRET
+        );
+      const validToken = mint();
 
       // Bad origin -> 403
       await assert.rejects(
@@ -250,12 +298,30 @@ describe("relay/computer-view WebSocket <-> TCP bridge", () => {
       const echoed = await echoPromise;
       assert.deepEqual([...echoed], [0xaa, 0x01, 0x02, 0x03]);
 
-      // Open 2 more viewers (total 3 allowed)
+      // The same token again is refused: single use, whoever presents it.
+      await assert.rejects(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            const replay = new WebSocket(
+              `ws://127.0.0.1:${httpPort}/voice-relay/computer?t=${encodeURIComponent(validToken)}`,
+              ["binary"],
+              { headers: { Origin: "https://juno.example" } }
+            );
+            replay.on("open", () => {
+              replay.close();
+              resolve();
+            });
+            replay.on("error", reject);
+          })
+      );
+
+      // Open 2 more viewers (total 3 allowed), each with its own token, offered
+      // as a subprotocol so it is never in the URL.
       const openViewer = () =>
         new Promise<WebSocket>((resolve, reject) => {
           const w = new WebSocket(
-            `ws://127.0.0.1:${httpPort}/voice-relay/computer?t=${encodeURIComponent(validToken)}`,
-            ["binary"],
+            `ws://127.0.0.1:${httpPort}/voice-relay/computer`,
+            ["binary", `juno-view.${mint()}`],
             { headers: { Origin: "https://juno.example" } }
           );
           w.once("open", () => resolve(w));
@@ -263,6 +329,8 @@ describe("relay/computer-view WebSocket <-> TCP bridge", () => {
         });
 
       const ws2 = await openViewer();
+      // The token protocol is never chosen back: the relay answers "binary".
+      assert.equal(ws2.protocol, "binary");
       const ws3 = await openViewer();
       assert.equal(computerView.getActiveViewerCount("agent_bridge_1"), 3);
 

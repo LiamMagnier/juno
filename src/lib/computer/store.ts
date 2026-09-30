@@ -5,11 +5,17 @@ import { env } from "@/lib/env";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
 import {
   ensureStream,
-  mintHandoffCode,
   mintViewToken,
   resolveComputerRelayUrl,
   stopStream,
 } from "./live-view";
+import {
+  TAKEOVER_REFUSAL,
+  takeoverActive,
+  takeoverClosed,
+  takeoverHolder,
+  takeoverOpened,
+} from "./takeover";
 import { computerProvider, isAgentComputerConfigured } from "./provider";
 import type {
   ComputerHandle,
@@ -36,6 +42,10 @@ export interface AgentComputerRow {
   activeSeconds: number;
   diskMb: number | null;
   lastError: string | null;
+  /** Exclusive takeover (src/lib/computer/takeover.ts). Optional for rows written before it. */
+  takeoverUntil?: Date | null;
+  takeoverStartedAt?: Date | null;
+  takeoverBy?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -175,6 +185,9 @@ function toRow(raw: {
   activeSeconds: number;
   diskMb: number | null;
   lastError: string | null;
+  takeoverUntil?: Date | null;
+  takeoverStartedAt?: Date | null;
+  takeoverBy?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): AgentComputerRow {
@@ -340,6 +353,11 @@ export function setComputerStorePersistenceForTest(
 
 export function getComputerStorePersistence(): ComputerStorePersistence {
   return activePersistence;
+}
+
+/** Whether the store is on the database (not a test's in-memory stand-in). */
+export function computerStoreUsesDatabase(): boolean {
+  return activePersistence === prismaPersistence;
 }
 
 export function createInMemoryComputerPersistence(): ComputerStorePersistence & {
@@ -829,6 +847,9 @@ export async function ensureAwake(
       await provider.unpause(handle);
     } else {
       await provider.start(handle);
+      // A fresh start has a fresh tmpfs and a fresh gate: hand it its token
+      // (never through the container's env, which the agent's shell reads).
+      await provider.provisionCdpToken(handle, secrets.cdpToken);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1061,10 +1082,29 @@ export async function releaseComputerLease(
 }
 
 export const YOUR_COMPUTER_PROMPT_SECTION =
-  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium, and the person can watch the same screen. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. Stay signed in to sites between tasks: your sign-ins persist. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, call `ask_user` and ask them to take over your computer for that step. Never ask for a secret in the chat and never type one you were told in the chat.";
+  "You have your own computer: a Linux desktop with Chromium, a shell and files. The `browser` tool drives its Chromium, and the person can watch the same screen. Prefer `browser` for web pages. Use the `computer_*` pixel tools only for things the page tools can't reach. Keep files you want to keep under /home/agent/work. Stay signed in to sites between tasks: your sign-ins persist. When a site needs a password, a 2FA code, a CAPTCHA, payment details or anything only the person should type, call `ask_user` and ask them to take over your computer for that step. While they have control you cannot see or use the computer; carry on once they hand it back. Running a command or typing text asks the person every time, so prefer the page tools. Never ask for a secret in the chat and never type one you were told in the chat.";
 
 export const BUSY_COMPUTER_FALLBACK_NOTE =
   "Your computer is busy with another task; you're using a temporary browser for this one.";
+
+/**
+ * The disk quota, enforced rather than only displayed (security audit C6).
+ * A named volume has no size limit of its own, so the limit is applied where
+ * Juno decides to use the computer: a computer over its quota is not attached
+ * to a task (the task gets the temporary browser and this note), and the sweep
+ * puts an idle one to sleep with a sentence saying why. The person can still
+ * open it, take control and delete files.
+ */
+export const COMPUTER_DISK_FULL_NOTE =
+  "Your computer is over its storage limit, so you're using a temporary browser for this task. The person can open the computer and delete files to free it up.";
+
+export function overDiskQuota(row: { diskMb: number | null } | null | undefined, quotaMb = env.agentComputer.diskQuotaMb): boolean {
+  return !!row && typeof row.diskMb === "number" && row.diskMb > quotaMb;
+}
+
+export function diskFullError(diskMb: number, quotaMb = env.agentComputer.diskQuotaMb): string {
+  return `The computer's files use ${diskMb} MB of its ${quotaMb} MB limit, so tasks use a temporary browser until some are deleted.`;
+}
 
 export type RunComputerAttachment =
   | {
@@ -1099,6 +1139,9 @@ export async function resolveRunComputerSession(input: {
   if (!existing) {
     return { attached: false, fallbackReason: "not_enabled", note: null };
   }
+  if (overDiskQuota(existing)) {
+    return { attached: false, fallbackReason: "unavailable", note: COMPUTER_DISK_FULL_NOTE };
+  }
 
   const lease = await acquireComputerLease(input.userId, input.agentId, input.runId);
   if (!lease.acquired) {
@@ -1112,6 +1155,11 @@ export async function resolveRunComputerSession(input: {
   const agentId = input.agentId;
   try {
     const awake = await ensureAwake(input.userId, agentId);
+    // Measured again on the way up: a computer that filled since the last sweep.
+    if (overDiskQuota(awake.row)) {
+      await releaseComputerLease(input.userId, agentId, input.runId).catch(() => {});
+      return { attached: false, fallbackReason: "unavailable", note: COMPUTER_DISK_FULL_NOTE };
+    }
     const renewMs = input.renewIntervalMs ?? 40_000;
     const timer = setInterval(() => {
       void renewComputerLease(input.userId, agentId, input.runId).catch(() => {});
@@ -1152,6 +1200,40 @@ export class AsleepComputerError extends Error {
   }
 }
 
+/**
+ * Why the agent may not use its computer right now, or null. Read by the
+ * runner before (and after) every computer and browser tool call: while the
+ * person has control, the answer is `TAKEOVER_REFUSAL`.
+ */
+export async function computerBlockedReason(userId: string, agentId: string, now = new Date()): Promise<string | null> {
+  const row = await activePersistence.findByAgent(userId, agentId);
+  return takeoverActive(row, now) ? TAKEOVER_REFUSAL : null;
+}
+
+/**
+ * The person takes (or keeps) control: the takeover window opens or extends.
+ * Only the person's own clients reach this, through their session.
+ */
+export async function holdComputerTakeover(
+  userId: string,
+  agentId: string,
+  holder: string,
+  now = new Date()
+): Promise<void> {
+  const row = await activePersistence.findByAgent(userId, agentId);
+  if (!row) return;
+  await activePersistence.updateByAgent(userId, agentId, takeoverOpened({ state: row, by: holder, now }));
+}
+
+/** Hand back: the takeover ends and the agent carries on. */
+export async function releaseComputerTakeover(userId: string, agentId: string): Promise<boolean> {
+  const row = await activePersistence.findByAgent(userId, agentId);
+  if (!row) return false;
+  const wasHeld = takeoverActive(row, new Date());
+  await activePersistence.updateByAgent(userId, agentId, takeoverClosed());
+  return wasHeld;
+}
+
 export async function openComputerViewSession(
   userId: string,
   agentId: string,
@@ -1160,6 +1242,8 @@ export async function openComputerViewSession(
     handoff?: boolean;
     rotatePasswords?: boolean;
     fallbackOrigin?: string;
+    /** The native device session asking, when an app asks; binds a handoff link to it. */
+    deviceSessionId?: string | null;
   }
 ): Promise<
   | {
@@ -1172,7 +1256,6 @@ export async function openComputerViewSession(
   | {
       kind: "handoff";
       url: string;
-      code: string;
     }
 > {
   const existing = await activePersistence.findByAgent(userId, agentId);
@@ -1181,22 +1264,24 @@ export async function openComputerViewSession(
   }
 
   if (opts?.handoff) {
-    const { code } = mintHandoffCode({
-      agentId,
-      userId,
-      mode,
-    });
+    // A single-use, session-bound link (src/lib/computer/handoff.ts). The
+    // takeover opens when the link is used, not when it is made.
+    const { createComputerHandoff } = await import("./handoff");
     const base =
       process.env.NEXT_PUBLIC_APP_URL ||
       process.env.AUTH_URL ||
       opts.fallbackOrigin ||
       "http://localhost:3000";
-    const url = new URL("/computer-view", base.trim());
-    url.searchParams.set("c", code);
+    const { url } = await createComputerHandoff({
+      userId,
+      agentId,
+      mode,
+      deviceSessionId: opts.deviceSessionId ?? null,
+      baseUrl: base,
+    });
     return {
       kind: "handoff",
-      url: url.toString(),
-      code,
+      url,
     };
   }
 
@@ -1239,6 +1324,12 @@ export async function openComputerViewSession(
     mode,
   });
 
+  // Control is exclusive: from here until Hand back (or a lapsed window) the
+  // agent's computer tools refuse.
+  if (mode === "control") {
+    await holdComputerTakeover(userId, agentId, takeoverHolder(opts?.deviceSessionId ?? null), now);
+  }
+
   return {
     kind: "direct",
     mode,
@@ -1251,7 +1342,7 @@ export async function openComputerViewSession(
 export async function heartbeatComputerViewSession(
   userId: string,
   agentId: string,
-  input: { mode: "watch" | "control"; ended?: boolean }
+  input: { mode: "watch" | "control"; ended?: boolean; deviceSessionId?: string | null }
 ): Promise<PublicAgentComputerState> {
   const existing = await activePersistence.findByAgent(userId, agentId);
   if (!existing) {
@@ -1259,7 +1350,18 @@ export async function heartbeatComputerViewSession(
   }
 
   const now = new Date();
+  // A control heartbeat keeps the takeover; Hand back (`ended`) releases it
+  // before anything else, so the agent can carry on even if rotating the
+  // passwords below fails.
+  if (input.mode === "control" && !input.ended) {
+    await activePersistence.updateByAgent(
+      userId,
+      agentId,
+      takeoverOpened({ state: existing, by: takeoverHolder(input.deviceSessionId ?? null), now })
+    );
+  }
   if (input.ended && input.mode === "control") {
+    await activePersistence.updateByAgent(userId, agentId, takeoverClosed());
     const provider = computerProvider();
     if (provider && existing.status === "awake") {
       try {

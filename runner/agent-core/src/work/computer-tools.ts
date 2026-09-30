@@ -36,6 +36,15 @@ export interface ComputerFileEntryItem {
 
 export interface ComputerToolsDeps {
   isHealthy(): boolean;
+  /**
+   * Why the computer may not be used right now, or null when it may. The
+   * server answers "the person has control" while a takeover is active: every
+   * tool refuses before touching the screen, the keyboard, the shell or the
+   * files, and a screenshot captured as a takeover began is thrown away rather
+   * than shown to the model. Optional so a caller without takeovers (tests, a
+   * provider that has none) keeps working.
+   */
+  blockedReason?(): Promise<string | null> | string | null;
   pageTakesPayment(): boolean;
   currentUrl(): string;
   screenEpoch(): number;
@@ -88,7 +97,85 @@ function capShellStream(label: string, value: string): string {
   return `${value.slice(0, MAX_SHELL_OUTPUT_CHARS)}\n[${label} cut off at ${MAX_SHELL_OUTPUT_CHARS} characters]`;
 }
 
+/**
+ * Keys `computer_key` presses without the approval a typing tool needs: the
+ * ones that move around or confirm and produce no text. Anything else (a
+ * letter, a digit, a paste shortcut, `ctrl+alt+t` for a terminal) can type
+ * text one key at a time, which is `computer_type` by another name, so it
+ * takes `computer_type`'s risk: it asks every time.
+ */
+const NAVIGATION_KEYS = new Set(
+  [
+    'return', 'enter', 'kp_enter', 'tab', 'shift+tab', 'escape', 'esc',
+    'up', 'down', 'left', 'right',
+    'page_up', 'page_down', 'prior', 'next', 'pageup', 'pagedown',
+    'home', 'end', 'backspace', 'delete',
+    'space', 'f5', 'ctrl+l', 'ctrl+r', 'alt+left', 'alt+right',
+  ].map((key) => key.toLowerCase())
+);
+
+/** Whether a `computer_key` press is navigation only (see `NAVIGATION_KEYS`). */
+export function isNavigationKeypress(raw: string): boolean {
+  const keys = raw
+    .split(/\s+/)
+    .map((key) => key.trim().toLowerCase())
+    .filter(Boolean);
+  return keys.length > 0 && keys.every((key) => NAVIGATION_KEYS.has(key));
+}
+
+/**
+ * Where `computer_files` may write without it being a way to run code: under
+ * /home/agent/work, and never into a dot-directory or a dotfile. Writing
+ * `~/.bashrc`, `~/.config/autostart/*.desktop` or `~/.profile` would run
+ * whatever the model wrote the next time a shell or the desktop starts, with
+ * no approval; those writes are refused outright.
+ */
+export function isSafeComputerWritePath(raw: string): boolean {
+  const path = raw.trim();
+  if (!path || /[\0\r\n]/.test(path)) return false;
+  const absolute = path.startsWith('/') ? path : `/home/agent/work/${path}`;
+  const parts = absolute.split('/').filter(Boolean);
+  if (parts.some((part) => part === '..' || part === '.')) return false;
+  if (parts.length < 4 || parts[0] !== 'home' || parts[1] !== 'agent' || parts[2] !== 'work') return false;
+  return !parts.slice(3).some((part) => part.startsWith('.'));
+}
+
+/**
+ * The risk of a tool that can run arbitrary code or type into pages
+ * (`computer_shell`, `computer_type`, a text-producing `computer_key`).
+ *
+ * `sensitive`, never `command`. A shell has no action labels, so a
+ * `curl -X POST` that sends mail or pays is `work.computer.shell`, never
+ * `work.connector.send_message`: the always-confirm floor, which is enforced on
+ * labels, cannot see it. `sensitive` asks under every approval mode, Skip
+ * included, and can never be covered by "Always allow"
+ * (`mayBeCoveredByStandingAllowance` stops at `command`, and the session only
+ * remembers `allowed_always` below `sensitive`). So each call is put to the
+ * person, every time.
+ */
+export const ARBITRARY_CODE_RISK: WorkRiskLevel = 'sensitive';
+
 export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
+  const blocked = async (): Promise<ToolResult | null> => {
+    const reason = deps.blockedReason ? await deps.blockedReason() : null;
+    return reason ? { output: reason, isError: true } : null;
+  };
+  // Every tool: refuse before acting while blocked, and refuse after acting
+  // if a takeover began mid-call, so what the screen showed at the moment the
+  // person took over never reaches the model.
+  // Part of each tool's own implementation, not a dispatch site: the session's
+  // `executeToolCall` still gates every call before it reaches this execute.
+  const guarded = (definition: WorkToolDefinition): WorkToolDefinition => ({
+    ...definition,
+    async execute(input, ctx) {
+      const before = await blocked();
+      if (before) return before;
+      const result = await definition.execute(input, ctx);
+      const after = await blocked();
+      return after ?? result;
+    },
+  });
+
   const withEpoch = (input: Record<string, unknown>) => ({
     ...input,
     screen: deps.screenEpoch(),
@@ -202,7 +289,9 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     intents: ['screen.type'],
     intentFor: () => 'screen.type',
     actionFor: pixelActionFor('work.computer.type'),
-    riskFor: pixelRiskFor,
+    // Typing reaches whatever has focus, the desktop's terminal included, so
+    // it can run code: it asks every time (`ARBITRARY_CODE_RISK`).
+    riskFor: () => (deps.pageTakesPayment() ? 'irreversible' : ARBITRARY_CODE_RISK),
     provenanceFor: () => pixelProvenance('work.computer.type'),
     isHealthy: () => deps.isHealthy(),
     signatureInput: withEpoch,
@@ -245,7 +334,14 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     intents: ['screen.key'],
     intentFor: () => 'screen.key',
     actionFor: pixelActionFor('work.computer.key'),
-    riskFor: pixelRiskFor,
+    // Navigation keys keep the pixel tools' risk; a key that produces text
+    // (or a shortcut that pastes or opens a terminal) is typing, and asks.
+    riskFor: (input) =>
+      deps.pageTakesPayment()
+        ? 'irreversible'
+        : isNavigationKeypress(String(input.keys ?? ''))
+          ? 'command'
+          : ARBITRARY_CODE_RISK,
     provenanceFor: () => pixelProvenance('work.computer.key'),
     isHealthy: () => deps.isHealthy(),
     signatureInput: withEpoch,
@@ -331,7 +427,10 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     intents: ['shell.run'],
     intentFor: () => 'shell.run',
     actionFor: () => 'work.computer.shell',
-    riskFor: () => 'command',
+    // Asks every time, under every mode, and is never covered by "Always
+    // allow": a shell can send, publish or pay without any label the
+    // always-confirm floor could recognise (see `ARBITRARY_CODE_RISK`).
+    riskFor: () => ARBITRARY_CODE_RISK,
     provenanceFor: () => localAppProvenance('work.computer.shell'),
     isHealthy: () => deps.isHealthy(),
     signatureInput: withEpoch,
@@ -464,6 +563,13 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
         if (typeof input.content !== 'string') {
           return { output: 'content is required when action is "write".', isError: true };
         }
+        if (!isSafeComputerWritePath(targetPath)) {
+          return {
+            output:
+              'Files can only be written under /home/agent/work, and never into a dotfile or dot-folder. Nothing was written.',
+            isError: true,
+          };
+        }
         await deps.writeFile(targetPath, input.content);
         return { output: `Wrote ${input.content.length} characters to ${targetPath}.` };
       }
@@ -480,5 +586,5 @@ export function computerTools(deps: ComputerToolsDeps): WorkToolDefinition[] {
     scrollTool,
     shellTool,
     filesTool,
-  ];
+  ].map(guarded);
 }

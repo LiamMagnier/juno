@@ -460,7 +460,7 @@ public extension JunoWorkPermissionPolicy {
         case .balanced:
             "Juno makes changes it can undo, and asks before running anything or touching anything private."
         case .permissive:
-            "Juno gets on with the work without asking — except for the four things it cannot take back."
+            "Juno gets on with the work without asking, except for what it cannot take back (sending, publishing, paying, deleting, account and security changes) and running commands or typing on a crew member's computer, which always ask."
         }
     }
 

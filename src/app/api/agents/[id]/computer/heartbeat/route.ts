@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/code-remote";
 import { rateLimit } from "@/lib/rate-limit";
 import { findAgent, recordAgentEvent } from "@/lib/agents/store";
+import { getCurrentDeviceSessionId } from "@/lib/session";
 import { isAgentComputerConfigured } from "@/lib/computer/provider";
 import {
   heartbeatComputerViewSession,
@@ -61,7 +62,13 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   const { mode, ended } = parsed.data;
-  await heartbeatComputerViewSession(user.id, id, { mode, ended });
+  // A control heartbeat holds the takeover (the agent's computer tools stay
+  // refused); `ended` is Hand back, which releases it.
+  await heartbeatComputerViewSession(user.id, id, {
+    mode,
+    ended,
+    deviceSessionId: await getCurrentDeviceSessionId(),
+  });
 
   if (ended && mode === "control") {
     await recordAgentEvent({

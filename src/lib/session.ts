@@ -84,6 +84,22 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   };
 });
 
+/**
+ * The native device session behind this request's bearer, or null for a
+ * browser (or no) session. Used to bind something a native app asks for (a
+ * computer view link) to the install that asked, so a device revoked since
+ * cannot use it.
+ */
+export const getCurrentDeviceSessionId = cache(async (): Promise<string | null> => {
+  const authorization = (await headers()).get("authorization");
+  if (!authorization) return null;
+  try {
+    return (await authenticateNativeBearer(authorization)).deviceSession.id;
+  } catch {
+    return null;
+  }
+});
+
 /** Pages: returns the user or redirects to sign-in. */
 export async function requireUser(): Promise<SessionUser> {
   const user = await getCurrentUser();

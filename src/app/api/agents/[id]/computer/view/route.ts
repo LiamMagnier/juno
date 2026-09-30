@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/code-remote";
 import { rateLimit } from "@/lib/rate-limit";
 import { findAgent, recordAgentEvent } from "@/lib/agents/store";
+import { getCurrentDeviceSessionId } from "@/lib/session";
 import { isAgentComputerConfigured } from "@/lib/computer/provider";
 import {
   AsleepComputerError,
@@ -65,19 +66,24 @@ export async function POST(req: Request, { params }: Params) {
 
   const { mode, handoff } = parsed.data;
   const fallbackOrigin = new URL(req.url).origin;
+  const deviceSessionId = await getCurrentDeviceSessionId();
 
   try {
     const session = await openComputerViewSession(user.id, id, mode, {
       handoff,
       fallbackOrigin,
+      deviceSessionId,
     });
 
-    if (mode === "control") {
+    // A link is a promise of control, not control: the takeover starts, and
+    // is recorded, when the link is opened (POST /api/computer-view/session).
+    if (mode === "control" && session.kind === "direct") {
       await recordAgentEvent({
         userId: user.id,
         agentId: id,
         kind: "takeover_started",
         title: "Took over computer",
+        detail: { via: deviceSessionId ? "app" : "web" },
       });
     }
 

@@ -88,4 +88,10 @@ export interface ComputerProvider {
     opts: { controlPassword: string; viewPassword: string }
   ): Promise<void>;
   stopVnc(handle: ComputerHandle): Promise<void>;
+  /**
+   * Hands the CDP gate its token after every start. Through stdin into tmpfs,
+   * never through `-e`: `docker exec` inherits a container's configured env,
+   * so a token passed that way is one `env` away from the agent's shell.
+   */
+  provisionCdpToken(handle: ComputerHandle, token: string): Promise<void>;
 }

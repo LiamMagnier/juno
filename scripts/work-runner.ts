@@ -51,6 +51,7 @@ import {
 } from "@/lib/work/store";
 import { billedWorkRunMicroUsd, checkUsageWindows, recordWorkRunSpend } from "@/lib/spend";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
+import { checkMemberBudget } from "@/lib/agents/budget-store";
 import { getUserPlan } from "@/lib/usage";
 import { actionDigest, policyDigest, verifyApproval } from "@/lib/work/digests";
 import { recordWorkAudit } from "@/lib/work/audit";
@@ -66,9 +67,11 @@ import {
 import { WORK_MAX_STEPS_PER_RUN } from "@/lib/work/budget";
 import { createWorkBrowser, sealedResponseHeaders, type WorkBrowser } from "@/lib/work/browser";
 import { connectAgentBrowser } from "@/lib/computer/remote-browser";
+import { guardBrowserForTakeover } from "@/lib/computer/takeover";
 import {
   BUSY_COMPUTER_FALLBACK_NOTE,
   YOUR_COMPUTER_PROMPT_SECTION,
+  computerBlockedReason,
   resolveRunComputerSession,
   setCachedPoster,
   type RunComputerAttachment,
@@ -1919,6 +1922,9 @@ function buildTools(input: {
   const remoteComputerTools = input.remoteComputer
     ? runtime.computerTools({
         isHealthy: () => true,
+        // While the person has control, every computer tool (screenshots
+        // included) refuses before and after acting (D-011, audit C3).
+        blockedReason: () => computerBlockedReason(input.userId, input.remoteComputer!.attachment.agentId),
         pageTakesPayment: () => browser.pageTakesPayment(),
         currentUrl: () => browser.currentUrl(),
         screenEpoch: getEpoch,
@@ -3405,12 +3411,14 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   });
   if (computerAttachment.attached) {
     try {
-      const remoteBrowser = connectAgentBrowser(
-        computerAttachment.handle,
-        computerAttachment.secrets,
-        {
+      // The browser tool drives the same Chromium the person uses during a
+      // takeover, so it stops with the computer tools (src/lib/computer/takeover.ts).
+      const takeoverAgentId = computerAttachment.agentId;
+      const remoteBrowser = guardBrowserForTakeover(
+        connectAgentBrowser(computerAttachment.handle, computerAttachment.secrets, {
           provider: computerAttachment.provider,
-        }
+        }),
+        () => computerBlockedReason(input.userId, takeoverAgentId)
       );
       remoteComputer = { attachment: computerAttachment, browser: remoteBrowser };
     } catch {
@@ -4011,13 +4019,32 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         pendingMicroUsd: Math.max(0, usage.costMicroUsd - billed),
         ignoreReservationRef: run.spendReservationRef,
       });
-      if (status.allowed || status.bound === null) return;
-      log("the account's usage window is spent", {
-        runId: input.runId,
-        window: status.bound,
-        resetsAtMs: status.resetsAtMs,
-      });
-      session.stopForAccountBudget(windowLimitMessage(status.bound, status.resetsAtMs));
+      if (!status.allowed && status.bound !== null) {
+        log("the account's usage window is spent", {
+          runId: input.runId,
+          window: status.bound,
+          resetsAtMs: status.resetsAtMs,
+        });
+        session.stopForAccountBudget(windowLimitMessage(status.bound, status.resetsAtMs));
+        return;
+      }
+      // The owning crew member's own cap (src/lib/agents/budget.ts), counted
+      // over its other runs in the window plus this run's live cost, which is
+      // newer than the row. Only narrows: the account's windows came first.
+      if (run.session.agentId) {
+        const member = await checkMemberBudget({
+          userId: input.userId,
+          agentId: run.session.agentId,
+          weekly: { startMs: status.weekly.startMs, resetsAtMs: status.weekly.resetsAtMs },
+          pendingMicroUsd: usage.costMicroUsd,
+          excludeRunId: input.runId,
+          stage: "running",
+        });
+        if (!member.ok) {
+          log("the crew member's own budget is spent", { runId: input.runId, agentId: run.session.agentId });
+          session.stopForAccountBudget(member.message);
+        }
+      }
     } catch (error) {
       log("could not re-read the usage window", { runId: input.runId, error: String(error) });
     } finally {

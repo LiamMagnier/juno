@@ -271,8 +271,11 @@ export {
 } from './tools.js';
 
 export {
+  ARBITRARY_CODE_RISK,
   REMOTE_TOOL_NAMES,
   computerTools,
+  isNavigationKeypress,
+  isSafeComputerWritePath,
   type ComputerExecOutcome,
   type ComputerFileEntryItem,
   type ComputerShotData,

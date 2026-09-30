@@ -169,18 +169,26 @@ export const env = {
         ""
       ).trim();
     },
+    /**
+     * The tag `deploy/agent-computers/setup-vm.sh` builds. The default here
+     * used to be a different tag, which left the feature silently off on a
+     * server set up exactly as documented (`available()` reported the image
+     * missing).
+     */
     get image(): string {
       return (
         process.env.AGENT_COMPUTER_IMAGE ??
         process.env.COMPUTER_DOCKER_IMAGE ??
         ""
-      ).trim() || "juno-agent-computer:1";
+      ).trim() || "juno-computer:1";
     },
-    get storageRoot(): string {
-      return (process.env.AGENT_COMPUTER_STORAGE_ROOT ?? "").trim() || "/var/lib/juno-computers";
-    },
+    /** The network setup-vm.sh creates (172.30.0.0/24, no container-to-container traffic). */
     get network(): string {
-      return (process.env.AGENT_COMPUTER_NETWORK ?? "").trim() || "juno-agent-net";
+      return (
+        process.env.AGENT_COMPUTER_NETWORK ??
+        process.env.COMPUTER_DOCKER_NETWORK ??
+        ""
+      ).trim() || "juno-computers";
     },
     get memoryMb(): number {
       const n = Number(
@@ -205,12 +213,14 @@ export const env = {
       );
       return Number.isFinite(n) && n > 0 ? n : 4096;
     },
+    /** Also read under the name the operations runbook documents (`COMPUTER_MAX_RUNNING_TOTAL`). */
     get maxAwakeHost(): number {
-      const n = Number(process.env.AGENT_COMPUTER_MAX_AWAKE_HOST);
+      const n = Number(process.env.AGENT_COMPUTER_MAX_AWAKE_HOST ?? process.env.COMPUTER_MAX_RUNNING_TOTAL);
       return Number.isFinite(n) && n > 0 ? Math.floor(n) : 6;
     },
+    /** Also read under the name the operations runbook documents (`COMPUTER_MAX_RUNNING_PER_USER`). */
     get maxAwakeUser(): number {
-      const n = Number(process.env.AGENT_COMPUTER_MAX_AWAKE_USER);
+      const n = Number(process.env.AGENT_COMPUTER_MAX_AWAKE_USER ?? process.env.COMPUTER_MAX_RUNNING_PER_USER);
       return Number.isFinite(n) && n > 0 ? Math.floor(n) : 2;
     },
     get minFreeMemMb(): number {
