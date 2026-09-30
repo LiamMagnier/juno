@@ -335,3 +335,86 @@ test('a Code session compacts by default and says so', async () => {
   );
   assert.ok(events.some((event) => event.type === 'turn_finished' && event.stopReason === 'end_turn'));
 });
+
+/**
+ * A provider whose summary call is where the person presses Stop: `onSummary`
+ * runs as the summary request arrives, and the call then answers as a lab
+ * would have had it not been cancelled — so the only thing standing between
+ * the Stop and the next request is the loop's own check.
+ */
+function stoppedDuringSummary(options: { overflowOnCall?: number; onSummary: () => void }) {
+  const requests: ProviderRequest[] = [];
+  let call = 0;
+  const provider: ProviderAdapter = {
+    id: 'mock',
+    name: 'Mock',
+    defaultModel: 'm',
+    models: () => ['m'],
+    capabilities: () => ({ tools: true, vision: false, computerUse: false, reasoningLevels: [], maxContext: 10_000, streaming: true, mcp: false }),
+    async *stream(req: ProviderRequest): AsyncGenerator<ProviderStreamEvent> {
+      if (req.system === SUMMARY_SYSTEM_PROMPT) {
+        options.onSummary();
+        yield { type: 'text_delta', text: '<summary>\nFolded.\n</summary>' };
+        yield { type: 'done', stopReason: 'end_turn', usage: { inputTokens: 500, outputTokens: 50 } };
+        return;
+      }
+      call += 1;
+      requests.push(req);
+      if (options.overflowOnCall === call) {
+        throw new ProviderCallError('context_overflow', 400, null, 'Mock', 'Too long.');
+      }
+      yield { type: 'tool_call', id: `call-${call}`, name: 'bash', input: { command: `npm test -- --shard ${call}` } };
+      yield { type: 'done', stopReason: 'tool_use', usage: { inputTokens: call * 1_000, outputTokens: 50 } };
+    },
+  };
+  return { provider, requests };
+}
+
+test('a Stop pressed during the summary call sends nothing more', async () => {
+  for (const overflowOnCall of [undefined, 4]) {
+    const controller = new AbortController();
+    let sentBeforeStop = -1;
+    const script = stoppedDuringSummary({
+      ...(overflowOnCall === undefined ? {} : { overflowOnCall }),
+      onSummary: () => {
+        sentBeforeStop = script.requests.length;
+        controller.abort();
+      },
+    });
+    const messages: ChatMessage[] = [{ role: 'user', content: [{ type: 'text', text: 'Fix the failing parser tests.' }] }];
+    const result = await runAgentLoop({
+      provider: script.provider,
+      model: 'm',
+      system: 'You are Juno.',
+      messages,
+      tools: [{ name: 'bash', description: 'b', inputSchema: { type: 'object' } }],
+      signal: controller.signal,
+      maxSteps: 30,
+      // The overflow case never reaches the threshold on its own.
+      compaction: { contextWindow: overflowOnCall === undefined ? 10_000 : 1_000_000, keepRecentSteps: 1 },
+      executeToolCall: async (call) => ({ type: 'tool_result', toolCallId: call.id, content: 'ok' }),
+    });
+    const path = overflowOnCall === undefined ? 'threshold' : 'overflow';
+    assert.ok(sentBeforeStop > 0, `${path}: the summary call never ran`);
+    assert.equal(result.stopReason, 'aborted', path);
+    assert.equal(script.requests.length, sentBeforeStop, `${path}: a request went out after Stop`);
+    assert.ok(toolPairingIntact(messages), path);
+  }
+});
+
+test('a window the catalog reports as zero does not compact every step', async () => {
+  const script = scripted({
+    steps: 6,
+    usage: (call) => ({ inputTokens: call * 1_000, outputTokens: 50 }),
+    summary: 'Folded.',
+    contextWindow: 0,
+  });
+  const compactions: CompactionInfo[] = [];
+  const messages: ChatMessage[] = [{ role: 'user', content: [{ type: 'text', text: 'Fix the failing parser tests.' }] }];
+  const result = await loop(script, messages, {
+    compaction: { contextWindow: 0, keepRecentSteps: 1, onCompaction: (info) => compactions.push(info) },
+  });
+  assert.equal(result.stopReason, 'end_turn');
+  assert.deepEqual(compactions, []);
+  assert.equal(script.summaryRequests.length, 0);
+});

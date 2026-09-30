@@ -373,6 +373,17 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
   let finalText = '';
   const silenceMs = opts.silenceTimeoutMs ?? DEFAULT_STREAM_SILENCE_MS;
   const systemText = () => (typeof opts.system === 'function' ? opts.system() : opts.system);
+  /**
+   * The window the threshold is measured against, or null when there is no
+   * usable one. A catalog entry that reports a window of 0 (or none that is a
+   * number) would otherwise put every step over the line and buy a summary
+   * call before each request; the overflow path still compacts such a run
+   * when the provider says it is too long.
+   */
+  const compactionWindow =
+    opts.compaction && Number.isFinite(opts.compaction.contextWindow) && opts.compaction.contextWindow > 0
+      ? opts.compaction.contextWindow
+      : null;
 
   /**
    * What the provider last said the context held, and how long the transcript
@@ -462,12 +473,21 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       opts.onMessagesChanged?.();
     }
     if (
-      opts.compaction &&
-      contextTokens() >= opts.compaction.contextWindow * clampThreshold(opts.compaction.threshold) &&
-      (await compact('threshold')) === 'stop'
+      compactionWindow !== null &&
+      contextTokens() >= compactionWindow * clampThreshold(opts.compaction?.threshold)
     ) {
-      stopReason = 'budget';
-      break;
+      const outcome = await compact('threshold');
+      if (outcome === 'stop') {
+        stopReason = 'budget';
+        break;
+      }
+      // The summary call is the one wait between the abort check at the top of
+      // this step and the request below. A Stop pressed during it ends the run
+      // here; otherwise the request would go out anyway (see `turn` below).
+      if (opts.signal.aborted) {
+        stopReason = 'aborted';
+        break;
+      }
     }
     // After compaction, which may have folded the last state block away.
     if (injectSessionState(opts.messages, opts.sessionState?.())) opts.onMessagesChanged?.();
@@ -497,6 +517,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       const turn = new AbortController();
       const chain = () => turn.abort();
       opts.signal.addEventListener('abort', chain, { once: true });
+      // A listener added to a signal that has already fired never runs, so a
+      // Stop that landed before this attempt began has to be passed on here.
+      if (opts.signal.aborted) turn.abort();
       let silent = false;
       let deadline: ReturnType<typeof setTimeout> | undefined;
       const listen = () => {
@@ -604,6 +627,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       if (overflow !== null) {
         compactedForOverflow = true;
         const outcome = await compact('overflow');
+        // As at the top of the step: Stop during the summary call is a stop.
+        if (opts.signal.aborted) {
+          stopReason = 'aborted';
+          break;
+        }
         if (outcome === 'unchanged') throw overflow;
         if (outcome === 'stop') {
           stopReason = 'budget';
