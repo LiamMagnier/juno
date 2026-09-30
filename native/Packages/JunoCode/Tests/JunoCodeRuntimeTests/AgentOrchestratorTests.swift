@@ -631,6 +631,60 @@ final class AgentOrchestratorTests: XCTestCase {
         XCTAssertEqual(model.receivedRequests.count, 1)
     }
 
+    /// A goal completed in an earlier run is the session's history, not a
+    /// stop. Every later batch used to end before its first call — the
+    /// `update_goal` that would start the next goal included — so a session
+    /// that finished one goal could never do anything again.
+    func testAGoalCompletedInAnEarlierRunDoesNotStopTheNextRunsCalls() async throws {
+        let first = try await store.createGoal(sessionID: session.id, objective: "First", steps: ["Do it"])
+        _ = try await store.updateGoal(
+            sessionID: session.id,
+            mutation: .setStepStatus(id: first.steps[0].id, status: .completed)
+        )
+        _ = try await store.updateGoal(
+            sessionID: session.id,
+            mutation: .addVerificationEvidence(summary: "Tests passed", source: "swift test")
+        )
+        _ = try await store.updateGoal(sessionID: session.id, mutation: .setLifecycle(.completed))
+
+        let model = ScriptedModelClient(steps: [
+            .toolCalls(
+                [
+                    (
+                        "next-goal",
+                        "update_goal",
+                        ["action": "create", "objective": "Second", "steps": ["Write it"]]
+                    ),
+                    ("write-next", "write_file", ["path": "src/next.swift", "content": "// next\n"]),
+                ],
+                text: ""
+            ),
+            .text("Started the next goal."),
+        ])
+        let orchestrator = AgentOrchestrator(
+            sessionID: session.id,
+            model: model,
+            registry: ToolRegistry(tools: registry.allTools + [UpdateGoalTool(store: store)]),
+            permissions: PermissionCoordinator(sessionID: session.id, mode: .fullAccess),
+            store: store,
+            configuration: .init(systemPrompt: "sys"),
+            modelID: "test-model",
+            reasoningEffort: .medium
+        )
+
+        try await orchestrator.submit(prompt: "Now the next task")
+        await orchestrator.awaitCompletion()
+
+        let final = try await store.session(id: session.id)
+        XCTAssertEqual(final.status, .completed)
+        XCTAssertEqual(final.goal?.objective, "Second")
+        XCTAssertEqual(final.goal?.lifecycle, .active)
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent("src/next.swift").path)
+        )
+        XCTAssertEqual(model.receivedRequests.count, 2, "the run went on past the batch")
+    }
+
     /// Every call in a batch that ran gets its real result, even when a later
     /// wave paused the goal. Recording stopped at the first result read after
     /// the pause, so calls that had written files were reported to the model as

@@ -1374,6 +1374,9 @@ public actor AgentOrchestrator {
 
             let scheduledCalls = toolCalls
             var terminalGoalLifecycle: GoalLifecycle?
+            // The goal as the batch found it, so a goal completed in an
+            // earlier run is not mistaken for one completed by this batch.
+            let goalAtBatchStart = try? await store.session(id: sessionID).goal
 
             let executionResults = await toolScheduler.execute(
                 calls: scheduledCalls,
@@ -1382,8 +1385,9 @@ public actor AgentOrchestrator {
                 // and their results, which every provider rejects.
                 shouldInterrupt: { [weak self, store, sessionID] in
                     guard let self else { return true }
-                    if let lifecycle = try? await store.session(id: sessionID).goal?.lifecycle,
-                       lifecycle != .active {
+                    if let goal = try? await store.session(id: sessionID).goal,
+                       Self.goalHalts(goal, startedAs: goalAtBatchStart)
+                    {
                         return true
                     }
                     if await self.hookHaltReason != nil {
@@ -1450,10 +1454,10 @@ public actor AgentOrchestrator {
             // stopping partway through recording told the model that calls
             // which had written files or run commands were never executed, so
             // a resumed session repeated them.
-            if let lifecycle = try? await store.session(id: sessionID).goal?.lifecycle,
-               lifecycle != .active
+            if let goal = try? await store.session(id: sessionID).goal,
+               Self.goalHalts(goal, startedAs: goalAtBatchStart)
             {
-                terminalGoalLifecycle = lifecycle
+                terminalGoalLifecycle = goal.lifecycle
             }
 
             // Answer every call the batch did not reach before anything else
@@ -1508,6 +1512,27 @@ public actor AgentOrchestrator {
 
     private var hasPendingSteer: Bool {
         pendingInstructions.contains { $0.event.kind == .steer }
+    }
+
+    /// Whether the session's goal is an execution boundary for a batch that
+    /// began with `start`: paused, blocked or completed.
+    ///
+    /// Except the goal that was already complete when the batch began. That
+    /// one is the session's history, not a stop: the check used to read any
+    /// goal that was not active as one, so once a goal was complete every
+    /// later batch in the session — the `update_goal` that would start the
+    /// next goal included — stopped before its first call ran, and the run
+    /// ended as "Goal completed." A goal this batch completes, a new one
+    /// included, still ends the run.
+    static func goalHalts(_ goal: SessionGoal, startedAs start: SessionGoal?) -> Bool {
+        switch goal.lifecycle {
+        case .active:
+            return false
+        case .completed:
+            return !(start?.id == goal.id && start?.lifecycle == .completed)
+        case .paused, .blocked:
+            return true
+        }
     }
 
     /// Folds the history after the provider found it longer than the window,
