@@ -788,6 +788,7 @@ public final class SessionController {
         if !contract.supportsVision || !contract.computerUseActive {
             tools.removeAll { $0.name.hasPrefix("computer_") }
         }
+        tools = Self.visionAdjusted(tools, supportsVision: contract.supportsVision)
         if contract.behavior == .code {
             // Preview inspection is bound to the exact parent session by the
             // ToolContext supplied during invocation. It is deliberately not
@@ -812,10 +813,13 @@ public final class SessionController {
                 // Sub-agents are inspectable and read-only, and have no
                 // reader gesture with which to activate screen capture.
                 registry: ToolRegistry(
-                    tools: context.registry
-                        .inspectionOnly()
-                        .allTools
-                        .filter { !$0.name.hasPrefix("computer_") }
+                    tools: Self.visionAdjusted(
+                        context.registry
+                            .inspectionOnly()
+                            .allTools
+                            .filter { !$0.name.hasPrefix("computer_") },
+                        supportsVision: contract.supportsVision
+                    )
                 ),
                 store: live.store,
                 workspaceID: workspaceID,
@@ -823,7 +827,7 @@ public final class SessionController {
                 modelID: contract.modelID,
                 reasoningEffort: contract.reasoningEffort,
                 parentSystemPrompt: systemPrompt,
-                executionFactory: { [permissions = live.permissions] request in
+                executionFactory: { [permissions = live.permissions, supportsVision = contract.supportsVision] request in
                     // A child never outranks the session that spawned it.
                     let childMode = PermissionMode.workspaceWrite.capped(
                         at: await permissions.permissionMode
@@ -834,10 +838,16 @@ public final class SessionController {
                             branch: request.branch
                         )
                         let isolated = try context.isolatedContext(at: worktree.rootURL)
+                        // No screen control and no background shells: a
+                        // bounded child has no reader to start either for,
+                        // and nothing would stop its servers once it ends.
                         let childRegistry = ToolRegistry(
-                            tools: isolated.registry.allTools.filter {
-                                !$0.name.hasPrefix("computer_")
-                            }
+                            tools: Self.visionAdjusted(
+                                isolated.registry.allTools.filter {
+                                    !$0.name.hasPrefix("computer_") && !$0.name.hasPrefix("shell_")
+                                },
+                                supportsVision: supportsVision
+                            )
                         )
                         return SubagentExecutionEnvironment(
                             registry: childRegistry,
@@ -881,10 +891,13 @@ public final class SessionController {
                 DelegateTaskTool(
                     model: live.modelClient,
                     registry: ToolRegistry(
-                        tools: context.registry
-                            .inspectionOnly()
-                            .allTools
-                            .filter { !$0.name.hasPrefix("computer_") }
+                        tools: Self.visionAdjusted(
+                            context.registry
+                                .inspectionOnly()
+                                .allTools
+                                .filter { !$0.name.hasPrefix("computer_") },
+                            supportsVision: contract.supportsVision
+                        )
                     ),
                     store: live.store,
                     workspaceID: workspaceID,
@@ -920,6 +933,12 @@ public final class SessionController {
             // it is still a turn a later rewind has to count past.
             turnCheckpoints: context.turnCheckpoints
         )
+    }
+
+    /// A model that cannot see is told what an image is, not sent one.
+    nonisolated static func visionAdjusted(_ tools: [any CodeTool], supportsVision: Bool) -> [any CodeTool] {
+        guard !supportsVision else { return tools }
+        return tools.map { ($0 as? ReadFileTool)?.allowingImages(false) ?? $0 }
     }
 
     /// The hook adapter for a Code run, or nil when no hook would run.

@@ -50,25 +50,38 @@ func parsedFingerprint(from input: JSONValue, field: String = "base_sha256") thr
 
 public struct ReadFileTool: CodeTool {
     private let files: any FileOperating
+    /// Whether an image comes back as an image the model can see. Off for a
+    /// model without vision, which is told what the file is instead.
+    let allowsImages: Bool
 
-    public init(files: any FileOperating) {
+    public init(files: any FileOperating, allowsImages: Bool = true) {
         self.files = files
+        self.allowsImages = allowsImages
+    }
+
+    /// The same tool for a model that can, or cannot, look at images.
+    public func allowingImages(_ allowed: Bool) -> ReadFileTool {
+        ReadFileTool(files: files, allowsImages: allowed)
     }
 
     public let name = "read_file"
     public let description = """
-        Read a UTF-8 text file inside the workspace.
+        Read a file inside the workspace: text, an image, or a PDF.
 
-        The first line of the result is a JSON header describing the read; the \
-        file's content follows it. When the whole file was returned the header \
-        carries "base_sha256" — pass that value straight back to write_file or \
-        apply_patch so the edit fails safely if the file changed meanwhile.
+        Text: the first line of the result is a JSON header describing the \
+        read; the file's content follows it, each line prefixed with its line \
+        number and a tab (as `cat -n` prints it). The prefix is not part of the \
+        file: never copy it into an edit. Pass "line_numbers": false for the \
+        bare content. When the whole file was returned the header carries \
+        "base_sha256" — pass that value straight back to write_file, \
+        multi_edit or apply_patch so the edit fails safely if the file changed \
+        meanwhile.
 
         When the file was too large to return whole the header says \
         "truncated": true and carries NO "base_sha256", because a digest of \
         bytes you were not shown is not a base you can safely overwrite from. \
-        Edit a truncated file with apply_patch, which matches an exact block \
-        rather than replacing the file.
+        Edit a truncated file with apply_patch or multi_edit, which match exact \
+        text rather than replacing the file.
 
         Long files return their first \(ReadFileTool.defaultLineLimit) lines, \
         or as many whole lines as fit in \(ReadFileTool.maximumContentBytes / 1_024) KB. \
@@ -76,6 +89,11 @@ public struct ReadFileTool: CodeTool {
         another window; the header's "first_line", "last_line" and \
         "total_lines" say where you are. A windowed read is partial, so it \
         carries no "base_sha256" either.
+
+        Images (PNG, JPEG, GIF, WebP) come back as an image you can see, \
+        scaled down when large. PDFs come back as their text, page by page; \
+        pass "pages" ("3" or "2-5", at most \(ReadFileTool.maximumPDFPages) per \
+        read) for a long one. Other binary files are described, not dumped.
         """
 
     /// Lines returned when the caller does not ask for a window. Enough for
@@ -91,8 +109,11 @@ public struct ReadFileTool: CodeTool {
     /// and a read cut there would still carry the whole file's `base_sha256`
     /// and a `last_line` it never showed: a full overwrite from it would
     /// silently delete the missing middle, and paging from `last_line + 1`
-    /// would skip it for good.
+    /// would skip it for good. Line-number prefixes count against it.
     static let maximumContentBytes = 100 * 1_024
+
+    /// Pages one PDF read returns at most.
+    static let maximumPDFPages = 20
 
     public var inputSchema: JSONValue {
         [
@@ -101,6 +122,8 @@ public struct ReadFileTool: CodeTool {
                 "path": ["type": "string", "description": "Workspace-relative file path"],
                 "offset": ["type": "integer", "description": "1-based line to start from"],
                 "limit": ["type": "integer", "description": "Number of lines to return"],
+                "line_numbers": ["type": "boolean", "description": "Prefix lines with their numbers (default true)"],
+                "pages": ["type": "string", "description": "PDF page range, e.g. \"3\" or \"2-5\""],
             ],
             "required": ["path"],
         ]
@@ -114,15 +137,114 @@ public struct ReadFileTool: CodeTool {
 
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
         let path = try workspacePath(from: input)
-        let result = try await files.read(path, limit: .fileRead)
+        // The first bytes say what the file is, before the text path would
+        // refuse a large PDF for its size or an image for not being UTF-8.
+        let head = try await files.readData(path, maximumBytes: FileSniffer.sniffBytes)
+        switch FileSniffer.kind(of: head.data) {
+        case let .image(mediaType):
+            return try await readImage(path, mediaType: mediaType, totalBytes: head.totalByteCount)
+        case .pdf:
+            return try await readPDF(path, pages: input["pages"]?.stringValue, totalBytes: head.totalByteCount)
+        case .binary:
+            return ToolResult(content: FileSniffer.binaryDescription(path: path.value, head: head))
+        case .text:
+            break
+        }
+        let result: FileReadResult
+        do {
+            result = try await files.read(path, limit: .fileRead)
+        } catch FileOperationError.notUTF8Text {
+            // Past the sniffed prefix, or text in another encoding.
+            return ToolResult(content: FileSniffer.binaryDescription(path: path.value, head: head))
+        }
         let offset = input["offset"]?.intValue
         let limit = input["limit"]?.intValue
-        return ToolResult(content: ReadFileTool.render(result, offset: offset, limit: limit))
+        let numbered = input["line_numbers"]?.boolValue ?? true
+        return ToolResult(content: ReadFileTool.render(result, offset: offset, limit: limit, lineNumbers: numbered))
+    }
+
+    private func readImage(_ path: WorkspacePath, mediaType: String, totalBytes: Int) async throws -> ToolResult {
+        guard totalBytes <= ImageAttachment.maximumSourceBytes else {
+            return ToolResult(
+                content: "{\"path\":\(Self.quoted(path.value)),\"type\":\"image\",\"media_type\":\"\(mediaType)\",\"bytes\":\(totalBytes),\"note\":\"too large to load (over \(ImageAttachment.maximumSourceBytes / 1_048_576) MB)\"}",
+                isError: true
+            )
+        }
+        let data = try await files.readData(path, maximumBytes: totalBytes).data
+        let prepared = ImageAttachment.prepare(data, mediaType: mediaType)
+        var header: [String] = [
+            "\"path\":\(Self.quoted(path.value))",
+            "\"type\":\"image\"",
+            "\"media_type\":\"\(prepared?.mediaType ?? mediaType)\"",
+            "\"bytes\":\(totalBytes)",
+        ]
+        if let size = prepared?.originalSize {
+            header.append("\"width\":\(size.width)")
+            header.append("\"height\":\(size.height)")
+        }
+        if let resized = prepared?.resizedSize {
+            header.append("\"shown_at\":\"\(resized.width)x\(resized.height)\"")
+        }
+        guard allowsImages else {
+            header.append("\"note\":\"this model cannot view images; only the file's details are shown\"")
+            return ToolResult(content: "{\(header.joined(separator: ","))}")
+        }
+        guard let prepared else {
+            header.append("\"note\":\"the image could not be decoded\"")
+            return ToolResult(content: "{\(header.joined(separator: ","))}", isError: true)
+        }
+        return ToolResult(
+            content: "{\(header.joined(separator: ","))}",
+            images: [ModelImage(mediaType: prepared.mediaType, data: prepared.data)]
+        )
+    }
+
+    private func readPDF(_ path: WorkspacePath, pages: String?, totalBytes: Int) async throws -> ToolResult {
+        guard totalBytes <= PDFText.maximumSourceBytes else {
+            return ToolResult(
+                content: "{\"path\":\(Self.quoted(path.value)),\"type\":\"pdf\",\"bytes\":\(totalBytes),\"note\":\"too large to load (over \(PDFText.maximumSourceBytes / 1_048_576) MB)\"}",
+                isError: true
+            )
+        }
+        let data = try await files.readData(path, maximumBytes: totalBytes).data
+        do {
+            let extract = try PDFText.extract(
+                from: data,
+                pages: pages,
+                maximumPages: Self.maximumPDFPages,
+                maximumBytes: Self.maximumContentBytes
+            )
+            var header: [String] = [
+                "\"path\":\(Self.quoted(path.value))",
+                "\"type\":\"pdf\"",
+                "\"total_pages\":\(extract.totalPages)",
+                "\"first_page\":\(extract.firstPage)",
+                "\"last_page\":\(extract.lastPage)",
+            ]
+            if let note = extract.note {
+                header.append("\"note\":\(Self.quoted(note))")
+            }
+            return ToolResult(content: "{\(header.joined(separator: ","))}\n" + extract.text)
+        } catch let error as PDFText.Failure {
+            return ToolResult(
+                content: "{\"path\":\(Self.quoted(path.value)),\"type\":\"pdf\",\"note\":\(Self.quoted(error.message))}",
+                isError: true
+            )
+        }
     }
 
     /// The read, narrowed to a window of lines when one was asked for, or when
     /// the file is longer than the default line count or the byte budget.
-    static func render(_ result: FileReadResult, offset: Int?, limit: Int?) -> String {
+    ///
+    /// - Parameter lineNumbers: prefix each line with its number and a tab.
+    ///   The prefixes count against the byte budget, so a numbered window
+    ///   stops sooner than a bare one and still never needs cutting.
+    static func render(
+        _ result: FileReadResult,
+        offset: Int?,
+        limit: Int?,
+        lineNumbers: Bool = false
+    ) -> String {
         // Split the way `lineCount` was counted. `String.split(separator:)`
         // compares Characters, and "\r\n" is one grapheme that is not "\n",
         // so a CRLF file read as a single line: never paged, and past its
@@ -130,12 +252,13 @@ public struct ReadFileTool: CodeTool {
         // each "\r", and does not count a trailing newline as a line.
         let lines = DiffEngine.splitLines(result.content)
         let total = lines.count
-        let fitsWhole = result.content.utf8.count <= maximumContentBytes
+        let numberingCost = lineNumbers ? total * (numberWidth + 1) : 0
+        let fitsWhole = result.content.utf8.count + numberingCost <= maximumContentBytes
         if offset == nil, limit == nil, total <= defaultLineLimit, fitsWhole {
-            return renderWhole(result)
+            return renderWhole(result, lineNumbers: lineNumbers)
         }
         // An empty file has no window to take; it is its own whole read.
-        guard total > 0 else { return renderWhole(result) }
+        guard total > 0 else { return renderWhole(result, lineNumbers: lineNumbers) }
         let start = max(1, offset ?? 1)
         let count = max(1, limit ?? defaultLineLimit)
         guard start <= total else {
@@ -148,7 +271,8 @@ public struct ReadFileTool: CodeTool {
         var used = 0
         var end = start - 1
         for number in start...requestedEnd {
-            let cost = lines[number - 1].utf8.count + (number > start ? 1 : 0)
+            let prefixCost = lineNumbers ? numberPrefix(number).utf8.count : 0
+            let cost = lines[number - 1].utf8.count + prefixCost + (number > start ? 1 : 0)
             if used + cost > maximumContentBytes { break }
             used += cost
             end = number
@@ -156,7 +280,7 @@ public struct ReadFileTool: CodeTool {
         if start == 1, end == total, !result.wasTruncated {
             // The window is the whole file. Return it as one, trailing newline
             // included, so the content shown is exactly what base_sha256 covers.
-            return renderWhole(result)
+            return renderWhole(result, lineNumbers: lineNumbers)
         }
 
         let window: String
@@ -165,12 +289,16 @@ public struct ReadFileTool: CodeTool {
             // One line longer than the whole budget — minified code, a data
             // blob. Its head is shown rather than nothing, or paging could
             // never get past it.
-            window = prefix(of: lines[start - 1], fittingBytes: maximumContentBytes)
+            let shown = prefix(
+                of: lines[start - 1],
+                fittingBytes: maximumContentBytes - (lineNumbers ? numberPrefix(start).utf8.count : 0)
+            )
+            window = (lineNumbers ? numberPrefix(start) : "") + shown
             end = start
-            note = "line \(start) is longer than \(maximumContentBytes / 1_024) KB; only its first \(window.utf8.count) bytes are shown"
+            note = "line \(start) is longer than \(maximumContentBytes / 1_024) KB; only its first \(shown.utf8.count) bytes are shown"
                 + (end < total ? "; pass offset \(end + 1) to continue" : "")
         } else {
-            window = lines[(start - 1)..<end].joined(separator: "\n")
+            window = numbered(lines[(start - 1)..<end], from: start, enabled: lineNumbers)
             if end < total {
                 note = "partial read; pass offset \(end + 1) to continue"
             } else if result.wasTruncated {
@@ -187,6 +315,9 @@ public struct ReadFileTool: CodeTool {
             "\"total_lines\":\(total)",
             "\"truncated\":true",
         ]
+        if lineNumbers {
+            header.append("\"line_numbers\":true")
+        }
         if let note {
             header.append("\"note\":\(quoted(note))")
         }
@@ -197,6 +328,22 @@ public struct ReadFileTool: CodeTool {
     /// the budget is returned as its first window instead.
     static func render(_ result: FileReadResult) -> String {
         render(result, offset: nil, limit: nil)
+    }
+
+    /// Digits a line number is padded to, as `cat -n` pads them.
+    private static let numberWidth = 6
+
+    private static func numberPrefix(_ number: Int) -> String {
+        let digits = String(number)
+        let padding = max(0, numberWidth - digits.count)
+        return String(repeating: " ", count: padding) + digits + "\t"
+    }
+
+    private static func numbered<Lines: Collection<String>>(_ lines: Lines, from first: Int, enabled: Bool) -> String {
+        guard enabled else { return lines.joined(separator: "\n") }
+        return lines.enumerated()
+            .map { numberPrefix(first + $0.offset) + $0.element }
+            .joined(separator: "\n")
     }
 
     /// Makes a read that something other than this tool must cut safe to
@@ -273,13 +420,16 @@ public struct ReadFileTool: CodeTool {
     /// benefit. The header is a single line and the content starts after the
     /// first newline, so the split is unambiguous even when the file itself
     /// begins with `{`.
-    private static func renderWhole(_ result: FileReadResult) -> String {
+    private static func renderWhole(_ result: FileReadResult, lineNumbers: Bool = false) -> String {
         var header: [String] = [
             "\"path\":\(quoted(result.path.value))",
             "\"bytes\":\(result.byteCount)",
             "\"lines\":\(result.lineCount)",
             "\"truncated\":\(result.wasTruncated)",
         ]
+        if lineNumbers {
+            header.append("\"line_numbers\":true")
+        }
         // Withheld on a truncated read — this is the whole truncation guard.
         // The digest covers the complete file, so handing it over would let a
         // model that saw the first megabyte of a file pass a *matching* base
@@ -293,10 +443,19 @@ public struct ReadFileTool: CodeTool {
                 "\"note\":\"content truncated; no base_sha256 is issued for a partial read — use apply_patch, or read a smaller file\""
             )
         }
-        return "{\(header.joined(separator: ","))}\n" + result.content
+        guard lineNumbers else {
+            return "{\(header.joined(separator: ","))}\n" + result.content
+        }
+        // Numbered line by line; a final newline stays final, so the lines
+        // shown map one to one onto the bytes base_sha256 covers.
+        let lines = DiffEngine.splitLines(result.content)
+        let endsWithNewline = result.content.utf8.last == UInt8(ascii: "\n")
+        return "{\(header.joined(separator: ","))}\n"
+            + numbered(lines, from: 1, enabled: true)
+            + (endsWithNewline ? "\n" : "")
     }
 
-    private static func quoted(_ value: String) -> String {
+    static func quoted(_ value: String) -> String {
         // Small, dependency-free JSON string escaping: the header only ever
         // carries a workspace-relative path and a hex digest, but a path may
         // legitimately contain a quote or a backslash.
