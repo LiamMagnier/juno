@@ -225,7 +225,7 @@ test("the pupils follow the level only while listening, and only where motion is
   assert.match(header, /matchMedia\?\.\("\(prefers-reduced-motion: reduce\)"\)\.matches\) return;/);
   assert.match(header, /cancelAnimationFrame\(raf\);\s+face\.style\.removeProperty\("--level"\);/);
   const chat = src("src/components/chat/chat-view.tsx");
-  assert.match(chat, /threadAgentState\(agent, chat\.isBusy, work\.session, voiceOpen \? voicePhaseOf\(realtimeVoice\) : null\)/);
+  assert.match(chat, /threadAgentState\(agent, chat\.isBusy, taskSessions, voiceOpen \? voicePhaseOf\(realtimeVoice\) : null\)/);
   assert.match(chat, /levelRef=\{voiceOpen \? realtimeVoice\.levelRef : undefined\}/);
 
   const css = src("src/components/agents/agent-face.css");

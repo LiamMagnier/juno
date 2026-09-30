@@ -35,11 +35,12 @@ import type { NativeChatTool } from "@/lib/llm";
 import { ACTION_PREVIEW_STRING_CHARS, type ClientActionApproval } from "@/lib/action-approval";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ReasoningEffort } from "@/types/chat";
+import { DEFAULT_WORK_PERMISSION_POLICY, type WorkPermissionPolicy } from "@/lib/work/domain";
 import {
-  DEFAULT_WORK_PERMISSION_POLICY,
-  WORK_LIVE_STATUSES,
-  type WorkPermissionPolicy,
-} from "@/lib/work/domain";
+  CONVERSATION_LIVE_STATUSES,
+  MAX_LIVE_TASKS_PER_CONVERSATION,
+  conversationAtCapMessage,
+} from "@/lib/work/conversation-tasks";
 
 /** The tool's name on the wire, and the name the approval receipt records. */
 export const START_TASK_TOOL_ID = "start_task";
@@ -324,16 +325,19 @@ export function taskRefusal(reason: TaskRefusalReason): Extract<TaskOutcome, { s
 }
 
 /**
- * The refusal the model is given for a live task already on this conversation.
+ * The refusal the model is given when this conversation already carries as
+ * many live tasks as it may (`MAX_LIVE_TASKS_PER_CONVERSATION`).
  *
- * Separate from the table above because it names the task: "a task is already
- * running" with no name is a sentence the user has to go and look up.
+ * Separate from the table above because it names the tasks: "too many tasks
+ * are running" with no names is a sentence the user has to go and look up.
+ * Several tasks per conversation are allowed now; the chat draws a card for
+ * each (src/lib/work/conversation-tasks.ts).
  */
-export function taskAlreadyRunning(title: string): Extract<TaskOutcome, { status: "not_started" }> {
+export function taskConversationAtCap(liveTitles: readonly string[]): Extract<TaskOutcome, { status: "not_started" }> {
   return {
     status: "not_started",
-    reason: "task_already_running",
-    message: `A task from this conversation is already running: "${title}". Let it finish or stop it before starting another. Nothing new was started.`,
+    reason: "conversation_at_task_cap",
+    message: conversationAtCapMessage(liveTitles),
   };
 }
 
@@ -477,7 +481,7 @@ export function taskTitleFromArgs(rawArgs: string | undefined): string | null {
  * draft costs nothing, holds no executor and is never drawn in the chat, so it
  * is not a task "already running".
  */
-export const LIVE_TASK_STATUSES: readonly string[] = WORK_LIVE_STATUSES.filter((status) => status !== "draft");
+export const LIVE_TASK_STATUSES: readonly string[] = CONVERSATION_LIVE_STATUSES;
 
 export interface StartTaskToolContext {
   user: { id: string; email?: string | null };
@@ -592,12 +596,13 @@ async function startTask(
   const ownSessionId = dispatch.sessionIdForKey(user, keys.session);
 
   /*
-   * One live task per conversation. The chat follows a single task at a time
-   * (use-conversation-work.ts), so a second one would hide the first, and a
-   * user who asks for more while a task runs almost always means the running
-   * one. This message's own task is excluded so a retry recognises it.
+   * Several live tasks per conversation, up to a cap. The chat draws a card
+   * for each (use-conversation-work.ts), so a second task no longer hides the
+   * first, and a routine firing in a crew member's thread no longer blocks the
+   * person's own request. At the cap the refusal names what is running. This
+   * message's own task is excluded so a retry recognises it.
    */
-  const live = await prisma.workSession.findFirst({
+  const live = await prisma.workSession.findMany({
     where: {
       userId: user.id,
       conversationId: ctx.conversation.id,
@@ -605,10 +610,13 @@ async function startTask(
       status: { in: [...LIVE_TASK_STATUSES] },
       id: { not: ownSessionId },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: { createdAt: "asc" },
     select: { title: true },
+    take: MAX_LIVE_TASKS_PER_CONVERSATION,
   });
-  if (live) return taskAlreadyRunning(live.title);
+  if (live.length >= MAX_LIVE_TASKS_PER_CONVERSATION) {
+    return taskConversationAtCap(live.map((row) => row.title));
+  }
 
   // This message already tried and was refused or declined, and its draft was
   // put away then. Asked before the create, which would otherwise replay onto

@@ -30,9 +30,10 @@ import {
   MAX_AGENT_GOALS,
   MAX_AGENT_NOTES,
   agentApprovalMode,
+  AGENT_BLOCKED_WINDOW_MS,
   agentStateSentence,
   agentTaskKeys,
-  deriveAgentState,
+  aggregateAgentState,
   routineTrigger,
   type AgentEventKind,
   type AgentNoteSource,
@@ -55,6 +56,7 @@ import {
   type ClientAgentTask,
 } from "@/lib/agents/types";
 import { AGENT_PROMPT_TEAMMATES, buildAgentPromptBlock } from "@/lib/agents/prompt";
+import { CONVERSATION_LIVE_STATUSES as LIVE_TASK_STATUSES } from "@/lib/work/conversation-tasks";
 
 export interface AgentActor {
   id: string;
@@ -108,14 +110,32 @@ function toTask(row: {
 }
 
 /**
- * What every screen that draws an agent needs beside its row: its newest task,
- * how many of its tasks wait on the person, its next routine and its new ideas.
+ * The most tasks one roster read considers for state. A member's tasks that
+ * matter to its face are the live ones, the ones waiting on the person and the
+ * ones that ended inside the done/blocked windows; far fewer than this.
+ */
+const STATE_TASKS_LIMIT = 400;
+
+interface StateTaskRow {
+  id: string;
+  title: string;
+  status: string;
+  needsAttention: boolean;
+  lastActivityAt: Date;
+  conversationId: string | null;
+  agentId: string | null;
+}
+
+/**
+ * What every screen that draws an agent needs beside its row: the state of its
+ * tasks, how many wait on the person, its next routine and its new ideas.
  *
- * Four reads for the whole roster, not four per agent, except the newest task,
- * which is one indexed `findFirst` per agent on (userId, agentId,
- * lastActivityAt). Prisma's `distinct` would read every task each agent ever
- * had and discard all but one in memory, and an agent with an hourly routine
- * has a great many.
+ * State is an aggregate over EVERY task the member owns
+ * (`aggregateAgentState`): one read for the whole roster brings every task that
+ * can still move a face (live, waiting on the person, or ended inside the
+ * blocked window), and each member's face is the strongest of them. The newest
+ * task is still read per member for the idle case, where the roster shows what
+ * it last did; that read only runs for members with nothing current.
  */
 async function deriveForAgents(userId: string, agents: readonly Agent[], now: Date): Promise<Map<string, AgentDerived>> {
   const ids = agents.map((agent) => agent.id);
@@ -123,21 +143,28 @@ async function deriveForAgents(userId: string, agents: readonly Agent[], now: Da
   if (ids.length === 0) return result;
 
   const { isAgentComputerConfigured } = await import("@/lib/computer/provider");
+  const recentSince = new Date(now.getTime() - AGENT_BLOCKED_WINDOW_MS);
   // Every glance is optional: a missing related table or a computer feature
   // that is off must not turn a roster that exists into an error or an empty
   // list. The agents themselves are read above and are the only hard fact.
-  const [newest, attention, schedules, ideas, computerConfigured, computers] = await Promise.all([
-    Promise.all(
-      ids.map((agentId) =>
-        prisma.workSession
-          .findFirst({
-            where: { userId, agentId, deletedAt: null },
-            orderBy: { lastActivityAt: "desc" },
-            select: TASK_SELECT,
-          })
-          .catch(() => null)
-      )
-    ),
+  const [current, attention, schedules, ideas, computerConfigured, computers] = await Promise.all([
+    prisma.workSession
+      .findMany({
+        where: {
+          userId,
+          agentId: { in: ids },
+          deletedAt: null,
+          OR: [
+            { status: { in: [...LIVE_TASK_STATUSES] } },
+            { needsAttention: true },
+            { lastActivityAt: { gte: recentSince } },
+          ],
+        },
+        orderBy: { lastActivityAt: "desc" },
+        select: { ...TASK_SELECT, agentId: true },
+        take: STATE_TASKS_LIMIT,
+      })
+      .catch(() => [] as StateTaskRow[]),
     prisma.workSession
       .groupBy({
         by: ["agentId"],
@@ -184,24 +211,52 @@ async function deriveForAgents(userId: string, agents: readonly Agent[], now: Da
     nextBy.set(agentId, { scheduleId: schedule.id, name: schedule.name, nextRunAt: schedule.nextRunAt });
   }
 
-  agents.forEach((agent, index) => {
-    const row = newest[index];
-    const glance: AgentTaskGlance | null = row
-      ? {
-          sessionId: row.id,
-          title: row.title,
-          status: row.status,
-          needsAttention: row.needsAttention,
-          lastActivityAt: row.lastActivityAt,
-        }
-      : null;
-    const state = deriveAgentState({ status: agent.status, task: glance, now });
+  const tasksBy = new Map<string, typeof current>();
+  for (const row of current) {
+    if (!row.agentId) continue;
+    const list = tasksBy.get(row.agentId) ?? [];
+    list.push(row);
+    tasksBy.set(row.agentId, list);
+  }
+  // The newest task, for members with nothing current: what the roster shows
+  // a member last did. Only asked for the members the read above found empty.
+  const quiet = ids.filter((agentId) => !tasksBy.has(agentId));
+  const newestQuiet = await Promise.all(
+    quiet.map((agentId) =>
+      prisma.workSession
+        .findFirst({
+          where: { userId, agentId, deletedAt: null },
+          orderBy: { lastActivityAt: "desc" },
+          select: TASK_SELECT,
+        })
+        .catch(() => null)
+    )
+  );
+  const newestBy = new Map<string, NonNullable<(typeof newestQuiet)[number]>>();
+  quiet.forEach((agentId, index) => {
+    const row = newestQuiet[index];
+    if (row) newestBy.set(agentId, row);
+  });
+
+  agents.forEach((agent) => {
+    const rows = tasksBy.get(agent.id) ?? [];
+    const glances: AgentTaskGlance[] = rows.map((row) => ({
+      sessionId: row.id,
+      title: row.title,
+      status: row.status,
+      needsAttention: row.needsAttention,
+      lastActivityAt: row.lastActivityAt,
+    }));
+    const { state, task: focus } = aggregateAgentState({ status: agent.status, tasks: glances, now });
+    const focusRow = focus ? rows.find((row) => row.id === focus.sessionId) ?? null : null;
+    // The task the roster names: the one the face is about, else the newest.
+    const shown = focusRow ?? rows[0] ?? newestBy.get(agent.id) ?? null;
     const next = nextBy.get(agent.id) ?? null;
     const compStatus = computerBy.get(agent.id);
     result.set(agent.id, {
       state,
-      stateSentence: agentStateSentence({ state, task: glance, nextRoutine: next, now }),
-      task: row ? toTask(row) : null,
+      stateSentence: agentStateSentence({ state, task: focus, nextRoutine: next, now }),
+      task: shown ? toTask(shown) : null,
       needsYou: attentionBy.get(agent.id) ?? 0,
       nextRoutine: next
         ? { scheduleId: next.scheduleId, name: next.name, nextRunAt: next.nextRunAt.toISOString() }
@@ -749,6 +804,10 @@ export async function updateAgentForUser(
     before.notify = rawAgent.notify ?? "results";
     after.notify = patch.notify;
   }
+  if (patch.budgetMicroUsd !== undefined && patch.budgetMicroUsd !== agent.budgetMicroUsd) {
+    before.budgetMicroUsd = agent.budgetMicroUsd;
+    after.budgetMicroUsd = patch.budgetMicroUsd;
+  }
   if (patch.pinned !== undefined && Boolean(rawAgent.pinnedAt) !== patch.pinned) {
     before.pinnedAt = rawAgent.pinnedAt ? rawAgent.pinnedAt.toISOString() : null;
     after.pinnedAt = patch.pinned ? new Date().toISOString() : null;
@@ -779,6 +838,7 @@ export async function updateAgentForUser(
       ...(patch.notify !== undefined ? { notify: patch.notify } : {}),
       ...(nextPinnedAt !== undefined ? { pinnedAt: nextPinnedAt } : {}),
       ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}),
+      ...(patch.budgetMicroUsd !== undefined ? { budgetMicroUsd: patch.budgetMicroUsd } : {}),
     },
   });
 
@@ -939,6 +999,7 @@ export async function undoAgentEventForUser(
       "status",
       "proactive",
       "notify",
+      "budgetMicroUsd",
     ] as const) {
       if (key in before) {
         agentUpdate[key] = before[key];
@@ -1099,7 +1160,24 @@ export type StartAgentTaskOutcome =
 export async function startAgentTask(
   user: AgentActor,
   agent: Agent,
-  input: { title: string; goal: string; idempotencyKey: string; confirmExpensive?: boolean; askFirst?: boolean }
+  input: {
+    title: string;
+    goal: string;
+    idempotencyKey: string;
+    confirmExpensive?: boolean;
+    askFirst?: boolean;
+    /**
+     * Where the task came from when another crew member handed it over: the
+     * delegation link (`WorkSession.parentSessionId` and friends). Stamped with
+     * the owner, in the same conditional write, so no reader sees a handed-off
+     * task without its origin.
+     */
+    delegation?: {
+      parentSessionId: string | null;
+      delegatedByAgentId: string;
+      originConversationId: string;
+    } | null;
+  }
 ): Promise<StartAgentTaskOutcome> {
   if (agent.status !== "active") {
     return {
@@ -1133,7 +1211,18 @@ export async function startAgentTask(
   const session = created.session;
   await prisma.workSession.updateMany({
     where: { id: session.id, userId: user.id, agentId: null },
-    data: { agentId: agent.id, title: input.title, titleSource: "manual" },
+    data: {
+      agentId: agent.id,
+      title: input.title,
+      titleSource: "manual",
+      ...(input.delegation
+        ? {
+            parentSessionId: input.delegation.parentSessionId,
+            delegatedByAgentId: input.delegation.delegatedByAgentId,
+            originConversationId: input.delegation.originConversationId,
+          }
+        : {}),
+    },
   });
 
   const runBody = protocol.startRunSchema.parse({

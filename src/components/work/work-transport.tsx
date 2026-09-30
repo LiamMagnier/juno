@@ -464,6 +464,31 @@ export function fetchWorkSessions(
   );
 }
 
+/**
+ * Every task a conversation draws: its live ones and the newest finished one,
+ * oldest first (`GET /api/conversations/{id}/tasks`). What the chat follows
+ * now that a conversation can carry several tasks.
+ */
+export function fetchConversationTasks(conversationId: string): Promise<WorkResult<ClientWorkSession[]>> {
+  return get(`/api/conversations/${encodeURIComponent(conversationId)}/tasks`, (data) =>
+    list<Record<string, unknown>>(data.sessions).map((entry) => entry as unknown as ClientWorkSession)
+  );
+}
+
+/**
+ * Hands a task to another crew member, or back to the person (`toAgentId:
+ * null`). The reason is required; see `POST /api/work/sessions/{id}/transfer`.
+ */
+export function transferWorkSession(
+  sessionId: string,
+  toAgentId: string | null,
+  reason: string
+): Promise<WorkResult<{ summary: string }>> {
+  return send("POST", `/api/work/sessions/${encodeURIComponent(sessionId)}/transfer`, { toAgentId, reason }, (data) => ({
+    summary: typeof data.summary === "string" ? data.summary : "",
+  }));
+}
+
 /** The four counts the server keeps for the whole account. See the counts route. */
 export interface WorkTriageCounts {
   needs_you: number;

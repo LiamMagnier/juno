@@ -6,8 +6,11 @@
  * suggested it, gives a job to a named teammate. The job becomes a task of the
  * teammate's, in the teammate's thread, under the teammate's autonomy and
  * apps, exactly as if the person had pressed Start on the teammate's page
- * (`startAgentTask`). There are no rooms, no claims and no conversation
- * between agents: the work leaves this thread and reports back in the other.
+ * (`startAgentTask`). There are no rooms and no conversation between agents:
+ * the work leaves this thread and reports back in the other. What is recorded
+ * is the link (`WorkSession.parentSessionId`, `delegatedByAgentId`,
+ * `originConversationId`), so the delegation can be read, audited and budgeted
+ * rather than living only in the goal's opening sentence.
  *
  * Two halves in one file, like task-tool.ts and for the same reason. The top is
  * pure (the declaration, the arguments, who the teammate is, the goal it is
@@ -56,6 +59,7 @@ import {
   type StartTaskArgs,
 } from "@/lib/chat/task-tool";
 import { agentTaskKeys } from "@/lib/agents/domain";
+import { MAX_LIVE_TASKS_PER_CONVERSATION, memberAtCapMessage } from "@/lib/work/conversation-tasks";
 
 /** The tool's name on the wire, and the name the approval receipt records. */
 export const HAND_OFF_TOOL_ID = "hand_off_to_teammate";
@@ -264,12 +268,16 @@ export function handoffRefusal(reason: HandoffRefusalReason): Extract<HandoffOut
   return { status: "not_handed_off", reason, message: HANDOFF_REFUSALS[reason] };
 }
 
-/** The refusal for a teammate whose thread already has a task going. It follows one task at a time, as every thread does. */
-export function teammateBusy(name: string, title: string): Extract<HandoffOutcome, { status: "not_handed_off" }> {
+/**
+ * The refusal for a teammate whose thread is already at the live-task cap
+ * (`MAX_LIVE_TASKS_PER_CONVERSATION`). A thread carries several tasks now and
+ * draws a card for each; this names what is running.
+ */
+export function teammateBusy(name: string, liveTitles: readonly string[]): Extract<HandoffOutcome, { status: "not_handed_off" }> {
   return {
     status: "not_handed_off",
     reason: "teammate_busy",
-    message: `${name} is already working on "${title}". Let that finish before handing it more. Nothing was handed off.`,
+    message: memberAtCapMessage(name, liveTitles),
   };
 }
 
@@ -486,11 +494,12 @@ async function handOff(
   });
   if (previous?.deletedAt) return { outcome: handoffRefusal("already_tried"), spent: true };
 
-  // One task at a time in the teammate's thread, as in any thread: a second
-  // would hide the first from the person reading it. This message's own task is
-  // excluded, so a retry recognises it instead of calling it busy.
+  // Several tasks in the teammate's thread, up to the cap every conversation
+  // has: each draws its own card, so a hand-off no longer hides the task the
+  // person was watching there. This message's own task is excluded, so a
+  // retry recognises it instead of calling it busy.
   if (target.conversationId) {
-    const live = await prisma.workSession.findFirst({
+    const live = await prisma.workSession.findMany({
       where: {
         userId: user.id,
         conversationId: target.conversationId,
@@ -498,11 +507,36 @@ async function handOff(
         status: { in: [...LIVE_TASK_STATUSES] },
         id: { not: ownSessionId },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: { createdAt: "asc" },
       select: { title: true },
+      take: MAX_LIVE_TASKS_PER_CONVERSATION,
     });
-    if (live) return early(teammateBusy(target.name, live.title));
+    if (live.length >= MAX_LIVE_TASKS_PER_CONVERSATION) {
+      return early(teammateBusy(target.name, live.map((row) => row.title)));
+    }
   }
+
+  // The delegation link. The parent is the handing member's newest live task
+  // in this conversation, when it has one: the work it was doing when it
+  // passed a piece on. Recorded as columns (`parentSessionId`,
+  // `delegatedByAgentId`, `originConversationId`), not only as the sentence
+  // the goal opens with, so the graph can be read, audited and budgeted.
+  const parent = await prisma.workSession.findFirst({
+    where: {
+      userId: user.id,
+      conversationId: ctx.conversation.id,
+      agentId: ctx.fromAgent.id,
+      deletedAt: null,
+      status: { in: [...LIVE_TASK_STATUSES] },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  const delegation = {
+    parentSessionId: parent?.id ?? null,
+    delegatedByAgentId: ctx.fromAgent.id,
+    originConversationId: ctx.conversation.id,
+  };
 
   const limit = await rateLimit({ key: `agents:handoff:${user.id}`, ...HANDOFF_RATE_LIMIT });
   if (!limit.success) return early(handoffRefusal("rate_limited"));
@@ -517,6 +551,7 @@ async function handOff(
       deliverable: args.deliverable,
     }),
     idempotencyKey: keys.task,
+    delegation,
   };
 
   /*

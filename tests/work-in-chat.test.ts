@@ -211,7 +211,9 @@ test("a started task is adopted by the one applier a resumed stream also uses", 
   assert.match(applier, /case "work": \{[\s\S]*?opts\.onWorkStarted\?\.\(chunk\.session\)/);
   const view = source("src/components/chat/chat-view.tsx");
   assert.match(view, /onWorkStarted: \(session\) => \{[\s\S]*?adoptWorkRef\.current\(session\)/);
-  assert.match(view, /adoptWorkRef\.current = work\.adopt;/);
+  // Every task on the conversation is discovered by one hook; the adopted
+  // session joins that list (tests/work-conversation-tasks.test.ts).
+  assert.match(view, /adoptWorkRef\.current = workTasks\.adopt;/);
 });
 
 test("a discovery answer that left before the task existed cannot take the adopted panel away", () => {
