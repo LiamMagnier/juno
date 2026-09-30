@@ -1380,8 +1380,7 @@ struct AnthropicStreamDecoder {
                 return [.thinkingBlock(text: thinking.text, signature: thinking.signature)]
             }
             guard let block = toolBlocks.removeValue(forKey: index) else { return [] }
-            let input = Self.parseToolInput(block.partialJSON)
-            return [.toolCallRequested(id: block.id, name: block.name, input: input)]
+            return [toolCallEvent(id: block.id, name: block.name, arguments: block.partialJSON)]
         case "message_delta":
             if let reason = wire.delta?.stopReason {
                 stopReason = Self.mapStopReason(reason)
@@ -1396,17 +1395,6 @@ struct AnthropicStreamDecoder {
         default:
             return []
         }
-    }
-
-    private static func parseToolInput(_ json: String) -> JSONValue {
-        let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return .object([:]) }
-        guard let data = trimmed.data(using: .utf8),
-              let value = try? JSONDecoder().decode(JSONValue.self, from: data)
-        else {
-            return .object([:])
-        }
-        return value
     }
 
     /// Each reason the loop must act on differently gets its own case; the
@@ -1671,20 +1659,13 @@ struct OpenAIChatStreamDecoder {
                 where !block.id.isEmpty && !block.name.isEmpty
             {
                 sawTools = true
-                if let extra = block.extraContent, !extra.isNull {
-                    events.append(.toolCallRequestedWithExtra(
-                        id: block.id,
-                        name: block.name,
-                        input: parseToolInput(block.arguments),
-                        extraContent: extra
-                    ))
-                } else {
-                    events.append(.toolCallRequested(
-                        id: block.id,
-                        name: block.name,
-                        input: parseToolInput(block.arguments)
-                    ))
-                }
+                let extra = block.extraContent.flatMap { $0.isNull ? nil : $0 }
+                events.append(toolCallEvent(
+                    id: block.id,
+                    name: block.name,
+                    arguments: block.arguments,
+                    extraContent: extra
+                ))
             }
             let reason: ModelStopReason
             if sawTools {
@@ -1739,11 +1720,7 @@ private struct OpenAIResponsesStreamDecoder {
                   let name = item["name"]?.stringValue
             else { return [] }
             sawToolCall = true
-            return [.toolCallRequested(
-                id: id,
-                name: name,
-                input: parseToolInput(item["arguments"]?.stringValue ?? "{}")
-            )]
+            return [toolCallEvent(id: id, name: name, arguments: item["arguments"]?.stringValue ?? "")]
         case "response.completed":
             guard !completed else { return [] }
             completed = true
@@ -1798,11 +1775,28 @@ private func decodeObject(_ payload: Data) throws -> JSONValue {
     }
 }
 
-private func parseToolInput(_ json: String) -> JSONValue {
-    let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty,
-          let data = trimmed.data(using: .utf8),
-          let value = try? JSONDecoder().decode(JSONValue.self, from: data)
-    else { return .object([:]) }
-    return value
+/// A finished tool call as the event the loop acts on: the call, or — when
+/// its streamed arguments are not JSON — the malformed call to answer with an
+/// error. Never `{}` in place of what the model wrote.
+func toolCallEvent(
+    id: String,
+    name: String,
+    arguments: String,
+    extraContent: JSONValue? = nil
+) -> ModelStreamEvent {
+    switch ToolArguments.parse(arguments) {
+    case let .value(input):
+        if let extraContent {
+            return .toolCallRequestedWithExtra(id: id, name: name, input: input, extraContent: extraContent)
+        }
+        return .toolCallRequested(id: id, name: name, input: input)
+    case let .malformed(error):
+        return .toolCallMalformed(
+            id: id,
+            name: name,
+            rawArguments: arguments,
+            error: error,
+            extraContent: extraContent
+        )
+    }
 }

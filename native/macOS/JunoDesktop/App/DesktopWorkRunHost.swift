@@ -256,6 +256,9 @@ actor DesktopWorkRunHost: WorkRunHosting {
 
             var reply = ""
             var calls: [(id: String, name: String, input: JSONValue)] = []
+            // Calls whose arguments did not parse, answered with the parser's
+            // complaint rather than run with nothing.
+            var malformed: [String: String] = [:]
             var stop = ModelStopReason.endTurn
             do {
                 let stream = dependencies.model.streamTurn(
@@ -280,6 +283,13 @@ actor DesktopWorkRunHost: WorkRunHosting {
                     case .toolCallRequested(let id, let name, let input),
                          .toolCallRequestedWithExtra(let id, let name, let input, _):
                         calls.append((id: id, name: name, input: input))
+                    case .toolCallMalformed(let id, let name, let rawArguments, let error, _):
+                        calls.append((id: id, name: name, input: .object([:])))
+                        malformed[id] = ToolArguments.malformedResult(
+                            toolName: name,
+                            rawArguments: rawArguments,
+                            error: error
+                        )
                     case .turnCompleted(let reason):
                         stop = reason
                     case .reasoningSummary, .thinkingBlock, .redactedThinking, .usage:
@@ -317,6 +327,10 @@ actor DesktopWorkRunHost: WorkRunHosting {
             for call in calls {
                 if Task.isCancelled { return }
                 messages.append(.toolCall(id: call.id, name: call.name, input: call.input))
+                if let answer = malformed[call.id] {
+                    messages.append(.toolResult(id: call.id, content: answer, isError: true))
+                    continue
+                }
                 let result = await perform(call, in: request, bindings: bindings)
                 messages.append(
                     .toolResult(id: call.id, content: result.content, isError: result.isError)

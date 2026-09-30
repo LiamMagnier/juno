@@ -220,6 +220,9 @@ public actor AgentOrchestrator {
     /// Set when a tool hook answers `"continue": false`, so the batch stops
     /// between waves and the run ends once every call is answered.
     private var hookHaltReason: String?
+    /// The answer for each call in the turn whose arguments did not parse,
+    /// by call id. Such a call is answered, never run.
+    private var malformedToolResults: [String: String] = [:]
 
     /// How many times stop hooks may send one run back to work. Hooks are
     /// told when they already have (`stop_hook_active`) and are expected to
@@ -862,6 +865,7 @@ public actor AgentOrchestrator {
                 turnItems.removeAll()
                 pendingSegment = ""
                 toolCalls.removeAll()
+                malformedToolResults.removeAll()
                 thinkingFilter = LeadingThinkingFilter()
                 stopReason = nil
                 // This call's own usage, per field, newest wins; summed into
@@ -903,6 +907,22 @@ public actor AgentOrchestrator {
                             toolCalls.append((id, name, input, extra))
                             turnItems.append(
                                 .toolCallWithExtra(id: id, name: name, input: input, extraContent: extra)
+                            )
+                        case let .toolCallMalformed(id, name, rawArguments, error, extra):
+                            // Kept in the history as a call with no arguments,
+                            // which every provider replays, and answered with
+                            // the parser's complaint instead of being run.
+                            closeSegment()
+                            toolCalls.append((id, name, .object([:]), extra))
+                            turnItems.append(
+                                extra.map {
+                                    .toolCallWithExtra(id: id, name: name, input: .object([:]), extraContent: $0)
+                                } ?? .toolCall(id: id, name: name, input: .object([:]))
+                            )
+                            malformedToolResults[id] = ToolArguments.malformedResult(
+                                toolName: name,
+                                rawArguments: rawArguments,
+                                error: error
                             )
                         case let .usage(inputTokens, outputTokens):
                             // Replaced, not accumulated: `inputTokens` is the whole
@@ -1834,6 +1854,26 @@ public actor AgentOrchestrator {
     private func executeToolCall(
         _ call: (id: String, name: String, input: JSONValue)
     ) async -> ToolScheduler.ExecutionResult {
+        if let message = malformedToolResults[call.id] {
+            _ = try? await store.appendEvent(
+                sessionID: sessionID,
+                payload: .toolCompleted(
+                    ToolCompletedEvent(
+                        toolCallID: call.id,
+                        status: .failed,
+                        resultSummary: "Not run: its arguments were not valid JSON.",
+                        durationSeconds: 0
+                    )
+                )
+            )
+            return ToolScheduler.ExecutionResult(
+                callID: call.id,
+                toolName: call.name,
+                input: call.input,
+                content: message,
+                isError: true
+            )
+        }
         let result = await ToolScheduler.executeCall(
             id: call.id,
             name: call.name,

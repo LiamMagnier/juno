@@ -508,7 +508,7 @@ public enum CompactionSummarizer {
                 case let .turnCompleted(reason):
                     reply.stopReason = reason
                 case .reasoningSummary, .thinkingBlock, .redactedThinking,
-                     .toolCallRequested, .toolCallRequestedWithExtra:
+                     .toolCallRequested, .toolCallRequestedWithExtra, .toolCallMalformed:
                     // Reasoning is not the summary, and with no tools declared
                     // a call is noise; the text alone is judged.
                     continue

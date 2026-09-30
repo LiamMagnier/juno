@@ -211,6 +211,24 @@ public enum ModelStreamEvent: Sendable {
     case redactedThinking(data: String)
     case toolCallRequested(id: String, name: String, input: JSONValue)
     case toolCallRequestedWithExtra(id: String, name: String, input: JSONValue, extraContent: JSONValue)
+    /// A tool call whose arguments were not valid JSON: cut off by the
+    /// output limit, or simply malformed. It is answered with an error naming
+    /// the problem so the model can send it again, never run with `{}`.
+    ///
+    /// - Parameters:
+    ///   - rawArguments: the arguments exactly as streamed.
+    ///   - error: what the JSON parser said, with its position when it gave
+    ///     one.
+    ///   - extraContent: provider data that must come back with the call, as
+    ///     for ``toolCallRequestedWithExtra(id:name:input:extraContent:)``;
+    ///     Gemini refuses a history whose call lost its thought signature.
+    case toolCallMalformed(
+        id: String,
+        name: String,
+        rawArguments: String,
+        error: String,
+        extraContent: JSONValue?
+    )
     /// Token accounting for the turn, as the provider reported it.
     ///
     /// `inputTokens` is the whole prompt the provider actually billed — system

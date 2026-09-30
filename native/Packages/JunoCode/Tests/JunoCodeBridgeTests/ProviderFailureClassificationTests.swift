@@ -109,6 +109,53 @@ final class ProviderFailureClassificationTests: XCTestCase {
         }
     }
 
+    // MARK: - Malformed tool arguments
+
+    func testTruncatedAnthropicToolArgumentsBecomeAMalformedCallNotAnEmptyOne() throws {
+        var decoder = AnthropicStreamDecoder()
+        _ = try decoder.events(from: Data(
+            #"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t1","name":"write_file","input":{}}}"#.utf8
+        ))
+        _ = try decoder.events(from: Data(
+            #"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"path\": \"a.swift\", \"content\": \"let"}}"#.utf8
+        ))
+        let events = try decoder.events(from: Data(#"{"type":"content_block_stop","index":0}"#.utf8))
+        guard case let .toolCallMalformed(id, name, raw, error, extra)? = events.first else {
+            return XCTFail("expected a malformed call, got \(events)")
+        }
+        XCTAssertEqual(id, "t1")
+        XCTAssertEqual(name, "write_file")
+        XCTAssertEqual(raw, #"{"path": "a.swift", "content": "let"#)
+        XCTAssertFalse(error.isEmpty)
+        XCTAssertNil(extra)
+    }
+
+    func testAToolWithNoParametersStillStreamsAsAnEmptyObject() throws {
+        var decoder = AnthropicStreamDecoder()
+        _ = try decoder.events(from: Data(
+            #"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t2","name":"git_status","input":{}}}"#.utf8
+        ))
+        let events = try decoder.events(from: Data(#"{"type":"content_block_stop","index":0}"#.utf8))
+        guard case let .toolCallRequested(_, _, input)? = events.first else {
+            return XCTFail("expected a call, got \(events)")
+        }
+        XCTAssertEqual(input, [:])
+    }
+
+    func testMalformedChatArgumentsKeepTheCallsThoughtSignature() throws {
+        var decoder = OpenAIChatStreamDecoder()
+        let chunk = #"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"g1","function":{"name":"grep","arguments":"{\"pattern\": "},"extra_content":{"google":{"thought_signature":"sig"}}}]},"finish_reason":"tool_calls"}]}"#
+        let events = try decoder.events(from: Data(chunk.utf8))
+        guard case let .toolCallMalformed(id, _, _, _, extra)? = events.first else {
+            return XCTFail("expected a malformed call, got \(events)")
+        }
+        XCTAssertEqual(id, "g1")
+        XCTAssertEqual(extra?["google"]?["thought_signature"]?.stringValue, "sig")
+        guard case .turnCompleted(.toolUse)? = events.last else {
+            return XCTFail("the turn still ends as a tool turn")
+        }
+    }
+
     func testTheClientSaysWhichProvidersCacheAPrefix() throws {
         let client = BackendCodeModelClient(
             streamer: NeverStreamer(),

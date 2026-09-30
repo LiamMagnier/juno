@@ -161,6 +161,9 @@ public actor ToolScheduler {
         maximumToolImages: Int = 10,
         maximumToolImageBytes: Int = 20 * 1024 * 1024
     ) async -> ExecutionResult {
+        // Converted once, here, so the hooks, the approval digest and the
+        // tool all see the same arguments.
+        let input = registry.coercedInput(toolName: name, input: input)
         let startedAt = Date()
         let hookInvocation = AgentToolHookInvocation(
             sessionID: sessionID,
