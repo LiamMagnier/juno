@@ -138,6 +138,7 @@ function readAgentChange(raw: unknown): ClientActivityEvent["agentChange"] {
       },
     ];
   });
+  const setupChange = readSetupChangeRef(r.setupChange);
   return {
     agentId: r.agentId,
     agentName: r.agentName,
@@ -145,6 +146,29 @@ function readAgentChange(raw: unknown): ClientActivityEvent["agentChange"] {
     summary: r.summary,
     changes,
     ...(typeof r.undone === "boolean" ? { undone: r.undone } : {}),
+    ...(setupChange ? { setupChange } : {}),
+  };
+}
+
+/** A persisted setup-change reference, field by field, or nothing. */
+function readSetupChangeRef(raw: unknown): NonNullable<ClientActivityEvent["agentChange"]>["setupChange"] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  const text = (key: string) => (typeof r[key] === "string" ? (r[key] as string) : null);
+  const id = text("id");
+  const kind = text("kind");
+  const digest = text("digest");
+  if (!id || !kind || !digest) return undefined;
+  return {
+    id,
+    kind,
+    kindLabel: text("kindLabel") ?? "Setup",
+    direction: text("direction") ?? "neutral",
+    directionSentence: text("directionSentence") ?? "",
+    affects: text("affects") ?? "",
+    status: text("status") ?? "proposed",
+    detail: text("detail"),
+    digest,
   };
 }
 

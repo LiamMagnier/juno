@@ -310,6 +310,48 @@ export const AGENT_MEMORY_TOOL: ToolDefinition = {
   },
 };
 
+/**
+ * The parameters `update_agent` loses inside a crew member's own thread, where
+ * `propose_setup_change` (src/lib/chat/setup-change-tool.ts) owns them: each of
+ * these is a setup change with a direction, a before and an after, a card with
+ * Undo, and an approval when it widens. Offering both would give the model two
+ * ways to make the same change with different guarantees.
+ */
+export const THREAD_SETUP_PARAMS = [
+  "autonomy",
+  "approvalMode",
+  "notify",
+  "model",
+  "reasoningEffort",
+  "connectorIds",
+  "addApps",
+  "removeApps",
+] as const;
+
+/** A declaration without the named parameters. */
+export function withoutParameters(tool: ToolDefinition, names: readonly string[]): ToolDefinition {
+  const parameters = tool.function.parameters as { properties?: Record<string, unknown> } & Record<string, unknown>;
+  const properties = { ...(parameters.properties ?? {}) };
+  for (const name of names) delete properties[name];
+  return { ...tool, function: { ...tool.function, parameters: { ...parameters, properties } } };
+}
+
+/**
+ * The declarations a turn carries. Without agent computers configured on this
+ * server, nothing mentions a computer: the UI shows nothing about computers
+ * when they are off, and neither does the model's tool list.
+ */
+export function agentConfigDeclarations(options: { inThread: boolean; computerConfigured: boolean }): {
+  create: ToolDefinition;
+  update: ToolDefinition;
+} {
+  const computer = options.computerConfigured ? [] : ["computer"];
+  return {
+    create: withoutParameters(CREATE_AGENT_TOOL, computer),
+    update: withoutParameters(UPDATE_AGENT_TOOL, [...computer, ...(options.inThread ? THREAD_SETUP_PARAMS : [])]),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Approval & preview helpers (pure)
 // ---------------------------------------------------------------------------
@@ -759,6 +801,11 @@ export interface AgentConfigToolsContext {
   generationId: string;
   onApprovalRequest?: (approval: ClientActionApproval) => void;
   onAgentChange?: (change: ClientAgentChange) => void;
+  /**
+   * Whether agent computers are configured on this server. Off, no declaration
+   * mentions a computer and a `computer` argument is refused.
+   */
+  computerConfigured?: boolean;
 }
 
 function jsonExecution(payload: Record<string, unknown>, extra?: Partial<ToolExecution>): ToolExecution {
@@ -779,6 +826,10 @@ function jsonExecution(payload: Record<string, unknown>, extra?: Partial<ToolExe
 export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChatTool[] {
   let queue: Promise<unknown> = Promise.resolve();
   let callIndex = 0;
+  const declarations = agentConfigDeclarations({
+    inThread: ctx.agent !== null,
+    computerConfigured: ctx.computerConfigured === true,
+  });
 
   const serializeCall = (fn: () => Promise<ToolExecution>): Promise<ToolExecution> => {
     const next = queue.then(fn);
@@ -798,6 +849,37 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
       return {
         ok: false,
         response: jsonExecution({ status: "refused", reason: "stopped", message: "The reply was stopped." }),
+      };
+    }
+
+    // Computers are off on this server: nothing about them is offered, and an
+    // argument naming one (a model reaching past its declaration) is refused.
+    if (ctx.computerConfigured !== true && rawArgs.computer !== undefined && rawArgs.computer !== null) {
+      return {
+        ok: false,
+        response: jsonExecution({
+          status: "refused",
+          reason: "computers_unavailable",
+          message: "Crew computers are not available on this server.",
+        }),
+      };
+    }
+    // In a member's own thread, setup changes go through propose_setup_change,
+    // which records them with a direction and Undo. Refused here rather than
+    // quietly applied, so the model uses the tool that gives the person a card.
+    if (
+      ctx.agent &&
+      toolName === UPDATE_AGENT_TOOL_NAME &&
+      THREAD_SETUP_PARAMS.some((name) => rawArgs[name] !== undefined)
+    ) {
+      return {
+        ok: false,
+        response: jsonExecution({
+          status: "refused",
+          reason: "use_propose_setup_change",
+          message:
+            "Notifications, approval, apps, model and budget are changed with propose_setup_change, so the person gets a card they can undo. Nothing was changed.",
+        }),
       };
     }
 
@@ -986,7 +1068,7 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
   };
 
   const createTool: NativeChatTool = {
-    tool: CREATE_AGENT_TOOL,
+    tool: declarations.create,
     label: AGENT_CONFIG_TOOL_LABELS.create_agent,
     access: "write",
     execute: (rawArgs: Record<string, unknown>, signal?: AbortSignal) =>
@@ -1093,7 +1175,7 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
   };
 
   const updateTool: NativeChatTool = {
-    tool: UPDATE_AGENT_TOOL,
+    tool: declarations.update,
     label: AGENT_CONFIG_TOOL_LABELS.update_agent,
     access: "write",
     execute: (rawArgs: Record<string, unknown>, signal?: AbortSignal) =>
@@ -1395,152 +1477,6 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
       }),
   };
 
-  const routineTool: NativeChatTool = {
-    tool: AGENT_ROUTINE_TOOL,
-    label: AGENT_CONFIG_TOOL_LABELS.agent_routine,
-    access: "write",
-    execute: (rawArgs: Record<string, unknown>, signal?: AbortSignal) =>
-      serializeCall(async () => {
-        const check = await guardAndApprove(AGENT_ROUTINE_TOOL_NAME, rawArgs, signal);
-        if (!check.ok) return check.response;
-        const freshAgent = check.freshAgent!;
-
-        const [{ prisma }, agents] = await Promise.all([
-          import("@/lib/prisma"),
-          import("@/lib/agents/store"),
-        ]);
-
-        const action = typeof rawArgs.action === "string" ? rawArgs.action : "add";
-        if (action === "add" || action === "create") {
-          const parsed = createRoutineSchema.safeParse({
-            name: rawArgs.name,
-            instructions: rawArgs.instructions,
-            cadence: rawArgs.cadence ?? "daily",
-            hour: rawArgs.hour ?? 9,
-            minute: rawArgs.minute ?? 0,
-            weekday: rawArgs.weekday ?? 1,
-            monthday: rawArgs.monthday ?? 1,
-            timezone:
-              typeof rawArgs.timezone === "string" && rawArgs.timezone.trim()
-                ? rawArgs.timezone.trim()
-                : ctx.timeZone || "UTC",
-          });
-          if (!parsed.success) {
-            return jsonExecution({
-              status: "refused",
-              reason: "invalid_arguments",
-              message: parsed.error.issues[0]?.message ?? "Invalid routine schedule.",
-            });
-          }
-          const created = await agents.createAgentRoutine(ctx.user, freshAgent, parsed.data);
-          if (created.status !== 201 || !created.value) {
-            return jsonExecution({
-              status: "refused",
-              reason: String(created.body.error ?? "routine_failed"),
-              message: String(created.body.message ?? "Could not create routine."),
-            });
-          }
-          const change: ClientAgentChange = {
-            agentId: freshAgent.id,
-            agentName: freshAgent.name,
-            ...(created.eventId ? { eventId: created.eventId } : {}),
-            summary: `Scheduled ${created.value.name}`,
-            changes: [
-              {
-                label: "Routine",
-                to: `${created.value.name} · ${created.value.schedule} (${created.value.timezone})`,
-              },
-            ],
-          };
-          ctx.onAgentChange?.(change);
-          return jsonExecution(
-            { status: "created", routine: created.value, eventId: created.eventId },
-            { agentChange: change }
-          );
-        }
-
-        // Pause, resume, or delete existing routine
-        let scheduleId =
-          typeof rawArgs.routineId === "string" && rawArgs.routineId.trim()
-            ? rawArgs.routineId.trim()
-            : typeof rawArgs.scheduleId === "string"
-              ? rawArgs.scheduleId.trim()
-              : "";
-        const name = typeof rawArgs.name === "string" ? rawArgs.name.trim() : "";
-        if (!scheduleId && name) {
-          const match = await prisma.workSchedule.findFirst({
-            where: {
-              userId: ctx.user.id,
-              session: { userId: ctx.user.id, agentId: freshAgent.id, deletedAt: null },
-              name: { equals: name, mode: "insensitive" },
-            },
-            orderBy: { createdAt: "desc" },
-          });
-          if (match) scheduleId = match.id;
-        }
-        if (!scheduleId) {
-          return jsonExecution({
-            status: "refused",
-            reason: "not_found",
-            message: "Could not find a matching routine.",
-          });
-        }
-
-        if (action === "delete") {
-          const existingSchedule = await prisma.workSchedule.findFirst({
-            where: { id: scheduleId, userId: ctx.user.id },
-          });
-          if (!existingSchedule) {
-            return jsonExecution({
-              status: "refused",
-              reason: "not_found",
-              message: "Could not find a matching routine.",
-            });
-          }
-          await prisma.workSchedule.delete({ where: { id: scheduleId } });
-          const change: ClientAgentChange = {
-            agentId: freshAgent.id,
-            agentName: freshAgent.name,
-            summary: `Deleted routine ${existingSchedule.name}`,
-            changes: [{ label: `Routine (${existingSchedule.name})`, from: "Scheduled", to: "Deleted" }],
-          };
-          ctx.onAgentChange?.(change);
-          return jsonExecution(
-            { status: "deleted", routineId: scheduleId },
-            { agentChange: change }
-          );
-        }
-
-        const enabled = action === "resume";
-        const updated = await agents.updateAgentRoutine(ctx.user, freshAgent, scheduleId, enabled);
-        if (updated.status !== 200 || !updated.value) {
-          return jsonExecution({
-            status: "refused",
-            reason: String(updated.body.error ?? "routine_failed"),
-            message: String(updated.body.message ?? "Could not update routine."),
-          });
-        }
-        const change: ClientAgentChange = {
-          agentId: freshAgent.id,
-          agentName: freshAgent.name,
-          ...(updated.eventId ? { eventId: updated.eventId } : {}),
-          summary: `${enabled ? "Resumed" : "Paused"} ${updated.value.name}`,
-          changes: [
-            {
-              label: `Routine (${updated.value.name})`,
-              from: enabled ? "Paused" : "Active",
-              to: enabled ? "Active" : "Paused",
-            },
-          ],
-        };
-        ctx.onAgentChange?.(change);
-        return jsonExecution(
-          { status: "updated", routine: updated.value, eventId: updated.eventId },
-          { agentChange: change }
-        );
-      }),
-  };
-
   const memoryTool: NativeChatTool = {
     tool: AGENT_MEMORY_TOOL,
     label: AGENT_CONFIG_TOOL_LABELS.agent_memory,
@@ -1633,5 +1569,9 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
       }),
   };
 
-  return [updateTool, goalTool, routineTool, memoryTool, createTool];
+  // Routines are set up with propose_setup_change (src/lib/chat/setup-change-tool.ts):
+  // a card with a direction, Undo, and an approval when a routine can act
+  // without asking. `agent_routine` is no longer offered; its declaration and
+  // approval rule stay for replaying older turns.
+  return [updateTool, goalTool, memoryTool, createTool];
 }

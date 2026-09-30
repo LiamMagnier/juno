@@ -97,10 +97,31 @@ test("tool definitions and gate cover normal chat and agent threads", () => {
     untrustedContent: false,
     generationId: "g1",
   });
+  // Routines, apps, notifications, approval, model and budget moved to
+  // propose_setup_change in a member's thread (src/lib/chat/setup-change-tool.ts).
   assert.deepEqual(
     agentThreadTools.map((t) => t.tool.function.name),
-    ["update_agent", "agent_goal", "agent_routine", "agent_memory", "create_agent"]
+    ["update_agent", "agent_goal", "agent_memory", "create_agent"]
   );
+  const threadUpdate = agentThreadTools[0].tool.function.parameters as { properties: Record<string, unknown> };
+  for (const moved of ["approvalMode", "autonomy", "notify", "connectorIds", "addApps", "removeApps", "model", "reasoningEffort"]) {
+    assert.equal(moved in threadUpdate.properties, false, moved);
+  }
+  // Computers off on this server: no declaration mentions one.
+  for (const tool of [...normalChatTools, ...agentThreadTools]) {
+    const props = (tool.tool.function.parameters as { properties: Record<string, unknown> }).properties;
+    assert.equal("computer" in props, false, tool.tool.function.name);
+  }
+  const withComputers = createAgentConfigTools({
+    user: { id: "u1" },
+    conversation: { id: "c1", projectId: null },
+    agent: null,
+    userMessageId: "m1",
+    untrustedContent: false,
+    generationId: "g1",
+    computerConfigured: true,
+  });
+  assert.equal("computer" in (withComputers[1].tool.function.parameters as { properties: Record<string, unknown> }).properties, true);
 
   // RULES.md §5: flat schemas only (no nested objects, no additionalProperties, every property has a description)
   for (const def of [CREATE_AGENT_TOOL, UPDATE_AGENT_TOOL, AGENT_GOAL_TOOL, AGENT_ROUTINE_TOOL, AGENT_MEMORY_TOOL]) {

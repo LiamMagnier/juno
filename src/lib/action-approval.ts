@@ -140,6 +140,11 @@ const JunoRules: Readonly<Record<string, ActionRiskClass>> = {
   "juno_agents:agent_goal": "external_write",
   "juno_agents:agent_routine": "external_write",
   "juno_agents:agent_memory": "external_write",
+  // A setup change that widens what a crew member can do
+  // (src/lib/chat/setup-change-tool.ts): an app added, a looser approval mode,
+  // a higher budget, a routine that acts without asking, a model. Asks under
+  // every policy short of `block`, and is never a standing approval.
+  "juno_agents:widen_setup": "external_write",
 };
 
 const READ_VERBS = new Set([

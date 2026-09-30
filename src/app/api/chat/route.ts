@@ -204,6 +204,8 @@ import {
   chatAgentConfigToolsEnabled,
   createAgentConfigTools,
 } from "@/lib/chat/agent-config-tools";
+import { createSetupChangeTool } from "@/lib/chat/setup-change-tool";
+import { isAgentComputerConfigured } from "@/lib/computer/provider";
 import { cheapestWorkModel } from "@/lib/work/models";
 import { agentChatContext } from "@/lib/agents/store";
 import { agentApprovalMode, agentTurnModel } from "@/lib/agents/domain";
@@ -3128,9 +3130,33 @@ async function handleChat(req: Request) {
                   agentChange: change,
                 });
               },
+              // Off, no declaration mentions a computer (PRODUCT_REFOUNDATION §7).
+              computerConfigured: await isAgentComputerConfigured().catch(() => false),
             })
           : [];
-      const nativeTools = [taskTool, handoffTool, ...agentConfigTools].filter(
+      // Setup by conversation (src/lib/chat/setup-change-tool.ts): only in a
+      // crew member's own thread, on the same gate as the other config tools.
+      const setupChangeTool =
+        agentConfigToolsOn && userMessageId && agentContext && !agentContext.paused
+          ? createSetupChangeTool({
+              user,
+              conversation: { id: conversationId, projectId: conversation.projectId },
+              agent: { id: agentContext.agent.id, name: agentContext.agent.name },
+              userMessageId,
+              untrustedContent: untrustedContentInTurn,
+              timeZone: input.timeZone,
+              generationId,
+              onApprovalRequest: requestApproval,
+              onAgentChange: (change) => {
+                sendActivity({
+                  kind: "tool",
+                  title: change.summary,
+                  agentChange: change,
+                });
+              },
+            })
+          : null;
+      const nativeTools = [taskTool, handoffTool, ...agentConfigTools, setupChangeTool].filter(
         (tool): tool is NativeChatTool => tool !== null
       );
 
