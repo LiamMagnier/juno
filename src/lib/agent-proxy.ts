@@ -257,6 +257,28 @@ export function isUpstreamTimeout(signal: AbortSignal): boolean {
   return upstreamTimeoutKind(signal) !== null;
 }
 
+/**
+ * The headers the client gets back with a provider's response: the media type,
+ * and how long the provider asked to be left alone.
+ *
+ * A 429 or an overload that carries `retry-after` (or OpenAI's exact
+ * `retry-after-ms`) is the provider saying when to come back, and the Mac's
+ * retry policy honours it; dropping it here left that policy guessing with
+ * backoff. Nothing else crosses: request ids, organisation names and rate-limit
+ * ledgers are the provider's business, not the client's.
+ */
+export const RELAYED_RESPONSE_HEADERS = ["content-type", "retry-after", "retry-after-ms"] as const;
+
+export function relayedResponseHeaders(upstream: Headers): Headers {
+  const headers = new Headers();
+  for (const name of RELAYED_RESPONSE_HEADERS) {
+    const value = upstream.get(name);
+    if (value) headers.set(name, value);
+  }
+  headers.set("cache-control", "no-store");
+  return headers;
+}
+
 // ---------------------------------------------------------------------------
 // The request
 // ---------------------------------------------------------------------------
