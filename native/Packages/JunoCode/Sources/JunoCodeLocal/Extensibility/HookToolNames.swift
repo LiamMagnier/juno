@@ -77,6 +77,10 @@ public enum HookToolNames {
             if let caseSensitive = input["case_sensitive"]?.boolValue {
                 fields["-i"] = .bool(!caseSensitive)
             }
+            if let path = absolute("path") { fields["path"] = path }
+            if let both = input["context"] { fields["-C"] = both }
+            if let before = input["before_context"] { fields["-B"] = before }
+            if let after = input["after_context"] { fields["-A"] = after }
         case "LS":
             fields["path"] = .string(absolutePath(input["path"]?.stringValue ?? "", root: root))
         case "Task":

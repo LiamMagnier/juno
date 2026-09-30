@@ -2,13 +2,21 @@ import Foundation
 import JunoCodeCore
 
 /// Filesystem-walking implementation of workspace navigation and search.
-/// Applies built-in exclusions plus the root `.gitignore`, bounds file sizes
-/// for content search, and checks for cancellation while walking.
+/// Applies built-in exclusions plus every `.gitignore` on the way down, skips
+/// other checkouts of the repository (worktrees), bounds file sizes for
+/// content search, and checks for cancellation while walking.
 public final class WorkspaceIndexService: WorkspaceIndexing, Sendable {
     /// Directories never traversed, regardless of gitignore.
     public static let builtinExcludedDirectories: Set<String> = [
         ".git", "node_modules", ".build", ".swiftpm", "DerivedData",
         ".next", "dist", ".venv", "__pycache__", ".DS_Store",
+    ]
+
+    /// Folders where tools keep extra checkouts of this same repository.
+    /// Searching them returns every hit once per checkout, and the copies
+    /// are not the files the reader is working on.
+    public static let excludedWorktreeFolders: Set<String> = [
+        ".juno/worktrees", ".claude/worktrees",
     ]
 
     public static let maximumGrepFileBytes = 1_024 * 1_024
@@ -35,7 +43,7 @@ public final class WorkspaceIndexService: WorkspaceIndexing, Sendable {
         else {
             throw WorkspaceIndexError.notADirectory(path: path?.value ?? ".")
         }
-        let ignore = loadGitignore()
+        let ignore = ignoreLayers(downTo: path)
         let contents = (try? FileManager.default.contentsOfDirectory(
             at: directoryURL,
             includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
@@ -92,6 +100,41 @@ public final class WorkspaceIndexService: WorkspaceIndexing, Sendable {
 
     public func grep(_ query: GrepQuery) async throws -> [GrepMatch] {
         guard !query.pattern.isEmpty else { return [] }
+        let matcher = try LineMatcher(query)
+        var matches: [GrepMatch] = []
+        let limit = max(1, query.maximumMatches)
+        try await walkSearchable(query) { entry, content in
+            let context = (before: query.contextBefore, after: query.contextAfter)
+            for match in matcher.matches(in: content, path: entry.path, context: context) {
+                matches.append(match)
+                if matches.count >= limit { return false }
+            }
+            return true
+        }
+        return matches
+    }
+
+    public func grepCounts(_ query: GrepQuery) async throws -> [GrepFileCount] {
+        guard !query.pattern.isEmpty else { return [] }
+        let matcher = try LineMatcher(query)
+        var counts: [GrepFileCount] = []
+        let limit = max(1, query.maximumMatches)
+        try await walkSearchable(query) { entry, content in
+            let count = matcher.count(in: content)
+            if count > 0 {
+                counts.append(GrepFileCount(path: entry.path, count: count))
+            }
+            return counts.count < limit
+        }
+        return counts.sorted { $0.path.value < $1.path.value }
+    }
+
+    /// Every text file the query may search, with its content: inside the
+    /// query's path, matching its include glob, small enough, not binary.
+    private func walkSearchable(
+        _ query: GrepQuery,
+        _ visit: (FileEntry, String) throws -> Bool
+    ) async throws {
         let includeGlob: GlobPattern?
         if let include = query.includeGlob {
             guard let compiled = try? GlobPattern(include) else {
@@ -101,24 +144,7 @@ public final class WorkspaceIndexService: WorkspaceIndexing, Sendable {
         } else {
             includeGlob = nil
         }
-        let regex: NSRegularExpression?
-        if query.isRegex {
-            var options: NSRegularExpression.Options = []
-            if !query.caseSensitive { options.insert(.caseInsensitive) }
-            guard let compiled = try? NSRegularExpression(
-                pattern: query.pattern,
-                options: options
-            ) else {
-                throw WorkspaceIndexError.invalidPattern
-            }
-            regex = compiled
-        } else {
-            regex = nil
-        }
-
-        var matches: [GrepMatch] = []
-        let limit = max(1, query.maximumMatches)
-        try await walk { entry in
+        try await walk(from: query.path) { entry in
             guard !entry.isDirectory else { return true }
             if let includeGlob, !includeGlob.matches(entry.path.value) { return true }
             if let byteCount = entry.byteCount, byteCount > Self.maximumGrepFileBytes {
@@ -130,44 +156,47 @@ public final class WorkspaceIndexService: WorkspaceIndexing, Sendable {
                   !data.contains(0),
                   let content = String(data: data, encoding: .utf8)
             else { return true }
-
-            var lineNumber = 0
-            for line in content.components(separatedBy: "\n") {
-                lineNumber += 1
-                let isMatch: Bool
-                if let regex {
-                    let range = NSRange(line.startIndex..., in: line)
-                    isMatch = regex.firstMatch(in: line, options: [], range: range) != nil
-                } else if query.caseSensitive {
-                    isMatch = line.contains(query.pattern)
-                } else {
-                    isMatch = line.range(of: query.pattern, options: .caseInsensitive) != nil
-                }
-                if isMatch {
-                    let limited = OutputLimiter.apply(
-                        OutputLimit(maximumBytes: 512, truncationNotice: "…"),
-                        to: line
-                    )
-                    matches.append(
-                        GrepMatch(path: entry.path, lineNumber: lineNumber, lineText: limited.text)
-                    )
-                    if matches.count >= limit { return false }
-                }
-            }
-            return true
+            return try visit(entry, content)
         }
-        return matches
     }
 
     // MARK: - Walking
 
-    /// Depth-first walk honoring exclusions and gitignore. The visitor
-    /// returns false to stop early. Checks cancellation between entries.
-    private func walk(_ visit: (FileEntry) throws -> Bool) async throws {
-        let ignore = loadGitignore()
-        var stack: [URL] = [access.rootURL]
+    /// One `.gitignore`, and the folder its patterns are relative to.
+    private struct IgnoreLayer {
+        /// Workspace-relative folder, "" for the root.
+        let base: String
+        let matcher: GitignoreMatcher
+    }
+
+    /// Depth-first walk honoring exclusions and every `.gitignore` from the
+    /// root down. The visitor returns false to stop early. Checks
+    /// cancellation between entries.
+    ///
+    /// - Parameter start: a folder to walk instead of the whole workspace, or
+    ///   a single file to visit alone.
+    private func walk(from start: WorkspacePath? = nil, _ visit: (FileEntry) throws -> Bool) async throws {
+        var stack: [(url: URL, layers: [IgnoreLayer])] = []
+        if let start {
+            let url = try access.resolveForReading(start)
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+                throw WorkspaceIndexError.notADirectory(path: start.value)
+            }
+            if !isDirectory.boolValue {
+                // One file: searched unless a `.gitignore` above it says not.
+                let parent = start.value.lastIndex(of: "/").flatMap { try? WorkspacePath(String(start.value[..<$0])) }
+                if let entry = makeEntry(url: url, ignore: ignoreLayers(downTo: parent)) {
+                    _ = try visit(entry)
+                }
+                return
+            }
+            stack = [(url, ignoreLayers(downTo: start))]
+        } else {
+            stack = [(access.rootURL, ignoreLayers(downTo: nil))]
+        }
         var visited = 0
-        while let directory = stack.popLast() {
+        while let (directory, layers) = stack.popLast() {
             try Task.checkCancellation()
             let contents = (try? FileManager.default.contentsOfDirectory(
                 at: directory,
@@ -178,14 +207,14 @@ public final class WorkspaceIndexService: WorkspaceIndexing, Sendable {
                 try Task.checkCancellation()
                 visited += 1
                 guard visited <= Self.maximumWalkEntries else { return }
-                guard let entry = makeEntry(url: url, ignore: ignore) else { continue }
+                guard let entry = makeEntry(url: url, ignore: layers) else { continue }
                 guard try visit(entry) else { return }
                 if entry.isDirectory {
                     // Never descend through directory symlinks: escaping
                     // targets are rejected and internal ones would duplicate.
                     let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey])
-                    if values?.isSymbolicLink != true {
-                        stack.append(url)
+                    if values?.isSymbolicLink != true, !Self.isWorktreeCheckout(url) {
+                        stack.append((url, layers + layer(at: url, relative: entry.path.value)))
                     }
                 }
             }
@@ -193,13 +222,14 @@ public final class WorkspaceIndexService: WorkspaceIndexing, Sendable {
     }
 
     /// Builds an entry for a child URL, or nil when excluded or outside.
-    private func makeEntry(url: URL, ignore: GitignoreMatcher?) -> FileEntry? {
+    private func makeEntry(url: URL, ignore: [IgnoreLayer]) -> FileEntry? {
         let name = url.lastPathComponent
         guard !Self.builtinExcludedDirectories.contains(name) else { return nil }
         guard let relative = try? access.makeRelative(url) else { return nil }
+        guard !Self.excludedWorktreeFolders.contains(relative.value) else { return nil }
         let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
         let isDirectory = values?.isDirectory ?? false
-        if let ignore, ignore.isIgnored(relative.value, isDirectory: isDirectory) {
+        if Self.isIgnored(relative.value, isDirectory: isDirectory, by: ignore) {
             return nil
         }
         return FileEntry(
@@ -209,10 +239,171 @@ public final class WorkspaceIndexService: WorkspaceIndexing, Sendable {
         )
     }
 
-    private func loadGitignore() -> GitignoreMatcher? {
-        let url = access.rootURL.appendingPathComponent(".gitignore")
-        guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+    /// Git's precedence: every layer that speaks about the path is consulted,
+    /// outermost first, and the deepest file's last matching rule wins.
+    private static func isIgnored(_ path: String, isDirectory: Bool, by layers: [IgnoreLayer]) -> Bool {
+        var ignored = false
+        for layer in layers {
+            let local: String
+            if layer.base.isEmpty {
+                local = path
+            } else if path.hasPrefix(layer.base + "/") {
+                local = String(path.dropFirst(layer.base.count + 1))
+            } else {
+                continue
+            }
+            if let verdict = layer.matcher.verdict(local, isDirectory: isDirectory) {
+                ignored = verdict
+            }
+        }
+        return ignored
+    }
+
+    /// The root's `.gitignore` and each one on the way down to `directory`,
+    /// so a search or listing that starts below the root obeys them all.
+    private func ignoreLayers(downTo directory: WorkspacePath?) -> [IgnoreLayer] {
+        var layers = layer(at: access.rootURL, relative: "")
+        guard let directory else { return layers }
+        var relative = ""
+        for component in directory.value.split(separator: "/") {
+            relative = relative.isEmpty ? String(component) : relative + "/" + component
+            layers += layer(at: access.rootURL.appendingPathComponent(relative), relative: relative)
+        }
+        return layers
+    }
+
+    private func layer(at directory: URL, relative: String) -> [IgnoreLayer] {
+        let url = directory.appendingPathComponent(".gitignore")
+        guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return [] }
         let matcher = GitignoreMatcher(contents: contents)
-        return matcher.isEmpty ? nil : matcher
+        return matcher.isEmpty ? [] : [IgnoreLayer(base: relative, matcher: matcher)]
+    }
+
+    /// A folder holding a linked worktree of some repository: its `.git` is a
+    /// file pointing into another repository's `worktrees/`. A submodule's
+    /// `.git` file points into `modules/` instead, and is searched as usual.
+    static func isWorktreeCheckout(_ directory: URL) -> Bool {
+        let marker = directory.appendingPathComponent(".git")
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: marker.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue,
+              let handle = try? FileHandle(forReadingFrom: marker)
+        else { return false }
+        defer { try? handle.close() }
+        let head = (try? handle.read(upToCount: 1_024)).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        return head.hasPrefix("gitdir:") && head.contains("/worktrees/")
+    }
+}
+
+/// One query compiled for line-by-line (or, in multiline mode, whole-file)
+/// matching.
+private struct LineMatcher {
+    private let query: GrepQuery
+    private let regex: NSRegularExpression?
+
+    init(_ query: GrepQuery) throws {
+        self.query = query
+        if query.isRegex {
+            var options: NSRegularExpression.Options = []
+            if !query.caseSensitive { options.insert(.caseInsensitive) }
+            if query.multiline { options.formUnion([.dotMatchesLineSeparators, .anchorsMatchLines]) }
+            guard let compiled = try? NSRegularExpression(pattern: query.pattern, options: options) else {
+                throw WorkspaceIndexError.invalidPattern
+            }
+            regex = compiled
+        } else {
+            regex = nil
+        }
+    }
+
+    private func lineMatches(_ line: String) -> Bool {
+        if let regex {
+            let range = NSRange(line.startIndex..., in: line)
+            return regex.firstMatch(in: line, options: [], range: range) != nil
+        }
+        if query.caseSensitive { return line.contains(query.pattern) }
+        return line.range(of: query.pattern, options: .caseInsensitive) != nil
+    }
+
+    /// The file's lines; a final newline ends the last line rather than
+    /// starting an empty one.
+    private static func lines(of content: String) -> [String] {
+        var lines = content.components(separatedBy: "\n")
+        if lines.count > 1, lines.last == "" { lines.removeLast() }
+        return lines
+    }
+
+    func count(in content: String) -> Int {
+        if query.multiline { return spans(in: content).count }
+        return Self.lines(of: content).reduce(0) { $0 + (lineMatches($1) ? 1 : 0) }
+    }
+
+    func matches(in content: String, path: WorkspacePath, context: (before: Int, after: Int)) -> [GrepMatch] {
+        let lines = Self.lines(of: content)
+        func bounded(_ text: String, bytes: Int = 512) -> String {
+            OutputLimiter.apply(OutputLimit(maximumBytes: bytes, truncationNotice: "…"), to: text).text
+        }
+        func surrounding(first: Int, last: Int) -> ([String], [String]) {
+            let before = lines[max(0, first - context.before)..<first].map { bounded($0) }
+            let afterStart = min(lines.count, last + 1)
+            let after = lines[afterStart..<min(lines.count, afterStart + context.after)].map { bounded($0) }
+            return (before, after)
+        }
+        if query.multiline {
+            return spans(in: content).map { span in
+                let (before, after) = surrounding(first: span.first, last: span.last)
+                return GrepMatch(
+                    path: path,
+                    lineNumber: span.first + 1,
+                    lineText: bounded(lines[span.first...span.last].joined(separator: "\n"), bytes: 2_048),
+                    endLineNumber: span.last > span.first ? span.last + 1 : nil,
+                    contextBefore: before,
+                    contextAfter: after
+                )
+            }
+        }
+        var found: [GrepMatch] = []
+        for (index, line) in lines.enumerated() where lineMatches(line) {
+            let (before, after) = surrounding(first: index, last: index)
+            found.append(GrepMatch(
+                path: path,
+                lineNumber: index + 1,
+                lineText: bounded(line),
+                contextBefore: before,
+                contextAfter: after
+            ))
+        }
+        return found
+    }
+
+    /// Zero-based first and last line of each whole-content match.
+    private func spans(in content: String) -> [(first: Int, last: Int)] {
+        var ranges: [Range<String.Index>] = []
+        if let regex {
+            let whole = NSRange(content.startIndex..., in: content)
+            for result in regex.matches(in: content, options: [], range: whole) where result.range.length > 0 {
+                if let range = Range(result.range, in: content) { ranges.append(range) }
+            }
+        } else {
+            var searchStart = content.startIndex
+            let options: String.CompareOptions = query.caseSensitive ? [] : [.caseInsensitive]
+            while searchStart < content.endIndex,
+                  let range = content.range(of: query.pattern, options: options, range: searchStart..<content.endIndex)
+            {
+                ranges.append(range)
+                searchStart = range.upperBound > range.lowerBound ? range.upperBound : content.index(after: range.lowerBound)
+            }
+        }
+        // Line numbers by counting "\n" code units up to each bound.
+        let utf8 = content.utf8
+        let newline = UInt8(ascii: "\n")
+        return ranges.map { range in
+            let first = utf8[utf8.startIndex..<range.lowerBound].reduce(0) { $1 == newline ? $0 + 1 : $0 }
+            // The last character matched, not the position after it: a match
+            // ending with its newline still ends on that line.
+            let lastIndex = content.index(before: range.upperBound)
+            let inside = utf8[range.lowerBound..<lastIndex].reduce(0) { $1 == newline ? $0 + 1 : $0 }
+            return (first, first + inside)
+        }
     }
 }
