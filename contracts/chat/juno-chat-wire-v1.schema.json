@@ -11,7 +11,7 @@
   },
   "x-native-summary": {
     "native": 159,
-    "planned": 80,
+    "planned": 113,
     "web-only": 43,
     "unclassified": 0
   },
@@ -424,6 +424,87 @@
             "type": "string"
           },
           "x-native": "native"
+        },
+        "context": {
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "file",
+                  "project",
+                  "app",
+                  "crew",
+                  "skill",
+                  "chat",
+                  "artifact"
+                ],
+                "x-native": "planned"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "x-native": "planned"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                "x-native": "planned"
+              },
+              "range": {
+                "type": "object",
+                "properties": {
+                  "start": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2000000,
+                    "x-native": "planned"
+                  },
+                  "end": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2000000,
+                    "x-native": "planned"
+                  }
+                },
+                "required": [
+                  "start",
+                  "end"
+                ],
+                "x-native": "planned"
+              },
+              "meta": {
+                "type": "object",
+                "properties": {
+                  "icon": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[a-z0-9_:.-]+$",
+                    "x-native": "planned"
+                  },
+                  "subtitle": {
+                    "type": "string",
+                    "maxLength": 160,
+                    "x-native": "planned"
+                  }
+                },
+                "x-native": "planned"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "label"
+            ]
+          },
+          "x-native": "planned",
+          "x-native-note": "Typed context tokens (docs/rework/PRODUCT_REFOUNDATION.md §5; src/lib/chat/context-tokens.ts): the files, projects, apps, crew, skills, chats and artifacts named in the message, with UTF-16 ranges into it. The web accepts it beside the legacy `connectors`; the Mac and iPhone composers gain inline tokens in the UI phase and send it on the append-then-regenerate turn."
         },
         "skillSlug": {
           "type": "string",
@@ -1253,6 +1334,197 @@
           "$ref": "#/$defs/ClientAgentChange",
           "x-native": "web-only",
           "x-native-note": "Structured receipt for conversational agent configuration edits; native refreshes the agent record on turn completion."
+        },
+        "contextReceipt": {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "number",
+              "const": 1,
+              "x-native": "planned"
+            },
+            "tokens": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "app",
+                      "artifact",
+                      "chat",
+                      "crew",
+                      "file",
+                      "project",
+                      "skill"
+                    ],
+                    "x-native": "planned"
+                  },
+                  "id": {
+                    "type": "string",
+                    "x-native": "planned"
+                  },
+                  "label": {
+                    "type": "string",
+                    "x-native": "planned"
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "applied",
+                      "dropped"
+                    ],
+                    "x-native": "planned"
+                  },
+                  "ranges": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "start": {
+                          "type": "number",
+                          "x-native": "planned"
+                        },
+                        "end": {
+                          "type": "number",
+                          "x-native": "planned"
+                        }
+                      },
+                      "required": [
+                        "start",
+                        "end"
+                      ]
+                    },
+                    "x-native": "planned"
+                  },
+                  "text": {
+                    "type": "string",
+                    "x-native": "planned"
+                  },
+                  "via": {
+                    "type": "string",
+                    "enum": [
+                      "already_in_context",
+                      "artifact_excerpt",
+                      "attachment",
+                      "chat_excerpt",
+                      "connector",
+                      "consult",
+                      "handoff",
+                      "project_context",
+                      "skill"
+                    ],
+                    "x-native": "planned"
+                  },
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "attachment_limit",
+                      "blocked",
+                      "connector_limit",
+                      "needs_connection",
+                      "not_found",
+                      "private_mode",
+                      "self",
+                      "skill_conflict",
+                      "skill_refused",
+                      "too_many",
+                      "unavailable",
+                      "workspace_denied"
+                    ],
+                    "x-native": "planned"
+                  },
+                  "message": {
+                    "type": "string",
+                    "x-native": "planned"
+                  },
+                  "connect": {
+                    "type": "object",
+                    "properties": {
+                      "connectorId": {
+                        "type": "string",
+                        "x-native": "planned"
+                      },
+                      "href": {
+                        "type": "string",
+                        "x-native": "planned"
+                      }
+                    },
+                    "required": [
+                      "connectorId",
+                      "href"
+                    ],
+                    "x-native": "planned"
+                  },
+                  "approval": {
+                    "type": "object",
+                    "properties": {
+                      "reads": {
+                        "type": "string",
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "block"
+                        ],
+                        "x-native": "planned"
+                      },
+                      "changes": {
+                        "type": "string",
+                        "enum": [
+                          "allow",
+                          "ask",
+                          "block"
+                        ],
+                        "x-native": "planned"
+                      },
+                      "sends": {
+                        "type": "string",
+                        "enum": [
+                          "ask",
+                          "block"
+                        ],
+                        "x-native": "planned"
+                      },
+                      "deletes": {
+                        "type": "string",
+                        "enum": [
+                          "ask",
+                          "block"
+                        ],
+                        "x-native": "planned"
+                      },
+                      "summary": {
+                        "type": "string",
+                        "x-native": "planned"
+                      }
+                    },
+                    "required": [
+                      "reads",
+                      "changes",
+                      "sends",
+                      "deletes",
+                      "summary"
+                    ],
+                    "x-native": "planned"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id",
+                  "label",
+                  "outcome"
+                ]
+              },
+              "x-native": "planned"
+            }
+          },
+          "required": [
+            "version",
+            "tokens"
+          ],
+          "x-native": "planned",
+          "x-native-note": "What became of each context token (applied or dropped, how, why, where to connect an app, what it will ask first), with the tokens' ranges in the user message so a reload can draw the chips. Native reads it with request.context."
         }
       },
       "required": [

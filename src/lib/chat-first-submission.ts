@@ -68,6 +68,8 @@ export interface FirstSubmissionHashInput {
   reasoningEffort?: ReasoningEffort;
   connectors?: string[];
   client?: LegacyChatClient;
+  /** Context tokens (src/lib/chat/context-tokens.ts): identity and placement only. */
+  context?: ReadonlyArray<{ kind: string; id: string; range?: { start: number; end: number } }>;
 }
 
 function sortedUnique(values: string[] | undefined): string[] {
@@ -105,6 +107,18 @@ export function hashFirstSubmission(input: FirstSubmissionHashInput): string {
     reasoningEffort: input.reasoningEffort ?? null,
     connectors: sortedUnique(input.connectors),
     client: input.client ?? null,
+    // Present only when the request carried tokens, so every tokenless
+    // submission keeps the hash it had before tokens existed: a retry that
+    // spans a deploy must still recognise its own receipt. Order-independent,
+    // like the id lists above; labels are left out because the server reads
+    // names from the rows, not from the request.
+    ...(input.context?.length
+      ? {
+          context: input.context
+            .map((token) => `${token.kind}:${token.id}@${token.range ? `${token.range.start}-${token.range.end}` : ""}`)
+            .sort(),
+        }
+      : {}),
   };
   return createHash("sha256").update(JSON.stringify(canonicalize(envelope))).digest("hex");
 }

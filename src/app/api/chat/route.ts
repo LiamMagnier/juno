@@ -183,6 +183,12 @@ import {
 } from "@/lib/chat/skills";
 import { recordWorkAudit } from "@/lib/work/audit";
 import { chatBodySchema } from "@/lib/chat/request";
+import { rangesForStoredText } from "@/lib/chat/context-tokens";
+import { appendToLastUserTurn, contextActivityRows, TurnContext } from "@/lib/chat/context-resolution";
+import { prismaContextPort, regenerateContextTokens } from "@/lib/chat/context-resolve";
+import { actionPolicyFromSetting } from "@/lib/chat/app-approval-preview";
+import { cloneLibraryAttachments } from "@/lib/library-attach";
+import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { isAttachmentParserPending, isAttachmentParserUnavailable } from "@/lib/attachment-context";
 import { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
 import {
@@ -1027,10 +1033,66 @@ async function handleChat(req: Request) {
           || workspaceConfig.allowedConnectorIds.includes(id)
       )
     : [];
+  /*
+   * ── Context tokens, phase one (src/lib/chat/context-resolution.ts) ────────
+   *
+   * The files, apps and skill a message NAMED, resolved before the route
+   * opens connectors, writes the user message or loads a skill, because each
+   * rides the mechanism that step already is. Every id is checked against
+   * this account's rows; one that is not the account's is dropped with a
+   * notice, never an error. A request with no tokens resolves nothing and
+   * the turn is exactly what it was before tokens existed.
+   *
+   * A regenerate that sends no `context` re-resolves what the answer it
+   * replaces was given (the receipt on that reply), so "try again" does not
+   * quietly lose the files and apps the question named.
+   */
+  const contextTokens =
+    input.context !== undefined
+      ? input.message !== undefined
+        ? rangesForStoredText(input.message, input.context)
+        : input.context
+      : input.regenerate && input.conversationId && !input.privateMode
+        ? await regenerateContextTokens(user.id, input.conversationId).catch(() => [])
+        : [];
+  const contextPort = prismaContextPort({ userId: user.id, settings, conversationProvider: modelInfo.provider });
+  const turnContext = await TurnContext.begin(
+    contextTokens,
+    {
+      privateMode: !!input.privateMode,
+      legacyConnectorIds: requestedConnectorIDs,
+      workspace: {
+        connectorsPermitted: workspacePermits(workspaceConfig, "connectors"),
+        allowedConnectorIds: workspaceConfig.allowedConnectorIds,
+      },
+      attachmentCount: new Set(input.attachmentIds ?? []).size,
+      explicitSkillSlug: input.skillSlug ?? null,
+      approvals: {
+        policy: actionPolicyFromSetting(settings?.actionApprovalPolicy),
+        lockdown: !!settings?.lockdownMode,
+        blockedConnectors: settings?.blockedConnectors ?? [],
+      },
+      carriedOver: input.context === undefined && contextTokens.length > 0,
+    },
+    contextPort
+  );
+  // This turn's apps: the conversation's (sticky, `connectors`) and the ones
+  // this message named (never persisted — see `connectorSelection` below,
+  // which still reads only `requestedConnectorIDs`).
+  const turnConnectorIDs = [...new Set([...requestedConnectorIDs, ...turnContext.connectorIds])];
   const activeConnectors =
-    !input.privateMode && requestedConnectorIDs.length
-      ? await getActiveConnectors(user.id, requestedConnectorIDs)
+    !input.privateMode && turnConnectorIDs.length
+      ? await getActiveConnectors(user.id, turnConnectorIDs)
       : [];
+  turnContext.settleConnectors(activeConnectors);
+  /** The skill this message runs under: armed the ordinary way, else named by a token. One per message. */
+  const turnSkillSlug = input.skillSlug ?? turnContext.skillSlug ?? undefined;
+  const skillSettlement = (outcome: Awaited<ReturnType<typeof loadChatSkill>> | null) =>
+    outcome === null
+      ? null
+      : outcome.applied
+        ? ({ applied: true } as const)
+        : ({ applied: false, message: CHAT_SKILL_REFUSAL_MESSAGES[outcome.reason] } as const);
 
   if (input.privateMode) {
     const unavailable = privateModeFeatureRefusal(input);
@@ -1061,10 +1123,10 @@ async function handleChat(req: Request) {
      * no connectors, no canvas and no attachment tools, so a skill asking for
      * any of them is told it did not get them, which is true.
      */
-    const privateSkill = input.skillSlug
+    const privateSkill = turnSkillSlug
       ? await loadChatSkill({
           userId: user.id,
-          slug: input.skillSlug,
+          slug: turnSkillSlug,
           capabilities: {
             webSearch: useWebSearch,
             canvas: false,
@@ -1075,6 +1137,7 @@ async function handleChat(req: Request) {
         })
       : null;
     const privateSkillBlock = privateSkill?.applied ? privateSkill.application : null;
+    turnContext.settleSkill(skillSettlement(privateSkill));
     const baseSystemSections = buildSystemPromptSections({
       userName: user.name,
       customInstructions: settings?.customInstructions ?? "",
@@ -1144,6 +1207,9 @@ async function handleChat(req: Request) {
         const privatePromptChars = () => promptChars(system, privateHistory);
 
         send({ type: "meta", conversationId: "private", userMessageId: null, title: "Private chat", generationId });
+        // What became of the tokens: in incognito only a skill applies, and
+        // the rest say so rather than vanishing.
+        for (const row of contextActivityRows(turnContext.receipt())) sendActivity(row);
         // Heartbeat: models with hidden reasoning can stream nothing for
         // minutes; periodic pings keep proxies from dropping the idle SSE.
         const heartbeat = setInterval(() => send({ type: "ping" }), 15_000);
@@ -1607,6 +1673,15 @@ async function handleChat(req: Request) {
   }
   let userMessageId: string | null = null;
   let staleAssistantId: string | null = null;
+  /**
+   * Library files a token named, as they landed on the user message: which
+   * sources made it (for the receipt) and the attachment rows they became
+   * (for a task this turn starts). Written inside the same transaction as the
+   * message, so a clone is never left unlinked in the Library.
+   */
+  let attachedContextFiles: Set<string> | null = null;
+  let contextFilesOverLimit = new Set<string>();
+  let contextAttachmentIds: string[] = [];
   let clarificationModelContent: string | null = null;
   let clarificationVisibleContent: string | null = null;
   let clarificationAssistantRollback: { id: string; content: string } | null = null;
@@ -1741,6 +1816,16 @@ async function handleChat(req: Request) {
           });
           if (claimed.count !== attachmentIds.length) throw new AttachmentClaimError();
         }
+        if (turnContext.libraryFiles.length > 0) {
+          const cloned = await cloneLibraryAttachments(
+            tx,
+            user.id,
+            turnContext.libraryFiles.map((file) => file.id),
+            { messageId: message.id, conversationId: acceptedConversation.id }
+          );
+          attachedContextFiles = new Set(cloned.bySource.keys());
+          contextAttachmentIds = [...cloned.bySource.values()];
+        }
 
         const receipt = await tx.chatFirstSubmissionReceipt.create({
           data: {
@@ -1852,6 +1937,37 @@ async function handleChat(req: Request) {
       orderBy: { createdAt: "desc" },
     });
     if (last?.role === "ASSISTANT") staleAssistantId = last.id;
+    // The native clients append the user turn first and then regenerate, so
+    // their file tokens arrive here: cloned onto the turn being answered,
+    // once — a retry that re-sends them finds the file already there.
+    //
+    // The message row is locked first, so two regenerates of the same turn
+    // (a double tap, a retry racing its original) run this one at a time and
+    // the second sees the first's clones. The turn keeps the per-message
+    // attachment ceiling, counting what it already carries: a regenerate is
+    // not a way to add files to a message past it.
+    if (turnContext.libraryFiles.length > 0) {
+      const target = await prisma.message.findFirst({
+        where: { conversationId: conversation.id, role: "USER" },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+      if (target) {
+        const conversationId = conversation.id;
+        const cloned = await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT "id" FROM "Message" WHERE "id" = ${target.id} FOR UPDATE`;
+          return cloneLibraryAttachments(
+            tx,
+            user.id,
+            turnContext.libraryFiles.map((file) => file.id),
+            { messageId: target.id, conversationId, skipExistingOnMessage: true, maxOnMessage: MAX_ATTACHMENTS }
+          );
+        });
+        attachedContextFiles = new Set(cloned.bySource.keys());
+        contextFilesOverLimit = new Set(cloned.overLimit);
+        contextAttachmentIds = [...cloned.bySource.values()];
+      }
+    }
   } else if (!durableFirstSubmission) {
     if (input.clarification) {
       const assistantMessage = await prisma.message.findFirst({
@@ -1919,6 +2035,19 @@ async function handleChat(req: Request) {
           // whole submission rather than silently disappearing from the prompt.
           if (claimed.count !== attachmentIds.length) throw new AttachmentClaimError();
         }
+        // A file token is the Library picker's clone, claimed by this message
+        // in the same transaction. A file removed from the Library since the
+        // token was resolved is simply not cloned, and the receipt says so.
+        if (turnContext.libraryFiles.length > 0) {
+          const cloned = await cloneLibraryAttachments(
+            tx,
+            user.id,
+            turnContext.libraryFiles.map((file) => file.id),
+            { messageId: message.id, conversationId: conversation.id }
+          );
+          attachedContextFiles = new Set(cloned.bySource.keys());
+          contextAttachmentIds = [...cloned.bySource.values()];
+        }
 
         return message;
       });
@@ -1949,6 +2078,8 @@ async function handleChat(req: Request) {
     }
 
   }
+
+  turnContext.settleFiles(attachedContextFiles, contextFilesOverLimit);
 
   // Durable first submissions consumed quota inside their acceptance
   // transaction. Every legacy caller retains the existing quota path.
@@ -2207,6 +2338,33 @@ async function handleChat(req: Request) {
   // envelope, instead of the system prompt — see buildProjectReferenceFiles.
   const projectReferenceFiles = buildProjectReferenceFiles(assistantProjectRow, projectKnowledge);
   const modelHistory = prependToFirstUserTurn(baseHistory, projectReferenceFiles);
+
+  /*
+   * ── Context tokens, phase two ─────────────────────────────────────────────
+   *
+   * The projects, chats, artifacts and crew members a message named are prompt
+   * context: read now that the conversation and the person's words for this
+   * turn exist, and put after the latest user turn for this generation only
+   * (`turnHistory`, below). Ranges are fitted to the user message as stored,
+   * which a regenerate reads back rather than receives.
+   */
+  if (!turnContext.empty) {
+    const storedUserText =
+      (userMessageId
+        ? history.find((message) => message.id === userMessageId)
+        : [...history].reverse().find((message) => message.role === "USER")
+      )?.content ?? "";
+    turnContext.fitRanges(storedUserText);
+    await turnContext.resolveReferences(
+      {
+        conversationId: conversation.id,
+        conversationProjectId: conversation.projectId,
+        threadAgentId: conversation.agentId,
+        query: knowledgeQuery,
+      },
+      contextPort
+    );
+  }
   // Attachment text is rendered by every adapter inside the same envelope
   // (attachedFileText); the rule that reads the envelope has to be on for it.
   const historyCarriesAttachmentText = modelHistory.some((message) =>
@@ -2256,10 +2414,10 @@ async function handleChat(req: Request) {
    * reader which skill was armed, and failing the generation would charge them
    * for a sentence they never got.
    */
-  const skillOutcome = input.skillSlug
+  const skillOutcome = turnSkillSlug
     ? await loadChatSkill({
         userId: user.id,
-        slug: input.skillSlug,
+        slug: turnSkillSlug,
         projectId: conversation.projectId,
         capabilities: {
           webSearch: useWebSearch,
@@ -2271,6 +2429,7 @@ async function handleChat(req: Request) {
       })
     : null;
   const appliedSkill = skillOutcome?.applied ? skillOutcome.application : null;
+  turnContext.settleSkill(skillSettlement(skillOutcome));
   if (skillOutcome) {
     /*
      * Logged, not awaited.
@@ -2315,7 +2474,7 @@ async function handleChat(req: Request) {
             withheldCount: withheldCapabilityCount(skillOutcome.application.resolved),
             generationId: durableGenerationId ?? input.generationId ?? undefined,
           }
-        : { skillSlug: input.skillSlug, outcome: skillOutcome.reason },
+        : { skillSlug: turnSkillSlug, outcome: skillOutcome.reason },
     });
   }
   // Any of these can put text Juno did not author into context: a connector
@@ -2342,7 +2501,9 @@ async function handleChat(req: Request) {
     // document whose text never made it onto the attachment row reaches the
     // model only through the tool, and would otherwise arrive marked but
     // ungoverned.
-    attachmentToolToggles.documents;
+    attachmentToolToggles.documents ||
+    // A chat excerpt, an artifact or a project's documents the message named.
+    turnContext.untrusted;
   /*
    * Whether the model may hand this request to a background task.
    *
@@ -2410,6 +2571,15 @@ async function handleChat(req: Request) {
           return null;
         })
       : null;
+  /*
+   * The referenced-context block, and the history the model reads with it.
+   * Decided here because a named crew member's ask goes to
+   * `hand_off_to_teammate` only when this turn carries that tool — the agent
+   * context above says whether it does, and the handoff tool below exists
+   * only with a user message to key it on.
+   */
+  const contextBlock = turnContext.turnBlock({ handoffAvailable: !!agentContext?.handoff && !!userMessageId });
+  const turnHistory = appendToLastUserTurn(modelHistory, contextBlock);
   const baseSystemSections = buildSystemPromptSections({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
@@ -2888,6 +3058,10 @@ async function handleChat(req: Request) {
           })),
         });
       }
+      // What became of each token the message named — the durable receipt
+      // (`contextReceipt`) and a warning for each one that did not make it,
+      // "Stripe isn't connected" included.
+      for (const row of contextActivityRows(turnContext.receipt())) sendActivity(row);
       if (artifactEditTarget) {
         sendActivity({
           kind: "tool",
@@ -3041,7 +3215,7 @@ async function handleChat(req: Request) {
       // Hard mid-stream budget ceiling (see the private path for rationale):
       // abort the provider stream the instant this generation's running cost
       // would take the user past their remaining plan budget.
-      const synthesisPromptChars = () => promptChars(synthesisSystem, modelHistory);
+      const synthesisPromptChars = () => promptChars(synthesisSystem, turnHistory);
       let budgetHalted = false;
       const budgetGuard = createStreamBudgetGuard({
         ceilingMicroUsd: budget.remainingMicroUsd,
@@ -3107,7 +3281,7 @@ async function handleChat(req: Request) {
               skillSlug: appliedSkill?.candidate.slug ?? null,
               model: conversationModelId,
               reasoningEffort: requestedEffort,
-              attachmentIds: input.attachmentIds ?? [],
+              attachmentIds: [...(input.attachmentIds ?? []), ...contextAttachmentIds],
               connectorIds: activeConnectors.map((connector) => connector.id),
               // Wider than the memory rule's flag: any file in the window
               // counts, pictures included. A screenshot of an email reaches a
@@ -3227,7 +3401,7 @@ async function handleChat(req: Request) {
           model: modelInfo,
           system: synthesisSystem,
           systemStablePrefix: baseSystemSections.stable,
-          history: modelHistory,
+          history: turnHistory,
           maxTokens: PLANS[plan].maxOutputTokens,
           // Not tied to req.signal: route changes can drop the browser stream
           // without killing generation; the explicit cancel endpoint aborts this.

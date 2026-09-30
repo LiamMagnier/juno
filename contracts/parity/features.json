@@ -106,6 +106,10 @@
           "note": "Whether to ask a clarifying question before a turn runs; the Mac's composer has no pre-flight questions yet (request.preflightClarification in the chat wire)."
         },
         "/api/chat/follow-ups": "native",
+        "/api/mentions": {
+          "status": "planned",
+          "note": "The composer's @ palette for typed context tokens (crew, files, projects, apps with needs-connection and approval preview, skills, chats, artifacts); the Mac and iPhone composers adopt inline tokens in the UI phase (request.context in the chat wire)."
+        },
         "/api/chat/receipt": {
           "status": "planned",
           "note": "Receipt refresh for a durable first submission, built for native recovery; the Swift apps append the turn first and have not adopted the durable pair (request.clientRequestId in the chat wire)."

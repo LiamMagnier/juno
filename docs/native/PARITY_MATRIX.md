@@ -22,13 +22,13 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-286 routes: 176 native, 46 planned, 51 web only, 13 internal. 44 pages: on the Mac 33 native, 2 partial, 2 planned, 7 web only; on iOS 17 native, 6 partial, 14 planned, 7 web only.
+287 routes: 176 native, 47 planned, 51 web only, 13 internal. 44 pages: on the Mac 33 native, 2 partial, 2 planned, 7 web only; on iOS 17 native, 6 partial, 14 planned, 7 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
 | [Sign-in and account security](#auth) | – | – | 15 | 3 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 6 | 0 | 2 | 0 |
-| [Chat and streaming](#chat) | 2/2 | 2/2 | 9 | 2 | 1 | 0 |
+| [Chat and streaming](#chat) | 2/2 | 2/2 | 9 | 3 | 1 | 0 |
 | [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 1 | 1 | 1 | 0 |
@@ -120,6 +120,7 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/chat/cancel` | POST | Native | JunoChatKit |  |
 | `/api/chat/clarify` | POST | Planned |  | Whether to ask a clarifying question before a turn runs; the Mac's composer has no pre-flight questions yet (request.preflightClarification in the chat wire). |
 | `/api/chat/follow-ups` | POST | Native | JunoChatKit |  |
+| `/api/mentions` | GET | Planned |  | The composer's @ palette for typed context tokens (crew, files, projects, apps with needs-connection and approval preview, skills, chats, artifacts); the Mac and iPhone composers adopt inline tokens in the UI phase (request.context in the chat wire). |
 | `/api/chat/receipt` | GET | Planned |  | Receipt refresh for a durable first submission, built for native recovery; the Swift apps append the turn first and have not adopted the durable pair (request.clientRequestId in the chat wire). |
 | `/api/chat/stream/[generationId]` | GET | Native | JunoChatKit |  |
 | `/api/chat/stream/active` | GET | Native | JunoChatKit |  |
