@@ -208,3 +208,20 @@ native (RealityKit meshes and PhysicallyBasedMaterial on Mac/iOS). Performance
 is part of the design: one shared renderer, cached sprites at ≤ 28 px, on-demand
 rendering for live faces, zero GPU work when idle. Motion stays event-driven
 (INTERACTION_SPEC §2.9, amended P4).
+
+**D-032 · Crew members are premium, cute 3D characters with deep customization
+(owner, 2026-10-01; supersedes the "face is an instrument, never a character"
+rule in PRODUCT_REFOUNDATION §7 and INTERACTION_SPEC §2.9, and refines D-031).**
+The owner shared OpenAI's dots imagery (plush 3D characters with accessories,
+expressive eyes, a colour per character that themes its thread, the character
+peeking above the conversation with its name and "Thinking…") and asked for
+"these kind of agents … more premium but cute … a lot of customization, motion
+design and everything". Juno builds its own character system in that spirit:
+own body shapes, materials (plush fur by shell texturing, velvet flock, knit,
+felt, soft vinyl, ceramic), eyes, accessories, colours, and an editor with a
+live 3D preview. Guardrails: never replicate dots' four characters or their
+exact accessories/colour pairings; state is always also words (no pills or
+dots); motion is mostly event-driven, with a subtle idle allowed only on the
+large character in the member's own thread (stopped when hidden or under
+Reduce Motion); performance rules from D-031 still apply (shared renderer,
+sprites at small sizes, fur level-of-detail, zero GPU when idle).

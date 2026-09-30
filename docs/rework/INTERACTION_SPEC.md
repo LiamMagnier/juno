@@ -1059,6 +1059,9 @@ Structure is PRODUCT_REFOUNDATION §4.1. The sidebar sits one tone step dimmer t
 
 ### 2.9 Crew faces: states and transitions
 
+> **Superseded in part by DECISIONS D-032 (2026-10-01).** Crew members are now cute, premium 3D characters with deep customization. The state contract below (six states, words always present, event-driven transitions, P3 attention, P4 pointer gaze and event blinks, P6 arrival) still applies. What changes: faces may be characters with personality (accessories, expressive eyes, reactions such as a small happy bounce when thanked); the large character in a member's own thread may carry a subtle idle (breathing/sway, occasional blink) that stops when the tab is hidden or Reduce Motion is on; small faces (≤ 28 px) stay still sprites.
+
+
 A face is an **instrument of state**, never a character (PRODUCT_REFOUNDATION §7). The drawing itself is decided in the identity round (`DESIGN_LANGUAGE.md`); it must stop being a Grok Bot derivative (crew audit §3.2-5). This section fixes the **state contract** every drawing must honour: the states, what each looks like in principle, when it may move, and what it says.
 
 `FaceState = available | thinking | working | waitingForYou | paused | offline`
