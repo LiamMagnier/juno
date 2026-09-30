@@ -1,0 +1,977 @@
+/*
+ * CANVAS — round 2 direction. Everything is scoped to `.cv`.
+ *
+ * The law, in one paragraph: a bright neutral ground (faint points only on
+ * the empty home), ink type in two weights, hairlines at low contrast, one
+ * floating object per screen (the composer), and colour ONLY where an entity
+ * brings its own (brand marks, file types, faces) plus one accent on send.
+ * Amber means "needs you" and nothing else.
+ *
+ * Files: canvas.css (tokens, base, shell, buttons, face, point),
+ * composer.css (composer, tokens, floating layers), thread.css,
+ * pages.css (crew, code, system, motion, type lab).
+ */
+
+/* ————————————————————————————————— Tokens ————————————————————————————————— */
+
+.cv {
+  /* Ground and surfaces */
+  --bg: #ffffff;
+  --side: #fafafa;
+  --surface: #ffffff;
+  --surface-2: #f4f4f4;
+  --pop: #ffffff;
+  --token: #f1f1f1;
+  --token-hover: #e8e8e8;
+
+  /* Ink */
+  --ink: #121212;
+  --ink-2: #5c5c5c;
+  --ink-3: #737373;
+  --on-ink: #ffffff;
+  --ink-hover: #2b2b2b;
+  --ink-press: #3d3d3d;
+
+  /* Fills (tonal hover / press / selected) */
+  --fill-hover: rgb(0 0 0 / 0.04);
+  --fill-press: rgb(0 0 0 / 0.075);
+  --fill-selected: rgb(0 0 0 / 0.055);
+  --fill-strong: rgb(0 0 0 / 0.09);
+
+  /* Lines */
+  --line: rgb(0 0 0 / 0.07);
+  --line-2: rgb(0 0 0 / 0.1);
+  --line-3: rgb(0 0 0 / 0.16);
+  --line-ui: #8f8f8f; /* 3.3:1 on white: field, switch and needs-connection edges */
+
+  /* The one accent: send / voice. oklch(0.47 0.16 268) */
+  --accent: #3550b3;
+  --accent-hover: #2e47a9;
+  --accent-press: #28409a;
+  --on-accent: #ffffff;
+
+  /* Needs you */
+  --amber: #9a5b00;
+
+  /* Diff (Code only) */
+  --add-bg: rgb(26 127 55 / 0.09);
+  --add-ink: #1a7f37;
+  --del-bg: rgb(207 34 46 / 0.07);
+  --del-ink: #b42318;
+
+  /* Faces: flat tones, one per member */
+  --face-1: #82cfc0;
+  --face-2: #a1b5f2;
+  --face-3: #edc47d;
+  --face-4: #efa49d;
+  --face-5: #b6d29b;
+  --face-6: #beaede;
+  --face-off: #d4d4d4;
+  --face-eye: #15171a;
+
+  /* The canvas's points */
+  --grid-dot: rgb(0 0 0 / 0.11);
+
+  /* Depth: one floating object, menus float above it */
+  --shadow-composer: 0 0 0 1px rgb(0 0 0 / 0.055), 0 1px 3px rgb(0 0 0 / 0.04), 0 12px 32px -12px rgb(0 0 0 / 0.1),
+    0 40px 96px -32px rgb(0 0 0 / 0.16);
+  --shadow-composer-focus: 0 0 0 1px rgb(0 0 0 / 0.1), 0 1px 3px rgb(0 0 0 / 0.05), 0 14px 36px -12px rgb(0 0 0 / 0.13),
+    0 44px 104px -32px rgb(0 0 0 / 0.2);
+  --shadow-pop: 0 0 0 1px rgb(0 0 0 / 0.07), 0 6px 16px -4px rgb(0 0 0 / 0.08), 0 20px 48px -12px rgb(0 0 0 / 0.16);
+  --shadow-raise: 0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.06);
+
+  --focus: #121212;
+
+  /* Type */
+  --font-display: var(--cv-font-display), ui-sans-serif, system-ui, sans-serif;
+  --font-text: var(--cv-font-text), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--cv-font-mono), ui-monospace, monospace;
+
+  /* Motion */
+  --dur-1: 120ms;
+  --dur-2: 160ms;
+  --dur-3: 220ms;
+  --dur-4: 320ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-io: cubic-bezier(0.45, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+
+  color-scheme: light;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-text);
+  font-size: 14px;
+  line-height: 20px;
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+html.dark .cv:not([data-theme="light"]),
+.cv[data-theme="dark"] {
+  --bg: #111111;
+  --side: #0c0c0c;
+  --surface: #1a1a1a;
+  --surface-2: #1c1c1c;
+  --pop: #1d1d1d;
+  --token: #2a2a2a;
+  --token-hover: #343434;
+
+  --ink: #ededed;
+  --ink-2: #a3a3a3;
+  --ink-3: #8f8f8f;
+  --on-ink: #111111;
+  --ink-hover: #d9d9d9;
+  --ink-press: #c4c4c4;
+
+  --fill-hover: rgb(255 255 255 / 0.05);
+  --fill-press: rgb(255 255 255 / 0.09);
+  --fill-selected: rgb(255 255 255 / 0.07);
+  --fill-strong: rgb(255 255 255 / 0.11);
+
+  --line: rgb(255 255 255 / 0.07);
+  --line-2: rgb(255 255 255 / 0.1);
+  --line-3: rgb(255 255 255 / 0.16);
+  --line-ui: #6b6b6b;
+
+  --accent: #4967c5;
+  --accent-hover: #5572cf;
+  --accent-press: #3f5cb8;
+  --on-accent: #ffffff;
+
+  --amber: #f0b35b;
+
+  --add-bg: rgb(63 185 80 / 0.12);
+  --add-ink: #56c26a;
+  --del-bg: rgb(248 81 73 / 0.1);
+  --del-ink: #f07a72;
+
+  --face-off: #4a4a4a;
+  --face-eye: #121314;
+
+  --grid-dot: rgb(255 255 255 / 0.1);
+
+  --shadow-composer: 0 0 0 1px rgb(255 255 255 / 0.08), 0 1px 2px rgb(0 0 0 / 0.4), 0 16px 48px -12px rgb(0 0 0 / 0.7);
+  --shadow-composer-focus: 0 0 0 1px rgb(255 255 255 / 0.14), 0 1px 2px rgb(0 0 0 / 0.4), 0 18px 56px -12px rgb(0 0 0 / 0.8);
+  --shadow-pop: 0 0 0 1px rgb(255 255 255 / 0.09), 0 8px 20px -4px rgb(0 0 0 / 0.5), 0 24px 56px -12px rgb(0 0 0 / 0.7);
+  --shadow-raise: 0 0 0 1px rgb(255 255 255 / 0.08), 0 1px 2px rgb(0 0 0 / 0.4);
+
+  --focus: #ededed;
+  color-scheme: dark;
+}
+
+/* The dev-build badge would sit in every still. */
+html:has(.cv) nextjs-portal {
+  display: none;
+}
+html:has(.cv),
+html:has(.cv) body {
+  background: var(--cv-page, #ffffff);
+}
+html.dark:has(.cv) body {
+  background: #111111;
+}
+
+:where(.cv) *,
+:where(.cv) *::before,
+:where(.cv) *::after {
+  box-sizing: border-box;
+}
+:where(.cv) button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cv :focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+:where(.cv) :is(p, h1, h2, h3, ul, ol) {
+  margin: 0;
+}
+:where(.cv) a {
+  color: inherit;
+}
+
+/* Icons from the app set carry hover articulations (a nudge, a turn).
+   Canvas hovers are tonal, never spatial: neutralise them here. */
+.cv svg.icon[data-motion] {
+  --icon-hover-t: 0 0;
+  --icon-hover-r: 0deg;
+  --icon-hover-s: 1;
+}
+.cv .cv-i {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.cv .cv-i-sm {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.cv .cv-mark {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.cv .cv-mark--ink {
+  color: var(--ink-2);
+}
+.cv .cv-markbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.cv .cv-mark-fill {
+  width: 100%;
+  height: 100%;
+}
+
+/* ———————————————————————————— Type ramp ———————————————————————————— */
+
+.cv .t-display {
+  font: 400 44px/52px var(--font-display);
+  letter-spacing: -0.03em;
+}
+.cv .t-title {
+  font: 400 28px/34px var(--font-display);
+  letter-spacing: -0.022em;
+}
+.cv .t-heading {
+  font: 500 17px/26px var(--font-text);
+  letter-spacing: -0.006em;
+}
+.cv .t-body {
+  font: 400 16px/26px var(--font-text);
+}
+.cv .t-ui {
+  font: 400 13.5px/20px var(--font-text);
+}
+.cv .t-small {
+  font: 400 12.5px/18px var(--font-text);
+}
+.cv .t-label {
+  font: 500 12px/16px var(--font-text);
+  color: var(--ink-3);
+}
+.cv .t-mono {
+  font: 400 12.5px/20px var(--font-mono);
+}
+.cv .ink-2 {
+  color: var(--ink-2);
+}
+.cv .ink-3 {
+  color: var(--ink-3);
+}
+.cv .amber {
+  color: var(--amber);
+}
+.cv .num {
+  font-variant-numeric: tabular-nums;
+}
+.cv .sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ———————————————————————————— App frame ———————————————————————————— */
+
+.cv-app {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  min-height: 100dvh;
+}
+.cv-main {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+.cv-top {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px 0 20px;
+  flex-shrink: 0;
+  background: var(--bg);
+}
+.cv-top[data-clear] {
+  background: transparent;
+}
+.cv-top__title {
+  font: 400 13.5px/20px var(--font-text);
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv-top__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+
+/* ———————————————————————————— Sidebar ———————————————————————————— */
+
+.cv-side {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--side);
+  border-right: 1px solid var(--line);
+  padding: 10px 10px 8px;
+  overflow: hidden;
+}
+.cv-side__head {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 0 0 8px;
+}
+.cv-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  font: 500 16px/1 var(--font-display);
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+.cv-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 32px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--fill-hover);
+  margin: 6px 0 10px;
+}
+.cv-switch__opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 8px;
+  font: 400 13px/1 var(--font-text);
+  color: var(--ink-2);
+  transition: color var(--dur-1) var(--ease-out), background-color var(--dur-1) var(--ease-out);
+}
+.cv-switch__opt:hover {
+  color: var(--ink);
+}
+.cv-switch__opt[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 500;
+  box-shadow: var(--shadow-raise);
+}
+.cv-side__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.cv-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cv-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font: 400 13.5px/20px var(--font-text);
+  color: var(--ink);
+  text-decoration: none;
+  width: 100%;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.cv-row:hover {
+  background: var(--fill-hover);
+}
+.cv-row:active {
+  background: var(--fill-press);
+}
+.cv-row[aria-current="page"] {
+  background: var(--fill-selected);
+  color: var(--ink);
+}
+.cv-row > .cv-i {
+  color: var(--ink-3);
+  transition: color var(--dur-1) var(--ease-out);
+}
+.cv-row:hover > .cv-i {
+  color: var(--ink-2);
+}
+.cv-row__text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv-row__hint {
+  font: 400 12px/1 var(--font-text);
+  color: var(--ink-3);
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-out);
+}
+.cv-row:hover .cv-row__hint,
+.cv-row:focus-visible .cv-row__hint {
+  opacity: 1;
+}
+.cv-row__attn {
+  font: 400 12.5px/1 var(--font-text);
+  color: var(--amber);
+  white-space: nowrap;
+}
+.cv-row__meta {
+  font: 400 12px/1 var(--font-text);
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.cv-row--muted {
+  color: var(--ink-2);
+}
+.cv-row--muted:hover {
+  color: var(--ink);
+}
+.cv-side__label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 16px 8px 4px;
+  font: 400 12px/16px var(--font-text);
+  color: var(--ink-3);
+}
+.cv-side__label .cv-ibtn {
+  width: 24px;
+  height: 24px;
+  margin-right: -4px;
+  opacity: 0;
+}
+.cv-side__section:hover .cv-side__label .cv-ibtn,
+.cv-side__label .cv-ibtn:focus-visible {
+  opacity: 1;
+}
+.cv-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 8px;
+  margin-top: 6px;
+  border-radius: 10px;
+  width: 100%;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+.cv-account:hover {
+  background: var(--fill-hover);
+}
+.cv-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--fill-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: 500 10.5px/1 var(--font-text);
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+.cv-account__name {
+  font: 400 13.5px/18px var(--font-text);
+  flex: 1;
+}
+.cv-account__plan {
+  font: 400 12px/1 var(--font-text);
+  color: var(--ink-3);
+}
+
+/* Phone bar (the sidebar folds away below 768px) */
+.cv-mbar {
+  display: none;
+}
+
+/* ———————————————————————————— Buttons ———————————————————————————— */
+
+.cv-ibtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  flex-shrink: 0;
+  transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.cv-ibtn:hover {
+  background: var(--fill-hover);
+  color: var(--ink);
+}
+.cv-ibtn:active {
+  background: var(--fill-press);
+}
+.cv-ibtn[aria-expanded="true"],
+.cv-ibtn[aria-pressed="true"] {
+  background: var(--fill-selected);
+  color: var(--ink);
+}
+.cv-ibtn:disabled {
+  color: var(--ink-3);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.cv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font: 500 13.5px/1 var(--font-text);
+  white-space: nowrap;
+  transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out);
+}
+.cv-btn--primary {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.cv-btn--primary:hover {
+  background: var(--ink-hover);
+}
+.cv-btn--primary:active {
+  background: var(--ink-press);
+}
+.cv-btn--secondary {
+  box-shadow: inset 0 0 0 1px var(--line-3);
+  color: var(--ink);
+}
+.cv-btn--secondary:hover {
+  background: var(--fill-hover);
+}
+.cv-btn--secondary:active {
+  background: var(--fill-press);
+}
+.cv-btn--ghost {
+  color: var(--ink-2);
+  padding: 0 10px;
+}
+.cv-btn--ghost:hover {
+  background: var(--fill-hover);
+  color: var(--ink);
+}
+.cv-btn--ghost:active {
+  background: var(--fill-press);
+}
+.cv-btn--sm {
+  height: 28px;
+  padding: 0 11px;
+  font-size: 13px;
+}
+.cv-btn:disabled,
+.cv-btn[aria-disabled="true"] {
+  background: var(--fill-selected);
+  color: var(--ink-3);
+  box-shadow: none;
+  pointer-events: none;
+}
+.cv-btn > .cv-i {
+  margin-left: -3px;
+}
+
+/* ———————————————————————————— Home canvas ———————————————————————————— */
+
+.cv-gridlayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, var(--grid-dot) 0.9px, transparent 1.25px);
+  background-size: 24px 24px;
+  background-position: 12px 12px;
+}
+.cv-home {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 32px 11vh;
+}
+.cv-greet {
+  font: 400 44px/52px var(--font-display);
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  text-align: center;
+  margin-bottom: 32px;
+  text-wrap: balance;
+}
+.cv-chips {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+.cv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px 0 10px;
+  border-radius: 999px;
+  background-color: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  font: 400 13.5px/1 var(--font-text);
+  color: var(--ink-2);
+  white-space: nowrap;
+  transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-1) var(--ease-out);
+}
+.cv-chip:hover {
+  background-image: linear-gradient(var(--fill-hover), var(--fill-hover));
+  color: var(--ink);
+}
+.cv-chip:active {
+  background-image: linear-gradient(var(--fill-press), var(--fill-press));
+}
+.cv-chip > .cv-i {
+  color: var(--ink-3);
+}
+
+/* ———————————————————————————— Face ———————————————————————————— */
+
+.cv-face {
+  overflow: visible;
+  flex-shrink: 0;
+  display: block;
+}
+.cv-face[data-tone="1"] {
+  --face-tone: var(--face-1);
+}
+.cv-face[data-tone="2"] {
+  --face-tone: var(--face-2);
+}
+.cv-face[data-tone="3"] {
+  --face-tone: var(--face-3);
+}
+.cv-face[data-tone="4"] {
+  --face-tone: var(--face-4);
+}
+.cv-face[data-tone="5"] {
+  --face-tone: var(--face-5);
+}
+.cv-face[data-tone="6"] {
+  --face-tone: var(--face-6);
+}
+.cv-face__body {
+  fill: var(--face-tone);
+  transition: fill var(--dur-3) var(--ease-out);
+}
+.cv-face[data-presence="offline"] .cv-face__body {
+  fill: var(--face-off);
+}
+.cv-face__lids rect {
+  fill: var(--face-eye);
+}
+.cv-face__all,
+.cv-face__eyes,
+.cv-face__lids {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.cv-face__eyes {
+  transition: transform 300ms var(--ease-spring);
+}
+.cv-face[data-presence="thinking"] .cv-face__eyes {
+  transform: translate(1.3px, -2.3px) scale(0.94);
+}
+.cv-face[data-presence="working"] .cv-face__eyes {
+  transform: translate(0, 1.9px) scaleY(0.5);
+}
+.cv-face[data-presence="waiting"] .cv-face__eyes {
+  transform: translateY(-0.4px) scale(1.14);
+}
+.cv-face[data-presence="paused"] .cv-face__eyes,
+.cv-face[data-presence="offline"] .cv-face__eyes {
+  transform: translateY(1.6px) scaleY(0.2);
+}
+.cv-face[data-anim="blink"] .cv-face__lids {
+  animation: cv-blink 190ms var(--ease-io);
+}
+.cv-face[data-anim="attend"] .cv-face__all {
+  animation: cv-attend 900ms var(--ease-io);
+}
+.cv-face[data-anim="settle"] .cv-face__all {
+  animation: cv-settle 460ms var(--ease-out);
+}
+.cv-face[data-anim="settle"] .cv-face__lids {
+  animation: cv-blink 190ms var(--ease-io);
+}
+.cv-face[data-anim="glance"] .cv-face__lids {
+  animation: cv-glance 1700ms var(--ease-io);
+}
+@keyframes cv-blink {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.12);
+  }
+}
+@keyframes cv-attend {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  20% {
+    transform: translateY(-2.6px);
+  }
+  40% {
+    transform: translateY(0);
+  }
+  60% {
+    transform: translateY(-1.4px);
+  }
+  78% {
+    transform: translateY(0);
+  }
+}
+@keyframes cv-settle {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  35% {
+    transform: translateY(1.4px);
+  }
+}
+@keyframes cv-glance {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  30%,
+  60% {
+    transform: translateX(-2.6px);
+  }
+}
+
+/* ———————————————————————————— The point ———————————————————————————— */
+
+.cv-point {
+  display: block;
+  flex-shrink: 0;
+  overflow: visible;
+  color: currentColor;
+}
+.cv-point__grid {
+  fill: currentColor;
+  opacity: 0.28;
+}
+.cv-point__ink {
+  fill: currentColor;
+}
+.cv-point[data-state="thinking"] .cv-point__ink {
+  animation: cv-walk 2.4s var(--ease-io) infinite;
+}
+.cv-point[data-state="working"] .cv-point__ink {
+  animation: cv-shuttle 1.8s var(--ease-io) infinite;
+}
+@keyframes cv-walk {
+  0%,
+  8% {
+    transform: translate(-4.5px, -4.5px);
+  }
+  12.5%,
+  20.5% {
+    transform: translate(0, -4.5px);
+  }
+  25%,
+  33% {
+    transform: translate(4.5px, -4.5px);
+  }
+  37.5%,
+  45.5% {
+    transform: translate(4.5px, 0);
+  }
+  50%,
+  58% {
+    transform: translate(4.5px, 4.5px);
+  }
+  62.5%,
+  70.5% {
+    transform: translate(0, 4.5px);
+  }
+  75%,
+  83% {
+    transform: translate(-4.5px, 4.5px);
+  }
+  87.5%,
+  95.5% {
+    transform: translate(-4.5px, 0);
+  }
+  100% {
+    transform: translate(-4.5px, -4.5px);
+  }
+}
+@keyframes cv-shuttle {
+  0%,
+  100% {
+    transform: translate(-4.5px, 0);
+  }
+  50% {
+    transform: translate(4.5px, 0);
+  }
+}
+
+/* ———————————————————————————— Reduced motion ———————————————————————————— */
+
+@media (prefers-reduced-motion: reduce) {
+  .cv *,
+  .cv *::before,
+  .cv *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+  .cv .cv-caret,
+  .cv .cv-point__ink {
+    animation: none !important;
+  }
+  .cv .cv-face * {
+    animation: none !important;
+  }
+}
+.cv[data-rm] *,
+.cv[data-rm] *::before,
+.cv[data-rm] *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+}
+.cv[data-rm] .cv-caret,
+.cv[data-rm] .cv-point__ink,
+.cv[data-rm] .cv-face * {
+  animation: none !important;
+}
+
+/* ———————————————————————————— Phone ———————————————————————————— */
+
+@media (max-width: 767px) {
+  .cv-app {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cv-app > .cv-side {
+    display: none;
+  }
+  .cv-mbar {
+    position: sticky;
+    top: 0;
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 52px;
+    padding: 0 6px;
+    background: var(--bg);
+  }
+  .cv-mbar[data-clear] {
+    background: transparent;
+  }
+  .cv-mbar .cv-ibtn {
+    width: 44px;
+    height: 44px;
+  }
+  .cv-mbar__title {
+    flex: 1;
+    text-align: center;
+    font: 500 15px/1 var(--font-display);
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cv-mbar__title--thread {
+    font: 400 14px/20px var(--font-text);
+    color: var(--ink);
+  }
+  .cv-top {
+    display: none;
+  }
+  .cv-greet {
+    font-size: 32px;
+    line-height: 38px;
+    letter-spacing: -0.028em;
+    margin-bottom: 20px;
+  }
+  .cv-home {
+    padding: 0 0 12px;
+    justify-content: flex-start;
+  }
+  .cv-home > .cv-greet {
+    order: 1;
+    margin-top: auto;
+    padding: 0 20px;
+    width: 100%;
+    text-align: left;
+  }
+  .cv-home > .cv-chips {
+    order: 2;
+    margin: 0 0 auto;
+    width: 100%;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding: 2px 16px;
+    scrollbar-width: none;
+  }
+  .cv-home > .cv-chips::-webkit-scrollbar {
+    display: none;
+  }
+  .cv-home > .cv-composer-wrap {
+    order: 3;
+    position: sticky;
+    bottom: 12px;
+    width: calc(100% - 24px);
+    margin: 24px 12px 0;
+  }
+  .cv-chip {
+    height: 40px;
+    flex-shrink: 0;
+  }
+}
