@@ -62,6 +62,13 @@ export interface ProviderRequest {
    * a preference the user expressed once into a run that cannot start at all.
    */
   reasoningEffort?: ReasoningEffort;
+  /**
+   * Whether to mark the request for the provider's prompt cache, where the
+   * provider needs telling (Anthropic). Absent means yes: every agent step
+   * re-sends the prefix the last one sent. A single side call — a compaction
+   * summary — passes false, because nothing will read what it would write.
+   */
+  cache?: boolean;
 }
 
 export interface ProviderAdapter {

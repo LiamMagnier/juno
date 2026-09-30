@@ -17,6 +17,7 @@ import type {
 import type { ProviderAdapter, ReasoningEffort } from './providers/types.js';
 import type { ToolContext, ToolDefinition } from './tools/types.js';
 import { PermissionEngine, classifyRisk, ruleSubjectFor, type PermissionRuleSet } from './permissions.js';
+import { addUsage } from './usage.js';
 import { runAgentLoop } from './loop.js';
 import type { UsageReporter } from './usage.js';
 import { decodeComputerScreenshot } from './computer.js';
@@ -763,14 +764,8 @@ function resolveSubagentModel(specModel: string | undefined, hostModel: string):
         return this.executeChildTool(task, toolsByName, permissions, ctx, call);
       },
       onStep: (stepUsage) => {
-        task.usage = {
-          inputTokens: task.usage.inputTokens + stepUsage.inputTokens,
-          outputTokens: task.usage.outputTokens + stepUsage.outputTokens,
-        };
-        this.turnUsage = {
-          inputTokens: this.turnUsage.inputTokens + stepUsage.inputTokens,
-          outputTokens: this.turnUsage.outputTokens + stepUsage.outputTokens,
-        };
+        task.usage = addUsage(task.usage, stepUsage);
+        this.turnUsage = addUsage(this.turnUsage, stepUsage);
         const budget = this.config.childTokenBudget;
         if (budget !== null && task.usage.inputTokens + task.usage.outputTokens >= budget) {
           budgetExhausted = true;

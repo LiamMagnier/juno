@@ -63,6 +63,50 @@ function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageParam[] 
   });
 }
 
+const EPHEMERAL: Anthropic.CacheControlEphemeral = { type: 'ephemeral' };
+
+type CacheableBlock = Anthropic.ContentBlockParam & { cache_control?: Anthropic.CacheControlEphemeral | null };
+
+/** Put a breakpoint on the last block of `message` that can carry one.
+ *  Thinking blocks cannot; everything a user message holds can. */
+function markLastCacheable(message: Anthropic.MessageParam | undefined): void {
+  if (!message) return;
+  if (typeof message.content === 'string') {
+    if (message.content) message.content = [{ type: 'text', text: message.content, cache_control: EPHEMERAL }];
+    return;
+  }
+  for (let index = message.content.length - 1; index >= 0; index--) {
+    const block = message.content[index] as CacheableBlock;
+    if (block.type === 'thinking' || block.type === 'redacted_thinking') continue;
+    if (block.type === 'text' && !block.text) continue;
+    block.cache_control = EPHEMERAL;
+    return;
+  }
+}
+
+/**
+ * The two rolling cache breakpoints on a conversation.
+ *
+ * The newest block writes the whole prefix, so the next request reads it. The
+ * second sits where the previous request put its newest one — the last block
+ * of the user message before the latest assistant turn — because the cache
+ * looks back only about twenty blocks from a breakpoint for an earlier write:
+ * a step with ten parallel tool calls adds twenty blocks on its own, and with
+ * one rolling breakpoint the next request would miss the entry the last one
+ * paid 1.25x to write. With the tools and the system prompt that is four, the
+ * most a request may carry.
+ */
+function markConversationBreakpoints(messages: Anthropic.MessageParam[]): void {
+  const last = messages.length - 1;
+  if (last < 0) return;
+  markLastCacheable(messages[last]);
+  for (let index = last - 1; index > 0; index--) {
+    if (messages[index]!.role !== 'assistant') continue;
+    if (messages[index - 1]!.role === 'user') markLastCacheable(messages[index - 1]);
+    return;
+  }
+}
+
 /**
  * Key resolution order: explicit arg → env var → ~/.juno/credentials.json
  * ({"anthropic":{"apiKey":"…"}}). The file path covers GUI-launched sidecars,
@@ -193,17 +237,29 @@ export class AnthropicAdapter implements ProviderAdapter {
     const bits = anthropicThinkingBits(req.model, req.maxTokens ?? 8192, req.reasoningEffort);
     const thinking = bindingTolerantThinking(bits.thinking);
     const headers = anthropicRequestHeadersForThinking(thinking, this.defaultHeaders);
+    // Prompt caching, on by default: an agent step re-sends everything before
+    // it, and without breakpoints every step of a sixty-step run billed its
+    // whole prefix at the full input price. A one-off side call opts out,
+    // since a cache write costs more than it saves when nothing reads it.
+    const cache = req.cache !== false;
+    const tools: Anthropic.Tool[] = req.tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
+    }));
+    if (cache && tools.length > 0) tools[tools.length - 1]!.cache_control = EPHEMERAL;
+    const system: Anthropic.TextBlockParam[] = req.system
+      ? [{ type: 'text', text: req.system, ...(cache ? { cache_control: EPHEMERAL } : {}) }]
+      : [];
+    const messages = toAnthropicMessages(req.messages);
+    if (cache) markConversationBreakpoints(messages);
     const stream = this.client.messages.stream(
       {
         model: req.model,
         max_tokens: bits.maxTokens,
-        system: req.system,
-        messages: toAnthropicMessages(req.messages),
-        tools: req.tools.map((t) => ({
-          name: t.name,
-          description: t.description,
-          input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
-        })),
+        ...(system.length > 0 ? { system } : {}),
+        messages,
+        tools,
         ...(thinking ? { thinking: thinking as unknown as Anthropic.ThinkingConfigParam } : {}),
         ...(bits.outputConfig ? { output_config: bits.outputConfig } : {}),
       } as Anthropic.MessageStreamParams,
@@ -254,12 +310,18 @@ export class AnthropicAdapter implements ProviderAdapter {
             ? 'max_tokens'
             : 'other';
 
+    // Anthropic counts cached tokens apart from `input_tokens`; Usage counts
+    // them in it (see its note in types.ts) and breaks them out beside it.
+    const cacheRead = final.usage.cache_read_input_tokens ?? 0;
+    const cacheWrite = final.usage.cache_creation_input_tokens ?? 0;
     yield {
       type: 'done',
       stopReason,
       usage: {
-        inputTokens: final.usage.input_tokens,
+        inputTokens: final.usage.input_tokens + cacheRead + cacheWrite,
         outputTokens: final.usage.output_tokens,
+        ...(cacheRead > 0 ? { cacheReadTokens: cacheRead } : {}),
+        ...(cacheWrite > 0 ? { cacheWriteTokens: cacheWrite } : {}),
       },
     };
   }

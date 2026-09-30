@@ -10,6 +10,7 @@ import { ProviderCallError, type ProviderFailureKind } from './providers/errors.
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './providers/timeouts.js';
 import { decodeComputerScreenshot } from './computer.js';
 import { LeadingThinkingFilter } from './providers/leading-thinking.js';
+import { addUsage } from './usage.js';
 
 /**
  * How long the loop will listen to a stream that is saying nothing.
@@ -52,6 +53,24 @@ export interface AgentLoopOptions {
    * place it can be correct.
    */
   system: string | (() => string);
+  /**
+   * What changes between steps of a run, rendered for the model: the date, the
+   * permission mode, a Work run's plan.
+   *
+   * Kept out of `system` so the system prompt is byte-identical from the first
+   * step to the last. Everything a request sends before the first byte that
+   * differs from the previous request is read from the provider's prompt cache
+   * at a tenth of the price, and the system prompt comes before the whole
+   * conversation — so a plan rendered into it, as Work's used to be, made
+   * every `update_plan` call a cache miss for the entire transcript.
+   *
+   * Instead the text is appended, wrapped in `<session_state>`, to the user
+   * message the step is about to send — which no earlier request has seen — and
+   * only when it differs from the last block in the transcript. It stays there,
+   * so every later request carries the same bytes at the same place, and the
+   * model reads the newest block as the current state.
+   */
+  sessionState?: () => string | null | undefined;
   /** The transcript, mutated in place (assistant + tool-result messages). */
   messages: ChatMessage[];
   tools: ToolSpec[];
@@ -260,6 +279,43 @@ function normalizeToolResult(result: UserContent | UserContent[]): UserContent[]
 
 export const OMITTED_SCREENSHOT_MARKER = '[Screenshot omitted from the saved run]';
 
+/** Opens every block `AgentLoopOptions.sessionState` writes. */
+export const SESSION_STATE_OPEN = '<session_state>';
+const SESSION_STATE_CLOSE = '</session_state>';
+
+export function renderSessionState(state: string): string {
+  return `${SESSION_STATE_OPEN}\n${state.trim()}\n${SESSION_STATE_CLOSE}`;
+}
+
+export function isSessionStateText(text: string): boolean {
+  return text.startsWith(SESSION_STATE_OPEN);
+}
+
+/** The newest session-state block in the transcript, or null. */
+export function latestSessionState(messages: readonly ChatMessage[]): string | null {
+  for (let m = messages.length - 1; m >= 0; m--) {
+    const message = messages[m]!;
+    if (message.role !== 'user') continue;
+    for (let p = message.content.length - 1; p >= 0; p--) {
+      const part = message.content[p]!;
+      if (part.type === 'text' && isSessionStateText(part.text)) return part.text;
+    }
+  }
+  return null;
+}
+
+/** Appends the state block to the message the next request ends with, when it
+ *  says something the transcript does not already. True when it did. */
+function injectSessionState(messages: ChatMessage[], state: string | null | undefined): boolean {
+  if (!state || !state.trim()) return false;
+  const block = renderSessionState(state);
+  if (latestSessionState(messages) === block) return false;
+  const last = messages[messages.length - 1];
+  if (last && last.role === 'user') last.content.push({ type: 'text', text: block });
+  else messages.push({ role: 'user', content: [{ type: 'text', text: block }] });
+  return true;
+}
+
 /**
  * Keeps only the newest `keepLast` image parts in `messages`, replacing older
  * `{ type: 'image' }` parts with `OMITTED_SCREENSHOT_MARKER`.
@@ -310,6 +366,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       else opts.messages.push({ role: 'user', content: parts });
       opts.onMessagesChanged?.();
     }
+    if (injectSessionState(opts.messages, opts.sessionState?.())) opts.onMessagesChanged?.();
     pruneOldMessageImages(opts.messages, 3);
     const assistantContent: AssistantContent[] = [];
     let toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
@@ -374,10 +431,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
             });
           } else if (ev.type === 'done') {
             stepUsage = ev.usage;
-            usage = {
-              inputTokens: usage.inputTokens + ev.usage.inputTokens,
-              outputTokens: usage.outputTokens + ev.usage.outputTokens,
-            };
+            usage = addUsage(usage, ev.usage);
             stopReason = ev.stopReason;
           }
         }

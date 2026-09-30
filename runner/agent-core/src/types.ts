@@ -7,8 +7,21 @@ export type RiskLevel = 'safe' | 'edit' | 'command' | 'sensitive';
 export type ApprovalDecision = 'allow' | 'allow_always' | 'deny';
 
 export interface Usage {
+  /**
+   * Every input token the request consumed, cached or not.
+   *
+   * Inclusive on purpose, which is OpenAI's convention and not Anthropic's
+   * (whose `input_tokens` counts only the uncached tail): the token ceilings,
+   * the context meter and the billing floor all read this one number, and a
+   * cached prefix is still context the model read. The two fields below break
+   * it down for anything that prices a cache read differently.
+   */
   inputTokens: number;
   outputTokens: number;
+  /** Of `inputTokens`, how many were read from the provider's prompt cache. */
+  cacheReadTokens?: number;
+  /** Of `inputTokens`, how many were written to the prompt cache. */
+  cacheWriteTokens?: number;
 }
 
 /** Provider-neutral chat message format. Adapters translate to vendor wire formats. */

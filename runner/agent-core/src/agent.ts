@@ -84,7 +84,15 @@ export interface AgentOptions {
   trustProjectSettings?: boolean;
 }
 
-function buildSystemPrompt(cwd: string, mode: PermissionMode, delegation = false): string {
+/**
+ * The system prompt: what cannot change while the session runs.
+ *
+ * Byte-stable by construction, because it sits in front of the whole
+ * conversation and a single changed byte in it makes every later request a
+ * prompt-cache miss. The date and the permission mode — which can change mid
+ * session — used to be written into it; they are in `buildSessionState` now.
+ */
+function buildSystemPrompt(cwd: string, delegation = false): string {
   let memory = '';
   for (const name of MEMORY_FILES) {
     const p = path.join(cwd, name);
@@ -98,7 +106,7 @@ function buildSystemPrompt(cwd: string, mode: PermissionMode, delegation = false
 Environment:
 - Working directory: ${cwd}
 - Platform: ${process.platform} (${os.release()})
-- Date: ${new Date().toISOString().slice(0, 10)}
+- The current date and permission mode are given in the latest <session_state> block.
 
 Operating rules:
 - Use the tools to read code before editing it. Prefer edit_file for surgical changes; write_file only for new files or full rewrites.
@@ -107,7 +115,18 @@ Operating rules:
 - Keep edits minimal and consistent with the surrounding code style.
 - Reasoning stays private. In your user-visible reply give a short summary of what you did (files changed, checks run), never a dump of your internal thinking.
 - Tool calls are gated by user permission settings; a denied call means the user declined — adjust your approach rather than retrying the same call.
-${mode === 'plan' ? '- You are in PLAN MODE: only read-only tools are available. Produce a concise numbered implementation plan and wait; do not attempt edits.' : ''}${delegation ? delegationPromptSection() : ''}${memory}`;
+${delegation ? delegationPromptSection() : ''}${memory}`;
+}
+
+/** What `buildSystemPrompt` leaves out because it can change mid session. */
+function buildSessionState(mode: PermissionMode, now: Date): string {
+  const lines = [`Date: ${now.toISOString().slice(0, 10)}`, `Permission mode: ${mode}`];
+  if (mode === 'plan') {
+    lines.push(
+      'You are in PLAN MODE: only read-only tools are available. Produce a concise numbered implementation plan and wait; do not attempt edits.',
+    );
+  }
+  return lines.join('\n');
 }
 
 export class AgentSession {
@@ -143,6 +162,13 @@ export class AgentSession {
    * instruction" only once that is true.
    */
   private queuedUserMessages: { text: string; resolve: () => void }[] = [];
+  /**
+   * The system prompt, built once per shape of session and then reused, so
+   * every request of every turn opens with the same bytes. Rebuilt only when
+   * delegation comes or goes, which also changes the tool list — a cache miss
+   * no prompt could avoid.
+   */
+  private systemPrompt: { delegation: boolean; text: string } | null = null;
 
   private constructor(store: SessionStore, opts: AgentOptions) {
     this.store = store;
@@ -358,7 +384,8 @@ export class AgentSession {
       const result = await runAgentLoop({
         provider: this.provider,
         model: this.model,
-        system: buildSystemPrompt(this.cwd, this.mode, delegation),
+        system: this.stableSystemPrompt(delegation),
+        sessionState: () => buildSessionState(this.mode, new Date()),
         messages: this.messages,
         tools: toolSpecs,
         signal: this.aborter.signal,
@@ -410,6 +437,13 @@ export class AgentSession {
         ? { subagentUsage }
         : {}),
     });
+  }
+
+  private stableSystemPrompt(delegation: boolean): string {
+    if (this.systemPrompt?.delegation !== delegation) {
+      this.systemPrompt = { delegation, text: buildSystemPrompt(this.cwd, delegation) };
+    }
+    return this.systemPrompt.text;
   }
 
   private async executeToolCall(

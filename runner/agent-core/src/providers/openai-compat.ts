@@ -6,7 +6,7 @@ import type {
   ProviderStreamEvent,
   ReasoningEffort,
 } from './types.js';
-import type { ChatMessage } from '../types.js';
+import type { ChatMessage, Usage } from '../types.js';
 import { resolveKey } from './credentials.js';
 import { classifyProviderError } from './errors.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './timeouts.js';
@@ -262,7 +262,7 @@ export class OpenAICompatAdapter implements ProviderAdapter {
     // Streamed tool-call fragments accumulate per choice index.
     const calls = new Map<number, { id: string; name: string; args: string }>();
     let finishReason: string | undefined;
-    let usage = { inputTokens: 0, outputTokens: 0 };
+    let usage: Usage = { inputTokens: 0, outputTokens: 0 };
 
     // The same classification around the iteration, not only around the call
     // that opened it. A lab that accepts the connection and then fails — a 5xx
@@ -285,9 +285,18 @@ export class OpenAICompatAdapter implements ProviderAdapter {
         }
         if (choice?.finish_reason) finishReason = choice.finish_reason;
         if (chunk.usage) {
+          // `prompt_tokens` already includes the cached part, which is the
+          // convention Usage keeps; the cached share is broken out beside it.
+          // Most compatible labs report it where OpenAI does, and some (GLM,
+          // DeepSeek) put it at the top level instead.
+          const cached =
+            chunk.usage.prompt_tokens_details?.cached_tokens ??
+            (chunk.usage as { prompt_cache_hit_tokens?: number }).prompt_cache_hit_tokens ??
+            0;
           usage = {
             inputTokens: chunk.usage.prompt_tokens ?? usage.inputTokens,
             outputTokens: chunk.usage.completion_tokens ?? usage.outputTokens,
+            ...(cached > 0 ? { cacheReadTokens: cached } : {}),
           };
         }
       }
