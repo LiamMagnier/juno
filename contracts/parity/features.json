@@ -129,6 +129,10 @@
         "/api/conversations/[id]/fork": "native",
         "/api/conversations/[id]/messages": "native",
         "/api/conversations/[id]/title": "native",
+        "/api/conversations/[id]/tasks": {
+          "status": "planned",
+          "note": "Every task a conversation draws (all live ones plus the newest finished one), for several tasks per conversation. The apps still follow the newest task through /api/work/sessions?conversationId=, which is unchanged."
+        },
         "/api/folders": {
           "status": "web-only",
           "note": "The apps create and rename folders through sync (/api/v1/mutations)."
@@ -359,6 +363,22 @@
         "/api/mcp/composio/[slug]": {
           "status": "internal",
           "note": "As /api/mcp/{connector}."
+        },
+        "/api/mcp/servers": {
+          "status": "native",
+          "note": "The Mac adds a custom MCP server (POST). Saved servers reach both apps as `user_mcp:` rows in /api/connectors; the iPhone has no add form yet."
+        },
+        "/api/mcp/servers/[id]": {
+          "status": "native",
+          "note": "The Mac edits, enables and disables a custom server (PATCH); Disconnect on either app deletes one (DELETE)."
+        },
+        "/api/mcp/servers/[id]/test": {
+          "status": "native",
+          "note": "Mac only: Test in the edit sheet for a saved server."
+        },
+        "/api/mcp/servers/test": {
+          "status": "native",
+          "note": "Mac only: Test in the add sheet before saving."
         }
       }
     },
@@ -393,6 +413,10 @@
       },
       "routes": {
         "/api/skills": "native",
+        "/api/skills/import/file": {
+          "status": "native",
+          "note": "Mac only: previews an uploaded SKILL.md (the web parses it in the browser); no Skills pages on the phone yet."
+        },
         "/api/skills/import/github": "native",
         "/api/skills/sources/[id]": "native",
         "/api/skills/sources/[id]/check": "native",
@@ -416,7 +440,11 @@
       },
       "routes": {
         "/api/assistants": "native",
-        "/api/assistants/[id]": "native"
+        "/api/assistants/[id]": "native",
+        "/api/assistants/[id]/move-to-crew": {
+          "status": "planned",
+          "note": "Move to crew (D-007): the assistant becomes a crew member and leaves the list. The apps still read and open assistants; they have no Move action yet."
+        }
       }
     },
     {
@@ -455,6 +483,10 @@
         "/api/work/sessions/[id]/context": "native",
         "/api/work/sessions/[id]/events": "native",
         "/api/work/sessions/[id]/runs": "native",
+        "/api/work/sessions/[id]/transfer": {
+          "status": "planned",
+          "note": "Hands a task to another crew member or back to the person, with a reason, at a safe point; recorded as an owner_transferred event. Web-first (crew foundations); no app screen yet."
+        },
         "/api/work/sessions/counts": {
           "status": "web-only",
           "note": "The web's sidebar counts; the Mac counts the chats its column can show (register #69)."
@@ -550,10 +582,11 @@
         "/api/agents/[id]/computer/heartbeat": "native",
         "/api/agents/[id]/computer/poster": "native",
         "/api/agents/[id]/computer/view": "native",
-        "/api/agents/[id]/duplicate": {
-          "status": "planned",
-          "note": "Agent duplication; wired into AgentClient.swift in Phase 7."
+        "/api/computer-view/session": {
+          "status": "web-only",
+          "note": "Called by the /computer-view page the apps open in a web view: it trades the page's one-time ticket for the viewer's credentials. The apps never call it themselves."
         },
+        "/api/agents/[id]/duplicate": "native",
         "/api/agents/[id]/goals": "native",
         "/api/agents/[id]/goals/[goalId]": "native",
         "/api/agents/[id]/ideas/[ideaId]": "native",
@@ -561,6 +594,14 @@
         "/api/agents/[id]/notes/[noteId]": "native",
         "/api/agents/[id]/reflect": "native",
         "/api/agents/[id]/routines": "native",
+        "/api/agents/[id]/setup-changes/[changeId]": {
+          "status": "planned",
+          "note": "A setup change asked for in a crew member's thread: read its live status, Apply (digest-bound) or Undo. The apps show the thread's text but not the card yet."
+        },
+        "/api/agents/[id]/starter": {
+          "status": "native",
+          "note": "The Mac sends a new agent's first message when its thread opens (the web reads it server-side in /chat/{id}); the iPhone does not fetch it yet."
+        },
         "/api/agents/[id]/tasks": "native",
         "/api/agents/[id]/thread": "native",
         "/api/agents/[id]/undo": {
