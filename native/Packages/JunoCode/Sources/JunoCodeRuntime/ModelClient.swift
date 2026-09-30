@@ -320,6 +320,10 @@ public enum AgentModelClientError: Error, Equatable, Sendable {
     /// signed out, the model cannot speak the tool protocol. Retrying the
     /// same request cannot help; the message says what will.
     case unavailable(message: String)
+    /// The provider took the request and then went quiet, or never finished
+    /// within the turn's deadline. Each attempt costs the whole deadline, so
+    /// it is tried again once, not waited out like a rate limit.
+    case stalled(message: String)
 }
 
 /// How a failed model request is tried again.

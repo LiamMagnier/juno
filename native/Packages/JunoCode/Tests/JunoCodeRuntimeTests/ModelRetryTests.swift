@@ -63,6 +63,11 @@ final class ModelRetryTests: XCTestCase {
         XCTAssertEqual(ModelFailure(AgentModelClientError.transport(message: "reset")).retryLimit(policy), 4)
         XCTAssertEqual(ModelFailure(URLError(.networkConnectionLost)).retryLimit(policy), 4)
         XCTAssertEqual(ModelFailure(AgentModelClientError.invalidResponse(message: "x")).retryLimit(policy), 1)
+        XCTAssertEqual(
+            ModelFailure(AgentModelClientError.stalled(message: "The model stream became idle.")).retryLimit(policy),
+            1,
+            "each attempt costs the whole idle deadline"
+        )
         XCTAssertEqual(ModelFailure(AgentModelClientError.unauthorized).retryLimit(policy), 0)
         XCTAssertEqual(ModelFailure(AgentModelClientError.quotaExhausted(message: "x")).retryLimit(policy), 0)
         XCTAssertTrue(ModelFailure(AgentModelClientError.quotaExhausted(message: "x")).warrantsFallback)

@@ -310,7 +310,9 @@ public struct BackendCodeModelClient: AgentModelClient {
 
                     let response = try await Self.withTimeout(
                         seconds: timeouts.connectionSeconds,
-                        message: "The model connection timed out."
+                        // Nothing was sent back yet: an ordinary failed
+                        // connection, retried as one.
+                        failure: .transport(message: "The model connection timed out.")
                     ) {
                         try await streamer.stream(bearer, for: accountID)
                     }
@@ -331,7 +333,7 @@ public struct BackendCodeModelClient: AgentModelClient {
 
                     try await Self.withTimeout(
                         seconds: timeouts.overallSeconds,
-                        message: "The model turn exceeded its time limit."
+                        failure: .stalled(message: "The model turn exceeded its time limit.")
                     ) {
                         try await Self.consume(
                             response: response,
@@ -355,7 +357,7 @@ public struct BackendCodeModelClient: AgentModelClient {
     /// streams because leaving the losing task alive would leak its socket.
     private static func withTimeout<T: Sendable>(
         seconds: TimeInterval,
-        message: String,
+        failure: AgentModelClientError,
         operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
         guard seconds > 0 else { return try await operation() }
@@ -363,11 +365,11 @@ public struct BackendCodeModelClient: AgentModelClient {
             group.addTask { try await operation() }
             group.addTask {
                 try await Task.sleep(for: .seconds(seconds))
-                throw AgentModelClientError.transport(message: message)
+                throw failure
             }
             defer { group.cancelAll() }
             guard let value = try await group.next() else {
-                throw AgentModelClientError.transport(message: message)
+                throw failure
             }
             return value
         }
@@ -417,7 +419,7 @@ public struct BackendCodeModelClient: AgentModelClient {
                     while true {
                         try await Task.sleep(for: .seconds(idleSeconds))
                         if await activity.isIdle(for: idleSeconds) {
-                            throw AgentModelClientError.transport(
+                            throw AgentModelClientError.stalled(
                                 message: "The model stream became idle."
                             )
                         }

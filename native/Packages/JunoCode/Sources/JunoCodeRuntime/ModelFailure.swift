@@ -21,6 +21,9 @@ enum ModelFailure: Equatable {
     case unavailable(String)
     /// A dropped or refused connection, a timeout, a 5xx.
     case transient
+    /// A stream that went quiet or overran its deadline: tried once more,
+    /// since each attempt costs the whole wait.
+    case stalled
     /// A response Juno could not read. Possibly garbled in transit, so tried
     /// once more, but no more than once.
     case malformed
@@ -41,6 +44,8 @@ enum ModelFailure: Equatable {
             self = .unauthorized
         case let .unavailable(message)?:
             self = .unavailable(message)
+        case .stalled?:
+            self = .stalled
         case .invalidResponse?:
             self = .malformed
         case .transport?, nil:
@@ -55,7 +60,7 @@ enum ModelFailure: Equatable {
         switch self {
         case .rateLimited, .overloaded, .transient:
             policy.maximumRetries
-        case .malformed:
+        case .malformed, .stalled:
             min(1, policy.maximumRetries)
         case .planLimit, .contextOverflow, .quota, .unauthorized, .unavailable:
             0
@@ -77,7 +82,7 @@ enum ModelFailure: Equatable {
     /// credentials, the window and the account's allowance follow the run.
     var warrantsFallback: Bool {
         switch self {
-        case .rateLimited, .overloaded, .quota, .transient:
+        case .rateLimited, .overloaded, .quota, .transient, .stalled:
             true
         case .planLimit, .contextOverflow, .unauthorized, .unavailable, .malformed:
             false
@@ -103,6 +108,8 @@ enum ModelFailure: Equatable {
             message
         case .transient:
             "The connection to the model failed."
+        case .stalled:
+            "The model stopped responding."
         case .malformed:
             "The model sent a response Juno could not read."
         }

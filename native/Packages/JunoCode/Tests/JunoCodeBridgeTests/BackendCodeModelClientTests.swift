@@ -426,8 +426,10 @@ final class BackendCodeModelClientTests: XCTestCase {
             )
         )
         let (_, error) = await collect(client, makeRequest())
-        guard case let AgentModelClientError.transport(message)? = error as? AgentModelClientError else {
-            return XCTFail("expected an idle-stream transport error, got \(String(describing: error))")
+        // Stalled rather than a plain transport failure: each attempt costs
+        // the whole idle deadline, so the loop tries it once more, not four.
+        guard case let AgentModelClientError.stalled(message)? = error as? AgentModelClientError else {
+            return XCTFail("expected an idle-stream stall, got \(String(describing: error))")
         }
         XCTAssertEqual(message, "The model stream became idle.")
     }
