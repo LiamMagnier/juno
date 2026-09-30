@@ -133,6 +133,7 @@ struct StudioPlanReviewCard: View {
                 }
                 Button(isExpanded ? "Less" : "More") { isExpanded.toggle() }
                     .buttonStyle(StudioQuietButtonStyle(tint: Studio.Ink.tertiary))
+                    .contentShape(.rect)
             }
             StudioAssistantMessage(text: request.plan)
                 .frame(maxHeight: isExpanded ? nil : 180, alignment: .top)
@@ -222,6 +223,7 @@ struct StudioQuestionPrompt: View {
                     Task { await controller.declineQuestion(request.id) }
                 }
                 .buttonStyle(StudioQuietButtonStyle())
+                .contentShape(.rect)
                 .accessibilityIdentifier("juno.code.question.skip")
                 Spacer()
                 Button("Send answer") {
@@ -236,6 +238,7 @@ struct StudioQuestionPrompt: View {
                     Task { await controller.answerQuestion(request.id, answers: answers) }
                 }
                 .buttonStyle(StudioPrimaryButtonStyle())
+                .contentShape(.rect)
                 .disabled(!hasAnswer(request))
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("juno.code.question.send")
@@ -377,6 +380,7 @@ struct StudioPlanApprovalPrompt: View {
                     }
                 }
                 .buttonStyle(StudioQuietButtonStyle())
+                .contentShape(.rect)
                 .accessibilityIdentifier("juno.code.plan.keep")
                 Spacer(minLength: JunoSpace.snug)
                 Picker("Level", selection: $mode) {
@@ -394,6 +398,7 @@ struct StudioPlanApprovalPrompt: View {
                     Task { await controller.approvePlan(request.id, mode: chosen) }
                 }
                 .buttonStyle(StudioPrimaryButtonStyle())
+                .contentShape(.rect)
                 .help("Switch to \(mode.title) and implement the plan")
                 .accessibilityIdentifier("juno.code.plan.approve")
             }
