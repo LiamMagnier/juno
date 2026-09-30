@@ -164,6 +164,10 @@ public actor AgentOrchestrator {
     /// Set when a tool hook answers `"continue": false`, so the batch stops
     /// between waves and the run ends once every call is answered.
     private var hookHaltReason: String?
+    /// Set when a call's tool ends the run (an approved plan), so no later
+    /// wave of the batch starts: the plan was approved to be implemented in
+    /// Code, not added to by the rest of a Plan batch.
+    private var toolEndedRun = false
 
     /// How many times stop hooks may send one run back to work. Hooks are
     /// told when they already have (`stop_hook_active`) and are expected to
@@ -683,6 +687,7 @@ public actor AgentOrchestrator {
         var testsPassed: Bool?
         var stopHookContinuations = 0
         hookHaltReason = nil
+        toolEndedRun = false
 
         defer {
             runTask = nil
@@ -1153,6 +1158,9 @@ public actor AgentOrchestrator {
                     if await self.hookHaltReason != nil {
                         return true
                     }
+                    if await self.toolEndedRun {
+                        return true
+                    }
                     return await self.hasPendingSteer
                 },
                 // Every call goes through `executeToolCall`, the one dispatch
@@ -1295,17 +1303,28 @@ public actor AgentOrchestrator {
     /// never saw whole. read_file bounds itself well under the cap; when a
     /// lower cap still has to cut one, it is cut head-first with the header
     /// rewritten to match.
+    ///
+    /// Context the call earned (a folder's instruction files, themselves
+    /// capped where they are gathered) follows the bounded content rather
+    /// than being bounded with it: inside a read, it would be counted as the
+    /// file's lines, and its size alone could cut a whole-file read and take
+    /// its base_sha256 away.
     private func boundedToolResult(_ execution: ToolScheduler.ExecutionResult) -> String {
+        Self.modelContent(for: execution, maximumBytes: configuration.maximumToolResultBytes)
+    }
+
+    static func modelContent(for execution: ToolScheduler.ExecutionResult, maximumBytes: Int) -> String {
+        let bounded: String
         if execution.toolName == "read_file" {
-            return ReadFileTool.bounded(
-                execution.content,
-                maximumBytes: configuration.maximumToolResultBytes
-            )
+            bounded = ReadFileTool.bounded(execution.content, maximumBytes: maximumBytes)
+        } else {
+            bounded = OutputLimiter.applyKeepingEnds(
+                OutputLimit(maximumBytes: maximumBytes),
+                to: execution.content
+            ).text
         }
-        return OutputLimiter.applyKeepingEnds(
-            OutputLimit(maximumBytes: configuration.maximumToolResultBytes),
-            to: execution.content
-        ).text
+        guard let context = execution.appendedContext else { return bounded }
+        return bounded + "\n\n" + context
     }
 
     /// Moves accepted instructions into model context in their durable event
@@ -1579,6 +1598,9 @@ public actor AgentOrchestrator {
         )
         if let halt = result.haltReason, hookHaltReason == nil {
             hookHaltReason = halt
+        }
+        if result.endsRun != nil {
+            toolEndedRun = true
         }
         return result
     }

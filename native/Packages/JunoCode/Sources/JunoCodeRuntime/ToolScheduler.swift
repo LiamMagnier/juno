@@ -18,6 +18,9 @@ public actor ToolScheduler {
         public let haltReason: String?
         /// The tool itself ended the run (see ``ToolResult/endsRun``).
         public let endsRun: String?
+        /// Context to follow the bounded content (see
+        /// ``ToolResult/appendedContext``).
+        public let appendedContext: String?
 
         public init(
             callID: String,
@@ -28,7 +31,8 @@ public actor ToolScheduler {
             images: [ModelImage] = [],
             sideEffects: [SessionEventPayload] = [],
             haltReason: String? = nil,
-            endsRun: String? = nil
+            endsRun: String? = nil,
+            appendedContext: String? = nil
         ) {
             self.callID = callID
             self.toolName = toolName
@@ -39,6 +43,7 @@ public actor ToolScheduler {
             self.sideEffects = sideEffects
             self.haltReason = haltReason
             self.endsRun = endsRun
+            self.appendedContext = appendedContext
         }
     }
 
@@ -357,7 +362,8 @@ public actor ToolScheduler {
                 images: result.images,
                 sideEffects: result.sideEffects,
                 haltReason: after.haltReason,
-                endsRun: result.endsRun
+                endsRun: result.endsRun,
+                appendedContext: result.appendedContext
             )
         } catch {
             let message = String(describing: error)

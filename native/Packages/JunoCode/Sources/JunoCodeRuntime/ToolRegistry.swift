@@ -190,11 +190,12 @@ public struct ToolRegistry: Sendable {
               )
         else { return result }
         return ToolResult(
-            content: result.content + "\n\n" + added,
+            content: result.content,
             isError: result.isError,
             images: result.images,
             sideEffects: result.sideEffects,
-            endsRun: result.endsRun
+            endsRun: result.endsRun,
+            appendedContext: result.appendedContext.map { $0 + "\n\n" + added } ?? added
         )
     }
 

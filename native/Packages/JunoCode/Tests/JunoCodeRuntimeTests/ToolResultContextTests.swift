@@ -42,13 +42,47 @@ final class ToolResultContextTests: XCTestCase {
             contextProvider: provider
         )
         let read = try await run(registry, "read_file", ["path": "app/a.swift"])
-        XCTAssertEqual(read.content, "result\n\n<system-reminder>for app/a.swift</system-reminder>")
+        XCTAssertEqual(read.content, "result", "the tool's own answer is left as it was")
+        XCTAssertEqual(read.appendedContext, "<system-reminder>for app/a.swift</system-reminder>")
+        XCTAssertEqual(read.contentWithContext, "result\n\n<system-reminder>for app/a.swift</system-reminder>")
 
         let failed = try await run(registry, "write_file", ["path": "app/b.swift"])
-        XCTAssertEqual(failed.content, "result", "a failed call earns nothing")
+        XCTAssertEqual(failed.contentWithContext, "result", "a failed call earns nothing")
 
         let inspection = try await run(registry.inspectionOnly(), "read_file", ["path": "lib/c.swift"])
-        XCTAssertTrue(inspection.content.contains("for lib/c.swift"), "an inspection registry keeps its provider")
+        XCTAssertTrue(inspection.contentWithContext.contains("for lib/c.swift"), "an inspection registry keeps its provider")
+    }
+
+    func testInstructionsFollowAWholeReadWithoutCuttingIt() throws {
+        // A read just under read_file's own budget, and the most a folder's
+        // instructions add: together over the result cap.
+        let line = String(repeating: "x", count: 99) + "\n"
+        let text = String(repeating: line, count: 950)
+        let rendered = ReadFileTool.render(
+            FileReadResult(
+                path: try WorkspacePath("app/big.txt"),
+                content: text,
+                wasTruncated: false,
+                fingerprint: FileFingerprint(of: text),
+                byteCount: text.utf8.count,
+                lineCount: 950
+            ),
+            offset: nil,
+            limit: nil
+        )
+        let instructions = "<system-reminder>\n" + String(repeating: "rule\n", count: 8_000) + "</system-reminder>"
+        let execution = ToolScheduler.ExecutionResult(
+            callID: "c",
+            toolName: "read_file",
+            input: ["path": "app/big.txt"],
+            content: rendered,
+            isError: false,
+            appendedContext: instructions
+        )
+        let sent = AgentOrchestrator.modelContent(for: execution, maximumBytes: 128 * 1_024)
+        XCTAssertTrue(sent.hasPrefix(rendered), "the read is whole, header and all")
+        XCTAssertTrue(sent.contains("\"base_sha256\""), "and still offers its base")
+        XCTAssertTrue(sent.hasSuffix(instructions))
     }
 
     func testTouchedPathsCoverEveryWayACallReachesAFolder() {

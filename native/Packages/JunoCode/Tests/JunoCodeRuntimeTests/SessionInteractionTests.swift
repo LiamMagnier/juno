@@ -268,6 +268,38 @@ final class SessionInteractionTests: XCTestCase {
         }, "the call is answered in the history")
     }
 
+    func testNothingLaterInTheBatchRunsOnceThePlanIsApproved() async throws {
+        let questions = QuestionCoordinator(sessionID: session.id, store: store)
+        // Both wait on the reader, so the question is the batch's next wave.
+        let model = ScriptedModelClient(steps: [
+            .toolCalls([
+                ("p1", "exit_plan", ["plan": "1. Add the column"]),
+                ("q1", "ask_user", askInput),
+            ], text: ""),
+            .text("This must never be requested."),
+        ])
+        let (agent, _) = orchestrator(model, questions: questions)
+        try await agent.submit(prompt: "Plan the migration")
+        let plan = try await waitForPlan(questions)
+        await questions.approvePlan(requestID: plan.id, permissionMode: .askBeforeChanges)
+        await agent.awaitCompletion()
+
+        let events = await payloads()
+        XCTAssertFalse(
+            events.contains { if case .questionRequested = $0 { return true } else { return false } },
+            "the approval ended the batch before the question was asked"
+        )
+        XCTAssertTrue(events.contains {
+            if case let .runCompleted(run) = $0 { return run.summary == "Plan approved" }
+            return false
+        })
+        let conversation = await store.loadConversation(sessionID: session.id)
+        XCTAssertTrue(conversation.contains {
+            if case let .toolResult(id, _, _) = $0 { return id == "q1" }
+            return false
+        }, "the skipped call is still answered")
+    }
+
     func testKeepPlanningHandsTheFeedbackBack() async throws {
         let questions = QuestionCoordinator(sessionID: session.id, store: store)
         let model = ScriptedModelClient(steps: [
