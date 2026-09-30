@@ -37,6 +37,9 @@ public struct ToolRegistry: Sendable {
         goalStore: CodeSessionStore? = nil,
         changes: (any WorkspaceChangeDetecting)? = nil,
         webSearch: (any CodeWebSearching)? = nil,
+        shells: (any ShellSessionManaging)? = nil,
+        workingDirectories: SessionWorkingDirectories? = nil,
+        workspaceRoot: String = "",
         additionalTools: [any CodeTool] = []
     ) -> ToolRegistry {
         var tools: [any CodeTool] = [
@@ -51,13 +54,24 @@ public struct ToolRegistry: Sendable {
             MultiEditTool(files: files),
             DeleteFileTool(files: files),
             MoveFileTool(files: files),
-            RunCommandTool(executor: executor, changes: changes),
+            RunCommandTool(
+                executor: executor,
+                changes: changes,
+                directories: workingDirectories,
+                workspaceRoot: workspaceRoot
+            ),
             GitStatusTool(git: git),
             GitDiffTool(git: git),
             GitLogTool(git: git),
             GitCommitTool(git: git),
             RunTestsTool(tests: tests),
         ]
+        if let shells {
+            tools.append(ShellStartTool(shells: shells, directories: workingDirectories))
+            tools.append(ShellOutputTool(shells: shells))
+            tools.append(ShellWriteTool(shells: shells))
+            tools.append(ShellKillTool(shells: shells))
+        }
         if let goalStore {
             tools.append(UpdateGoalTool(store: goalStore))
         }

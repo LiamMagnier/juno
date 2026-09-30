@@ -10,7 +10,7 @@ import JunoCodeCore
 ///
 /// | Juno tool | Hooks see | `tool_input` adds |
 /// |---|---|---|
-/// | `run_command`, `run_tests` | `Bash` | `command`, `timeout` (ms) |
+/// | `run_command`, `run_tests`, `shell_start` | `Bash` | `command`, `timeout` (ms) |
 /// | `read_file` | `Read` | `file_path` (absolute) |
 /// | `write_file`, `create_file` | `Write` | `file_path`, `content` |
 /// | `apply_patch`, `edit_file` | `Edit` | `file_path`, `old_string`, `new_string`, `replace_all` |
@@ -31,6 +31,7 @@ public enum HookToolNames {
     private static let names: [String: String] = [
         "run_command": "Bash",
         "run_tests": "Bash",
+        "shell_start": "Bash",
         "read_file": "Read",
         "write_file": "Write",
         "create_file": "Write",

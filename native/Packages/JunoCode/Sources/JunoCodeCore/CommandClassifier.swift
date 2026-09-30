@@ -885,3 +885,15 @@ enum ShellTokenizer {
         return tokens
     }
 }
+
+/// Whether a command line sends something to the background with `&`.
+///
+/// Read from the tokens, not the text: `a && b`, `2>&1` and a quoted `"&"` are
+/// not background jobs, and a check for the substring "& " refused every one
+/// of them.
+public enum ShellBackgrounding {
+    public static func runsInBackground(_ line: String) -> Bool {
+        guard let tokens = ShellTokenizer.tokenize(line) else { return false }
+        return tokens.contains { $0.kind == .controlOperator && $0.text.hasPrefix("&") && !$0.text.hasPrefix("&&") }
+    }
+}

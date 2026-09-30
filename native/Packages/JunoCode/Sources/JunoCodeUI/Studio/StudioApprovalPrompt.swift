@@ -253,6 +253,21 @@ struct StudioApprovalCopy {
             subject = object
             icon = .terminal
             isCommand = true
+        case "shell_start":
+            question = "Run this in the background?"
+            subject = summary.hasPrefix("Start in background: ")
+                ? String(summary.dropFirst("Start in background: ".count))
+                : summary
+            icon = .terminal
+            isCommand = true
+        case "shell_write":
+            question = "Send this to the background process?"
+            subject = summary
+            icon = .terminal
+        case "shell_kill":
+            question = "Stop this background process?"
+            subject = summary
+            icon = .terminal
         case "run_tests":
             question = "Run the tests?"
             subject = object

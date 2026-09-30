@@ -16,6 +16,11 @@ public final class WorkspaceContext: Sendable {
     public let files: FileOperationService
     public let index: WorkspaceIndexService
     public let executor: CommandExecutionService
+    /// The agent's background processes, under the executor's containment.
+    /// Owned per session; stopped when the session ends or the app quits.
+    public let shells: ShellSessionManager
+    /// Each session's `run_command` folder, moved by a lone `cd`.
+    public let workingDirectories: SessionWorkingDirectories
     /// Settings-driven environment and network, applied to every command.
     public let commandOverrides: CommandRuntimeOverrides
     public let git: GitService
@@ -105,6 +110,15 @@ public final class WorkspaceContext: Sendable {
             overrides: commandOverrides
         )
         self.executor = executor
+        let shells = ShellSessionManager(
+            executor: executor,
+            logDirectory: storageRoot
+                .appendingPathComponent("shell-sessions", isDirectory: true)
+                .appendingPathComponent(record.id.value + "-" + UUID().uuidString.prefix(8).lowercased(), isDirectory: true)
+        )
+        self.shells = shells
+        let workingDirectories = SessionWorkingDirectories()
+        self.workingDirectories = workingDirectories
         let git = GitService(executor: executor)
         self.git = git
         let tests = TestRunnerService(access: access, executor: executor)
@@ -145,6 +159,9 @@ public final class WorkspaceContext: Sendable {
             // only account the transcript can honestly give of them.
             changes: WorkspaceChangeDetector(rootURL: access.rootURL),
             webSearch: webSearch,
+            shells: shells,
+            workingDirectories: workingDirectories,
+            workspaceRoot: access.rootURL.path,
             additionalTools: [
                 ComputerScreenshotTool(computer: computerUse),
                 ComputerClickTool(computer: computerUse),
