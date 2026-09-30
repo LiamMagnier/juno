@@ -20,6 +20,7 @@ import { SessionStore } from './session.js';
 import { defaultTools } from './tools/registry.js';
 import type { UsageReporter } from './usage.js';
 import { failureCodeOf, runAgentLoop } from './loop.js';
+import type { CompactionOptions } from './compaction.js';
 import type { ReasoningEffort } from './providers/types.js';
 import {
   SubagentManager,
@@ -82,6 +83,12 @@ export interface AgentOptions {
    * may make the agent more careful, never less. See permissions.ts.
    */
   trustProjectSettings?: boolean;
+  /**
+   * How the conversation is kept inside the model's context window. On by
+   * default, at the Mac's threshold of 80% of the window; `false` turns it
+   * off. See compaction.ts.
+   */
+  compaction?: Pick<CompactionOptions, 'threshold' | 'keepRecentSteps' | 'modelSummary'> | false;
 }
 
 /**
@@ -169,6 +176,7 @@ export class AgentSession {
    * no prompt could avoid.
    */
   private systemPrompt: { delegation: boolean; text: string } | null = null;
+  private readonly compaction: AgentOptions['compaction'];
 
   private constructor(store: SessionStore, opts: AgentOptions) {
     this.store = store;
@@ -188,6 +196,7 @@ export class AgentSession {
     this.env = opts.env;
     this.containerSandbox = opts.containerSandbox;
     this.reasoningEffort = opts.reasoningEffort;
+    this.compaction = opts.compaction;
     if (opts.subagents !== false) {
       const session = this;
       this.subagents = new SubagentManager(
@@ -392,6 +401,24 @@ export class AgentSession {
         maxSteps: MAX_STEPS_PER_TURN,
         ...(this.reasoningEffort ? { reasoningEffort: this.reasoningEffort } : {}),
         takeQueuedUserText: () => this.takeQueuedUserMessages(),
+        ...(this.compaction === false
+          ? {}
+          : {
+              compaction: {
+                ...this.compaction,
+                contextWindow: this.provider.capabilities(this.model).maxContext,
+                onCompaction: (info) =>
+                  this.emit({
+                    type: 'context_compacted',
+                    reason: info.reason,
+                    summary: info.summary,
+                    ...(info.failure === undefined ? {} : { failure: info.failure }),
+                    removedMessages: info.removedMessages,
+                    tokensBefore: info.tokensBefore,
+                    tokensAfter: info.tokensAfter,
+                  }),
+              },
+            }),
         onAssistantDelta: (text) => this.callbacks.onEvent({ type: 'assistant_delta', text }),
         onAssistantMessage: (text) => this.emit({ type: 'assistant_message', text }),
         onThinkingDelta: (text) => this.callbacks.onEvent({ type: 'thinking_delta', text }),

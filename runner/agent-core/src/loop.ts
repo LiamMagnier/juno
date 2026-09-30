@@ -11,6 +11,17 @@ import { DEFAULT_REQUEST_TIMEOUT_MS } from './providers/timeouts.js';
 import { decodeComputerScreenshot } from './computer.js';
 import { LeadingThinkingFilter } from './providers/leading-thinking.js';
 import { addUsage } from './usage.js';
+import {
+  TARGET_AFTER_COMPACTION,
+  clampThreshold,
+  compactedMessages,
+  estimateTokens,
+  modelMemory,
+  planCompaction,
+  requestModelSummary,
+  toolPairingIntact,
+  type CompactionOptions,
+} from './compaction.js';
 
 /**
  * How long the loop will listen to a stream that is saying nothing.
@@ -94,6 +105,17 @@ export interface AgentLoopOptions {
   takeQueuedUserText?: () => string[];
   /** Longest silence from a stream before it is judged dead, in ms. */
   silenceTimeoutMs?: number;
+  /**
+   * Keep the run inside the model's context window (see compaction.ts).
+   *
+   * Checked at the top of every step against the usage the provider last
+   * reported plus an estimate of what was appended since; past the threshold
+   * the older steps are folded into a model-written summary before the
+   * request goes out. And if the provider still refuses a request as too long,
+   * the step compacts and sends it again, once. Absent, the loop never folds
+   * anything — a subagent's fifteen steps do not need it.
+   */
+  compaction?: CompactionOptions;
   onAssistantDelta?: (text: string) => void;
   onAssistantMessage?: (text: string) => void;
   onThinkingDelta?: (text: string) => void;
@@ -350,6 +372,79 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
   let stopReason = 'end_turn';
   let finalText = '';
   const silenceMs = opts.silenceTimeoutMs ?? DEFAULT_STREAM_SILENCE_MS;
+  const systemText = () => (typeof opts.system === 'function' ? opts.system() : opts.system);
+
+  /**
+   * What the provider last said the context held, and how long the transcript
+   * was then: everything after that point is estimated, everything before it
+   * is known. Null before the first answer and after a compaction.
+   */
+  let reported: { tokens: number; messageCount: number } | null = null;
+  const contextTokens = (): number =>
+    reported !== null && reported.messageCount <= opts.messages.length
+      ? reported.tokens + estimateTokens({ messages: opts.messages.slice(reported.messageCount) })
+      : estimateTokens({ system: systemText(), tools: opts.tools, messages: opts.messages });
+
+  /**
+   * Fold the older steps into a summary. `stop` when the summary call's cost
+   * ended the run (the budget sees it like any other request); `unchanged`
+   * when there is nothing it could cut.
+   */
+  const compact = async (reason: 'threshold' | 'overflow'): Promise<'compacted' | 'unchanged' | 'stop'> => {
+    const options = opts.compaction;
+    if (!options) return 'unchanged';
+    const system = systemText();
+    const tokensBefore = contextTokens();
+    const plan = planCompaction(opts.messages, {
+      ...(options.keepRecentSteps === undefined ? {} : { keepRecentSteps: options.keepRecentSteps }),
+      targetTokens: Math.floor(options.contextWindow * TARGET_AFTER_COMPACTION),
+      system,
+      tools: opts.tools,
+    });
+    if (plan === null) return 'unchanged';
+    let memory = plan.structuralMemory;
+    let summary: 'model' | 'structural' = 'structural';
+    let failure: string | undefined;
+    let summaryUsage: Usage | undefined;
+    if (options.modelSummary !== false) {
+      const attempt = await requestModelSummary({
+        provider: opts.provider,
+        model: opts.model,
+        plan,
+        signal: opts.signal,
+        ...(options.summaryTimeoutMs === undefined ? {} : { timeoutMs: options.summaryTimeoutMs }),
+      });
+      summaryUsage = attempt.usage;
+      if (attempt.summary !== null) {
+        memory = modelMemory(plan, attempt.summary);
+        summary = 'model';
+      } else if (attempt.failure !== null) {
+        failure = attempt.failure;
+      }
+    }
+    const next = compactedMessages(plan, memory);
+    // The cut is placed so this cannot fail; if it ever did, sending a call
+    // without its answer is the one outcome worse than not compacting.
+    if (!toolPairingIntact(next)) return 'unchanged';
+    opts.messages.splice(0, opts.messages.length, ...next);
+    reported = null;
+    opts.onMessagesChanged?.();
+    options.onCompaction?.({
+      reason,
+      summary,
+      ...(failure === undefined ? {} : { failure }),
+      removedMessages: plan.folded.length,
+      keptMessages: plan.recent.length,
+      tokensBefore,
+      tokensAfter: contextTokens(),
+      ...(summaryUsage === undefined ? {} : { usage: summaryUsage }),
+    });
+    if (summaryUsage && (summaryUsage.inputTokens > 0 || summaryUsage.outputTokens > 0)) {
+      usage = addUsage(usage, summaryUsage);
+      if (opts.onStep?.(summaryUsage) === 'stop') return 'stop';
+    }
+    return 'compacted';
+  };
 
   for (let step = 0; step < opts.maxSteps; step++) {
     if (opts.signal.aborted) {
@@ -366,6 +461,15 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       else opts.messages.push({ role: 'user', content: parts });
       opts.onMessagesChanged?.();
     }
+    if (
+      opts.compaction &&
+      contextTokens() >= opts.compaction.contextWindow * clampThreshold(opts.compaction.threshold) &&
+      (await compact('threshold')) === 'stop'
+    ) {
+      stopReason = 'budget';
+      break;
+    }
+    // After compaction, which may have folded the last state block away.
     if (injectSessionState(opts.messages, opts.sessionState?.())) opts.onMessagesChanged?.();
     pruneOldMessageImages(opts.messages, 3);
     /**
@@ -380,6 +484,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
     /** Retries spent on THIS step. Each step starts with a full allowance. */
     let retries = 0;
     let waitedMs = 0;
+    /** Whether this step already compacted because its request was too long;
+     *  a second refusal after that is a real failure. */
+    let compactedForOverflow = false;
 
     for (;;) {
       textAcc = '';
@@ -401,6 +508,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       };
 
       let retryable: ProviderCallError | null = null;
+      let overflow: ProviderCallError | null = null;
       const thinkingFilter = new LeadingThinkingFilter();
       let thinkingAcc = '';
       const deliver = (parts: { text: string; thinking: string }) => {
@@ -460,6 +568,15 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
           stopReason = 'aborted';
         } else if (
           err instanceof ProviderCallError &&
+          err.kind === 'context_overflow' &&
+          opts.compaction !== undefined &&
+          !compactedForOverflow &&
+          textAcc === '' && thinkingAcc === '' && assistantContent.length === 0
+        ) {
+          // Too long to send: fold the older steps and send the shorter one.
+          overflow = err;
+        } else if (
+          err instanceof ProviderCallError &&
           err.retryable &&
           // NOTHING may have been shown yet. This is the load-bearing condition:
           // `onAssistantDelta` has already streamed `textAcc` to whoever is
@@ -484,6 +601,18 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       deliver(thinkingFilter.finish());
       if (thinkingAcc) opts.onThinkingMessage?.(thinkingAcc);
 
+      if (overflow !== null) {
+        compactedForOverflow = true;
+        const outcome = await compact('overflow');
+        if (outcome === 'unchanged') throw overflow;
+        if (outcome === 'stop') {
+          stopReason = 'budget';
+          break;
+        }
+        // Straight back to the request: not a provider retry, and no wait.
+        injectSessionState(opts.messages, opts.sessionState?.());
+        continue;
+      }
       if (retryable === null) break;
 
       // What the lab asked for, when it said, and an exponential back-off when
@@ -534,6 +663,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       opts.messages.push({ role: 'assistant', content: assistantContent });
     }
     opts.onMessagesChanged?.();
+    if (stepUsage.inputTokens > 0) {
+      reported = { tokens: stepUsage.inputTokens + stepUsage.outputTokens, messageCount: opts.messages.length };
+    }
 
     if (opts.onStep?.(stepUsage) === 'stop') {
       stopReason = 'budget';

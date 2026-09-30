@@ -43,6 +43,15 @@ export {
 } from './loop.js';
 export { ProviderCallError, classifyProviderError, type ProviderFailureKind } from './providers/errors.js';
 export {
+  planCompaction,
+  compactedMessages,
+  estimateTokens,
+  toolPairingIntact,
+  type CompactionInfo,
+  type CompactionOptions,
+  type CompactionPlan,
+} from './compaction.js';
+export {
   SubagentManager,
   isOrchestrationTool,
   orchestrationToolSpecs,

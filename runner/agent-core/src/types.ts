@@ -109,6 +109,21 @@ export type AgentEvent =
   | { type: 'approval_requested'; request: ApprovalRequest }
   | { type: 'approval_resolved'; callId: string; decision: ApprovalDecision; agentId?: string }
   | { type: 'files_changed'; turnIndex: number; paths: string[] }
+  /**
+   * The older steps of the conversation were folded into a summary to keep it
+   * inside the model's context window (see compaction.ts). `summary` says who
+   * wrote it: the model, or the structural notes when the model's attempt
+   * failed, which `failure` explains.
+   */
+  | {
+      type: 'context_compacted';
+      reason: 'threshold' | 'overflow';
+      summary: 'model' | 'structural';
+      failure?: string;
+      removedMessages: number;
+      tokensBefore: number;
+      tokensAfter: number;
+    }
   | { type: 'mode_changed'; mode: PermissionMode }
   | {
       type: 'turn_finished';

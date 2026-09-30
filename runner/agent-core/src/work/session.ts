@@ -25,6 +25,7 @@
 
 import crypto from 'node:crypto';
 import { runAgentLoop } from '../loop.js';
+import type { CompactionInfo, CompactionOptions } from '../compaction.js';
 import type { ProviderAdapter, ReasoningEffort } from '../providers/types.js';
 import type { ChatMessage, ToolSpec, UserContent } from '../types.js';
 import type { ToolContext } from '../tools/types.js';
@@ -296,6 +297,12 @@ export interface WorkSessionCallbacks {
     kind: string;
     reason: string;
   }): void;
+  /**
+   * Called after the run's older steps were folded into a summary to keep it
+   * inside the model's context window. Operator-facing, for the reason
+   * `onProviderRetry` gives: a new transcript kind is a native release.
+   */
+  onCompaction?(info: CompactionInfo): void;
 }
 
 /**
@@ -376,6 +383,13 @@ export interface WorkSessionOptions {
   approvalMode?: WorkPermissionPolicy;
   validate?: WorkValidator;
   env?: NodeJS.ProcessEnv;
+  /**
+   * How the run is kept inside the model's context window: on by default at
+   * 80% of it, `false` to turn it off. A Work run is the longest thing this
+   * engine runs — up to 200 steps of pages and documents — and without it a
+   * run that read enough simply ended when the provider refused the request.
+   */
+  compaction?: Pick<CompactionOptions, 'threshold' | 'keepRecentSteps' | 'modelSummary'> | false;
 }
 
 /** Everything needed to continue a paused run on another executor. */
@@ -702,6 +716,15 @@ export class WorkAgentSession {
         executeToolCall: (call) => this.executeToolCall(call),
         onMessagesChanged: () => this.options.callbacks.onCheckpoint?.(this.checkpoint()),
         onProviderRetry: (info) => this.options.callbacks.onProviderRetry?.(info),
+        ...(this.options.compaction === false
+          ? {}
+          : {
+              compaction: {
+                ...this.options.compaction,
+                contextWindow: this.options.provider.capabilities(this.options.model).maxContext,
+                onCompaction: (info) => this.options.callbacks.onCompaction?.(info),
+              },
+            }),
       });
       this.finalText = result.finalText || this.finalText;
     } catch (err) {
