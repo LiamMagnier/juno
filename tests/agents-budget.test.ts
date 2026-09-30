@@ -65,3 +65,27 @@ test("enforced at admission, on run-now, and while running; it only narrows the 
   const watch = runner.slice(runner.indexOf("const watchUsageWindow = async"));
   assert.match(watch.slice(0, 3000), /checkMemberBudget\(\{[\s\S]*?stage: "running"[\s\S]*?session\.stopForAccountBudget\(member\.message\)/);
 });
+
+test("routines firing on their own meet the cap before a run exists: the scheduler and the trigger poller", () => {
+  // A member's routines are the spending the cap is most often for. Without
+  // this, a routine past its cap still started a run on every fire, and only
+  // the executor's first usage poll stopped it again.
+  for (const file of ["scripts/work-scheduler.ts", "scripts/work-trigger-poller.ts"]) {
+    const source = readFileSync(file, "utf8");
+    const check = source.indexOf("checkMemberBudget({");
+    assert.ok(check > 0, file);
+    assert.ok(check < source.lastIndexOf("await createRun({"), `${file}: the cap is checked before the run is created`);
+    assert.match(source.slice(check, check + 1200), /stage: "admission"[\s\S]*?reason: "budget_exceeded",\s*explanation: memberBudget\.message/, file);
+    assert.match(source, /runBudgetForWindow\(windowForRun\)/, `${file}: its remainder lowers the run's ceiling`);
+  }
+});
+
+test("the largest cap fits the column it is stored in", () => {
+  // `Agent.budgetMicroUsd` is a 32-bit Int: anything the schema accepts must
+  // be writable, or a raise fails as a server error instead of a sentence.
+  assert.ok(MAX_MEMBER_BUDGET_MICRO_USD <= 2_147_483_647);
+  assert.equal(patchAgentSchema.safeParse({ budgetMicroUsd: MAX_MEMBER_BUDGET_MICRO_USD }).success, true);
+  assert.equal(patchAgentSchema.safeParse({ budgetMicroUsd: 3_000_000_000 }).success, false);
+  const schema = readFileSync("prisma/schema.prisma", "utf8");
+  assert.match(schema, /budgetMicroUsd\s+Int\?/);
+});
