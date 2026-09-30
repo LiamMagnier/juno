@@ -21,6 +21,7 @@ import {
   ownerTransferredPayload,
   transferredConnectorIds,
   transferredPermissionPolicy,
+  transferredRunPolicy,
   type OwnerTransferRefusalCode,
 } from "@/lib/work/ownership";
 import { agentApprovalMode } from "@/lib/agents/domain";
@@ -74,6 +75,7 @@ export async function transferWorkSessionOwner(input: {
       agentId: true,
       status: true,
       permissionPolicy: true,
+      connectorsChosen: true,
       connectors: { select: { connectorId: true } },
     },
   });
@@ -98,11 +100,20 @@ export async function transferWorkSessionOwner(input: {
   }
   const from = session.agentId ? byId.get(session.agentId) ?? null : null;
 
-  const run = await prisma.workRun.findFirst({
-    where: { sessionId: session.id, userId: input.userId },
-    orderBy: { attempt: "desc" },
-    select: { id: true, status: true, claimedBy: true, leaseExpiresAt: true },
-  });
+  const runSelect = { id: true, status: true, claimedBy: true, leaseExpiresAt: true } as const;
+  // The latest attempt carries the event; an attempt an executor still holds
+  // (any of them, not only the latest) decides the safe point.
+  const [run, leased] = await Promise.all([
+    prisma.workRun.findFirst({
+      where: { sessionId: session.id, userId: input.userId },
+      orderBy: { attempt: "desc" },
+      select: runSelect,
+    }),
+    prisma.workRun.findFirst({
+      where: { sessionId: session.id, userId: input.userId, ...liveLeaseWhere(now) },
+      select: runSelect,
+    }),
+  ]);
 
   const refusal = ownerTransferRefusal({
     status: session.status,
@@ -111,7 +122,7 @@ export async function transferWorkSessionOwner(input: {
     toAgentStatus: target?.status ?? null,
     fromName: from?.name ?? null,
     toName: target?.name ?? null,
-    run,
+    run: leased ?? run,
     reason,
     now,
   });
@@ -123,13 +134,13 @@ export async function transferWorkSessionOwner(input: {
     current: policyOf(session.permissionPolicy),
     toMemberMode: target ? agentApprovalMode(target.approvalMode) : null,
   });
-  const keep = new Set(
-    transferredConnectorIds({
-      current: session.connectors.map((row) => row.connectorId),
-      toMemberConnectorIds: target ? target.connectorIds : null,
-    })
-  );
-  const dropped = session.connectors.map((row) => row.connectorId).filter((id) => !keep.has(id));
+  // The apps the task keeps: only the new member's. A task that never chose
+  // (`connectorsChosen` false) reaches everything the account can, so moved to
+  // a member it is narrowed to that member's apps and the choice is written.
+  const keep = transferredConnectorIds({
+    current: session.connectorsChosen ? session.connectors.map((row) => row.connectorId) : null,
+    toMemberConnectorIds: target ? target.connectorIds : null,
+  });
   const actor =
     input.by.kind === "person"
       ? ({ kind: "person" } as const)
@@ -142,6 +153,16 @@ export async function transferWorkSessionOwner(input: {
   const summary = ownerTransferSentence({ ...sides, by: actor, reason });
 
   const moved = await prisma.$transaction(async (tx) => {
+    // The session's attempts are locked first, in the order a claim takes its
+    // locks (the run, then the session: `claimRun`), so a claim racing this
+    // transfer waits for it and then runs as the new owner, and no deadlock
+    // is possible between the two. With the rows held, an attempt an executor
+    // took since the read above is seen here and the transfer backs off.
+    await tx.$queryRaw`SELECT "id" FROM "WorkRun" WHERE "sessionId" = ${session.id} AND "userId" = ${input.userId} FOR UPDATE`;
+    const held = await tx.workRun.count({
+      where: { sessionId: session.id, userId: input.userId, ...liveLeaseWhere(now) },
+    });
+    if (held > 0) throw new TransferRaced();
     // Compare-and-set on the owner AND a safe status. A dispatch or another
     // transfer that landed since the read above makes this a no-op.
     const updated = await tx.workSession.updateMany({
@@ -156,20 +177,38 @@ export async function transferWorkSessionOwner(input: {
         agentId: input.toAgentId,
         ownerTransferredAt: now,
         permissionPolicy: nextPolicy,
+        ...(keep !== null ? { connectorsChosen: true } : {}),
       },
     });
     if (updated.count !== 1) return false;
-    // The run's lease is re-checked inside the transaction: a queued attempt
-    // claimed between the read and here is past its safe point.
-    if (run && session.status === "queued") {
-      const claimed = await tx.workRun.count({
-        where: { id: run.id, userId: input.userId, claimedBy: { not: null }, leaseExpiresAt: { gt: now } },
-      });
-      if (claimed > 0) throw new TransferRaced();
-    }
-    if (dropped.length > 0) {
+    if (keep !== null) {
+      // Exactly `keep`, as `writeSessionConnectors` writes a choice: the
+      // runner reads these rows when the next attempt starts.
       await tx.workSessionConnector.deleteMany({
-        where: { sessionId: session.id, userId: input.userId, connectorId: { in: dropped } },
+        where: {
+          sessionId: session.id,
+          userId: input.userId,
+          ...(keep.length > 0 ? { connectorId: { notIn: keep } } : {}),
+        },
+      });
+      if (keep.length > 0) {
+        await tx.workSessionConnector.createMany({
+          data: keep.map((connectorId) => ({ sessionId: session.id, userId: input.userId, connectorId })),
+          skipDuplicates: true,
+        });
+      }
+    }
+    // Attempts that have not run yet (queued, or paused to be resumed) carry
+    // the policy they were stamped with, and the executor enforces the stamp:
+    // narrow it too, or the next step would run under the old owner's mode.
+    const pending = await tx.workRun.findMany({
+      where: { sessionId: session.id, userId: input.userId, status: { notIn: [...WORK_TERMINAL_STATUSES] } },
+      select: { id: true, permissionPolicy: true },
+    });
+    for (const attempt of pending) {
+      await tx.workRun.updateMany({
+        where: { id: attempt.id, userId: input.userId },
+        data: { permissionPolicy: transferredRunPolicy(attempt.permissionPolicy, nextPolicy) as Prisma.InputJsonValue },
       });
     }
     if (run) {
@@ -229,6 +268,14 @@ export async function transferWorkSessionOwner(input: {
   ]);
 
   return { ok: true, sessionId: session.id, fromAgentId: session.agentId, toAgentId: input.toAgentId, summary };
+}
+
+/** An attempt an executor still holds: claimed, with a lease that has not run out (`leaseIsLive`). */
+function liveLeaseWhere(now: Date) {
+  return {
+    claimedBy: { not: null },
+    OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { gt: now } }],
+  } satisfies Prisma.WorkRunWhereInput;
 }
 
 class TransferRaced extends Error {

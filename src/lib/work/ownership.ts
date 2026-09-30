@@ -31,8 +31,9 @@ export const MAX_TRANSFER_REASON_CHARS = 500;
  * Statuses at which ownership may change, beside any terminal status.
  *
  * `draft` has never run. `paused` stopped at a checkpoint and is resumed as a
- * fresh claim that re-reads the session. `queued` is safe only while no
- * executor holds the lease (the transfer function checks that separately).
+ * fresh claim that re-reads the session. Each of the three, like a terminal
+ * status, is safe only while no executor still holds a lease on an attempt
+ * (`isAtSafePoint` checks that first).
  * `preparing`, `running`, `waiting_input` and `waiting_approval` are not: an
  * executor is holding the attempt open with the old owner's identity, and
  * waiting on the person is still inside that attempt.
@@ -96,7 +97,7 @@ export function ownerTransferRefusal(input: OwnerTransferInput): OwnerTransferRe
     return {
       code: "not_at_safe_point",
       message:
-        "This task is in the middle of a step. Pause it, or let it finish or ask its question, then hand it over.",
+        "This task is in the middle of a step. Pause it or let it finish, then hand it over once it has stopped.",
     };
   }
   return null;
@@ -105,22 +106,34 @@ export function ownerTransferRefusal(input: OwnerTransferInput): OwnerTransferRe
 /**
  * Whether no executor is part-way through this task.
  *
- * A queued attempt that an executor has claimed is past the point of no
- * return even though its status has not moved yet: the claim and the status
- * change are two writes, and the lease is the one that is true first. An
- * expired lease is nobody's, which is the same rule the lease sweep applies.
+ * The lease decides first, whatever the status says. A queued attempt that an
+ * executor has claimed is past the point of no return even though its status
+ * has not moved yet: the claim and the status change are two writes, and the
+ * lease is the one that is true first. The same holds the other way round for
+ * Pause and Stop: the session reads `paused` (or a terminal status) the moment
+ * the person presses the button, while the executor finishes the step it is on
+ * and only then parks the run and lets the lease go (`parkRun`). Until it has,
+ * that step is still running with the old owner's identity, apps and approval
+ * mode. `run` is the attempt holding a lease when one does (else the latest).
+ * An expired lease is nobody's, which is the same rule the lease sweep applies.
  */
 export function isAtSafePoint(input: {
   status: string;
   run: { status: string; claimedBy: string | null; leaseExpiresAt: Date | null } | null;
   now: Date;
 }): boolean {
+  if (leaseIsLive(input.run, input.now)) return false;
   if (isTerminalStatus(input.status)) return true;
-  if (!SAFE_LIVE_STATUSES.has(input.status)) return false;
-  if (input.status !== "queued") return true;
-  const run = input.run;
-  if (!run || !run.claimedBy) return true;
-  return run.leaseExpiresAt !== null && run.leaseExpiresAt.getTime() <= input.now.getTime();
+  return SAFE_LIVE_STATUSES.has(input.status);
+}
+
+/** Whether an executor still holds this attempt: claimed, and the lease has not run out. */
+export function leaseIsLive(
+  run: { claimedBy: string | null; leaseExpiresAt: Date | null } | null | undefined,
+  now: Date
+): boolean {
+  if (!run || !run.claimedBy) return false;
+  return run.leaseExpiresAt === null || run.leaseExpiresAt.getTime() > now.getTime();
 }
 
 /**
@@ -142,14 +155,44 @@ export function transferredPermissionPolicy(input: {
  * The apps a task keeps after it changes hands: only those the new member may
  * use. A member cannot be handed access it was never given by being handed a
  * task that had it. Back to the person, the task keeps what it was granted.
+ *
+ * `current: null` is a task that never chose its apps (`connectorsChosen`
+ * false), which the runner reads as "everything the account can reach". Moved
+ * to a member, that is narrowed to the member's own apps and written down as a
+ * choice; kept at null it would have handed the member every app the account
+ * has. Back to the person it stays unrestricted, as it was.
  */
 export function transferredConnectorIds(input: {
-  current: readonly string[];
+  current: readonly string[] | null;
   toMemberConnectorIds: readonly string[] | null;
-}): string[] {
-  if (!input.toMemberConnectorIds) return [...input.current];
+}): string[] | null {
+  if (!input.toMemberConnectorIds) return input.current === null ? null : [...input.current];
+  if (input.current === null) return [...new Set(input.toMemberConnectorIds)];
   const allowed = new Set(input.toMemberConnectorIds);
   return input.current.filter((id) => allowed.has(id));
+}
+
+/**
+ * The approval-mode blob an attempt that has not run yet carries after its
+ * task changes hands.
+ *
+ * Runs are stamped with their policy when they are created (`policy`, plus
+ * the layers it came from), and the executor enforces the stamp, not the
+ * session. A queued or paused attempt made under the old owner would otherwise
+ * resume under the old owner's mode. The effective `policy` only narrows, the
+ * `session` layer becomes the session's new mode, and every other layer
+ * (host, unattended, attended) is kept as it was. A stamp nobody can read is
+ * treated as the strictest mode, which is what the executor does with it.
+ */
+export function transferredRunPolicy(
+  stamped: unknown,
+  sessionPolicy: WorkPermissionPolicy
+): Record<string, unknown> {
+  const blob =
+    stamped && typeof stamped === "object" && !Array.isArray(stamped) ? { ...(stamped as Record<string, unknown>) } : {};
+  const known = (value: unknown): WorkPermissionPolicy =>
+    value === "balanced" || value === "permissive" || value === "conservative" ? value : "conservative";
+  return { ...blob, policy: narrowestPolicy(known(blob.policy), sessionPolicy), session: sessionPolicy };
 }
 
 /** The `owner_transferred` event payload, one shape for the log, the web and the apps. */

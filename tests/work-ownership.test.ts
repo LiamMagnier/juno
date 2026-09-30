@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import {
   MAX_TRANSFER_REASON_CHARS,
   isAtSafePoint,
+  leaseIsLive,
   ownerTransferRefusal,
   ownerTransferSentence,
   ownerTransferredPayload,
   transferredConnectorIds,
   transferredPermissionPolicy,
+  transferredRunPolicy,
 } from "@/lib/work/ownership";
 import { WORK_EVENT_KINDS, WORK_TERMINAL_STATUSES, defaultVisibilityFor } from "@/lib/work/domain";
 
@@ -50,6 +52,24 @@ test("only a task no executor is part-way through can change hands", () => {
   }
 });
 
+test("Pause or Stop pressed while a step runs is not a safe point until the executor lets go", () => {
+  const future = new Date(NOW.getTime() + 60_000);
+  const past = new Date(NOW.getTime() - 1);
+  // The session reads paused (or cancelled) the moment the person presses the
+  // button; the executor finishes its step and only then parks the run.
+  for (const status of ["paused", "draft", "cancelled", "completed"]) {
+    const held = { status: "paused", claimedBy: "exec-1", leaseExpiresAt: future };
+    assert.equal(isAtSafePoint({ status, run: held, now: NOW }), false, status);
+    assert.equal(ownerTransferRefusal({ ...base, status, run: held })?.code, "not_at_safe_point", status);
+    // Parked (lease released) or lapsed: nobody holds it any more.
+    assert.equal(isAtSafePoint({ status, run: { ...held, claimedBy: null, leaseExpiresAt: null }, now: NOW }), true, status);
+    assert.equal(isAtSafePoint({ status, run: { ...held, leaseExpiresAt: past }, now: NOW }), true, status);
+  }
+  // A claim with no expiry is held, not free.
+  assert.equal(leaseIsLive({ claimedBy: "exec-1", leaseExpiresAt: null }, NOW), true);
+  assert.equal(leaseIsLive({ claimedBy: null, leaseExpiresAt: future }, NOW), false);
+});
+
 test("a queued attempt is safe only while no live lease holds it", () => {
   const future = new Date(NOW.getTime() + 60_000);
   const past = new Date(NOW.getTime() - 1);
@@ -67,6 +87,21 @@ test("a transfer never widens the task's approval mode or apps", () => {
   assert.equal(transferredPermissionPolicy({ current: "balanced", toMemberMode: null }), "balanced");
   assert.deepEqual(transferredConnectorIds({ current: ["gmail", "linear"], toMemberConnectorIds: ["linear", "slack"] }), ["linear"]);
   assert.deepEqual(transferredConnectorIds({ current: ["gmail"], toMemberConnectorIds: null }), ["gmail"]);
+  // A task that never chose its apps reaches everything the account can; moved
+  // to a member it is narrowed to the member's own, never left unrestricted.
+  assert.deepEqual(transferredConnectorIds({ current: null, toMemberConnectorIds: ["linear"] }), ["linear"]);
+  assert.deepEqual(transferredConnectorIds({ current: null, toMemberConnectorIds: [] }), []);
+  assert.equal(transferredConnectorIds({ current: null, toMemberConnectorIds: null }), null, "back to the person: as it was");
+});
+
+test("an attempt that has not run yet is re-stamped: its effective mode only narrows", () => {
+  const stamped = { policy: "permissive", session: "permissive", host: null, unattended: "ask", attended: false };
+  assert.deepEqual(transferredRunPolicy(stamped, "balanced"), { ...stamped, policy: "balanced", session: "balanced" });
+  // A host that pinned a stricter mode keeps it.
+  assert.equal(transferredRunPolicy({ policy: "conservative", session: "permissive", host: "conservative" }, "balanced").policy, "conservative");
+  // Unreadable stamps are the strictest, as the executor reads them.
+  assert.equal(transferredRunPolicy(null, "permissive").policy, "conservative");
+  assert.equal(transferredRunPolicy({ policy: "yolo" }, "balanced").policy, "conservative");
 });
 
 test("the record says who moved it, from whom, to whom and why", () => {
