@@ -324,8 +324,17 @@ actor DesktopWorkRunHost: WorkRunHosting {
             case .maxTokens:
                 await finish(request.runID, outcome: "truncated", reason: "The model ran out of room before it finished.")
                 return
-            case .endTurn, .toolUse, nil:
+            case .endTurn:
                 await finish(request.runID, outcome: "succeeded", reason: "Finished.")
+                return
+            case .toolUse, nil:
+                // A reply that stopped without saying why, or that asked for
+                // tools and named none, is cut short, not finished — as the
+                // Code loop reads it. Reporting it as success passed a
+                // half-written answer off as the task's result.
+                let reason = "The model's reply ended before it finished."
+                await emit(request.runID, "error", ["message": .string(reason)])
+                await finish(request.runID, outcome: "failed", reason: reason)
                 return
             }
 
