@@ -163,3 +163,37 @@ Simulator.app under a computer-use grant. No private SimulatorKit APIs.
 as the fallback if WebKit throttles offscreen pages. **Resume on launch** is off
 by default with a setting. **Headless CLI** waits (P2); an App Intent ships
 first.
+
+## Design round 2 feedback (2026-09-30)
+
+The owner saw early round-2 passes: "a bit better", then: dark mode looks
+horrible; the shadow behind the composer looks bad; build our own icons that
+follow the design system, with motion on hover, press and every state; the
+agents' design is bad (rework shapes, motion, everything); bring back the serif
+font; keep upgrading.
+
+**D-026 · Converge on one system.** Canvas and Porcelain had converged anyway
+(bright neutral ground, neutral tokens carrying each thing's mark, three small
+suggestion chips, quiet sidebar). Instrument produced the dark screen the owner
+called horrible and is dropped; its density ideas survive as a Code density
+variant of the same system. Round 3 puts specialists on the one system
+(foundations and screens; icons; crew identity) instead of three generalists.
+
+**D-027 · The serif returns (reverses part of D-017).** Newsreader is the
+display face for the greeting and display moments, as the owner asked. It is not
+used for the Claude "How can I help, *Name*?" italic-name pattern, and a
+Cyrillic-capable serif is added to the stack because Newsreader has no Cyrillic.
+
+**D-028 · Juno draws its own icons.** One set on a 24px grid, drawn for 16 and
+20px, with purposeful micro-motion on hover, press, active and state changes
+(copy→check, send→stop, mic→waveform), CSS-only, with reduced-motion forms. It
+replaces the mix of lucide, phosphor and the old glyphs, and projects to native
+through the icon generator. This overrides design-taste-frontend's "never
+hand-roll icons" rule, because the owner asked for it.
+
+**D-029 · Crew identity is redesigned from the shape up.** The Grok-like
+two-dot rounded square goes. New shape grammar, states and motion rig.
+
+**D-030 · The composer has no drop shadow;** it is defined by surface and a
+crisp hairline. **Dark mode is designed, not derived:** it gets the same
+critique weight as light.
