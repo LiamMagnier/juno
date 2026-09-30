@@ -1,6 +1,6 @@
 import XCTest
 import JunoCodeCore
-import JunoCodeLocal
+@testable import JunoCodeLocal
 @testable import JunoCodeRuntime
 @testable import JunoCodeUI
 
@@ -40,7 +40,7 @@ private final class TurnScript: AgentModelClient, @unchecked Sendable {
     }
 }
 
-/// Plan → approve → Code, and questions, through the session controller the
+/// Plan → approve → Code, questions and trusted skills, through the session controller the
 /// Studio drives.
 @MainActor
 final class PlanHandoffTests: XCTestCase {
@@ -177,6 +177,39 @@ final class PlanHandoffTests: XCTestCase {
         let mode = await controller.live?.permissions.permissionMode
         XCTAssertEqual(mode, .readOnly)
         XCTAssertTrue(controller.pendingPlans.isEmpty)
+    }
+
+    func testOnlyTrustedSkillsAreListedAndNoBodyIsInThePrompt() async throws {
+        let skills = root.appendingPathComponent("project/.claude/skills")
+        for (name, text) in [
+            ("deploy", "---\ndescription: Ship to staging\n---\nSECRET-DEPLOY-BODY"),
+            ("lint", "---\ndescription: Run the linters\n---\nSECRET-LINT-BODY"),
+        ] {
+            try FileManager.default.createDirectory(
+                at: skills.appendingPathComponent(name), withIntermediateDirectories: true
+            )
+            try text.write(to: skills.appendingPathComponent("\(name)/SKILL.md"), atomically: true, encoding: .utf8)
+        }
+        let model = TurnScript([.text("Ok.")])
+        let (controller, store, sessionID) = try await makeController(
+            behavior: .code, storedMode: .workspaceWrite, model: model
+        )
+        let context = try XCTUnwrap(controller.context)
+        let deploy = try XCTUnwrap(SkillDiscovery(access: context.access).discover().skills.first { $0.name == "deploy" })
+        try context.setSkillTrusted(deploy, trusted: true)
+
+        controller.composerText = "Ship it"
+        await controller.send()
+        try await eventually { !model.requests.isEmpty }
+        try await eventually {
+            (try? await store.session(id: sessionID).status.isActive) == false
+        }
+        let request = try XCTUnwrap(model.requests.first)
+        XCTAssertTrue(request.systemPrompt.contains("<skills>"))
+        XCTAssertTrue(request.systemPrompt.contains("- deploy: Ship to staging"))
+        XCTAssertFalse(request.systemPrompt.contains("lint"), "an untrusted skill is not mentioned")
+        XCTAssertFalse(request.systemPrompt.contains("SECRET-DEPLOY-BODY"), "bodies load on demand")
+        XCTAssertTrue(request.tools.map(\.name).contains("use_skill"))
     }
 
     func testAQuestionIsShownThenAnsweredFromTheController() async throws {

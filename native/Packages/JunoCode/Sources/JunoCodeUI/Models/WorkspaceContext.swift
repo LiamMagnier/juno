@@ -42,6 +42,9 @@ public final class WorkspaceContext: Sendable {
     /// Consent gate for starting repository-declared MCP processes or making
     /// their discovery requests. Missing consent always denies startup.
     public let mcpPolicyStore: MCPServerPolicyStore
+    /// The reader's trust in this project's skills, bound to each file's
+    /// content. A repository skill is offered to the agent only once trusted.
+    public let skillPolicyStore: SkillPolicyStore
     /// Discovered during context construction so hooks are available to the
     /// first agent turn even when the reader never opens the Repository pane.
     public let hookDiscoveryResult: HookDiscoveryResult
@@ -72,6 +75,10 @@ public final class WorkspaceContext: Sendable {
             workspaceID: record.id
         )
         self.mcpPolicyStore = MCPServerPolicyStore(
+            storageRoot: storageRoot,
+            workspaceID: record.id
+        )
+        self.skillPolicyStore = SkillPolicyStore(
             storageRoot: storageRoot,
             workspaceID: record.id
         )
@@ -203,6 +210,18 @@ public final class WorkspaceContext: Sendable {
         if !allowed {
             try? await mcpRegistry?.disconnect(serverID: server.name)
         }
+    }
+
+    /// Trusts a skill as it reads now, or withdraws trust. Stored privately;
+    /// the repository cannot trust its own skills.
+    public func setSkillTrusted(_ skill: SkillDefinition, trusted: Bool) throws {
+        try skillPolicyStore.setTrusted(skill, trusted: trusted)
+    }
+
+    /// The skills a session may load, with the reader's switched-off ones
+    /// left out.
+    public func skillProvider(disabledIDs: Set<String>) -> WorkspaceSkillProvider {
+        WorkspaceSkillProvider(access: access, policy: skillPolicyStore, disabledIDs: disabledIDs)
     }
 
     /// Allows or revokes this project's hooks, as the reader decided.
