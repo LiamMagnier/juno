@@ -151,7 +151,9 @@ export function prismaContextPort(options: ContextPortOptions): ContextPort {
           select: { digest: true },
         }),
         prisma.message.findMany({
-          where: { conversationId: conversation.id, conversation: { userId } },
+          // The turns a person and Juno wrote. A SYSTEM row is never sent to
+          // a provider (every adapter skips it), so it is not quoted either.
+          where: { conversationId: conversation.id, conversation: { userId }, role: { in: ["USER", "ASSISTANT"] } },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take: EXCERPT_MESSAGES,
           select: { role: true, content: true },

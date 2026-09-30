@@ -176,6 +176,10 @@ if (!DB_URL) {
     await prisma.message.create({
       data: { conversationId: pricing.id, role: "ASSISTANT", content: encryptMessageText("They asked for 12% off.") },
     });
+    // A SYSTEM row is never sent to a provider, so an excerpt does not quote it.
+    await prisma.message.create({
+      data: { conversationId: pricing.id, role: "SYSTEM", content: encryptMessageText("INTERNAL SYSTEM ROW") },
+    });
     const mira = await prisma.agent.create({
       data: { userId: me.id, name: "Mira", role: "Revenue analyst", instructions: "Watch renewals and flag risk." },
     });
@@ -260,6 +264,7 @@ if (!DB_URL) {
     assert.match(turn.content, /# Referenced in this message/);
     assert.match(turn.content, /## Project: Acme renewal[\s\S]*Always cite the renewal date\./);
     assert.match(turn.content, /<<<JUNO_UNTRUSTED_BEGIN>>> source=chat “Pricing call notes”[\s\S]*They asked for 12% off\./);
+    assert.ok(!turn.content.includes("INTERNAL SYSTEM ROW"), "an excerpt quotes only what the person and Juno wrote");
     assert.match(turn.content, /## Crew member: Mira — Revenue analyst[\s\S]*You cannot hand work to Mira/);
     assert.ok(turn.attachments?.some((attachment) => attachment.id === clone.id), "the clone rides the turn like any upload");
     for (const secret of ["SECRET PAYROLL", "THEIR SECRET INSTRUCTIONS", "THEIR AGENT BRIEF", "their.example.test"]) {
