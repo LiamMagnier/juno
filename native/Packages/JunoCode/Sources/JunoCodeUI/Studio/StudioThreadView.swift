@@ -26,7 +26,8 @@ public struct StudioThreadView: View {
             events: controller.events,
             groups: controller.narrativeGroups,
             pendingApprovalIDs: Set(controller.pendingApprovals.map(\.id)),
-            showReasoning: preferences.showReasoning || preferences.density == .detailed
+            showReasoning: preferences.showReasoning || preferences.density == .detailed,
+            pendingPlanIDs: Set(controller.pendingPlans.map(\.id))
         )
     }
 
@@ -166,6 +167,14 @@ public struct StudioThreadView: View {
                 .accessibilityIdentifier("juno.code.transcript.hook")
         case let .modeChange(_, text):
             StudioDividerCaption(text: text)
+        case let .todos(_, list):
+            StudioTodoCard(list: list)
+                .accessibilityIdentifier("juno.code.todos")
+        case let .question(_, request, resolution):
+            StudioQuestionRow(request: request, resolution: resolution)
+        case let .planReview(id, request, decision):
+            StudioPlanReviewCard(request: request, decision: decision, isExpanded: binding(id, defaultExpanded: decision == nil))
+                .accessibilityIdentifier("juno.code.plan-review")
         case let .summary(_, run, turn):
             StudioRunSummary(
                 run: run,
@@ -227,6 +236,8 @@ struct StudioThreadTail: View {
         status.isActive
             && status != .waitingForApproval
             && controller.pendingApprovals.isEmpty
+            && controller.pendingQuestions.isEmpty
+            && controller.pendingPlans.isEmpty
             && controller.liveAssistantText.isEmpty
             && !(controller.narrativeGroups.last?.status == .running)
     }

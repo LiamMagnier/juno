@@ -446,6 +446,31 @@ private actor DesktopQueuedCodeHost {
                 kind: "status",
                 payload: ["status": .string(goal.goal.objective)]
             )
+        // A queued task has no way to answer on the device yet; the phone
+        // is told what the run waits on, in the same quiet status line.
+        case .todosUpdated(let list):
+            .init(
+                kind: "status",
+                payload: [
+                    "status": .string("Checklist"),
+                    "detail": .string("\(list.completedCount) of \(list.items.count) done"),
+                ]
+            )
+        case .questionRequested(let request):
+            .init(
+                kind: "status",
+                payload: [
+                    "status": .string("Waiting for an answer on the Mac"),
+                    "detail": .string(request.questions.first?.question ?? ""),
+                ]
+            )
+        case .planSubmitted:
+            .init(
+                kind: "status",
+                payload: ["status": .string("Plan ready for review on the Mac")]
+            )
+        case .questionResolved, .planResolved:
+            nil
         case .statusChanged(let status):
             .init(
                 kind: "status",

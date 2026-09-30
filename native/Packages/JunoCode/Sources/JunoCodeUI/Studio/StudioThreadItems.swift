@@ -30,6 +30,13 @@ enum StudioThreadItem: Identifiable, Equatable {
     case modeChange(id: String, text: String)
     /// A run's end: how long it took and what it changed.
     case summary(id: String, run: RunCompletedEvent, turn: TurnTotals)
+    /// The agent's checklist, as it last wrote it.
+    case todos(id: String, list: TodoListEvent)
+    /// A question the reader answered, declined or let lapse. One still
+    /// waiting is the card above the composer, not a row.
+    case question(id: String, request: QuestionRequest, resolution: QuestionResolution)
+    /// A plan handed over from Plan mode, and what the reader decided.
+    case planReview(id: String, request: PlanApprovalRequest, decision: PlanDecision?)
 
     var id: String {
         switch self {
@@ -37,7 +44,8 @@ enum StudioThreadItem: Identifiable, Equatable {
              let .reasoning(id, _), let .decision(id, _, _), let .plan(id, _),
              let .subagent(id, _), let .tests(id, _), let .error(id, _),
              let .compaction(id, _), let .hook(id, _), let .modeChange(id, _),
-             let .summary(id, _, _):
+             let .summary(id, _, _), let .todos(id, _), let .question(id, _, _),
+             let .planReview(id, _, _):
             id
         case let .activity(group, _):
             group.id
@@ -57,7 +65,8 @@ enum StudioThreadItems {
         events: [SessionEvent],
         groups: [ActivityNarrativeGroup],
         pendingApprovalIDs: Set<String>,
-        showReasoning: Bool
+        showReasoning: Bool,
+        pendingPlanIDs: Set<String> = []
     ) -> [StudioThreadItem] {
         var owner: [String: Int] = [:]
         for (index, group) in groups.enumerated() {
@@ -67,8 +76,17 @@ enum StudioThreadItems {
         var decisions: [String: ApprovalDecision] = [:]
         var latestSubagent: [String: SubagentUpdateEvent] = [:]
         var latestGoal: SessionGoal?
+        var questionResolutions: [String: QuestionResolution] = [:]
+        var planDecisions: [String: PlanDecision] = [:]
+        var lastTodosEventID: String?
         for event in events {
             switch event.payload {
+            case let .questionResolved(resolved):
+                questionResolutions[resolved.requestID] = resolved.resolution
+            case let .planResolved(resolved):
+                planDecisions[resolved.requestID] = resolved.decision
+            case .todosUpdated:
+                lastTodosEventID = event.id
             case let .approvalResolved(resolved):
                 decisions[resolved.approvalID] = resolved.decision
             case let .subagentUpdated(update):
@@ -182,6 +200,27 @@ enum StudioThreadItems {
                 flushReasoning(id: event.id)
                 items.append(.summary(id: event.id, run: run, turn: totals))
                 totals = StudioThreadItem.TurnTotals()
+
+            case let .todosUpdated(list):
+                // One checklist, where it last changed.
+                guard event.id == lastTodosEventID, !list.items.isEmpty else { continue }
+                items.append(.todos(id: event.id, list: list))
+
+            case let .questionRequested(request):
+                guard let resolution = questionResolutions[request.id] else { continue }
+                items.append(.question(id: event.id, request: request, resolution: resolution))
+
+            case let .planSubmitted(request):
+                // Shown while waiting too: the plan is the answer the run
+                // produced, and the card below only asks what to do with it.
+                items.append(.planReview(
+                    id: event.id,
+                    request: request,
+                    decision: pendingPlanIDs.contains(request.id) ? nil : planDecisions[request.id]
+                ))
+
+            case .questionResolved, .planResolved:
+                continue
             }
         }
         return items

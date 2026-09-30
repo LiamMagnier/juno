@@ -21,6 +21,7 @@ import JunoCodeCore
 /// | `web_fetch` | `WebFetch` | `url` |
 /// | `web_search` | `WebSearch` | `query` |
 /// | `delegate_task` | `Task` | `prompt`, `description` |
+/// | `todo_write`, `ask_user`, `exit_plan` | `TodoWrite`, `AskUserQuestion`, `ExitPlanMode` | — |
 /// | `mcp__server__tool` | unchanged | — |
 ///
 /// Every other tool — `delete_file`, `move_file`, the `git_*` tools,
@@ -45,6 +46,9 @@ public enum HookToolNames {
         "web_fetch": "WebFetch",
         "web_search": "WebSearch",
         "delegate_task": "Task",
+        "todo_write": "TodoWrite",
+        "ask_user": "AskUserQuestion",
+        "exit_plan": "ExitPlanMode",
     ]
 
     /// The name hooks see for a Juno tool.

@@ -16,6 +16,8 @@ public actor ToolScheduler {
         /// A hook answered `"continue": false` around this call, so the run
         /// ends once the batch is answered.
         public let haltReason: String?
+        /// The tool itself ended the run (see ``ToolResult/endsRun``).
+        public let endsRun: String?
 
         public init(
             callID: String,
@@ -25,7 +27,8 @@ public actor ToolScheduler {
             isError: Bool,
             images: [ModelImage] = [],
             sideEffects: [SessionEventPayload] = [],
-            haltReason: String? = nil
+            haltReason: String? = nil,
+            endsRun: String? = nil
         ) {
             self.callID = callID
             self.toolName = toolName
@@ -35,6 +38,7 @@ public actor ToolScheduler {
             self.images = images
             self.sideEffects = sideEffects
             self.haltReason = haltReason
+            self.endsRun = endsRun
         }
     }
 
@@ -352,7 +356,8 @@ public actor ToolScheduler {
                 isError: result.isError,
                 images: result.images,
                 sideEffects: result.sideEffects,
-                haltReason: after.haltReason
+                haltReason: after.haltReason,
+                endsRun: result.endsRun
             )
         } catch {
             let message = String(describing: error)

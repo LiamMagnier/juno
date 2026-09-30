@@ -1241,6 +1241,18 @@ public actor AgentOrchestrator {
                 )
                 return
             }
+            // A tool ended the run (an approved plan): every call is answered
+            // and saved, and the next step belongs to a new turn.
+            if let ending = executionResults.lazy.compactMap(\.endsRun).first {
+                await finish(
+                    status: .completed,
+                    summary: ending,
+                    filesChanged: filesChanged.count,
+                    testsPassed: testsPassed,
+                    startedAt: startedAt
+                )
+                return
+            }
             if let terminalGoalLifecycle {
                 let status: SessionStatus =
                     terminalGoalLifecycle == .completed ? .completed : .cancelled

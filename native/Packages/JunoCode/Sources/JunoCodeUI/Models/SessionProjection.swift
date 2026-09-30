@@ -279,6 +279,21 @@ public final class SessionProjection {
             // stretch it happened in, not the end of it.
             break
 
+        case .todosUpdated:
+            // The checklist is a row of its own; the work it lists goes on.
+            break
+
+        case .questionRequested:
+            closeActiveGroup(status: .completed)
+            executionState = .executing(summary: "Waiting for your answer")
+
+        case .planSubmitted:
+            closeActiveGroup(status: .completed)
+            executionState = .executing(summary: "Waiting for you to review the plan")
+
+        case .questionResolved, .planResolved:
+            executionState = .executing(summary: "Resuming…")
+
         case let .approvalRequested(request):
             closeActiveGroup(status: .completed)
             executionState = .awaitingApproval(

@@ -249,6 +249,9 @@ public final class SessionController {
         let context: WorkspaceContext?
         let store: CodeSessionStore
         let permissions: PermissionCoordinator
+        /// Questions for the reader and plan approvals. Answering one grants
+        /// nothing; it is kept apart from `permissions` for that reason.
+        let questions: QuestionCoordinator
         /// Live child-agent controls are kept separately from the parent
         /// permission coordinator. A child must never be approved through the
         /// parent's action digest or stopped by replacing the parent's run.
@@ -408,6 +411,13 @@ public final class SessionController {
     public private(set) var session: CodeSession
     public private(set) var events: [SessionEvent] = []
     public private(set) var pendingApprovals: [ApprovalRequest] = []
+    /// Questions the agent is waiting on the reader to answer.
+    public private(set) var pendingQuestions: [QuestionRequest] = []
+    /// A plan written in Plan mode, waiting for Approve or Keep planning.
+    public private(set) var pendingPlans: [PlanApprovalRequest] = []
+    /// An approved plan waiting for its planning run to end, so the Code turn
+    /// that implements it can start.
+    private var approvedPlanHandoff: (plan: String, mode: PermissionMode)?
     public private(set) var changes: [TrackedChange] = []
     public private(set) var projection: SessionProjection
     public var narrativeGroups: [ActivityNarrativeGroup] { projection.narrativeGroups }
@@ -646,16 +656,22 @@ public final class SessionController {
         self.sessionID = session.id
         self.session = session
         let behavior = session.configuration.behavior
+        let permissions = PermissionCoordinator(
+            sessionID: session.id,
+            // Nothing to permit without a workspace, and a stated
+            // permission level the tools cannot honour is worse than none.
+            mode: context == nil
+                ? .readOnly
+                : (behavior == .code ? session.configuration.permissionMode : .readOnly)
+        )
         self.live = Live(
             context: context,
             store: store,
-            permissions: PermissionCoordinator(
+            permissions: permissions,
+            questions: QuestionCoordinator(
                 sessionID: session.id,
-                // Nothing to permit without a workspace, and a stated
-                // permission level the tools cannot honour is worse than none.
-                mode: context == nil
-                    ? .readOnly
-                    : (behavior == .code ? session.configuration.permissionMode : .readOnly)
+                store: store,
+                otherWaitsPending: { await !permissions.pendingApprovals.isEmpty }
             ),
             subagentControls: SubagentControlRegistry(),
             modelClient: modelClient,
@@ -789,6 +805,13 @@ public final class SessionController {
             tools.removeAll { $0.name.hasPrefix("computer_") }
         }
         tools = Self.visionAdjusted(tools, supportsVision: contract.supportsVision)
+        // The checklist and questions for the reader change nothing on disk,
+        // so every behaviour has them; only Plan hands a plan over.
+        tools.append(TodoWriteTool())
+        tools.append(AskUserTool(questions: live.questions))
+        if contract.behavior == .plan {
+            tools.append(ExitPlanTool(questions: live.questions))
+        }
         if contract.behavior == .code {
             // Preview inspection is bound to the exact parent session by the
             // ToolContext supplied during invocation. It is deliberately not
@@ -1067,11 +1090,11 @@ public final class SessionController {
         guard let goal = session.goal else {
             return """
 
-            DURABLE GOALS
-            For a long-running or multi-step request, create an explicit goal \
-            with update_goal before changing files. Keep its ordered steps \
-            current as work progresses. Never mark a goal complete until every \
-            step is complete and concrete verification evidence is recorded.
+            PROGRESS
+            Track the steps of multi-step work with todo_write. update_goal is \
+            for a durable goal the reader asks you to hold across turns — a \
+            completion contract closed only by recorded verification — not for \
+            step tracking.
             """
         }
         let steps = goal.steps.enumerated().map { index, step in
@@ -1244,6 +1267,8 @@ public final class SessionController {
             session = current
         }
         pendingApprovals = await live.permissions.pendingApprovals
+        pendingQuestions = await live.questions.pendingQuestions
+        pendingPlans = await live.questions.pendingPlans
         await refreshWorkspacePanels()
         await refreshComputerUse()
         // Cleared here rather than by the caller once it resumes, so a detach
@@ -1682,7 +1707,9 @@ public final class SessionController {
         // reaches. Cancelling the handover kills their processes, and the
         // prompt is turned away rather than delivered after the Stop.
         remoteHandover?.cancel()
+        approvedPlanHandoff = nil
         await orchestrator?.stop()
+        await live?.questions.cancelAll()
         liveAssistantText = ""
         liveReasoningSummary = ""
     }
@@ -2033,6 +2060,91 @@ public final class SessionController {
     public func sweepExpiredApprovals() async {
         guard let live else { return }
         await live.permissions.sweepExpired()
+    }
+
+    // MARK: - Questions and plans
+
+    /// The reader's answers to a question card. Information for the agent;
+    /// it approves nothing.
+    public func answerQuestion(_ requestID: String, answers: [QuestionAnswer]) async {
+        guard let live else {
+            pendingQuestions.removeAll { $0.id == requestID }
+            return
+        }
+        await live.questions.answer(requestID: requestID, answers: answers)
+    }
+
+    public func declineQuestion(_ requestID: String) async {
+        guard let live else {
+            pendingQuestions.removeAll { $0.id == requestID }
+            return
+        }
+        await live.questions.decline(requestID: requestID)
+    }
+
+    /// Approves a plan into a Code turn at `mode`, exactly: the level the
+    /// reader picked on the card, whatever the session held before.
+    public func approvePlan(_ requestID: String, mode: PermissionMode) async {
+        guard let live else {
+            pendingPlans.removeAll { $0.id == requestID }
+            return
+        }
+        guard mode != .readOnly else {
+            transientError = "Pick a level that can make changes, or keep planning."
+            return
+        }
+        await live.questions.approvePlan(requestID: requestID, permissionMode: mode)
+    }
+
+    public func keepPlanning(_ requestID: String, feedback: String?) async {
+        guard let live else {
+            pendingPlans.removeAll { $0.id == requestID }
+            return
+        }
+        await live.questions.keepPlanning(requestID: requestID, feedback: feedback)
+    }
+
+    /// The Code turn an approved plan starts once its planning run has ended.
+    ///
+    /// The behaviour and the permission level change together, to exactly
+    /// what the reader approved with — never the level the session held
+    /// before Plan, which could be higher — and the plan goes to the model
+    /// as the turn's instruction.
+    private func beginApprovedPlan() async {
+        guard let handoff = approvedPlanHandoff, let live else { return }
+        approvedPlanHandoff = nil
+        await orchestrator?.awaitCompletion()
+        await live.permissions.setMode(handoff.mode)
+        hookPolicy = HookExecutionPolicy(
+            allowedHookIDs: hookPolicy.allowedHookIDs,
+            permissionMode: handoff.mode,
+            allowUntrustedHooks: hookPolicy.allowUntrustedHooks
+        )
+        session.configuration.behavior = .code
+        session.configuration.permissionMode = handoff.mode
+        _ = try? await live.store.updateSession(id: sessionID) { session in
+            session.configuration.behavior = .code
+            session.configuration.permissionMode = handoff.mode
+        }
+        let modelPrompt = """
+            The reader approved the plan below and switched this session to Code. \
+            Implement it now, step by step, keeping to its scope, and verify the \
+            result as it describes.
+
+            <approved_plan>
+            \(handoff.plan)
+            </approved_plan>
+            """
+        do {
+            try await startTurn(
+                prompt: "Implement the approved plan.",
+                modelPrompt: modelPrompt,
+                images: [],
+                live: live
+            )
+        } catch {
+            transientError = "The plan was approved, but implementing it could not start: \(error.localizedDescription)"
+        }
     }
 
     public func setPermissionMode(_ mode: PermissionMode) async {
@@ -3857,6 +3969,32 @@ public final class SessionController {
             liveAssistantText = ""
             liveReasoningSummary = ""
             Task { await refreshWorkspacePanels() }
+            if approvedPlanHandoff != nil {
+                Task { await self.beginApprovedPlan() }
+            }
+        case let .questionRequested(request):
+            if !pendingQuestions.contains(where: { $0.id == request.id }) {
+                pendingQuestions.append(request)
+            }
+        case let .questionResolved(resolved):
+            pendingQuestions.removeAll { $0.id == resolved.requestID }
+        case let .planSubmitted(request):
+            if !pendingPlans.contains(where: { $0.id == request.id }) {
+                pendingPlans.append(request)
+            }
+        case let .planResolved(resolved):
+            if case let .approved(mode) = resolved.decision,
+               let plan = pendingPlans.first(where: { $0.id == resolved.requestID })?.plan
+                   ?? events.lazy.compactMap({ event -> String? in
+                       guard case let .planSubmitted(request) = event.payload,
+                             request.id == resolved.requestID
+                       else { return nil }
+                       return request.plan
+                   }).first
+            {
+                approvedPlanHandoff = (plan, mode)
+            }
+            pendingPlans.removeAll { $0.id == resolved.requestID }
         default:
             break
         }

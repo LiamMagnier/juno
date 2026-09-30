@@ -20,17 +20,24 @@ public struct ToolResult: Sendable {
     /// Structured transcript events produced by this call (file changes,
     /// test outcomes, …) beyond the generic tool events.
     public let sideEffects: [SessionEventPayload]
+    /// Set when this call is the end of the run: the batch is answered and
+    /// the run completes with this summary instead of asking the model for
+    /// another turn. `exit_plan` uses it — an approved plan is implemented in
+    /// a new Code turn, not by the read-only run that wrote it.
+    public let endsRun: String?
 
     public init(
         content: String,
         isError: Bool = false,
         images: [ModelImage] = [],
-        sideEffects: [SessionEventPayload] = []
+        sideEffects: [SessionEventPayload] = [],
+        endsRun: String? = nil
     ) {
         self.content = content
         self.isError = isError
         self.images = images
         self.sideEffects = sideEffects
+        self.endsRun = endsRun
     }
 }
 

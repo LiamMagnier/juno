@@ -518,6 +518,11 @@ final class CodePreviewHarnessTests: XCTestCase {
                 case .compaction: payloadKinds.insert("compaction")
                 case .transcriptRewound: payloadKinds.insert("transcriptRewound")
                 case .hookActivity: payloadKinds.insert("hookActivity")
+                case .todosUpdated: payloadKinds.insert("todosUpdated")
+                case .questionRequested: payloadKinds.insert("questionRequested")
+                case .questionResolved: payloadKinds.insert("questionResolved")
+                case .planSubmitted: payloadKinds.insert("planSubmitted")
+                case .planResolved: payloadKinds.insert("planResolved")
                 }
             }
             sawRunningTool = sawRunningTool || !startedTools.subtracting(completedTools).isEmpty
