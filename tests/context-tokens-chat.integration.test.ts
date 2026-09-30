@@ -317,6 +317,84 @@ if (!DB_URL) {
     assert.equal(userMessage.attachments.length, 1, "the stored object was already on the message");
   });
 
+  test("a regenerate keeps the per-message attachment ceiling, counting what the turn already carries", async () => {
+    const f = fixture;
+    const { encryptMessageText } = await import("@/lib/message-crypto");
+    const { MAX_ATTACHMENTS } = await import("@/lib/uploads");
+    const full = await prisma.conversation.create({ data: { userId: f.me.id, title: "Full turn" } });
+    const turn = await prisma.message.create({
+      data: { conversationId: full.id, role: "USER", content: encryptMessageText("Read all of these") },
+    });
+    for (let index = 0; index < MAX_ATTACHMENTS - 1; index += 1) {
+      await prisma.attachment.create({
+        data: {
+          userId: f.me.id,
+          kind: "FILE",
+          fileName: `sent-${index}.txt`,
+          mimeType: "text/plain",
+          size: 1,
+          storageKey: `test/${full.id}/sent-${index}.txt`,
+          parserState: "ready",
+          messageId: turn.id,
+          conversationId: full.id,
+        },
+      });
+    }
+    const extra = await Promise.all(
+      ["a", "b", "c"].map((name) =>
+        prisma.attachment.create({
+          data: {
+            userId: f.me.id,
+            kind: "FILE",
+            fileName: `extra-${name}.txt`,
+            mimeType: "text/plain",
+            size: 1,
+            storageKey: `test/${full.id}/extra-${name}.txt`,
+            parserState: "ready",
+          },
+        })
+      )
+    );
+    const { receipt } = await chat({
+      conversationId: full.id,
+      regenerate: true,
+      context: extra.map((file) => ({ kind: "file", id: file.id, label: file.fileName })),
+    });
+    const vias = extra.map((file) => {
+      const entry = outcomeOf(receipt, file.id);
+      return entry.via ?? entry.code;
+    });
+    assert.deepEqual(vias, ["attachment", "attachment_limit", "attachment_limit"], "one slot was left, and the rest say why");
+    assert.equal(await prisma.attachment.count({ where: { messageId: turn.id } }), MAX_ATTACHMENTS);
+    // Asking again adds nothing: the message is full, and the file it took is
+    // already there.
+    await chat({
+      conversationId: full.id,
+      regenerate: true,
+      context: extra.map((file) => ({ kind: "file", id: file.id, label: file.fileName })),
+    });
+    assert.equal(await prisma.attachment.count({ where: { messageId: turn.id } }), MAX_ATTACHMENTS);
+  });
+
+  test("two regenerates of the same turn racing each other attach a file token once", async () => {
+    const f = fixture;
+    const { encryptMessageText } = await import("@/lib/message-crypto");
+    const raced = await prisma.conversation.create({ data: { userId: f.me.id, title: "Raced turn" } });
+    // The native shape: the user turn appended, then regenerate — twice at once.
+    const turn = await prisma.message.create({
+      data: { conversationId: raced.id, role: "USER", content: encryptMessageText("Summarise Q3 Forecast.csv") },
+    });
+    const body = {
+      conversationId: raced.id,
+      regenerate: true,
+      context: [{ kind: "file", id: f.libraryFile.id, label: "Q3 Forecast.csv" }],
+    };
+    await Promise.all([chat(body), chat(body), chat(body)]);
+    const onTurn = await prisma.attachment.findMany({ where: { messageId: turn.id } });
+    assert.equal(onTurn.length, 1, "the lock on the turn makes the later ones find the first one's clone");
+    assert.equal(onTurn[0].storageKey, f.libraryFile.storageKey);
+  });
+
   test("a durable first submission clones the file inside its acceptance transaction", async () => {
     const f = fixture;
     const text = "Summarise Q3 Forecast.csv";

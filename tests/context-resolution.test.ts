@@ -627,3 +627,11 @@ test("an app the person told Juno not to ask about again does not promise that e
   );
   assert.equal(outcome(without, "github").approval?.changes, "ask");
 });
+
+test("a file the message had no room for is an attachment-limit notice, not a vague failure", async () => {
+  const { port } = makePort();
+  const turn = await TurnContext.begin([token("file", id("forecast")), token("file", id("brief"))], baseFacts, port);
+  turn.settleFiles(new Set([id("forecast")]), new Set([id("brief")]));
+  assert.equal(outcome(turn, id("forecast")).via, "attachment");
+  assert.equal(outcome(turn, id("brief")).code, "attachment_limit");
+});

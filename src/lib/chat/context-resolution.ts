@@ -525,11 +525,12 @@ export class TurnContext {
   /**
    * Which Library files made it onto the user message (the sources that were
    * cloned, or that the message already carried). Null when no message could
-   * take them.
+   * take them. `overLimit`: sources left off because the message was full.
    */
-  settleFiles(attachedSourceIds: ReadonlySet<string> | null) {
+  settleFiles(attachedSourceIds: ReadonlySet<string> | null, overLimit: ReadonlySet<string> = new Set()) {
     for (const entry of this.of("file")) {
       if (attachedSourceIds?.has(entry.id)) this.apply(entry, "attachment");
+      else if (overLimit.has(entry.id)) this.drop(entry, "attachment_limit");
       else this.drop(entry, "unavailable", `“${oneLine(entry.label)}” couldn't be attached to this message.`);
     }
   }

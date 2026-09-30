@@ -176,6 +176,7 @@ import { appendToLastUserTurn, contextActivityRows, TurnContext } from "@/lib/ch
 import { prismaContextPort, regenerateContextTokens } from "@/lib/chat/context-resolve";
 import { actionPolicyFromSetting } from "@/lib/chat/app-approval-preview";
 import { cloneLibraryAttachments } from "@/lib/library-attach";
+import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { isAttachmentParserPending, isAttachmentParserUnavailable } from "@/lib/attachment-context";
 import { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
 import {
@@ -1632,6 +1633,7 @@ async function handleChat(req: Request) {
    * message, so a clone is never left unlinked in the Library.
    */
   let attachedContextFiles: Set<string> | null = null;
+  let contextFilesOverLimit = new Set<string>();
   let contextAttachmentIds: string[] = [];
   let clarificationModelContent: string | null = null;
   let clarificationVisibleContent: string | null = null;
@@ -1891,6 +1893,12 @@ async function handleChat(req: Request) {
     // The native clients append the user turn first and then regenerate, so
     // their file tokens arrive here: cloned onto the turn being answered,
     // once — a retry that re-sends them finds the file already there.
+    //
+    // The message row is locked first, so two regenerates of the same turn
+    // (a double tap, a retry racing its original) run this one at a time and
+    // the second sees the first's clones. The turn keeps the per-message
+    // attachment ceiling, counting what it already carries: a regenerate is
+    // not a way to add files to a message past it.
     if (turnContext.libraryFiles.length > 0) {
       const target = await prisma.message.findFirst({
         where: { conversationId: conversation.id, role: "USER" },
@@ -1899,15 +1907,17 @@ async function handleChat(req: Request) {
       });
       if (target) {
         const conversationId = conversation.id;
-        const cloned = await prisma.$transaction((tx) =>
-          cloneLibraryAttachments(
+        const cloned = await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT "id" FROM "Message" WHERE "id" = ${target.id} FOR UPDATE`;
+          return cloneLibraryAttachments(
             tx,
             user.id,
             turnContext.libraryFiles.map((file) => file.id),
-            { messageId: target.id, conversationId, skipExistingOnMessage: true }
-          )
-        );
+            { messageId: target.id, conversationId, skipExistingOnMessage: true, maxOnMessage: MAX_ATTACHMENTS }
+          );
+        });
         attachedContextFiles = new Set(cloned.bySource.keys());
+        contextFilesOverLimit = new Set(cloned.overLimit);
         contextAttachmentIds = [...cloned.bySource.values()];
       }
     }
@@ -2022,7 +2032,7 @@ async function handleChat(req: Request) {
 
   }
 
-  turnContext.settleFiles(attachedContextFiles);
+  turnContext.settleFiles(attachedContextFiles, contextFilesOverLimit);
 
   // Durable first submissions consumed quota inside their acceptance
   // transaction. Every legacy caller retains the existing quota path.
