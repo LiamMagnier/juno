@@ -886,7 +886,10 @@ public final class SessionController {
                     }
                 },
                 controls: live.subagentControls,
-                fallbackResolver: live.fallbackResolver,
+                // A sub-agent falls back only when the reader opted in, as
+                // the session does: another lab's model answering is a
+                // surprise otherwise.
+                fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil,
                 // Read as each child starts, so a rule the reader added with
                 // "Always allow" or a settings edit mid-session carries over.
                 parentRules: { [permissions = live.permissions] in
@@ -916,7 +919,7 @@ public final class SessionController {
                     reasoningEffort: contract.reasoningEffort,
                     parentSystemPrompt: systemPrompt,
                     sessionState: childSessionState,
-                    fallbackResolver: live.fallbackResolver,
+                    fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil,
                     parentRules: { [permissions = live.permissions] in
                         await permissions.permissionRules
                     }
