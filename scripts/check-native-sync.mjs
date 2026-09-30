@@ -22,6 +22,13 @@ const GATES = [
   // The capability and Work contracts' generated Swift.
   "capabilities:check",
   "work:contract:check",
+  // The canonical agent session protocol: contracts/agent → agent-core, the
+  // web and the JunoAgentProtocol Swift target, plus the golden transcripts'
+  // folded views. Both folds are held to those files by their tests.
+  "agent:protocol:check",
+  // The device-task wire fixtures the Mac's decoder is tested against are the
+  // server's own serializeTask output.
+  "code:task-wire:check",
   // globals.css + tailwind.config.ts → JunoGeneratedTokens.swift.
   "design:tokens:check",
   // The web's icon registries → both apps' symbol catalogs and JunoIcon.

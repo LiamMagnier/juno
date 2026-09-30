@@ -1,0 +1,323 @@
+{
+  "$comment": "Which producer emits, which reader folds, and which host handles each part of contracts/agent/juno-agent-protocol-v1.json. Checked by scripts/generate-agent-protocol.mjs: every event and command must be classified for every party listed, and nothing may be classified that the contract does not have. implemented: it does this today, and a test covers it. planned: it means to; the note says what stands in the way. n/a: it never will, by design; the note says why.",
+  "producers": {
+    "cloud-runner": {
+      "summary": "scripts/cloud-code-runner.mjs, through runner/agent-core/src/protocol-projector.ts (AgentEvent → protocol). Posted as `protocol` task events to a server that advertises agentProtocol in runner-context.",
+      "events": {
+        "session.created": "implemented",
+        "session.configured": {
+          "status": "n/a",
+          "note": "A cloud run's model, effort and mode are fixed at dispatch; session.created carries them."
+        },
+        "session.state": "implemented",
+        "session.error": "implemented",
+        "turn.started": "implemented",
+        "turn.completed": "implemented",
+        "turn.failed": "implemented",
+        "turn.interrupted": {
+          "status": "implemented",
+          "note": "A cancel between steps, and a run the driver abandons on an exception."
+        },
+        "transcript.restarted": {
+          "status": "n/a",
+          "note": "A cloud run is one pass; nothing rewinds it."
+        },
+        "item.user_message": "implemented",
+        "item.assistant_text.delta": "implemented",
+        "item.assistant_text": "implemented",
+        "item.thinking.delta": "implemented",
+        "item.thinking": "implemented",
+        "item.tool_call": "implemented",
+        "item.tool_output": {
+          "status": "planned",
+          "note": "agent-core returns a command's output with its result; it has no streaming output event yet."
+        },
+        "item.tool_result": "implemented",
+        "item.file_change": {
+          "status": "implemented",
+          "note": "From the staged diff after the agent phase, as the legacy file_change rows are."
+        },
+        "item.test_run": {
+          "status": "planned",
+          "note": "agent-core has no test runner tool; test commands arrive as bash calls with an exit code."
+        },
+        "item.subagent": "implemented",
+        "item.compaction": {
+          "status": "planned",
+          "note": "agent-core has no compaction yet (audit C3); it lands with the engine lane."
+        },
+        "item.notice": "implemented",
+        "approval.requested": "implemented",
+        "approval.resolved": {
+          "status": "implemented",
+          "note": "Always by `mode`: nobody is attached to a cloud run, so the permission mode answers and says so."
+        },
+        "question.asked": {
+          "status": "planned",
+          "note": "Cloud Code has no ask-the-user tool; cloud Work's askQuestion joins in slice 3."
+        },
+        "question.answered": {
+          "status": "planned",
+          "note": "See question.asked."
+        },
+        "plan.updated": {
+          "status": "planned",
+          "note": "Cloud Work's update_plan joins in slice 3; cloud Code has no todo tool."
+        },
+        "plan.proposed": {
+          "status": "planned",
+          "note": "Plan → approve → Code is a runtime-lane feature."
+        },
+        "plan.resolved": {
+          "status": "planned",
+          "note": "See plan.proposed."
+        },
+        "usage.updated": {
+          "status": "implemented",
+          "note": "Per turn from turn_finished, and per sub-agent. Cache counts ride along once agent-core reports them."
+        },
+        "code.pull_request": "implemented"
+      }
+    },
+    "mac-host": {
+      "summary": "The Mac, through JunoCodeBridge's AgentProtocolProjection (SessionEvent → protocol). Carried on relay uploads (payload key `protocol`) and posted as `protocol` task events for device tasks whose server advertises agentProtocol.",
+      "events": {
+        "session.created": "implemented",
+        "session.configured": {
+          "status": "implemented",
+          "note": "From each turn's TurnConfigurationEvent."
+        },
+        "session.state": "implemented",
+        "session.error": "implemented",
+        "turn.started": {
+          "status": "implemented",
+          "note": "A user prompt opens a turn; its turnId is derived from the prompt's sequence."
+        },
+        "turn.completed": {
+          "status": "implemented",
+          "note": "From RunCompletedEvent."
+        },
+        "turn.failed": {
+          "status": "planned",
+          "note": "The Swift runtime records a failure as an error plus a failed status; session.error and session.state carry it until it records the turn's end as one event."
+        },
+        "turn.interrupted": {
+          "status": "implemented",
+          "note": "From a cancelled status."
+        },
+        "transcript.restarted": {
+          "status": "implemented",
+          "note": "From TranscriptRewoundEvent."
+        },
+        "item.user_message": {
+          "status": "implemented",
+          "note": "Prompts, steers and queued messages."
+        },
+        "item.assistant_text.delta": {
+          "status": "n/a",
+          "note": "The Swift runtime journals whole replies."
+        },
+        "item.assistant_text": "implemented",
+        "item.thinking.delta": {
+          "status": "n/a",
+          "note": "The Swift runtime journals reasoning summaries whole."
+        },
+        "item.thinking": "implemented",
+        "item.tool_call": "implemented",
+        "item.tool_output": "implemented",
+        "item.tool_result": "implemented",
+        "item.file_change": "implemented",
+        "item.test_run": "implemented",
+        "item.subagent": "implemented",
+        "item.compaction": "implemented",
+        "item.notice": {
+          "status": "implemented",
+          "note": "Hook activity."
+        },
+        "approval.requested": "implemented",
+        "approval.resolved": {
+          "status": "implemented",
+          "note": "The Swift journal records approved or denied; always-allow and redirect are not distinguished in it yet, so they read as allow_once and deny."
+        },
+        "question.asked": {
+          "status": "planned",
+          "note": "No ask_user tool in the Swift runtime yet (runtime lane)."
+        },
+        "question.answered": {
+          "status": "planned",
+          "note": "See question.asked."
+        },
+        "plan.updated": {
+          "status": "implemented",
+          "note": "From the session goal's steps."
+        },
+        "plan.proposed": {
+          "status": "planned",
+          "note": "Plan → approve → Code is a runtime-lane feature."
+        },
+        "plan.resolved": {
+          "status": "planned",
+          "note": "See plan.proposed."
+        },
+        "usage.updated": {
+          "status": "planned",
+          "note": "The Swift journal does not record per-call usage (audit C6); sub-agent usage rides item.subagent."
+        },
+        "code.pull_request": {
+          "status": "n/a",
+          "note": "A Mac session does not open pull requests on its own."
+        }
+      }
+    }
+  },
+  "consumers": {
+    "web-fold": {
+      "summary": "src/lib/agent-protocol/fold.ts: the web's transcript and the server's persisted outcome read a task through it, with upgradeLegacy for events stored before the protocol.",
+      "events": {
+        "session.created": "implemented",
+        "session.configured": "implemented",
+        "session.state": "implemented",
+        "turn.started": "implemented",
+        "turn.completed": "implemented",
+        "turn.failed": "implemented",
+        "turn.interrupted": "implemented",
+        "transcript.restarted": "implemented",
+        "item.user_message": "implemented",
+        "item.assistant_text.delta": "implemented",
+        "item.assistant_text": "implemented",
+        "item.thinking.delta": "implemented",
+        "item.thinking": "implemented",
+        "item.tool_call": "implemented",
+        "item.tool_output": "implemented",
+        "item.tool_result": "implemented",
+        "item.file_change": "implemented",
+        "item.test_run": "implemented",
+        "item.subagent": "implemented",
+        "item.compaction": "implemented",
+        "item.notice": "implemented",
+        "approval.requested": "implemented",
+        "approval.resolved": "implemented",
+        "question.asked": "implemented",
+        "question.answered": "implemented",
+        "plan.updated": "implemented",
+        "plan.proposed": "implemented",
+        "plan.resolved": "implemented",
+        "usage.updated": "implemented",
+        "session.error": "implemented",
+        "code.pull_request": "implemented"
+      }
+    },
+    "swift-fold": {
+      "summary": "JunoAgentProtocol's AgentSessionFold: the same reducer in Swift, held to the same golden fixtures.",
+      "events": {
+        "session.created": "implemented",
+        "session.configured": "implemented",
+        "session.state": "implemented",
+        "turn.started": "implemented",
+        "turn.completed": "implemented",
+        "turn.failed": "implemented",
+        "turn.interrupted": "implemented",
+        "transcript.restarted": "implemented",
+        "item.user_message": "implemented",
+        "item.assistant_text.delta": "implemented",
+        "item.assistant_text": "implemented",
+        "item.thinking.delta": "implemented",
+        "item.thinking": "implemented",
+        "item.tool_call": "implemented",
+        "item.tool_output": "implemented",
+        "item.tool_result": "implemented",
+        "item.file_change": "implemented",
+        "item.test_run": "implemented",
+        "item.subagent": "implemented",
+        "item.compaction": "implemented",
+        "item.notice": "implemented",
+        "approval.requested": "implemented",
+        "approval.resolved": "implemented",
+        "question.asked": "implemented",
+        "question.answered": "implemented",
+        "plan.updated": "implemented",
+        "plan.proposed": "implemented",
+        "plan.resolved": "implemented",
+        "usage.updated": "implemented",
+        "session.error": "implemented",
+        "code.pull_request": "implemented"
+      }
+    }
+  },
+  "commandHandlers": {
+    "mac-host": {
+      "summary": "No host accepts protocol commands yet: commands are slice 2. Each note names the legacy verb that carries the intent today.",
+      "commands": {
+        "turn.send": {
+          "status": "planned",
+          "note": "Slice 2. Today: `message` relay command; a queued CodeTask for a device run."
+        },
+        "turn.steer": {
+          "status": "planned",
+          "note": "Slice 2. Today: `steer` task control; relay `message` with delivery steer."
+        },
+        "turn.queue": {
+          "status": "planned",
+          "note": "Slice 2. Today: relay `message` with delivery queue."
+        },
+        "turn.cancel": {
+          "status": "planned",
+          "note": "Slice 2. Today: `cancel_request` task control; relay `stop`."
+        },
+        "approval.decide": {
+          "status": "planned",
+          "note": "Slice 2. Today: `approval_response` task control; relay `approval`."
+        },
+        "question.answer": {
+          "status": "planned",
+          "note": "Slice 2. Today: nothing yet."
+        },
+        "plan.decide": {
+          "status": "planned",
+          "note": "Slice 2. Today: nothing yet."
+        },
+        "session.set_mode": {
+          "status": "planned",
+          "note": "Slice 2. Today: relay `patch` (update_session)."
+        }
+      }
+    },
+    "cloud-runner": {
+      "summary": "As mac-host. The runner reads legacy task controls from the events POST response.",
+      "commands": {
+        "turn.send": {
+          "status": "planned",
+          "note": "Slice 2. Today: `message` relay command; a queued CodeTask for a device run."
+        },
+        "turn.steer": {
+          "status": "planned",
+          "note": "Slice 2. Today: `steer` task control; relay `message` with delivery steer."
+        },
+        "turn.queue": {
+          "status": "planned",
+          "note": "Slice 2. Today: relay `message` with delivery queue. Cloud runs take a message sent mid-run as a steer."
+        },
+        "turn.cancel": {
+          "status": "planned",
+          "note": "Slice 2. Today: `cancel_request` task control; relay `stop`."
+        },
+        "approval.decide": {
+          "status": "planned",
+          "note": "Slice 2. Today: `approval_response` task control; relay `approval`."
+        },
+        "question.answer": {
+          "status": "planned",
+          "note": "Slice 2. Today: nothing yet. Cloud Code has no question tool."
+        },
+        "plan.decide": {
+          "status": "planned",
+          "note": "Slice 2. Today: nothing yet. Cloud Code has no plan mode."
+        },
+        "session.set_mode": {
+          "status": "planned",
+          "note": "Slice 2. Today: relay `patch` (update_session). A cloud run's mode is fixed at dispatch."
+        }
+      }
+    }
+  }
+}
