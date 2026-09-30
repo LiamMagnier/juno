@@ -359,6 +359,22 @@
         "/api/mcp/composio/[slug]": {
           "status": "internal",
           "note": "As /api/mcp/{connector}."
+        },
+        "/api/mcp/servers": {
+          "status": "native",
+          "note": "The Mac adds a custom MCP server (POST). Saved servers reach both apps as `user_mcp:` rows in /api/connectors; the iPhone has no add form yet."
+        },
+        "/api/mcp/servers/[id]": {
+          "status": "native",
+          "note": "The Mac edits, enables and disables a custom server (PATCH); Disconnect on either app deletes one (DELETE)."
+        },
+        "/api/mcp/servers/[id]/test": {
+          "status": "native",
+          "note": "Mac only: Test in the edit sheet for a saved server."
+        },
+        "/api/mcp/servers/test": {
+          "status": "native",
+          "note": "Mac only: Test in the add sheet before saving."
         }
       }
     },
@@ -393,6 +409,10 @@
       },
       "routes": {
         "/api/skills": "native",
+        "/api/skills/import/file": {
+          "status": "native",
+          "note": "Mac only: previews an uploaded SKILL.md (the web parses it in the browser); no Skills pages on the phone yet."
+        },
         "/api/skills/import/github": "native",
         "/api/skills/sources/[id]": "native",
         "/api/skills/sources/[id]/check": "native",
@@ -550,10 +570,7 @@
         "/api/agents/[id]/computer/heartbeat": "native",
         "/api/agents/[id]/computer/poster": "native",
         "/api/agents/[id]/computer/view": "native",
-        "/api/agents/[id]/duplicate": {
-          "status": "planned",
-          "note": "Agent duplication; wired into AgentClient.swift in Phase 7."
-        },
+        "/api/agents/[id]/duplicate": "native",
         "/api/agents/[id]/goals": "native",
         "/api/agents/[id]/goals/[goalId]": "native",
         "/api/agents/[id]/ideas/[ideaId]": "native",
@@ -561,11 +578,19 @@
         "/api/agents/[id]/notes/[noteId]": "native",
         "/api/agents/[id]/reflect": "native",
         "/api/agents/[id]/routines": "native",
+        "/api/agents/[id]/starter": {
+          "status": "native",
+          "note": "The Mac sends a new agent's first message when its thread opens (the web reads it server-side in /chat/{id}); the iPhone does not fetch it yet."
+        },
         "/api/agents/[id]/tasks": "native",
         "/api/agents/[id]/thread": "native",
         "/api/agents/[id]/undo": {
           "status": "planned",
           "note": "Agent event undo; wired into AgentClient.swift in Phase 7."
+        },
+        "/api/agents/hire-draft": {
+          "status": "internal",
+          "note": "Dead: no client calls it. Its only caller, the web's talk-first hire chat (via `draftHireAgent`), was removed in the agents redesign; kept until the rework deletes it."
         }
       }
     },
