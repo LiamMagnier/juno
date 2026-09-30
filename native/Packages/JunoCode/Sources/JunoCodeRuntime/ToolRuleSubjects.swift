@@ -21,9 +21,12 @@ public enum ToolRuleSubjects {
         case "git_commit":
             return .command("git commit")
         case "move_file":
-            // The destination is where the write lands.
-            return (input["to"]?.stringValue ?? input["from"]?.stringValue)
-                .map(PermissionRuleSubject.path)
+            // Both ends: the destination is where the write lands, and the
+            // source is where a file disappears from. Checking only the
+            // destination let a move carry a file out of a folder an
+            // `Edit(secrets/**)` deny was meant to protect.
+            let paths = [input["from"]?.stringValue, input["to"]?.stringValue].compactMap { $0 }
+            return paths.isEmpty ? nil : .paths(paths)
         case "read_file", "write_file", "create_file", "apply_patch", "multi_edit",
              "delete_file", "list_directory", "grep", "glob", "find_files":
             return input["path"]?.stringValue.map(PermissionRuleSubject.path)

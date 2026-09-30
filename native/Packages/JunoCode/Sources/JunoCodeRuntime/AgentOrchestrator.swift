@@ -11,6 +11,24 @@ public protocol ModelFallbackResolver: Sendable {
     /// Returns an available model ID to use as fallback for `currentModelID`,
     /// or nil when no suitable alternative exists.
     func resolveFallback(for currentModelID: String) async -> String?
+
+    /// The thinking setting to send `modelID` in place of `preferred`, which
+    /// was chosen for another model: nil when it takes no thinking parameter,
+    /// and otherwise the nearest depth it offers.
+    ///
+    /// The primary's effort sent to a fallback from another lab is a 400 for
+    /// a model that takes no parameter or does not offer that depth, and the
+    /// fallback exists precisely to keep the run going.
+    func reasoningEffort(for modelID: String, preferred: ReasoningEffort?) -> ReasoningEffort?
+}
+
+public extension ModelFallbackResolver {
+    /// With nothing known about the model, no thinking parameter at all:
+    /// omitting one costs a shallower answer, while a wrong one fails the
+    /// turn.
+    func reasoningEffort(for _: String, preferred _: ReasoningEffort?) -> ReasoningEffort? {
+        nil
+    }
 }
 
 public enum OrchestratorError: Error, Equatable, Sendable {
@@ -46,7 +64,33 @@ public actor AgentOrchestrator {
         /// How the session's own model is asked to write compaction summaries,
         /// or nil to write the structural summary alone.
         public var compactionSummary: CompactionSummarizer.Limits?
+        /// Fixed for the orchestrator's life, and kept free of anything that
+        /// changes during a session: it heads every request's cached prefix.
         public var systemPrompt: String
+        /// The session's volatile facts — date, branch, goal, skills — read
+        /// before each request and sent as a `<session_state>` block when
+        /// they changed. Nil sends none. See ``SessionState``.
+        public var sessionState: (@Sendable () async -> [SessionStateSection])?
+        /// How many images, and how many bytes of them, the history may carry
+        /// before the oldest are rewritten as text ahead of compaction. See
+        /// ``ImageRetention``.
+        public var maximumRetainedImages: Int
+        /// In the images' own bytes, which travel as base64, a third larger.
+        /// The default keeps them, with the text the byte guard allows, well
+        /// inside the 16 MB body the agent proxy accepts
+        /// (`MAX_AGENT_BODY_BYTES` in `src/lib/agent-proxy.ts`): at 12 MB
+        /// they alone filled it, and every request past that was a 413 that
+        /// only a forced compaction could clear.
+        public var maximumRetainedImageBytes: Int
+        /// How a failed model request is tried again. See ``ModelRetryPolicy``.
+        public var retryPolicy: ModelRetryPolicy
+        /// How the loop waits between retries. Must throw when the task is
+        /// cancelled, so Stop is never held up by a backoff; tests replace it
+        /// to run without waiting.
+        public var retrySleep: @Sendable (Duration) async throws -> Void
+        /// A number in 0..<1 that spreads out the retries of sessions that
+        /// hit the same limit together.
+        public var retryJitter: @Sendable () -> Double
 
         public init(
             maximumIterations: Int = 200,
@@ -57,7 +101,13 @@ public actor AgentOrchestrator {
             contextCompactionTriggerFraction: Double = 0.80,
             maximumConversationBytes: Int = 4 * 1_024 * 1_024,
             compactionSummary: CompactionSummarizer.Limits? = .standard,
-            systemPrompt: String
+            systemPrompt: String,
+            sessionState: (@Sendable () async -> [SessionStateSection])? = nil,
+            maximumRetainedImages: Int = 20,
+            maximumRetainedImageBytes: Int = 6 * 1_024 * 1_024,
+            retryPolicy: ModelRetryPolicy = .standard,
+            retrySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+            retryJitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) }
         ) {
             self.compactionSummary = compactionSummary
             self.maximumIterations = maximumIterations
@@ -71,18 +121,30 @@ public actor AgentOrchestrator {
             )
             self.maximumConversationBytes = max(maximumConversationBytes, 16_384)
             self.systemPrompt = systemPrompt
+            self.sessionState = sessionState
+            self.maximumRetainedImages = max(1, maximumRetainedImages)
+            self.maximumRetainedImageBytes = max(1, maximumRetainedImageBytes)
+            self.retryPolicy = retryPolicy
+            self.retrySleep = retrySleep
+            self.retryJitter = retryJitter
         }
     }
 
     private let sessionID: CodeSessionID
     private let model: any AgentModelClient
     private let registry: ToolRegistry
+    /// The tool list every request sends, built once so each carries the
+    /// same bytes in the same order.
+    private let toolDescriptors: [ModelToolDescriptor]
     private let permissions: PermissionCoordinator
     private let store: CodeSessionStore
     private let configuration: Configuration
     private let modelID: String
     private var activeModelID: String
     private let reasoningEffort: ReasoningEffort?
+    /// The thinking setting sent with `activeModelID`: the reader's own
+    /// until a fallback model answers instead, which gets one of its own.
+    private var activeReasoningEffort: ReasoningEffort?
     private let lifecycleHooks: (any AgentLifecycleHooks)?
     private let fallbackResolver: (any ModelFallbackResolver)?
     /// Told when each of the reader's messages opens a turn, so the files the
@@ -121,6 +183,9 @@ public actor AgentOrchestrator {
     private var pendingInstructions: [PendingInstruction] = []
     private let toolScheduler = ToolScheduler()
     private var approvalObserverToken: UUID?
+    /// Feeds the one task that writes approval updates, in order.
+    private var approvalUpdates: AsyncStream<PermissionCoordinator.ApprovalUpdate>.Continuation?
+    private var approvalWriter: Task<Void, Never>?
     private var restored = false
     private var liveTextObserver: (@Sendable (String) -> Void)?
     private var liveReasoningObserver: (@Sendable (String) -> Void)?
@@ -133,6 +198,11 @@ public actor AgentOrchestrator {
     private var usageObserver: (@Sendable (Int?, Int?) -> Void)?
     /// Every call this orchestrator made, turns and compaction summaries alike.
     public private(set) var usageTotals = ModelUsageTotals()
+    /// The same calls by model, which is how they are priced and what a
+    /// delegating session adds to its own ledger.
+    public private(set) var usageLedger = SessionUsageLedger()
+    /// Calls recorded since the store's ledger was last brought up to date.
+    private var unsavedUsage = SessionUsageLedger()
     private var callUsageObserver: (@Sendable (ModelCallUsage) -> Void)?
 
     /// True while a compaction is being written, from the first decision to
@@ -142,7 +212,7 @@ public actor AgentOrchestrator {
     private var compactionWaiters: [CheckedContinuation<Void, Never>] = []
     /// The model summary in flight, so Stop can reach one that a `/compact`
     /// between runs started — no run task exists to cancel then.
-    private var summaryTask: Task<CompactionSummarizer.Attempt, Never>?
+    private var summaryTask: Task<[CompactionSummarizer.Attempt], Never>?
     private var compactionObserver: (@Sendable (Bool) -> Void)?
     /// Successful model turns since the last compaction. Starts at the
     /// threshold so the first compaction of a session may use the model.
@@ -164,6 +234,9 @@ public actor AgentOrchestrator {
     /// Set when a tool hook answers `"continue": false`, so the batch stops
     /// between waves and the run ends once every call is answered.
     private var hookHaltReason: String?
+    /// The answer for each call in the turn whose arguments did not parse,
+    /// by call id. Such a call is answered, never run.
+    private var malformedToolResults: [String: String] = [:]
 
     /// How many times stop hooks may send one run back to work. Hooks are
     /// told when they already have (`stop_hook_active`) and are expected to
@@ -186,12 +259,20 @@ public actor AgentOrchestrator {
         self.sessionID = sessionID
         self.model = model
         self.registry = registry
+        self.toolDescriptors = registry.allTools.map {
+            ModelToolDescriptor(
+                name: $0.name,
+                description: $0.description,
+                inputSchema: $0.inputSchema
+            )
+        }
         self.permissions = permissions
         self.store = store
         self.configuration = configuration
         self.modelID = modelID
         self.activeModelID = modelID
         self.reasoningEffort = reasoningEffort
+        self.activeReasoningEffort = reasoningEffort
         self.lifecycleHooks = lifecycleHooks
         self.fallbackResolver = fallbackResolver
         self.turnCheckpoints = turnCheckpoints
@@ -262,8 +343,29 @@ public actor AgentOrchestrator {
 
     private func recordCall(_ usage: ModelCallUsage) {
         guard usage.inputTokens != nil || usage.outputTokens != nil else { return }
+        let usage = usage.modelID == nil
+            ? ModelCallUsage(
+                purpose: usage.purpose,
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                cacheReadTokens: usage.cacheReadTokens,
+                cacheWriteTokens: usage.cacheWriteTokens,
+                modelID: activeModelID
+            )
+            : usage
         usageTotals.record(usage)
+        usageLedger.record(usage)
+        unsavedUsage.record(usage)
         callUsageObserver?(usage)
+    }
+
+    /// Adds the calls made since the last save to the session's ledger in
+    /// the store, which keeps it across launches and tells the window.
+    private func saveUsage() async {
+        guard !unsavedUsage.isEmpty else { return }
+        let batch = unsavedUsage
+        unsavedUsage = SessionUsageLedger()
+        _ = try? await store.recordUsage(batch, for: sessionID)
     }
 
     /// Releases the observer this orchestrator holds on the shared permission
@@ -279,6 +381,10 @@ public actor AgentOrchestrator {
             await permissions.removeObserver(token)
             approvalObserverToken = nil
         }
+        // What was already announced is still written; the writer ends after.
+        approvalUpdates?.finish()
+        approvalUpdates = nil
+        approvalWriter = nil
         liveTextObserver = nil
         liveReasoningObserver = nil
         usageObserver = nil
@@ -586,12 +692,18 @@ public actor AgentOrchestrator {
     private func prepare() async throws {
         if !restored {
             restored = true
-            // Sessions saved before the integrity pass existed may carry an
-            // unanswered call; repairing on load is what un-bricks them.
-            conversation = ConversationIntegrity.repaired(
-                await store.loadConversation(sessionID: sessionID)
-            )
             let events = await store.events(for: sessionID)
+            // A batch is saved before it runs, so a history that ends in calls
+            // without results is one the app stopped in the middle of. The
+            // transcript says which of them began and which finished, and the
+            // model is told each one's truth: a call that started may have
+            // done its work, and must not be reported as never run. Sessions
+            // saved before the integrity pass existed may carry an unanswered
+            // call too; repairing on load is what un-bricks them.
+            conversation = ConversationIntegrity.repaired(
+                await store.loadConversation(sessionID: sessionID),
+                interrupted: ConversationIntegrity.interruptedCalls(in: events)
+            )
             let applied = Set(events.compactMap { event -> String? in
                 guard case let .userInstructionApplied(value) = event.payload else {
                     return nil
@@ -617,58 +729,82 @@ public actor AgentOrchestrator {
             // observer must not capture the actor.
             let permissions = self.permissions
             let hooks = self.lifecycleHooks
+            // One writer, in the order the coordinator announced them. A task
+            // per update raced its neighbours: a resolution could be written
+            // before its request, and the waiting flag set after it was
+            // cleared, leaving the session marked as waiting on nothing.
+            let (updates, writer) = AsyncStream.makeStream(of: PermissionCoordinator.ApprovalUpdate.self)
+            approvalUpdates = writer
             approvalObserverToken = await permissions.addObserver { update in
+                writer.yield(update)
+            }
+            approvalWriter = Task {
+                for await update in updates {
+                    await Self.record(
+                        update,
+                        sessionID: sessionID,
+                        store: store,
+                        permissions: permissions,
+                        hooks: hooks
+                    )
+                }
+            }
+        }
+    }
+
+    /// Writes one approval update to the transcript and the session record.
+    private static func record(
+        _ update: PermissionCoordinator.ApprovalUpdate,
+        sessionID: CodeSessionID,
+        store: CodeSessionStore,
+        permissions: PermissionCoordinator,
+        hooks: (any AgentLifecycleHooks)?
+    ) async {
+        switch update {
+        case let .requested(request):
+            _ = try? await store.appendEvent(
+                sessionID: sessionID,
+                payload: .approvalRequested(request)
+            )
+            _ = try? await store.updateSession(id: sessionID) { session in
+                session.hasPendingApproval = true
+                session.status = .waitingForApproval
+            }
+            // A `Notification` hook is how a reader who has walked away hears
+            // that the run is waiting on them. A hook's own approval is left
+            // out: it would announce itself. Its own task, so a slow hook
+            // never holds up the next update's record.
+            if request.toolName != "hook", let hooks {
                 Task {
-                    switch update {
-                    case let .requested(request):
-                        _ = try? await store.appendEvent(
-                            sessionID: sessionID,
-                            payload: .approvalRequested(request)
-                        )
-                        _ = try? await store.updateSession(id: sessionID) { session in
-                            session.hasPendingApproval = true
-                            session.status = .waitingForApproval
-                        }
-                        // A `Notification` hook is how a reader who has walked
-                        // away hears that the run is waiting on them. A hook's
-                        // own approval is left out: it would announce itself.
-                        if request.toolName != "hook",
-                           let response = await hooks?.notify(
-                               sessionID: sessionID,
-                               kind: .permissionPrompt,
-                               message: "Juno needs your permission: \(request.summary)"
-                           )
-                        {
-                            await ToolScheduler.record(
-                                response.notices,
-                                sessionID: sessionID,
-                                store: store
-                            )
-                        }
-                    case let .resolved(id, decision):
-                        _ = try? await store.appendEvent(
-                            sessionID: sessionID,
-                            payload: .approvalResolved(
-                                ApprovalResolvedEvent(approvalID: id, decision: decision)
-                            )
-                        )
-                        // Only clear the waiting state once nothing is still waiting.
-                        //
-                        // Several tool calls in one turn can each be gated, and this
-                        // used to clear `hasPendingApproval` and flip the status back
-                        // to `.running` on the *first* resolution. The remaining
-                        // requests were still suspended and their cards still drawn,
-                        // but the session claimed to be running and the sidebar's
-                        // "waiting for approval" marker went out — so a run that was
-                        // blocked on the reader looked like a run that was working.
-                        let stillPending = await permissions.pendingApprovals.isEmpty == false
-                        _ = try? await store.updateSession(id: sessionID) { session in
-                            session.hasPendingApproval = stillPending
-                            if !stillPending, session.status == .waitingForApproval {
-                                session.status = .running
-                            }
-                        }
-                    }
+                    let response = await hooks.notify(
+                        sessionID: sessionID,
+                        kind: .permissionPrompt,
+                        message: "Juno needs your permission: \(request.summary)"
+                    )
+                    await ToolScheduler.record(response.notices, sessionID: sessionID, store: store)
+                }
+            }
+        case let .resolved(id, decision):
+            _ = try? await store.appendEvent(
+                sessionID: sessionID,
+                payload: .approvalResolved(
+                    ApprovalResolvedEvent(approvalID: id, decision: decision)
+                )
+            )
+            // Only clear the waiting state once nothing is still waiting.
+            //
+            // Several tool calls in one turn can each be gated, and this used
+            // to clear `hasPendingApproval` and flip the status back to
+            // `.running` on the *first* resolution. The remaining requests were
+            // still suspended and their cards still drawn, but the session
+            // claimed to be running and the sidebar's "waiting for approval"
+            // marker went out — so a run that was blocked on the reader looked
+            // like a run that was working.
+            let stillPending = await permissions.pendingApprovals.isEmpty == false
+            _ = try? await store.updateSession(id: sessionID) { session in
+                session.hasPendingApproval = stillPending
+                if !stillPending, session.status == .waitingForApproval {
+                    session.status = .running
                 }
             }
         }
@@ -682,6 +818,9 @@ public actor AgentOrchestrator {
         var lastAssistantText = ""
         var testsPassed: Bool?
         var stopHookContinuations = 0
+        // Whether this step already folded the history after the window
+        // overflowed; a second overflow in a row is a failure.
+        var overflowRecoveryUsed = false
         hookHaltReason = nil
 
         defer {
@@ -691,6 +830,9 @@ public actor AgentOrchestrator {
         var iteration = 0
         while true {
             iteration += 1
+            // The last step's calls, and any summary since, reach the store's
+            // ledger before the next step begins.
+            await saveUsage()
             if iteration > configuration.maximumIterations {
                 await finish(
                     status: .failed,
@@ -755,46 +897,59 @@ public actor AgentOrchestrator {
                 }
             }
 
-            var modelRetriesLeft = 1
+            // This step's retries of one model, and the waiting they have
+            // cost; both start again when a fallback model takes over.
+            var retries = 0
+            var waited = Duration.zero
             var fallbackAttempted = false
 
             // Every request goes out valid, whatever path left the history in
             // its current shape.
             conversation = ConversationIntegrity.repaired(conversation)
+            // Past the image budget, the oldest answered images become text in
+            // one go: one cache break instead of a request no provider takes.
+            if let bounded = ImageRetention.withinBudget(
+                conversation,
+                maximumImages: configuration.maximumRetainedImages,
+                maximumBytes: configuration.maximumRetainedImageBytes
+            ) {
+                conversation = bounded
+            }
+            await appendSessionStateIfChanged()
 
             while true {
                 let request = ModelTurnRequest(
                     sessionID: sessionID,
                     systemPrompt: configuration.systemPrompt,
                     messages: conversation,
-                    tools: registry.allTools.map {
-                        ModelToolDescriptor(
-                            name: $0.name,
-                            description: $0.description,
-                            inputSchema: $0.inputSchema
-                        )
-                    },
+                    tools: toolDescriptors,
                     modelID: activeModelID,
-                    reasoningEffort: reasoningEffort
+                    reasoningEffort: activeReasoningEffort
                 )
                 turnText = ""
                 turnReasoningSummary = ""
                 turnItems.removeAll()
                 pendingSegment = ""
                 toolCalls.removeAll()
+                malformedToolResults.removeAll()
                 thinkingFilter = LeadingThinkingFilter()
                 stopReason = nil
                 // This call's own usage, per field, newest wins; summed into
                 // the session's totals once the call ends, however it ends.
                 var callInputTokens: Int?
                 var callOutputTokens: Int?
+                var callCacheReadTokens: Int?
+                var callCacheWriteTokens: Int?
 
                 do {
                     defer {
                         recordCall(ModelCallUsage(
                             purpose: .turn,
                             inputTokens: callInputTokens,
-                            outputTokens: callOutputTokens
+                            outputTokens: callOutputTokens,
+                            cacheReadTokens: callCacheReadTokens,
+                            cacheWriteTokens: callCacheWriteTokens,
+                            modelID: activeModelID
                         ))
                     }
                     for try await event in model.streamTurn(request) {
@@ -824,6 +979,22 @@ public actor AgentOrchestrator {
                             turnItems.append(
                                 .toolCallWithExtra(id: id, name: name, input: input, extraContent: extra)
                             )
+                        case let .toolCallMalformed(id, name, rawArguments, error, extra):
+                            // Kept in the history as a call with no arguments,
+                            // which every provider replays, and answered with
+                            // the parser's complaint instead of being run.
+                            closeSegment()
+                            toolCalls.append((id, name, .object([:]), extra))
+                            turnItems.append(
+                                extra.map {
+                                    .toolCallWithExtra(id: id, name: name, input: .object([:]), extraContent: $0)
+                                } ?? .toolCall(id: id, name: name, input: .object([:]))
+                            )
+                            malformedToolResults[id] = ToolArguments.malformedResult(
+                                toolName: name,
+                                rawArguments: rawArguments,
+                                error: error
+                            )
                         case let .usage(inputTokens, outputTokens):
                             // Replaced, not accumulated: `inputTokens` is the whole
                             // billed prompt for this turn, so the newest report *is*
@@ -838,6 +1009,9 @@ public actor AgentOrchestrator {
                                 callOutputTokens = outputTokens
                             }
                             usageObserver?(contextTokens, lastOutputTokens)
+                        case let .cacheUsage(readTokens, writeTokens):
+                            if let readTokens { callCacheReadTokens = readTokens }
+                            if let writeTokens { callCacheWriteTokens = writeTokens }
                         case let .turnCompleted(reason):
                             stopReason = reason
                         }
@@ -847,10 +1021,11 @@ public actor AgentOrchestrator {
                     if Task.isCancelled {
                         break
                     }
-                    let errorDesc = shortDescription(error)
+                    let failure = ModelFailure(error)
 
-                    // Typed error classification — prefer structured errors over string matching.
-                    if case let .planLimitReached(message) = error as? AgentModelClientError {
+                    // The account's allowance: every model draws on it, so
+                    // neither waiting nor another model helps.
+                    if case let .planLimit(message) = failure {
                         _ = try? await store.appendEvent(
                             sessionID: sessionID,
                             payload: .errorOccurred(ErrorEvent(message: message, isRecoverable: true))
@@ -866,97 +1041,90 @@ public actor AgentOrchestrator {
                         return
                     }
 
-                    let isOverload: Bool
-                    let isQuotaExhausted: Bool
-                    if let clientError = error as? AgentModelClientError {
-                        switch clientError {
-                        case .rateLimited:
-                            isOverload = true
-                            isQuotaExhausted = false
-                        case .quotaExhausted:
-                            isOverload = true
-                            isQuotaExhausted = true
-                        case let .transport(message):
-                            let m = message.lowercased()
-                            isQuotaExhausted = m.contains("quota") || m.contains("exceeded your current quota")
-                            isOverload = isQuotaExhausted
-                                || m.contains("503")
-                                || m.contains("504")
-                                || m.contains("overloaded")
-                                || m.contains("high demand")
-                                || m.contains("timed out")
-                                || m.contains("timeout")
-                                || m.contains("rate limit")
-                        case .unauthorized, .invalidResponse, .planLimitReached:
-                            isOverload = false
-                            isQuotaExhausted = false
-                        }
-                    } else {
-                        let m = errorDesc.lowercased()
-                        isQuotaExhausted = m.contains("quota") || m.contains("exceeded your current quota")
-                        isOverload = isQuotaExhausted
-                            || m.contains("503")
-                            || m.contains("504")
-                            || m.contains("overloaded")
-                            || m.contains("high demand")
-                            || m.contains("timed out")
-                            || m.contains("timeout")
-                            || m.contains("rate limit")
-                    }
-
-                    if isOverload && !fallbackAttempted {
-                        if let fallback = await computeFallbackModel(for: activeModelID),
-                           fallback != activeModelID
-                        {
-                            fallbackAttempted = true
-                            modelRetriesLeft = 1
-                            let reason = isQuotaExhausted ? "quota is exhausted" : "is temporarily unavailable"
-                            _ = try? await store.appendEvent(
-                                sessionID: sessionID,
-                                payload: .errorOccurred(
-                                    ErrorEvent(
-                                        message: "Model '\(activeModelID)' \(reason). Switching to '\(fallback)' to continue.",
-                                        isRecoverable: true
-                                    )
-                                )
-                            )
-                            activeModelID = fallback
-                            try? await Task.sleep(nanoseconds: 500_000_000)
+                    // Too long for the window: the same request fails the
+                    // same way, a folded one may not. Once per step.
+                    if case .contextOverflow = failure, !overflowRecoveryUsed {
+                        overflowRecoveryUsed = true
+                        if await recoverFromContextOverflow() {
                             continue
                         }
                     }
 
-                    // On quota exhaustion without fallback, do not do a pointless retry on the exact same model!
-                    if isQuotaExhausted {
-                        modelRetriesLeft = 0
+                    // Worth waiting out on the same model: a limit, an
+                    // overload, a dropped connection.
+                    let retryLimit = failure.retryLimit(configuration.retryPolicy)
+                    if retryLimit > retries {
+                        retries += 1
+                        if let delay = configuration.retryPolicy.delay(
+                            forRetry: retries,
+                            retryAfter: failure.retryAfter,
+                            waited: waited,
+                            jitter: configuration.retryJitter()
+                        ) {
+                            waited += delay
+                            _ = try? await store.appendEvent(
+                                sessionID: sessionID,
+                                payload: .errorOccurred(
+                                    ErrorEvent(
+                                        message: "\(failure.sentence) Retrying in \(Self.seconds(delay)) (retry \(retries) of \(retryLimit)).",
+                                        isRecoverable: true
+                                    )
+                                )
+                            )
+                            do {
+                                try await configuration.retrySleep(delay)
+                            } catch {
+                                // Stopped while waiting: the top of the loop
+                                // ends the run as stopped.
+                                break
+                            }
+                            if Task.isCancelled { break }
+                            continue
+                        }
                     }
 
-                    if modelRetriesLeft > 0 {
-                        modelRetriesLeft -= 1
+                    // Waiting is spent or would not help. Another model — only
+                    // when the reader opted into fallback, which is when a
+                    // resolver exists — may still answer.
+                    if failure.warrantsFallback, !fallbackAttempted,
+                       let fallback = await computeFallbackModel(for: activeModelID),
+                       fallback != activeModelID
+                    {
+                        fallbackAttempted = true
+                        retries = 0
+                        waited = .zero
                         _ = try? await store.appendEvent(
                             sessionID: sessionID,
                             payload: .errorOccurred(
                                 ErrorEvent(
-                                    message: "Model turn failed, retrying: \(errorDesc)",
+                                    message: "\(failure.sentence) Switching from '\(activeModelID)' to '\(fallback)' to continue.",
                                     isRecoverable: true
                                 )
                             )
                         )
-                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        // Its own thinking setting: the reader's was chosen for
+                        // another model, and may be one this one rejects.
+                        activeReasoningEffort = fallbackResolver?.reasoningEffort(
+                            for: fallback,
+                            preferred: reasoningEffort
+                        )
+                        activeModelID = fallback
                         continue
                     }
+
                     _ = try? await store.appendEvent(
                         sessionID: sessionID,
                         payload: .errorOccurred(
                             ErrorEvent(
-                                message: "Model turn failed: \(shortDescription(error))",
+                                message: "Model turn failed: \(failure.sentence) \(shortDescription(error))",
                                 isRecoverable: false
                             )
                         )
                     )
+                    try? await store.saveConversation(sessionID: sessionID, messages: conversation)
                     await finish(
                         status: .failed,
-                        summary: "The model transport failed.",
+                        summary: failure.sentence,
                         filesChanged: filesChanged.count,
                         testsPassed: testsPassed,
                         startedAt: startedAt
@@ -971,10 +1139,10 @@ public actor AgentOrchestrator {
             if Task.isCancelled { continue }
             consumeText(thinkingFilter.finish())
             modelTurnsSinceCompaction += 1
-            // Images are intentionally one-turn context. Once a successful
-            // model turn has consumed them, retain only the redacted tool
-            // result so subsequent turns do not resend screenshots.
-            conversation = conversation.map(\.persistenceSafe)
+            // Images the model has now seen stay exactly as they were sent:
+            // rewriting them here would change the prefix of every later
+            // request. They become text at compaction, or past the image
+            // budget above. The store never keeps their bytes either way.
 
             let normalizedReasoning = turnReasoningSummary.trimmingCharacters(
                 in: .whitespacesAndNewlines
@@ -993,13 +1161,80 @@ public actor AgentOrchestrator {
             // The model's content goes into history now, minus its tool calls:
             // those are added only once the batch is committed to running, so
             // a steer that discards the proposal leaves no call unanswered.
-            conversation.append(contentsOf: turnItems.filter { $0.toolCallID == nil })
+            let narrative = turnItems.filter { $0.toolCallID == nil }
+            conversation.append(contentsOf: narrative)
             if !turnText.isEmpty {
                 lastAssistantText = turnText
                 _ = try? await store.appendEvent(
                     sessionID: sessionID,
                     payload: .assistantMessage(AssistantMessageEvent(text: turnText))
                 )
+            }
+
+            // The reply was cut off because the window is full. Nothing it
+            // says is kept for the model: the history is folded and the step
+            // asked again, once, and only then treated as a failure.
+            if stopReason == .contextWindowExceeded {
+                conversation.removeLast(narrative.count)
+                if !overflowRecoveryUsed {
+                    overflowRecoveryUsed = true
+                    if await recoverFromContextOverflow() { continue }
+                }
+                try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+                _ = try? await store.appendEvent(
+                    sessionID: sessionID,
+                    payload: .errorOccurred(
+                        ErrorEvent(
+                            message: "The conversation no longer fits the model's context window, even compacted.",
+                            isRecoverable: true
+                        )
+                    )
+                )
+                await finish(
+                    status: .failed,
+                    summary: "The conversation no longer fits the model's context window. Compact it or start a new session.",
+                    filesChanged: filesChanged.count,
+                    testsPassed: testsPassed,
+                    startedAt: startedAt
+                )
+                return
+            }
+            overflowRecoveryUsed = false
+
+            // The model declined. What it wrote is in the transcript for the
+            // reader, but not in its own history: a refused turn left there
+            // tends to be refused again when the conversation carries on.
+            if stopReason == .refusal {
+                conversation.removeLast(narrative.count)
+                try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+                _ = try? await store.appendEvent(
+                    sessionID: sessionID,
+                    payload: .errorOccurred(
+                        ErrorEvent(
+                            message: "The model declined to continue with this request.",
+                            isRecoverable: true
+                        )
+                    )
+                )
+                await finish(
+                    status: .failed,
+                    summary: "The model declined to continue. Rephrase the request, or rewind to before it.",
+                    filesChanged: filesChanged.count,
+                    testsPassed: testsPassed,
+                    startedAt: startedAt
+                )
+                return
+            }
+
+            // A paused turn is resumed by sending the conversation back as it
+            // stands, ending in the model's own message. Its calls, if it made
+            // any, are a normal tool turn.
+            if stopReason == .pauseTurn {
+                if toolCalls.isEmpty {
+                    try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+                    continue
+                }
+                stopReason = .toolUse
             }
 
             if stopReason == .maxTokens {
@@ -1069,8 +1304,23 @@ public actor AgentOrchestrator {
                 return
             }
 
+            // The calls with the arguments they will run with: the schema's
+            // exact conversions applied once, here, so the proposal the reader
+            // sees and the waves the batch is cut into read the values the
+            // tool will. A `read_file` whose arguments came as one JSON string
+            // otherwise read as touching no path and shared a wave with a
+            // write to the same file. The history keeps each call as the model
+            // wrote it, which is what its replayed reasoning is bound to.
+            let proposedCalls = toolCalls.map { call in
+                (
+                    id: call.id,
+                    name: call.name,
+                    input: registry.coercedInput(toolName: call.name, input: call.input),
+                    extraContent: call.extraContent
+                )
+            }
             if stopReason == .toolUse {
-                for call in toolCalls {
+                for call in proposedCalls {
                     let tool = registry.tool(named: call.name)
                     let risk = tool?.assessRisk(input: call.input) ?? .destructive
                     let summary = tool?.summary(input: call.input) ?? call.name
@@ -1135,9 +1385,19 @@ public actor AgentOrchestrator {
             // a reasoning block that fell between two calls keeps its place.
             conversation.removeLast(turnItems.filter { $0.toolCallID == nil }.count)
             conversation.append(contentsOf: turnItems)
+            // Saved before anything runs. Were the app to stop mid-batch, the
+            // store would otherwise hold a history without this turn at all,
+            // while its commits, installs and edits had happened; a resumed
+            // model would not know, and could do them twice. With the calls
+            // saved, restore answers each from the transcript: started calls
+            // as outcome unknown, the rest as never run.
+            try? await store.saveConversation(sessionID: sessionID, messages: conversation)
 
-            let scheduledCalls = toolCalls
+            let scheduledCalls = proposedCalls
             var terminalGoalLifecycle: GoalLifecycle?
+            // The goal as the batch found it, so a goal completed in an
+            // earlier run is not mistaken for one completed by this batch.
+            let goalAtBatchStart = try? await store.session(id: sessionID).goal
 
             let executionResults = await toolScheduler.execute(
                 calls: scheduledCalls,
@@ -1146,8 +1406,9 @@ public actor AgentOrchestrator {
                 // and their results, which every provider rejects.
                 shouldInterrupt: { [weak self, store, sessionID] in
                     guard let self else { return true }
-                    if let lifecycle = try? await store.session(id: sessionID).goal?.lifecycle,
-                       lifecycle != .active {
+                    if let goal = try? await store.session(id: sessionID).goal,
+                       Self.goalHalts(goal, startedAs: goalAtBatchStart)
+                    {
                         return true
                     }
                     if await self.hookHaltReason != nil {
@@ -1214,10 +1475,10 @@ public actor AgentOrchestrator {
             // stopping partway through recording told the model that calls
             // which had written files or run commands were never executed, so
             // a resumed session repeated them.
-            if let lifecycle = try? await store.session(id: sessionID).goal?.lifecycle,
-               lifecycle != .active
+            if let goal = try? await store.session(id: sessionID).goal,
+               Self.goalHalts(goal, startedAs: goalAtBatchStart)
             {
-                terminalGoalLifecycle = lifecycle
+                terminalGoalLifecycle = goal.lifecycle
             }
 
             // Answer every call the batch did not reach before anything else
@@ -1272,6 +1533,72 @@ public actor AgentOrchestrator {
 
     private var hasPendingSteer: Bool {
         pendingInstructions.contains { $0.event.kind == .steer }
+    }
+
+    /// Whether the session's goal is an execution boundary for a batch that
+    /// began with `start`: paused, blocked or completed.
+    ///
+    /// Except the goal that was already complete when the batch began. That
+    /// one is the session's history, not a stop: the check used to read any
+    /// goal that was not active as one, so once a goal was complete every
+    /// later batch in the session — the `update_goal` that would start the
+    /// next goal included — stopped before its first call ran, and the run
+    /// ended as "Goal completed." A goal this batch completes, a new one
+    /// included, still ends the run.
+    static func goalHalts(_ goal: SessionGoal, startedAs start: SessionGoal?) -> Bool {
+        switch goal.lifecycle {
+        case .active:
+            return false
+        case .completed:
+            return !(start?.id == goal.id && start?.lifecycle == .completed)
+        case .paused, .blocked:
+            return true
+        }
+    }
+
+    /// Folds the history after the provider found it longer than the window,
+    /// so the step can be asked again. False when there was nothing safe to
+    /// fold, and the failure stands.
+    private func recoverFromContextOverflow() async -> Bool {
+        _ = try? await store.appendEvent(
+            sessionID: sessionID,
+            payload: .errorOccurred(
+                ErrorEvent(
+                    message: "The conversation is longer than the model's context window. Compacting it, then trying again.",
+                    isRecoverable: true
+                )
+            )
+        )
+        guard await compactConversationIfNeeded(overflowed: true) else { return false }
+        conversation = ConversationIntegrity.repaired(conversation)
+        // The fold may have taken the last state block with it.
+        await appendSessionStateIfChanged()
+        return true
+    }
+
+    /// A wait, as the transcript says it: "800 ms", "4 s".
+    static func seconds(_ duration: Duration) -> String {
+        let milliseconds = duration.components.seconds * 1_000
+            + duration.components.attoseconds / 1_000_000_000_000_000
+        guard milliseconds >= 1_000 else { return "\(milliseconds) ms" }
+        return "\((milliseconds + 500) / 1_000) s"
+    }
+
+    /// Tells the model what changed about the session since it was last told:
+    /// a `<session_state>` block holding only the sections whose facts moved,
+    /// appended after the history and kept in it. See ``SessionState``.
+    ///
+    /// Skipped when the model wrote last — a turn it paused continues from
+    /// its own message — and the facts are simply read again next time.
+    private func appendSessionStateIfChanged() async {
+        guard let provider = configuration.sessionState,
+              let last = conversation.last,
+              !last.isAssistantSide
+        else { return }
+        let changed = SessionState.changedSections(await provider(), since: conversation)
+        guard let block = SessionState.render(changed) else { return }
+        conversation.append(.user(block))
+        try? await store.saveConversation(sessionID: sessionID, messages: conversation)
     }
 
     /// A tool result within the configured cap.
@@ -1342,9 +1669,17 @@ public actor AgentOrchestrator {
     /// Compacts before a provider request, never in the middle of a tool turn.
     /// This keeps the model-facing history valid while ensuring a resumed app
     /// sees the same bounded memory because the compacted messages are persisted.
-    private func compactConversationIfNeeded() async {
+    ///
+    /// - Parameter overflowed: the provider just refused the history as too
+    ///   long for the window. The fold is forced, and the summary is not asked
+    ///   as a continuation of that same history.
+    /// - Returns: whether the history was folded.
+    @discardableResult
+    private func compactConversationIfNeeded(overflowed: Bool = false) async -> Bool {
         let tokenTrigger: Bool
-        if let window = configuration.contextWindowTokens,
+        if overflowed {
+            tokenTrigger = true
+        } else if let window = configuration.contextWindowTokens,
            window > 0,
            let contextTokens
         {
@@ -1373,15 +1708,17 @@ public actor AgentOrchestrator {
             conversation,
             maximumBytes: contextSizedMaximum ?? configuration.maximumConversationBytes,
             force: tokenTrigger
-        ) else { return }
+        ) else { return false }
         isCompacting = true
         defer { finishCompacting() }
-        await fold(
+        let event = await fold(
             plan,
             focus: nil,
             requestedByUser: false,
-            allowModel: modelTurnsSinceCompaction >= Self.minimumTurnsBetweenModelSummaries
+            allowModel: modelTurnsSinceCompaction >= Self.minimumTurnsBetweenModelSummaries,
+            allowContinuation: !overflowed
         )
+        return event != nil
     }
 
     /// Folds the conversation down now, at the reader's request.
@@ -1409,7 +1746,16 @@ public actor AgentOrchestrator {
         ) else { return nil }
         // The reader asked, so the model is asked too, however recently the
         // last compaction ran.
-        return await fold(plan, focus: focus, requestedByUser: true, allowModel: true)
+        let event = await fold(
+            plan,
+            focus: focus,
+            requestedByUser: true,
+            allowModel: true,
+            allowContinuation: true
+        )
+        // Between runs nothing else saves the summary's cost.
+        await saveUsage()
+        return event
     }
 
     private func finishCompacting() {
@@ -1455,10 +1801,16 @@ public actor AgentOrchestrator {
         _ plan: ConversationCompactionPlan,
         focus: String?,
         requestedByUser: Bool,
-        allowModel: Bool
+        allowModel: Bool,
+        allowContinuation: Bool
     ) async -> CompactionEvent? {
         let planned = conversation.count
-        let outcome = await summarize(plan, focus: focus, allowModel: allowModel)
+        let outcome = await summarize(
+            plan,
+            focus: focus,
+            allowModel: allowModel,
+            allowContinuation: allowContinuation
+        )
         // Nothing appends to the history while it is being folded: a new run
         // waits for the fold and a steer waits for the next boundary. Should
         // that ever stop holding, installing this result would silently drop
@@ -1471,7 +1823,8 @@ public actor AgentOrchestrator {
     private func summarize(
         _ plan: ConversationCompactionPlan,
         focus: String?,
-        allowModel: Bool
+        allowModel: Bool,
+        allowContinuation: Bool
     ) async -> CompactionOutcome {
         guard allowModel, let limits = summaryLimits else {
             return CompactionOutcome(result: plan.structural, source: .structural, fallbackReason: nil, usage: nil)
@@ -1480,20 +1833,56 @@ public actor AgentOrchestrator {
         let model = self.model
         let sessionID = self.sessionID
         let modelID = activeModelID
+        // Asked as the session's own next request where the provider caches
+        // it and it fits the window; otherwise, or when that answer is not a
+        // summary, from the escaped transcript.
+        let prefix: CompactionSummarizer.CachedPrefix? =
+            allowContinuation && model.cachesPromptPrefix(for: modelID) && continuationFits(limits)
+                ? CompactionSummarizer.CachedPrefix(
+                    systemPrompt: configuration.systemPrompt,
+                    tools: toolDescriptors,
+                    messages: conversation,
+                    reasoningEffort: activeReasoningEffort
+                )
+                : nil
         // Its own task so Stop can reach it between runs; inside a run the
         // cancellation handler carries the run's own stop through to it.
-        let task = Task {
-            await CompactionSummarizer.summarize(
+        let task = Task { () -> [CompactionSummarizer.Attempt] in
+            var attempts: [CompactionSummarizer.Attempt] = []
+            if let prefix {
+                let continued = await CompactionSummarizer.summarize(
+                    request: CompactionSummarizer.continuationRequest(
+                        prefix: prefix,
+                        focus: focus,
+                        sessionID: sessionID,
+                        modelID: modelID,
+                        limits: limits
+                    ),
+                    model: model,
+                    limits: limits
+                )
+                attempts.append(continued)
+                // A stop or a deadline is not something a second request
+                // would change.
+                if continued.summary != nil
+                    || continued.failure == .cancelled
+                    || continued.failure == .timedOut
+                {
+                    return attempts
+                }
+            }
+            attempts.append(await CompactionSummarizer.summarize(
                 plan: plan,
                 focus: focus,
                 model: model,
                 sessionID: sessionID,
                 modelID: modelID,
                 limits: limits
-            )
+            ))
+            return attempts
         }
         summaryTask = task
-        let attempt = await withTaskCancellationHandler {
+        let attempts = await withTaskCancellationHandler {
             await task.value
         } onCancel: {
             task.cancel()
@@ -1501,20 +1890,49 @@ public actor AgentOrchestrator {
         summaryTask = nil
         compactionObserver?(false)
         // Billed whether or not the summary was usable.
-        recordCall(attempt.usage)
-        if let summary = attempt.summary {
+        attempts.forEach { recordCall($0.usage) }
+        let usage = Self.combined(attempts.map(\.usage))
+        if let summary = attempts.last?.summary {
             return CompactionOutcome(
                 result: plan.result(modelSummary: summary),
                 source: .model,
                 fallbackReason: nil,
-                usage: attempt.usage
+                usage: usage
             )
         }
         return CompactionOutcome(
             result: plan.structural,
             source: .structural,
-            fallbackReason: attempt.failure?.reason,
-            usage: attempt.usage
+            fallbackReason: attempts.last?.failure?.reason,
+            usage: usage
+        )
+    }
+
+    /// Whether the session's own request, with the summary instruction and
+    /// its reply, still fits the window. Estimated from the larger of the last
+    /// reported prompt and the history's weight, since what was added since
+    /// that report is not in it.
+    private func continuationFits(_ limits: CompactionSummarizer.Limits) -> Bool {
+        guard let window = configuration.contextWindowTokens, window > 0 else { return false }
+        let estimated = max(contextTokens ?? 0, ConversationCompactor.encodedByteCount(conversation) / 4)
+        return estimated + limits.maximumOutputTokens + 4_096 <= window
+    }
+
+    /// Several calls' usage as one, for the record that names one summary.
+    private static func combined(_ usages: [ModelCallUsage]) -> ModelCallUsage? {
+        guard let first = usages.first else { return nil }
+        guard usages.count > 1 else { return first }
+        func sum(_ field: (ModelCallUsage) -> Int?) -> Int? {
+            let values = usages.compactMap(field)
+            return values.isEmpty ? nil : values.reduce(0, +)
+        }
+        return ModelCallUsage(
+            purpose: first.purpose,
+            inputTokens: sum(\.inputTokens),
+            outputTokens: sum(\.outputTokens),
+            cacheReadTokens: sum(\.cacheReadTokens),
+            cacheWriteTokens: sum(\.cacheWriteTokens),
+            modelID: first.modelID
         )
     }
 
@@ -1538,7 +1956,10 @@ public actor AgentOrchestrator {
             summaryInputTokens: outcome.usage?.inputTokens,
             summaryOutputTokens: outcome.usage?.outputTokens
         )
-        conversation = outcome.result.messages
+        // The history is rewritten here anyway, so this is when the images
+        // the model has already answered become text. Any it has not seen
+        // yet stay for the request that follows.
+        conversation = ImageRetention.redactingAnswered(outcome.result.messages)
         modelTurnsSinceCompaction = 0
         // The next request will report a new prompt size. Keeping the old
         // number visible would make the UI claim the compacted request is still
@@ -1553,6 +1974,26 @@ public actor AgentOrchestrator {
     private func executeToolCall(
         _ call: (id: String, name: String, input: JSONValue)
     ) async -> ToolScheduler.ExecutionResult {
+        if let message = malformedToolResults[call.id] {
+            _ = try? await store.appendEvent(
+                sessionID: sessionID,
+                payload: .toolCompleted(
+                    ToolCompletedEvent(
+                        toolCallID: call.id,
+                        status: .failed,
+                        resultSummary: "Not run: its arguments were not valid JSON.",
+                        durationSeconds: 0
+                    )
+                )
+            )
+            return ToolScheduler.ExecutionResult(
+                callID: call.id,
+                toolName: call.name,
+                input: call.input,
+                content: message,
+                isError: true
+            )
+        }
         let result = await ToolScheduler.executeCall(
             id: call.id,
             name: call.name,
@@ -1609,11 +2050,11 @@ public actor AgentOrchestrator {
         testsPassed: Bool?,
         startedAt: Date
     ) async {
-        // Image payloads are one-turn capabilities. Redact the reusable
-        // in-memory history on every terminal path as well as successful model
-        // turns, so a transport failure or cancellation cannot resend a stale
-        // screenshot when this orchestrator is reused.
-        conversation = ConversationIntegrity.repaired(conversation.map(\.persistenceSafe))
+        // Images stay in the in-memory history across runs, as sent, so the
+        // next prompt in this session reads the same prefix from the cache;
+        // the store keeps only their text. See ``ImageRetention``.
+        conversation = ConversationIntegrity.repaired(conversation)
+        await saveUsage()
         emitLiveText("", force: true)
         emitLiveReasoning("", force: true)
         _ = try? await store.appendEvent(

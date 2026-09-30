@@ -76,6 +76,9 @@ public struct ReadFileTool: CodeTool {
         another window; the header's "first_line", "last_line" and \
         "total_lines" say where you are. A windowed read is partial, so it \
         carries no "base_sha256" either.
+
+        A juno://command-output/ path that run_command gave you reads the \
+        whole saved output of that command, paged the same way.
         """
 
     /// Lines returned when the caller does not ask for a window. Enough for
@@ -113,10 +116,24 @@ public struct ReadFileTool: CodeTool {
     }
 
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
-        let path = try workspacePath(from: input)
-        let result = try await files.read(path, limit: .fileRead)
         let offset = input["offset"]?.intValue
         let limit = input["limit"]?.intValue
+        // A command's saved output: in this session's own folder, never the
+        // workspace, and only by the bare file name run_command handed out.
+        if let raw = input["path"]?.stringValue, raw.hasPrefix(CommandOutputSpill.pathPrefix) {
+            guard let url = CommandOutputSpill.resolve(raw, in: context.commandOutputDirectory) else {
+                throw ToolError.invalidInput(message: "No saved command output at \(raw).")
+            }
+            return ToolResult(content: try CommandOutputSpill.render(
+                url: url,
+                modelPath: raw,
+                offset: offset,
+                limit: limit,
+                maximumBytes: Self.maximumContentBytes
+            ))
+        }
+        let path = try workspacePath(from: input)
+        let result = try await files.read(path, limit: .fileRead)
         return ToolResult(content: ReadFileTool.render(result, offset: offset, limit: limit))
     }
 

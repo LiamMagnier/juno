@@ -83,8 +83,10 @@ public struct UnconfiguredModelClient: AgentModelClient {
         _ request: ModelTurnRequest
     ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
         AsyncThrowingStream { continuation in
+            // Unavailable rather than a transport failure: nothing will
+            // answer however long the run waits, so it fails at once.
             continuation.finish(
-                throwing: AgentModelClientError.transport(
+                throwing: AgentModelClientError.unavailable(
                     message: "No model transport is configured. Sign in to Juno to run the agent."
                 )
             )
@@ -395,7 +397,7 @@ public final class WorkbenchModel {
                 // by.
                 selectedSessionID = visibleSessions.first?.id
             }
-        case .eventAppended:
+        case .eventAppended, .usageChanged:
             break
         }
     }
@@ -718,7 +720,20 @@ public final class WorkbenchModel {
             // are actually available to this account, prefers a tool-capable
             // model from another provider, and refuses to invent an id the
             // catalog does not know.
-            fallbackResolver: CatalogFallbackResolver(availableModels: availableModels)
+            fallbackResolver: CatalogFallbackResolver(availableModels: availableModels),
+            // The manifest's published rates, with the cache multipliers the
+            // model's provider documents, for the session's cost estimate.
+            modelPricing: { [weak self] modelID in
+                guard let catalog = self?.availableModels.first(where: { $0.modelID == modelID })?.catalog,
+                      let price = catalog.price
+                else { return nil }
+                return CodeUsagePricing.forModel(
+                    modelID,
+                    providerID: catalog.providerID,
+                    inputPerMillion: price.inputPerMillion,
+                    outputPerMillion: price.outputPerMillion
+                )
+            }
         )
         controllers[sessionID] = controller
         await controller.attach()

@@ -22,8 +22,10 @@ public struct RunCommandTool: CodeTool {
 
     public let name = "run_command"
     public let description = """
-        Run a finite shell command in the workspace root. Output is streamed and \
-        bounded; commands that exceed the timeout are terminated.
+        Run a finite shell command in the workspace root. Output is streamed; \
+        commands that exceed the timeout are terminated. Long output returns \
+        its start and its end, with a juno://command-output/ path to the whole \
+        of it that read_file pages with offset and limit.
 
         Do NOT run background commands (ending with &) or start long-running \
         development/preview servers (such as `npm run dev`, `vite`, `next dev`, \
@@ -92,20 +94,25 @@ public struct RunCommandTool: CodeTool {
             Self.maximumTimeoutSeconds
         )
         let before = await changes?.snapshot()
-        var collected = ""
+        // Every byte to the session's spill file; the ends in memory for the
+        // result; the transcript up to its own budget.
+        var capture = CommandOutputCapture(
+            context: context,
+            headBytes: Self.resultHeadBytes,
+            tailBytes: Self.resultTailBytes
+        )
+        defer { capture.finish() }
         var result: CommandResult?
         for try await event in executor.stream(
             command,
             timeoutSeconds: timeout,
-            outputLimit: .commandOutput
+            outputLimit: CommandOutputCapture.outputLimit
         ) {
             switch event {
-            case let .stdout(text):
-                collected += text
-                await context.emitOutput(.stdout, text)
-            case let .stderr(text):
-                collected += text
-                await context.emitOutput(.stderr, text)
+            case let .stdout(chunk):
+                await capture.take(.stdout, chunk, context: context)
+            case let .stderr(chunk):
+                await capture.take(.stderr, chunk, context: context)
             case let .completed(final):
                 result = final
             }
@@ -115,7 +122,7 @@ public struct RunCommandTool: CodeTool {
         }
         var footer = "\n[exit \(result.exitCode)"
         if result.wasTimeout { footer += ", timed out" }
-        if result.wasTruncated { footer += ", output truncated" }
+        if result.wasTruncated { footer += ", " + CommandOutputCapture.ceilingNote }
         footer += String(format: ", %.1fs]", result.durationSeconds)
 
         // What the command did to the workspace, as far as a before/after scan
@@ -129,13 +136,18 @@ public struct RunCommandTool: CodeTool {
             footer += "\n" + Self.changeSummary(report)
         }
 
-        let limited = OutputLimiter.applyKeepingEnds(.commandOutput, to: collected)
         return ToolResult(
-            content: limited.text + footer,
+            content: capture.rendered() + footer,
             isError: !result.succeeded,
             sideEffects: Self.changeEvents(report)
         )
     }
+
+    /// How much of a long output's start the result carries.
+    static let resultHeadBytes = 24 * 1_024
+    /// And of its end, where a failing build prints its error. Together they
+    /// stay under the orchestrator's tool-result cap, so it never cuts again.
+    static let resultTailBytes = 72 * 1_024
 
     static func changeSummary(_ report: WorkspaceChangeReport) -> String {
         var parts: [String] = []
@@ -208,7 +220,9 @@ public struct RunTestsTool: CodeTool {
         Run an explicit project test or verification command. The user is asked \
         to approve the exact command every time it runs, in every permission \
         mode that allows commands at all — a read-only session refuses it \
-        outright rather than offering the prompt.
+        outright rather than offering the prompt. Long output returns its \
+        start and its end, with a juno://command-output/ path to the whole of \
+        it that read_file pages with offset and limit.
         """
     public var inputSchema: JSONValue {
         [
@@ -255,19 +269,33 @@ public struct RunTestsTool: CodeTool {
         if case let .forbidden(reason) = classifier.classify(command) {
             throw ToolError.denied(reason: reason)
         }
-        var collected = ""
+        // As for run_command: every byte to the session's spill file, the ends
+        // for the result, the transcript up to its budget. A suite used to be
+        // killed once it had printed 2 MB, and the kill's exit status then
+        // reported a verbose but passing run as failed.
+        var capture = CommandOutputCapture(
+            context: context,
+            headBytes: Self.resultHeadBytes,
+            tailBytes: Self.resultTailBytes
+        )
+        defer { capture.finish() }
+        // What the summary is read from: a wider window than the result
+        // shows, since the counts a runner prints come at the end but may
+        // follow pages of failures.
+        var summaryWindow = HeadTailBuffer(headBytes: 64 * 1_024, tailBytes: 256 * 1_024)
         var result: CommandResult?
         for try await event in tests.stream(
             command: command,
-            timeoutSeconds: Self.defaultTimeoutSeconds
+            timeoutSeconds: Self.defaultTimeoutSeconds,
+            outputLimit: CommandOutputCapture.outputLimit
         ) {
             switch event {
             case let .stdout(text):
-                collected += text
-                await context.emitOutput(.stdout, text)
+                summaryWindow.append(text)
+                await capture.take(.stdout, text, context: context)
             case let .stderr(text):
-                collected += text
-                await context.emitOutput(.stderr, text)
+                summaryWindow.append(text)
+                await capture.take(.stderr, text, context: context)
             case let .completed(final):
                 result = final
             }
@@ -277,7 +305,7 @@ public struct RunTestsTool: CodeTool {
         }
         let outcome = TestOutputParser.parse(
             command: command,
-            output: collected,
+            output: summaryWindow.joined { _ in "\n" },
             exitCode: result.exitCode,
             durationSeconds: result.durationSeconds
         )
@@ -289,12 +317,9 @@ public struct RunTestsTool: CodeTool {
             }
         }
         report += String(format: " (%.1fs)", outcome.durationSeconds)
-        let limited = OutputLimiter.apply(
-            OutputLimit(maximumBytes: 32 * 1_024),
-            to: collected.suffix(40_000).description
-        )
+        if result.wasTruncated { report += " — " + CommandOutputCapture.ceilingNote }
         return ToolResult(
-            content: report + "\n" + limited.text,
+            content: report + "\n" + capture.rendered(),
             isError: !outcome.passed,
             sideEffects: [
                 .testRunCompleted(
@@ -309,6 +334,11 @@ public struct RunTestsTool: CodeTool {
             ]
         )
     }
+
+    /// How much of a long run's start the result carries: what ran.
+    static let resultHeadBytes = 8 * 1_024
+    /// And of its end, where the failures and the counts are.
+    static let resultTailBytes = 24 * 1_024
 
     private func explicitCommand(from input: JSONValue) -> String? {
         guard let rawCommand = input["command"]?.stringValue else {

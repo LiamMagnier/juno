@@ -6,6 +6,10 @@ public enum PermissionRuleSubject: Equatable, Sendable {
     case command(String)
     /// A workspace-relative path.
     case path(String)
+    /// Several paths one invocation touches, as a move does its source and
+    /// its destination. A deny or ask rule that matches any of them applies;
+    /// allow rules must cover every one.
+    case paths([String])
     /// A host name, for tools that reach the network.
     case domain(String)
 }
@@ -131,6 +135,10 @@ public struct PermissionRule: Hashable, Codable, Sendable, CustomStringConvertib
             return Self.commandMatches(pattern: specifier, command: command)
         case let .path(path)?:
             return Self.pathMatches(pattern: specifier, path: path)
+        case let .paths(paths)?:
+            // Matching all of them is the reading that is safe whichever list
+            // it is checked against; `evaluate` splits them to do better.
+            return !paths.isEmpty && paths.allSatisfy { Self.pathMatches(pattern: specifier, path: $0) }
         case let .domain(host)?:
             guard specifier.lowercased().hasPrefix("domain:") else { return false }
             return Self.domainMatches(pattern: String(specifier.dropFirst(7)), host: host)
@@ -281,6 +289,23 @@ public struct PermissionRuleSet: Equatable, Sendable, Codable {
             }
             return nil
         }
+        if case let .paths(paths)? = subject {
+            let each = paths.map(PermissionRuleSubject.path)
+            // A deny or ask rule on either end applies: moving a file out of
+            // a denied folder is as much an edit there as writing into it.
+            if let rule = deny.first(where: { rule in each.contains { rule.matches(toolName: toolName, subject: $0) } }) {
+                return .deny(rule)
+            }
+            if let rule = ask.first(where: { rule in each.contains { rule.matches(toolName: toolName, subject: $0) } }) {
+                return .ask(rule)
+            }
+            // Allowed only when every path is covered by some allow rule.
+            let covering = each.map { path in allow.first { $0.matches(toolName: toolName, subject: path) } }
+            if !covering.isEmpty, covering.allSatisfy({ $0 != nil }), let rule = covering.first ?? nil {
+                return .allow(rule)
+            }
+            return nil
+        }
         if let rule = deny.first(where: { $0.matches(toolName: toolName, subject: subject) }) {
             return .deny(rule)
         }
@@ -358,7 +383,7 @@ public struct PermissionRuleSet: Equatable, Sendable, Codable {
                 .filter { !$0.hasPrefix("-") }
                 .joined(separator: " ")
             return PermissionRule(tool: "Bash", specifier: prefix + " *")
-        case .path?:
+        case .path?, .paths?:
             return PermissionRule(tool: "Edit")
         case let .domain(host)?:
             return PermissionRule(tool: "WebFetch", specifier: "domain:" + host)

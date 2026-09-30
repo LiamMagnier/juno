@@ -87,6 +87,14 @@ public struct ToolRegistry: Sendable {
         return ToolRegistry(tools: allTools + mcpTools)
     }
 
+    /// `input` with the exact conversions the tool's schema allows applied:
+    /// `"3"` for an integer field and the like. See
+    /// ``SchemaValidator/coerced(input:against:)``.
+    public func coercedInput(toolName: String, input: JSONValue) -> JSONValue {
+        guard let tool = tools[toolName] else { return input }
+        return SchemaValidator.coerced(input: input, against: tool.inputSchema)
+    }
+
     /// Validates input shape; returns a message when invalid.
     public func validateInput(toolName: String, input: JSONValue) -> String? {
         guard let tool = tools[toolName] else {

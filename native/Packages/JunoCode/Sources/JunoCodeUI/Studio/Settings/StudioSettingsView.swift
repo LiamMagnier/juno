@@ -921,8 +921,8 @@ struct StudioToolsSettings: View {
             }
             ForEach(extensions.skills.skills) { skill in
                 Toggle(isOn: Binding(
-                    get: { defaults.isSkillEnabled(skill.id) },
-                    set: { defaults.setSkill(skill.id, enabled: $0) }
+                    get: { defaults.isSkillEnabled(skill) },
+                    set: { defaults.setSkill(skill, enabled: $0) }
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(skill.name)

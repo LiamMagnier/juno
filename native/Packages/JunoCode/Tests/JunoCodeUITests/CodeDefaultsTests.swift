@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import JunoCodeCore
+import JunoCodeLocal
 @testable import JunoCodeUI
 
 /// The standing Code preferences persist, and a session created from them
@@ -43,6 +44,28 @@ struct CodeDefaultsTests {
         #expect(second.isMCPServerEnabled("linear"))
         #expect(!second.isHookEnabled("claude:1"))
         #expect(!second.isSkillEnabled("juno:review"))
+    }
+
+    /// A skill switched off stays off when its file is edited, including one
+    /// switched off under the content id earlier builds used.
+    @Test
+    func aSkillSwitchedOffStaysOffWhenItsFileChanges() {
+        let defaults = CodeDefaults(store: store())
+        let path = ".claude/skills/review/SKILL.md"
+        let original = SkillDefinition(name: "review", instructions: "v1", source: .claude, path: path)
+        defaults.setSkill(original, enabled: false)
+        let edited = SkillDefinition(name: "review", instructions: "v2", source: .claude, path: path)
+        #expect(!defaults.isSkillEnabled(edited))
+
+        // Saved by an earlier build, under the content id.
+        let legacy = CodeDefaults(store: store())
+        legacy.setSkill(original.legacyContentID, enabled: false)
+        #expect(!legacy.isSkillEnabled(original))
+        legacy.migrateSkillSwitches(for: [original])
+        #expect(legacy.disabledSkills == [original.id])
+        #expect(!legacy.isSkillEnabled(edited), "and it holds once the file changes")
+        legacy.setSkill(edited, enabled: true)
+        #expect(legacy.isSkillEnabled(original))
     }
 
     @Test

@@ -287,6 +287,8 @@ extension ModelMessage {
     var userTurnAuthorship: UserTurnAuthorship? {
         switch self {
         case let .user(text):
+            // Juno's own state block is in the user role but is nobody's turn.
+            guard !isSessionState else { return nil }
             return AgentHookContext.authorship(of: text)
         case let .userWithImages(text, images):
             var authorship = AgentHookContext.authorship(of: text)

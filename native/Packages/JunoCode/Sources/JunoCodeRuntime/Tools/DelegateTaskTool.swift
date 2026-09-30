@@ -26,6 +26,9 @@ public struct DelegateTaskTool: CodeTool {
     private let modelID: String
     private let reasoningEffort: ReasoningEffort?
     private let parentSystemPrompt: String
+    /// The session state a child is told, as the parent is: date, branch and
+    /// skills. Nil sends none.
+    private let sessionState: (@Sendable () async -> [SessionStateSection])?
     /// Optional host-owned live controls. The runtime remains embeddable without
     /// a UI, while Desktop Code can expose the child's real approval and stop
     /// capabilities in its inspector.
@@ -78,6 +81,7 @@ public struct DelegateTaskTool: CodeTool {
         modelID: String,
         reasoningEffort: ReasoningEffort?,
         parentSystemPrompt: String,
+        sessionState: (@Sendable () async -> [SessionStateSection])? = nil,
         executionFactory: SubagentExecutionFactory? = nil,
         controls: SubagentControlRegistry? = nil,
         fallbackResolver: (any ModelFallbackResolver)? = nil,
@@ -92,6 +96,7 @@ public struct DelegateTaskTool: CodeTool {
         self.modelID = modelID
         self.reasoningEffort = reasoningEffort
         self.parentSystemPrompt = parentSystemPrompt
+        self.sessionState = sessionState
         self.executionFactory = executionFactory
         self.controls = controls
         self.fallbackResolver = fallbackResolver
@@ -469,7 +474,8 @@ public struct DelegateTaskTool: CodeTool {
                 \(childInstruction) Complete only the delegated task. Return a
                 concise result with concrete file references, verification
                 evidence, and uncertainties. You cannot delegate further.
-                """
+                """,
+                sessionState: sessionState
             ),
             modelID: childModelID,
             reasoningEffort: childReasoningEffort,
@@ -484,10 +490,6 @@ public struct DelegateTaskTool: CodeTool {
             permissions: permissions,
             orchestrator: orchestrator
         )
-        let usage = UsageTally()
-        await orchestrator.observeUsage { input, output in
-            Task { await usage.record(input: input, output: output) }
-        }
         let approvalRelay = relayApprovalState(
             of: permissions,
             spec,
@@ -541,6 +543,7 @@ public struct DelegateTaskTool: CodeTool {
         } catch {
             let message = "The sub-agent could not start: \(error)"
             try? await store.setStatus(id: child.id, status: .failed)
+            _ = try? await store.recordUsage(await orchestrator.usageLedger, for: parentSessionID)
             await orchestrator.release()
             await endApprovalRelay()
             await publish(
@@ -556,6 +559,11 @@ public struct DelegateTaskTool: CodeTool {
             await controls?.unregister(childSessionID: child.id)
             return Outcome(index: index, title: spec.title, status: .failed, answer: message)
         }
+        // Every call the child made is the delegating session's spend too:
+        // summed into its ledger, where it used to be reported only as the
+        // child's last prompt size and never reached the parent at all.
+        let childUsage = await orchestrator.usageLedger
+        _ = try? await store.recordUsage(childUsage, for: parentSessionID)
         await orchestrator.release()
         await endApprovalRelay()
         await controls?.unregister(childSessionID: child.id)
@@ -588,7 +596,7 @@ public struct DelegateTaskTool: CodeTool {
         let childStatus = (try? await store.session(id: child.id).status) ?? .completed
         let childOutcomeStatus = Self.status(of: childStatus)
         let status = finalizationError == nil ? childOutcomeStatus : .failed
-        let tokens = await usage.snapshot()
+        let tokens = childUsage.total
         await publish(
             spec,
             toolCallID: toolCallID,
@@ -597,8 +605,8 @@ public struct DelegateTaskTool: CodeTool {
             status: status,
             startedAt: startedAt,
             completedAt: Date(),
-            inputTokens: tokens.input,
-            outputTokens: tokens.output,
+            inputTokens: tokens.requests > 0 ? tokens.inputTokens : nil,
+            outputTokens: tokens.requests > 0 ? tokens.outputTokens : nil,
             summary: answer,
             error: finalizationError ?? (status == .completed ? nil : lastError(in: events))
         )
@@ -721,21 +729,4 @@ public struct DelegateTaskTool: CodeTool {
             return nil
         }.first
     }
-}
-
-/// The provider's own token counts for one sub-agent's turns.
-///
-/// An actor rather than a captured variable because `observeUsage` hands its
-/// reports to a `@Sendable` closure that can be called from the orchestrator's
-/// executor while this call is suspended awaiting completion.
-private actor UsageTally {
-    private var input: Int?
-    private var output: Int?
-
-    func record(input: Int?, output: Int?) {
-        if let input { self.input = input }
-        if let output { self.output = output }
-    }
-
-    func snapshot() -> (input: Int?, output: Int?) { (input, output) }
 }

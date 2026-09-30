@@ -144,7 +144,10 @@ final class EndToEndIntegrationTests: XCTestCase {
             registry: registry,
             permissions: permissions,
             store: store,
-            configuration: AgentOrchestrator.Configuration(systemPrompt: "You are Juno Code."),
+            configuration: AgentOrchestrator.Configuration(
+                systemPrompt: "You are Juno Code.",
+                retrySleep: { _ in }
+            ),
             modelID: "claude-sonnet-5",
             reasoningEffort: .medium
         )
@@ -250,7 +253,7 @@ final class EndToEndIntegrationTests: XCTestCase {
         XCTAssertEqual(final.status, .completed)
     }
 
-    /// A persistent network drop (initial call and its retry) fails the session
+    /// A persistent network drop (the initial call and its retries) fails the session
     /// cleanly: no mutation, no false success.
     func testPersistentNetworkDropFailsSession() async throws {
         let streamer = ScriptedByteStreamer(responses: [])
@@ -267,7 +270,11 @@ final class EndToEndIntegrationTests: XCTestCase {
             encoding: .utf8
         )
         XCTAssertEqual(content, "let value = 1\n", "no mutation on a failed turn")
-        XCTAssertGreaterThanOrEqual(streamer.callCount, 2, "initial call plus one retry")
+        XCTAssertEqual(
+            streamer.callCount,
+            ModelRetryPolicy.standard.maximumRetries + 1,
+            "the initial call plus every retry the policy allows"
+        )
     }
 
     /// A transient drop on the first call recovers on the retry and completes.
@@ -284,7 +291,7 @@ final class EndToEndIntegrationTests: XCTestCase {
             registry: registry,
             permissions: permissions,
             store: store,
-            configuration: AgentOrchestrator.Configuration(systemPrompt: "sys"),
+            configuration: AgentOrchestrator.Configuration(systemPrompt: "sys", retrySleep: { _ in }),
             modelID: "claude-sonnet-5",
             reasoningEffort: .medium
         )

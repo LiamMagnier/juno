@@ -12,6 +12,7 @@ import {
   isUpstreamTimeout,
   providerWire,
   readLimitedRequestBody,
+  relayedResponseHeaders,
   relayUpstreamBody,
   upstreamTimeoutKind,
   upstreamTimeoutsFor,
@@ -224,11 +225,9 @@ export async function POST(
   }
   upstreamAbort.headersReceived();
 
-  // Stream the provider response back to the app untouched.
-  const respHeaders = new Headers();
-  const ct = upstream.headers.get("content-type");
-  if (ct) respHeaders.set("content-type", ct);
-  respHeaders.set("cache-control", "no-store");
+  // Stream the provider response back to the app untouched, with its media
+  // type and any `retry-after` it asked for.
+  const respHeaders = relayedResponseHeaders(upstream.headers);
 
   // A bodyless upstream response has no stream to clear the deadlines from, so
   // disarm them here — otherwise the timers and the `req.signal` listener stay

@@ -37,6 +37,32 @@ final class SkillActivationTests: XCTestCase {
         XCTAssertTrue(result.diagnostics.isEmpty)
     }
 
+    /// The reader's switches are keyed by the id, so it must survive an edit
+    /// to the skill's file.
+    func testASkillsIDFollowsItsPathNotItsContent() {
+        let before = SkillDefinition(
+            name: "review",
+            instructions: "inspect the diff",
+            source: .claude,
+            path: ".claude/skills/review/SKILL.md"
+        )
+        let edited = SkillDefinition(
+            name: "review",
+            instructions: "inspect the diff, then the tests",
+            source: .claude,
+            path: ".claude/skills/review/SKILL.md"
+        )
+        let elsewhere = SkillDefinition(
+            name: "review",
+            instructions: "inspect the diff",
+            source: .juno,
+            path: ".juno/skills/review/SKILL.md"
+        )
+        XCTAssertEqual(before.id, edited.id)
+        XCTAssertNotEqual(before.id, elsewhere.id)
+        XCTAssertNotEqual(before.legacyContentID, edited.legacyContentID, "the old id moved with every edit")
+    }
+
     func testSkillActivationRequiresAllowlistAndExplicitTrust() {
         let skill = SkillDefinition(
             name: "review",
