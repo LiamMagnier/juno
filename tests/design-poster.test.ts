@@ -6,8 +6,9 @@
  *    null — never a throw, never JSON, never an owner-only path;
  *  - `posterResponse` serves it under the headers the contract names;
  *  - the two routes resolve access exactly as their siblings do — the owner's
- *    through the conversation join, the public one through the share page's
- *    own two calls, so it can only draw the version that page shows.
+ *    through the artifact's own owner (src/lib/artifact-access.ts), the public
+ *    one through the share page's own calls (a legacy share link, else a
+ *    publication), so it can only draw the version that page shows.
  *
  * The routes run against stand-in Prisma, session and rate-limit modules, so
  * no database is needed.
@@ -34,10 +35,30 @@ let limited = false;
 const rateKeys: string[] = [];
 
 /** Artifacts, as the owner route's `findFirst` would find them. */
-let artifacts: Array<{ id: string; userId: string; type: string; currentVersion: number; title: string; language: string | null }> = [];
+let artifacts: Array<{
+  id: string;
+  userId: string;
+  type: string;
+  currentVersion: number;
+  title: string;
+  language: string | null;
+  deletedAt?: Date | null;
+}> = [];
 /** Versions, keyed `${artifactId}:${version}`. */
 let versions = new Map<string, { content: string; createdAt: Date }>();
 let shares: Row[] = [];
+/** Publications (Publish), as `findPublicPublication` resolves a token. */
+let publications: Array<{
+  id: string;
+  token: string;
+  userId: string;
+  artifactId: string;
+  pinnedVersion: number | null;
+  title: string;
+  publishedAt: Date | null;
+  retiredAt: Date | null;
+  takenDownAt: Date | null;
+}> = [];
 const artifactWheres: Row[] = [];
 let shareViewBumps = 0;
 
@@ -46,37 +67,42 @@ const versionRows = (artifactId: string) =>
     .filter(([key]) => key.startsWith(`${artifactId}:`))
     .map(([key, row]) => ({ version: Number(key.split(":")[1]), ...row }));
 
+const artifactVersion = {
+  findUnique: async (args: { where: { artifactId_version: { artifactId: string; version: number } } }) => {
+    const { artifactId, version } = args.where.artifactId_version;
+    const row = versions.get(`${artifactId}:${version}`);
+    return row ? { version, content: row.content } : null;
+  },
+  // A legacy share serves the newest version created at or before its
+  // snapshot, else the first (src/lib/share.ts). Versions are immutable, so
+  // that is exactly what existed when the link was made.
+  findFirst: async (args: { where: { artifactId: string; createdAt?: { lte: Date } }; orderBy: { version: "asc" | "desc" } }) => {
+    const rows = versionRows(args.where.artifactId)
+      .filter((row) => !args.where.createdAt || row.createdAt <= args.where.createdAt.lte)
+      .sort((a, b) => (args.orderBy.version === "desc" ? b.version - a.version : a.version - b.version));
+    return rows[0] ?? null;
+  },
+};
+
 const prisma = {
   artifact: {
+    // Owned through the artifact's own `userId`; `deletedAt: null` when the
+    // caller leaves Recently deleted out (the share snapshot does, the owner's
+    // poster does not: a trashed design's tile is still a picture).
     findFirst: async (args: { where: Row; select?: Row }) => {
       artifactWheres.push(args.where);
-      const where = args.where as { id: string; type?: string; conversation?: { userId: string } };
+      const where = args.where as { id: string; type?: string; userId?: string; deletedAt?: null };
       const hit = artifacts.find(
-        (a) => a.id === where.id && (!where.type || a.type === where.type) && (!where.conversation || a.userId === where.conversation.userId)
+        (a) =>
+          a.id === where.id &&
+          (!where.type || a.type === where.type) &&
+          a.userId === where.userId &&
+          (!("deletedAt" in where) || !a.deletedAt)
       );
-      return hit ? { currentVersion: hit.currentVersion } : null;
-    },
-    findUnique: async (args: { where: { id: string } }) => {
-      const hit = artifacts.find((a) => a.id === args.where.id);
-      return hit ? { title: hit.title, type: hit.type, language: hit.language } : null;
+      return hit ? { currentVersion: hit.currentVersion, title: hit.title, type: hit.type, language: hit.language } : null;
     },
   },
-  artifactVersion: {
-    findUnique: async (args: { where: { artifactId_version: { artifactId: string; version: number } } }) => {
-      const { artifactId, version } = args.where.artifactId_version;
-      const row = versions.get(`${artifactId}:${version}`);
-      return row ? { version, content: row.content } : null;
-    },
-    // The public resolver lists stamps and picks with `sharedVersionAt`.
-    findMany: async (args: { where: { artifactId: string } }) =>
-      versionRows(args.where.artifactId).map(({ version, createdAt }) => ({ version, createdAt })),
-    findFirst: async (args: { where: { artifactId: string; createdAt?: { lte: Date } }; orderBy: { version: "asc" | "desc" } }) => {
-      const rows = versionRows(args.where.artifactId)
-        .filter((row) => !args.where.createdAt || row.createdAt <= args.where.createdAt.lte)
-        .sort((a, b) => (args.orderBy.version === "desc" ? b.version - a.version : a.version - b.version));
-      return rows[0] ?? null;
-    },
-  },
+  artifactVersion,
 };
 
 const prismaUnguarded = {
@@ -94,6 +120,32 @@ const prismaUnguarded = {
       return Promise.resolve({});
     },
   },
+  // `sharedArtifactIsTrashed`: a link to an artifact in Recently deleted is gone.
+  artifact: {
+    findUnique: async (args: { where: { id: string } }) => {
+      const hit = artifacts.find((a) => a.id === args.where.id);
+      return hit ? { deletedAt: hit.deletedAt ?? null } : null;
+    },
+  },
+  artifactPublication: {
+    findUnique: async (args: { where: { token: string } }) => {
+      const found = publications.find((p) => p.token === args.where.token);
+      if (!found) return null;
+      const artifact = artifacts.find((a) => a.id === found.artifactId)!;
+      return {
+        ...found,
+        user: { bannedAt: null },
+        artifact: {
+          title: artifact.title,
+          type: artifact.type,
+          language: artifact.language,
+          currentVersion: artifact.currentVersion,
+          deletedAt: artifact.deletedAt ?? null,
+        },
+      };
+    },
+  },
+  artifactVersion,
 };
 
 // `mock.module` needs --experimental-test-module-mocks. `npm test` runs this
@@ -130,6 +182,7 @@ function reset() {
   artifacts = [];
   versions = new Map();
   shares = [];
+  publications = [];
 }
 
 const stored = (doc: DesignDocument) => serializeDesignDocument(doc);
@@ -286,8 +339,8 @@ routeTest("owner: the current version when no version is named, revalidated", as
   assert.equal(res.headers.get("content-type"), "image/svg+xml");
   assert.equal(res.headers.get("cache-control"), "private, no-cache");
   assert.match(await res.text(), />Version three</);
-  // The same ownership join as every other artifact route, and DESIGN only.
-  assert.deepEqual(artifactWheres[0], { id: "d1", type: "DESIGN", conversation: { userId: "u1" } });
+  // The artifact's own owner, as every other artifact route, and DESIGN only.
+  assert.deepEqual(artifactWheres[0], { id: "d1", type: "DESIGN", userId: "u1" });
   assert.deepEqual(rateKeys, ["artifact-poster:u1"]);
 });
 
@@ -299,8 +352,7 @@ routeTest("owner: a superseded version is immutable; the current one is not", as
   assert.equal(old.headers.get("cache-control"), "private, max-age=31536000, immutable");
   assert.match(await old.text(), />Version two</);
 
-  // v3 is current, and edits fold into the current row in place, so naming
-  // it must not pin its drawing for a year.
+  // v3 is the head: only a superseded version is cached for a year.
   const current = await getOwner("d1", "?v=3");
   assert.equal(current.headers.get("cache-control"), "private, no-cache");
 
@@ -397,6 +449,47 @@ routeTest("public: a shared design this build cannot read is a 404, and the limi
 
   limited = true;
   assert.equal((await getPublic(TOKEN)).status, 429);
+});
+
+routeTest("public: a publication draws its pin; one following latest draws the head; one that no longer serves is gone", async () => {
+  reset();
+  seedOwnedDesign();
+  const published = new Date("2026-09-02T12:00:00Z");
+  const publication = (token: string, fields: Partial<(typeof publications)[number]>) => ({
+    id: token,
+    token,
+    userId: "u1",
+    artifactId: "d1",
+    pinnedVersion: null,
+    title: "Sign in",
+    publishedAt: published,
+    retiredAt: null,
+    takenDownAt: null,
+    ...fields,
+  });
+  publications = [
+    publication(`${TOKEN}p`, { pinnedVersion: 2 }),
+    publication(`${TOKEN}l`, {}),
+    publication(`${TOKEN}u`, { pinnedVersion: 2, publishedAt: null }),
+    publication(`${TOKEN}o`, { pinnedVersion: 2, retiredAt: new Date() }),
+  ];
+
+  // Pinned at v2 while v3 exists: the later edit stays off the public picture.
+  const pinned = await getPublic(`${TOKEN}p`);
+  assert.equal(pinned.status, 200);
+  const pinnedSvg = await pinned.text();
+  assert.match(pinnedSvg, />Version two</);
+  assert.doesNotMatch(pinnedSvg, /Version three/);
+
+  assert.match(await (await getPublic(`${TOKEN}l`)).text(), />Version three</, "following latest is the owner's explicit choice");
+  assert.equal((await getPublic(`${TOKEN}u`)).status, 410, "unpublished");
+  assert.equal((await getPublic(`${TOKEN}o`)).status, 410, "reset link");
+
+  // In Recently deleted: neither kind of link draws it.
+  shares = [{ id: "s1", token: TOKEN, userId: "u1", kind: "ARTIFACT", artifactId: "d1", conversationId: null, revokedAt: null, snapshotAt: published }];
+  artifacts[0].deletedAt = new Date();
+  assert.equal((await getPublic(`${TOKEN}p`)).status, 410);
+  assert.equal((await getPublic(TOKEN)).status, 410);
 });
 
 // ---------------------------------------------------------------------------
