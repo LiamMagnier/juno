@@ -110,6 +110,38 @@ final class RequestShapeTests: XCTestCase {
         XCTAssertEqual(messages[2]["content"]?.stringValue, "Reading both.")
     }
 
+    /// A call another lab's model made with its arguments as one JSON string,
+    /// or as something that is not an object, is replayed as an object:
+    /// Anthropic refuses any other `tool_use` input, so a fallback to Claude
+    /// after such a call failed every later request of the session.
+    func testForeignCallArgumentsAreReplayedAsObjects() throws {
+        let history: [ModelMessage] = [
+            .user("Look"),
+            .toolCall(id: "s", name: "grep", input: .string(#"{"pattern": "x"}"#)),
+            .toolCall(id: "n", name: "grep", input: .array([.number(1)])),
+            .toolResult(id: "s", content: "S", isError: false),
+            .toolResult(id: "n", content: "Input must be an object.", isError: true),
+        ]
+        let anthropic = AnthropicRequestBuilder.body(
+            for: request(history),
+            providerModelID: "claude-sonnet-5",
+            maxTokens: 4_096
+        )
+        let calls = try XCTUnwrap(anthropic["messages"]?.arrayValue?[1]["content"]?.arrayValue)
+        XCTAssertEqual(calls.compactMap { $0["input"] }, [["pattern": "x"], [:]])
+
+        let chat = OpenAIChatRequestBuilder.body(
+            for: request(history),
+            providerModelID: "gemini-3-pro",
+            providerID: "google",
+            maxTokens: 4_096
+        )
+        let arguments = try XCTUnwrap(chat["messages"]?.arrayValue?[2]["tool_calls"]?.arrayValue)
+            .compactMap { $0["function"]?["arguments"]?.stringValue }
+        XCTAssertEqual(arguments, [#"{"pattern":"x"}"#, "{}"])
+        XCTAssertEqual(replayableToolInput(["path": "a"]), ["path": "a"], "an object is sent as it is")
+    }
+
     func testThinkingDeltasAssembleIntoOneSignedBlock() throws {
         var decoder = AnthropicStreamDecoder()
         var events: [ModelStreamEvent] = []

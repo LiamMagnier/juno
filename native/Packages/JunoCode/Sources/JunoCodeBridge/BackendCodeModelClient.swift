@@ -675,7 +675,7 @@ enum AnthropicRequestBuilder {
                         "type": "tool_use",
                         "id": .string(id),
                         "name": .string(name),
-                        "input": input,
+                        "input": replayableToolInput(input),
                     ])
                 )
             case let .toolResult(id, content, isError):
@@ -965,7 +965,7 @@ enum OpenAIChatRequestBuilder {
                     "type": .string("function"),
                     "function": .object([
                         "name": .string(name),
-                        "arguments": .string(jsonString(input)),
+                        "arguments": .string(jsonString(replayableToolInput(input))),
                     ]),
                 ]))
             case let .toolCallWithExtra(id, name, input, extraContent):
@@ -974,7 +974,7 @@ enum OpenAIChatRequestBuilder {
                     "type": .string("function"),
                     "function": .object([
                         "name": .string(name),
-                        "arguments": .string(jsonString(input)),
+                        "arguments": .string(jsonString(replayableToolInput(input))),
                     ]),
                 ]
                 // Only pass extra_content to Google/Gemini endpoints when the payload is specifically
@@ -1099,7 +1099,7 @@ enum OpenAIResponsesRequestBuilder {
                     "type": .string("function_call"),
                     "call_id": .string(id),
                     "name": .string(name),
-                    "arguments": .string(jsonString(arguments)),
+                    "arguments": .string(jsonString(replayableToolInput(arguments))),
                 ]))
             case let .toolResult(id, content, _):
                 input.append(.object([
@@ -1160,6 +1160,27 @@ enum OpenAIResponsesRequestBuilder {
         }
         return .object(object)
     }
+}
+
+/// A call's arguments as the object every provider's replay requires.
+///
+/// Claude writes an object, but the history may hold a call another lab's
+/// model made — before a fallback, or a switch of model mid-session — whose
+/// arguments came as one JSON string, which the runtime unwraps and runs, or
+/// as some other value. Anthropic refuses a `tool_use` whose input is not an
+/// object, and Gemini arguments that are not one, so replayed as they were
+/// every later request of the session was a 400. A string holding an object
+/// is sent as that object; anything else as an empty one, its result having
+/// already said what was wrong with it.
+func replayableToolInput(_ input: JSONValue) -> JSONValue {
+    if input.objectValue != nil { return input }
+    if case let .string(text) = input,
+       let parsed = try? JSONDecoder().decode(JSONValue.self, from: Data(text.utf8)),
+       parsed.objectValue != nil
+    {
+        return parsed
+    }
+    return .object([:])
 }
 
 private func jsonString(_ value: JSONValue) -> String {
