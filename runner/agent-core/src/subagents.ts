@@ -16,7 +16,7 @@ import type {
 } from './types.js';
 import type { ProviderAdapter, ReasoningEffort } from './providers/types.js';
 import type { ToolContext, ToolDefinition } from './tools/types.js';
-import { PermissionEngine, classifyRisk } from './permissions.js';
+import { PermissionEngine, classifyRisk, ruleSubjectFor, type PermissionRuleSet } from './permissions.js';
 import { runAgentLoop } from './loop.js';
 import type { UsageReporter } from './usage.js';
 import { decodeComputerScreenshot } from './computer.js';
@@ -106,6 +106,14 @@ export interface SubagentHost {
   readonly usageReporter?: UsageReporter;
   /** The root session's thinking effort; children think as hard as the root. */
   readonly reasoningEffort?: ReasoningEffort;
+  /**
+   * The root session's resolved permission rules, "Always allow" answers
+   * included. A child is gated by exactly these: re-reading the settings
+   * files from a child's worktree would read the copy the child can edit, and
+   * would lose every rule the reader granted the session. Absent, a child
+   * reads the files the root would, untrusted.
+   */
+  readonly permissionRules?: PermissionRuleSet;
   emit(event: AgentEvent): void;
   requestApproval(request: ApprovalRequest): Promise<ApprovalDecision>;
   /** Snapshot an absolute path before the manager applies imported changes. */
@@ -724,7 +732,9 @@ function resolveSubagentModel(specModel: string | undefined, hostModel: string):
 
     const tools = this.childTools(task);
     const toolsByName = new Map(tools.map((t) => [t.spec.name, t]));
-    const permissions = new PermissionEngine(cwd);
+    const permissions = this.host.permissionRules
+      ? PermissionEngine.withRules(this.host.permissionRules)
+      : new PermissionEngine(this.host.cwd);
     const messages: ChatMessage[] = [
       { role: 'user', content: [{ type: 'text', text: this.childTaskTurn(task) }] },
     ];
@@ -824,12 +834,13 @@ function resolveSubagentModel(specModel: string | undefined, hostModel: string):
       return { type: 'tool_result', toolCallId: call.id, content: `Unknown tool: ${call.name}`, isError: true };
     }
     const { risk, reason } = classifyRisk(tool, call.input);
-    const outcome = permissions.decide(task.mode, call.name, risk);
+    const subject = ruleSubjectFor(call.name, call.input, ctx.cwd);
+    const outcome = permissions.decide(task.mode, call.name, risk, subject);
 
     if (outcome === 'deny') {
       const why = task.mode === 'plan'
         ? 'Denied: this agent is read-only.'
-        : 'Denied by project permission rules.';
+        : permissions.denialReason(task.mode, call.name, subject);
       this.host.emit({ type: 'tool_denied', callId: call.id, name: call.name, reason: why, agentId: task.id });
       return { type: 'tool_result', toolCallId: call.id, content: why, isError: true };
     }
@@ -1068,7 +1079,9 @@ ${isolation}
     // approval (never auto-allowed); clean imports classify as an edit.
     const conflicted = task.conflictedFiles.length > 0;
     const risk = conflicted ? 'sensitive' : 'edit';
-    const permissions = new PermissionEngine(this.host.cwd);
+    const permissions = this.host.permissionRules
+      ? PermissionEngine.withRules(this.host.permissionRules)
+      : new PermissionEngine(this.host.cwd);
     const outcome = permissions.decide(this.host.mode, 'apply_subagent_changes', risk);
     let allowed = outcome === 'allow';
     if (outcome === 'ask') {

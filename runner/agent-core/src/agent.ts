@@ -14,7 +14,7 @@ import type { ProviderAdapter } from './providers/types.js';
 import { assertContainedPath } from './tools/fs.js';
 import type { ToolContext, ToolDefinition } from './tools/types.js';
 import type { ContainerSandboxConfig } from './tools/container-sandbox.js';
-import { PermissionEngine, classifyRisk } from './permissions.js';
+import { PermissionEngine, classifyRisk, ruleSubjectFor } from './permissions.js';
 import { CheckpointStore, type FileRollback } from './checkpoints.js';
 import { SessionStore } from './session.js';
 import { defaultTools } from './tools/registry.js';
@@ -71,6 +71,17 @@ export interface AgentOptions {
    * Instant, which is what every run got before.
    */
   reasoningEffort?: ReasoningEffort;
+  /**
+   * Whether the reader has approved this project's own settings files, so
+   * their allow rules may widen what the agent does without asking.
+   *
+   * Off unless the host says so. `.juno/settings.json` arrives with a clone:
+   * left to widen, a repository's `{"allow":["bash"]}` turned a cloud
+   * `auto-edit` run into `full`, and the mode is a control the person who
+   * started the run chose. Its ask and deny rules always apply — a repository
+   * may make the agent more careful, never less. See permissions.ts.
+   */
+  trustProjectSettings?: boolean;
 }
 
 function buildSystemPrompt(cwd: string, mode: PermissionMode, delegation = false): string {
@@ -141,7 +152,9 @@ export class AgentSession {
     this.provider = opts.provider;
     this.tools = opts.tools ?? defaultTools();
     this.toolsByName = new Map(this.tools.map((t) => [t.spec.name, t]));
-    this.permissions = new PermissionEngine(this.cwd);
+    this.permissions = new PermissionEngine(this.cwd, {
+      trustProjectSettings: opts.trustProjectSettings === true,
+    });
     this.checkpoints = new CheckpointStore(store.dir);
     this.messages = store.loadMessages();
     this.callbacks = opts.callbacks;
@@ -161,6 +174,7 @@ export class AgentSession {
           get env() { return session.env; },
           get usageReporter() { return session.usageReporter; },
           get reasoningEffort() { return session.reasoningEffort; },
+          get permissionRules() { return session.permissions.ruleSet; },
           emit: (event) => session.emit(event),
           requestApproval: (request) => session.callbacks.requestApproval(request),
           snapshotForUndo: (absPath) => session.checkpoints.snapshot(session.currentTurnIndex, absPath),
@@ -411,6 +425,8 @@ export class AgentSession {
           isError: true,
         };
       }
+      const refused = await this.gateOrchestration(call);
+      if (refused) return refused;
       return this.subagents.handleToolCall(turnIndex, call) as Promise<{
         type: 'tool_result';
         toolCallId: string;
@@ -423,13 +439,11 @@ export class AgentSession {
       return { type: 'tool_result', toolCallId: call.id, content: `Unknown tool: ${call.name}`, isError: true };
     }
     const { risk, reason } = classifyRisk(tool, call.input);
-    const outcome = this.permissions.decide(this.mode, call.name, risk);
+    const subject = ruleSubjectFor(call.name, call.input, this.cwd);
+    const outcome = this.permissions.decide(this.mode, call.name, risk, subject);
 
     if (outcome === 'deny') {
-      const why =
-        this.mode === 'plan'
-          ? 'Denied: plan mode only allows read-only tools.'
-          : `Denied by project permission rules.`;
+      const why = this.permissions.denialReason(this.mode, call.name, subject);
       this.emit({ type: 'tool_denied', callId: call.id, name: call.name, reason: why });
       return { type: 'tool_result', toolCallId: call.id, content: why, isError: true };
     }
@@ -451,7 +465,7 @@ export class AgentSession {
         return { type: 'tool_result', toolCallId: call.id, content: msg, isError: true };
       }
       if (decision === 'allow_always' && risk !== 'sensitive') {
-        this.permissions.grantAlways(call.name);
+        this.permissions.grantAlways(call.name, subject);
       }
     }
 
@@ -515,6 +529,41 @@ export class AgentSession {
       isError,
     };
     return image ? [result, image] : result;
+  }
+
+  /**
+   * The rules' word on a delegation, before the manager takes it.
+   *
+   * Delegation is not a tool the ladder rules on — it reads nothing and writes
+   * nothing itself, and every child's own calls and the import of its changes
+   * are gated where they happen. But `Agent` and `Task` are rule names a reader
+   * can write, and a deny rule for them has to stop a child being started, as
+   * it does on the Mac. Null when the call may go ahead.
+   */
+  private async gateOrchestration(
+    call: { id: string; name: string; input: Record<string, unknown> },
+  ): Promise<UserContent | null> {
+    const outcome = this.permissions.decide(this.mode, call.name, 'safe');
+    if (outcome === 'allow') return null;
+    if (outcome === 'deny') {
+      const reason = this.permissions.denialReason(this.mode, call.name);
+      this.emit({ type: 'tool_denied', callId: call.id, name: call.name, reason });
+      return { type: 'tool_result', toolCallId: call.id, content: reason, isError: true };
+    }
+    const request: ApprovalRequest = {
+      callId: call.id,
+      toolName: call.name,
+      input: call.input,
+      risk: 'safe',
+      summary: `Start agents: ${JSON.stringify(call.input).slice(0, 200)}`,
+    };
+    this.emit({ type: 'approval_requested', request });
+    const decision = await this.callbacks.requestApproval(request);
+    this.emit({ type: 'approval_resolved', callId: call.id, decision });
+    if (decision !== 'deny') return null;
+    const msg = 'The user declined this action.';
+    this.emit({ type: 'tool_denied', callId: call.id, name: call.name, reason: msg });
+    return { type: 'tool_result', toolCallId: call.id, content: msg, isError: true };
   }
 
   /** Undo everything the previous turn changed on disk. Returns restored paths. */

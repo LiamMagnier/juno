@@ -76,22 +76,28 @@ public struct PermissionRule: Hashable, Codable, Sendable, CustomStringConvertib
     // MARK: - Matching
 
     /// Tool families the friendly names stand for.
+    ///
+    /// The cloud engine's tool names (`bash`, `edit_file`, `delegate_tasks`)
+    /// are here too: both engines read the same `.juno/settings.json`, so
+    /// `Bash(npm test *)` has to reach `run_command` here and `bash` there.
+    /// `contracts/agent/permission-rules.fixtures.json` pins this table, and
+    /// runner/agent-core/src/permission-rules.ts holds the same one.
     static let families: [String: Set<String>] = [
         // Git's own tools are shell commands with a narrower surface, so a
         // rule about `git commit` reads the same whichever tool runs it. A
         // repository hook is a shell command too, asked about as one: the
         // reader's rule about `npm run lint` means the same when a hook runs
         // it.
-        "bash": ["run_command", "run_tests", "git_status", "git_diff", "git_log", "git_commit", "hook"],
-        "shell": ["run_command", "run_tests", "git_status", "git_diff", "git_log", "git_commit", "hook"],
+        "bash": ["run_command", "run_tests", "git_status", "git_diff", "git_log", "git_commit", "hook", "bash"],
+        "shell": ["run_command", "run_tests", "git_status", "git_diff", "git_log", "git_commit", "hook", "bash"],
         "read": ["read_file", "list_directory", "find_files", "glob", "grep"],
-        "edit": ["create_file", "write_file", "apply_patch", "multi_edit", "delete_file", "move_file"],
-        "write": ["create_file", "write_file", "apply_patch", "multi_edit", "delete_file", "move_file"],
+        "edit": ["create_file", "write_file", "apply_patch", "multi_edit", "delete_file", "move_file", "edit_file"],
+        "write": ["create_file", "write_file", "apply_patch", "multi_edit", "delete_file", "move_file", "edit_file"],
         "git": ["git_status", "git_diff", "git_log", "git_commit"],
         "websearch": ["web_search"],
         "webfetch": ["web_fetch"],
-        "agent": ["delegate_task"],
-        "task": ["delegate_task"],
+        "agent": ["delegate_task", "delegate_tasks"],
+        "task": ["delegate_task", "delegate_tasks"],
     ]
 
     /// Whether this rule names `toolName` at all, ignoring the specifier.
