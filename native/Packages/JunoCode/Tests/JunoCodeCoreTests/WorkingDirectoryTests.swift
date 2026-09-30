@@ -41,4 +41,23 @@ final class WorkingDirectoryTests: XCTestCase {
         directories.set(nil, for: first)
         XCTAssertNil(directories.current(for: first))
     }
+
+    func testAFolderOutlivesARelaunchUntilItsSessionIsForgotten() throws {
+        let store = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("juno-cwd-\(UUID().uuidString)")
+            .appendingPathComponent("directories.json")
+        defer { try? FileManager.default.removeItem(at: store.deletingLastPathComponent()) }
+        let session = CodeSessionID()
+        let other = CodeSessionID()
+        let before = SessionWorkingDirectories(storeURL: store)
+        before.set(try WorkspacePath("app/src"), for: session)
+        before.set(try WorkspacePath("lib"), for: other)
+
+        // The transcript still says the session moved; so does the next launch.
+        let after = SessionWorkingDirectories(storeURL: store)
+        XCTAssertEqual(after.current(for: session)?.value, "app/src")
+        after.forget(session)
+        XCTAssertNil(SessionWorkingDirectories(storeURL: store).current(for: session))
+        XCTAssertEqual(SessionWorkingDirectories(storeURL: store).current(for: other)?.value, "lib")
+    }
 }

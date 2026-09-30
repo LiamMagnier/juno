@@ -200,23 +200,69 @@ public protocol ShellSessionManaging: Sendable {
 
 /// The folder each session's `run_command` runs in: the workspace root until
 /// a command that is only `cd <dir>` moves it.
+///
+/// Kept on disk when given a file, because the transcript keeps the `cd`: a
+/// session reopened after a relaunch still reads "working directory is now
+/// app", and a folder silently back at the root would run its next
+/// `rm -rf build` against the root's `build` instead.
 public final class SessionWorkingDirectories: @unchecked Sendable {
     private let lock = NSLock()
     private var directories: [CodeSessionID: WorkspacePath] = [:]
+    private let storeURL: URL?
+    private var loaded = false
 
-    public init() {}
+    /// - Parameter storeURL: a file in Juno's own storage to keep the folders
+    ///   in across launches; nil keeps them for this launch only.
+    public init(storeURL: URL? = nil) {
+        self.storeURL = storeURL
+    }
 
     /// Nil means the workspace root.
     public func current(for sessionID: CodeSessionID) -> WorkspacePath? {
         lock.lock()
         defer { lock.unlock() }
+        loadIfNeeded()
         return directories[sessionID]
     }
 
     public func set(_ directory: WorkspacePath?, for sessionID: CodeSessionID) {
         lock.lock()
         defer { lock.unlock() }
+        loadIfNeeded()
+        guard directories[sessionID] != directory else { return }
         directories[sessionID] = directory
+        save()
+    }
+
+    /// The session was deleted.
+    public func forget(_ sessionID: CodeSessionID) {
+        set(nil, for: sessionID)
+    }
+
+    private func loadIfNeeded() {
+        guard !loaded else { return }
+        loaded = true
+        guard let storeURL,
+              let data = try? Data(contentsOf: storeURL),
+              let stored = try? JSONDecoder().decode([String: String].self, from: data)
+        else { return }
+        for (session, path) in stored {
+            // A path that no longer validates is the root again.
+            if let path = try? WorkspacePath(path) {
+                directories[CodeSessionID(value: session)] = path
+            }
+        }
+    }
+
+    private func save() {
+        guard let storeURL else { return }
+        let stored = Dictionary(uniqueKeysWithValues: directories.map { ($0.key.value, $0.value.value) })
+        guard let data = try? JSONEncoder().encode(stored) else { return }
+        try? FileManager.default.createDirectory(
+            at: storeURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? data.write(to: storeURL, options: [.atomic])
     }
 
     /// `target` resolved against `current`, as a shell would resolve a `cd`

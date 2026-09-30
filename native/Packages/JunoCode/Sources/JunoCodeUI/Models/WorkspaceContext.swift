@@ -127,7 +127,16 @@ public final class WorkspaceContext: Sendable {
                 .appendingPathComponent(record.id.value + "-" + UUID().uuidString.prefix(8).lowercased(), isDirectory: true)
         )
         self.shells = shells
-        let workingDirectories = SessionWorkingDirectories()
+        // Kept across launches, per checkout: a worktree's context has its
+        // own root and so its own file.
+        let workingDirectories = SessionWorkingDirectories(
+            storeURL: storageRoot
+                .appendingPathComponent("working-directories", isDirectory: true)
+                .appendingPathComponent(
+                    Digests.sha256Hex(record.id.value + "\u{1f}" + access.rootURL.path) + ".json",
+                    isDirectory: false
+                )
+        )
         self.workingDirectories = workingDirectories
         let git = GitService(executor: executor)
         self.git = git

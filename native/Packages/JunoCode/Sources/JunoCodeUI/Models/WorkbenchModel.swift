@@ -859,6 +859,7 @@ public final class WorkbenchModel {
                 // Its background shells end with it, whether or not a
                 // controller for it was ever opened this launch.
                 await context.shells.terminateAll(ownedBy: session.id)
+                context.workingDirectories.forget(session.id)
                 try await context.checkpoints.removeCheckpoints(for: session.id)
                 try await context.turnCheckpoints.removeSession(session.id)
             } else {
