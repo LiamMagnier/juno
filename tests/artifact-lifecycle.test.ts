@@ -46,14 +46,14 @@ test("no route deletes an artifact because a message went away", () => {
   const start = chat.indexOf('if (mode === "supersede" && stale)');
   assert.ok(start > 0, "the supersede branch is where this test expects it");
   const supersede = chat.slice(start, chat.indexOf("prisma.message.update", start));
-  assert.match(supersede, /prisma\.\$transaction\(\[[\s\S]*detachArtifactsFromMessage\(stale\.id\)/);
+  assert.match(supersede, /prisma\.\$transaction\(\[[\s\S]*detachArtifactsFromMessage\(stale\.id, user\.id\)/);
 });
 
 test("a detached artifact is let go of, never deleted, and claimed by the next emission", () => {
   const store = read("src/lib/artifacts-store.ts");
   const detach = store.slice(store.indexOf("export function detachArtifactsFromMessage"));
-  assert.match(detach.slice(0, 200), /artifact\.updateMany\(\{ where: \{ messageId \}, data: \{ messageId: null \} \}\)/);
-  assert.match(store, /\.\.\.\(existing\.messageId \? \{\} : \{ messageId \}\)/);
+  assert.match(detach.slice(0, 220), /artifact\.updateMany\(\{ where: \{ messageId, userId \}, data: \{ messageId: null \} \}\)/);
+  assert.match(store, /\.\.\.\(existing\.messageId \? \{\} : \{ message: \{ connect: \{ id: messageId \} \} \}\)/);
 });
 
 const DB_URL = process.env.ARTIFACT_TEST_DATABASE_URL;
@@ -68,6 +68,13 @@ if (!DB_URL) {
   process.env.DATA_ENCRYPTION_KEY = randomBytes(32).toString("base64");
   delete process.env.DATA_ENCRYPTION_KEYRING;
   process.env.AUTH_SECRET ??= "artifact-lifecycle-test-secret";
+  // These cases are about what an edit or a regenerate must never DELETE, and
+  // they re-emit over a hand edit to prove the row survives and is claimed.
+  // With the re-emit guard on (the default), such a re-emit waits as a
+  // suggestion instead of appending; that behaviour has its own suite
+  // (tests/artifact-ownership-lifecycle.integration.test.ts). Off here, so
+  // these keep testing the append path they were written for.
+  process.env.JUNO_AI_REEMIT_GUARD = "0";
 
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
 

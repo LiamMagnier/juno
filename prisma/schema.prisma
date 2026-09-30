@@ -99,6 +99,9 @@ model User {
   apiSpend                    ApiSpend[]
   moderationFlags             ModerationFlag[]
   shares                      Share[]
+  artifacts                   Artifact[]
+  artifactDrafts              ArtifactDraft[]
+  artifactPublications        ArtifactPublication[]
   scheduledTasks              ScheduledTask[]
   voiceTranscriptSessions     VoiceTranscriptSession[]
   nativeAuthorizationCodes    NativeAuthorizationCode[]
@@ -656,6 +659,7 @@ model Project {
   memorySummaries    ProjectMemorySummary[]
   workspace          ProjectWorkspace?
   members            ProjectMember[]
+  artifacts          Artifact[]
 
   @@unique([userId, importSourceId])
   @@index([userId, updatedAt])
@@ -811,6 +815,7 @@ model Message {
   conversation            Conversation             @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   attachments             Attachment[]
   artifacts               Artifact[]
+  artifactProposals       ArtifactProposal[]
   versions                MessageVersion[]
   researchRuns            ResearchRun[]            @relation("ResearchRunAssistantMessage")
   researchReportRevisions ResearchReportRevision[]
@@ -1206,26 +1211,62 @@ model ProjectMemorySummary {
 // ----------------------------------------------------------------------------
 
 model Artifact {
-  id             String       @id @default(cuid())
-  conversationId String
-  messageId      String?
-  identifier     String // stable id used by the model to update an artifact
-  title          String
-  type           ArtifactType
-  language       String? // for code artifacts
-  currentVersion Int          @default(1)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id                 String       @id @default(cuid())
+  /// The owner. An artifact belongs to a person, not to the chat it was made
+  /// in (PRODUCT_REFOUNDATION §10, DECISIONS D-013): deleting the chat detaches
+  /// it and it stays in the owner's Library. Nullable only for the expand step
+  /// of docs/JUNO.md §20.2b: the migration backfills it from the conversation,
+  /// a BEFORE INSERT trigger fills it for rows the previous release writes
+  /// during a deploy, and every writer in this release sets it. Required in a
+  /// later release.
+  userId             String?
+  /// The chat it was made in, while that chat exists. Null for an artifact
+  /// made outside a chat (New design, Duplicate) and once its chat is deleted.
+  conversationId     String?
+  messageId          String?
+  /// The artifact's own project. Taken from the chat's project when the
+  /// artifact is made, follows the chat when the chat moves, and stays when the
+  /// chat is deleted.
+  projectId          String?
+  identifier         String // stable id used by the model to update an artifact
+  title              String
+  type               ArtifactType
+  language           String? // for code artifacts
+  currentVersion     Int          @default(1)
+  /// Provenance of a Duplicate: the artifact and version it was copied from.
+  /// Plain pointers, not relations, for the reason Conversation.forkedFromId
+  /// gives: the source may be purged on its own.
+  derivedFromId      String?
+  derivedFromVersion Int?
+  /// Recently deleted. Every read, list, share and publication treats a
+  /// trashed artifact as absent; restore clears it; the purge removes rows
+  /// trashed longer than ARTIFACT_TRASH_RETENTION_DAYS (src/lib/artifact-trash.ts).
+  deletedAt          DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
-  conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  message      Message?          @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  user         User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation?         @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  message      Message?              @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  project      Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
   versions     ArtifactVersion[]
   shares       Share[]
+  draft        ArtifactDraft?
+  proposals    ArtifactProposal[]
+  publications ArtifactPublication[]
 
   @@unique([conversationId, identifier])
   @@index([conversationId])
+  @@index([userId, deletedAt, updatedAt])
+  @@index([projectId])
+  @@index([deletedAt])
 }
 
+/// One saved version. IMMUTABLE: nothing rewrites a row once it exists (a
+/// BEFORE UPDATE trigger refuses any change to its body, number or artifact).
+/// Work in progress lives in ArtifactDraft and becomes a new row when it is
+/// sealed, so what a publication, a share or a sync client read as version N
+/// is what version N will always be.
 model ArtifactVersion {
   id         String   @id @default(cuid())
   artifactId String
@@ -1240,6 +1281,104 @@ model ArtifactVersion {
   artifact Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
 
   @@unique([artifactId, version])
+}
+
+/// The working copy of an artifact being edited in place (the design editor).
+///
+/// Gesture-rate edits land here, never on a version. The draft is sealed into
+/// a new ArtifactVersion on an explicit checkpoint, when the edit run has been
+/// idle for ARTIFACT_DRAFT_IDLE_MS, and before any other write to the artifact
+/// (a save, a restore, Juno's own write), so it never goes stale behind the
+/// head. Not change-captured, never synced, never shared or published: only
+/// the owner's editor reads it (src/lib/artifact-draft.ts).
+model ArtifactDraft {
+  artifactId  String   @id
+  userId      String
+  /// The version this working copy started from.
+  baseVersion Int
+  content     String   @db.Text
+  /// Bumped on every write: the compare-and-swap key two editors race on.
+  revision    Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  artifact Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([updatedAt])
+}
+
+/// Juno's work that is not (yet) a version: a model re-emit held back because
+/// the person had edited the artifact, or because it would remove structure a
+/// design has (the re-emit guard, src/lib/artifact-proposals.ts). Applied or
+/// dismissed by the person. Never change-captured, synced, shared or published.
+model ArtifactProposal {
+  id          String    @id @default(cuid())
+  artifactId  String
+  /// The version it was written against; Apply refuses a moved head.
+  baseVersion Int
+  /// suggestion (the only role this release writes).
+  role        String    @default("suggestion")
+  /// REWRITE (the only kind this release writes).
+  kind        String    @default("REWRITE")
+  /// { content, title, language }; content is the STORED form.
+  payload     Json
+  summary     String    @default("")
+  messageId   String?
+  /// "untrusted-input" when the turn read text Juno did not author.
+  taint       String?
+  /// PENDING | APPLIED | DISCARDED | STALE
+  status      String    @default("PENDING")
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+
+  artifact Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  message  Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([artifactId, status])
+  @@index([messageId])
+}
+
+/// A published artifact: the stable public URL that serves a version the
+/// owner chose (PRODUCT_REFOUNDATION §10). Separate from Share, which is the
+/// legacy frozen snapshot link and, later, private access for people.
+///
+/// At most one live row per artifact; the app holds the invariant under a row
+/// lock on the artifact (src/lib/artifact-publication.ts). Unpublishing keeps
+/// the row and its token, so publishing again brings back the same URL.
+/// Resetting the link retires the row — its token answers "link gone" (410)
+/// for good — and a new row with a new token takes over. Public pages serve
+/// the pinned version as static content: scripted public pages stay gated
+/// behind JUNO_PREVIEW_ORIGIN_PUBLIC and publish-time screening.
+model ArtifactPublication {
+  id             String    @id @default(cuid())
+  artifactId     String
+  userId         String
+  token          String    @unique
+  /// The version the public sees. Null follows the artifact's latest version.
+  pinnedVersion  Int?
+  /// Set while the page is up. Null before the first publish and after an
+  /// unpublish.
+  publishedAt    DateTime?
+  unpublishedAt  DateTime?
+  /// Reset link: this token is gone for good (410) and a newer row serves.
+  retiredAt      DateTime?
+  views          Int       @default(0)
+  /// Removed by Juno (admin takedown), as for Share. A taken-down artifact
+  /// cannot be published again until an admin restores the row.
+  takenDownAt    DateTime?
+  takenDownBy    String?
+  takedownReason String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  artifact Artifact      @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reports  ShareReport[]
+
+  @@index([artifactId, retiredAt])
+  @@index([userId, createdAt])
 }
 
 // ----------------------------------------------------------------------------
@@ -1970,6 +2109,9 @@ model Share {
 model ShareReport {
   id           String    @id @default(cuid())
   shareId      String?
+  /// Set instead of shareId when the report is about a published artifact
+  /// (ArtifactPublication); the token, title and owner copies work the same.
+  publicationId String?
   shareToken   String
   shareTitle   String    @default("")
   shareOwnerId String
@@ -1984,10 +2126,12 @@ model ShareReport {
   resolvedBy   String?
   createdAt    DateTime  @default(now())
 
-  share Share? @relation(fields: [shareId], references: [id], onDelete: SetNull)
+  share       Share?               @relation(fields: [shareId], references: [id], onDelete: SetNull)
+  publication ArtifactPublication? @relation(fields: [publicationId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([shareId])
+  @@index([publicationId])
 }
 
 // ----------------------------------------------------------------------------

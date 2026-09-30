@@ -64,7 +64,8 @@ export function ArtifactReadView({
    *  poster: the document JSON never needs to reach this page. */
   content: string;
   /** The made-in conversation, with its canvas open on this artifact. */
-  chatHref: string;
+  /** Null when the artifact has no chat to open. */
+  chatHref: string | null;
 }) {
   const rt = React.useMemo(() => runtimeFor(type, language), [type, language]);
   const isDesign = type === "DESIGN";
@@ -127,17 +128,19 @@ export function ArtifactReadView({
 
         {/* The one way to change it, so it is the one labelled action on the
             row: the chat is where the canvas, Ask and the model are. */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button asChild variant="ghost" size="sm" className="h-7 shrink-0 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground">
-              <Link href={chatHref} aria-label="Open in chat">
-                <MessagesSquare className="size-3.5" aria-hidden />
-                <span className="hidden @[36rem]/window:inline">Open in chat</span>
-              </Link>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Open in the conversation it was made in</TooltipContent>
-        </Tooltip>
+        {chatHref && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button asChild variant="ghost" size="sm" className="h-7 shrink-0 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground">
+                <Link href={chatHref} aria-label="Open in chat">
+                  <MessagesSquare className="size-3.5" aria-hidden />
+                  <span className="hidden @[36rem]/window:inline">Open in chat</span>
+                </Link>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Open in the conversation it was made in</TooltipContent>
+          </Tooltip>
+        )}
       </header>
 
       {older && (

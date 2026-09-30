@@ -67,16 +67,18 @@ const reads: { op: string; args: Record<string, unknown> }[] = [];
 
 const prisma = {
   artifact: {
-    // Honours the ownership join the way Postgres would: a row comes back only
-    // when the `where` names its owner through the conversation.
-    findFirst: async (args: { where: { id: string; conversation?: { userId?: string } }; select?: unknown }) => {
+    // Honours ownership the way Postgres would: a row comes back only when the
+    // `where` names its owner (the artifact's own userId) and asks for a live,
+    // untrashed row.
+    findFirst: async (args: { where: { id: string; userId?: string; deletedAt?: unknown }; select?: unknown }) => {
       reads.push({ op: "artifact.findFirst", args });
-      const row = rows.find((r) => r.id === args.where.id && r.ownerId === args.where.conversation?.userId);
+      const row = rows.find((r) => r.id === args.where.id && r.ownerId === args.where.userId && args.where.deletedAt === null);
       if (!row) return null;
       const { bodies, ownerId: _ownerId, ...rest } = row;
       void _ownerId;
       return {
         ...rest,
+        draft: null,
         versions: Object.keys(bodies)
           .map(Number)
           .sort((a, b) => a - b)
@@ -270,7 +272,7 @@ test("every type has a noun, and it is the reader's word rather than the enum", 
 // The page
 // ---------------------------------------------------------------------------
 
-pageTest("the page reads the artifact through the owner's conversations, and one body only", async () => {
+pageTest("the page reads the artifact by its own owner, and one body only", async () => {
   seed();
   const element = await openArtifact("art-page");
   assert.equal(element.type, ArtifactReadView);
@@ -286,7 +288,7 @@ pageTest("the page reads the artifact through the owner's conversations, and one
     chatHref: "/chat/conv-1?artifact=pricing-table",
   });
   const [first, second] = reads;
-  assert.deepEqual((first.args as { where: unknown }).where, { id: "art-page", conversation: { userId: OWNER } });
+  assert.deepEqual((first.args as { where: unknown }).where, { id: "art-page", userId: OWNER, deletedAt: null });
   const select = (first.args as { select: { versions: { select: unknown } } }).select;
   assert.deepEqual(select.versions.select, { version: true }, "version numbers only; no body rides the first read");
   assert.deepEqual((second.args as { where: unknown }).where, { artifactId_version: { artifactId: "art-page", version: 3 } });

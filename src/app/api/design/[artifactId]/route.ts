@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
-import { documentFromArtifact, loadOwnedDesignArtifact, serializeDesignArtifact } from "@/lib/design/store";
+import { documentAtVersion, documentFromArtifact, loadOwnedDesignArtifact, serializeDesignArtifact } from "@/lib/design/store";
 import { DesignValidationError } from "@/lib/design/schema";
 
 export const runtime = "nodejs";
@@ -8,10 +8,12 @@ export const runtime = "nodejs";
 /**
  * Read one design document.
  *
- * Ownership is the artifact system's own (artifact → conversation → user), so a
- * design document is exactly as private as the chat it was made in. `?version=`
- * reads an earlier revision without restoring it, which is what the history
- * panel needs to show an older state non-destructively.
+ * Ownership is the artifact's own (`Artifact.userId`), so a design is its
+ * owner's whether or not it still has a chat. Without `?version=` this is the
+ * working copy — the unsealed draft when there is one — which is what the
+ * editor opens. `?version=` reads one earlier version without restoring it,
+ * which is what the history panel needs to show an older state
+ * non-destructively; only that one body is read.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ artifactId: string }> }) {
   const user = await getCurrentUser();
@@ -28,7 +30,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ artifact
   }
 
   try {
-    const document = documentFromArtifact(artifact, version);
+    const document = version === undefined ? documentFromArtifact(artifact) : await documentAtVersion(artifact, version);
     return NextResponse.json({ artifact: serializeDesignArtifact(artifact), document });
   } catch (error) {
     if (error instanceof DesignValidationError) {

@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { getConversationThread } from "@/lib/queries";
 import { serializeConversation } from "@/lib/serializers";
 import { codeWorkspaceAttributionShape } from "@/lib/code-workspaces";
+import { artifactsFollowConversationProject, deleteConversationsKeepingArtifacts, type ArtifactFollowDb } from "@/lib/artifact-follow";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -74,6 +75,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const updated = await prisma.conversation.update({ where: { id, userId: user.id }, data });
+  // The chat's artifacts follow it between projects (PRODUCT_REFOUNDATION §10).
+  if (fields.projectId !== undefined && fields.projectId !== existing.projectId) {
+    await artifactsFollowConversationProject(prisma as unknown as ArtifactFollowDb, user.id, id, existing.projectId, fields.projectId);
+  }
   return NextResponse.json({ conversation: serializeConversation(updated) });
 }
 
@@ -85,6 +90,8 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const existing = await prisma.conversation.findFirst({ where: { id, userId: user.id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await prisma.conversation.delete({ where: { id, userId: user.id } });
+  // Its artifacts are not deleted with it: they detach (the foreign key is SET
+  // NULL) and stay in the owner's Library, with the files they use.
+  await deleteConversationsKeepingArtifacts(user.id, [id]);
   return NextResponse.json({ ok: true });
 }

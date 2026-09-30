@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
+import { ownedArtifactWhere } from "@/lib/artifact-access";
 import { rateLimit } from "@/lib/rate-limit";
 import { isOwnerEmail } from "@/lib/owner";
 import {
@@ -78,9 +79,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     }
   }
 
-  // An artifact id alone must never grant access — join through the owning conversation.
+  // An artifact id alone must never grant access: it must be the reader's own.
   const artifact = await prisma.artifact.findFirst({
-    where: { id, conversation: { userId: user.id } },
+    where: ownedArtifactWhere(user.id, { id }),
     select: {
       identifier: true,
       title: true,

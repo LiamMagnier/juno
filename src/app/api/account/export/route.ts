@@ -16,6 +16,13 @@ export const runtime = "nodejs";
 const MAX_MESSAGE_ROWS = 50_000;
 
 /**
+ * Hard cap on exported artifact version rows. Each can be 200 000 characters,
+ * so the cap is on rows, newest artifacts' history first; a truncated export
+ * says so, as the message cap does.
+ */
+const MAX_ARTIFACT_VERSION_ROWS = 20_000;
+
+/**
  * RFC 4180 quoting, plus CSV-injection neutralization: a leading =, +, -, @,
  * tab or CR is prefixed with a single quote so spreadsheet apps do not evaluate
  * attacker-influenceable message text as a formula (CWE-1236).
@@ -226,6 +233,70 @@ export async function GET(req: Request) {
         select: { projectId: true, content: true, entryCount: true, createdAt: true, updatedAt: true },
       }),
     ]);
+
+  // Artifacts are the person's own (PRODUCT_REFOUNDATION §10): every one,
+  // including those whose chat was deleted and those in Recently deleted, with
+  // their versions, an unsealed design draft, and their public links
+  // (publications and legacy share links). Suggestions Juno is holding are
+  // included with their status: they are Juno's work on the person's artifact.
+  const [artifactRows, artifactVersionRows] = await Promise.all([
+    prisma.artifact.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        identifier: true,
+        title: true,
+        type: true,
+        language: true,
+        currentVersion: true,
+        conversationId: true,
+        messageId: true,
+        projectId: true,
+        derivedFromId: true,
+        derivedFromVersion: true,
+        deletedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        draft: { select: { baseVersion: true, content: true, updatedAt: true } },
+        publications: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            token: true,
+            pinnedVersion: true,
+            publishedAt: true,
+            unpublishedAt: true,
+            retiredAt: true,
+            views: true,
+            takenDownAt: true,
+            createdAt: true,
+          },
+        },
+        shares: {
+          orderBy: { createdAt: "asc" },
+          select: { token: true, snapshotAt: true, views: true, revokedAt: true, takenDownAt: true, createdAt: true },
+        },
+        proposals: {
+          orderBy: { createdAt: "asc" },
+          select: { id: true, baseVersion: true, status: true, summary: true, payload: true, createdAt: true, resolvedAt: true },
+        },
+      },
+    }),
+    prisma.artifactVersion.findMany({
+      where: { artifact: { userId: user.id } },
+      orderBy: [{ artifactId: "asc" }, { version: "asc" }],
+      take: MAX_ARTIFACT_VERSION_ROWS + 1,
+      select: { artifactId: true, version: true, content: true, origin: true, createdAt: true },
+    }),
+  ]);
+  const artifactVersionsTruncated = artifactVersionRows.length > MAX_ARTIFACT_VERSION_ROWS;
+  const versionsByArtifact = new Map<string, object[]>();
+  for (const row of artifactVersionsTruncated ? artifactVersionRows.slice(0, MAX_ARTIFACT_VERSION_ROWS) : artifactVersionRows) {
+    const { artifactId, ...version } = row;
+    const list = versionsByArtifact.get(artifactId);
+    if (list) list.push(version);
+    else versionsByArtifact.set(artifactId, [version]);
+  }
 
   const truncated = rawMessages.length > MAX_MESSAGE_ROWS;
   const messages = (truncated ? rawMessages.slice(0, MAX_MESSAGE_ROWS) : rawMessages).map((m) => ({
@@ -452,6 +523,23 @@ export async function GET(req: Request) {
     ...(truncated
       ? { truncationNote: `Message export is capped at ${MAX_MESSAGE_ROWS.toLocaleString("en-US")} rows; older messages are included first.` }
       : {}),
+    artifacts: {
+      versionsTruncated: artifactVersionsTruncated,
+      ...(artifactVersionsTruncated
+        ? { truncationNote: `Artifact history is capped at ${MAX_ARTIFACT_VERSION_ROWS.toLocaleString("en-US")} versions.` }
+        : {}),
+      items: artifactRows.map(({ draft, publications, shares, proposals, ...artifact }) => ({
+        ...artifact,
+        conversationId: artifact.conversationId ? stableConversationId.get(artifact.conversationId) ?? artifact.conversationId : null,
+        messageId: artifact.messageId ? stableMessageId.get(artifact.messageId) ?? artifact.messageId : null,
+        projectId: artifact.projectId ? stableProjectId.get(artifact.projectId) ?? artifact.projectId : null,
+        versions: versionsByArtifact.get(artifact.id) ?? [],
+        draft,
+        publications,
+        shareLinks: shares,
+        suggestions: proposals,
+      })),
+    },
     conversations: conversations.map((c) => ({
       id: c.id,
       sourceId: stableConversationId.get(c.id) ?? c.id,

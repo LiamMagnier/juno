@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { serializeMessage, serializeArtifact, serializeConversation } from "@/lib/serializers";
+import { ARTIFACT_CLIENT_INCLUDE, serializeMessage, serializeArtifact, serializeConversation } from "@/lib/serializers";
 import type { ClientArtifact, ClientConversation, ClientMessage } from "@/types/chat";
 
 /**
@@ -114,10 +114,15 @@ export async function getConversationThread(
         versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" } },
       },
     }),
+    // The chat's artifacts, each with its newest window of versions (the rest
+    // page in from /api/artifacts/[id]/versions), a waiting suggestion's label
+    // and a design's working copy. Trashed ones are kept (they carry
+    // `deletedAt`), so a card can say "In Recently deleted" and offer Restore;
+    // every way into the canvas reads the live ones only (`liveArtifacts`).
     prisma.artifact.findMany({
-      where: { conversationId },
+      where: { conversationId, userId },
       orderBy: { createdAt: "asc" },
-      include: { versions: true },
+      include: ARTIFACT_CLIENT_INCLUDE,
     }),
   ]);
 

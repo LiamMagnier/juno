@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
+import { artifactInProjectWhere, artifactProjectId, ownedArtifactWhere } from "@/lib/artifact-access";
+import { purgeAtFor } from "@/lib/artifact-trash";
 
 export const runtime = "nodejs";
 
@@ -17,27 +19,31 @@ export const runtime = "nodejs";
 const PREVIEW_CHARS = 1200;
 
 /**
- * All artifacts the user has created across conversations — the Artifacts
- * home — or, with `?projectId=`, the ones made in that project's chats.
+ * All the user's artifacts — the Artifacts home — or, with `?projectId=`, the
+ * ones in that project. `?deleted=1` lists Recently deleted instead, newest
+ * deletion first, each with the day the purge may remove it.
  *
- * The project scope exists for a project's Sources tab, which used to fetch
- * the whole account's list and keep the ones from its chats on the client
- * (X-21). That could only narrow the 200 most recent, so a project whose
- * artifacts were older than the account's latest 200 read short. Scoped here,
- * the 200 are the project's own. It goes through the conversation, as the
- * ownership join does, until an artifact carries its own `projectId`
- * (04-MERGE-PLAN.md §2.6); a project id the user does not own matches nothing,
- * because the conversation must also be theirs.
+ * Owned by the artifact's own `userId` (src/lib/artifact-access.ts), so an
+ * artifact whose chat was deleted, or that never had one (New design,
+ * Duplicate), is listed like any other; `conversationTitle` is null for it.
+ * The project scope is the artifact's own project, falling back to its chat's
+ * for a row written by the previous release. A project id the user does not
+ * own matches nothing, because the artifact must also be theirs.
+ *
+ * The unified, paginated Library of everything made (artifacts and Work
+ * deliverables together) is GET /api/library/made.
  */
 export async function GET(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const projectId = new URL(req.url).searchParams.get("projectId")?.trim() || null;
+  const searchParams = new URL(req.url).searchParams;
+  const projectId = searchParams.get("projectId")?.trim() || null;
+  const deleted = searchParams.get("deleted") === "1";
 
   const artifacts = await prisma.artifact.findMany({
-    where: { conversation: { userId: user.id, ...(projectId ? { projectId } : {}) } },
-    orderBy: { updatedAt: "desc" },
+    where: ownedArtifactWhere(user.id, projectId ? artifactInProjectWhere(projectId) : {}, { trashed: deleted }),
+    orderBy: deleted ? [{ deletedAt: "desc" }, { id: "asc" }] : { updatedAt: "desc" },
     take: 200,
     select: {
       id: true,
@@ -47,9 +53,12 @@ export async function GET(req: Request) {
       language: true,
       currentVersion: true,
       conversationId: true,
+      projectId: true,
+      derivedFromId: true,
+      deletedAt: true,
       createdAt: true,
       updatedAt: true,
-      conversation: { select: { title: true } },
+      conversation: { select: { title: true, projectId: true } },
     },
   });
 
@@ -62,8 +71,8 @@ export async function GET(req: Request) {
    * one pass, which is what `currentVersion` names.
    *
    * Ownership is already established — these ids came from a query scoped to
-   * the user's own conversations — and the ids are parameterised, so this
-   * cannot widen what the caller can see.
+   * the user's own artifacts — and the ids are parameterised, so this cannot
+   * widen what the caller can see.
    */
   /*
    * `::int` ON THE LENGTH IS LOAD-BEARING, and its absence broke this page for
@@ -105,9 +114,14 @@ export async function GET(req: Request) {
       language: a.language,
       version: a.currentVersion,
       conversationId: a.conversationId,
-      conversationTitle: a.conversation.title,
+      // Null when the artifact has no chat: made outside one, or its chat was
+      // deleted (it stays here; PRODUCT_REFOUNDATION §10).
+      conversationTitle: a.conversation?.title ?? null,
+      projectId: artifactProjectId(a),
+      derivedFromId: a.derivedFromId,
       createdAt: a.createdAt.toISOString(),
       updatedAt: a.updatedAt.toISOString(),
+      ...(a.deletedAt ? { deletedAt: a.deletedAt.toISOString(), purgeAt: purgeAtFor(a.deletedAt).toISOString() } : {}),
       // Truncated source for the grid tile. Null when the artifact has no
       // stored version yet, which the tile renders as its kind glyph, and
       // always for a design, which the tile draws from its poster.

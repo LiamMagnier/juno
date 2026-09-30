@@ -20,9 +20,10 @@ import { PrismaClient } from "@prisma/client";
  * `userId` key, so those three models were unguardable rather than unguarded.
  *
  * Not guarded, on purpose:
- *  - Models scoped through a parent (Message, MessageVersion, Artifact,
- *    ArtifactVersion, CodeTaskEvent, NativeRefreshToken, ScheduledTaskRun —
- *    reached via an ownership-checked Conversation / CodeTask / parent row).
+ *  - Models scoped through a parent (Message, MessageVersion,
+ *    ArtifactVersion, ArtifactProposal, CodeTaskEvent, NativeRefreshToken,
+ *    ScheduledTaskRun — reached via an ownership-checked Conversation /
+ *    Artifact / CodeTask / parent row).
  *  - Auth-adapter models (User, Account, Session, VerificationToken), which
  *    NextAuth queries by provider identifiers before a session exists.
  *  - FeatureRequest and FeatureComment, owned via `authorId` and deliberately
@@ -134,6 +135,15 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // moderation queue, and the cross-user scheduler sweep. Everything else had
   // the userId in hand already and now puts it in the where.
   ["Share", "userId"],
+  // Artifacts own themselves (PRODUCT_REFOUNDATION §10): the chat is a
+  // nullable pointer, so the old `conversation: { userId }` join no longer
+  // reaches a detached artifact and every read scopes on the artifact's own
+  // owner (src/lib/artifact-access.ts). The draft and the publication carry the
+  // same owner. The public page and the admin tools resolve publications by
+  // token through prismaUnguarded, like shares.
+  ["Artifact", "userId"],
+  ["ArtifactDraft", "userId"],
+  ["ArtifactPublication", "userId"],
   ["ScheduledTask", "userId"],
   ["ModerationFlag", "userId"],
   ["CodeRemoteSession", "userId"],

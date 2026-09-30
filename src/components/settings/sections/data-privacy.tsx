@@ -103,7 +103,7 @@ export function DataPrivacySection() {
         <SettingRow
           label="Delete all conversations"
           tone="destructive"
-          description="Every chat and its messages, at once. Memories and projects stay."
+          description="Every chat and its messages, at once. What Juno made, memories and projects stay."
           control={
             <Button variant="destructive-outline" size="sm" onClick={() => setDeleteChatsOpen(true)}>
               Delete all
@@ -117,8 +117,8 @@ export function DataPrivacySection() {
           <DialogHeader>
             <DialogTitle>Delete all conversations?</DialogTitle>
             <DialogDescription>
-              Every conversation and its messages are deleted for good. Memories and projects stay. This can’t be
-              undone.
+              Every conversation and its messages are deleted for good. Everything Juno made in them stays in your
+              Library, and memories and projects stay. This can’t be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

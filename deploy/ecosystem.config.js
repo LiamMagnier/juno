@@ -351,6 +351,25 @@ module.exports = {
       merge_logs: true,
     },
     {
+      // Seals idle design drafts into versions every minute and purges the
+      // artifact trash every six hours (scripts/artifact-maintenance.ts). The
+      // purge is dry until JUNO_ARTIFACTS_PURGE=1 is set in the release env.
+      name: "juno-artifact-maintenance",
+      cwd: runRoot,
+      script: "npm",
+      args: "run artifacts:maintenance -- --daemon",
+      watch: false,
+      max_memory_restart: "300M",
+      env: {
+        ...releaseEnv,
+        NODE_ENV: "production",
+      },
+      error_file: "logs/artifact-maintenance-err.log",
+      out_file: "logs/artifact-maintenance-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+    },
+    {
       name: "juno-voice-relay",
       // The relay is its own package inside the release, so it is the one app
       // whose cwd is a subdirectory rather than the release root.

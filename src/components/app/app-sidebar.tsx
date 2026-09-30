@@ -2481,7 +2481,7 @@ function ConversationRow({
       title: isCodeSession ? "Delete this session?" : "Delete this conversation?",
       description: isCodeSession
         ? "This permanently removes the session and its transcript. Anything it already changed on a machine or in a pull request stays where it is. This can't be undone."
-        : "This permanently removes the conversation and its messages. This can't be undone.",
+        : "This permanently removes the conversation and its messages. Anything Juno made in it stays in your Library. This can't be undone.",
       confirmLabel: isCodeSession ? "Delete session" : "Delete chat",
       onConfirm: async () => {
         onRemove(conversation.id);
@@ -3026,7 +3026,7 @@ function ArchivedChatsDialog({
       title: isCode ? "Delete this session?" : "Delete this conversation?",
       description: isCode
         ? "This permanently removes the session and its transcript. Anything it already changed on a machine or in a pull request stays where it is. This can't be undone."
-        : "This permanently removes the conversation and its messages. This can't be undone.",
+        : "This permanently removes the conversation and its messages. Anything Juno made in it stays in your Library. This can't be undone.",
       confirmLabel: isCode ? "Delete session" : "Delete chat",
       onConfirm: async () => {
         setItems((prev) => prev?.filter((x) => x.id !== c.id) ?? prev);

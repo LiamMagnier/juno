@@ -8,6 +8,7 @@ import { mutationRequestSchema, type MutationOperation } from "@/lib/sync-mutati
 import { WORKSPACE_CONFIG_VERSION, writeWorkspaceConfig } from "@/lib/projects/workspace-config";
 import { serializeWorkDefaults, WORK_DEFAULTS_VERSION } from "@/lib/work/projects";
 import { guardedMemoryWrite, type MemoryEntryKind } from "@/lib/memory-suppression";
+import { artifactsFollowConversationProject, keepArtifactAttachments } from "@/lib/artifact-follow";
 
 export const runtime = "nodejs";
 
@@ -111,11 +112,18 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
         throw new ApiV1Error("invalid_request", 400, "The model is unknown.");
       }
       await requireOwnedConversationReferences(tx, accountId, op.patch);
+      const before = op.patch.projectId !== undefined
+        ? await tx.conversation.findFirst({ where: { id: op.entityId, userId: accountId }, select: { projectId: true } })
+        : null;
       const updated = await tx.conversation.updateMany({ where: { id: op.entityId, userId: accountId }, data: {
         ...op.patch,
         ...(op.patch.title !== undefined ? { titleSource: "user" } : {}),
       } });
       if (!updated.count) throw new ApiV1Error("not_found", 404, "The conversation was not found.");
+      // The chat's artifacts follow it between projects.
+      if (before && op.patch.projectId !== undefined) {
+        await artifactsFollowConversationProject(tx, accountId, op.entityId, before.projectId, op.patch.projectId);
+      }
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "conversation", op.entityId) } };
     }
     case "conversation.archive": {
@@ -133,6 +141,8 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
     }
     case "conversation.delete": {
       await requireRevision(tx, accountId, "conversation", op.entityId, baseRevision);
+      // Its artifacts detach and stay (SET NULL); keep the files they use.
+      await keepArtifactAttachments(tx, accountId, [op.entityId]);
       const deleted = await tx.conversation.deleteMany({ where: { id: op.entityId, userId: accountId } });
       if (!deleted.count) throw new ApiV1Error("not_found", 404, "The conversation was not found.");
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "conversation", op.entityId), deleted: true } };

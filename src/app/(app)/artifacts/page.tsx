@@ -123,8 +123,9 @@ interface Item {
   type: ArtifactType;
   language: string | null;
   version: number;
-  conversationId: string;
-  conversationTitle: string;
+  /** Null when the artifact has no chat: made outside one, or its chat was deleted. */
+  conversationId: string | null;
+  conversationTitle: string | null;
   createdAt: string;
   updatedAt: string;
   /** The head of the newest version's source, for the grid tile. */
@@ -282,9 +283,11 @@ function ArtifactsHome() {
         <DropdownMenuItem onSelect={() => router.push(artifactHref(item.id))}>
           <Maximize2 className="size-4" aria-hidden /> Open
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => router.push(conversationArtifactHref(item.conversationId, item.identifier))}>
-          <PanelRightOpen className="size-4" aria-hidden /> Open in conversation
-        </DropdownMenuItem>
+        {item.conversationId && (
+          <DropdownMenuItem onSelect={() => router.push(conversationArtifactHref(item.conversationId!, item.identifier))}>
+            <PanelRightOpen className="size-4" aria-hidden /> Open in conversation
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => openRename(item)}>
           <ActionIcons.edit className="size-4" aria-hidden /> Rename
@@ -401,7 +404,7 @@ function ArtifactsHome() {
       if (!q) return true;
       return (
         item.title.toLowerCase().includes(q) ||
-        item.conversationTitle.toLowerCase().includes(q) ||
+        (item.conversationTitle ?? "").toLowerCase().includes(q) ||
         runtimeFor(item.type, item.language).label.toLowerCase().includes(q)
       );
     });
@@ -478,7 +481,7 @@ function ArtifactsHome() {
       if (!res.ok) throw new Error();
       setItems((prev) => prev?.filter((i) => i.id !== deleteTarget.id) ?? prev);
       setDeleteTarget(null);
-      toast.success("Artifact deleted.");
+      toast.success("Moved to Recently deleted.");
     } catch {
       toast.error("Couldn’t delete the artifact.");
     } finally {
@@ -931,7 +934,9 @@ function ArtifactsHome() {
                   className="min-w-0 flex-1 outline-none after:absolute after:inset-0 after:rounded-control after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
                 >
                   <span className="block truncate text-ui font-medium">{item.title || "Untitled artifact"}</span>
-                  <span className="mt-0.5 block truncate text-caption text-muted-foreground">in “{item.conversationTitle}”</span>
+                  <span className="mt-0.5 block truncate text-caption text-muted-foreground">
+                    {item.conversationTitle ? `in “${item.conversationTitle}”` : "Not in a chat"}
+                  </span>
                 </Link>
 
                 {/* Kind, version and age in fixed columns, the way the
@@ -997,7 +1002,8 @@ function ArtifactsHome() {
           <DialogHeader>
             <DialogTitle>Delete “{deleteTarget?.title || "artifact"}”?</DialogTitle>
             <DialogDescription>
-              Every version is removed and any public share link stops working. The conversation it came from is untouched.
+              It moves to Recently deleted for 30 days with every version, and any public link to it stops working
+              until it is restored. The conversation it came from is untouched.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
