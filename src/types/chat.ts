@@ -2,6 +2,7 @@ import type { ClientActionApproval } from "@/lib/action-approval";
 import type { ArtifactType } from "@/lib/message-content";
 import type { ChatOrigin } from "@/lib/chat-origin";
 import type { ClientWorkSession } from "@/lib/work/serializers";
+import type { ContextReceipt, ContextToken } from "@/lib/chat/context-tokens";
 
 export type MessageRole = "USER" | "ASSISTANT" | "SYSTEM";
 export type FeedbackValue = "UP" | "DOWN" | null;
@@ -275,6 +276,15 @@ export interface ClientActivityEvent {
   };
   /** Structured receipt for conversational agent setup or self-configuration edits. */
   agentChange?: ClientAgentChange;
+  /**
+   * What became of each context token the message named (the files, apps,
+   * projects, crew members, skills, chats and artifacts), on the turn's
+   * "Using what you mentioned" row: applied or dropped, how, why, and for an
+   * app that is not connected, where to connect it. Carries the tokens'
+   * ranges in the user message above, so a reload can draw its chips.
+   * Shape and reader: src/lib/chat/context-tokens.ts.
+   */
+  contextReceipt?: ContextReceipt;
 }
 
 /** How an artifact version came to be. Null on rows older than the column. */
@@ -428,6 +438,8 @@ export interface ChatRequestBody {
   conversationId?: string;
   projectId?: string;
   message?: string;
+  /** Typed context tokens in `message` (src/lib/chat/context-tokens.ts). */
+  context?: ContextToken[];
   attachmentIds?: string[];
   model?: string;
   regenerate?: boolean;

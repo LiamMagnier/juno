@@ -59,6 +59,10 @@
     },
     "request.reasoningEffort": "native",
     "request.connectors": "native",
+    "request.context": {
+      "status": "planned",
+      "note": "Typed context tokens (docs/rework/PRODUCT_REFOUNDATION.md §5; src/lib/chat/context-tokens.ts): the files, projects, apps, crew, skills, chats and artifacts named in the message, with UTF-16 ranges into it. The web accepts it beside the legacy `connectors`; the Mac and iPhone composers gain inline tokens in the UI phase and send it on the append-then-regenerate turn."
+    },
     "request.skillSlug": "native",
     "request.generationId": "native",
     "request.workHandoff": "native",
@@ -251,6 +255,10 @@
     "ClientActivityEvent.artifactVerification": {
       "status": "planned",
       "note": "The artifact check's receipt (verified, repaired, refused) is not drawn on the Mac yet."
+    },
+    "ClientActivityEvent.contextReceipt": {
+      "status": "planned",
+      "note": "What became of each context token (applied or dropped, how, why, where to connect an app, what it will ask first), with the tokens' ranges in the user message so a reload can draw the chips. Native reads it with request.context."
     },
     "ClientActivityEvent.agentChange": {
       "status": "web-only",

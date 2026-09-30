@@ -24,6 +24,7 @@ import { resolveModel } from "@/lib/models";
 import { estimateCostUsd } from "@/lib/pricing";
 import { coerceChatOrigin } from "@/lib/chat-origin";
 import { readToolDetail } from "@/lib/chat/tool-detail";
+import { readContextReceipt } from "@/lib/chat/context-tokens";
 
 const ACTIVITY_KINDS = new Set<ClientActivityEvent["kind"]>([
   "context",
@@ -99,6 +100,9 @@ function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
     const exitCode =
       typeof record.exitCode === "number" && Number.isFinite(record.exitCode) ? record.exitCode : undefined;
     const agentChange = readAgentChange(record.agentChange);
+    // The context-token receipt: parsed against its schema, so a row that does
+    // not match is dropped here rather than handed to a renderer that trusts it.
+    const contextReceipt = readContextReceipt(record.contextReceipt);
 
     return [
       {
@@ -112,6 +116,7 @@ function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
         ...(patch ? { patch } : {}),
         ...(exitCode !== undefined ? { exitCode } : {}),
         ...(agentChange ? { agentChange } : {}),
+        ...(contextReceipt ? { contextReceipt } : {}),
       },
     ];
   });

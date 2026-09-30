@@ -16,6 +16,7 @@ import {
   clientIdempotencyKeySchema,
   clientSubmissionMetadataIssue,
 } from "@/lib/chat-origin";
+import { contextRangeIssues, contextTokensSchema } from "@/lib/chat/context-tokens";
 import { REASONING_TIERS } from "@/lib/model-metrics";
 import { RESEARCH_EFFORTS } from "@/lib/research/domain";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
@@ -124,6 +125,25 @@ export const chatBodySchema = z
     reasoningEffort: z.enum(REASONING_TIERS).optional(),
     connectors: z.array(z.string()).max(5).optional(),
     /**
+     * Typed context tokens: the files, projects, apps, crew members, skills,
+     * chats and artifacts the person named inside the message
+     * (src/lib/chat/context-tokens.ts). Each is `{ kind, id, label, range? }`,
+     * where `range` is UTF-16 offsets into `message` and the text there is the
+     * label, so the stored message stays the plain sentence.
+     *
+     * For THIS turn only, and resolved on the server through the mechanism
+     * each kind already has (src/lib/chat/context-resolution.ts): an app joins
+     * this turn's connectors but, unlike `connectors` above, is never written
+     * to the conversation; a skill token arms the skill as `skillSlug` would.
+     * Both spellings are accepted side by side until the composer's inline
+     * token editor replaces the `@`-regex mentions.
+     *
+     * On a regenerate (no `message`) ranges are checked against the stored
+     * message instead, and a regenerate that sends no `context` re-resolves
+     * the tokens the replaced answer was given.
+     */
+    context: contextTokensSchema.optional(),
+    /**
      * A skill to apply to this message, by slug.
      *
      * Per-send and explicit, exactly like deep research: the composer puts it
@@ -191,6 +211,27 @@ export const chatBodySchema = z
         message:
           "A canvas edit requires one direct message and cannot be combined with regenerate, clarification, or deep research.",
       });
+    }
+    if (input.context?.length) {
+      if (input.artifactEdit) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["context"],
+          message: "A canvas edit carries no context tokens: its context is the selected artifact.",
+        });
+      }
+      // Ranges are only checkable against text that came with them. Without a
+      // message (a regenerate, a clarification reply) they are fitted to the
+      // stored message on the server and dropped where they do not fit.
+      if (input.message !== undefined) {
+        for (const rangeIssue of contextRangeIssues(input.message, input.context)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["context", rangeIssue.index, "range"],
+            message: rangeIssue.message,
+          });
+        }
+      }
     }
     const issue = clientSubmissionMetadataIssue({
       origin: input.origin,

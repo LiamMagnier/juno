@@ -19,6 +19,7 @@ import { appendReasoningDelta, emptyReasoning } from "@/lib/reasoning-parts";
 import { resolveModel } from "@/lib/models";
 import type { ResearchEffort } from "@/lib/research/domain";
 import type { ArtifactEditRequest } from "@/lib/artifact-edit";
+import type { ContextToken } from "@/lib/chat/context-tokens";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import {
   formatPreflightClarificationVisibleMessage,
@@ -120,6 +121,15 @@ export type SendOptions = {
   /** Per-send connector selection. When set, overrides the sticky `opts.connectors`
    *  for this generation (used when auto-enabling from prompt intent). */
   connectors?: string[];
+  /**
+   * Typed context tokens in the message (src/lib/chat/context-tokens.ts):
+   * the files, projects, apps, crew members, skills, chats and artifacts the
+   * person named, with ranges into `text`. Per-send, never sticky. The
+   * server resolves each one; nothing the composer draws is trusted as more
+   * than an id. No composer sends these yet — the inline token editor is the
+   * UI phase's — so this is the slot it plugs into.
+   */
+  context?: ContextToken[];
 };
 
 export type ImageEditInput = { prompt: string; model: string; edit: GenerateEditPayload };
@@ -1231,6 +1241,7 @@ export function useChat(opts: UseChatOptions) {
       skillSlug?: string;
       artifactEdit?: ArtifactEditRequest;
       connectors?: string[];
+      context?: ContextToken[];
     }): SendResult => {
       const trimmed = input.text.trim();
       const attachments = input.attachments ?? [];
@@ -1317,6 +1328,9 @@ export function useChat(opts: UseChatOptions) {
           artifactEdit: !opts.privateMode ? input.artifactEdit : undefined,
           reasoningEffort: opts.reasoningEffort,
           connectors: input.connectors ?? opts.connectors,
+          // Resolved server-side; never with a canvas edit (its context is the
+          // artifact) and absent rather than empty so an old server ignores it.
+          context: !input.artifactEdit && input.context?.length ? input.context : undefined,
           preflightClarification: input.preflightClarification,
           // This client draws a task the model starts (the `work` frame and the
           // panel under the reply), so the route may offer `start_task`. Never
@@ -1421,7 +1435,7 @@ export function useChat(opts: UseChatOptions) {
         deepResearch,
       });
       if (localSkip) {
-        return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch, researchEffort: options?.researchEffort, skillSlug: options?.skillSlug });
+        return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch, researchEffort: options?.researchEffort, skillSlug: options?.skillSlug, context: options?.context });
       }
 
       setStatus("checking");
@@ -1464,6 +1478,9 @@ export function useChat(opts: UseChatOptions) {
             // skill, then answered three questions about their request. Losing
             // it here would answer the scoped question the ordinary way.
             skillSlug: options?.skillSlug,
+            // Parked like the skill: the answers resume the message the
+            // person wrote, tokens included.
+            context: options?.context,
           });
           setStatus("idle");
           return { accepted: false, clarificationPending: true };
@@ -1474,7 +1491,7 @@ export function useChat(opts: UseChatOptions) {
         clearTimeout(clarifyTimeout);
       }
 
-      return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch, researchEffort: options?.researchEffort, skillSlug: options?.skillSlug });
+      return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch, researchEffort: options?.researchEffort, skillSlug: options?.skillSlug, context: options?.context });
     },
     [opts.model, opts.privateMode, pendingClarification, startGeneration, status]
   );
@@ -1604,6 +1621,7 @@ export function useChat(opts: UseChatOptions) {
         deepResearch: pending.deepResearch,
         researchEffort: pending.researchEffort,
         skillSlug: pending.skillSlug,
+        context: pending.context,
       });
     },
     [pendingClarification, startGeneration, status]

@@ -1,4 +1,5 @@
 import type { ClientAttachment } from "@/types/chat";
+import type { ContextToken } from "@/lib/chat/context-tokens";
 
 export type PreflightClarificationQuestionType = "single-choice" | "multi-choice" | "text" | "text-long";
 export type PreflightClarificationAnswerSource = "option" | "else" | "skip";
@@ -48,6 +49,8 @@ export interface PendingPreflightClarification {
   researchEffort?: "quick" | "standard" | "deep" | "max";
   /** The skill that was armed when the questions interrupted the send. */
   skillSlug?: string;
+  /** The message's context tokens, for the same reason (src/lib/chat/context-tokens.ts). */
+  context?: ContextToken[];
 }
 
 export interface PreflightClarificationContext {
