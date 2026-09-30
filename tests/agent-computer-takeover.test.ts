@@ -34,6 +34,7 @@ const { resetComputerProviderCache } = req("../src/lib/computer/provider") as ty
 const store = req("../src/lib/computer/store") as typeof import("@/lib/computer/store");
 const takeover = req("../src/lib/computer/takeover") as typeof import("@/lib/computer/takeover");
 const liveView = req("../src/lib/computer/live-view") as typeof import("@/lib/computer/live-view");
+const docker = req("../src/lib/computer/docker") as typeof import("@/lib/computer/docker");
 const domain = req("../src/lib/work/domain") as typeof import("@/lib/work/domain");
 const protocol = req("../src/app/api/work/protocol") as typeof import("@/app/api/work/protocol");
 
@@ -136,6 +137,27 @@ describe("(a) running code or typing on a crew computer always asks", () => {
     assert.equal(ok.isError ?? false, false);
     assert.deepEqual(calls, ["write"]);
     assert.equal(runtime.isSafeComputerWritePath("notes/today.md"), true);
+  });
+
+  it("the provider re-checks the path after symlinks are resolved", () => {
+    // A symlink /home/agent/work/notes -> /home/agent/.bashrc passes the
+    // runner's check on the name; the provider's check on what `realpath`
+    // resolved it to is what refuses it.
+    for (const resolved of [
+      "/home/agent/.bashrc",
+      "/home/agent/.config/autostart/evil.desktop",
+      "/home/agent/work",
+      "/home/agent/work/.hidden/run.sh",
+      "/home/agent/work/a/.profile",
+      "/etc/passwd",
+    ]) {
+      assert.equal(docker.isAgentWorkAreaPath(resolved), false, resolved);
+    }
+    assert.equal(docker.isAgentWorkAreaPath("/home/agent/work/report.csv"), true);
+    assert.equal(docker.isAgentWorkAreaPath("/home/agent/work/downloads/a.pdf"), true);
+    const source = readFileSync("src/lib/computer/docker.ts", "utf8");
+    const write = source.slice(source.indexOf("async writeFile("));
+    assert.ok(write.indexOf("isAgentWorkAreaPath(resolved)") < write.indexOf("spawnDockerWithStdin("));
   });
 
   it("Skip's own sentence no longer promises the floor covers everything", () => {

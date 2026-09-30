@@ -123,6 +123,19 @@ async function runDockerText(
   return out;
 }
 
+/**
+ * Whether a resolved path inside the container is one the agent may write:
+ * under /home/agent/work, with no dot-directory or dotfile on the way. Writing
+ * `~/.bashrc`, `~/.profile` or `~/.config/autostart/*.desktop` would run what
+ * the model wrote the next time a shell or the desktop starts, unasked.
+ */
+export function isAgentWorkAreaPath(resolved: string): boolean {
+  const root = "/home/agent/work/";
+  if (!resolved.startsWith(root)) return false;
+  const rest = resolved.slice(root.length).split("/");
+  return rest.length > 0 && rest.every((part) => part.length > 0 && !part.startsWith("."));
+}
+
 async function resolveContainerPath(
   handle: ComputerHandle,
   rawPath: string
@@ -620,6 +633,13 @@ export class DockerProvider implements ComputerProvider {
     content: Buffer | string
   ): Promise<void> {
     const resolved = await resolveContainerPath(handle, filePath);
+    // The agent's only file write (`computer_files`). The runner refuses a
+    // dotfile or anything outside /home/agent/work before it gets here; the
+    // rule is applied again to the RESOLVED path, so a symlink under work/
+    // pointing at ~/.bashrc or ~/.config/autostart cannot carry the write out.
+    if (!isAgentWorkAreaPath(resolved)) {
+      throw new Error("Files can only be written under /home/agent/work, and never into a dotfile or dot-folder.");
+    }
     const parentDir = path.posix.dirname(resolved);
     await runDockerText([
       "exec",
