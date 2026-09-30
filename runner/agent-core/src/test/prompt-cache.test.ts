@@ -281,3 +281,38 @@ test('a Work run keeps its system prompt while the plan moves', async () => {
     assert.deepEqual(requests[n]!.messages.slice(0, requests[n - 1]!.messages.length), requests[n - 1]!.messages);
   }
 });
+
+test('the project memory is read again at each turn, and the bytes move only when it does', async () => {
+  process.env.JUNO_HOME = tmpdir();
+  const cwd = tmpdir();
+  fs.writeFileSync(path.join(cwd, 'AGENTS.md'), 'Use tabs.');
+  const systems: string[] = [];
+  const provider: ProviderAdapter = {
+    id: 'mock',
+    name: 'Mock',
+    defaultModel: 'mock-1',
+    models: () => ['mock-1'],
+    capabilities: () => ({ tools: true, vision: false, computerUse: false, reasoningLevels: [], maxContext: 100_000, streaming: true, mcp: false }),
+    async *stream(req: ProviderRequest): AsyncGenerator<ProviderStreamEvent> {
+      systems.push(req.system);
+      yield { type: 'text_delta', text: 'ok' };
+      yield { type: 'done', stopReason: 'end_turn', usage: { inputTokens: 1, outputTokens: 1 } };
+    },
+  };
+  const session = AgentSession.create({
+    provider,
+    cwd,
+    mode: 'full',
+    subagents: false,
+    callbacks: { onEvent: () => {}, requestApproval: async () => 'allow' },
+  });
+  await session.prompt('one');
+  await session.prompt('two');
+  // Unchanged workspace: the same bytes, so the cached prefix still serves.
+  assert.equal(systems[1], systems[0]);
+  // Someone edits the memory file between turns: the next turn reads it.
+  fs.writeFileSync(path.join(cwd, 'AGENTS.md'), 'Use spaces.');
+  await session.prompt('three');
+  assert.match(systems[0]!, /Use tabs\./);
+  assert.match(systems[2]!, /Use spaces\./);
+});

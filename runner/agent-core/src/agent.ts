@@ -109,6 +109,11 @@ export interface AgentOptions {
  * conversation and a single changed byte in it makes every later request a
  * prompt-cache miss. The date and the permission mode — which can change mid
  * session — used to be written into it; they are in `buildSessionState` now.
+ *
+ * Deterministic, so it is rebuilt at every turn for free: the same workspace
+ * gives the same bytes and the cache still hits. The one input that may move is
+ * the project memory file, and when someone edits AGENTS.md the next turn
+ * should read the new one — a cache miss that is the point, not a cost.
  */
 function buildSystemPrompt(cwd: string, delegation = false): string {
   let memory = '';
@@ -180,13 +185,6 @@ export class AgentSession {
    * instruction" only once that is true.
    */
   private queuedUserMessages: { text: string; resolve: () => void }[] = [];
-  /**
-   * The system prompt, built once per shape of session and then reused, so
-   * every request of every turn opens with the same bytes. Rebuilt only when
-   * delegation comes or goes, which also changes the tool list — a cache miss
-   * no prompt could avoid.
-   */
-  private systemPrompt: { delegation: boolean; text: string } | null = null;
   private readonly compaction: AgentOptions['compaction'];
 
   private constructor(store: SessionStore, opts: AgentOptions) {
@@ -405,7 +403,7 @@ export class AgentSession {
       const result = await runAgentLoop({
         provider: this.provider,
         model: this.model,
-        system: this.stableSystemPrompt(delegation),
+        system: buildSystemPrompt(this.cwd, delegation),
         sessionState: () => buildSessionState(this.mode, new Date()),
         messages: this.messages,
         tools: toolSpecs,
@@ -476,13 +474,6 @@ export class AgentSession {
         ? { subagentUsage }
         : {}),
     });
-  }
-
-  private stableSystemPrompt(delegation: boolean): string {
-    if (this.systemPrompt?.delegation !== delegation) {
-      this.systemPrompt = { delegation, text: buildSystemPrompt(this.cwd, delegation) };
-    }
-    return this.systemPrompt.text;
   }
 
   private async executeToolCall(
