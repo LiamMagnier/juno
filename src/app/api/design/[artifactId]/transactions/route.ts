@@ -17,11 +17,13 @@ const bodySchema = z.object({
 /**
  * Apply one validated transaction to a design document.
  *
- * This is the only write path. There is deliberately no "replace the document"
- * endpoint: a client that could PUT a whole scene could also PUT one the
- * operation layer never checked, and the undo stack would have nothing to
+ * This is the editor's only write path. There is deliberately no design-only
+ * "replace the document" endpoint: the undo stack would have nothing to
  * invert. Every change — a drag, a keyboard nudge, an accepted AI proposal —
- * arrives here as operations against a named `baseRevision`.
+ * arrives here as operations against a named `baseRevision`. (The generic
+ * artifact save, `POST /api/artifacts/[id]`, still appends a whole document —
+ * restore, and the Mac and iPhone Save — but only one that passes the same
+ * validation every design read applies; see src/lib/design/document-save.ts.)
  *
  * A stale `baseRevision` returns 409 with the current document, so the client
  * can show what changed rather than silently clobbering it.
@@ -43,7 +45,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ artifac
   }
 
   try {
-    const outcome = await commitTransaction(artifact, parsed.data.transaction, parsed.data.origin);
+    const outcome = await commitTransaction(artifact, parsed.data.transaction, parsed.data.origin, user.id);
     if (!outcome.ok) {
       return NextResponse.json(
         { error: outcome.message, code: outcome.code, document: outcome.document ?? null },

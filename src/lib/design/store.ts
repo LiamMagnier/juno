@@ -25,6 +25,7 @@ import {
 import { parseStoredDesignDocument, serializeDesignDocument } from "@/lib/design/migrations";
 import { DesignValidationError } from "@/lib/design/schema";
 import type { DesignDocument } from "@/lib/design/types";
+import { versionIsShared } from "@/lib/share-snapshot";
 
 export type OwnedArtifact = Artifact & { versions: ArtifactVersion[] };
 
@@ -80,16 +81,26 @@ const MAX_DOCUMENT_BYTES = 200_000;
  * — allocates a new one. `allocatesCheckpoint` holds the rule; this function
  * only carries it out.
  *
+ * One exception outranks the rule: a checkpoint a public link serves is never
+ * rewritten. A link is frozen at the version current when it was made, and an
+ * in-place rewrite of that version would publish the edit (audit B1). The
+ * first edit after sharing gets a checkpoint of its own, which the link cannot
+ * see, and the run folds into that one from then on.
+ *
  * Conflict handling is honest at every layer: the transaction is refused if its
  * `baseRevision` is not the document's current revision, an insert is refused
  * if another writer appended first, and an in-place rewrite is refused if the
  * body it was computed from is no longer the one stored. None of the three
  * rebases — the caller is told the document moved and shown the current one.
+ *
+ * `ownerId` is the signed-in owner the artifact was loaded for; it scopes the
+ * share lookup.
  */
 export async function commitTransaction(
   artifact: OwnedArtifact,
   transaction: DesignTransaction,
-  origin: "edit" | "restore" = "edit"
+  origin: "edit" | "restore",
+  ownerId: string
 ): Promise<CommitOutcome> {
   const parsed = designTransactionSchema.safeParse(transaction);
   if (!parsed.success) {
@@ -122,7 +133,8 @@ export async function commitTransaction(
   const latest = currentVersionRow(artifact);
   const folds =
     latest !== null &&
-    !allocatesCheckpoint({ origin: latest.origin, ageMs: Date.now() - latest.createdAt.getTime() }, transaction, origin);
+    !allocatesCheckpoint({ origin: latest.origin, ageMs: Date.now() - latest.createdAt.getTime() }, transaction, origin) &&
+    !(await checkpointIsShared(artifact, latest, ownerId));
 
   const written = folds && latest ? await rewriteVersion(artifact, latest, content) : await appendVersion(artifact, content, origin);
 
@@ -146,6 +158,22 @@ export async function commitTransaction(
     result,
     undo: invertTransaction(result, transaction, new Date().toISOString()),
   };
+}
+
+/**
+ * Whether a public link serves `row`, so folding into it would publish the
+ * edit. Asked only when a fold is otherwise due, so an edit that allocates a
+ * checkpoint anyway costs no query. Revoked links never serve again and are
+ * left out; a link taken down or suspended by a ban can come back, so it
+ * counts. The version a link serves is `sharedVersionAt`'s choice — the rule
+ * the public page itself resolves with (src/lib/share.ts).
+ */
+async function checkpointIsShared(artifact: OwnedArtifact, row: ArtifactVersion, ownerId: string): Promise<boolean> {
+  const links = await prisma.share.findMany({
+    where: { userId: ownerId, kind: "ARTIFACT", artifactId: artifact.id, revokedAt: null },
+    select: { snapshotAt: true },
+  });
+  return versionIsShared(row.version, artifact.versions, links.map((link) => link.snapshotAt));
 }
 
 /** Raised inside an interactive transaction to roll it back; never escapes. */

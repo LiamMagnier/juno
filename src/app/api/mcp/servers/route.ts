@@ -5,9 +5,9 @@ import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import {
   encryptAuthHeader,
-  isAllowedMcpUrl,
   serializeUserMcpServer,
   testUserMcpConnection,
+  userMcpUrlProblem,
 } from "@/lib/user-mcp";
 
 export const runtime = "nodejs";
@@ -50,12 +50,8 @@ export async function POST(req: Request) {
 
   const name = parsed.data.name;
   const url = parsed.data.url;
-  if (!isAllowedMcpUrl(url)) {
-    return NextResponse.json(
-      { error: "Server URL must be https, or http only on localhost for development." },
-      { status: 400 }
-    );
-  }
+  const urlProblem = userMcpUrlProblem(url);
+  if (urlProblem) return NextResponse.json({ error: urlProblem }, { status: 400 });
 
   const count = await prisma.userMcpServer.count({ where: { userId: user.id } });
   if (count >= MAX_USER_MCP_SERVERS) {

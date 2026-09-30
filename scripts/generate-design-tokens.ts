@@ -160,6 +160,17 @@ const colorNames = [...rootDecls.keys()]
   .filter((name) => asColor(rootDecls.get(name)!) !== null)
   .sort();
 
+const colors = colorNames.map((name) => {
+  const light = asColor(rootDecls.get(name)!)!;
+  const darkRaw = darkDecls.get(name);
+  return {
+    name,
+    light,
+    dark: darkRaw ? (asColor(darkRaw) ?? light) : light,
+    inherited: darkRaw === undefined,
+  };
+});
+
 const ACCENTS = ["coral", "juniper", "teal", "violet", "amber", "sage"] as const;
 const ACCENT_TOKENS = ["primary", "ring", "primary-foreground", "primary-ink"] as const;
 
@@ -346,11 +357,14 @@ const spaceSteps = SPACE_STEPS.map((key) => {
 // Emit
 // ---------------------------------------------------------------------------
 
+/**
+ * Over the projected values only, the numbers the clients actually receive. It
+ * used to hash the whole of globals.css, so a comment, a reflowed line or a
+ * rule that declares no token failed `--check` with nothing for a client to
+ * pick up. Now the digest moves exactly when a generated value does.
+ */
 const digest = createHash("sha256")
-  .update(readFileSync(CSS_PATH))
-  .update(JSON.stringify(rawRadius))
-  .update(JSON.stringify(rawFontSize))
-  .update(JSON.stringify(spaceSteps))
+  .update(JSON.stringify({ colors, accents, durations, easings, radii, typeRungs, spaceSteps }))
   .digest("hex")
   .slice(0, 16);
 
@@ -395,13 +409,10 @@ function swiftColor(c: Rgba): string {
   return `JunoColorToken(unchecked: ${f(c.r)}, ${f(c.g)}, ${f(c.b)}${c.a === 1 ? "" : `, ${f(c.a)}`})`;
 }
 
-const swiftColorCases = colorNames
-  .map((name) => {
-    const light = asColor(rootDecls.get(name)!)!;
-    const darkRaw = darkDecls.get(name);
-    const dark = darkRaw ? (asColor(darkRaw) ?? light) : light;
-    const inherited = darkRaw === undefined ? "  // no .dark override; light value applies to both" : "";
-    return `    /// \`--${name}\`${inherited}
+const swiftColorCases = colors
+  .map(({ name, light, dark, inherited }) => {
+    const note = inherited ? "  // no .dark override; light value applies to both" : "";
+    return `    /// \`--${name}\`${note}
     public static let ${swiftName(name)} = JunoGeneratedPair(
         light: ${swiftColor(light)},
         dark: ${swiftColor(dark)}

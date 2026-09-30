@@ -147,10 +147,13 @@ export function AgentProfile({
     window.dispatchEvent(new CustomEvent(COMPOSER_FOCUS_EVENT));
   };
 
+  // The task's panel in the thread (`WorkRunPanel`), found by the session it
+  // draws. A thread follows one task at a time, so any panel is the fallback.
   const showInChat = () => {
     onClose?.();
-    const el = document.querySelector("[data-work-run-panel], [data-work-task-card]");
-    if (el instanceof HTMLElement) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const panels = Array.from(document.querySelectorAll<HTMLElement>("[data-work-run-panel]"));
+    const el = panels.find((panel) => panel.dataset.workRunPanel === task?.sessionId) ?? panels[0];
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   return (

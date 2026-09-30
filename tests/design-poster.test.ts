@@ -65,8 +65,11 @@ const prisma = {
     findUnique: async (args: { where: { artifactId_version: { artifactId: string; version: number } } }) => {
       const { artifactId, version } = args.where.artifactId_version;
       const row = versions.get(`${artifactId}:${version}`);
-      return row ? { content: row.content } : null;
+      return row ? { version, content: row.content } : null;
     },
+    // The public resolver lists stamps and picks with `sharedVersionAt`.
+    findMany: async (args: { where: { artifactId: string } }) =>
+      versionRows(args.where.artifactId).map(({ version, createdAt }) => ({ version, createdAt })),
     findFirst: async (args: { where: { artifactId: string; createdAt?: { lte: Date } }; orderBy: { version: "asc" | "desc" } }) => {
       const rows = versionRows(args.where.artifactId)
         .filter((row) => !args.where.createdAt || row.createdAt <= args.where.createdAt.lte)

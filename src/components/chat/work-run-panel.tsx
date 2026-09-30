@@ -105,6 +105,9 @@ export function WorkRunPanel({
   return (
     <motion.section
       aria-labelledby={titleId}
+      // What an agent profile's "Show in chat" / "Answer in chat" scrolls to
+      // (agent-panel.tsx), keyed by the session this panel draws.
+      data-work-run-panel={session.id}
       // Fade and a 4px rise on the base rung: the panel arrives under the
       // reply that announced it, so it rises into place rather than dropping
       // in. Reduced motion keeps the fade and loses the travel.

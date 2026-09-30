@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { serializeArtifact } from "@/lib/serializers";
+import { checkDesignDocumentSave } from "@/lib/design/document-save";
 
 const postSchema = z.object({
   content: z.string().max(200_000),
@@ -47,6 +48,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const parsed = postSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+
+  // A design body must be a document the editor can open: this is the route
+  // restore and the Mac and iPhone Save write a whole design through, and it
+  // used to store any text (audit B2).
+  if (artifact.type === "DESIGN") {
+    const check = checkDesignDocumentSave(parsed.data.content);
+    if (!check.ok) return NextResponse.json({ error: check.error, issues: check.issues }, { status: 400 });
+  }
 
   if (parsed.data.baseVersion != null && parsed.data.baseVersion !== artifact.currentVersion) {
     return NextResponse.json(

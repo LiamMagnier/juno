@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-262 routes: 169 native, 31 planned, 49 web only, 13 internal. 44 pages: on the Mac 33 native, 2 partial, 2 planned, 7 web only; on iOS 17 native, 6 partial, 14 planned, 7 web only.
+269 routes: 176 native, 30 planned, 49 web only, 14 internal. 44 pages: on the Mac 33 native, 2 partial, 2 planned, 7 web only; on iOS 17 native, 6 partial, 14 planned, 7 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -35,13 +35,13 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 12 | 4 | 2 | 0 |
 | [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 5 | 2 | 2 | 0 |
 | [Memory](#memory) | 1/1 | 1/1 | 12 | 0 | 0 | 0 |
-| [Connections](#connections) | 1/1 | 1/1 | 6 | 1 | 3 | 2 |
-| [Skills](#skills) | 4/4 | 0/4 | 9 | 0 | 0 | 0 |
+| [Connections](#connections) | 1/1 | 1/1 | 10 | 1 | 3 | 2 |
+| [Skills](#skills) | 4/4 | 0/4 | 10 | 0 | 0 | 0 |
 | [Assistants](#assistants) | 1/1 | 0/1 | 2 | 0 | 0 | 0 |
 | [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 0 | 2 | 0 |
 | [Automations](#automations) | 3/3 | 0/3 | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
-| [Agents](#agents) | 3/3 | 3/3 | 16 | 3 | 0 | 0 |
+| [Agents](#agents) | 3/3 | 3/3 | 18 | 2 | 0 | 1 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
 | [Juno Code](#code) | 2/4 (+2 partial) | 0/4 (+3 partial) | 15 | 13 | 3 | 0 |
@@ -273,6 +273,10 @@ Design is a type of artifact (register #73).
 | `/api/connectors/composio/catalog` | GET | Native | JunoChatKit |  |
 | `/api/mcp/[connector]` | GET, POST, DELETE | Internal |  | MCP servers Juno hosts for its own model runs. |
 | `/api/mcp/composio/[slug]` | GET, POST, DELETE | Internal |  | As /api/mcp/{connector}. |
+| `/api/mcp/servers` | GET, POST | Native | JunoChatKit | The Mac adds a custom MCP server (POST). Saved servers reach both apps as `user_mcp:` rows in /api/connectors; the iPhone has no add form yet. |
+| `/api/mcp/servers/[id]` | PATCH, DELETE | Native | JunoChatKit | The Mac edits, enables and disables a custom server (PATCH); Disconnect on either app deletes one (DELETE). |
+| `/api/mcp/servers/[id]/test` | POST | Native | JunoChatKit | Mac only: Test in the edit sheet for a saved server. |
+| `/api/mcp/servers/test` | POST | Native | JunoChatKit | Mac only: Test in the add sheet before saving. |
 
 <a id="skills"></a>
 
@@ -288,6 +292,7 @@ Design is a type of artifact (register #73).
 | Route | Methods | Status | Called from | Note |
 |---|---|---|---|---|
 | `/api/skills` | GET | Native | JunoWorkKit |  |
+| `/api/skills/import/file` | POST | Native | JunoWorkKit | Mac only: previews an uploaded SKILL.md (the web parses it in the browser); no Skills pages on the phone yet. |
 | `/api/skills/import/github` | POST | Native | JunoWorkKit |  |
 | `/api/skills/sources/[id]` | PATCH, DELETE | Native | JunoWorkKit |  |
 | `/api/skills/sources/[id]/check` | POST | Native | JunoWorkKit |  |
@@ -395,7 +400,7 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/agents/[id]/computer/heartbeat` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/computer/poster` | GET | Native | JunoWorkKit |  |
 | `/api/agents/[id]/computer/view` | POST | Native | JunoWorkKit |  |
-| `/api/agents/[id]/duplicate` | POST | Planned |  | Agent duplication; wired into AgentClient.swift in Phase 7. |
+| `/api/agents/[id]/duplicate` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/goals` | GET, POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/goals/[goalId]` | PATCH, DELETE | Native | JunoWorkKit |  |
 | `/api/agents/[id]/ideas/[ideaId]` | PATCH | Native | JunoWorkKit |  |
@@ -403,9 +408,11 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/agents/[id]/notes/[noteId]` | PATCH, DELETE | Native | JunoWorkKit |  |
 | `/api/agents/[id]/reflect` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/routines` | GET, POST | Native | JunoWorkKit |  |
+| `/api/agents/[id]/starter` | GET | Native | JunoWorkKit | The Mac sends a new agent's first message when its thread opens (the web reads it server-side in /chat/{id}); the iPhone does not fetch it yet. |
 | `/api/agents/[id]/tasks` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/thread` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/undo` | POST | Planned |  | Agent event undo; wired into AgentClient.swift in Phase 7. |
+| `/api/agents/hire-draft` | POST | Internal |  | Dead: no client calls it. Its only caller, the web's talk-first hire chat (via `draftHireAgent`), was removed in the agents redesign; kept until the rework deletes it. |
 
 <a id="research"></a>
 
