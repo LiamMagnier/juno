@@ -610,7 +610,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
           break;
         }
         // Straight back to the request: not a provider retry, and no wait.
-        injectSessionState(opts.messages, opts.sessionState?.());
+        if (injectSessionState(opts.messages, opts.sessionState?.())) opts.onMessagesChanged?.();
         continue;
       }
       if (retryable === null) break;
