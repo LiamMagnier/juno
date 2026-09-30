@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   CONVERSATION_LIVE_STATUSES,
+  CONVERSATION_WAITING_STATUSES,
   MAX_LIVE_TASKS_PER_CONVERSATION,
   composerTaskId,
   conversationAtCapMessage,
   memberAtCapMessage,
   mergeDiscoveredTasks,
   tasksToDraw,
+  waitingTasksFirst,
   type ConversationTaskRow,
 } from "@/lib/work/conversation-tasks";
 import { delegatedComposerPlaceholder } from "@/lib/work/delegation";
@@ -125,9 +127,22 @@ test("start_task and hand-offs refuse at the cap, not at the first live task", (
   assert.match(flow, /live\.length >= MAX_LIVE_TASKS_PER_CONVERSATION/);
   const handoff = readFileSync("src/lib/chat/handoff-tool.ts", "utf8");
   assert.match(handoff, /live\.length >= MAX_LIVE_TASKS_PER_CONVERSATION/);
-  // The shipped apps follow the newest task through the unchanged list route.
+  // The shipped apps follow one task per chat through the list route: the
+  // usual order, with a task waiting on the person put first.
   const list = readFileSync("src/app/api/work/sessions/route.ts", "utf8");
   assert.match(list, /orderBy: sessionListOrder\(parsed\.query\)/);
+  assert.match(list, /waitingTasksFirst\(waiting, listed, limit\)/);
+});
+
+test("an app that follows one task per chat sees the task waiting on the person first", () => {
+  // A newer routine is running while an older request waits on an answer: the
+  // apps' composer must land on the waiting one, or its question is unanswerable.
+  const running = { id: "routine" };
+  const asking = { id: "request" };
+  assert.deepEqual(waitingTasksFirst([asking], [running, asking], 1), [asking]);
+  assert.deepEqual(waitingTasksFirst([asking], [running, asking], 5), [asking, running], "no duplicates");
+  assert.deepEqual(waitingTasksFirst([], [running, asking], 1), [running], "nothing waiting: the usual order");
+  assert.deepEqual([...CONVERSATION_WAITING_STATUSES], ["waiting_input", "waiting_approval"]);
 });
 
 test("the chat view draws a card per task and keeps one stream per task", () => {

@@ -140,3 +140,36 @@ export function composerTaskId(
   if (waiting.length > 0) return waiting[0].sessionId;
   return [...live].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0].sessionId;
 }
+
+/** The statuses in which a task has stopped to wait on the person. */
+export const CONVERSATION_WAITING_STATUSES = ["waiting_input", "waiting_approval"] as const;
+
+/**
+ * A conversation's own listing for a client that follows ONE task: the apps
+ * that shipped before several tasks per conversation, which ask
+ * `GET /api/work/sessions?conversationId=&limit=1` and draw the answer as "the
+ * task on this chat", with the composer answering its question.
+ *
+ * While a conversation could hold one live task, the newest row was that task.
+ * Now a newer task (a routine firing in a crew member's thread, a second
+ * request) can be running while an older one waits on the person, and "newest
+ * first" would hide the waiting one from those apps: its question could not be
+ * answered from the chat at all. So a task waiting on the person comes first,
+ * the same rule the web composer follows (`composerTaskId`), then the usual
+ * order. `waiting` and `rest` are each already in their own order.
+ */
+export function waitingTasksFirst<T extends { id: string }>(
+  waiting: readonly T[],
+  rest: readonly T[],
+  limit: number
+): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const row of [...waiting, ...rest]) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    out.push(row);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
