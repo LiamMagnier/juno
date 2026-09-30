@@ -22,14 +22,14 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-269 routes: 176 native, 30 planned, 49 web only, 14 internal. 44 pages: on the Mac 33 native, 2 partial, 2 planned, 7 web only; on iOS 17 native, 6 partial, 14 planned, 7 web only.
+273 routes: 176 native, 34 planned, 50 web only, 13 internal. 44 pages: on the Mac 33 native, 2 partial, 2 planned, 7 web only; on iOS 17 native, 6 partial, 14 planned, 7 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
 | [Sign-in and account security](#auth) | – | – | 15 | 3 | 6 | 0 |
 | [Sync and bootstrap](#sync) | – | – | 6 | 0 | 2 | 0 |
 | [Chat and streaming](#chat) | 2/2 | 2/2 | 9 | 2 | 1 | 0 |
-| [Conversations, messages and sharing](#conversations) | – | – | 9 | 1 | 3 | 0 |
+| [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 1 | 1 | 1 | 0 |
 | [Library, files and knowledge](#library) | 1/2 | 1/2 | 12 | 4 | 2 | 0 |
@@ -37,11 +37,11 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Memory](#memory) | 1/1 | 1/1 | 12 | 0 | 0 | 0 |
 | [Connections](#connections) | 1/1 | 1/1 | 10 | 1 | 3 | 2 |
 | [Skills](#skills) | 4/4 | 0/4 | 10 | 0 | 0 | 0 |
-| [Assistants](#assistants) | 1/1 | 0/1 | 2 | 0 | 0 | 0 |
-| [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 0 | 2 | 0 |
+| [Assistants](#assistants) | 1/1 | 0/1 | 2 | 1 | 0 | 0 |
+| [Tasks in chat](#tasks) | 2/2 | 0/2 (+2 partial) | 13 | 1 | 2 | 0 |
 | [Automations](#automations) | 3/3 | 0/3 | 5 | 0 | 0 | 0 |
 | [Permissions and this Mac as a host](#permissions) | 2/2 | 0/2 | 6 | 0 | 0 | 0 |
-| [Agents](#agents) | 3/3 | 3/3 | 18 | 2 | 0 | 1 |
+| [Agents](#agents) | 3/3 | 3/3 | 18 | 3 | 1 | 0 |
 | [Research](#research) | 2/2 | 2/2 | 7 | 0 | 0 | 0 |
 | [Voice](#voice) | – | – | 4 | 0 | 3 | 0 |
 | [Juno Code](#code) | 2/4 (+2 partial) | 0/4 (+3 partial) | 15 | 13 | 3 | 0 |
@@ -138,6 +138,7 @@ POST /api/chat's body and frames are classified field by field in the chat wire 
 | `/api/conversations/[id]/fork` | POST | Native | JunoChatKit |  |
 | `/api/conversations/[id]/messages` | POST | Native | JunoChatKit |  |
 | `/api/conversations/[id]/title` | POST | Native | JunoChatKit |  |
+| `/api/conversations/[id]/tasks` | GET | Planned |  | Every task a conversation draws (all live ones plus the newest finished one), for several tasks per conversation. The apps still follow the newest task through /api/work/sessions?conversationId=, which is unchanged. |
 | `/api/folders` | GET, POST | Web only |  | The apps create and rename folders through sync (/api/v1/mutations). |
 | `/api/folders/[id]` | PATCH, DELETE | Web only |  | As /api/folders. |
 | `/api/messages/[id]` | PATCH | Planned |  | Edit-and-resend of a sent question, keeping the old text as a version; the Mac's question editor does not call it. |
@@ -314,6 +315,7 @@ Design is a type of artifact (register #73).
 |---|---|---|---|---|
 | `/api/assistants` | GET, POST | Native | JunoChatKit |  |
 | `/api/assistants/[id]` | GET, PATCH, DELETE | Native | JunoChatKit |  |
+| `/api/assistants/[id]/move-to-crew` | POST | Planned |  | Move to crew (D-007): the assistant becomes a crew member and leaves the list. The apps still read and open assistants; they have no Move action yet. |
 
 <a id="tasks"></a>
 
@@ -342,6 +344,7 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/work/sessions/[id]/context` | GET, PATCH | Native | JunoWorkKit |  |
 | `/api/work/sessions/[id]/events` | GET | Native | JunoWorkKit |  |
 | `/api/work/sessions/[id]/runs` | GET, POST | Native | JunoWorkKit |  |
+| `/api/work/sessions/[id]/transfer` | POST | Planned |  | Hands a task to another crew member or back to the person, with a reason, at a safe point; recorded as an owner_transferred event. Web-first (crew foundations); no app screen yet. |
 | `/api/work/sessions/counts` | GET | Web only |  | The web's sidebar counts; the Mac counts the chats its column can show (register #69). |
 
 <a id="automations"></a>
@@ -400,6 +403,7 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/agents/[id]/computer/heartbeat` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/computer/poster` | GET | Native | JunoWorkKit |  |
 | `/api/agents/[id]/computer/view` | POST | Native | JunoWorkKit |  |
+| `/api/computer-view/session` | POST | Web only |  | Called by the /computer-view page the apps open in a web view: it trades the page's one-time ticket for the viewer's credentials. The apps never call it themselves. |
 | `/api/agents/[id]/duplicate` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/goals` | GET, POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/goals/[goalId]` | PATCH, DELETE | Native | JunoWorkKit |  |
@@ -408,11 +412,11 @@ The web retired its task pages: a task lives in its chat (Phase 5). `/api/tasks`
 | `/api/agents/[id]/notes/[noteId]` | PATCH, DELETE | Native | JunoWorkKit |  |
 | `/api/agents/[id]/reflect` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/routines` | GET, POST | Native | JunoWorkKit |  |
+| `/api/agents/[id]/setup-changes/[changeId]` | GET, POST | Planned |  | A setup change asked for in a crew member's thread: read its live status, Apply (digest-bound) or Undo. The apps show the thread's text but not the card yet. |
 | `/api/agents/[id]/starter` | GET | Native | JunoWorkKit | The Mac sends a new agent's first message when its thread opens (the web reads it server-side in /chat/{id}); the iPhone does not fetch it yet. |
 | `/api/agents/[id]/tasks` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/thread` | POST | Native | JunoWorkKit |  |
 | `/api/agents/[id]/undo` | POST | Planned |  | Agent event undo; wired into AgentClient.swift in Phase 7. |
-| `/api/agents/hire-draft` | POST | Internal |  | Dead: no client calls it. Its only caller, the web's talk-first hire chat (via `draftHireAgent`), was removed in the agents redesign; kept until the rework deletes it. |
 
 <a id="research"></a>
 

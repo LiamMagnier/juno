@@ -325,6 +325,18 @@
     "ClientWorkSession.updatedAt": {
       "status": "planned",
       "note": "Not read yet; the Mac orders tasks by lastActivityAt, as the web does."
+    },
+    "ClientWorkSession.agentId": {
+      "status": "planned",
+      "note": "The crew member that owns the task (refoundation crew foundations). The apps draw a task without its owner yet."
+    },
+    "ClientWorkSession.parentSessionId": {
+      "status": "planned",
+      "note": "The task a hand-off was delegated from. Not drawn anywhere yet; the web reads it for the delegation graph later."
+    },
+    "ClientWorkSession.delegatedByAgentId": {
+      "status": "planned",
+      "note": "The crew member that handed the task over. Not drawn by the apps yet."
     }
   },
   "nativeOnly": {

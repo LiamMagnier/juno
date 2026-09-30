@@ -9,7 +9,9 @@ export DISPLAY=:0
 
 mkdir -p /home/agent/work/downloads /home/agent/.chrome /home/agent/.juno
 chmod 700 /home/agent/.juno
-rm -f /tmp/.X0-lock
+# Earlier builds left the VNC password file on the volume, where the agent's
+# shell could read it. It now lives in tmpfs and x11vnc deletes it on read.
+rm -f /home/agent/.juno/vncpass /tmp/.X0-lock
 
 Xvfb :0 -screen 0 1280x800x24 -nolisten tcp -dpi 96 >/tmp/xvfb.log 2>&1 &
 xvfb=$!

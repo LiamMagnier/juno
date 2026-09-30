@@ -24,6 +24,7 @@ export interface DockerCreateArgvOptions {
   memoryMb?: number;
   cpus?: number;
   image?: string;
+  network?: string;
 }
 
 /**
@@ -36,6 +37,7 @@ export function buildDockerCreateArgv(opts: DockerCreateArgvOptions): string[] {
   const memoryMb = opts.memoryMb ?? env.agentComputer.memoryMb;
   const cpus = opts.cpus ?? env.agentComputer.cpus;
   const image = opts.image ?? env.agentComputer.image;
+  const network = opts.network ?? env.agentComputer.network;
   const name = `juno-agent-${opts.agentId}`;
 
   const argv: string[] = [
@@ -45,7 +47,7 @@ export function buildDockerCreateArgv(opts: DockerCreateArgvOptions): string[] {
     "--hostname",
     "computer",
     "--network",
-    "juno-computers",
+    network,
     "--dns",
     "1.1.1.1",
     "--dns",
@@ -79,8 +81,10 @@ export function buildDockerCreateArgv(opts: DockerCreateArgvOptions): string[] {
     `juno.agent=${opts.agentId}`,
     "--label",
     `juno.user=${opts.userId}`,
-    "-e",
-    "JUNO_CDP_TOKEN",
+    // No `-e JUNO_CDP_TOKEN`: `docker exec` inherits a container's configured
+    // env, so the agent's shell (and so the model) could print it with `env`.
+    // The token reaches the gate through stdin into tmpfs after every start
+    // (`provisionCdpToken`), and the gate deletes the file once it has it.
     "--restart",
     "no",
     "--stop-timeout",
@@ -117,6 +121,19 @@ async function runDockerText(
     );
   }
   return out;
+}
+
+/**
+ * Whether a resolved path inside the container is one the agent may write:
+ * under /home/agent/work, with no dot-directory or dotfile on the way. Writing
+ * `~/.bashrc`, `~/.profile` or `~/.config/autostart/*.desktop` would run what
+ * the model wrote the next time a shell or the desktop starts, unasked.
+ */
+export function isAgentWorkAreaPath(resolved: string): boolean {
+  const root = "/home/agent/work/";
+  if (!resolved.startsWith(root)) return false;
+  const rest = resolved.slice(root.length).split("/");
+  return rest.length > 0 && rest.every((part) => part.length > 0 && !part.startsWith("."));
 }
 
 async function resolveContainerPath(
@@ -219,14 +236,14 @@ export class DockerProvider implements ComputerProvider {
     const volume = `juno-agent-${opts.agentId}`;
 
     if (process.platform === "darwin" && process.env.NODE_ENV !== "production") {
-      const netCheck = await runDockerText(
-        ["network", "inspect", "juno-computers"],
-        { allowNonZero: true }
-      );
+      const network = env.agentComputer.network;
+      const netCheck = await runDockerText(["network", "inspect", network], { allowNonZero: true });
       if (netCheck.exitCode !== 0) {
-        await runDockerText(["network", "create", "juno-computers"], {
-          allowNonZero: true,
-        });
+        // Same shape as setup-vm.sh: no container-to-container traffic.
+        await runDockerText(
+          ["network", "create", "--driver", "bridge", "-o", "com.docker.network.bridge.enable_icc=false", network],
+          { allowNonZero: true }
+        );
       }
     }
 
@@ -240,11 +257,39 @@ export class DockerProvider implements ComputerProvider {
       userId: opts.userId,
     });
 
-    await runDockerText(createArgv, {
-      env: { JUNO_CDP_TOKEN: opts.cdpToken },
-    });
+    await runDockerText(createArgv);
 
     return { name, volume };
+  }
+
+  /**
+   * Hands the CDP gate its token after a start. Written to tmpfs through
+   * stdin (never argv, never env), renamed into place so the gate never reads
+   * half a token, and waited on until the gate has taken and deleted it, so
+   * the first browser connection after a wake is not refused.
+   */
+  async provisionCdpToken(handle: ComputerHandle, token: string): Promise<void> {
+    await spawnDockerWithStdin(
+      [
+        "exec",
+        "-i",
+        "--user",
+        "1000",
+        handle.name,
+        "sh",
+        "-c",
+        "umask 077 && cat > /tmp/.juno-cdp-token.part && mv -f /tmp/.juno-cdp-token.part /tmp/.juno-cdp-token",
+      ],
+      Buffer.from(token, "utf8")
+    );
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      const left = await runDockerText(
+        ["exec", "--user", "1000", handle.name, "test", "-e", "/tmp/.juno-cdp-token"],
+        { allowNonZero: true, timeoutMs: 5_000 }
+      );
+      if (left.exitCode !== 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
   }
 
   async start(handle: ComputerHandle): Promise<void> {
@@ -321,12 +366,12 @@ export class DockerProvider implements ComputerProvider {
     const inspectOut = await runDockerText([
       "inspect",
       "-f",
-      '{{(index .NetworkSettings.Networks "juno-computers").IPAddress}}',
+      `{{(index .NetworkSettings.Networks ${JSON.stringify(env.agentComputer.network)}).IPAddress}}`,
       handle.name,
     ]);
     const ip = inspectOut.stdout.trim();
     if (!ip) {
-      throw new Error(`Container ${handle.name} has no IP on juno-computers`);
+      throw new Error(`Container ${handle.name} has no IP on ${env.agentComputer.network}`);
     }
     return {
       cdpUrl: `ws://${ip}:9222`,
@@ -588,6 +633,13 @@ export class DockerProvider implements ComputerProvider {
     content: Buffer | string
   ): Promise<void> {
     const resolved = await resolveContainerPath(handle, filePath);
+    // The agent's only file write (`computer_files`). The runner refuses a
+    // dotfile or anything outside /home/agent/work before it gets here; the
+    // rule is applied again to the RESOLVED path, so a symlink under work/
+    // pointing at ~/.bashrc or ~/.config/autostart cannot carry the write out.
+    if (!isAgentWorkAreaPath(resolved)) {
+      throw new Error("Files can only be written under /home/agent/work, and never into a dotfile or dot-folder.");
+    }
     const parentDir = path.posix.dirname(resolved);
     await runDockerText([
       "exec",
@@ -634,9 +686,17 @@ export class DockerProvider implements ComputerProvider {
     handle: ComputerHandle,
     opts: { controlPassword: string; viewPassword: string }
   ): Promise<void> {
+    // The password file goes to tmpfs, never the agent's volume, and x11vnc
+    // deletes it the moment it has read it (`rm:`). A file left in
+    // /home/agent/.juno was readable by the agent's shell, which runs as the
+    // same uid, so the model could have read the control password.
     const passFileContent = Buffer.from(
       `${opts.controlPassword}\n__BEGIN_VIEWONLY__\n${opts.viewPassword}\n`,
       "utf8"
+    );
+    await runDockerText(
+      ["exec", "--user", "1000", handle.name, "pkill", "-x", "x11vnc"],
+      { allowNonZero: true }
     );
     await spawnDockerWithStdin(
       [
@@ -647,13 +707,9 @@ export class DockerProvider implements ComputerProvider {
         handle.name,
         "sh",
         "-c",
-        "mkdir -p /home/agent/.juno && chmod 700 /home/agent/.juno && umask 077 && cat > /home/agent/.juno/vncpass",
+        "umask 077 && rm -f /tmp/.juno-vncpass /home/agent/.juno/vncpass && cat > /tmp/.juno-vncpass",
       ],
       passFileContent
-    );
-    await runDockerText(
-      ["exec", "--user", "1000", handle.name, "pkill", "-x", "x11vnc"],
-      { allowNonZero: true }
     );
     await runDockerText([
       "exec",
@@ -669,8 +725,9 @@ export class DockerProvider implements ComputerProvider {
       "-shared",
       "-rfbport",
       "5900",
+      "-noipv6",
       "-passwdfile",
-      "/home/agent/.juno/vncpass",
+      "rm:/tmp/.juno-vncpass",
       "-bg",
       "-o",
       "/tmp/x11vnc.log",

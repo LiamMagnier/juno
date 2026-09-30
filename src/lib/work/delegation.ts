@@ -68,7 +68,13 @@ export function delegatedComposerMode(input: {
  * whose placeholder never changed while a run was waiting on an answer was the
  * whole of finding (c): the reader typed the answer, and it went nowhere.
  */
-export function delegatedComposerPlaceholder(mode: DelegatedComposerMode): string {
+export function delegatedComposerPlaceholder(mode: DelegatedComposerMode, taskTitle?: string | null): string {
+  // With several tasks live the field says which one it goes to; with one, the
+  // sentence it always said.
+  const title = taskTitle?.replace(/\s+/g, " ").trim();
+  if (title) {
+    return mode.kind === "answer" ? `Answer the question from “${title}”…` : `Add an instruction to “${title}”…`;
+  }
   return mode.kind === "answer"
     ? "Answer Juno’s question…"
     : "Add an instruction to the running task…";

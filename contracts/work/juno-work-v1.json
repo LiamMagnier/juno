@@ -626,6 +626,11 @@
           "value": "error",
           "summary": "Something went wrong, in language the user can act on.",
           "visibility": "user"
+        },
+        {
+          "value": "owner_transferred",
+          "summary": "The task changed hands between crew members, or back to the person: who moved it, from whom, to whom and why. Written by the server, never by an executor.",
+          "visibility": "user"
         }
       ]
     },

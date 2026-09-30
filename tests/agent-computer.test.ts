@@ -319,8 +319,6 @@ describe("agent-computer provider and lifecycle", () => {
       "juno.agent=ag_123",
       "--label",
       "juno.user=usr_456",
-      "-e",
-      "JUNO_CDP_TOKEN",
       "--restart",
       "no",
       "--stop-timeout",
@@ -337,6 +335,12 @@ describe("agent-computer provider and lifecycle", () => {
     assert.ok(!prodArgv.includes("--cap-add"));
     assert.ok(!joined.includes("seccomp=unconfined"));
     assert.ok(!joined.includes("JUNO_CDP_TOKEN="));
+    // Not even the bare name: `docker exec` (the agent's shell) inherits a
+    // container's configured env, so the token must never be part of it. It
+    // reaches the gate through stdin into tmpfs (`provisionCdpToken`).
+    assert.ok(!joined.includes("JUNO_CDP_TOKEN"));
+    assert.ok(!prodArgv.includes("-e"));
+    assert.ok(!prodArgv.includes("--env"));
 
     // macOS dev argv adds 127.0.0.1 ephemeral port mappings
     const macDevArgv = buildDockerCreateArgv({
@@ -714,33 +718,13 @@ describe("agent-computer provider and lifecycle", () => {
     assert.equal(selection.degradation.length, 0);
   });
 
-  it("verifies handoff codes, view sessions, and control password rotation on heartbeat ended", async () => {
+  it("verifies view sessions, and control password rotation on heartbeat ended", async () => {
     const store = req("../src/lib/computer/store") as typeof import("../src/lib/computer/store");
-    const liveView = req("../src/lib/computer/live-view") as typeof import("../src/lib/computer/live-view");
     const domain = req("../src/lib/agents/domain") as typeof import("../src/lib/agents/domain");
 
-    // 1. Handoff code HMAC verification
-    const { code } = liveView.mintHandoffCode({
-      agentId: "agent_1",
-      userId: "user_1",
-      mode: "control",
-      ttlSeconds: 60,
-      authSecret: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-    });
-    const verified = liveView.verifyHandoffCode(code, {
-      authSecret: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-    });
-    assert.ok(verified);
-    assert.equal(verified.agentId, "agent_1");
-    assert.equal(verified.userId, "user_1");
-    assert.equal(verified.mode, "control");
-
-    assert.equal(
-      liveView.verifyHandoffCode(`${code}bad`, {
-        authSecret: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      }),
-      null
-    );
+    // 1. The app links are single-use codes stored server-side now
+    // (src/lib/computer/handoff.ts, tests/agent-computer-handoff.test.ts), not
+    // signed bearers: nothing here mints or verifies one.
 
     // 2. Asleep computer refuses openComputerViewSession with AsleepComputerError
     await enableComputer("user_1", "agent_view");

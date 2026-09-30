@@ -206,6 +206,14 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // secrets, lease state, and runtime usage. Cross-account sweeps (idle
   // descanso/sleep and reboot reconciliation) use prismaUnguarded explicitly.
   ["AgentComputer", "userId"],
+  // A crew member's setup changes asked for in its thread: before/after state
+  // of its apps, approval mode, budget and routines. Every read is scoped by
+  // the person's id (src/lib/agents/setup-changes-store.ts).
+  ["AgentSetupChange", "userId"],
+  // Single-use computer view links. The one lookup that cannot know the owner
+  // first, spending a code by its hash, uses prismaUnguarded on purpose
+  // (src/lib/computer/handoff.ts): the code is the authorization.
+  ["AgentComputerHandoff", "userId"],
 ]);
 
 /**

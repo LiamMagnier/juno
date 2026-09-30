@@ -16,7 +16,7 @@ import {
   isTaskApproval,
   parseStartTaskArgs,
   taskActivityTitle,
-  taskAlreadyRunning,
+  taskConversationAtCap,
   taskApprovalArgs,
   taskIdempotencyKeys,
   taskRefusalFromResponse,
@@ -285,9 +285,12 @@ test("every sentence the tool writes itself says nothing started, and uses no da
     assert.match(message, /[Nn]othing (new )?was started\.$/, reason);
     assert.doesNotMatch(message, /[—–]/, reason);
   }
-  const running = taskAlreadyRunning("Weekly digest");
-  assert.equal(running.reason, "task_already_running");
-  assert.match(running.message, /"Weekly digest"/);
+  // Several tasks per conversation now; at the cap the refusal names them all.
+  const full = taskConversationAtCap(["Weekly digest", "Pricing sheet", "Inbox triage", "Q3 plan"]);
+  assert.equal(full.reason, "conversation_at_task_cap");
+  assert.match(full.message, /already has 4 tasks going: "Weekly digest", "Pricing sheet", "Inbox triage" and "Q3 plan"\./);
+  assert.match(full.message, /Nothing new was started\.$/);
+  assert.doesNotMatch(full.message, /[—–]/);
 });
 
 test("an outcome is JSON for the model and a sentence for the panel", () => {
@@ -439,7 +442,7 @@ test("the chat route gates the tool and its prompt section on one flag", () => {
   assert.match(route, /taskHandoff: taskToolOn,/);
   // The task tool, handoff tool and agent config tools ride one list, each only
   // when its own gate opened; an empty list is no native tools at all.
-  assert.match(route, /const nativeTools = \[taskTool, handoffTool(?:, \.\.\.agentConfigTools)?\]\.filter\(/);
+  assert.match(route, /const nativeTools = \[taskTool, handoffTool(?:, \.\.\.agentConfigTools)?(?:, setupChangeTool)?\]\.filter\(/);
   assert.match(route, /nativeTools: nativeTools\.length > 0 \? nativeTools : undefined,/);
   assert.match(route, /send\(\{ type: "work", session \}\);/);
   // The private branch builds no task or handoff tool: it sits above the saved

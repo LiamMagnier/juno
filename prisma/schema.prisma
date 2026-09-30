@@ -153,6 +153,8 @@ model User {
   agentNotes                  AgentNote[]
   agentEvents                 AgentEvent[]
   agentComputers              AgentComputer[]
+  agentComputerHandoffs       AgentComputerHandoff[]
+  agentSetupChanges           AgentSetupChange[]
 
   @@index([image])
 }
@@ -2450,10 +2452,31 @@ model WorkSession {
   /// Work itself. A plain pointer rather than a relation: the conversation may
   /// be private-mode and never mirrored server-side.
   conversationId String?
-  /// The agent this task was delegated to, when it was (docs/design/AGENTS.md).
-  /// A plain pointer like `conversationId`: retiring an agent must not take its
-  /// tasks' history with it, and the task is still the account's either way.
+  /// The crew member that OWNS this task: the one it runs as (brief, apps,
+  /// approval mode, budget) and the one whose state it counts towards. Null is
+  /// a task the person owns themselves. A plain pointer like `conversationId`:
+  /// retiring a member must not take its tasks' history with it, and the task
+  /// is still the account's either way.
+  ///
+  /// Written once when the task is created, and after that ONLY by
+  /// `transferWorkSessionOwner` (src/lib/work/ownership.ts), which requires the
+  /// task to be at a safe point and records who moved it, when and why as an
+  /// `owner_transferred` event. The executor's lease (`WorkRun.claimedBy`) is a
+  /// different lock: it says which process runs an attempt, never who owns it.
   agentId        String?
+  /// The task this one was delegated from, when one was: a hand-off started
+  /// while the handing member had a task in the conversation it was asked in.
+  /// With `delegatedByAgentId` and `originConversationId` this is the
+  /// delegation graph; the goal no longer carries it as prose alone.
+  parentSessionId      String?
+  /// The crew member that handed this task over, when one did.
+  delegatedByAgentId   String?
+  /// The conversation the hand-off was asked in (the source thread), so the
+  /// result can be reported back where the work came from.
+  originConversationId String?
+  /// When ownership last changed through a transfer. Null for a task that is
+  /// still with the member it was created for.
+  ownerTransferredAt   DateTime?
 
   title       String
   titleSource String @default("default")
@@ -2521,6 +2544,7 @@ model WorkSession {
   @@index([projectId, lastActivityAt])
   @@index([conversationId])
   @@index([userId, agentId, lastActivityAt])
+  @@index([parentSessionId])
 }
 
 /// One connected app a single task is allowed to reach.
@@ -3047,6 +3071,11 @@ model WorkSkill {
   /// Its `SKILL.md` path inside the source's repository: the identity an
   /// update check matches upstream files against, since the slug can differ.
   sourcePath String?
+  /// Set when an assistant (`kind: "assistant"`) was moved to the crew (D-007):
+  /// the crew member it became. The row stays readable by id for the apps
+  /// that shipped with Assistants, and lists leave it out.
+  movedToAgentId String?
+  movedAt        DateTime?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3592,6 +3621,9 @@ model ResearchRun {
   id                 String    @id @default(cuid())
   userId             String
   conversationId     String?
+  /// The crew member whose thread started it, when one did. Stamped at
+  /// creation from the conversation, like `WorkSession.agentId`.
+  agentId            String?
   goal               String    @db.Text
   /// accepted | planning | awaiting_plan_confirmation | investigating | reviewing |
   /// synthesizing | validating_citations | awaiting_user_input | paused |
@@ -3847,6 +3879,13 @@ model Agent {
 
   /// needs_you | results | all. Which notifications this agent sends.
   notify   String    @default("results")
+  /// Its own spending cap inside the account's weekly usage window, in
+  /// micro-USD. Null means no cap of its own: it shares the account's windows
+  /// like any chat. Checked when a task is admitted and while it runs
+  /// (src/lib/agents/budget.ts); it can only narrow what the account allows.
+  budgetMicroUsd    Int?
+  /// The assistant this member was moved from (D-007), when it was.
+  sourceAssistantId String?
   /// Set when the agent is pinned in the roster; pinned agents sort first.
   pinnedAt DateTime?
 
@@ -3862,6 +3901,7 @@ model Agent {
   notes    AgentNote[]
   events   AgentEvent[]
   computer AgentComputer?
+  setupChanges AgentSetupChange[]
 
   @@index([userId, deletedAt, sortOrder])
 }
@@ -3980,6 +4020,14 @@ model AgentComputer {
   activeSeconds  Int       @default(0) // lifetime awake seconds, for the UI
   diskMb         Int? // last measured /home/agent size
   lastError      String?
+  /// Exclusive takeover. While `takeoverUntil` is in the future the person has
+  /// control and the agent's computer tools (screenshots included) refuse; a
+  /// control heartbeat extends it and Hand back clears it. A lapsed window
+  /// hands the computer back on its own, so a closed tab never strands a task.
+  takeoverUntil     DateTime?
+  takeoverStartedAt DateTime?
+  /// Which client holds it: "web" or "native:<device session id>".
+  takeoverBy        String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -3987,4 +4035,87 @@ model AgentComputer {
 
   @@index([userId, status])
   @@index([status, lastActiveAt])
+}
+
+/// A one-time link that opens an agent's computer in a web view (the apps'
+/// `/computer-view?c=…` sheet). Single use in two steps, both atomic:
+///
+///   1. The page consumes the code (`consumedAt`) and hands the viewer a
+///      one-time ticket instead of credentials, so nothing secret is in the
+///      page's markup or its URL.
+///   2. The viewer exchanges the ticket (`exchangedAt`) for the relay token and
+///      VNC password over a POST.
+///
+/// Both secrets are stored as SHA-256 hashes, both live 60 seconds, and the
+/// grant is bound to the session that minted it: a native device session that
+/// has since been revoked cannot be used, and a signed-in browser for another
+/// account is refused.
+model AgentComputerHandoff {
+  id              String    @id @default(cuid())
+  userId          String
+  agentId         String
+  /// watch | control
+  mode            String
+  codeHash        String    @unique
+  /// The native device session that asked for it, when one did.
+  deviceSessionId String?
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  ticketHash      String?   @unique
+  ticketExpiresAt DateTime?
+  exchangedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+/// A change to a crew member's setup, asked for in its thread
+/// (`propose_setup_change`, src/lib/chat/setup-change-tool.ts).
+///
+/// Narrowing changes (fewer notifications, stricter approval, an app removed,
+/// a routine paused) apply at once. Widening ones (an app added, a looser
+/// approval mode, a raised budget, a routine added or resumed, a model)
+/// apply only after the person answers a deterministic approval card. Either
+/// way `before` holds what Undo restores, and Undo is always available on an
+/// applied change.
+model AgentSetupChange {
+  id             String    @id @default(cuid())
+  userId         String
+  agentId        String
+  conversationId String?
+  /// The user turn that asked for it, when one did.
+  userMessageId  String?
+  /// Idempotency: one change per call in a turn, whatever retries.
+  callKey        String?
+  /// notify | approval_mode | apps_add | apps_remove | routine_add |
+  /// routine_pause | routine_resume | budget | model | skill_draft
+  kind           String
+  /// narrowing | widening | neutral
+  direction      String
+  /// One sentence: what changes.
+  summary        String    @db.Text
+  /// One sentence: what it affects.
+  affects        String    @db.Text
+  before         Json      @default("{}")
+  after          Json      @default("{}")
+  /// proposed | awaiting_approval | applied | declined | undone | failed
+  status         String    @default("proposed")
+  /// The approval receipt a widening change was applied under.
+  approvalReceiptId String?
+  /// Why it did not apply, in the person's words, when it did not.
+  detail         String?   @db.Text
+  appliedAt      DateTime?
+  undoneAt       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, callKey])
+  @@index([agentId, createdAt])
+  @@index([userId, conversationId, createdAt])
 }

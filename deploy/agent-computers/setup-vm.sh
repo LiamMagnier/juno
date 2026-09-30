@@ -7,6 +7,7 @@ set -euo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo" >&2; exit 1; }
 HERE="$(cd "$(dirname "$0")" && pwd -P)"
 RUN_USER="${SUDO_USER:-liammgnr}"
+# The tag `src/lib/env.ts` defaults to (`agentComputer.image`). Keep them equal.
 IMAGE="${COMPUTER_DOCKER_IMAGE:-juno-computer:1}"
 NET=juno-computers
 SUBNET=172.30.0.0/24
@@ -48,4 +49,6 @@ docker build --pull -t "$IMAGE" "$HERE"
 
 echo
 echo "Agent computers are ready on this server."
+echo "Computers created by an older build keep their old arguments: use Reset on each one"
+echo "(or docker rm -f juno-agent-*; volumes are kept) so they are recreated with this image."
 echo "Turn them on:  cd ~/juno && ./scripts/set-env-key.sh COMPUTER_PROVIDER --reload   (value: docker)"

@@ -183,7 +183,7 @@ test("the whole goal fits on the approval card, however long the brief", () => {
 test("every sentence the tool writes itself says nothing was handed off, and uses no dash as a separator", () => {
   const sentences = [
     ...Object.entries(HANDOFF_REFUSALS),
-    ["teammate_busy", teammateBusy("Atlas", "Weekly digest").message],
+    ["teammate_busy", teammateBusy("Atlas", ["Weekly digest", "Inbox", "Q3", "Digest"]).message],
     ...["Zed", "Pip", "Scout"].map((name) => {
       const outcome = resolveTeammate(name, ROSTER, SELF.id);
       return [name, outcome.kind === "refused" ? outcome.outcome.message : ""];
@@ -193,7 +193,10 @@ test("every sentence the tool writes itself says nothing was handed off, and use
     assert.match(message, /[Nn]othing (new )?was handed off\.$/, reason);
     assert.doesNotMatch(message, /[—–]/, reason);
   }
-  assert.match(teammateBusy("Atlas", "Weekly digest").message, /^Atlas is already working on "Weekly digest"/);
+  assert.match(
+    teammateBusy("Atlas", ["Weekly digest", "Inbox", "Q3", "Digest"]).message,
+    /^Atlas already has 4 tasks going: "Weekly digest", "Inbox", "Q3" and "Digest"\. Let one finish/
+  );
 });
 
 test("a handoff tells the model who has it and where it reports back", () => {

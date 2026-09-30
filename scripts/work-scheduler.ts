@@ -57,6 +57,7 @@ import "server-only";
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget, checkUsageWindows } from "@/lib/spend";
+import { checkMemberBudget } from "@/lib/agents/budget-store";
 import { runBudgetForWindow } from "@/lib/work/budget";
 import {
   createRun,
@@ -158,6 +159,8 @@ interface AccountLimits {
   remainingMicroUsd: number | null;
   /** The window's own remainder, which sizes the run's ceiling at dispatch. */
   windowRemainingMicroUsd: number | null;
+  /** The account's weekly cell, which a crew member's own cap is counted in. */
+  weekly: { startMs: number; resetsAtMs: number };
 }
 
 /**
@@ -194,6 +197,7 @@ async function accountLimits(
     // Null only when NEITHER is metered, which is the cap-disabled account.
     remainingMicroUsd: both.length === 0 ? null : Math.min(...both),
     windowRemainingMicroUsd: windows.remainingMicroUsd,
+    weekly: { startMs: windows.weekly.startMs, resetsAtMs: windows.weekly.resetsAtMs },
   };
   cache.set(userId, limits);
   return limits;
@@ -788,6 +792,44 @@ async function dispatchOne(
         return;
       }
 
+      // The crew member that owns this routine may have its own weekly cap
+      // inside the account's (src/lib/agents/budget.ts). Checked here, before
+      // any run exists, exactly as the account's own gate is: a routine whose
+      // member has spent its cap records the skipped fire with the sentence
+      // that names the member, and does not start a run that the executor's
+      // first usage poll would only stop again.
+      const memberBudget = await checkMemberBudget({
+        userId: schedule.userId,
+        agentId: schedule.session.agentId,
+        weekly: limits.weekly,
+        stage: "admission",
+      });
+      if (!memberBudget.ok) {
+        await prisma.workSchedule.updateMany({
+          where: { id: schedule.id, userId: schedule.userId },
+          data: { nextRunAt: advanced(), lockedUntil: null },
+        });
+        await recordMarkerRun({
+          scheduleId: schedule.id,
+          sessionId: schedule.sessionId,
+          userId: schedule.userId,
+          fireAt: dueAt,
+          requestedTarget: schedule.target,
+          reason: "budget_exceeded",
+          explanation: memberBudget.message,
+        });
+        log("member budget blocked", { scheduleId: schedule.id, agentId: schedule.session.agentId });
+        return;
+      }
+      // Its remainder lowers each run's cost ceiling, as it does for a task
+      // started by hand, so the executor stops at whichever runs out first.
+      const windowForRun =
+        memberBudget.remainingMicroUsd === null
+          ? limits.windowRemainingMicroUsd
+          : limits.windowRemainingMicroUsd === null
+            ? memberBudget.remainingMicroUsd
+            : Math.min(limits.windowRemainingMicroUsd, memberBudget.remainingMicroUsd);
+
       // The policy the executor will enforce, after narrowing. `narrowestPolicy`
       // is a `min`, so no layer can widen another: a Mac pinned to
       // `conservative` stays conservative under a `permissive` session, which is
@@ -852,7 +894,7 @@ async function dispatchOne(
               maxTokens: schedule.maxTokens,
               maxRuntimeMs: schedule.maxRuntimeMs,
             },
-            runBudgetForWindow(limits.windowRemainingMicroUsd)
+            runBudgetForWindow(windowForRun)
           ),
           // The same plan the ceiling above was built from, so spend admission
           // measures the run against it rather than reading the row a second

@@ -69,7 +69,10 @@ export interface ClientAgent {
   /** Derived on read; never stored. `thinking` and `listening` are client-only. */
   state: AgentState;
   stateSentence: string;
-  /** The newest task this agent owns, when it has one. */
+  /**
+   * The task its state is about: the one waiting on the person, else the one
+   * working, else its newest (see `aggregateAgentState`).
+   */
   task: ClientAgentTask | null;
   /** How many of its tasks are waiting on the person. */
   needsYou: number;
@@ -78,6 +81,12 @@ export interface ClientAgent {
   newIdeas: number;
   /** Present when agent computers are configured; null otherwise. */
   computer?: ClientAgentComputerGlance | null;
+  /**
+   * Its own spending cap inside the account's weekly window, in micro-USD, or
+   * null for none (src/lib/agents/budget.ts). Optional for clients written
+   * before it; the server always sends it.
+   */
+  budgetMicroUsd?: number | null;
 }
 
 export interface ClientAgentGoal {
@@ -207,6 +216,7 @@ export function serializeAgent(agent: Agent, derived: AgentDerived): ClientAgent
     nextRoutine: derived.nextRoutine,
     newIdeas: derived.newIdeas,
     computer: derived.computer ?? null,
+    budgetMicroUsd: agent.budgetMicroUsd ?? null,
   };
 }
 

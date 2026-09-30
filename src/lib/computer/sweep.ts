@@ -3,12 +3,16 @@ import { env } from "@/lib/env";
 import { stopStream } from "./live-view";
 import { computerProvider, isAgentComputerConfigured } from "./provider";
 import {
+  computerStoreUsesDatabase,
   decodeHandle,
+  diskFullError,
   getComputerStorePersistence,
+  overDiskQuota,
   restComputer,
   sleepComputer,
   type AgentComputerRow,
 } from "./store";
+import { purgeComputerHandoffs } from "./handoff";
 
 export interface SweepSummary {
   reconciledAfterReboot: string[];
@@ -103,15 +107,29 @@ export async function sweepAgentComputers(opts?: {
       }
     }
 
-    // 4. Disk quota telemetry refresh for running containers
+    // 4. Disk quota: measured for running containers, and enforced below.
+    let measuredDiskMb = row.diskMb;
     if (liveState === "running") {
       const diskMb = await provider.diskUsageMb(handle).catch(() => row.diskMb);
+      measuredDiskMb = diskMb;
       if (diskMb !== row.diskMb) {
         await persistence.updateByAgent(row.userId, row.agentId, { diskMb });
       }
     }
 
     if (hasActiveLease || streamActive) {
+      continue;
+    }
+
+    // An idle computer over its quota goes to sleep with a sentence saying
+    // why; tasks will not attach it until files are deleted
+    // (`resolveRunComputerSession`). The person can still open it.
+    if (liveState === "running" && overDiskQuota({ diskMb: measuredDiskMb })) {
+      await sleepComputer(row.userId, row.agentId, { now });
+      await persistence.updateByAgent(row.userId, row.agentId, {
+        lastError: diskFullError(measuredDiskMb ?? 0),
+      });
+      summary.slept.push(row.agentId);
       continue;
     }
 
@@ -133,6 +151,9 @@ export async function sweepAgentComputers(opts?: {
       summary.rested.push(row.agentId);
     }
   }
+
+  // Spent and expired single-use view links (src/lib/computer/handoff.ts).
+  if (computerStoreUsesDatabase()) await purgeComputerHandoffs(now).catch(() => 0);
 
   return summary;
 }

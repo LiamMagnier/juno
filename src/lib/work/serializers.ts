@@ -219,6 +219,16 @@ export interface ClientWorkSession {
   lastActivityAt: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * The crew member that owns the task, or null for the person's own. Optional
+   * only for the fixtures and clients written before it; the server always
+   * sends it. See `WorkSession.agentId`.
+   */
+  agentId?: string | null;
+  /** The task this one was delegated from, when one was. */
+  parentSessionId?: string | null;
+  /** The crew member that handed it over, when one did. */
+  delegatedByAgentId?: string | null;
 }
 
 export function serializeSession(session: WorkSession): ClientWorkSession {
@@ -241,6 +251,9 @@ export function serializeSession(session: WorkSession): ClientWorkSession {
     lastActivityAt: iso(session.lastActivityAt),
     createdAt: iso(session.createdAt),
     updatedAt: iso(session.updatedAt),
+    agentId: session.agentId ?? null,
+    parentSessionId: session.parentSessionId ?? null,
+    delegatedByAgentId: session.delegatedByAgentId ?? null,
   };
 }
 

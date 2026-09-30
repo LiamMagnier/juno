@@ -245,6 +245,29 @@ export interface ClientAgentChange {
   summary: string;
   changes: ClientAgentChangeItem[];
   undone?: boolean;
+  /**
+   * Present when the change is a setup change asked for in a crew member's
+   * thread (`propose_setup_change`, src/lib/agents/setup-changes.ts). The card
+   * then offers Apply / Undo against
+   * `/api/agents/{agentId}/setup-changes/{id}` and reads its live status there.
+   */
+  setupChange?: ClientSetupChangeRef;
+}
+
+/** A setup change as the transcript carries it. The live status is fetched by id. */
+export interface ClientSetupChangeRef {
+  id: string;
+  kind: string;
+  kindLabel: string;
+  /** narrowing | widening | neutral */
+  direction: string;
+  directionSentence: string;
+  affects: string;
+  /** proposed | awaiting_approval | applied | declined | undone | failed, when it was emitted. */
+  status: string;
+  detail?: string | null;
+  /** What Apply must carry; binds the press to the change the card showed. */
+  digest: string;
 }
 
 export interface ClientActivityEvent {

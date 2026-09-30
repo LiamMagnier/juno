@@ -12,6 +12,7 @@ import {
 } from "@/lib/work/domain";
 import { runBudgetForWindow } from "@/lib/work/budget";
 import { checkUsageWindows } from "@/lib/spend";
+import { checkMemberBudget } from "@/lib/agents/budget-store";
 import { windowLimitMessage, type UsageWindowName } from "@/lib/spend-ceiling";
 import { createRun, recordRunInputsFromGrants } from "@/lib/work/store";
 import {
@@ -90,6 +91,8 @@ export const FIRE_REFUSALS = [
   "code_refused",
   /** The account is out of its 5-hour or weekly window — the only ceiling left. */
   "usage_window_exceeded",
+  /** The crew member that owns the routine has spent its own weekly cap (src/lib/agents/budget.ts). */
+  "member_budget_exhausted",
 ] as const;
 
 export type FireRefusal = (typeof FIRE_REFUSALS)[number];
@@ -118,7 +121,7 @@ export type FireOutcome =
  * same wall.
  */
 export function fireRefusalStatus(reason: FireRefusal): number {
-  return reason === "usage_window_exceeded" ? 429 : 409;
+  return reason === "usage_window_exceeded" || reason === "member_budget_exhausted" ? 429 : 409;
 }
 
 /** The routine, with the session a Work run needs. */
@@ -302,6 +305,22 @@ export async function fireScheduleNow(input: FireNowInput): Promise<FireOutcome>
     };
   }
 
+  // The owning crew member's own cap, inside the window above.
+  const memberBudget = await checkMemberBudget({
+    userId,
+    agentId: schedule.session.agentId,
+    weekly: { startMs: windows.weekly.startMs, resetsAtMs: windows.weekly.resetsAtMs },
+    stage: "admission",
+  });
+  if (!memberBudget.ok) {
+    return {
+      outcome: "refused",
+      reason: "member_budget_exhausted",
+      message: memberBudget.message,
+      resetsAtMs: memberBudget.resetsAtMs,
+    };
+  }
+
   const created = await createRun({
     sessionId: schedule.sessionId,
     userId,
@@ -328,7 +347,13 @@ export async function fireScheduleNow(input: FireNowInput): Promise<FireOutcome>
         maxTokens: schedule.maxTokens,
         maxRuntimeMs: schedule.maxRuntimeMs,
       },
-      runBudgetForWindow(windows.remainingMicroUsd)
+      runBudgetForWindow(
+        memberBudget.remainingMicroUsd === null
+          ? windows.remainingMicroUsd
+          : windows.remainingMicroUsd === null
+            ? memberBudget.remainingMicroUsd
+            : Math.min(windows.remainingMicroUsd, memberBudget.remainingMicroUsd)
+      )
     ),
     plan,
     idempotencyKey: input.idempotencyKey,

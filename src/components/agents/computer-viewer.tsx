@@ -9,9 +9,24 @@ export interface ComputerViewerProps {
   initialRelayUrl?: string;
   initialToken?: string;
   initialPassword?: string;
+  /**
+   * An app's one-time link ticket (`/computer-view`). The viewer trades it
+   * once for credentials over a POST, so none is ever in the page. In this
+   * mode the app's own sheet holds the controls (Take control, Hand back).
+   */
+  handoffTicket?: string;
   fullBleed?: boolean;
   onModeChange?: (mode: "watch" | "control") => void;
   onDisconnected?: () => void;
+}
+
+/**
+ * The relay reads the view token from a WebSocket subprotocol
+ * (`juno-view.<token>`) rather than the URL, so it is never in an access log.
+ * The token is single-use either way.
+ */
+export function viewTokenProtocol(token: string): string {
+  return `juno-view.${token}`;
 }
 
 export function ComputerViewer({
@@ -21,10 +36,13 @@ export function ComputerViewer({
   initialRelayUrl,
   initialToken,
   initialPassword,
+  handoffTicket,
   fullBleed = false,
   onModeChange,
   onDisconnected,
 }: ComputerViewerProps) {
+  const ticketRef = useRef<string | null>(handoffTicket ?? null);
+  const handoff = Boolean(handoffTicket);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rfbRef = useRef<import("@novnc/novnc").default | null>(null);
   const credentialsRef = useRef<{
@@ -72,7 +90,29 @@ export function ComputerViewer({
 
       try {
         let creds = useInitialIfAvailable ? credentialsRef.current : null;
-        if (!creds || creds.mode !== targetMode) {
+        if (handoff) {
+          // One exchange per link. A reconnect has nothing left to trade: the
+          // app opens a fresh link.
+          const ticket = ticketRef.current;
+          ticketRef.current = null;
+          if (!ticket) throw new Error("This view has ended. Close it and open the computer again from the app.");
+          const res = await fetch("/api/computer-view/session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ticket }),
+          });
+          const body = (await res.json().catch(() => ({}))) as {
+            mode?: "watch" | "control";
+            relayUrl?: string;
+            token?: string;
+            password?: string;
+            message?: string;
+          };
+          if (!res.ok || !body.relayUrl || !body.token || !body.password) {
+            throw new Error(body.message || "This link has expired. Open the computer again from the app.");
+          }
+          creds = { relayUrl: body.relayUrl, token: body.token, password: body.password, mode: body.mode ?? targetMode };
+        } else if (!creds || creds.mode !== targetMode) {
           const res = await fetch(`/api/agents/${encodeURIComponent(agentId)}/computer/view`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -104,12 +144,13 @@ export function ComputerViewer({
         if (!containerRef.current) return;
 
         const wsUrl = new URL(creds.relayUrl, window.location.origin);
-        wsUrl.searchParams.set("t", creds.token);
 
         const rfb = new RFB(containerRef.current, wsUrl.toString(), {
           credentials: { password: creds.password },
           shared: true,
-          wsProtocols: ["binary"],
+          // The token rides as a subprotocol, not in the URL; the relay
+          // answers with "binary".
+          wsProtocols: ["binary", viewTokenProtocol(creds.token)],
         });
         rfb.viewOnly = creds.mode === "watch";
         rfb.scaleViewport = true;
@@ -147,7 +188,7 @@ export function ComputerViewer({
         setErrorMessage(err instanceof Error ? err.message : "Unable to connect.");
       }
     },
-    [agentId, disconnectRfb, onDisconnected]
+    [agentId, disconnectRfb, onDisconnected, handoff]
   );
 
   useEffect(() => {
@@ -161,7 +202,10 @@ export function ComputerViewer({
     };
   }, [mode, fetchSessionAndConnect, disconnectRfb]);
 
-  // Heartbeat every 20s while visible
+  // Heartbeat every 20s while visible. A control heartbeat holds the takeover.
+  // In an app's web view it has no session and answers 401, which is harmless:
+  // the app sends its own. A browser tab opened from "Open in a new window"
+  // has the person's session, so its heartbeats hold control there.
   useEffect(() => {
     if (!agentId) return;
     const sendBeat = () => {
@@ -250,7 +294,7 @@ export function ComputerViewer({
             )}
           </div>
           <div className="flex items-center gap-2">
-            {mode === "control" ? (
+            {handoff ? null : mode === "control" ? (
               <button
                 type="button"
                 onClick={() => void switchMode("watch")}

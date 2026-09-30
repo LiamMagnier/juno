@@ -13,6 +13,48 @@ export interface ComputerViewTokenPayload {
   p: number;
   m: "watch" | "control";
   exp: number;
+  /**
+   * One-time id. The bridge refuses a token it has already accepted, so a
+   * token copied out of a log, a URL or a screen share cannot open a second
+   * connection in its 60 seconds (security audit C4/C7).
+   */
+  j: string;
+}
+
+/** The subprotocol a viewer offers its token in, so it never sits in a URL or an access log. */
+export const VIEW_TOKEN_PROTOCOL_PREFIX = "juno-view.";
+
+/** The token a viewer presented: the `juno-view.<token>` subprotocol, else the legacy `?t=`. */
+export function presentedViewToken(req: { url?: string; headers: IncomingMessage["headers"] }): string | null {
+  const offered = String(req.headers["sec-websocket-protocol"] ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .find((value) => value.startsWith(VIEW_TOKEN_PROTOCOL_PREFIX));
+  if (offered) return offered.slice(VIEW_TOKEN_PROTOCOL_PREFIX.length) || null;
+  const url = new URL(req.url ?? "/", "http://relay");
+  return url.searchParams.get("t") ?? url.searchParams.get("token");
+}
+
+/**
+ * Remembers the one-time ids this process has accepted until their tokens
+ * expire. In memory is enough: the relay is one process, and a restart loses
+ * nothing a 60-second token could still use for long.
+ */
+export function createViewTokenLedger(now: () => number = Date.now) {
+  const seen = new Map<string, number>();
+  return {
+    /** True the first time a token's id is presented, false every time after. */
+    accept(grant: Pick<ComputerViewTokenPayload, "j" | "exp">): boolean {
+      const nowMs = now();
+      for (const [id, expMs] of seen) if (expMs <= nowMs) seen.delete(id);
+      if (seen.has(grant.j)) return false;
+      seen.set(grant.j, grant.exp * 1000);
+      return true;
+    },
+    size(): number {
+      return seen.size;
+    },
+  };
 }
 
 export interface ComputerViewVerifyOptions {
@@ -119,7 +161,10 @@ export function verifyComputerViewToken(
       parsed.h.length === 0 ||
       typeof parsed.p !== "number" ||
       (parsed.m !== "watch" && parsed.m !== "control") ||
-      typeof parsed.exp !== "number"
+      typeof parsed.exp !== "number" ||
+      typeof parsed.j !== "string" ||
+      parsed.j.length < 8 ||
+      parsed.j.length > 64
     ) {
       return null;
     }
@@ -146,6 +191,7 @@ export function verifyComputerViewToken(
       p: parsed.p,
       m: parsed.m,
       exp: parsed.exp,
+      j: parsed.j,
     };
   } catch {
     return null;
@@ -176,12 +222,16 @@ export function createComputerViewUpgradeHandler(opts: ComputerViewBridgeOptions
     maxPayload: 4 * 1024 * 1024,
     handleProtocols(protocols) {
       if (protocols.has("binary")) return "binary";
-      const first = protocols.values().next().value;
-      return first ?? false;
+      // Never echo the token back as the chosen protocol.
+      for (const protocol of protocols) {
+        if (!protocol.startsWith(VIEW_TOKEN_PROTOCOL_PREFIX)) return protocol;
+      }
+      return false;
     },
   });
 
   const viewersByAgent = new Map<string, number>();
+  const ledger = createViewTokenLedger();
   const maxViewers = opts.maxViewersPerAgent ?? MAX_VIEWERS_PER_AGENT;
   const idleTimeoutMs = opts.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const maxDurationMs = opts.maxDurationMs ?? DEFAULT_MAX_DURATION_MS;
@@ -199,13 +249,14 @@ export function createComputerViewUpgradeHandler(opts: ComputerViewBridgeOptions
       return true;
     }
 
-    const rawToken = url.searchParams.get("t") ?? url.searchParams.get("token");
+    const rawToken = presentedViewToken(req);
     const grant = verifyComputerViewToken(rawToken, {
       authSecret: opts.authSecret,
       cidr: opts.cidr,
       nodeEnv: opts.nodeEnv,
     });
-    if (!grant) {
+    // Single use: a token already accepted once is refused, whoever presents it.
+    if (!grant || !ledger.accept(grant)) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return true;

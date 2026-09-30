@@ -1482,6 +1482,15 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
         tone: "quiet",
         icon: MessageSquare,
       };
+    // The server's record of a hand-over (src/lib/work/ownership.ts):
+    // `summary` is the whole sentence, the reason is repeated as detail.
+    case "owner_transferred":
+      return {
+        title: str(payload, "summary") ?? "The task changed hands",
+        detail: firstLine(str(payload, "reason")),
+        tone: "quiet",
+        icon: MessageSquare,
+      };
     case "approval_requested":
       return {
         title: str(payload, "summary") ?? "Asked for approval",

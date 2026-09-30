@@ -17,6 +17,7 @@ import {
 } from "@/lib/work/domain";
 import { AGENT_EYES, AGENT_MARKS, AGENT_SHAPES, AGENT_TONES } from "@/lib/agents/avatar";
 import { resolveModel } from "@/lib/models";
+import { MAX_MEMBER_BUDGET_MICRO_USD } from "@/lib/agents/budget";
 import { REASONING_TIERS } from "@/lib/model-metrics";
 import type { ReasoningEffort } from "@/types/chat";
 
@@ -139,6 +140,15 @@ export const AGENT_EVENT_KINDS = [
   // that gave the work away and the teammate whose thread it now runs in.
   "handed_off",
   "handoff_received",
+  // A task changed hands (src/lib/work/ownership-store.ts), written on both
+  // members: `detail.direction` is "out" on the one it left and "in" on the
+  // one that took it.
+  "task_transferred",
+  // A setup change asked for in the member's thread
+  // (src/lib/agents/setup-changes.ts): applied, or undone.
+  "setup_changed",
+  // Moved here from an assistant (D-007); `detail.assistantId` names it.
+  "moved_from_assistant",
   "computer_enabled",
   "computer_disabled",
   "computer_reset",
@@ -211,7 +221,11 @@ export interface AgentTaskGlance {
 const BLOCKED_TERMINALS = new Set(["failed", "interrupted", "budget_exceeded", "timed_out", "host_offline"]);
 
 /**
- * The face's state, from the agent and its newest task.
+ * The face's state, from the agent and ONE task.
+ *
+ * Kept for callers that hold a single task; the roster and the thread use
+ * `aggregateAgentState`, which applies the same rule over every task the
+ * member owns and is defined in terms of this one.
  *
  * In order, and the order is the policy:
  *   1. Paused beats everything: a paused agent is asleep even while a run it
@@ -244,6 +258,58 @@ export function deriveAgentState(input: {
   if (task.status === "completed" && age <= AGENT_DONE_WINDOW_MS) return "done";
   if (BLOCKED_TERMINALS.has(task.status) && age <= AGENT_BLOCKED_WINDOW_MS) return "blocked";
   return "idle";
+}
+
+/** How strongly each state claims the face when a member has several tasks. */
+const STATE_PRECEDENCE: Record<Exclude<AgentState, "thinking" | "listening" | "sleeping">, number> = {
+  waiting: 4,
+  working: 3,
+  blocked: 2,
+  done: 1,
+  idle: 0,
+};
+
+/**
+ * The face's state over EVERY task a member owns, and the task it is about.
+ *
+ * A member can own several tasks at once now: the person's request, a routine
+ * that fired in its thread, a hand-off it took. Reading only the newest made a
+ * member with a waiting task and a newer running routine look "working" while
+ * the needs-you count beside it said otherwise. The rule is the single-task
+ * rule applied to each task, and the strongest wins: waiting beats working
+ * beats a recent failure beats a recent finish beats idle. Ties go to the most
+ * recently active task, which is the one the sentence then names.
+ *
+ * Paused still beats everything, whatever the tasks say.
+ */
+export function aggregateAgentState(input: {
+  status: string;
+  tasks: readonly AgentTaskGlance[];
+  now: Date;
+}): { state: Exclude<AgentState, "thinking" | "listening">; task: AgentTaskGlance | null } {
+  if (input.status === "paused") {
+    const newest = [...input.tasks].sort((a, b) => b.lastActivityAt.getTime() - a.lastActivityAt.getTime())[0] ?? null;
+    return { state: "sleeping", task: newest };
+  }
+  let best: { state: Exclude<AgentState, "thinking" | "listening" | "sleeping">; task: AgentTaskGlance } | null = null;
+  for (const task of input.tasks) {
+    const state = deriveAgentState({ status: input.status, task, now: input.now }) as Exclude<
+      AgentState,
+      "thinking" | "listening" | "sleeping"
+    >;
+    if (
+      !best ||
+      STATE_PRECEDENCE[state] > STATE_PRECEDENCE[best.state] ||
+      (STATE_PRECEDENCE[state] === STATE_PRECEDENCE[best.state] &&
+        task.lastActivityAt.getTime() > best.task.lastActivityAt.getTime())
+    ) {
+      best = { state, task };
+    }
+  }
+  if (!best) return { state: "idle", task: null };
+  // An idle verdict is about no task in particular: the sentence then speaks
+  // of what is next, not of a task that finished long ago.
+  return best.state === "idle" ? { state: "idle", task: null } : best;
 }
 
 /**
@@ -457,6 +523,8 @@ export const patchAgentSchema = z
     notify: z.enum(AGENT_NOTIFY_LEVELS).optional(),
     pinned: z.boolean().optional(),
     sortOrder: z.int().min(0).max(10_000).optional(),
+    /** Its own weekly cap in micro-USD, or null for none (src/lib/agents/budget.ts). */
+    budgetMicroUsd: z.int().min(0).max(MAX_MEMBER_BUDGET_MICRO_USD).nullable().optional(),
   })
   .refine((body) => Object.keys(body).length > 0, { message: "Nothing to change" });
 export type PatchAgentInput = z.infer<typeof patchAgentSchema>;

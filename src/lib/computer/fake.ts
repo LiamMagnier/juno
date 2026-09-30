@@ -338,6 +338,14 @@ export class FakeProvider implements ComputerProvider {
       c.vncRunning = false;
     }
   }
+
+  /** The gate's token, as the Docker provider hands it over: never as env. */
+  async provisionCdpToken(handle: ComputerHandle, token: string): Promise<void> {
+    // Recorded without the token itself: the call log is read by tests.
+    this.record("provisionCdpToken", handle);
+    const c = this.containers.get(handle.name);
+    if (c) c.cdpToken = token;
+  }
 }
 
 export const fakeComputerProvider = new FakeProvider();

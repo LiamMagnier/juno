@@ -14,11 +14,13 @@ import {
   answerWorkQuestion,
   controlWorkRun,
   decideWorkApproval,
+  fetchConversationTasks,
   fetchWorkSessions,
   steerWorkRun,
   subscribeToWorkEvents,
   type WorkApprovalDecisionInput,
 } from "@/components/work/work-transport";
+import { mergeDiscoveredTasks } from "@/lib/work/conversation-tasks";
 import { derivePendingSteers, type PendingSteer } from "@/components/work/steering/pending-steers";
 import {
   deriveApprovals,
@@ -60,14 +62,19 @@ import { deriveArtifacts } from "@/components/work/work-detail-panels";
  * transcript and the same run on its own page cannot disagree about whether
  * something happened.
  *
- * ONE TASK, THE NEWEST. A conversation that has delegated twice draws the
- * second run and not the first, which is a real limitation and is stated here
- * rather than discovered: the alternative is one open SSE stream per historical
- * task in the transcript, and a chat somebody has worked out of for a week
- * would hold a dozen. Research solves this by re-fetching a finished run's
- * report on demand (`HistoricalResearchRunPanel`); a task has no equivalent
- * one-shot read yet — its state is the event stream — so the honest thing is to
- * follow the one that is still moving.
+ * SEVERAL TASKS, EACH FOLLOWED ONCE. A conversation can carry several live
+ * tasks now (up to `MAX_LIVE_TASKS_PER_CONVERSATION`): the person's request, a
+ * routine that fired in a crew member's thread, a hand-off it took.
+ * `useConversationWorkSessions` discovers every task the conversation draws
+ * (`GET /api/conversations/{id}/tasks`: all live ones plus the newest finished
+ * one), and each card follows its own task with `useWorkSessionFollower`, one
+ * stream and one cursor per task. A finished task's stream is a one-shot read:
+ * the server sends the snapshot and a `done` frame and closes it. Older
+ * finished tasks still leave the transcript on reload, as before; a task the
+ * page has already drawn is never taken away while it is open.
+ *
+ * `useConversationWork` keeps the old contract (follow the newest task) for the
+ * one caller that wants exactly that, the computer overlay.
  */
 
 /** How often a conversation re-asks whether it has a task. Research's interval. */
@@ -118,16 +125,14 @@ export interface ConversationWork {
   adopt: (session: ClientWorkSession) => void;
 }
 
+/**
+ * The newest task on a conversation, followed. The contract every caller had
+ * before a conversation could carry several tasks; the computer overlay still
+ * wants exactly this, and a chat view draws every task with
+ * `useConversationWorkSessions` instead.
+ */
 export function useConversationWork(conversationId: string | null): ConversationWork {
-  const [session, setSession] = React.useState<ClientWorkSession | null>(null);
-  const [run, setRun] = React.useState<ClientWorkRun | null>(null);
-  const [events, setEvents] = React.useState<ClientWorkEvent[]>([]);
-  const [busy, setBusy] = React.useState(false);
-
-  const sessionId = session?.id ?? null;
-  // Read by `adopt`, which must stay a stable callback for the chat view's ref.
-  const sessionIdRef = React.useRef<string | null>(null);
-  sessionIdRef.current = sessionId;
+  const [newest, setNewest] = React.useState<ClientWorkSession | null>(null);
   /*
    * Bumped by every `adopt`. A discovery answer is only applied when none
    * happened while it was in flight: one that left before the task existed
@@ -136,6 +141,64 @@ export function useConversationWork(conversationId: string | null): Conversation
    * next poll put it back.
    */
   const adoptions = React.useRef(0);
+
+  React.useEffect(() => {
+    setNewest(null);
+    if (!conversationId) return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const discover = async () => {
+      const asked = adoptions.current;
+      const result = await fetchWorkSessions({ conversationId, limit: 1 });
+      if (!cancelled && result.kind === "ok" && asked === adoptions.current) {
+        const found = result.value[0] ?? null;
+        // Only when it is genuinely a different task, and never a draft. Writing
+        // the same row back every four seconds would re-render the panel — and
+        // the composer — on a timer, for a fact that did not change; the draft
+        // rule is argued over `adoptDiscoveredSession`.
+        setNewest((current) => adoptDiscoveredSession(current, found));
+      }
+      if (!cancelled) timer = setTimeout(discover, DISCOVERY_POLL_MS);
+    };
+    void discover();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [conversationId]);
+
+  const follower = useWorkSessionFollower(newest);
+  const followerAdopt = follower.adopt;
+  const adopt = React.useCallback(
+    (next: ClientWorkSession) => {
+      adoptions.current += 1;
+      setNewest((current) => (current?.id === next.id ? current : next));
+      followerAdopt(next);
+    },
+    [followerAdopt]
+  );
+  return React.useMemo(() => ({ ...follower, adopt }), [follower, adopt]);
+}
+
+/**
+ * One task, followed: its event stream with a resume cursor, and everything the
+ * card and the composer derive from it.
+ *
+ * `initial` is the row discovery found (or the stream's `work` frame handed
+ * over). The stream's own frames replace it from then on, because they are the
+ * authoritative read; a later discovery row replaces it only when it is newer,
+ * which covers the moment before the stream's first frame.
+ */
+export function useWorkSessionFollower(initial: ClientWorkSession | null): ConversationWork {
+  const [session, setSession] = React.useState<ClientWorkSession | null>(initial);
+  const [run, setRun] = React.useState<ClientWorkRun | null>(null);
+  const [events, setEvents] = React.useState<ClientWorkEvent[]>([]);
+  const [busy, setBusy] = React.useState(false);
+
+  const sessionId = session?.id ?? null;
+  const sessionIdRef = React.useRef<string | null>(null);
+  sessionIdRef.current = sessionId;
 
   /*
    * The resume cursor, both halves, in a ref.
@@ -147,6 +210,32 @@ export function useConversationWork(conversationId: string | null): Conversation
    * same stream with the same contract.
    */
   const cursor = React.useRef<{ runId: string | null; after: number }>({ runId: null, after: 0 });
+
+  // A different task handed in (a card re-used for another row, or the newest
+  // task changing under `useConversationWork`) starts over: its cursor, run and
+  // events belong to the old one. The same task arriving again only refreshes
+  // the row when it is newer than what the stream already said.
+  React.useEffect(() => {
+    if (!initial) {
+      if (sessionIdRef.current !== null) {
+        cursor.current = { runId: null, after: 0 };
+        setEvents([]);
+        setRun(null);
+        setSession(null);
+      }
+      return;
+    }
+    if (initial.id !== sessionIdRef.current) {
+      cursor.current = { runId: null, after: 0 };
+      setEvents([]);
+      setRun(null);
+      setSession(initial);
+      return;
+    }
+    setSession((current) =>
+      current && Date.parse(initial.updatedAt) > Date.parse(current.updatedAt) ? initial : current
+    );
+  }, [initial]);
 
   const mergeEvents = React.useCallback((incoming: readonly ClientWorkEvent[]) => {
     if (incoming.length === 0) return;
@@ -160,39 +249,6 @@ export function useConversationWork(conversationId: string | null): Conversation
       cursor.current.after = Math.max(cursor.current.after, event.seq);
     }
   }, []);
-
-  // Discovery. Everything is dropped when the conversation changes, including
-  // the cursor: a seq from the previous chat's run would have the stream resume
-  // this one from the middle of a transcript that belongs to somebody else's
-  // errand.
-  React.useEffect(() => {
-    setSession(null);
-    setRun(null);
-    setEvents([]);
-    cursor.current = { runId: null, after: 0 };
-    if (!conversationId) return;
-
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const discover = async () => {
-      const asked = adoptions.current;
-      const result = await fetchWorkSessions({ conversationId, limit: 1 });
-      if (!cancelled && result.kind === "ok" && asked === adoptions.current) {
-        const newest = result.value[0] ?? null;
-        // Only when it is genuinely a different task, and never a draft. Writing
-        // the same row back every four seconds would re-render the panel — and
-        // the composer — on a timer, for a fact that did not change; the draft
-        // rule is argued over `adoptDiscoveredSession`.
-        setSession((current) => adoptDiscoveredSession(current, newest));
-      }
-      if (!cancelled) timer = setTimeout(discover, DISCOVERY_POLL_MS);
-    };
-    void discover();
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [conversationId]);
 
   // The run's own events. Opened once there is a task to follow, and closed
   // again when the conversation moves. A finished run closes the stream from the
@@ -377,27 +433,82 @@ export function useConversationWork(conversationId: string | null): Conversation
     // events while the open stream carried on from its cursor, and the panel
     // would lose everything the run had said so far.
     if (sessionIdRef.current === next.id) return;
-    adoptions.current += 1;
     cursor.current = { runId: null, after: 0 };
     setEvents([]);
     setRun(null);
     setSession(next);
   }, []);
 
-  return {
-    session,
-    run,
-    events,
-    plan,
-    questions,
-    openApprovals,
-    currentAction,
-    pendingSteers,
-    documents,
-    busy,
-    steering,
-    decide,
-    answer,
-    adopt,
-  };
+  // One object per change, not per render: the chat view keeps each card's
+  // follower beside the composer, and a new identity every render would loop.
+  return React.useMemo(
+    () => ({
+      session,
+      run,
+      events,
+      plan,
+      questions,
+      openApprovals,
+      currentAction,
+      pendingSteers,
+      documents,
+      busy,
+      steering,
+      decide,
+      answer,
+      adopt,
+    }),
+    [session, run, events, plan, questions, openApprovals, currentAction, pendingSteers, documents, busy, steering, decide, answer, adopt]
+  );
+}
+
+/** How often a conversation re-asks which tasks it has. Research's interval. */
+const TASKS_POLL_MS = DISCOVERY_POLL_MS;
+
+export interface ConversationWorkSessions {
+  /** Every task the conversation draws, oldest first: the order the cards stack in. */
+  sessions: ClientWorkSession[];
+  /**
+   * Draws a task the model has just started from this chat (the stream's
+   * `work` frame) before the poll would find it.
+   */
+  adopt: (session: ClientWorkSession) => void;
+}
+
+/**
+ * Which tasks a conversation draws. Discovery only: each task's run is
+ * followed by its own card (`useWorkSessionFollower`).
+ *
+ * A task the page has drawn is never taken away by a later answer that no
+ * longer lists it (`mergeDiscoveredTasks`); only moving to another
+ * conversation clears the list.
+ */
+export function useConversationWorkSessions(conversationId: string | null): ConversationWorkSessions {
+  const [sessions, setSessions] = React.useState<ClientWorkSession[]>([]);
+
+  React.useEffect(() => {
+    setSessions([]);
+    if (!conversationId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const discover = async () => {
+      const result = await fetchConversationTasks(conversationId);
+      if (!cancelled && result.kind === "ok") {
+        setSessions((current) => mergeDiscoveredTasks(current, result.value));
+      }
+      if (!cancelled) timer = setTimeout(discover, TASKS_POLL_MS);
+    };
+    void discover();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [conversationId]);
+
+  const adopt = React.useCallback((next: ClientWorkSession) => {
+    if (next.status === "draft") return;
+    setSessions((current) => mergeDiscoveredTasks(current, [next]));
+  }, []);
+
+  return { sessions, adopt };
 }

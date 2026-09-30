@@ -49,17 +49,19 @@ import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
 import { SPLIT_MIN_WIDTH, THOUGHT_DEFAULT_WIDTH, canvasWidthBounds, splitEngaged, thoughtWidthBounds } from "@/components/chat/split-layout";
 import { HistoricalResearchRunPanel, ResearchRunPanel } from "@/components/chat/research-run-panel";
 import { useConversationResearch } from "@/components/research/use-conversation-run";
-import { useConversationWork } from "@/components/chat/use-conversation-work";
+import { useConversationWorkSessions, type ConversationWork } from "@/components/chat/use-conversation-work";
+import { ConversationTaskPanel } from "@/components/chat/conversation-task-panel";
 import type { ClientAgent } from "@/lib/agents/types";
 import { AgentGreeting, AgentThreadHeader, threadAgentState } from "@/components/agents/agent-thread-header";
 import { AgentPanel, normalizeAgentPanelTab, type AgentPanelTab } from "@/components/agents/agent-panel";
 import { AgentComputerOverlay, AgentComputerPip } from "@/components/agents/agent-computer";
 import { AgentThreadContext, type AgentThreadIdentity } from "@/components/agents/agent-thread-context";
 import { AGENTS_CHANGED_EVENT, fetchAgentDetail } from "@/components/agents/agents-transport";
-import { WorkRunPanel } from "@/components/chat/work-run-panel";
 import { SessionOutputs } from "@/components/chat/session-outputs";
 import { PendingSteers } from "@/components/work/steering/pending-steers";
 import { delegatedComposerPlaceholder } from "@/lib/work/delegation";
+import { composerTaskId } from "@/lib/work/conversation-tasks";
+import { isTerminalStatus } from "@/lib/work/domain";
 import { WORK_SYNC_EVENT } from "@/components/work/work-transport";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import { ShareDialog } from "@/components/share/share-dialog";
@@ -513,14 +515,53 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const researchSteering = research.steering;
 
   /**
-   * The task the model started from this conversation, on exactly the same
-   * terms: one hook, one cursor, two readers (the panel in the transcript and
-   * the composer at the bottom). Never in incognito, which writes no rows for a
-   * `WorkSession.conversationId` to point at.
+   * Every task on this conversation: the person's, a routine that fired in a
+   * crew member's thread, a hand-off it took. Each draws its own card, which
+   * follows its own task (one stream, one cursor per task) and reports it here,
+   * because the composer answers or steers ONE of them (`composerTaskId`: the
+   * one waiting on the person, else the newest live one) and the face in a
+   * crew member's thread reads all of them. Never in incognito, which writes no
+   * rows for a `WorkSession.conversationId` to point at.
    */
-  const work = useConversationWork(privateMode ? null : currentConversationId);
-  const workSteering = work.steering;
-  adoptWorkRef.current = work.adopt;
+  const workTasks = useConversationWorkSessions(privateMode ? null : currentConversationId);
+  adoptWorkRef.current = workTasks.adopt;
+  const [taskWork, setTaskWork] = React.useState<Record<string, ConversationWork>>({});
+  const reportTask = React.useCallback((id: string, next: ConversationWork | null) => {
+    setTaskWork((current) => {
+      if (next === null) {
+        if (!(id in current)) return current;
+        const rest = { ...current };
+        delete rest[id];
+        return rest;
+      }
+      return current[id] === next ? current : { ...current, [id]: next };
+    });
+  }, []);
+  // Each task as the freshest read has it: the card's stream when it has
+  // spoken, else the row discovery found.
+  const taskSessions = React.useMemo(
+    () => workTasks.sessions.map((session) => taskWork[session.id]?.session ?? session),
+    [workTasks.sessions, taskWork]
+  );
+  const liveTaskCount = taskSessions.filter((session) => !isTerminalStatus(session.status)).length;
+  const composerTask = React.useMemo<ConversationWork | null>(() => {
+    const reports = workTasks.sessions.flatMap((row) => {
+      const followed = taskWork[row.id];
+      const session = followed?.session;
+      if (!followed || !session) return [];
+      return [
+        {
+          sessionId: session.id,
+          createdAt: session.createdAt,
+          live: !isTerminalStatus(session.status),
+          waiting: followed.questions.length > 0 || followed.openApprovals.length > 0 || session.needsAttention,
+        },
+      ];
+    });
+    const id = composerTaskId(reports);
+    return id ? taskWork[id] ?? null : null;
+  }, [workTasks.sessions, taskWork]);
+  const workSteering = composerTask?.steering ?? null;
 
   // Follow-ups appear only on a settled turn: the stream is idle and the last
   // message is a non-empty assistant reply. Flipping this false while a new send
@@ -1357,7 +1398,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // content is a run is not an empty chat, and showing the greeting over a live
   // run would be the product denying the thing it is in the middle of doing.
   const hasMessages =
-    displayMessages.length > 0 || voiceOpen || !!research.run || !!work.session;
+    displayMessages.length > 0 || voiceOpen || !!research.run || workTasks.sessions.length > 0;
 
   /* ─── First-message handoff ────────────────────────────────────────────────
    * The centered empty-state composer and the transcript's bottom dock are two
@@ -1487,7 +1528,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // The face in an agent's thread: listening while a call is open, thinking
   // while a reply streams or the call composes one, else what its task says.
   const agentState = agent
-    ? threadAgentState(agent, chat.isBusy, work.session, voiceOpen ? voicePhaseOf(realtimeVoice) : null)
+    ? threadAgentState(agent, chat.isBusy, taskSessions, voiceOpen ? voicePhaseOf(realtimeVoice) : null)
     : null;
   const agentThreadIdentity = React.useMemo<AgentThreadIdentity | null>(
     () => (agent && !privateMode ? { name: agent.name, avatar: agent.avatar, state: agentState ?? "idle" } : null),
@@ -1904,7 +1945,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 // Nothing is streaming: the run was dispatched minutes ago and
                 // `isBusy` is false for its whole life. See the prop's note.
                 standalone: true,
-                placeholder: delegatedComposerPlaceholder(workSteering.mode),
+                // With several tasks live, the field names the one it goes to.
+                placeholder: delegatedComposerPlaceholder(
+                  workSteering.mode,
+                  liveTaskCount > 1 ? composerTask?.session?.title ?? null : null
+                ),
                 sendLabel:
                   workSteering.mode.kind === "answer"
                     ? "Answer the task’s question"
@@ -1914,7 +1959,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 // cancels a stream — or the reverse — is the one word this
                 // control can afford spent on the wrong thing.
                 stopLabel: chat.isBusy ? "Stop generating" : "Stop the task",
-                above: <PendingSteers steers={work.pendingSteers} />,
+                above: <PendingSteers steers={composerTask?.pendingSteers ?? []} />,
                 onSteer: workSteering.send,
               }
             : null
@@ -2295,7 +2340,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             <AgentThreadHeader
               agent={agent}
               state={agentState ?? "idle"}
-              taskTitle={work.session?.title ?? null}
+              taskTitle={
+                composerTask?.session?.title ??
+                [...taskSessions].reverse().find((session) => !isTerminalStatus(session.status))?.title ??
+                taskSessions[taskSessions.length - 1]?.title ??
+                null
+              }
               levelRef={voiceOpen ? realtimeVoice.levelRef : undefined}
               activePanelTab={agentPanelTab}
               onTogglePanel={toggleAgentTab}
@@ -2346,7 +2396,25 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   // Placed by its own createdAt, so it lands under the turn that
                   // asked for it rather than at the end of a transcript the
                   // reader has carried on adding to while it worked.
-                  ...(work.session ? [{ id: work.session.id, createdAt: work.session.createdAt, node: <WorkRunPanel work={work} className="mt-5" actor={agent?.name} /> }] : []),
+                  // Every task, stacked by its own createdAt, newest last.
+                  // A task another crew member (or the person) owns speaks as
+                  // Juno here rather than as this thread's member.
+                  ...workTasks.sessions.map((session) => ({
+                    id: session.id,
+                    createdAt: session.createdAt,
+                    node: (
+                      <ConversationTaskPanel
+                        session={session}
+                        onReport={reportTask}
+                        className="mt-5"
+                        actor={
+                          agent && (session.agentId === undefined || session.agentId === agent.id)
+                            ? agent.name
+                            : undefined
+                        }
+                      />
+                    ),
+                  })),
                 ]}
                 busy={chat.isBusy}
                 status={chat.status}
@@ -2683,7 +2751,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         </div>
       )}
 
-      {agent && !privateMode ? (
+      {/* Nothing about computers when they are off on this server
+          (`agent.computer` is null then), even for a `?agent=computer` link. */}
+      {agent && !privateMode && agent.computer ? (
         <AgentComputerOverlay agent={agent} open={agentPanelTab === "computer"} onClose={() => setAgentTab(null)} />
       ) : null}
 

@@ -823,6 +823,13 @@ extension WorkEventLog {
         // older build wrote renders through the same accessor.
         case .userMessage:
             return entry(event, "You added an instruction", string(payload, "text"), .message, .quiet)
+        // Written by the server when the task changes hands; `summary` is the
+        // whole sentence ("You handed this from Mira to Otto: …").
+        case .ownerTransferred:
+            return entry(
+                event, string(payload, "summary") ?? "The task changed hands", string(payload, "reason"),
+                .message, .quiet
+            )
         case .approvalRequested:
             return entry(
                 event, string(payload, "summary") ?? "Asked for approval",

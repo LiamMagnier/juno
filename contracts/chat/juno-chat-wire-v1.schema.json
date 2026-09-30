@@ -11,8 +11,8 @@
   },
   "x-native-summary": {
     "native": 159,
-    "planned": 65,
-    "web-only": 32,
+    "planned": 68,
+    "web-only": 42,
     "unclassified": 0
   },
   "x-native-only": {
@@ -1284,6 +1284,10 @@
         "undone": {
           "type": "boolean",
           "x-native": "web-only"
+        },
+        "setupChange": {
+          "$ref": "#/$defs/ClientSetupChangeRef",
+          "x-native": "web-only"
         }
       },
       "required": [
@@ -1784,6 +1788,60 @@
         "remaining"
       ]
     },
+    "ClientSetupChangeRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "kind": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "kindLabel": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "direction": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "directionSentence": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "affects": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "status": {
+          "type": "string",
+          "x-native": "web-only"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "web-only"
+        },
+        "digest": {
+          "type": "string",
+          "x-native": "web-only"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "kindLabel",
+        "direction",
+        "directionSentence",
+        "affects",
+        "status",
+        "digest"
+      ]
+    },
     "ClientSource": {
       "type": "object",
       "properties": {
@@ -1996,6 +2054,30 @@
           "type": "string",
           "x-native": "planned",
           "x-native-note": "Not read yet; the Mac orders tasks by lastActivityAt, as the web does."
+        },
+        "agentId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "planned",
+          "x-native-note": "The crew member that owns the task (refoundation crew foundations). The apps draw a task without its owner yet."
+        },
+        "parentSessionId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "planned",
+          "x-native-note": "The task a hand-off was delegated from. Not drawn anywhere yet; the web reads it for the delegation graph later."
+        },
+        "delegatedByAgentId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-native": "planned",
+          "x-native-note": "The crew member that handed the task over. Not drawn by the apps yet."
         }
       },
       "required": [

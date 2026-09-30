@@ -8,6 +8,7 @@ import {
   parseSessionListQuery,
   sessionListOrder,
 } from "@/app/api/work/protocol";
+import { CONVERSATION_WAITING_STATUSES, waitingTasksFirst } from "@/lib/work/conversation-tasks";
 
 export const runtime = "nodejs";
 
@@ -22,28 +23,42 @@ export async function GET(req: Request) {
   const { status, needsAttention, pinned, archived, projectId, conversationId, limit } =
     parsed.query;
 
-  const sessions = await prisma.workSession.findMany({
-    where: {
-      userId: user.id,
-      // Soft-deleted sessions are never listed. The row survives so an audit
-      // question about what ran can still be answered; the user asked for it to
-      // be gone from their list, and that is what the list must honour.
-      deletedAt: null,
-      archived,
-      ...(status ? { status } : {}),
-      ...(needsAttention !== undefined ? { needsAttention } : {}),
-      ...(pinned !== undefined ? { pinned } : {}),
-      ...(projectId ? { projectId } : {}),
-      // The chat asking about its own run. Scoped by `userId` like every other
-      // clause here, so an id guessed from another account selects nothing
-      // rather than reading that account's task.
-      ...(conversationId ? { conversationId } : {}),
-    },
+  const where = {
+    userId: user.id,
+    // Soft-deleted sessions are never listed. The row survives so an audit
+    // question about what ran can still be answered; the user asked for it to
+    // be gone from their list, and that is what the list must honour.
+    deletedAt: null,
+    archived,
+    ...(status ? { status } : {}),
+    ...(needsAttention !== undefined ? { needsAttention } : {}),
+    ...(pinned !== undefined ? { pinned } : {}),
+    ...(projectId ? { projectId } : {}),
+    // The chat asking about its own run. Scoped by `userId` like every other
+    // clause here, so an id guessed from another account selects nothing
+    // rather than reading that account's task.
+    ...(conversationId ? { conversationId } : {}),
+  };
+  // One conversation asking for its task (the apps that follow one task per
+  // chat): a task waiting on the person comes before a newer one that is
+  // running, or its question could not be answered from the chat
+  // (`waitingTasksFirst`). Not when the caller asked for a status of its own.
+  const waiting =
+    conversationId && !status
+      ? await prisma.workSession.findMany({
+          where: { ...where, status: { in: [...CONVERSATION_WAITING_STATUSES] } },
+          orderBy: { lastActivityAt: "desc" },
+          take: limit,
+        })
+      : [];
+  const listed = await prisma.workSession.findMany({
+    where,
     // Pinned first, except when one conversation is being asked about its own
     // task — the argument is written out over `sessionListOrder`.
     orderBy: sessionListOrder(parsed.query),
     take: limit,
   });
+  const sessions = waitingTasksFirst(waiting, listed, limit);
 
   /*
    * What each executing task is doing right now, for the row's status line.
