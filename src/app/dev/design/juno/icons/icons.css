@@ -1,0 +1,393 @@
+/*
+ * Juno icons: motion (design round 3). See index.tsx for the contract.
+ *
+ * Every moving part is a <g class="jp"> carrying its own pose as custom
+ * properties (--hx --hy grid units, --hr degrees, --hsx --hsy scale, --ro/--ho
+ * rest and hover opacity, --hd delay) and its pivot as transform-origin in
+ * grid units (transform-box: view-box). So one rule articulates every icon,
+ * and each icon's motion lives next to its drawing.
+ *
+ * Tokens (INTERACTION_SPEC §1): hover articulation goes out on out-soft in
+ * 200 ms and comes back in 150 ms; the press dip is 70 ms on out-strong; state
+ * swaps are `fast` (120 ms); a turn to an on state (plus to close, a chevron
+ * opening) is `base` (220 ms) on in-out; one-shots stay within 360 ms. Only
+ * transform and opacity move.
+ */
+
+.ji {
+  --ji-soft: cubic-bezier(0.33, 1, 0.68, 1);
+  --ji-strong: cubic-bezier(0.32, 0.72, 0, 1);
+  --ji-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  --ji-in: cubic-bezier(0.4, 0, 1, 1);
+  flex: none;
+  overflow: visible;
+  vertical-align: middle;
+  transition: scale 150ms var(--ji-soft);
+}
+
+.ji .jsnap,
+.ji .jl,
+.ji .jg,
+.ji .jp {
+  transform-box: view-box;
+}
+.ji .jl,
+.ji .jg {
+  transform-origin: 12px 12px;
+}
+
+@media (min-resolution: 2dppx) {
+  .ji .jsnap {
+    translate: var(--ji-snap, 0) var(--ji-snap, 0);
+  }
+}
+
+/* ——————————————————————————— Parts at rest ——————————————————————————— */
+
+.ji .jp {
+  opacity: var(--ro, 1);
+  transition:
+    translate 150ms var(--ji-soft),
+    rotate 150ms var(--ji-soft),
+    scale 150ms var(--ji-soft),
+    opacity 120ms var(--ji-soft);
+}
+.ji .jd {
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 0;
+}
+
+/* ——————————————————————————— Hover articulation ———————————————————————————
+ * A fine pointer over a .jicon-trigger (not inside .jicon-quiet), or a forced
+ * pose for stills. Never on keyboard focus (INTERACTION_SPEC I-7).            */
+
+@media (hover: hover) and (pointer: fine) {
+  .jicon-trigger:not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp:not([data-anim]) {
+    translate: var(--hx, 0) var(--hy, 0);
+    rotate: var(--hr, 0deg);
+    scale: var(--hsx, 1) var(--hsy, 1);
+    opacity: var(--ho, 1);
+    transition-duration: 200ms, 200ms, 200ms, 120ms;
+    transition-delay: var(--hd, 0ms);
+  }
+  .jicon-trigger:not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp[data-anim] {
+    opacity: var(--ho, 1);
+    animation: var(--ji-anim) var(--ji-anim-dur, 320ms) var(--ji-soft) var(--hd, 0ms) 1 both;
+  }
+  .jicon-trigger:not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jg-hover {
+    opacity: 1;
+  }
+  .jicon-trigger:not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jg-hover ~ .jg-fill,
+  .jicon-trigger:not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]):not([data-state="active"]) .jg-base:has(~ .jg-hover) {
+    opacity: 0;
+  }
+}
+
+/* Forced poses (stills and the gallery's state columns). */
+.jicon-trigger[data-force="hover"] .ji .jp,
+.ji[data-pose="hover"] .jp,
+[data-jicon-pose="hover"] .ji .jp {
+  translate: var(--hx, 0) var(--hy, 0);
+  rotate: var(--hr, 0deg);
+  scale: var(--hsx, 1) var(--hsy, 1);
+  opacity: var(--ho, 1);
+}
+.jicon-trigger[data-force="hover"] .ji .jg-hover,
+.ji[data-pose="hover"] .jg-hover,
+[data-jicon-pose="hover"] .ji .jg-hover {
+  opacity: 1;
+}
+.jicon-trigger[data-force="hover"] .ji:not([data-state="active"]) .jg-base:has(~ .jg-hover),
+.ji[data-pose="hover"]:not([data-state="active"]) .jg-base:has(~ .jg-hover),
+[data-jicon-pose="hover"] .ji:not([data-state="active"]) .jg-base:has(~ .jg-hover) {
+  opacity: 0;
+}
+
+/* ——————————————————————————— One-shots ——————————————————————————— */
+
+.ji .jp[data-anim="swing"] {
+  --ji-anim: ji-swing;
+  --ji-anim-dur: 360ms;
+}
+.ji .jp[data-anim="nod"] {
+  --ji-anim: ji-nod;
+  --ji-anim-dur: 360ms;
+}
+.ji .jp[data-anim="pop"] {
+  --ji-anim: ji-pop;
+  --ji-anim-dur: 260ms;
+}
+.ji .jp[data-anim="levels"] {
+  --ji-anim: ji-levels;
+  --ji-anim-dur: 240ms;
+}
+.ji .jp[data-anim="wave"] {
+  --ji-anim: ji-wave;
+  --ji-anim-dur: 260ms;
+}
+.ji .jp[data-anim="draw"] {
+  --ji-anim: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .jicon-trigger:not(.jicon-quiet, .jicon-quiet *):hover .ji:not([data-state="disabled"]) .jp[data-anim="draw"] .jd {
+    animation: ji-draw 320ms var(--ji-soft) var(--hd, 0ms) 1 both;
+  }
+}
+
+@keyframes ji-swing {
+  0% {
+    rotate: 0deg;
+  }
+  24% {
+    rotate: 12deg;
+  }
+  56% {
+    rotate: -7deg;
+  }
+  80% {
+    rotate: 3deg;
+  }
+  100% {
+    rotate: 0deg;
+  }
+}
+@keyframes ji-nod {
+  0% {
+    rotate: 0deg;
+  }
+  30% {
+    rotate: -10deg;
+  }
+  66% {
+    rotate: 6deg;
+  }
+  100% {
+    rotate: 0deg;
+  }
+}
+@keyframes ji-pop {
+  0% {
+    scale: 1;
+  }
+  40% {
+    scale: 1.07;
+  }
+  100% {
+    scale: 1;
+  }
+}
+@keyframes ji-levels {
+  0% {
+    scale: 1 1;
+  }
+  45% {
+    scale: 1 var(--hsy, 1);
+  }
+  100% {
+    scale: 1 1;
+  }
+}
+@keyframes ji-wave {
+  0% {
+    opacity: 0.15;
+    translate: -0.75px 0;
+  }
+  100% {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@keyframes ji-draw {
+  0% {
+    stroke-dashoffset: 1.02;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Live input levels (voice): the bars follow the analyser, no timer. */
+.ji .jp[data-lv] {
+  scale: 1 var(--lv, 1);
+  transition: scale 60ms linear;
+  animation: none !important;
+}
+
+/* ——————————————————————————— Press ——————————————————————————— */
+
+.jicon-trigger:active .ji:not([data-state="disabled"]),
+.jicon-trigger[data-force="press"] .ji,
+.ji[data-pose="press"] {
+  scale: 0.9;
+  transition: scale 70ms var(--ji-strong);
+}
+
+/* ——————————————————————————— States ——————————————————————————— */
+
+.ji .jg-fill,
+.ji .jg-alt,
+.ji .jg-hover {
+  opacity: 0;
+}
+.ji .jg-fill,
+.ji .jg-alt {
+  scale: 0.8;
+}
+.ji .jg-base,
+.ji .jg-fill,
+.ji .jg-alt,
+.ji .jg-hover {
+  transition:
+    opacity 120ms var(--ji-soft),
+    scale 120ms var(--ji-soft),
+    rotate 220ms var(--ji-inout);
+}
+
+/* fill: the on drawing grows into the outline (a pinned pin, a starred star) */
+.ji[data-state="active"] .jg-fill {
+  opacity: 1;
+  scale: 1;
+}
+
+/* swap: the on glyph replaces the rest glyph (copy to check, send to stop, mic to meter) */
+.ji[data-state="active"] .jg-alt {
+  opacity: 1;
+  scale: 1;
+}
+.ji[data-state="active"][data-on="swap"] > .jsnap > .jl > .jg-base {
+  opacity: 0;
+  scale: 0.8;
+}
+
+/* turn: plus to close, a chevron opening; no hover articulation on top of it */
+.ji[data-state="active"][data-on="turn"] .jg-base {
+  rotate: var(--on-turn, 0deg);
+}
+.ji[data-state="active"][data-on="turn"] .jp {
+  translate: 0 0 !important;
+  rotate: 0deg !important;
+  scale: 1 !important;
+}
+
+/* draw: the check draws itself when it becomes the on state */
+.ji[data-state="active"][data-on="draw"] .jd {
+  animation: ji-draw 240ms var(--ji-soft) 1 both;
+}
+
+/* disabled */
+.ji[data-state="disabled"] {
+  opacity: 0.4;
+}
+
+/* ——————————————————————————— Name changes ——————————————————————————— */
+
+.ji .jg-enter {
+  animation: ji-in 120ms var(--ji-soft) both;
+}
+.ji .jg-exit {
+  animation: ji-out 120ms var(--ji-in) both;
+  pointer-events: none;
+}
+.ji .jg-turnin {
+  animation: ji-turnin 220ms var(--ji-inout) both;
+}
+@keyframes ji-in {
+  from {
+    opacity: 0;
+    scale: 0.8;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+@keyframes ji-out {
+  from {
+    opacity: 1;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 0.8;
+  }
+}
+@keyframes ji-turnin {
+  from {
+    rotate: var(--from, 0deg);
+  }
+  to {
+    rotate: 0deg;
+  }
+}
+
+/* ——————————————————————————— Reduced motion ———————————————————————————
+ * Fewer and gentler, not none: every state still changes, by a 120 ms
+ * cross-fade. No translate, rotate or scale; no one-shots; no draw-ins.     */
+
+@keyframes ji-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ji-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ji,
+  .ji .jp,
+  .ji .jg-fill,
+  .ji .jg-alt,
+  .ji .jg-base {
+    translate: none !important;
+    rotate: none !important;
+    scale: none !important;
+  }
+  .ji .jp,
+  .ji .jd {
+    animation: none !important;
+  }
+  .ji[data-state="active"][data-on="turn"] .jg-base {
+    rotate: var(--on-turn, 0deg) !important;
+    transition: none;
+  }
+  .ji .jg-enter,
+  .ji .jg-turnin {
+    animation: ji-fade-in 120ms linear both;
+  }
+  .ji .jg-exit {
+    animation: ji-fade-out 120ms linear both;
+  }
+}
+:is([data-rm], [data-motion="reduced"]) .ji,
+:is([data-rm], [data-motion="reduced"]) .ji .jp,
+:is([data-rm], [data-motion="reduced"]) .ji .jg-fill,
+:is([data-rm], [data-motion="reduced"]) .ji .jg-alt,
+:is([data-rm], [data-motion="reduced"]) .ji .jg-base {
+  translate: none !important;
+  rotate: none !important;
+  scale: none !important;
+}
+:is([data-rm], [data-motion="reduced"]) .ji .jp,
+:is([data-rm], [data-motion="reduced"]) .ji .jd {
+  animation: none !important;
+}
+:is([data-rm], [data-motion="reduced"]) .ji[data-state="active"][data-on="turn"] .jg-base {
+  rotate: var(--on-turn, 0deg) !important;
+  transition: none;
+}
+:is([data-rm], [data-motion="reduced"]) .ji .jg-enter,
+:is([data-rm], [data-motion="reduced"]) .ji .jg-turnin {
+  animation: ji-fade-in 120ms linear both;
+}
+:is([data-rm], [data-motion="reduced"]) .ji .jg-exit {
+  animation: ji-fade-out 120ms linear both;
+}

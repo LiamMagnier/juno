@@ -1,36 +1,38 @@
 "use client";
 
 /**
- * CrewFace: a crew member's identity and presence in one small drawing.
+ * CrewFace: a crew member's identity and presence, as a small sculpted object.
  *
- * The grammar (chosen in CrewLab, see RATIONALE.md): a lit body in
- * three-quarter view. Three things are the member's own and never change:
- * its colour family, its form (proportions from the seed) and the set of its
- * eyes. Everything that changes is presence, and presence is carried by four
- * quantities only, each a registered CSS custom property so any change is an
- * interruptible transition (face.css):
+ * The member's AvatarConfig (or, untouched, the one derived from its seed)
+ * says what the object is: a form grammar, proportions, a material, a colour
+ * family, a texture, eyes. Presence is carried by pose only: where it looks,
+ * how open its eyes are, how it sits, how much colour it holds.
  *
- *   --jc-yaw, --jc-pitch   where it is looking (eyes are points on a sphere)
- *   --jc-lid               how open the eyes are
- *   --jc-dark              how much of it is in shadow (light is presence)
- *   --jc-lift, --jc-lean   posture
+ *   available   three-quarter, looking ahead, at rest
+ *   thinking    gaze up and aside, a slight tilt; slow drift while focused
+ *   working     settled, forward and down on the work; a slow nod while focused
+ *   waiting     turns to face you once, eyes a touch more open, then still
+ *   paused      eyes closed, settled lower, colour quieted
+ *   offline     matte and grey, eyes out
  *
- *   available   three-quarter, looking ahead, lit
- *   thinking    eyes up and away; occasional small saccades while it lasts
- *   working     eyes down on the work, lids lowered, leaning in
- *   waiting     turned to you, fully lit, lifted (one attention gesture, then still)
- *   paused      lids closed, waned to a crescent, settled lower
- *   offline     light out, eyes gone, dimmed
+ * Sizes up to 28 px render as cached sprites (<img>, no WebGL context each);
+ * larger faces are live views of the one shared renderer, drawn only while
+ * something moves. Until a render is ready, and wherever WebGL is missing,
+ * the flat silhouette stands in at the same framing.
  *
- * State is always also text: the face carries an accessible name only when
- * asked (`label`), because rows print the name and the state beside it.
+ * The face is decorative by default (rows print the name and the state
+ * beside it); pass `label` where it stands alone.
  */
+
 import * as React from "react";
-import { formFromSeed, bodyPath, familyFromSeed, type CrewFamily, type CrewForm } from "./identity";
-import { registerFace } from "./rig";
+import { avatarFromSeed, avatarKey, normalizeAvatar, type AvatarColor, type AvatarConfig } from "./avatar";
+import type { CrewState, Facing } from "./rig";
+import { Silhouette } from "./silhouette";
+import { resolveTheme, storedSprite, type Theme } from "./sprite-store";
+import type { LiveHandle } from "./engine";
 import "./face.css";
 
-export type CrewState = "available" | "thinking" | "working" | "waiting" | "paused" | "offline";
+export type { CrewState, Facing };
 
 export const CREW_STATE_LABEL: Record<CrewState, string> = {
   available: "Available",
@@ -45,10 +47,12 @@ export interface CrewMember {
   id: string;
   name: string;
   role?: string;
-  /** A seed the identity system derives shape and colour from. */
+  /** A seed the identity is derived from when there is no stored avatar. */
   seed: string;
-  /** The colour family, when the person chose one. Otherwise derived from the seed. */
-  family?: CrewFamily;
+  /** The stored look. Absent: derived from the seed. */
+  avatar?: AvatarConfig;
+  /** A colour family chosen without a full avatar (legacy callers). */
+  family?: AvatarColor;
 }
 
 export interface CrewFaceProps {
@@ -57,163 +61,183 @@ export interface CrewFaceProps {
   size?: number;
   className?: string;
   /**
-   * Motion on (blink, pointer attention, saccades while thinking, state
-   * gestures). Off for faces that are pictures of a choice (a colour swatch
-   * grid), where twenty moving faces would be noise. Reduced motion always
-   * turns it off.
+   * Motion on (gaze, event blinks, state morphs). Off for faces that are
+   * pictures of a choice. Reduced motion always removes movement.
    */
   live?: boolean;
-  /** Play the arrival (a new member being lit for the first time). */
+  /** Play the arrival (a new member, the first time it is shown). */
   arrive?: boolean;
   /** Which way the three-quarter view faces at rest. Rows face their text. */
-  facing?: "right" | "left" | "front";
-  /** Give the face an accessible name ("Mira, waiting for you"). Omit when the name is printed beside it. */
-  label?: boolean;
+  facing?: Facing;
+  /** Give the face an accessible name ("Mira, waiting for you"). */
+  label?: boolean | string;
+  /** The focused context (the open thread's header, the roster card being viewed): allows the thinking/working loop. */
+  focused?: boolean;
+  /** Follow the pointer when it comes near (faces of 28 px and up). Defaults to `live`. */
+  gaze?: boolean;
+  /** Morph shape changes (the avatar editor). */
+  morph?: boolean;
+  /** Force a live render at any size. */
+  forceLive?: boolean;
+  /** Receive the live handle (blink on typing, drag in the editor). */
+  onHandle?: (h: LiveHandle | null) => void;
 }
 
-/** The pose each state rests in. Numbers are unitless; face.css turns them into geometry. */
-export const POSE: Record<CrewState, { yaw: number; pitch: number; lid: number; dark: number; lift: number; lean: number }> = {
-  available: { yaw: 0.34, pitch: 0.05, lid: 0, dark: 0.2, lift: 0, lean: 0 },
-  thinking: { yaw: 0.12, pitch: -0.78, lid: 0.08, dark: 0.2, lift: 0, lean: -1.2 },
-  working: { yaw: 0.46, pitch: 0.72, lid: 0.4, dark: 0.2, lift: 0.4, lean: 2.4 },
-  waiting: { yaw: 0, pitch: -0.05, lid: 0, dark: 0, lift: -1.8, lean: 0 },
-  paused: { yaw: 0.22, pitch: 0.5, lid: 0.84, dark: 0.7, lift: 1.3, lean: 0.8 },
-  offline: { yaw: 0.22, pitch: 0.5, lid: 1, dark: 1, lift: 1.3, lean: 0 },
-};
-
-/** Optical compensation: small faces get relatively larger eyes so they stay legible. */
-function eyeScaleFor(size: number) {
-  if (size <= 16) return 1.3;
-  if (size <= 20) return 1.2;
-  if (size <= 28) return 1.08;
-  return 1;
+let enginePromise: Promise<typeof import("./engine")> | null = null;
+/** three.js arrives in its own chunk, the first time a face needs it. */
+export function loadEngine() {
+  enginePromise ??= import("./engine");
+  return enginePromise;
 }
 
-interface Geometry {
-  d: string;
-  R: number;
-  cy: number;
-  eyeW: number;
-  eyeH: number;
-  spread: number;
-  lat: number;
-  lean: number;
+/** The config a member renders with: its stored avatar, else its seed's. */
+export function useAvatar(member: CrewMember): AvatarConfig {
+  const cfg = member.avatar ? normalizeAvatar(member.avatar, member.seed) : avatarFromSeed(member.seed, member.family);
+  const key = avatarKey(cfg);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return React.useMemo(() => cfg, [key]);
 }
 
-const cache = new Map<string, Geometry>();
-/** Pure geometry for a seed: memoised because rosters repeat faces. */
-export function faceGeometry(seed: string): Geometry {
-  const hit = cache.get(seed);
-  if (hit) return hit;
-  const f = formFromSeed(seed);
-  const form: CrewForm = {
-    ...f,
-    // A head, not a tile: rounder than the lab pebble, still individual.
-    nTop: 2.02 + (f.nTop - 2.25) * 0.5,
-    nBottom: 2.2 + (f.nBottom - 2.6) * 0.42,
-    taper: f.taper * 0.55,
-  };
-  const cy = 33;
-  const g: Geometry = {
-    d: bodyPath(form, 32, cy, 44),
-    R: (form.rx + form.ry) / 2,
-    cy,
-    eyeW: f.eyeW * 0.86,
-    eyeH: f.eyeH * 1.22,
-    spread: 17 + (f.eyeGap - 6.6) * 2.4,
-    lat: 1.5 + (f.eyeY + 3.6) * 1.4,
-    lean: f.lean,
-  };
-  cache.set(seed, g);
-  return g;
-}
-
-export function CrewFace({
-  member,
-  state = "available",
-  size = 20,
-  className,
-  live = true,
-  arrive = false,
-  facing = "right",
-  label = false,
-}: CrewFaceProps) {
-  const family = member.family ?? familyFromSeed(member.seed);
-  const g = faceGeometry(member.seed);
-  const clipId = `jcf${React.useId().replace(/[^a-zA-Z0-9]/g, "")}`;
-  const ref = React.useRef<SVGSVGElement | null>(null);
-  const pose = POSE[state];
-  const dir = facing === "left" ? -1 : facing === "front" ? 0 : 1;
-  const k = eyeScaleFor(size);
-  const ew = g.eyeW * k;
-  const eh = g.eyeH * k;
-
-  // The rig: blink, pointer attention, saccades, gestures on change.
-  React.useEffect(() => {
+function useTheme(ref: React.RefObject<Element | null>): Theme | null {
+  const [theme, setTheme] = React.useState<Theme | null>(null);
+  React.useLayoutEffect(() => {
     const el = ref.current;
-    if (!el || !live) return;
-    return registerFace(el, { state, size, arrive });
-    // Registration follows the element; state changes are pushed below.
+    if (!el) return;
+    const read = () => setTheme(resolveTheme(el));
+    read();
+    window.addEventListener("jcf-theme", read);
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    mq.addEventListener("change", read);
+    return () => {
+      window.removeEventListener("jcf-theme", read);
+      mq.removeEventListener("change", read);
+    };
+  }, [ref]);
+  return theme;
+}
+
+export function CrewFace(props: CrewFaceProps) {
+  const { member, state = "available", size = 20, forceLive } = props;
+  const cfg = useAvatar(member);
+  const name =
+    typeof props.label === "string" ? props.label : props.label ? `${member.name}, ${CREW_STATE_LABEL[state].toLowerCase()}` : undefined;
+  if ((size <= 28 || props.live === false) && !forceLive) return <SpriteFace {...props} cfg={cfg} name={name} state={state} size={size} />;
+  return <LiveFace {...props} cfg={cfg} name={name} state={state} size={size} />;
+}
+
+type Inner = CrewFaceProps & { cfg: AvatarConfig; name?: string; state: CrewState; size: number };
+
+function SpriteFace({ cfg, state, size, facing = "right", className, name, arrive }: Inner) {
+  const ref = React.useRef<HTMLSpanElement | null>(null);
+  const theme = useTheme(ref);
+  const [layers, setLayers] = React.useState<{ top: string | null; under: string | null }>({ top: null, under: null });
+  const key = avatarKey(cfg);
+
+  React.useEffect(() => {
+    if (!theme) return;
+    let cancelled = false;
+    const show = (url: string) => {
+      if (cancelled) return;
+      setLayers((l) => (l.top === url ? l : { top: url, under: l.top }));
+    };
+    const stored = storedSprite(cfg, state, size, theme, facing);
+    if (stored) show(stored);
+    else
+      loadEngine()
+        .then((m) => {
+          const e = m.getEngine();
+          return e.ok ? e.sprite(cfg, state, size, theme, facing) : null;
+        })
+        .then((url) => url && show(url))
+        .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live]);
+  }, [key, state, size, theme, facing]);
+
+  // Drop the layer underneath once the new one has faded in.
   React.useEffect(() => {
-    const el = ref.current;
-    if (!el || !live) return;
-    el.dispatchEvent(new CustomEvent("jc-face-state", { detail: state }));
-  }, [state, live]);
-
-  const style = {
-    width: size,
-    height: size,
-    "--jc-yaw": pose.yaw * (dir === 0 ? 0.2 : dir),
-    "--jc-pitch": pose.pitch,
-    "--jc-lid": pose.lid,
-    "--jc-dark": pose.dark,
-    "--jc-lift": pose.lift,
-    "--jc-lean": pose.lean + g.lean,
-    "--jc-R": g.R * 0.94,
-    "--jc-cy": g.cy,
-    "--jc-spread": g.spread,
-    "--jc-lat": g.lat,
-    "--jc-eh": eh,
-  } as React.CSSProperties;
-
-  const name = label ? `${member.name}, ${CREW_STATE_LABEL[state].toLowerCase()}` : undefined;
+    if (!layers.under) return;
+    const t = setTimeout(() => setLayers((l) => ({ top: l.top, under: null })), 220);
+    return () => clearTimeout(t);
+  }, [layers.under]);
 
   return (
-    <svg
+    <span
       ref={ref}
-      className={className ? `jc-face ${className}` : "jc-face"}
-      viewBox="0 0 64 64"
-      data-family={family}
-      data-state={state}
+      className={className ? `jcf ${className}` : "jcf"}
+      style={{ width: size, height: size }}
       data-arrive={arrive ? "" : undefined}
-      data-live={live ? "" : undefined}
-      data-small={size <= 20 ? "" : undefined}
+      data-ready={layers.top ? "" : undefined}
       role={name ? "img" : undefined}
       aria-label={name}
       aria-hidden={name ? undefined : true}
-      style={style}
-      focusable="false"
     >
-      <defs>
-        <clipPath id={clipId}>
-          <path d={g.d} />
-        </clipPath>
-      </defs>
-      <g className="jc-face__posture">
-        <path className="jc-face__body" d={g.d} />
-        <g clipPath={`url(#${clipId})`}>
-          <circle className="jc-face__light" cx={32} cy={g.cy} r={g.R * 1.1} />
-        </g>
-        <g className="jc-face__eyes">
-          {[-1, 1].map((side) => (
-            <g key={side} className="jc-face__eye" style={{ "--side": side } as React.CSSProperties}>
-              <rect x={-ew / 2} y={-eh} width={ew} height={eh} rx={ew / 2} />
-            </g>
-          ))}
-        </g>
-      </g>
-    </svg>
+      <Silhouette cfg={cfg} size={size} state={state} />
+      {layers.under ? <img className="jcf__img" src={layers.under} alt="" width={size} height={size} draggable={false} /> : null}
+      {layers.top ? (
+        <img key={layers.top} className="jcf__img" data-fade={layers.under ? "" : undefined} src={layers.top} alt="" width={size} height={size} draggable={false} />
+      ) : null}
+    </span>
+  );
+}
+
+function LiveFace({ cfg, state, size, facing = "right", className, name, arrive, live = true, focused = false, gaze, morph, onHandle }: Inner) {
+  const canvas = React.useRef<HTMLCanvasElement | null>(null);
+  const ghost = React.useRef<HTMLCanvasElement | null>(null);
+  const handle = React.useRef<LiveHandle | null>(null);
+  const [ready, setReady] = React.useState(false);
+  const key = avatarKey(cfg);
+  const opts = { cfg, state, size, facing, loop: live && focused, gaze: live && (gaze ?? true), morph: !!morph };
+  const latest = React.useRef(opts);
+  const onHandleRef = React.useRef(onHandle);
+  React.useLayoutEffect(() => {
+    latest.current = opts;
+    onHandleRef.current = onHandle;
+  });
+
+  React.useEffect(() => {
+    let disposed = false;
+    const c = canvas.current;
+    if (!c) return;
+    loadEngine()
+      .then((m) => {
+        if (disposed) return;
+        const e = m.getEngine();
+        if (!e.ok) return;
+        handle.current = e.mount(c, ghost.current, latest.current, () => setReady(true));
+        if (arrive) handle.current.arrive();
+        onHandleRef.current?.(handle.current);
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      handle.current?.dispose();
+      handle.current = null;
+      onHandleRef.current?.(null);
+    };
+    // Remount only when the pixel size changes; everything else is an update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [size]);
+
+  React.useEffect(() => {
+    handle.current?.update(latest.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, state, facing, opts.loop, opts.gaze, opts.morph]);
+
+  return (
+    <span
+      className={className ? `jcf jcf--live ${className}` : "jcf jcf--live"}
+      style={{ width: size, height: size }}
+      data-ready={ready ? "" : undefined}
+      role={name ? "img" : undefined}
+      aria-label={name}
+      aria-hidden={name ? undefined : true}
+    >
+      <Silhouette cfg={cfg} size={size} state={state} />
+      <canvas ref={canvas} className="jcf__canvas" style={{ width: size, height: size }} />
+      <canvas ref={ghost} className="jcf__ghost" style={{ width: size, height: size }} />
+    </span>
   );
 }

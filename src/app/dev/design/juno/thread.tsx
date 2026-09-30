@@ -3,67 +3,81 @@
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CrewFace } from "./crew/face";
-import { ANSWER_CLOSE, ANSWER_INTRO, ANSWER_LIST, ANSWER_TABLE, MIRA, MIRA_PLAN, READS, SLACK_POST, type Segment } from "./fixtures";
+import { ANSWER_CLOSE, ANSWER_INTRO, ANSWER_LIST, ANSWER_TABLE, MIRA, MIRA_PLAN, READS, SLACK_POST, TRACE_SUMMARY, type Segment } from "./fixtures";
 import { Sentence } from "./composer";
 import { Icon } from "./icons";
-import { SlackMark } from "./marks";
-import { R, T, useReduced } from "./motion";
+import { SlackMark, StepMark } from "./marks";
+import { R, SPRING, T, TIMING, useReduced } from "./motion";
 import { face } from "./shell";
 
-/* ————————————————————————— Juno's presence: the caret ————————————————————————— */
+/* ———————————————————————— The live line (M1) ———————————————————————— */
 
 /*
- * Juno's presence is a caret in the presence colour, standing where the answer
- * will begin. While Juno thinks it breathes (opacity only, 1.4s); when words
- * arrive it rides at the end of them, steady; when the answer is done it fades.
- * One object carries the whole wait, so the eye never has to find a new thing.
+ * While Juno works before its first word, one line of text in the presence
+ * colour says what it is doing, and after three seconds how long it has been.
+ * The colour and the changing words are the whole signal: no caret, no dots,
+ * no shimmer, no orb. A phase change cross-fades on fast; the first word of
+ * the answer replaces the line in the same frame.
  */
-export function JunoCaret({ state }: { state: "thinking" | "streaming" | "voice" }) {
-  return <span className="jn-jcaret" data-state={state} aria-hidden="true" />;
-}
-
-export function PresenceLine({ text }: { text: string }) {
+export function LiveLine({ text, seconds, who, className }: { text: string; seconds?: number; who?: "mira"; className?: string }) {
   const reduced = useReduced();
   return (
-    <div className="jn-presence" role="status" aria-live="polite">
-      <JunoCaret state="thinking" />
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.span
-          key={text}
-          className="jn-presence__text"
-          initial={{ opacity: 0, y: reduced ? 0 : 3 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: reduced ? 0 : -3 }}
-          transition={reduced ? R : { duration: 0.18, ease: [0.2, 0, 0, 1] }}
-        >
-          {text}
-        </motion.span>
+    <div className={["jn-live", className].filter(Boolean).join(" ")} role="status" aria-live="polite">
+      {who ? (
+        <span className="jn-live__face">
+          <CrewFace member={face(MIRA)} state="working" size={16} live={false} />
+        </span>
+      ) : null}
+      <span className="jn-live__words">
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.span key={text} className="jn-live__text" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={reduced ? T.instant : T.fast}>
+            {text}
+          </motion.span>
+        </AnimatePresence>
+      </span>
+      {seconds !== undefined && seconds >= 3 ? <span className="jn-live__secs num">{seconds}s</span> : null}
+    </div>
+  );
+}
+
+/** Seconds since mount, ticking once a second (a number changing is information, not animation). */
+export function useSeconds(running: boolean, start = 0) {
+  const [s, setS] = React.useState(start);
+  React.useEffect(() => {
+    if (!running) return;
+    const t = window.setInterval(() => setS((x) => x + 1), 1000);
+    return () => window.clearInterval(t);
+  }, [running]);
+  return s;
+}
+
+/* ———————————————————————— The person's message and its receipt ———————————————————————— */
+
+export function UserMessage({ segments, receipt, animateIn = false }: { segments: Segment[]; receipt?: string | null; animateIn?: boolean }) {
+  const reduced = useReduced();
+  return (
+    <div className="jn-umsg">
+      <motion.div
+        className="jn-umsg__bubble"
+        initial={animateIn && !reduced ? { opacity: 0.6 } : false}
+        animate={{ opacity: 1 }}
+        transition={T.fast}
+      >
+        <Sentence segments={segments} still />
+      </motion.div>
+      <AnimatePresence initial={false}>
+        {receipt ? (
+          <motion.p key="receipt" className="jn-receipt" initial={animateIn ? { opacity: 0 } : false} animate={{ opacity: 1 }} transition={T.fast}>
+            {receipt}
+          </motion.p>
+        ) : null}
       </AnimatePresence>
     </div>
   );
 }
 
-/* ———————————————————————— The user's message ———————————————————————— */
 
-export function UserMessage({ segments, layoutId, bgDelay = 0.12, animateIn = false }: { segments: Segment[]; layoutId?: string; bgDelay?: number; animateIn?: boolean }) {
-  const reduced = useReduced();
-  return (
-    <div className="jn-umsg">
-      <div className="jn-umsg__bubble">
-        <motion.span
-          className="jn-umsg__bg"
-          aria-hidden="true"
-          initial={animateIn ? { opacity: 0 } : false}
-          animate={{ opacity: 1 }}
-          transition={reduced ? R : { duration: 0.22, delay: bgDelay, ease: [0.2, 0, 0, 1] }}
-        />
-        <Sentence segments={segments} layoutId={layoutId} still />
-      </div>
-    </div>
-  );
-}
-
-/* ———————————————————————— The answer, as blocks of words ———————————————————————— */
+/* ———————————————————————— The answer, as blocks of words (M2, M3, M8) ———————————————————————— */
 
 type Run = { t: string; b?: boolean };
 type Block = { k: "h"; runs: Run[] } | { k: "p"; runs: Run[] } | { k: "li"; runs: Run[] } | { k: "table" };
@@ -94,12 +108,12 @@ function wordsOf(runs: Run[]): { w: string; b?: boolean }[] {
 const BLOCK_WORDS = BLOCKS.map((b) => (b.k === "table" ? 6 : wordsOf(b.runs).length));
 export const ANSWER_WORDS = BLOCK_WORDS.reduce((a, b) => a + b, 0);
 
-function Words({ runs, shown, caret }: { runs: Run[]; shown: number; caret?: boolean }) {
+function Words({ runs, shown }: { runs: Run[]; shown: number }) {
   const words = wordsOf(runs);
-  if (shown >= words.length && !caret) {
+  if (shown >= words.length) {
     return <>{runs.map((r, i) => (r.b ? <strong key={i}>{r.t}</strong> : <React.Fragment key={i}>{r.t}</React.Fragment>))}</>;
   }
-  // Streaming: each word fades in where it will stay (140ms). No slide, no blur, no bounce.
+  // Streaming: each word fades in where it will stay (160ms). No slide, no blur, no caret.
   return (
     <>
       {words.slice(0, shown).map((x, i) =>
@@ -113,14 +127,12 @@ function Words({ runs, shown, caret }: { runs: Run[]; shown: number; caret?: boo
           </span>
         ),
       )}
-      {caret ? <JunoCaret state="streaming" /> : null}
     </>
   );
 }
 
 export function Answer({ revealed = Infinity }: { revealed?: number }) {
   let budget = revealed;
-  const streaming = revealed !== Infinity && revealed < ANSWER_WORDS;
   const items: React.ReactNode[] = [];
   const listItems: React.ReactNode[] = [];
   const flushList = (key: string) => {
@@ -131,14 +143,13 @@ export function Answer({ revealed = Infinity }: { revealed?: number }) {
     const n = BLOCK_WORDS[i];
     const shown = Math.min(budget, n);
     budget -= n;
-    const last = streaming && budget <= 0;
     if (b.k !== "li") flushList(`ul-${i}`);
-    if (b.k === "h") items.push(<h3 key={i}><Words runs={b.runs} shown={shown} caret={last} /></h3>);
-    if (b.k === "p") items.push(<p key={i}><Words runs={b.runs} shown={shown} caret={last} /></p>);
-    if (b.k === "li") listItems.push(<li key={i}><Words runs={b.runs} shown={shown} caret={last} /></li>);
+    if (b.k === "h") items.push(<h3 key={i}><Words runs={b.runs} shown={shown} /></h3>);
+    if (b.k === "p") items.push(<p key={i}><Words runs={b.runs} shown={shown} /></p>);
+    if (b.k === "li") listItems.push(<li key={i}><Words runs={b.runs} shown={shown} /></li>);
     if (b.k === "table")
       items.push(
-        <div key={i} className={revealed === Infinity ? "jn-tablewrap" : "jn-tablewrap jn-w"}>
+        <div key={i} className={revealed === Infinity ? "jn-tablewrap" : "jn-tablewrap jn-w"} role="region" aria-label="Table, 4 columns, 3 rows" tabIndex={0}>
           <table className="jn-table">
             <thead>
               <tr>
@@ -165,34 +176,44 @@ export function Answer({ revealed = Infinity }: { revealed?: number }) {
       );
   });
   flushList("ul-end");
-  return <div className="jn-answer">{items}</div>;
+  return (
+    <div className="jn-answer" aria-busy={revealed !== Infinity && revealed < ANSWER_WORDS ? true : undefined}>
+      {items}
+    </div>
+  );
 }
 
-/* ———————————————————— What Juno did, collapsed to one line ———————————————————— */
+/* ———————————————————— What Juno did: the work trace (M5) ———————————————————— */
 
-export function ActivityLine({ open: initialOpen = false, label = "Read 3 files and searched the web", items = READS }: { open?: boolean; label?: string; items?: { verb: string; object: string }[] }) {
+export function Trace({ open: initialOpen = false, label = TRACE_SUMMARY, items = READS }: { open?: boolean; label?: string; items?: typeof READS }) {
   const [open, setOpen] = React.useState(initialOpen);
   const reduced = useReduced();
   return (
-    <div className="jn-activity">
-      <button type="button" className="jn-activity__line jicon-trigger" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+    <div className="jn-trace" role="group" aria-label="Juno’s steps">
+      <button type="button" className="jn-trace__line jicon-trigger" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span>{label}</span>
-        <Icon name={open ? "chevron-down" : "chevron-right"} size={16} />
+        <span className="jn-trace__chev" data-open={open ? "" : undefined}>
+          <Icon name="chevron-right" size={16} />
+        </span>
       </button>
       <AnimatePresence initial={false}>
         {open ? (
           <motion.ul
-            key="reads"
-            className="jn-activity__list"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={reduced ? R : T.grow}
+            key="steps"
+            className="jn-trace__list"
+            initial={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
+            animate={reduced ? { opacity: 1 } : { height: "auto", opacity: 1 }}
+            exit={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
+            transition={reduced ? R : T.disclose}
             style={{ overflow: "hidden" }}
           >
             {items.map((r) => (
-              <li key={r.object}>
-                <span className="ink-3">{r.verb}</span> <span className="jn-activity__obj">{r.object}</span>
+              <li key={r.object} className="jn-step">
+                <span className="jn-step__mark">
+                  <StepMark mark={r.mark} />
+                </span>
+                <span className="jn-step__verb">{r.verb}</span> <span className="jn-step__obj">{r.object}</span>
+                {r.where ? <span className="jn-step__where"> {r.where}</span> : null}
               </li>
             ))}
           </motion.ul>
@@ -202,20 +223,29 @@ export function ActivityLine({ open: initialOpen = false, label = "Read 3 files 
   );
 }
 
+/* ———————————————————— The action row (M10, M11, M12) ———————————————————— */
+
 export function MessageActions() {
   const [copied, setCopied] = React.useState(false);
+  const [vote, setVote] = React.useState<null | "good" | "bad">(null);
   React.useEffect(() => {
     if (!copied) return;
-    const t = window.setTimeout(() => setCopied(false), 1600);
+    const t = window.setTimeout(() => setCopied(false), TIMING.copiedHold);
     return () => window.clearTimeout(t);
   }, [copied]);
   return (
-    <div className="jn-actions">
+    <div className="jn-actions" role="group" aria-label="Reply actions">
       <button type="button" className="jib jib--sm jicon-trigger" aria-label={copied ? "Copied" : "Copy"} onClick={() => setCopied(true)}>
         <Icon name={copied ? "check" : "copy"} size={16} state={copied ? "active" : "rest"} />
       </button>
       <button type="button" className="jib jib--sm jicon-trigger" aria-label="Try again">
         <Icon name="retry" size={16} />
+      </button>
+      <button type="button" className="jib jib--sm jicon-trigger" aria-label="Good response" aria-pressed={vote === "good"} onClick={() => setVote((v) => (v === "good" ? null : "good"))}>
+        <Icon name="thumbs-up" size={16} state={vote === "good" ? "active" : "rest"} />
+      </button>
+      <button type="button" className="jib jib--sm jicon-trigger" aria-label="Bad response" aria-pressed={vote === "bad"} onClick={() => setVote((v) => (v === "bad" ? null : "bad"))}>
+        <Icon name="thumbs-down" size={16} state={vote === "bad" ? "active" : "rest"} />
       </button>
       <button type="button" className="jib jib--sm jicon-trigger" aria-label="More">
         <Icon name="more" size={16} />
@@ -224,73 +254,157 @@ export function MessageActions() {
   );
 }
 
-/* ———————————————————————— A live task inside the chat ———————————————————————— */
+/* ———————————————————————— A live task inside the chat (T1–T5, T10) ———————————————————————— */
 
-export function TaskCard({ planOpen: initialPlan = false, answered = false }: { planOpen?: boolean; answered?: boolean }) {
-  const [plan, setPlan] = React.useState(initialPlan);
-  const [choice, setChoice] = React.useState<string | null>(answered ? "Halvorsen AS" : null);
+const OPTIONS = [
+  { value: "Halvorsen AS", line: "Annual plan, €96,000, renews 30 November" },
+  { value: "Halvorsen Group", line: "Monthly since August, €6,033 a month" },
+];
+
+export const HANDOFF_ID = "jn-handoff";
+
+export function TaskCard({
+  planOpen: initialPlan = false,
+  answered = null,
+  choice: initialChoice = null,
+  handoff = false,
+}: {
+  planOpen?: boolean;
+  answered?: string | null;
+  /** An option already chosen but not yet sent (a still of the selected state). */
+  choice?: string | null;
+  /** The live line that described the work becomes this card's title (T1). */
+  handoff?: boolean;
+}) {
   const reduced = useReduced();
-  const state = choice ? "working" : "waiting";
+  const [plan, setPlan] = React.useState(initialPlan);
+  const [choice, setChoice] = React.useState<string | null>(initialChoice);
+  const [sent, setSent] = React.useState<string | null>(answered);
+  const [other, setOther] = React.useState(false);
+  const waiting = !sent;
   return (
-    <section className="jn-task" aria-label="Task: Mira is checking renewal usage">
-      <div className="jn-task__head">
+    <section className="jn-task" aria-label="Task: Mira is checking renewal usage for three accounts">
+      <header className="jn-task__head">
         <span className="jn-task__face">
-          <CrewFace member={face(MIRA)} state={state} size={28} />
+          <CrewFace member={face(MIRA)} state={waiting ? "waiting" : "working"} size={24} />
         </span>
         <div className="jn-task__main">
-          <p className="jn-task__what">Mira is matching Stripe customers to the three accounts</p>
-          <p className="jn-task__progress num">{choice ? `Checking ${choice}, step 2 of 4` : "Step 2 of 4, waiting on you for 4 minutes"}</p>
+          <motion.p className="jn-task__what" layoutId={handoff && !reduced ? HANDOFF_ID : undefined} transition={SPRING.emphasized}>
+            Mira is checking renewal usage for three accounts
+          </motion.p>
+          <p className="jn-task__progress num">
+            {waiting ? (
+              <>Stopped at step 2 of 4 for your answer</>
+            ) : (
+              <>
+                <span className="jn-task__verb">Matching {sent} in Stripe</span>, step 2 of 4
+              </>
+            )}
+          </p>
         </div>
-        <button type="button" className="jb jb--ghost jb--sm jicon-trigger">
-          <Icon name="stop" size={16} />
-          Stop
-        </button>
-      </div>
-      <AnimatePresence initial={false}>
-        {!choice ? (
+        <span className="jn-task__ctl">
+          <button type="button" className="jb jb--ghost jb--sm">
+            Pause
+          </button>
+          <button type="button" className="jb jb--ghost jb--sm">
+            Stop
+          </button>
+        </span>
+      </header>
+
+      <AnimatePresence initial={false} mode="popLayout">
+        {waiting ? (
           <motion.div
             key="need"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={reduced ? R : T.grow}
-            style={{ overflow: "hidden" }}
+            className="jn-task__need"
+            initial={reduced ? { opacity: 0 } : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, transition: reduced ? R : T.exit }}
+            transition={reduced ? R : T.base}
           >
-            <div className="jn-task__need">
-              <p className="jn-task__needlabel">Mira needs your answer</p>
-              <p className="jn-task__question">Halvorsen has two Stripe customers. Which one holds the annual plan?</p>
-              <div className="jn-task__options">
-                {["Halvorsen AS", "Halvorsen Group", "Check both"].map((o) => (
-                  <button key={o} type="button" className="jb jb--secondary jb--sm" onClick={() => setChoice(o)}>
-                    {o}
-                  </button>
-                ))}
-                <span className="jn-task__or">or reply below</span>
-              </div>
+            <p className="jn-task__ask">
+              <b className="jn-attn">Needs your answer:</b> Halvorsen has two Stripe customers. Which one holds the annual plan?
+            </p>
+            <div className="jn-q" role="radiogroup" aria-label="Which Halvorsen customer holds the annual plan?">
+              {OPTIONS.map((o, i) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={choice === o.value}
+                  className="jn-q__opt"
+                  onClick={() => {
+                    setChoice(o.value);
+                    setOther(false);
+                  }}
+                >
+                  <span className="jn-q__radio" aria-hidden="true" />
+                  <span className="jn-q__text">
+                    <span>{o.value}</span>
+                    <span className="jn-q__line">{o.line}</span>
+                  </span>
+                  <span className="jkbd jn-q__key" aria-hidden="true">
+                    {i + 1}
+                  </span>
+                </button>
+              ))}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={other}
+                className="jn-q__opt jn-q__opt--other"
+                onClick={() => {
+                  setOther(true);
+                  setChoice(null);
+                }}
+              >
+                <span className="jn-q__radio" aria-hidden="true" />
+                <span className="jn-q__text">
+                  <span>Something else…</span>
+                </span>
+              </button>
+            </div>
+            <div className="jn-q__actions">
+              <button type="button" className="jb jb--ghost jb--sm">
+                Skip
+              </button>
+              <button type="button" className="jb jb--primary jb--sm" aria-disabled={!choice && !other} onClick={() => choice && setSent(choice)}>
+                Continue
+              </button>
             </div>
           </motion.div>
-        ) : null}
+        ) : (
+          <motion.p key="answered" className="jn-task__answered" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={reduced ? R : T.base}>
+            You answered: <span className="jn-task__answer">{sent}</span>
+            <button type="button" className="jb jb--link" onClick={() => setSent(null)}>
+              Change
+            </button>
+          </motion.p>
+        )}
       </AnimatePresence>
+
       <button type="button" className="jn-task__plan jicon-trigger" aria-expanded={plan} onClick={() => setPlan((p) => !p)}>
-        <Icon name={plan ? "chevron-down" : "chevron-right"} size={16} />
+        <span className="jn-trace__chev" data-open={plan ? "" : undefined}>
+          <Icon name="chevron-right" size={16} />
+        </span>
         <span>Plan</span>
-        <span className="ink-3 num">1 of 4 done</span>
+        <span className="num">1 of 4 steps done, 6 min</span>
       </button>
       <AnimatePresence initial={false}>
         {plan ? (
           <motion.ol
             key="plan"
             className="jn-plan"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={reduced ? R : T.grow}
+            initial={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
+            animate={reduced ? { opacity: 1 } : { height: "auto", opacity: 1 }}
+            exit={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
+            transition={reduced ? R : T.disclose}
             style={{ overflow: "hidden" }}
           >
             {MIRA_PLAN.map((step) => (
               <li key={step.title} className="jn-plan__step" data-state={step.state}>
                 <span className="jn-plan__mark">
-                  <Icon name={step.state === "done" ? "check" : step.state === "active" ? "progress" : "circle"} size={16} state={step.state === "active" ? "active" : "rest"} />
+                  <Icon name={step.state === "done" ? "check" : step.state === "active" ? "progress" : "circle"} size={16} state={step.state === "active" && !waiting ? "active" : "rest"} />
                 </span>
                 {step.title}
               </li>
@@ -302,58 +416,169 @@ export function TaskCard({ planOpen: initialPlan = false, answered = false }: { 
   );
 }
 
-/* ———————————— An approval, docked on the composer where your hands are ———————————— */
+/* ———————————— The approval card (T6): deterministic, the button is the verb ———————————— */
 
-export function Approval({ animate = false, onInstead }: { animate?: boolean; onInstead?: () => void }) {
+export function Approval({ animate = false, menuOpen = false, onInstead }: { animate?: boolean; menuOpen?: boolean; onInstead?: () => void }) {
   const reduced = useReduced();
-  const [outcome, setOutcome] = React.useState<null | "denied" | "allowed" | "always">(null);
-  const body = (
-    <div className="jn-approve" role="group" aria-label="Approval: post the summary to #design in Slack">
-      <div className="jn-approve__head">
-        <SlackMark size={20} className="jn-approve__mark" />
-        <div className="jn-approve__words">
-          <p className="jn-approve__title">Post the summary to #design in Slack?</p>
-          <p className="jn-approve__sub">Juno will post as you, once. Your Slack rule is to ask first.</p>
-        </div>
-      </div>
-      <p className="jn-approve__body">{SLACK_POST}</p>
-      <AnimatePresence mode="wait" initial={false}>
+  const [outcome, setOutcome] = React.useState<null | "denied" | "posted" | "always">(null);
+  const [armed, setArmed] = React.useState(!animate);
+  const [menu, setMenu] = React.useState(menuOpen);
+  const [redirect, setRedirect] = React.useState(false);
+
+  // Arming: for 500ms after the card appears the verb ignores activation (no countdown is shown).
+  React.useEffect(() => {
+    if (armed) return;
+    const t = window.setTimeout(() => setArmed(true), TIMING.approvalArm);
+    return () => window.clearTimeout(t);
+  }, [armed]);
+
+  const card = (
+    <section className="jn-approve" role="group" aria-labelledby="jn-approve-title" data-outcome={outcome ?? undefined}>
+      <AnimatePresence mode="popLayout" initial={false}>
         {outcome ? (
-          <motion.p key="done" className="jn-approve__outcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={reduced ? R : T.fade}>
-            <Icon name="check" size={16} state="active" />
-            {outcome === "denied" ? "Not posted. Juno will carry on without it." : outcome === "always" ? "Posted to #design at 14:06. Slack posts no longer ask." : "Posted to #design at 14:06."}
+          <motion.p
+            key="receipt"
+            className="jn-approve__receipt"
+            initial={reduced ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={reduced ? R : SPRING.reward}
+          >
+            <SlackMark size={16} />
+            {outcome === "denied" ? (
+              <span className="ink-3">Not posted. You said not now.</span>
+            ) : (
+              <span>
+                Posted to #design <span className="ink-3 num">at 14:06</span>
+                {outcome === "always" ? <span className="ink-3">. Juno posts to #design without asking from now on.</span> : null}
+              </span>
+            )}
             <button type="button" className="jb jb--link" onClick={() => setOutcome(null)}>
               Undo
             </button>
           </motion.p>
         ) : (
-          <motion.div key="ask" className="jn-approve__actions" exit={{ opacity: 0 }} transition={reduced ? R : T.menuOut}>
-            <button type="button" className="jb jb--secondary" onClick={() => setOutcome("denied")}>
-              Deny
-            </button>
-            <button type="button" className="jb jb--primary" onClick={() => setOutcome("allowed")}>
-              Allow once
-            </button>
-            <button type="button" className="jb jb--ghost" onClick={() => setOutcome("always")}>
-              Always for Slack
-            </button>
-            <button type="button" className="jb jb--link jn-approve__instead" onClick={onInstead}>
-              Tell Juno what to do instead
-            </button>
+          <motion.div key="ask" exit={{ opacity: 0, transition: reduced ? R : T.exit }}>
+            <header className="jn-approve__head">
+              <SlackMark size={20} className="jn-approve__mark" />
+              <p id="jn-approve-title" className="jn-approve__title">
+                Juno wants to post to #design
+              </p>
+            </header>
+            <div className="jn-approve__payload">
+              <p className="jn-approve__channel">
+                <span className="jn-approve__hash">#design</span> <span className="ink-3">in Northwind Slack, as you</span>
+              </p>
+              <p className="jn-approve__msg">{SLACK_POST}</p>
+            </div>
+            <p className="jn-approve__consequence">Visible to 42 people. Your Slack rule is to ask before posting.</p>
+            {redirect ? (
+              <div className="jn-approve__redirect">
+                <label className="jfield">
+                  <input autoFocus placeholder="Tell Juno what to do instead" aria-label="Tell Juno what to do instead" />
+                </label>
+                <button type="button" className="jb jb--ghost jb--sm" onClick={() => setRedirect(false)}>
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div className="jn-approve__actions">
+                <button type="button" className="jb jb--secondary" onClick={() => setOutcome("denied")}>
+                  Not now
+                </button>
+                <span className="jsplit" data-armed={armed ? "" : undefined}>
+                  <button type="button" className="jb jb--primary jsplit__main" aria-disabled={!armed} onClick={() => armed && setOutcome("posted")}>
+                    Post to #design
+                  </button>
+                  <button
+                    type="button"
+                    className="jb jb--primary jsplit__caret jicon-trigger"
+                    aria-label="More ways to post"
+                    aria-haspopup="menu"
+                    aria-expanded={menu}
+                    aria-disabled={!armed}
+                    onClick={() => armed && setMenu((m) => !m)}
+                  >
+                    <Icon name="chevron-down" size={16} state={menu ? "active" : "rest"} />
+                  </button>
+                  <AnimatePresence>
+                    {menu ? (
+                      <motion.div
+                        key="menu"
+                        className="jn-pop jn-menu jsplit__menu"
+                        role="menu"
+                        initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: -4 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, transition: reduced ? R : T.exit }}
+                        transition={reduced ? R : T.base}
+                      >
+                        <button
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked="true"
+                          className="jn-pop__row"
+                          onClick={() => {
+                            setMenu(false);
+                            setOutcome("posted");
+                          }}
+                        >
+                          <span className="jn-pop__text">Post once</span>
+                          <span className="jn-pop__check">
+                            <Icon name="check" size={16} />
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked="false"
+                          className="jn-pop__row"
+                          onClick={() => {
+                            setMenu(false);
+                            setOutcome("always");
+                          }}
+                        >
+                          <span className="jn-pop__text">Always allow Juno to post to #design</span>
+                        </button>
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
+                </span>
+                <button
+                  type="button"
+                  className="jb jb--link jn-approve__instead"
+                  onClick={() => {
+                    setRedirect(true);
+                    onInstead?.();
+                  }}
+                >
+                  Tell Juno what to do
+                </button>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </section>
   );
-  if (!animate) return body;
+  if (!animate) return card;
   return (
-    <motion.div
-      initial={{ height: 0, opacity: 0 }}
-      animate={{ height: "auto", opacity: 1 }}
-      transition={reduced ? R : { duration: 0.26, ease: [0.2, 0, 0, 1] }}
-      style={{ overflow: "hidden" }}
-    >
-      {body}
+    <motion.div initial={reduced ? { opacity: 0 } : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={reduced ? R : T.base}>
+      {card}
     </motion.div>
+  );
+}
+
+/* ———————————— The dock row (§2.1): needs you, when the card is out of view ———————————— */
+
+export function NeedsYouRow({ onShow }: { onShow?: () => void }) {
+  return (
+    <div className="jn-dockrow" role="status">
+      <CrewFace member={face(MIRA)} state="waiting" size={20} live={false} />
+      <span className="jn-dockrow__text">
+        Mira <span className="jn-attn">needs your answer</span> on the Halvorsen renewal
+      </span>
+      <button type="button" className="jb jb--ghost jb--sm" onClick={onShow}>
+        Show
+      </button>
+    </div>
   );
 }

@@ -4,6 +4,7 @@ import * as React from "react";
 import { CrewFace } from "./crew/face";
 import { crew, LIB_FILTERS, LIBRARY, type LibItem, type LibKind } from "./fixtures";
 import { Icon } from "./icons";
+import { Segmented } from "./composer";
 import { FileMark } from "./marks";
 import { AppFrame, ChatSidebar, face, MobileBar } from "./shell";
 
@@ -179,17 +180,17 @@ export function LibraryScene() {
           </label>
         </header>
         <div className="jn-page__bar">
-          <div className="jfilter" role="group" aria-label="Show">
-            {LIB_FILTERS.map((f) => (
-              <button key={f} type="button" className="jfilter__opt" aria-pressed={filter === f} onClick={() => setFilter(f)}>
-                {f}
-              </button>
-            ))}
-          </div>
-          <button type="button" className="jn-sort jicon-trigger">
-            Recent
-            <Icon name="chevron-down" size={16} />
-          </button>
+          <Segmented options={LIB_FILTERS} value={filter} onChange={setFilter} label="Show" layoutKey="lib-filter" className="jn-lib__filter" />
+          <span className="jn-page__tools">
+            <button type="button" className="jn-sort jicon-trigger">
+              Anyone
+              <Icon name="chevron-down" size={16} />
+            </button>
+            <button type="button" className="jn-sort jicon-trigger">
+              Recent
+              <Icon name="chevron-down" size={16} />
+            </button>
+          </span>
         </div>
         <ul className="jn-lib">
           {LIBRARY.map((item) => (
@@ -208,7 +209,7 @@ export function LibraryScene() {
                   <span className="jn-lib__meta">
                     {item.by ? (
                       <>
-                        <CrewFace member={face(crew(item.by))} state="available" size={14} live={false} />
+                        <CrewFace member={face(crew(item.by))} state="available" size={16} live={false} />
                         {crew(item.by).name},{" "}
                       </>
                     ) : null}

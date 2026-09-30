@@ -205,7 +205,7 @@ export function ModelMark({ provider, className }: { provider: Provider; classNa
 export function TokenMark({ token, size = 16 }: { token: TokenRef; size?: number }) {
   if (token.kind === "crew") {
     const m = crew(token.id);
-    return <CrewFace member={{ id: m.id, name: m.name, role: m.role, seed: m.seed }} state="available" size={size} />;
+    return <CrewFace member={{ id: m.id, name: m.name, role: m.role, seed: m.seed }} state="available" size={size} live={false} />;
   }
   if (token.kind === "file") return <FileMark name={token.label} size={size} className="jn-mark" />;
   if (token.kind === "app") return <AppMark id={token.id} size={size} className="jn-mark" />;
@@ -214,3 +214,10 @@ export function TokenMark({ token, size = 16 }: { token: TokenRef; size?: number
 }
 
 export const tokenById = (id: string): TokenRef => TOKENS[id];
+
+/** A work-trace step's mark (M5): "file:Name.ext", "app:stripe" or "web". */
+export function StepMark({ mark, size = 16 }: { mark: string; size?: number }) {
+  if (mark.startsWith("file:")) return <FileMark name={mark.slice(5)} size={size} className="jn-mark" />;
+  if (mark.startsWith("app:")) return <AppMark id={mark.slice(4)} size={size} className="jn-mark" />;
+  return <Icon name="globe" size={size} className="jn-mark jn-mark--ink" />;
+}

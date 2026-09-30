@@ -25,8 +25,9 @@ function SideHead() {
     <div className="jn-side__head">
       <Wordmark />
       <span className="jn-side__headtools">
-        <button type="button" className="jib jib--sm jicon-trigger" aria-label="Activity">
-          <Icon name="bell" size={16} />
+        {/* S10: unseen records turn the bell's glyph solid. No dot, no count. */}
+        <button type="button" className="jib jib--sm jicon-trigger" aria-label="Activity, 2 unseen">
+          <Icon name="bell" size={16} state="active" />
         </button>
         <button type="button" className="jib jib--sm jicon-trigger" aria-label="Hide sidebar">
           <Icon name="sidebar" size={16} />
@@ -75,7 +76,7 @@ export function CrewRowItem({ m, current }: { m: CrewRow; current?: boolean }) {
   return (
     <a href="#" className="jrow jn-side__crew" aria-current={current ? "page" : undefined}>
       <span className="jrow__lead">
-        <CrewFace member={face(m)} state={m.state} size={20} />
+        <CrewFace member={face(m)} state={m.state} size={20} live={false} />
       </span>
       <span className="jn-side__crewname">{m.name}</span>
       <span className="jrow__text jn-side__crewnow">{m.now}</span>
@@ -112,10 +113,10 @@ export function ChatSidebar({ current, crewCurrent }: { current?: "thread" | "li
         <Section label="Needs you">
           <a href="#" className="jrow jn-side__need">
             <span className="jrow__lead">
-              <CrewFace member={face(mira)} state="waiting" size={20} />
+              <CrewFace member={face(mira)} state="waiting" size={20} live={false} />
             </span>
             <span className="jrow__text">
-              <span className="jn-side__needwho">Mira</span> asks which Halvorsen account
+              Mira <span className="jn-attn">wants your answer</span>
             </span>
           </a>
         </Section>
@@ -128,7 +129,7 @@ export function ChatSidebar({ current, crewCurrent }: { current?: "thread" | "li
           }
         >
           {CREW.slice(0, 4).map((m) => (
-            <CrewRowItem key={m.id} m={m} current={crewCurrent === m.id || (current === "crew" && !crewCurrent && false)} />
+            <CrewRowItem key={m.id} m={m} current={crewCurrent === m.id} />
           ))}
         </Section>
         <Section label="Recent">
@@ -164,10 +165,12 @@ export function CodeSidebar({ current = 0 }: { current?: number }) {
       <div className="jn-side__scroll">
         <Section label="Needs you">
           <a href="#" className="jrow jn-side__need">
-            <span className="jrow__lead jn-side__glyph" data-state="waiting">
+            <span className="jrow__lead jn-side__glyph">
               <Icon name="hand" size={16} />
             </span>
-            <span className="jrow__text">Approve the migration plan</span>
+            <span className="jrow__text">
+              Search index <span className="jn-attn">wants your approval</span>
+            </span>
           </a>
         </Section>
         <Section label="Sessions">

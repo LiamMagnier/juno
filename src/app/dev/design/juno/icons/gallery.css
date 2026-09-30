@@ -1,0 +1,500 @@
+/* The icon gallery (dev only). Uses the foundations tokens from ../tokens.css. */
+
+.jig {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 56px 40px 96px;
+  color: var(--ink);
+}
+.jig-head {
+  max-width: 640px;
+  margin-bottom: 40px;
+}
+.jig-title {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 40px;
+  line-height: 44px;
+  letter-spacing: -0.012em;
+  font-variation-settings: "opsz" 48;
+  margin-bottom: 12px;
+}
+.jig-lede {
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 24px;
+}
+.jig-sec {
+  margin-top: 36px;
+}
+.jig-h2 {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--ink-2);
+  margin-bottom: 12px;
+}
+.jig-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  overflow: hidden;
+}
+.jig-cell {
+  background: var(--ground);
+  padding: 14px 14px 10px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 6px;
+  align-items: center;
+}
+.jig-sizes {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.jig-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: var(--ink);
+  transition: background-color var(--d-fast) var(--e-out);
+}
+.jig-btn[data-size="24"] {
+  width: 40px;
+  height: 40px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .jig-btn:hover {
+    background: var(--fill-hover);
+  }
+}
+.jig-btn:active {
+  background: var(--fill-press);
+}
+.jig-states {
+  justify-self: end;
+  display: flex;
+  gap: 2px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+.jig-state {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 36px;
+  color: var(--ink-2);
+}
+.jig-state[data-dim] {
+  opacity: 0.25;
+}
+.jig-name {
+  grid-column: 1 / -1;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ink-3);
+  padding-left: 10px;
+}
+
+/* ——— Split panes (light beside dark) ——— */
+.jig--proof,
+.jig--lab,
+.jig--context {
+  max-width: none;
+  padding: 0;
+}
+.jig-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 100dvh;
+}
+.jig-pane {
+  min-height: auto;
+  padding: 32px;
+  background: var(--ground);
+  color: var(--ink);
+}
+
+/* ——— Proof ——— */
+.jig-proof {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 6px 4px;
+}
+.jig-proofcell {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 8px 2px;
+  color: var(--ink);
+}
+.jig-proofcell > span {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 12px;
+  color: var(--ink-3);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* ——— Lab ——— */
+.jig-labrow {
+  margin-bottom: 28px;
+}
+.jig-labcap {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-bottom: 8px;
+}
+.jig-labnav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 200px));
+  gap: 0 16px;
+  margin-bottom: 12px;
+}
+.jig-labitem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 8px;
+  font-size: 14px;
+  color: var(--ink);
+}
+.jig-labitem > svg {
+  color: var(--ink-2);
+}
+.jig-labstrip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  color: var(--ink-2);
+}
+.jig-labsep {
+  width: 1px;
+  height: 20px;
+  background: var(--line-2);
+}
+
+/* ——— Context ——— */
+.jig-ctx {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  padding: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+.jig-side {
+  background: var(--side);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.jig-sidehead {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 2px 0 10px;
+  margin-bottom: 6px;
+}
+.jig-wordmark {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 21px;
+  letter-spacing: -0.01em;
+}
+.jig-sidetools {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+.jig-ib {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: var(--ink-3);
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out);
+}
+.jig-crow .jig-ib {
+  width: 32px;
+  height: 32px;
+  color: var(--ink-2);
+}
+.jig-ib--sm {
+  width: 24px;
+  height: 24px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .jig-ib:hover,
+  .jig-row:hover,
+  .jig-chip:hover,
+  .jig-model:hover {
+    background: var(--fill-hover);
+    color: var(--ink);
+  }
+}
+.jig-ib:active,
+.jig-ib[aria-expanded="true"],
+.jig-ib[aria-pressed="true"] {
+  background: var(--fill-press);
+  color: var(--ink);
+}
+.jig-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: var(--r-row);
+  color: var(--ink);
+}
+.jig-row > svg {
+  color: var(--ink-3);
+}
+.jig-row[aria-current="page"] {
+  background: var(--fill-selected);
+}
+.jig-row[aria-current="page"] > svg {
+  color: var(--ink);
+}
+.jig-row--session {
+  color: var(--ink-2);
+}
+.jig-row--session[data-kind="progress"] > svg {
+  color: var(--presence);
+}
+.jig-row--session[data-kind="hand"] > svg {
+  color: var(--attn);
+}
+.jig-row--session[data-kind="alert"] > svg {
+  color: var(--danger);
+}
+.jig-sidelabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 8px 4px 10px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.jig-main {
+  padding: 40px 40px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 720px;
+}
+.jig-msg p {
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--ink);
+}
+.jig-actions {
+  display: flex;
+  gap: 2px;
+  margin-top: 8px;
+  margin-left: -6px;
+}
+.jig-composer {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-composer);
+  padding: 14px 10px 10px 16px;
+}
+.jig-placeholder {
+  color: var(--ink-3);
+  font-size: 15px;
+  line-height: 24px;
+  margin-bottom: 18px;
+}
+.jig-crow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: -6px;
+}
+.jig-grow {
+  flex: 1;
+}
+.jig-chip,
+.jig-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px 0 8px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: 13px;
+  transition: background-color var(--d-fast) var(--e-out);
+}
+.jig-model {
+  padding: 0 8px 0 12px;
+  gap: 4px;
+}
+.jig-send {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--on-ink);
+  margin-left: 2px;
+}
+.jig-menu {
+  position: absolute;
+  left: 4px;
+  top: calc(100% + 8px);
+  width: 248px;
+  padding: 6px;
+  border-radius: var(--r-pop);
+  background: var(--raised);
+  box-shadow: var(--shadow-pop);
+  z-index: 2;
+}
+.jig-mrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.jig-mrow > svg {
+  color: var(--ink-2);
+}
+.jig-mrow:first-child {
+  background: var(--fill-hover);
+}
+.jig-msep {
+  display: block;
+  height: 1px;
+  margin: 6px 8px;
+  background: var(--line);
+}
+.jig-files {
+  margin-top: 200px;
+  display: flex;
+  flex-direction: column;
+}
+.jig-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+.jig-file > svg {
+  color: var(--ink-2);
+}
+.jig-filename {
+  flex: 1;
+}
+.jig-filekind {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+/* ——— States and reel (recording surfaces) ——— */
+.jig--states,
+.jig--reel {
+  max-width: none;
+  padding: 24px;
+  zoom: 2.5;
+}
+.jig-stategrid,
+.jig-reelgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px;
+}
+.jig-statebtn,
+.jig-reelbtn {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 10px 4px 8px;
+  border-radius: 10px;
+  color: var(--ink);
+  transition: background-color var(--d-fast) var(--e-out);
+}
+.jig-statebtn > span,
+.jig-reelbtn > span {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  line-height: 10px;
+  color: var(--ink-3);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jig-statebtn:hover,
+  .jig-reelbtn:hover {
+    background: var(--fill-hover);
+  }
+}
+.jig-reelsec + .jig-reelsec {
+  margin-top: 16px;
+}
+
+/* ——— Focus ——— */
+.jig--focus {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 24px;
+  max-width: none;
+}
+.jig-focus {
+  display: grid;
+  gap: 10px;
+}
+.jig-focusbig {
+  position: relative;
+  width: 192px;
+  height: 192px;
+  color: var(--ink);
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.jig-focusgrid {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  stroke: var(--presence);
+  opacity: 0.5;
+}
+.jig-focusbig > .ji {
+  position: absolute;
+  inset: 0;
+}
+.jig-focussmall {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--ink);
+  padding-left: 4px;
+}

@@ -9,7 +9,12 @@
 }
 .jn .jn-top--clear {
   background: transparent;
-  backdrop-filter: none;
+}
+.jn .jn-ghost {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
 }
 
 /* Home: the greeting, the composer, three suggestions, and air. */
@@ -24,22 +29,22 @@
 .jn .jn-home__stack {
   width: 100%;
   max-width: 720px;
-  margin-top: max(22vh, 132px);
+  margin-top: max(24vh, 140px);
   display: flex;
   flex-direction: column;
   align-items: stretch;
 }
 .jn .jn-greet {
   text-align: center;
-  margin-bottom: 28px;
-  font-variation-settings: "opsz" 44;
+  margin-bottom: 30px;
+  font-variation-settings: "opsz" 48;
 }
 .jn .jn-suggest {
   display: flex;
   justify-content: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 18px;
+  margin-top: 20px;
 }
 .jn .jn-chip {
   display: inline-flex;
@@ -53,8 +58,7 @@
   color: var(--ink-2);
   transition:
     background-color var(--d-fast) var(--e-out),
-    color var(--d-fast) var(--e-out),
-    box-shadow var(--d-fast) var(--e-out);
+    color var(--d-fast) var(--e-out);
 }
 .jn .jn-chip > svg,
 .jn .jn-chip > span:first-child {
@@ -64,99 +68,96 @@
   .jn .jn-chip:hover {
     background: var(--fill-hover);
     color: var(--ink);
-    box-shadow: inset 0 0 0 1px var(--line-2);
   }
 }
 .jn .jn-chip:active {
   background: var(--fill-press);
+  transition-duration: var(--d-press);
 }
 
 /* —————————————————————————————— Thread —————————————————————————————— */
 
 .jn .jn-thread {
   width: 100%;
-  max-width: 720px;
+  max-width: 784px;
   margin: 0 auto;
   padding: 20px 32px 40px;
-  box-sizing: content-box;
   flex: 1;
   display: flex;
   flex-direction: column;
 }
 
-/* The person's message: the same sentence, tokens and all, in a quiet tone on the right. */
+/* The person's turn: the same sentence, tokens and all, in a quiet tone on the right. */
 .jn .jn-umsg {
   display: flex;
-  justify-content: flex-end;
-  margin: 8px 0 26px;
+  flex-direction: column;
+  align-items: flex-end;
+  margin: 8px 0 24px;
 }
 .jn .jn-umsg__bubble {
-  position: relative;
   max-width: 82%;
   padding: 10px 16px 11px;
+  border-radius: 20px;
+  background: var(--well);
   font-size: 16px;
   line-height: 26px;
   letter-spacing: -0.006em;
 }
-.jn .jn-umsg__bg {
-  position: absolute;
-  inset: 0;
-  border-radius: 20px;
-  background: var(--well);
-  z-index: 0;
-}
-.jn .jn-umsg__bubble .jn-sentence {
-  position: relative;
-  z-index: 1;
-}
 .jn .jn-umsg .jn-token {
-  background: light-dark(#ffffff, #3a3b3f);
+  background: var(--thumb);
   box-shadow: 0 0 0 1px var(--line);
 }
+/* How the tokens resolved (M23): one quiet line under the turn. */
+.jn .jn-receipt {
+  max-width: 82%;
+  margin-top: 7px;
+  padding-right: 4px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+  text-align: right;
+}
 
-/* Presence: the caret in the presence colour, and one line of state. */
-.jn .jn-presence {
+/* The live line (M1): presence-coloured words, and real seconds after three. */
+.jn .jn-live {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 26px;
-  font-size: 15px;
-  line-height: 24px;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--presence);
+}
+.jn .jn-live--slot {
+  visibility: hidden;
+}
+.jn .jn-live__words {
+  display: inline-grid;
+}
+.jn .jn-live__text {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+.jn .jn-live__secs {
   color: var(--ink-3);
 }
-.jn .jn-jcaret {
-  display: inline-block;
-  width: 2px;
-  height: 18px;
-  border-radius: 1px;
-  background: var(--presence);
-  vertical-align: -3px;
+.jn .jn-live__secs::before {
+  content: "·";
+  margin-right: 8px;
+  color: var(--ink-4);
+}
+.jn .jn-live__face {
+  display: inline-grid;
   flex: none;
 }
-.jn .jn-jcaret[data-state="thinking"] {
-  animation: jn-breathe 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+.jn .jn-handoff {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
 }
-.jn .jn-jcaret[data-state="streaming"] {
-  margin-left: 2px;
-}
-@keyframes jn-breathe {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.28;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .jn .jn-jcaret[data-state="thinking"] {
-    animation: none;
-    opacity: 0.7;
-  }
-}
-.jn[data-rm] .jn-jcaret[data-state="thinking"] {
-  animation: none;
-  opacity: 0.7;
+.jn .jn-handoff__line {
+  margin: 0;
 }
 
 /* The answer: reading type, no bubble. */
@@ -165,7 +166,7 @@
   line-height: 27px;
   letter-spacing: -0.006em;
   color: var(--ink);
-  margin-top: 12px;
+  margin-top: 10px;
 }
 .jn .jn-answer > * + * {
   margin-top: 14px;
@@ -195,18 +196,23 @@
   content: "";
   position: absolute;
   left: 5px;
-  top: 12px;
+  top: 13px;
   width: 5px;
   height: 1.5px;
   border-radius: 1px;
   background: var(--ink-3);
 }
 .jn .jn-w {
-  animation: jn-word 140ms var(--e-out) both;
+  animation: jn-word 160ms var(--e-out) both;
 }
 @keyframes jn-word {
   from {
     opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jn .jn-w {
+    animation: none;
   }
 }
 
@@ -214,6 +220,7 @@
   margin-top: 18px !important;
   margin-bottom: 4px;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
 }
 .jn .jn-table {
   width: 100%;
@@ -248,8 +255,8 @@
   font-weight: 500;
 }
 
-/* What Juno did: one line, the verb quiet, the object in ink. */
-.jn .jn-activity__line {
+/* The work trace (M5): one summary line; each step is a sentence with its mark. */
+.jn .jn-trace__line {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -264,47 +271,86 @@
     color var(--d-fast) var(--e-out);
 }
 @media (hover: hover) and (pointer: fine) {
-  .jn .jn-activity__line:hover {
+  .jn .jn-trace__line:hover {
     color: var(--ink);
     background: var(--fill-hover);
   }
 }
-.jn .jn-activity__list {
+.jn .jn-trace__chev {
+  display: inline-grid;
+  place-items: center;
+  color: var(--ink-3);
+  transition: transform var(--d-base) var(--e-inout);
+}
+.jn .jn-trace__chev[data-open] {
+  transform: rotate(90deg);
+}
+.jn .jn-trace__list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 4px 0 4px 0;
+  gap: 2px;
+  padding: 4px 0 6px;
+}
+.jn .jn-step {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-height: 26px;
   font-size: 14px;
   line-height: 20px;
+  white-space: pre;
 }
-.jn .jn-activity__obj {
+.jn .jn-step__mark {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 10px;
+  flex: none;
+}
+.jn .jn-step__verb {
   color: var(--ink-2);
+}
+.jn .jn-step__obj,
+.jn .jn-step__where {
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .jn .jn-actions {
   display: flex;
-  gap: 0;
+  gap: 2px;
   margin: 10px 0 0 -6px;
+}
+
+/* ———————————————— Cards in the transcript: real outputs only ———————————————— */
+
+/* A flat tone step, radius 12, no border, no shadow (the composer stays the one
+   elevated object). Increase Contrast adds a 1px line (tokens.css). */
+.jn .jn-thread__card {
+  margin-top: 22px;
+}
+.jn .jn-thread__card + .jn-thread__card {
+  margin-top: 16px;
 }
 
 /* ———————————————————————— A live task in the chat ———————————————————————— */
 
 .jn .jn-task {
-  margin-top: 26px;
-  border-radius: var(--r-card);
-  background: light-dark(#ffffff, #1e1f22);
-  box-shadow: 0 0 0 1px var(--line-2);
-  padding: 4px 0;
+  border-radius: 12px;
+  background: var(--card);
 }
 .jn .jn-task__head {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 12px 12px 12px 16px;
+  padding: 14px 10px 12px 16px;
 }
 .jn .jn-task__face {
-  margin-top: 2px;
+  margin-top: 0;
   flex: none;
+  display: inline-grid;
 }
 .jn .jn-task__main {
   flex: 1;
@@ -315,67 +361,172 @@
   line-height: 22px;
   font-weight: 500;
   letter-spacing: -0.006em;
+  color: var(--ink);
 }
 .jn .jn-task__progress {
   margin-top: 1px;
   font-size: 13px;
   line-height: 18px;
-  color: var(--ink-3);
+  color: var(--ink-2);
+}
+.jn .jn-task__verb {
+  color: var(--presence);
+}
+.jn .jn-task__ctl {
+  display: flex;
+  gap: 0;
+  margin-top: -3px;
+}
+.jn .jn-task__ctl .jb {
+  padding: 0 10px;
+  font-weight: 400;
+}
+.jn .jn-attn {
+  color: var(--attn);
+  font-weight: 500;
 }
 .jn .jn-task__need {
-  margin: 0 16px;
-  padding: 14px 0 16px;
-  border-top: 1px solid var(--line);
+  padding: 0 16px 14px 52px;
 }
-.jn .jn-task__needlabel {
-  font-size: 13px;
-  line-height: 18px;
-  font-weight: 500;
-  color: var(--attn);
-}
-.jn .jn-task__question {
-  margin-top: 4px;
+.jn .jn-task__ask {
   font-size: 15px;
   line-height: 23px;
+  color: var(--ink);
 }
-.jn .jn-task__options {
+
+/* The question (T5): options as full-width rows, then Skip and Continue. */
+.jn .jn-q {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 10px 0 0 -10px;
+}
+.jn .jn-q__opt {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 12px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: var(--r-row);
+  text-align: left;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink);
+  transition: background-color var(--d-fast) var(--e-out);
 }
-.jn .jn-task__or {
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-q__opt:hover {
+    background: var(--fill-hover);
+  }
+}
+.jn .jn-q__opt:active {
+  background: var(--fill-press);
+}
+.jn .jn-q__opt--other {
+  min-height: 36px;
+  color: var(--ink-2);
+}
+.jn .jn-q__radio {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px var(--line-ui);
+  flex: none;
+  transition: box-shadow var(--d-fast) var(--e-out);
+}
+.jn .jn-q__radio::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 999px;
+  background: var(--on-ink);
+  transform: scale(0.4);
+  opacity: 0;
+  transition:
+    transform var(--d-fast) var(--e-out),
+    opacity var(--d-fast) var(--e-out);
+}
+.jn .jn-q__opt[aria-checked="true"] .jn-q__radio {
+  box-shadow: inset 0 0 0 8px var(--ink);
+}
+.jn .jn-q__opt[aria-checked="true"] .jn-q__radio::after {
+  transform: scale(1);
+  opacity: 1;
+}
+.jn .jn-q__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.jn .jn-q__line {
   font-size: 13px;
+  line-height: 18px;
   color: var(--ink-3);
+}
+.jn .jn-q__key {
+  opacity: 0;
+  transition: opacity var(--d-fast) var(--e-out);
+}
+.jn .jn-q:focus-within .jn-q__key,
+.jn .jn-q__opt:hover .jn-q__key {
+  opacity: 1;
+}
+.jn .jn-q__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+.jn .jb[aria-disabled="true"] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.jn .jn-task__answered {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px 12px 52px;
+  font-size: 14px;
+  color: var(--ink-3);
+}
+.jn .jn-task__answer {
+  color: var(--ink);
+}
+.jn .jn-task__answered .jb--link {
   margin-left: 4px;
+  font-size: 13px;
 }
 .jn .jn-task__plan {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: calc(100% - 16px);
-  margin: 0 8px;
-  height: 36px;
-  padding: 0 8px;
-  border-radius: var(--r-row);
-  font-size: 13px;
-  color: var(--ink-2);
+  width: 100%;
+  height: 38px;
+  padding: 0 16px 0 14px;
   border-top: 1px solid var(--line);
-  border-radius: 0 0 10px 10px;
-  transition: background-color var(--d-fast) var(--e-out);
-}
-.jn .jn-task__plan > svg {
+  border-radius: 0 0 12px 12px;
+  font-size: 13px;
   color: var(--ink-3);
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out);
+}
+.jn .jn-task__plan > span:nth-child(2) {
+  color: var(--ink-2);
 }
 @media (hover: hover) and (pointer: fine) {
   .jn .jn-task__plan:hover {
     background: var(--fill-hover);
-    color: var(--ink);
+    color: var(--ink-2);
   }
 }
+.jn .jn-task__plan[aria-expanded="true"] {
+  border-radius: 0;
+}
 .jn .jn-plan {
-  padding: 2px 16px 10px 16px;
+  padding: 0 16px 10px 16px;
   display: flex;
   flex-direction: column;
 }
@@ -403,20 +554,20 @@
   color: var(--ink);
 }
 
-/* ———————————— The approval, docked on the composer's top edge ———————————— */
+/* ———————————— The approval card (T6) ———————————— */
 
 .jn .jn-approve {
-  padding: 16px 18px 16px;
-  border-bottom: 1px solid var(--line);
-  cursor: default;
+  position: relative;
+  border-radius: 12px;
+  background: var(--card);
+  padding: 14px 16px 16px;
 }
 .jn .jn-approve__head {
   display: flex;
   gap: 12px;
-  align-items: flex-start;
+  align-items: center;
 }
 .jn .jn-approve__mark {
-  margin-top: 2px;
   flex: none;
 }
 .jn .jn-approve__title {
@@ -425,18 +576,29 @@
   font-weight: 500;
   letter-spacing: -0.006em;
 }
-.jn .jn-approve__sub {
+/* The exact payload, quoted: a neutral rule, not a box inside the card. */
+.jn .jn-approve__payload {
+  margin: 12px 0 0 32px;
+  padding: 1px 0 1px 14px;
+  box-shadow: inset 2px 0 0 var(--line-2);
+}
+.jn .jn-approve__channel {
   font-size: 13px;
   line-height: 18px;
-  color: var(--ink-3);
 }
-.jn .jn-approve__body {
-  margin: 12px 0 0 32px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: var(--well);
+.jn .jn-approve__hash {
+  font-weight: 500;
+}
+.jn .jn-approve__msg {
+  margin-top: 4px;
   font-size: 14px;
   line-height: 21px;
+  color: var(--ink);
+}
+.jn .jn-approve__consequence {
+  margin: 10px 0 0 32px;
+  font-size: 13px;
+  line-height: 18px;
   color: var(--ink-2);
 }
 .jn .jn-approve__actions {
@@ -450,17 +612,27 @@
   margin-left: auto;
   font-size: 13px;
 }
-.jn .jn-approve__outcome {
+.jn .jn-approve__redirect {
   display: flex;
-  align-items: center;
   gap: 8px;
   margin: 14px 0 0 32px;
+}
+.jn .jn-approve__redirect .jfield {
+  flex: 1;
+}
+.jn .jn-approve[data-outcome] {
+  padding: 10px 16px;
+}
+.jn .jn-approve__receipt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-height: 32px;
   font-size: 14px;
-  color: var(--ink-2);
+  color: var(--ink);
 }
-.jn .jn-approve__outcome .jb--link {
-  margin-left: 4px;
+.jn .jn-approve__receipt .jb--link {
+  margin-left: 2px;
   font-size: 13px;
 }
 
@@ -471,12 +643,12 @@
   bottom: 0;
   z-index: 4;
   padding: 0 32px 10px;
-  background: linear-gradient(to bottom, transparent, var(--ground) 20px);
+  background: linear-gradient(to bottom, transparent, var(--ground) 24px);
 }
 .jn .jn-dock::before {
   content: "";
   display: block;
-  height: 20px;
+  height: 24px;
 }
 .jn .jn-dock__note {
   text-align: center;
@@ -508,15 +680,23 @@
     justify-content: flex-end;
     padding-bottom: 12px;
   }
+  .jn .jn-home__greet {
+    margin: auto 0;
+    padding-bottom: 6vh;
+  }
   .jn .jn-greet {
     font-size: 32px;
     line-height: 38px;
-    margin-bottom: auto;
-    margin-top: 28vh;
+    margin-bottom: 0;
     font-variation-settings: "opsz" 32;
   }
+  .jn .jn-home__suggest {
+    order: 1;
+  }
+  .jn .jn-home__stack > .jn-composer-wrap {
+    order: 2;
+  }
   .jn .jn-suggest {
-    order: -1;
     justify-content: flex-start;
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -531,7 +711,8 @@
   .jn .jn-thread {
     padding: 12px 16px 24px;
   }
-  .jn .jn-umsg__bubble {
+  .jn .jn-umsg__bubble,
+  .jn .jn-receipt {
     max-width: 88%;
   }
   .jn .jn-dock {
@@ -540,21 +721,37 @@
   .jn .jn-dock__note {
     display: none;
   }
-  .jn .jn-approve {
-    padding: 14px 14px 14px;
+  .jn .jn-task__head {
+    flex-wrap: wrap;
+    padding: 12px 8px 10px 14px;
   }
-  .jn .jn-approve__body,
+  .jn .jn-task__ctl {
+    order: 3;
+    width: 100%;
+    margin: 4px 0 0 30px;
+  }
+  .jn .jn-task__need,
+  .jn .jn-task__answered {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .jn .jn-approve {
+    padding: 14px;
+  }
+  .jn .jn-approve__payload,
   .jn .jn-approve__actions,
-  .jn .jn-approve__outcome {
+  .jn .jn-approve__consequence,
+  .jn .jn-approve__redirect {
     margin-left: 0;
+  }
+  .jn .jn-approve__actions .jb {
+    height: 40px;
   }
   .jn .jn-approve__instead {
     margin-left: 0;
     width: 100%;
     text-align: left;
-  }
-  .jn .jn-task__options .jb {
-    height: 36px;
+    height: 32px !important;
   }
   .jn .jn-answer {
     font-size: 16px;

@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { APP_ORDER_AVAILABLE, APP_ORDER_CONNECTED, APPS, POLICY_LABEL, type Policy } from "./fixtures";
 import { Icon } from "./icons";
 import { AppMark } from "./marks";
+import { Segmented } from "./composer";
 import { R, T, useReduced } from "./motion";
 import { AppFrame, ChatSidebar, MobileBar } from "./shell";
 
@@ -23,17 +24,12 @@ const SUBNAV = [
   { id: "instructions", label: "Instructions", icon: "instructions" },
 ];
 
-function PolicyControl({ value, label }: { value: Policy; label: string }) {
+const POLICIES = ["allow", "ask", "off"] as const;
+
+/* Allow, Ask, Off (K4): a small segmented whose thumb moves on the standard spring. */
+export function PolicyControl({ value, label }: { value: Policy; label: string }) {
   const [v, setV] = React.useState<Policy>(value);
-  return (
-    <span className="jpolicy" role="radiogroup" aria-label={label}>
-      {(["allow", "ask", "off"] as Policy[]).map((p) => (
-        <button key={p} type="button" role="radio" aria-checked={v === p} className="jpolicy__opt" onClick={() => setV(p)}>
-          {POLICY_LABEL[p]}
-        </button>
-      ))}
-    </span>
-  );
+  return <Segmented options={POLICIES} value={v} onChange={setV} label={label} size="sm" layoutKey={`policy-${label}`} labels={POLICY_LABEL} />;
 }
 
 function Switch({ on: initial }: { on: boolean }) {
@@ -93,7 +89,7 @@ export function AppSheet({ id, onClose }: { id: string; onClose?: () => void }) 
             {changes.map((a) => (
               <div key={a.label} className="jn-sheet__row">
                 <span className="jn-sheet__rowtext">{a.label}</span>
-                <PolicyControl value={a.policy} label={a.label} />
+                {a.floor ? <span className="jn-sheet__floor">Always asks</span> : <PolicyControl value={a.policy} label={a.label} />}
               </div>
             ))}
           </section>
@@ -107,10 +103,10 @@ export function AppSheet({ id, onClose }: { id: string; onClose?: () => void }) 
           </section>
         </div>
         <footer className="jn-sheet__foot">
-          <button type="button" className="jb jb--danger">
-            Revoke access
+          <button type="button" className="jb jb--link jn-sheet__disconnect">
+            Disconnect {app.name}
           </button>
-          <p className="t-meta">Juno loses access at once. Nothing in {app.name} is deleted.</p>
+          <p className="t-meta">Juno loses access at once. Mira’s renewal check stops posting. Nothing in {app.name} is deleted.</p>
         </footer>
       </motion.aside>
     </>
@@ -123,15 +119,15 @@ function AppRow({ id, onOpen }: { id: string; onOpen: (id: string) => void }) {
     <li>
       <button type="button" className="jn-approw jicon-trigger" onClick={() => onOpen(id)}>
         <span className="jn-approw__mark">
-          <AppMark id={id} size={24} />
+          <AppMark id={id} size={22} />
         </span>
         <span className="jn-approw__text">
           <span className="jn-approw__name">{app.name}</span>
-          <span className="jn-approw__line">{app.connected ? app.account : app.line}</span>
+          <span className="jn-approw__line">{app.line}</span>
         </span>
         {app.connected ? (
           <>
-            <span className="jn-approw__meta">{app.lastUsed?.split(",")[0]}</span>
+            <span className="jn-approw__status">Connected</span>
             <Icon name="chevron-right" size={16} className="ink-3" />
           </>
         ) : (

@@ -7,22 +7,33 @@
   margin: 0 auto;
 }
 
-/* No shadow. The surface and one crisp hairline define it; focus darkens the
-   hairline and lays a restrained presence ring outside it. */
+/* No shadow (D-030). The surface and one crisp hairline define it. Focus from
+   a pointer darkens the hairline; focus from the keyboard (C1) also lays a
+   restrained ring outside it, in the presence colour, because that is where
+   Juno starts listening. The ring is a pseudo-element so only opacity moves. */
 .jn .jn-composer {
   position: relative;
   background: var(--surface);
   border-radius: var(--r-composer);
   box-shadow: 0 0 0 1px var(--line-2);
-  transition: box-shadow var(--d-base) var(--e-out);
+  transition: box-shadow var(--d-fast) var(--e-out);
   cursor: text;
-  overflow: clip;
-  overflow-clip-margin: 6px;
+}
+.jn .jn-composer::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: calc(var(--r-composer) + 3px);
+  box-shadow: 0 0 0 2px var(--presence-ring);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--d-fast) var(--e-out);
 }
 .jn .jn-composer[data-focus] {
-  box-shadow:
-    0 0 0 1px var(--line-3),
-    0 0 0 4px var(--presence-soft);
+  box-shadow: 0 0 0 1px var(--line-3);
+}
+.jn .jn-composer[data-kbd]::after {
+  opacity: 1;
 }
 
 .jn .jn-field {
@@ -131,7 +142,9 @@
   color: var(--ink);
 }
 
-/* The one ink disc: voice when empty, send with words, stop while Juno works. */
+/* One disc, three faces. Empty: voice, quiet (a tone step, ink glyph): nothing
+   is armed yet. With words: send, the ink disc, the one strong spot on the
+   composer. While Juno works: stop, the same ink disc. */
 .jn .jn-disc {
   position: relative;
   display: grid;
@@ -143,7 +156,22 @@
   background: var(--ink);
   color: var(--on-ink);
   flex: none;
-  transition: background-color var(--d-fast) var(--e-out);
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out);
+}
+.jn .jn-disc[data-mode="voice"] {
+  background: var(--well);
+  color: var(--ink);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-disc[data-mode="voice"]:hover {
+    background: var(--well-2);
+    color: var(--ink);
+  }
+}
+.jn .jn-disc[data-mode="voice"]:active {
+  background: var(--well-3);
 }
 .jn .jn-disc__glyph {
   grid-area: 1 / 1;
@@ -227,14 +255,14 @@
 
 /* ——————————————————————————————— Tokens ——————————————————————————————— */
 
-/* An atomic object in the sentence: a neutral chip carrying the thing's own mark. */
+/* An atomic object in the sentence (C8): a neutral chip one tone step above
+   the field, carrying the thing's own mark. Colour comes only from the mark. */
 .jn .jn-token {
   display: inline-block;
   height: 24px;
-  line-height: 22px;
-  padding: 0 7px 0 4px;
+  line-height: 24px;
+  padding: 0 6px 0 4px;
   margin: 0 1px;
-  border: 1px solid transparent;
   border-radius: var(--r-token);
   background: var(--well);
   font-size: 15px;
@@ -270,20 +298,19 @@
   background: var(--well-2);
   box-shadow: 0 0 0 1.5px var(--ink-3);
 }
-.jn .jn-token[data-state="needs"] {
-  background: transparent;
-  border: 1px dashed var(--line-ui);
-  color: var(--ink-2);
+/* Needs something before it can resolve (an app not connected): the mark at
+   40%. Its popover says why. No dot, no warning badge. */
+.jn .jn-token[data-state="needs"] .jn-token__mark {
+  opacity: 0.4;
 }
-.jn .jn-token[data-fresh] {
-  animation: jn-token-land 420ms var(--e-out);
+/* The token settles: its fill starts at the palette's highlight tone and
+   relaxes to the token tone over base. Nothing moves. */
+.jn .jn-token[data-settle] {
+  animation: jn-token-settle var(--d-base) var(--e-out);
 }
-@keyframes jn-token-land {
-  0% {
-    background-color: var(--presence-soft);
-  }
-  100% {
-    background-color: var(--well);
+@keyframes jn-token-settle {
+  from {
+    background-color: var(--well-3);
   }
 }
 
@@ -300,7 +327,7 @@
   cursor: default;
 }
 .jn .jn-pop__scroll {
-  max-height: 360px;
+  max-height: 408px;
   overflow: auto;
   scrollbar-width: none;
 }
@@ -308,7 +335,7 @@
   margin-top: 4px;
 }
 .jn .jn-pop__label {
-  padding: 8px 10px 4px;
+  padding: 7px 10px 3px;
   font-size: 12px;
   line-height: 16px;
   font-weight: 500;
@@ -319,7 +346,7 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: 36px;
+  height: 34px;
   padding: 0 10px;
   border-radius: var(--r-row);
   font-size: 14px;
@@ -359,7 +386,8 @@
   height: 17px;
 }
 .jn .jn-pop__text {
-  flex: 1;
+  flex: 1 0 auto;
+  max-width: 70%;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -377,12 +405,20 @@
   color: var(--ink-3);
 }
 .jn .jn-pop__detail {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 12px;
   color: var(--ink-3);
 }
 .jn .jn-pop__detail[data-needs] {
   color: var(--ink-2);
+}
+.jn .jn-pop__mark[data-needs] {
+  opacity: 0.4;
 }
 .jn .jn-pop__check {
   width: 16px;
@@ -414,7 +450,7 @@
 
 /* Model */
 .jn .jn-modelpop {
-  width: 316px;
+  width: 344px;
 }
 .jn .jn-modelpop__effort {
   padding: 4px 8px 6px;
@@ -492,6 +528,36 @@
 }
 .jn .jn-appanel__foot .jb--link {
   font-size: 12px;
+}
+.jn .jn-appanel__verbs {
+  display: flex;
+  gap: 2px;
+  margin-left: -10px;
+}
+.jn .jn-appanel__verbs .jb {
+  font-size: 12.5px;
+  height: 26px;
+  padding: 0 10px;
+}
+
+/* The dock (§2.1): one row attached to the composer's top edge. */
+.jn .jn-dockrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  color: var(--ink);
+  cursor: default;
+}
+.jn .jn-dockrow__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* —————————————————————————————— Phone —————————————————————————————— */

@@ -1,240 +1,77 @@
 /*
- * CrewFace. Self-contained: works inside the crew gallery (.jc) and wherever
- * the lead mounts it. Theme follows html.dark or the nearest [data-theme].
- *
- * Geometry is computed in CSS from a handful of registered numbers, so every
- * state change is an interruptible transition of those numbers, and the eyes
- * move over a sphere (trig in calc) instead of sliding on a plane.
+ * CrewFace. A face is an image in the flow of the page: a flat silhouette
+ * underneath (the placeholder and the no-WebGL fallback), the rendered sprite
+ * or live canvas on top. Nothing here loops.
  */
 
-@property --jc-yaw { syntax: "<number>"; inherits: true; initial-value: 0; }
-@property --jc-pitch { syntax: "<number>"; inherits: true; initial-value: 0; }
-@property --jc-lid { syntax: "<number>"; inherits: true; initial-value: 0; }
-@property --jc-dark { syntax: "<number>"; inherits: true; initial-value: 0; }
-@property --jc-lift { syntax: "<number>"; inherits: true; initial-value: 0; }
-@property --jc-lean { syntax: "<number>"; inherits: true; initial-value: 0; }
-@property --jc-look-x { syntax: "<number>"; inherits: true; initial-value: 0; }
-@property --jc-look-y { syntax: "<number>"; inherits: true; initial-value: 0; }
-@property --jc-blink { syntax: "<number>"; inherits: true; initial-value: 0; }
-@property --jc-hop { syntax: "<number>"; inherits: true; initial-value: 0; }
-@property --jc-grow { syntax: "<number>"; inherits: true; initial-value: 1; }
-@property --jc-sat { syntax: "<number>"; inherits: true; initial-value: 1; }
-
-.jc-face {
-  /* Colour family (hue, chroma); roles derived below. */
-  --fh: 160;
-  --fc: 0.07;
-  --f-L: 0.685;
-  --f-body: oklch(var(--f-L) calc(var(--fc) * var(--jc-sat)) var(--fh));
-  --f-shade: oklch(calc(var(--f-L) - 0.085) calc(var(--fc) * 1.05 * var(--jc-sat)) var(--fh));
-  --f-deep: oklch(0.235 calc(var(--fc) * 0.45) var(--fh));
-
+.jcf {
+  position: relative;
   display: inline-block;
   flex: none;
-  overflow: visible;
   vertical-align: middle;
-
-  --ease-out: cubic-bezier(0.2, 0, 0, 1);
-  --ease-io: cubic-bezier(0.45, 0, 0.2, 1);
-  /* A critically damped-ish spring with a whisper of overshoot, as linear() stops. */
-  --spring: linear(0, 0.063 3.6%, 0.235 8.2%, 0.481 13.7%, 0.717 19.9%, 0.866 25.2%, 0.957 30.8%, 1.004 36.8%, 1.021 43.2%, 1.018 51%, 1.006 62%, 0.999 76%, 1);
-
-  transition:
-    --jc-yaw 320ms var(--ease-io),
-    --jc-pitch 320ms var(--ease-io),
-    --jc-lid 220ms var(--ease-out),
-    --jc-dark 560ms var(--ease-io),
-    --jc-lift 420ms var(--spring),
-    --jc-lean 420ms var(--spring),
-    --jc-look-x 180ms var(--ease-out),
-    --jc-look-y 180ms var(--ease-out),
-    --jc-blink 130ms var(--ease-out),
-    --jc-grow 520ms var(--spring),
-    --jc-sat 480ms var(--ease-io),
-    opacity 480ms var(--ease-io);
+  line-height: 0;
+  color: var(--ink, #191b1e);
+  -webkit-user-select: none;
+  user-select: none;
 }
-
-html.dark .jc-face,
-html [data-theme="dark"] .jc-face {
-  --f-L: 0.665;
-  --f-body: oklch(var(--f-L) calc(var(--fc) * 0.95 * var(--jc-sat)) var(--fh));
-  --f-shade: oklch(calc(var(--f-L) - 0.11) calc(var(--fc) * 0.95 * var(--jc-sat)) var(--fh));
-  --f-deep: oklch(0.2 calc(var(--fc) * 0.4) var(--fh));
+.jcf > * {
+  position: absolute;
+  inset: 0;
 }
-html.dark [data-theme="light"] .jc-face {
-  --f-L: 0.685;
-  --f-body: oklch(var(--f-L) calc(var(--fc) * var(--jc-sat)) var(--fh));
-  --f-shade: oklch(calc(var(--f-L) - 0.085) calc(var(--fc) * 1.05 * var(--jc-sat)) var(--fh));
-  --f-deep: oklch(0.235 calc(var(--fc) * 0.45) var(--fh));
+.jcf__sil {
+  transition: opacity 160ms cubic-bezier(0.2, 0, 0, 1);
 }
-html.dark [data-theme="light"] [data-theme="dark"] .jc-face {
-  --f-L: 0.665;
-  --f-body: oklch(var(--f-L) calc(var(--fc) * 0.95 * var(--jc-sat)) var(--fh));
-  --f-shade: oklch(calc(var(--f-L) - 0.11) calc(var(--fc) * 0.95 * var(--jc-sat)) var(--fh));
-  --f-deep: oklch(0.2 calc(var(--fc) * 0.4) var(--fh));
+.jcf__sil[data-state="offline"] {
+  filter: grayscale(0.9);
+  opacity: 0.8;
 }
-
-.jc-face[data-family="clay"] { --fh: 42; --fc: 0.092; }
-.jc-face[data-family="rose"] { --fh: 14; --fc: 0.078; }
-.jc-face[data-family="plum"] { --fh: 342; --fc: 0.068; }
-.jc-face[data-family="iris"] { --fh: 292; --fc: 0.07; }
-.jc-face[data-family="slate"] { --fh: 250; --fc: 0.058; }
-.jc-face[data-family="lagoon"] { --fh: 208; --fc: 0.068; }
-.jc-face[data-family="sage"] { --fh: 162; --fc: 0.068; }
-.jc-face[data-family="olive"] { --fh: 118; --fc: 0.074; }
-
-.jc-face__posture {
-  transform-box: view-box;
-  transform-origin: 32px 58px;
-  translate: 0 calc((var(--jc-lift) + var(--jc-hop)) * 1px);
-  rotate: calc(var(--jc-lean) * 1deg);
-  scale: var(--jc-grow) calc(var(--jc-grow) * (1 - max(0, var(--jc-lift)) * 0.012));
+.jcf__sil[data-state="paused"] {
+  filter: grayscale(0.5);
 }
-
-.jc-face__body {
-  fill: var(--f-shade);
-  transition: fill 480ms var(--ease-io);
-}
-
-.jc-face__light {
-  fill: var(--f-body);
-  transform-box: view-box;
-  /* Light from the upper left; --jc-dark slides the lit disc away. */
-  translate: calc(var(--jc-dark) * var(--jc-R) * -1.84px) calc(var(--jc-dark) * var(--jc-R) * -1.29px);
-}
-
-.jc-face__eye {
-  --lon: calc((var(--side) * var(--jc-spread) + (var(--jc-yaw) + var(--jc-look-x)) * 38) * 1deg);
-  --lat: calc((var(--jc-lat) + (var(--jc-pitch) + var(--jc-look-y)) * 21) * 1deg);
-  transform-box: view-box;
-  transform-origin: 0 0;
-  translate:
-    calc((32 + var(--jc-R) * cos(var(--lat)) * sin(var(--lon))) * 1px)
-    calc((var(--jc-cy) + var(--jc-R) * sin(var(--lat)) + var(--jc-eh) * 0.5) * 1px);
-  scale:
-    calc(0.4 + 0.6 * cos(var(--lat)) * cos(var(--lon)))
-    max(0.13, calc((1 - var(--jc-lid)) * (1 - var(--jc-blink))));
-}
-.jc-face__eye rect {
-  fill: var(--f-deep);
-}
-.jc-face__eyes {
-  transition: opacity 320ms var(--ease-io);
-}
-
-/* ——— States that change more than pose ——— */
-
-.jc-face[data-state="paused"] {
-  --jc-sat: 0.55;
-  /* Falling asleep is slow. */
-  transition:
-    --jc-yaw 900ms var(--ease-io),
-    --jc-pitch 900ms var(--ease-io),
-    --jc-lid 760ms var(--ease-io),
-    --jc-dark 1200ms var(--ease-io),
-    --jc-lift 900ms var(--ease-io),
-    --jc-lean 900ms var(--ease-io),
-    --jc-look-x 180ms var(--ease-out),
-    --jc-look-y 180ms var(--ease-out),
-    --jc-blink 130ms var(--ease-out),
-    --jc-grow 520ms var(--spring),
-    --jc-sat 900ms var(--ease-io),
-    opacity 480ms var(--ease-io);
-}
-.jc-face[data-state="offline"] {
-  --jc-sat: 0.25;
-  opacity: 0.6;
-}
-.jc-face[data-state="offline"] .jc-face__eyes {
+.jcf[data-ready] > .jcf__sil {
   opacity: 0;
 }
-
-/* Blink: a quick close, a slightly slower open. */
-.jc-face[data-blink] {
-  --jc-blink: 1;
-  transition:
-    --jc-yaw 320ms var(--ease-io),
-    --jc-pitch 320ms var(--ease-io),
-    --jc-lid 220ms var(--ease-out),
-    --jc-dark 560ms var(--ease-io),
-    --jc-lift 420ms var(--spring),
-    --jc-lean 420ms var(--spring),
-    --jc-look-x 180ms var(--ease-out),
-    --jc-look-y 180ms var(--ease-out),
-    --jc-blink 70ms cubic-bezier(0.4, 0, 1, 1),
-    --jc-grow 520ms var(--spring),
-    --jc-sat 480ms var(--ease-io),
-    opacity 480ms var(--ease-io);
+.jcf__img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.jcf__img[data-fade] {
+  animation: jcf-in 160ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+@keyframes jcf-in {
+  from {
+    opacity: 0;
+  }
+}
+.jcf__canvas {
+  display: block;
+}
+.jcf__ghost {
+  opacity: 0;
+  pointer-events: none;
 }
 
-/* ——— Gestures (one-shot, set by the rig on a change) ——— */
-
-@keyframes jc-attend {
-  0% { --jc-hop: 0; }
-  22% { --jc-hop: -2.4; }
-  48% { --jc-hop: 0.5; }
-  70% { --jc-hop: -0.6; }
-  100% { --jc-hop: 0; }
+/* Arrival for sprite faces (a sidebar row): scale 0.9 to 1 with opacity on emphasis / out-expo (P6). */
+.jcf[data-arrive]:not(.jcf--live) {
+  animation: jcf-arrive 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-@keyframes jc-settle {
-  0% { --jc-hop: 0; }
-  35% { --jc-hop: 1.1; }
-  70% { --jc-hop: -0.2; }
-  100% { --jc-hop: 0; }
+@keyframes jcf-arrive {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
 }
-.jc-face[data-gesture="attend"] {
-  animation: jc-attend 720ms var(--ease-io) both;
-}
-.jc-face[data-gesture="settle"] {
-  animation: jc-settle 520ms var(--ease-io) both;
-}
-
-/* ——— Arrival: lit for the first time ——— */
-
-.jc-face[data-arrival="start"] {
-  --jc-dark: 1 !important;
-  --jc-lid: 1 !important;
-  --jc-grow: 0.88 !important;
-  --jc-lift: 1.5 !important;
-  transition: none !important;
-}
-.jc-face[data-arrival="run"] {
-  transition:
-    --jc-dark 900ms cubic-bezier(0.3, 0, 0.1, 1),
-    --jc-grow 700ms var(--spring),
-    --jc-lift 700ms var(--spring),
-    --jc-lid 260ms var(--ease-out) 620ms,
-    --jc-yaw 420ms var(--ease-io) 620ms,
-    --jc-pitch 420ms var(--ease-io) 620ms,
-    --jc-look-x 180ms var(--ease-out),
-    --jc-look-y 180ms var(--ease-out),
-    --jc-blink 130ms var(--ease-out),
-    --jc-sat 480ms var(--ease-io);
-}
-
-/* ——— Reduced motion: the state still changes, nothing travels ——— */
-
 @media (prefers-reduced-motion: reduce) {
-  .jc-face,
-  .jc-face[data-state="paused"],
-  .jc-face[data-blink],
-  .jc-face[data-arrival="run"] {
-    transition:
-      --jc-sat 200ms linear,
-      opacity 200ms linear;
-  }
-  .jc-face[data-gesture]:not([data-gesture="swap"]) {
-    animation: none;
-  }
-  .jc-face__body {
-    transition: fill 200ms linear;
+  .jcf[data-arrive]:not(.jcf--live) {
+    animation-name: jcf-fade;
   }
 }
-
-/* Reduced motion's state change: a short cross-fade over the new pose. */
-@keyframes jc-swap {
-  from { opacity: 0.3; }
+[data-rm] .jcf[data-arrive]:not(.jcf--live) {
+  animation-name: jcf-fade;
 }
-.jc-face[data-gesture="swap"] {
-  animation: jc-swap 260ms linear backwards;
+@keyframes jcf-fade {
+  from {
+    opacity: 0;
+  }
 }

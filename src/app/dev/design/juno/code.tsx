@@ -5,7 +5,7 @@ import { CODE_STEPS, DIFF } from "./fixtures";
 import { Composer } from "./composer";
 import { Icon } from "./icons";
 import { AppFrame, CodeSidebar, MobileBar, TopBar } from "./shell";
-import { JunoCaret } from "./thread";
+import { LiveLine } from "./thread";
 
 /*
  * Juno Code on the same tokens, one notch denser: 13px tool lines on 28px
@@ -14,7 +14,7 @@ import { JunoCaret } from "./thread";
  * repository, environment, and the mode (Ask, Plan, Code) as words.
  */
 
-function ContextRow({ mode = "Code", compact = false }: { mode?: "Ask" | "Plan" | "Code"; compact?: boolean }) {
+export function ContextRow({ mode = "Code", compact = false }: { mode?: "Ask" | "Plan" | "Code"; compact?: boolean }) {
   return (
     <>
       {!compact ? (
@@ -107,14 +107,14 @@ function Step({ verb, object, extra, state }: { verb: string; object: string; ex
 }
 
 export function DiffPanel() {
-  const [tab, setTab] = React.useState("Diff");
+  const [tab, setTab] = React.useState("Changes");
   return (
     <aside className="jn-diff" aria-label="Changes">
       <div className="jn-diff__tabs" role="tablist">
-        {["Diff", "Files", "Terminal", "Tests"].map((t) => (
+        {["Changes", "Files", "Terminal", "Tests"].map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} className="jn-diff__tab" onClick={() => setTab(t)}>
             {t}
-            {t === "Diff" ? <span className="jn-diff__count num">2</span> : null}
+            {t === "Changes" ? <span className="jn-diff__count num">2</span> : null}
             {t === "Tests" ? <span className="jn-diff__count num">12</span> : null}
           </button>
         ))}
@@ -192,8 +192,7 @@ export function CodeScene() {
           <div className="jn-codework__col">
             <div className="jn-umsg">
               <div className="jn-umsg__bubble">
-                <span className="jn-umsg__bg" />
-                <span className="jn-sentence" style={{ position: "relative" }}>
+                <span className="jn-sentence">
                   Fix the cursor drop in the sync worker when a batch retries. Keep the retry budget as it is.
                 </span>
               </div>
@@ -207,11 +206,7 @@ export function CodeScene() {
                 <Step key={s.object + s.verb} {...s} />
               ))}
             </ol>
-            <div className="jn-codelive" role="status">
-              <JunoCaret state="thinking" />
-              <span>Running the whole sync suite</span>
-              <span className="ink-3 num mono jn-codelive__count">41 of 128</span>
-            </div>
+            <LiveLine className="jn-codelive" text="Running the whole sync suite, 41 of 128 tests" seconds={38} />
           </div>
           <div className="jn-dock jn-dock--code">
             <Composer variant="code" busy placeholder="Steer, or ask about the change" context={<ContextRow compact mode="Code" />} />

@@ -16,7 +16,7 @@ import {
 } from "./fixtures";
 import { Icon } from "./icons";
 import { AppMark, ModelMark, TokenMark } from "./marks";
-import { R, T, useReduced } from "./motion";
+import { R, SPRING, T, useReduced } from "./motion";
 
 /*
  * The composer (PRODUCT_REFOUNDATION §5): one field and four objects on one
@@ -40,53 +40,46 @@ import { R, T, useReduced } from "./motion";
 
 export function TokenChip({
   id,
-  markLayoutId,
+  settle,
   selected,
   onPress,
   register,
   still,
 }: {
   id: string;
-  /** Set only on the token that was just chosen: its mark arrives from the palette row. */
-  markLayoutId?: string;
+  /** Set only on the token that was just chosen: its fill relaxes from the palette's highlight tone (C8). */
+  settle?: boolean;
   selected?: boolean;
   onPress?: (id: string) => void;
   register?: (id: string, el: HTMLSpanElement | null) => void;
   still?: boolean;
 }) {
   const token = TOKENS[id];
-  const reduced = useReduced();
   const needs = token.kind === "app" && token.connected === false;
-  const fresh = !!markLayoutId && !reduced;
+  const kindWord = token.kind === "crew" ? "crew member" : token.kind === "app" ? "app" : token.kind;
   return (
     <span
       ref={(el) => register?.(id, el)}
       role={still ? undefined : "button"}
       tabIndex={still ? undefined : -1}
-      aria-label={needs ? `${token.label}, not connected` : token.label}
+      aria-label={needs ? `${token.label}, ${kindWord}, not connected` : `${token.label}, ${kindWord}`}
       className="jn-token"
       data-kind={token.kind}
       data-token={id}
       data-state={needs ? "needs" : undefined}
       data-selected={selected ? "" : undefined}
-      data-fresh={fresh ? "" : undefined}
+      data-settle={settle ? "" : undefined}
+      contentEditable={false}
       onMouseDown={(e) => {
         if (!onPress) return;
         e.preventDefault();
         onPress(id);
       }}
     >
-      <motion.span className="jn-token__mark" layoutId={fresh ? markLayoutId : undefined} transition={T.travel}>
+      <span className="jn-token__mark">
         <TokenMark token={token} size={16} />
-      </motion.span>
-      <motion.span
-        className="jn-token__label"
-        initial={fresh ? { opacity: 0 } : false}
-        animate={{ opacity: 1 }}
-        transition={fresh ? { duration: 0.16, delay: 0.1 } : T.instant}
-      >
-        {token.label}
-      </motion.span>
+      </span>
+      <span className="jn-token__label">{token.label}</span>
     </span>
   );
 }
@@ -94,7 +87,6 @@ export function TokenChip({
 /** A sentence of text runs and tokens. The same object in the composer and in the thread. */
 export function Sentence({
   segments,
-  layoutId,
   fresh,
   selected,
   onToken,
@@ -103,7 +95,6 @@ export function Sentence({
   still,
 }: {
   segments: Segment[];
-  layoutId?: string;
   fresh?: { id: string; key: string } | null;
   selected?: string | null;
   onToken?: (id: string) => void;
@@ -111,18 +102,18 @@ export function Sentence({
   children?: React.ReactNode;
   still?: boolean;
 }) {
-  const reduced = useReduced();
   const lastToken = lastTokenIndex(segments);
+  // The sentence never flies (C12, C18): a sent turn is drawn in its final place in the same frame.
   return (
-    <motion.div className="jn-sentence" layoutId={reduced ? undefined : layoutId} transition={T.travel}>
+    <div className="jn-sentence">
       {segments.map((s, i) => {
         if (s.t === "text") return <React.Fragment key={i}>{s.v}</React.Fragment>;
         const isFresh = !!fresh && fresh.id === s.id && i === lastToken;
         return (
           <TokenChip
-            key={`${s.id}-${i}`}
+            key={isFresh ? `${s.id}-${i}-${fresh?.key}` : `${s.id}-${i}`}
             id={s.id}
-            markLayoutId={isFresh ? fresh?.key : undefined}
+            settle={isFresh}
             selected={selected === s.id}
             onPress={onToken}
             register={register}
@@ -131,7 +122,7 @@ export function Sentence({
         );
       })}
       {children}
-    </motion.div>
+    </div>
   );
 }
 
@@ -143,6 +134,8 @@ function lastTokenIndex(segs: Segment[]): number {
 /* ———————————————————————————— Model ———————————————————————————— */
 
 interface State {
+  /** Focus arrived from the keyboard (type-to-focus, Tab): draw the ring. */
+  kbd: boolean;
   segs: Segment[];
   query: string | null;
   active: number;
@@ -163,7 +156,7 @@ type Action =
   | { type: "escape" }
   | { type: "panel"; id: string | null }
   | { type: "model"; open: boolean }
-  | { type: "focus"; on: boolean }
+  | { type: "focus"; on: boolean; kbd?: boolean }
   | { type: "reset"; segs: Segment[] };
 
 function appendText(segs: Segment[], c: string): Segment[] {
@@ -206,7 +199,7 @@ function reducer(s: State, a: Action): State {
     case "model":
       return { ...s, model: a.open, panel: null };
     case "focus":
-      return { ...s, focus: a.on };
+      return { ...s, focus: a.on, kbd: a.on ? (a.kbd ?? s.kbd) : false };
     case "reset":
       return { ...s, segs: a.segs, query: null, panel: null, model: false, selected: null, fresh: null };
   }
@@ -232,7 +225,8 @@ function paletteItems(query: string): { label: string; items: PaletteItem[] }[] 
 /* ———————————————————————————— Composer ———————————————————————————— */
 
 export interface ComposerApi {
-  focus: () => void;
+  /** Focus the field; `kbd` false draws pointer focus (hairline only). */
+  focus: (kbd?: boolean) => void;
   blur: () => void;
   type: (text: string, perChar?: number) => Promise<void>;
   key: (k: "ArrowDown" | "ArrowUp" | "Enter" | "Escape" | "Backspace") => void;
@@ -243,7 +237,10 @@ export interface ComposerApi {
 }
 
 export interface ComposerStill {
+  /** Focused from the keyboard: the darker hairline and the ring. */
   focused?: boolean;
+  /** Focused by pointer: the darker hairline only. */
+  pointerFocused?: boolean;
   palette?: { query: string; active?: number };
   model?: boolean;
   panel?: string;
@@ -253,12 +250,12 @@ const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
 export function Composer({
   initial = [],
-  placeholder = "Ask Juno anything. Type @ to add a file, app or teammate",
+  placeholder = "Ask anything. @ adds files, apps or crew; / runs skills",
+  label = "Message Juno",
   layoutId,
-  sentenceLayoutId,
   still,
   context,
-  approval,
+  dockRow,
   onSend,
   apiRef,
   className,
@@ -269,13 +266,14 @@ export function Composer({
 }: {
   initial?: Segment[];
   placeholder?: string;
+  /** The field's accessible name (C1). */
+  label?: string;
   layoutId?: string;
-  sentenceLayoutId?: string;
   still?: ComposerStill;
   /** A quiet row above the field (Code: repository, environment, mode). */
   context?: React.ReactNode;
-  /** An approval docked on the composer's top edge. */
-  approval?: React.ReactNode;
+  /** The dock (§2.1): one row attached to the composer's top edge (needs you, a queued message, a goal). */
+  dockRow?: React.ReactNode;
   onSend?: (segs: Segment[]) => void;
   apiRef?: React.MutableRefObject<ComposerApi | null>;
   className?: string;
@@ -294,9 +292,12 @@ export function Composer({
     fresh: null,
     panel: still?.panel ?? null,
     model: !!still?.model,
-    focus: !!still?.focused || !!still?.palette || !!still?.panel,
+    focus: !!still?.focused || !!still?.pointerFocused || !!still?.palette || !!still?.panel,
+    kbd: !!still?.focused || !!still?.palette,
     selected: still?.panel ?? null,
   }));
+  // Pointer or keyboard: the last input decides whether focus draws the ring (C1).
+  const pointerDown = React.useRef(false);
 
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
   const fieldRef = React.useRef<HTMLDivElement | null>(null);
@@ -358,9 +359,10 @@ export function Composer({
   React.useEffect(() => {
     if (!apiRef) return;
     apiRef.current = {
-      focus: () => {
+      focus: (kbd = true) => {
+        pointerDown.current = !kbd;
         fieldRef.current?.focus({ preventScroll: true });
-        dispatch({ type: "focus", on: true });
+        dispatch({ type: "focus", on: true, kbd });
       },
       blur: () => {
         fieldRef.current?.blur();
@@ -410,7 +412,7 @@ export function Composer({
     const next: typeof anchor = {};
     if (paletteOpen && caretRef.current) {
       const c = caretRef.current.getBoundingClientRect();
-      const width = Math.min(328, vw - 24);
+      const width = Math.min(372, vw - 24);
       let left = c.left - w.left - 20;
       left = Math.max(-4, Math.min(left, w.width - width + 8, vw - 12 - w.left - width));
       const below = vh - c.bottom > 420 || vh - c.bottom > c.top;
@@ -453,8 +455,12 @@ export function Composer({
         layoutId={reduced ? undefined : layoutId}
         transition={T.travel}
         data-focus={s.focus ? "" : undefined}
+        data-kbd={s.focus && s.kbd ? "" : undefined}
         data-variant={variant}
-        data-approval={approval ? "" : undefined}
+        data-dock={dockRow ? "" : undefined}
+        onPointerDown={() => {
+          pointerDown.current = true;
+        }}
         onMouseDown={(e) => {
           // Clicking the composer's body (not a control) puts the caret in the field.
           if ((e.target as HTMLElement).closest("button, a, [role=button]")) return;
@@ -462,20 +468,25 @@ export function Composer({
           fieldRef.current?.focus({ preventScroll: true });
         }}
       >
-        {approval}
+        {dockRow}
         {context ? <div className="jn-composer__context">{context}</div> : null}
         <div
           ref={fieldRef}
           className="jn-field"
           role="textbox"
           aria-multiline="true"
-          aria-label="Message"
+          aria-label={label}
           aria-expanded={paletteOpen}
           aria-controls={paletteOpen ? "jn-palette" : undefined}
+          aria-autocomplete="list"
+          aria-activedescendant={paletteOpen ? `jn-opt-${flat[Math.min(s.active, flat.length - 1)]?.token.id}` : undefined}
           tabIndex={0}
-          onFocus={() => dispatch({ type: "focus", on: true })}
+          onFocus={() => {
+            dispatch({ type: "focus", on: true, kbd: !pointerDown.current });
+            pointerDown.current = false;
+          }}
           onBlur={() => {
-            if (!still?.focused && !still?.palette && !still?.panel) dispatch({ type: "focus", on: false });
+            if (!still?.focused && !still?.pointerFocused && !still?.palette && !still?.panel) dispatch({ type: "focus", on: false });
           }}
           onKeyDown={(e) => {
             if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -490,7 +501,6 @@ export function Composer({
           ) : (
             <Sentence
               segments={s.segs}
-              layoutId={sentenceLayoutId}
               fresh={s.fresh}
               selected={s.selected}
               register={register}
@@ -529,17 +539,18 @@ export function Composer({
             type="button"
             className="jn-disc jicon-trigger"
             data-mode={mode}
-            aria-label={mode === "stop" ? "Stop" : mode === "send" ? "Send" : "Talk to Juno"}
+            aria-label={mode === "stop" ? "Stop response" : mode === "send" ? "Send message" : "Start a voice conversation"}
             onClick={mode === "send" ? send : undefined}
           >
+            {/* One disc, three faces (C12, C13, C16). The glyphs overlap and swap in place: opacity with scale 0.8 to 1 on fast. */}
             <AnimatePresence initial={false} mode="popLayout">
               <motion.span
                 key={mode}
                 className="jn-disc__glyph"
-                initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.6 }}
+                initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
-                exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.6 }}
-                transition={reduced ? R : { duration: 0.14, ease: [0.2, 0, 0, 1] }}
+                exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.8 }}
+                transition={reduced ? R : T.fast}
               >
                 <Icon name={mode === "stop" ? "stop" : mode === "send" ? "send" : "voice"} size={mode === "stop" ? 16 : 20} />
               </motion.span>
@@ -575,41 +586,36 @@ export function Composer({
 export function Palette({
   groups,
   active,
-  session,
   style,
-  origin,
   onChoose,
   onHover,
   className,
 }: {
   groups: { label: string; items: PaletteItem[] }[];
   active: number;
-  session: number;
+  session?: number;
   style?: React.CSSProperties;
   origin?: string;
   onChoose: (id: string) => void;
   onHover: (i: number) => void;
   className?: string;
 }) {
-  const reduced = useReduced();
   let index = -1;
-  // The palette is keyboard-born (typing "@"), so it appears at once: no travel, a 90ms fade.
+  // Keyboard-born (typing "@"), so it opens and closes in the same frame (C7, F0). No fade, no travel.
   return (
-    <motion.div
+    <div
       id="jn-palette"
       className={["jn-pop jn-palette", className].filter(Boolean).join(" ")}
       role="listbox"
       aria-label="Add to your message"
-      style={{ ...style, transformOrigin: origin, visibility: style ? "visible" : "hidden" }}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0, transition: reduced ? R : T.menuOut }}
-      transition={{ duration: 0.09 }}
+      style={{ ...style, visibility: style ? "visible" : "hidden" }}
     >
       <div className="jn-pop__scroll">
         {groups.map((g) => (
           <div key={g.label} role="group" aria-label={g.label} className="jn-pop__group">
-            <div className="jn-pop__label">{g.label}</div>
+            <div className="jn-pop__label" role="presentation">
+              {g.label}
+            </div>
             {g.items.map((item) => {
               index += 1;
               const i = index;
@@ -617,6 +623,7 @@ export function Palette({
               return (
                 <button
                   key={item.token.id}
+                  id={`jn-opt-${item.token.id}`}
                   type="button"
                   role="option"
                   aria-selected={i === active}
@@ -628,9 +635,9 @@ export function Palette({
                   }}
                   onMouseEnter={() => onHover(i)}
                 >
-                  <motion.span className="jn-pop__mark" layoutId={reduced ? undefined : `pick-${item.token.id}-${session}`} transition={T.travel}>
+                  <span className="jn-pop__mark" data-needs={needs ? "" : undefined}>
                     <TokenMark token={item.token} size={18} />
-                  </motion.span>
+                  </span>
                   <span className="jn-pop__text">{item.token.label}</span>
                   <span className="jn-pop__detail" data-needs={needs ? "" : undefined}>
                     {item.token.detail}
@@ -641,7 +648,7 @@ export function Palette({
           </div>
         ))}
       </div>
-      <div className="jn-pop__foot">
+      <div className="jn-pop__foot" aria-hidden="true">
         <span>
           <span className="jkbd">↑</span>
           <span className="jkbd">↓</span>
@@ -656,39 +663,53 @@ export function Palette({
           to close
         </span>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
-/* ———————————————————————————— App panel ———————————————————————————— */
+/* ———————————————————————————— Token popover (C10) ———————————————————————————— */
 
+/*
+ * A click on a token opens its popover, grown from the token (base, scale 0.96
+ * to 1, origin at the token). For an app it resolves connection and approval
+ * before send, in words: who it acts as, what it may read, what asks first.
+ */
 export function AppPanel({ id, style, origin, below = true }: { id: string; style?: React.CSSProperties; origin?: string; below?: boolean }) {
   const reduced = useReduced();
   const app = APPS[id];
   if (!app) return null;
+  const reads = app.actions.filter((a) => a.kind === "read" && a.policy !== "off");
+  const changes = app.actions.filter((a) => a.kind === "change");
   return (
     <motion.div
       className="jn-pop jn-apppanel"
       role="dialog"
-      aria-label={`${app.name} in this message`}
+      aria-label={`${app.name}, in this message`}
       style={{ ...style, transformOrigin: origin, visibility: style ? "visible" : "hidden" }}
-      initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.92, y: below ? -6 : 6 }}
+      initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: below ? -4 : 4 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: reduced ? 1 : 0.97, transition: reduced ? R : T.menuOut }}
-      transition={reduced ? R : T.grow}
+      exit={{ opacity: 0, transition: reduced ? R : T.exit }}
+      transition={reduced ? R : T.base}
     >
       <div className="jn-appanel__head">
-        <AppMark id={id} size={20} />
+        <AppMark id={id} size={24} />
         <div className="jn-appanel__who">
           <span className="jn-appanel__name">{app.name}</span>
-          <span className="jn-appanel__acct">{app.connected ? app.account : "Not connected yet"}</span>
+          <span className="jn-appanel__acct">{app.connected ? `Connected as ${app.account}` : "Not connected"}</span>
         </div>
       </div>
       {app.connected ? (
         <>
-          <p className="jn-appanel__lede">In this message, Juno may:</p>
           <ul className="jn-appanel__list">
-            {app.actions.slice(0, 4).map((a) => (
+            {reads.slice(0, 1).map((a) => (
+              <li key={a.label} className="jn-appanel__row">
+                <span>{a.label}</span>
+                <span className="jn-appanel__policy" data-policy={a.policy}>
+                  {POLICY_SENTENCE[a.policy]}
+                </span>
+              </li>
+            ))}
+            {changes.slice(0, 2).map((a) => (
               <li key={a.label} className="jn-appanel__row">
                 <span>{a.label}</span>
                 <span className="jn-appanel__policy" data-policy={a.policy}>
@@ -698,7 +719,14 @@ export function AppPanel({ id, style, origin, below = true }: { id: string; styl
             ))}
           </ul>
           <div className="jn-appanel__foot">
-            <span>Only for this message</span>
+            <span className="jn-appanel__verbs">
+              <button type="button" className="jb jb--ghost jb--sm">
+                Open {app.name}
+              </button>
+              <button type="button" className="jb jb--ghost jb--sm">
+                Remove
+              </button>
+            </span>
             <a className="jb jb--link" href="#customize">
               Change in Customize
             </a>
@@ -706,11 +734,11 @@ export function AppPanel({ id, style, origin, below = true }: { id: string; styl
         </>
       ) : (
         <>
-          <p className="jn-appanel__lede">Connect {app.name} so Juno can read issues and, when you allow it, create them.</p>
+          <p className="jn-appanel__lede">Connect {app.name} so Juno can read issues. Creating one will ask you first.</p>
           <div className="jn-appanel__foot">
             <span>Opens {app.name} to sign in</span>
             <button type="button" className="jb jb--primary jb--sm">
-              Connect
+              Connect {app.name}
             </button>
           </div>
         </>
@@ -719,7 +747,7 @@ export function AppPanel({ id, style, origin, below = true }: { id: string; styl
   );
 }
 
-/* ———————————————————————————— Model popover ———————————————————————————— */
+/* ———————————————————————————— Model popover (MP1–MP3) ———————————————————————————— */
 
 export function ModelPopover({ style, origin, below = true, className }: { style?: React.CSSProperties; origin?: string; below?: boolean; className?: string }) {
   const reduced = useReduced();
@@ -731,10 +759,10 @@ export function ModelPopover({ style, origin, below = true, className }: { style
       role="dialog"
       aria-label="Model"
       style={{ ...style, transformOrigin: origin, visibility: style ? "visible" : "hidden" }}
-      initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: below ? -4 : 4 }}
+      initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: below ? -4 : 4 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, transition: reduced ? R : T.menuOut }}
-      transition={reduced ? R : T.menuIn}
+      exit={{ opacity: 0, transition: reduced ? R : T.exit }}
+      transition={reduced ? R : T.base}
     >
       <div role="radiogroup" aria-label="Model" className="jn-modelpop__list">
         <button type="button" role="radio" aria-checked={chosen === "auto"} className="jn-pop__row jn-pop__row--tall jicon-trigger" onClick={() => setChosen("auto")}>
@@ -743,7 +771,7 @@ export function ModelPopover({ style, origin, below = true, className }: { style
           </span>
           <span className="jn-pop__stack">
             <span>Auto</span>
-            <span className="jn-pop__line">Picks the model for each message</span>
+            <span className="jn-pop__line">Picks the right model for each message</span>
           </span>
           <span className="jn-pop__check" aria-hidden="true">
             {chosen === "auto" ? <Icon name="check" size={16} state="active" /> : null}
@@ -770,20 +798,61 @@ export function ModelPopover({ style, origin, below = true, className }: { style
           <span>Effort</span>
           <span className="ink-3">{EFFORT_LINE[effort]}</span>
         </div>
-        <div className="jseg jn-modelpop__seg" role="radiogroup" aria-label="Effort">
-          {EFFORT.map((e) => (
-            <button key={e} type="button" role="radio" aria-checked={effort === e} className="jseg__opt" onClick={() => setEffort(e)}>
-              {e}
-            </button>
-          ))}
-        </div>
+        <Segmented options={EFFORT} value={effort} onChange={setEffort} label="Effort" className="jn-modelpop__seg" layoutKey="effort" />
       </div>
       <div className="jn-pop__sep" />
       <button type="button" className="jn-pop__row jicon-trigger">
-        <span className="jn-pop__text">All models</span>
-        <span className="jn-pop__detail">14</span>
+        <span className="jn-pop__text">All models…</span>
         <Icon name="chevron-right" size={16} className="ink-3" />
       </button>
     </motion.div>
+  );
+}
+
+/* ———————————————————————————— Segmented (MP3, K4) ———————————————————————————— */
+
+/** A segmented control whose thumb moves on the standard spring (instant when reduced). */
+export function Segmented<V extends string>({
+  options,
+  value,
+  onChange,
+  label,
+  className,
+  layoutKey,
+  size = "md",
+  labels,
+}: {
+  options: readonly V[];
+  value: V;
+  onChange?: (v: V) => void;
+  label: string;
+  className?: string;
+  layoutKey: string;
+  size?: "md" | "sm";
+  labels?: Partial<Record<V, string>>;
+}) {
+  const reduced = useReduced();
+  const id = React.useId();
+  return (
+    <span className={["jseg", size === "sm" ? "jseg--sm" : "", className].filter(Boolean).join(" ")} role="radiogroup" aria-label={label}>
+      {options.map((o) => (
+        <button
+          key={o}
+          type="button"
+          role="radio"
+          aria-checked={value === o}
+          className="jseg__opt"
+          onClick={() => onChange?.(o)}
+          onKeyDown={(e) => {
+            const i = options.indexOf(value);
+            if (e.key === "ArrowRight") onChange?.(options[Math.min(options.length - 1, i + 1)]);
+            if (e.key === "ArrowLeft") onChange?.(options[Math.max(0, i - 1)]);
+          }}
+        >
+          {value === o ? <motion.span className="jseg__thumb" layoutId={`${layoutKey}-${id}`} transition={reduced ? T.instant : SPRING.standard} aria-hidden="true" /> : null}
+          <span className="jseg__label">{labels?.[o] ?? o}</span>
+        </button>
+      ))}
+    </span>
   );
 }

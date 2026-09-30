@@ -124,7 +124,7 @@
   color: var(--ink);
 }
 .jn .jn-side__glyph[data-state="waiting"] {
-  color: var(--attn);
+  color: var(--ink-2);
 }
 .jn .jn-side__account {
   height: 44px;
@@ -156,8 +156,7 @@
   justify-content: space-between;
   height: 52px;
   padding: 0 12px 0 16px;
-  background: color-mix(in srgb, var(--ground) 92%, transparent);
-  backdrop-filter: blur(12px) saturate(1.2);
+  background: var(--ground);
 }
 .jn .jn-top__title {
   display: inline-flex;
@@ -221,8 +220,7 @@
     justify-content: space-between;
     height: 52px;
     padding: 0 6px;
-    background: color-mix(in srgb, var(--ground) 92%, transparent);
-    backdrop-filter: blur(12px) saturate(1.2);
+    background: var(--ground);
   }
   .jn .jn-mbar .jib {
     width: 44px;

@@ -12,24 +12,28 @@ export const ACCOUNT = { name: "Liam Magnier", first: "Liam", plan: "Pro", initi
 /* ———————————————————————————— Crew ———————————————————————————— */
 
 export interface CrewRow {
+  /** Two lines at most, under the face on the roster. */
+  roster?: string;
   id: string;
   name: string;
   role: string;
   seed: string;
   state: CrewState;
-  /** One line, in words, of what the member is doing now. */
+  /** A few words, in the sidebar row, of what the member is doing now. */
   now: string;
+  /** The same, as a full sentence (roster, member page). */
+  long: string;
   /** When the member last did something, relative. */
   when: string;
 }
 
 export const CREW: CrewRow[] = [
-  { id: "mira", name: "Mira", role: "Accounts", seed: "mira-accounts", state: "waiting", now: "Wants your answer on the Halvorsen renewal", when: "4 min ago" },
-  { id: "scout", name: "Scout", role: "Research", seed: "scout-research", state: "available", now: "Finished the Q3 forecast review", when: "1 h ago" },
-  { id: "otto", name: "Otto", role: "Finance operations", seed: "otto-finops", state: "working", now: "Reconciling September invoices, 206 of 214 matched", when: "now" },
-  { id: "rhea", name: "Rhea", role: "Support", seed: "rhea-support", state: "thinking", now: "Reading this week’s escalations", when: "now" },
-  { id: "ines", name: "Ines", role: "Recruiting", seed: "ines-recruiting", state: "paused", now: "Paused until Monday", when: "Friday" },
-  { id: "tomas", name: "Tomas", role: "On-call engineering", seed: "tomas-oncall", state: "offline", now: "Off until the next page", when: "Sunday" },
+  { id: "mira", name: "Mira", role: "Accounts", seed: "mira-accounts", state: "waiting", now: "Needs your answer", long: "Needs your answer on the Halvorsen renewal", when: "4 min ago" },
+  { id: "scout", name: "Scout", role: "Research", seed: "scout-research", state: "available", now: "Free", long: "Finished the Q3 forecast review, 1 h ago", when: "1 h ago" },
+  { id: "otto", name: "Otto", role: "Finance operations", seed: "otto-finops", state: "working", now: "Reconciling invoices", roster: "Reconciling invoices, 206 of 214", long: "Reconciling September invoices, 206 of 214 matched", when: "now" },
+  { id: "rhea", name: "Rhea", role: "Support", seed: "rhea-support", state: "thinking", now: "Reading escalations", roster: "Reading this week’s escalations", long: "Reading this week’s escalations", when: "now" },
+  { id: "ines", name: "Ines", role: "Recruiting", seed: "ines-recruiting", state: "paused", now: "Paused", long: "Paused until Monday", when: "Friday" },
+  { id: "tomas", name: "Tomas", role: "On-call engineering", seed: "tomas-oncall", state: "offline", now: "Offline", roster: "Offline since Sunday", long: "Offline, last active Sunday", when: "Sunday" },
 ];
 
 export const crew = (id: string): CrewRow => CREW.find((m) => m.id === id) ?? CREW[0];
@@ -75,16 +79,16 @@ export interface TokenRef {
 }
 
 export const TOKENS: Record<string, TokenRef> = {
-  forecast: { id: "forecast", kind: "file", label: "Q3 Forecast.xlsx", detail: "Edited today" },
-  notes: { id: "notes", kind: "file", label: "Renewal notes.md", detail: "Monday" },
-  deck: { id: "deck", kind: "file", label: "Board deck, October.pdf", detail: "18 pages" },
-  stripe: { id: "stripe", kind: "app", label: "Stripe", connected: true, detail: "Connected" },
-  slack: { id: "slack", kind: "app", label: "Slack", connected: true, detail: "Connected" },
+  forecast: { id: "forecast", kind: "file", label: "Q3 Forecast.xlsx", detail: "Drive, edited today" },
+  notes: { id: "notes", kind: "file", label: "Renewal notes.md", detail: "Library, Monday" },
+  deck: { id: "deck", kind: "file", label: "Board deck, October.pdf", detail: "Drive, 18 pages" },
+  stripe: { id: "stripe", kind: "app", label: "Stripe", connected: true, detail: "Connected as Halvorsen Finance" },
+  slack: { id: "slack", kind: "app", label: "Slack", connected: true, detail: "Connected as liam@northwind.io" },
   linear: { id: "linear", kind: "app", label: "Linear", connected: false, detail: "Not connected" },
-  notion: { id: "notion", kind: "app", label: "Notion", connected: true, detail: "Connected" },
-  mira: { id: "mira", kind: "crew", label: "Mira", detail: "Accounts" },
-  scout: { id: "scout", kind: "crew", label: "Scout", detail: "Research" },
-  otto: { id: "otto", kind: "crew", label: "Otto", detail: "Finance operations" },
+  notion: { id: "notion", kind: "app", label: "Notion", connected: true, detail: "Connected as Northwind wiki" },
+  mira: { id: "mira", kind: "crew", label: "Mira", detail: "Accounts, needs your answer" },
+  scout: { id: "scout", kind: "crew", label: "Scout", detail: "Research, free" },
+  otto: { id: "otto", kind: "crew", label: "Otto", detail: "Finance operations, reconciling invoices" },
   atlas: { id: "atlas", kind: "project", label: "Atlas launch", detail: "14 chats" },
   renewals: { id: "renewals", kind: "project", label: "Renewals 2026", detail: "6 chats" },
   chat1: { id: "chat1", kind: "chat", label: "Pricing page copy, second pass", detail: "Yesterday" },
@@ -118,6 +122,8 @@ export interface AppAction {
   label: string;
   policy: Policy;
   kind: "read" | "change";
+  /** On the always-confirm floor: no control, only "Always asks". */
+  floor?: boolean;
 }
 
 export const POLICY_LABEL: Record<Policy, string> = { allow: "Allow", ask: "Ask", off: "Off" };
@@ -147,7 +153,7 @@ export const APPS: Record<string, AppInfo> = {
       { label: "Post a message to a channel", policy: "ask", kind: "change" },
       { label: "Send a direct message", policy: "ask", kind: "change" },
       { label: "Add a reaction", policy: "allow", kind: "change" },
-      { label: "Archive a channel", policy: "off", kind: "change" },
+      { label: "Archive a channel", policy: "ask", kind: "change", floor: true },
     ],
   },
   stripe: {
@@ -205,14 +211,21 @@ export const ANSWER_TABLE = {
 
 export const ANSWER_CLOSE = "I’ve asked Mira to check usage on all three and flag the ones worth a call.";
 
-export const READS = [
-  { verb: "Read", object: "Q3 Forecast.xlsx" },
-  { verb: "Read", object: "stripe-subscriptions-september.csv" },
-  { verb: "Read", object: "Renewal notes.md" },
-  { verb: "Searched the web for", object: "Halvorsen annual report 2026" },
+/** The work trace (M5): one sentence per step, with the app's own mark. */
+export const READS: { verb: string; object: string; where?: string; mark: string }[] = [
+  { verb: "Read", object: "Q3 Forecast.xlsx", where: "in Drive", mark: "file:Q3 Forecast.xlsx" },
+  { verb: "Listed", object: "subscriptions renewing before December", where: "in Stripe", mark: "app:stripe" },
+  { verb: "Read", object: "Renewal notes.md", mark: "file:Renewal notes.md" },
+  { verb: "Searched the web for", object: "Halvorsen annual report 2026", mark: "web" },
 ];
 
+export const TRACE_SUMMARY = "Worked 12s, searched the web and read 3 sources";
+
+/** The live line's phases (M1), each held at least a second. */
 export const PRESENCE_WORDS = ["Reading Q3 Forecast.xlsx", "Checking Stripe subscriptions", "Comparing renewals with the forecast"];
+
+/** How the sent message's tokens resolved (M23). */
+export const RECEIPT = "Q3 Forecast.xlsx and Stripe added. Mira takes the renewal check. Posting to Slack asks you first.";
 
 export const MIRA_PLAN = [
   { title: "Pull usage for the three accounts", state: "done" as const },
@@ -234,9 +247,9 @@ export interface ModelRow {
 }
 
 export const MODELS: ModelRow[] = [
-  { id: "claude-fable-5-1", name: "Claude Fable 5.1", provider: "anthropic", line: "Deepest reasoning for hard problems" },
+  { id: "claude-fable-5-1", name: "Claude Fable 5.1", provider: "anthropic", line: "Best for long, careful work, uses more of your limit" },
   { id: "gpt-6-sol", name: "GPT-6 Sol", provider: "openai", line: "Everyday work, writing and code review" },
-  { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", provider: "google", line: "Fast answers over long files and video" },
+  { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", provider: "google", line: "Fastest, good with long files and video" },
   { id: "grok-4.7", name: "Grok 4.7", provider: "xai", line: "Live web results and current events" },
 ];
 
