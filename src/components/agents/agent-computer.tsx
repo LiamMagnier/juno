@@ -24,6 +24,7 @@ import { useConversationWork } from "@/components/chat/use-conversation-work";
 import { AgentPresence } from "@/components/agents/agent-presence";
 import { useAgentDetail } from "@/components/agents/use-agents";
 import { announceAgentsChanged, computerAction, fetchComputerFiles, type ClientAgentComputerFile } from "@/components/agents/agents-transport";
+import { HAND_BACK_ANSWER, handBackQuestion, pinTakeover, type TakeoverPin } from "@/lib/agents/computer-handback";
 import type { ClientAgent, ClientAgentComputer } from "@/lib/agents/types";
 import { cn } from "@/lib/utils";
 
@@ -64,9 +65,14 @@ export function AgentComputerOverlay({
   };
   const computer: ClientAgentComputer | null = detail?.computer ?? null;
   const status = computer?.status ?? "asleep";
+  // The question this takeover is for, pinned when control is taken, so Hand
+  // back answers that one and never whichever question happens to be first.
+  const takeover = React.useRef<TakeoverPin | null>(null);
 
   React.useEffect(() => {
-    if (open) setMode(initialMode);
+    if (!open) return;
+    setMode(initialMode);
+    takeover.current = null;
   }, [open, initialMode]);
 
   React.useEffect(() => {
@@ -96,6 +102,11 @@ export function AgentComputerOverlay({
     refresh();
   };
 
+  const takeControl = () => {
+    takeover.current = pinTakeover(work.questions);
+    setMode("control");
+  };
+
   const handBack = async () => {
     setBusy("handback");
     await fetch(`/api/agents/${encodeURIComponent(agent.id)}/computer/heartbeat`, {
@@ -103,8 +114,11 @@ export function AgentComputerOverlay({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: "control", ended: true }),
     }).catch(() => {});
-    const question = work.questions[0];
-    if (question) await work.answer(question.id, "Done. I've finished on your computer; continue.").catch(() => false);
+    // Only the question that asked for the computer, and nothing when it has
+    // gone: anything else is still the person's to answer in the composer.
+    const question = handBackQuestion(work.questions, takeover.current);
+    takeover.current = null;
+    if (question) await work.answer(question.id, HAND_BACK_ANSWER).catch(() => false);
     setBusy(null);
     setMode("watch");
     announceAgentsChanged();
@@ -214,7 +228,7 @@ export function AgentComputerOverlay({
                     Hand back
                   </Button>
                 ) : (
-                  <Button type="button" variant="outline" className="rounded-full px-5" onClick={() => setMode("control")}>
+                  <Button type="button" variant="outline" className="rounded-full px-5" onClick={takeControl}>
                     Take control
                   </Button>
                 )

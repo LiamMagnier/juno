@@ -929,8 +929,10 @@ async function openingContext(input: {
         take: 8,
         select: { title: true },
       }),
+      // `deletedAt: null`: "Forget this" is a soft delete, and a note the
+      // person asked the agent to forget must not reach its runs either.
       prisma.agentNote.findMany({
-        where: { userId: input.userId, agentId: input.session.agentId },
+        where: { userId: input.userId, agentId: input.session.agentId, deletedAt: null },
         orderBy: { updatedAt: "desc" },
         take: 24,
         select: { content: true },
