@@ -34,7 +34,7 @@ public struct NativeCodeAgentRepository: Codable, Identifiable, Equatable, Senda
     public let updatedAt: String
 }
 
-public struct NativeCodeAgentTask: Codable, Identifiable, Equatable, Sendable {
+public struct NativeCodeAgentTask: Decodable, Identifiable, Equatable, Sendable {
     public let id: String
     public let deviceId: String?
     public let workspacePath: String
@@ -50,26 +50,28 @@ public struct NativeCodeAgentTask: Codable, Identifiable, Equatable, Sendable {
     public let repoName: String?
     public let baseRef: String?
     public let prUrl: String?
-    public let agentRuntime: CodeAgentRuntime
     public let permissionMode: CodeAgentPermissionMode
+    /// The model the submitter picked, or nil for "no preference".
     public let modelId: String?
     public let reasoningEffort: String?
-    public let computerUse: Bool
-    public let subagentsEnabled: Bool
     public let createdAt: String
     public let updatedAt: String
 
+    /// Every key here is one `serializeTask` (src/lib/code-task-wire.ts)
+    /// sends, except `modelId`, which no server has ever sent and is read only
+    /// as a fallback. `tests/code-task-wire.test.ts` holds this list to the
+    /// server's key set, so a field the Mac waits for that the server never
+    /// writes fails there instead of silently decoding as nil.
     private enum CodingKeys: String, CodingKey {
         case id, deviceId, workspacePath, workspaceName, workspaceKey, title, prompt
         case status, lastSeq, conversationId, target, repoOwner, repoName, baseRef, prUrl
-        case agentRuntime, permissionMode, modelId, reasoningEffort, computerUse
-        case subagentsEnabled, createdAt, updatedAt
+        case permissionMode, model, modelId, reasoningEffort, createdAt, updatedAt
     }
 
-    /// Lenient where the server is: `serializeTask` sends no runtime, model,
-    /// effort, Computer Use or sub-agent fields, leaves `permissionMode` null
-    /// on device tasks and omits `prompt` on list responses. Decoding those
-    /// strictly failed every queued task, so none ever started on the Mac.
+    /// Lenient where the server is: `serializeTask` leaves `permissionMode`,
+    /// `model` and `reasoningEffort` null on a task created without them and
+    /// omits `prompt` on list responses. Decoding those strictly failed every
+    /// queued task, so none ever started on the Mac.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -87,13 +89,13 @@ public struct NativeCodeAgentTask: Codable, Identifiable, Equatable, Sendable {
         repoName = try container.decodeIfPresent(String.self, forKey: .repoName)
         baseRef = try container.decodeIfPresent(String.self, forKey: .baseRef)
         prUrl = try container.decodeIfPresent(String.self, forKey: .prUrl)
-        agentRuntime = (try? container.decodeIfPresent(CodeAgentRuntime.self, forKey: .agentRuntime)) ?? .claude
         // Null means "no preference": the Mac's own gating, which asks.
         permissionMode = (try? container.decodeIfPresent(CodeAgentPermissionMode.self, forKey: .permissionMode)) ?? .ask
-        modelId = try container.decodeIfPresent(String.self, forKey: .modelId)
+        // `model` is the server's key. `modelId` is what this decoder used to
+        // read, and what no server ever wrote; it stays only as a fallback.
+        modelId = try container.decodeIfPresent(String.self, forKey: .model)
+            ?? container.decodeIfPresent(String.self, forKey: .modelId)
         reasoningEffort = try container.decodeIfPresent(String.self, forKey: .reasoningEffort)
-        computerUse = try container.decodeIfPresent(Bool.self, forKey: .computerUse) ?? false
-        subagentsEnabled = try container.decodeIfPresent(Bool.self, forKey: .subagentsEnabled) ?? false
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
         updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt) ?? ""
     }

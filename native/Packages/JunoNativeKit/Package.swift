@@ -208,7 +208,11 @@ let package = Package(
             dependencies: [
                 "JunoCore", "JunoAPI", "JunoAuth", "JunoStorage", "JunoSync",
                 "JunoCodeKit",
-            ]
+            ],
+            // `code-task-wire.json` is written by the server's own
+            // serializeTask (scripts/generate-code-task-wire-fixtures.ts), so
+            // the decoder is tested against what a Mac is actually handed.
+            resources: [.copy("Fixtures")]
         ),
         .testTarget(
             name: "JunoWorkKitTests",
