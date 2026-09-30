@@ -432,6 +432,8 @@ final class BackendCodeModelClientTests: XCTestCase {
         XCTAssertEqual(message, "The model stream became idle.")
     }
 
+    /// An overload reported inside the stream is typed as one, so the loop
+    /// waits it out rather than treating it as an unknown failure.
     func testErrorEventThrows() async {
         let sse = """
         data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}
@@ -440,10 +442,18 @@ final class BackendCodeModelClientTests: XCTestCase {
         let streamer = FakeByteStreamer(canned: .init(body: Data(sse.utf8)))
         let client = BackendCodeModelClient(streamer: streamer, accountID: accountID)
         let (_, error) = await collect(client, makeRequest())
-        guard case let AgentModelClientError.transport(message)? = error as? AgentModelClientError else {
-            return XCTFail("expected transport error")
-        }
-        XCTAssertEqual(message, "Overloaded")
+        XCTAssertEqual(error as? AgentModelClientError, .overloaded(retryAfter: nil))
+    }
+
+    func testAnUnrecognisedErrorEventIsATransportFailure() async {
+        let sse = """
+        data: {"type":"error","error":{"type":"api_error","message":"Internal server error"}}
+
+        """
+        let streamer = FakeByteStreamer(canned: .init(body: Data(sse.utf8)))
+        let client = BackendCodeModelClient(streamer: streamer, accountID: accountID)
+        let (_, error) = await collect(client, makeRequest())
+        XCTAssertEqual(error as? AgentModelClientError, .transport(message: "Internal server error"))
     }
 
     func testNon2xxThrowsWithServerMessage() async {
@@ -463,8 +473,10 @@ final class BackendCodeModelClientTests: XCTestCase {
         let streamer = FakeByteStreamer(canned: .init(body: Data()))
         let client = BackendCodeModelClient(streamer: streamer, accountID: accountID)
         let (_, error) = await collect(client, makeRequest(modelID: "juno:auto"))
-        guard case AgentModelClientError.invalidResponse? = error as? AgentModelClientError else {
-            return XCTFail("expected invalidResponse for unsupported model")
+        // Unavailable, so the loop fails the turn rather than retrying a
+        // request that can never be sent.
+        guard case AgentModelClientError.unavailable? = error as? AgentModelClientError else {
+            return XCTFail("expected unavailable for unsupported model")
         }
         XCTAssertNil(streamer.lastRequest, "an unsupported model must not hit the transport")
     }

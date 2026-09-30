@@ -223,7 +223,11 @@ final class AgentOrchestratorTests: XCTestCase {
             registry: registry,
             permissions: permissions,
             store: store,
-            configuration: AgentOrchestrator.Configuration(systemPrompt: "You are Juno Code."),
+            configuration: AgentOrchestrator.Configuration(
+                systemPrompt: "You are Juno Code.",
+                // Retries run without waiting; `ModelRetryTests` covers the waits.
+                retrySleep: { _ in }
+            ),
             modelID: "test-model",
             reasoningEffort: .medium
         )
@@ -723,22 +727,29 @@ final class AgentOrchestratorTests: XCTestCase {
         XCTAssertFalse(content.contains("bytes omitted"), "a read is never cut through the middle")
     }
 
-    func testModelFailureRetriesOnceThenFails() async throws {
-        let model = ScriptedModelClient(steps: [
-            .failure(AgentModelClientError.transport(message: "boom")),
-            .failure(AgentModelClientError.transport(message: "boom again")),
-        ])
+    func testATransportFailureIsRetriedUpToThePolicyThenFails() async throws {
+        let retries = ModelRetryPolicy.standard.maximumRetries
+        let model = ScriptedModelClient(
+            steps: Array(
+                repeating: .failure(AgentModelClientError.transport(message: "boom")),
+                count: retries + 1
+            )
+        )
         let (orchestrator, _) = makeOrchestrator(model: model)
-        try await orchestrator.submit(prompt: "Fail twice")
+        try await orchestrator.submit(prompt: "Fail every time")
         await orchestrator.awaitCompletion()
         let final = try await store.session(id: session.id)
         XCTAssertEqual(final.status, .failed)
+        XCTAssertEqual(model.receivedRequests.count, retries + 1)
         let events = await payloads()
-        let errors = events.filter {
-            if case .errorOccurred = $0 { return true }
-            return false
+        let errors = events.compactMap { payload -> ErrorEvent? in
+            if case let .errorOccurred(event) = payload { return event }
+            return nil
         }
-        XCTAssertEqual(errors.count, 2)
+        // One notice per retry, then the failure.
+        XCTAssertEqual(errors.count, retries + 1)
+        XCTAssertTrue(errors.dropLast().allSatisfy { $0.isRecoverable && $0.message.contains("Retrying in") })
+        XCTAssertFalse(errors.last!.isRecoverable)
     }
 
     func testTransientFailureRecovers() async throws {
@@ -815,7 +826,11 @@ final class AgentOrchestratorTests: XCTestCase {
             registry: ToolRegistry(tools: [EphemeralImageTool()]),
             permissions: permissions,
             store: store,
-            configuration: AgentOrchestrator.Configuration(systemPrompt: "sys"),
+            configuration: AgentOrchestrator.Configuration(
+                systemPrompt: "sys",
+                retryPolicy: ModelRetryPolicy(maximumRetries: 1),
+                retrySleep: { _ in }
+            ),
             modelID: "vision-model",
             reasoningEffort: .medium
         )

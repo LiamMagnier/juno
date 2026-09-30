@@ -188,6 +188,15 @@ public enum ModelStopReason: Equatable, Sendable {
     /// The model requested tool calls and is waiting for their results.
     case toolUse
     case maxTokens
+    /// The model declined to go on with the request. Not a finished answer:
+    /// what it wrote before stopping may be partial.
+    case refusal
+    /// The provider paused a long turn and expects the same conversation to
+    /// be sent back so the model can carry on from its own last message.
+    case pauseTurn
+    /// The reply stopped because the context window was full. The answer is
+    /// cut off, and only a shorter history lets the model finish.
+    case contextWindowExceeded
 }
 
 public enum ModelStreamEvent: Sendable {
@@ -214,9 +223,19 @@ public enum ModelStreamEvent: Sendable {
 }
 
 public enum AgentModelClientError: Error, Equatable, Sendable {
+    /// A connection that failed or dropped, a timeout, a 5xx: nothing says it
+    /// will fail again.
     case transport(message: String)
     case unauthorized
-    case rateLimited
+    /// The provider is throttling this account. `retryAfter` is how long it
+    /// asked to be left alone, in seconds, when it said.
+    case rateLimited(retryAfter: TimeInterval?)
+    /// The provider is up but has no capacity right now (Anthropic's 529,
+    /// a 503). Waiting is the fix.
+    case overloaded(retryAfter: TimeInterval?)
+    /// The request is longer than the model's context window. The same
+    /// request will fail the same way; a shorter history will not.
+    case contextWindowExceeded(message: String)
     /// The provider's own capacity or billing quota. Another model may work.
     case quotaExhausted(message: String)
     /// The Juno account's plan budget or usage window. Every model draws on
@@ -224,6 +243,85 @@ public enum AgentModelClientError: Error, Equatable, Sendable {
     /// honest answer is the message, which says when it frees up.
     case planLimitReached(message: String)
     case invalidResponse(message: String)
+    /// Nothing can be sent at all: no transport is composed, the reader is
+    /// signed out, the model cannot speak the tool protocol. Retrying the
+    /// same request cannot help; the message says what will.
+    case unavailable(message: String)
+}
+
+/// How a failed model request is tried again.
+///
+/// Ported from the cloud runner (`runner/agent-core/src/loop.ts`,
+/// `providers/errors.ts`), which learned it from a run that died fourteen
+/// seconds in on one 429. A rate limit or an overload is waited out with
+/// exponential backoff and jitter, honouring the provider's own
+/// `retry-after` when it gave one, within a total budget; only once that is
+/// spent does a fallback model — when the reader opted into one — get a turn.
+/// A dropped connection is retried the same way. An error that retrying cannot
+/// fix is not retried at all.
+public struct ModelRetryPolicy: Equatable, Sendable {
+    /// Retries after the first attempt, per model.
+    public var maximumRetries: Int
+    /// The first backoff; each later one doubles, up to `maximumDelay`.
+    public var baseDelay: Duration
+    public var maximumDelay: Duration
+    /// The most one step may spend waiting across all its retries.
+    public var maximumTotalWait: Duration
+    /// The longest `retry-after` honoured as asked. A provider saying "come
+    /// back in an hour" is saying to give up on it, not to hold the run that
+    /// long; past this the retry is not attempted.
+    public var maximumRetryAfter: Duration
+
+    public init(
+        maximumRetries: Int = 4,
+        baseDelay: Duration = .seconds(1),
+        maximumDelay: Duration = .seconds(20),
+        maximumTotalWait: Duration = .seconds(90),
+        maximumRetryAfter: Duration = .seconds(60)
+    ) {
+        self.maximumRetries = max(0, maximumRetries)
+        self.baseDelay = baseDelay
+        self.maximumDelay = maximumDelay
+        self.maximumTotalWait = maximumTotalWait
+        self.maximumRetryAfter = maximumRetryAfter
+    }
+
+    public static let standard = ModelRetryPolicy()
+
+    /// How long to wait before retry number `retry` (1-based), or nil when the
+    /// policy says to stop: out of retries, out of waiting budget, or asked to
+    /// wait longer than it honours.
+    ///
+    /// - Parameters:
+    ///   - retryAfter: what the provider asked for, in seconds, if anything.
+    ///   - waited: the time already spent waiting in this step.
+    ///   - jitter: a number in 0..<1. Several sessions meeting the same
+    ///     per-minute limit at once must not all come back at once, or the
+    ///     retry is the thundering herd that caused the limit, rearranged.
+    public func delay(
+        forRetry retry: Int,
+        retryAfter: TimeInterval?,
+        waited: Duration,
+        jitter: Double
+    ) -> Duration? {
+        guard retry >= 1, retry <= maximumRetries else { return nil }
+        let delay: Duration
+        if let retryAfter, retryAfter >= 0 {
+            let asked = Duration.milliseconds(Int64((retryAfter * 1_000).rounded(.up)))
+            guard asked <= maximumRetryAfter else { return nil }
+            delay = asked
+        } else {
+            var backoff = baseDelay
+            for _ in 1..<retry {
+                backoff = min(backoff * 2, maximumDelay)
+            }
+            backoff = min(backoff, maximumDelay)
+            // Full jitter over the top half: never less than half the backoff.
+            delay = backoff * (0.5 + 0.5 * min(max(jitter, 0), 1))
+        }
+        guard waited + delay <= maximumTotalWait else { return nil }
+        return delay
+    }
 }
 
 /// The transport that produces model turns. The production implementation

@@ -11,6 +11,24 @@ public protocol ModelFallbackResolver: Sendable {
     /// Returns an available model ID to use as fallback for `currentModelID`,
     /// or nil when no suitable alternative exists.
     func resolveFallback(for currentModelID: String) async -> String?
+
+    /// The thinking setting to send `modelID` in place of `preferred`, which
+    /// was chosen for another model: nil when it takes no thinking parameter,
+    /// and otherwise the nearest depth it offers.
+    ///
+    /// The primary's effort sent to a fallback from another lab is a 400 for
+    /// a model that takes no parameter or does not offer that depth, and the
+    /// fallback exists precisely to keep the run going.
+    func reasoningEffort(for modelID: String, preferred: ReasoningEffort?) -> ReasoningEffort?
+}
+
+public extension ModelFallbackResolver {
+    /// With nothing known about the model, no thinking parameter at all:
+    /// omitting one costs a shallower answer, while a wrong one fails the
+    /// turn.
+    func reasoningEffort(for _: String, preferred _: ReasoningEffort?) -> ReasoningEffort? {
+        nil
+    }
 }
 
 public enum OrchestratorError: Error, Equatable, Sendable {
@@ -58,6 +76,15 @@ public actor AgentOrchestrator {
         /// ``ImageRetention``.
         public var maximumRetainedImages: Int
         public var maximumRetainedImageBytes: Int
+        /// How a failed model request is tried again. See ``ModelRetryPolicy``.
+        public var retryPolicy: ModelRetryPolicy
+        /// How the loop waits between retries. Must throw when the task is
+        /// cancelled, so Stop is never held up by a backoff; tests replace it
+        /// to run without waiting.
+        public var retrySleep: @Sendable (Duration) async throws -> Void
+        /// A number in 0..<1 that spreads out the retries of sessions that
+        /// hit the same limit together.
+        public var retryJitter: @Sendable () -> Double
 
         public init(
             maximumIterations: Int = 200,
@@ -71,7 +98,10 @@ public actor AgentOrchestrator {
             systemPrompt: String,
             sessionState: (@Sendable () async -> [SessionStateSection])? = nil,
             maximumRetainedImages: Int = 20,
-            maximumRetainedImageBytes: Int = 12 * 1_024 * 1_024
+            maximumRetainedImageBytes: Int = 12 * 1_024 * 1_024,
+            retryPolicy: ModelRetryPolicy = .standard,
+            retrySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+            retryJitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) }
         ) {
             self.compactionSummary = compactionSummary
             self.maximumIterations = maximumIterations
@@ -88,6 +118,9 @@ public actor AgentOrchestrator {
             self.sessionState = sessionState
             self.maximumRetainedImages = max(1, maximumRetainedImages)
             self.maximumRetainedImageBytes = max(1, maximumRetainedImageBytes)
+            self.retryPolicy = retryPolicy
+            self.retrySleep = retrySleep
+            self.retryJitter = retryJitter
         }
     }
 
@@ -713,6 +746,9 @@ public actor AgentOrchestrator {
         var lastAssistantText = ""
         var testsPassed: Bool?
         var stopHookContinuations = 0
+        // Whether this step already folded the history after the window
+        // overflowed; a second overflow in a row is a failure.
+        var overflowRecoveryUsed = false
         hookHaltReason = nil
 
         defer {
@@ -786,7 +822,10 @@ public actor AgentOrchestrator {
                 }
             }
 
-            var modelRetriesLeft = 1
+            // This step's retries of one model, and the waiting they have
+            // cost; both start again when a fallback model takes over.
+            var retries = 0
+            var waited = Duration.zero
             var fallbackAttempted = false
 
             // Every request goes out valid, whatever path left the history in
@@ -882,10 +921,11 @@ public actor AgentOrchestrator {
                     if Task.isCancelled {
                         break
                     }
-                    let errorDesc = shortDescription(error)
+                    let failure = ModelFailure(error)
 
-                    // Typed error classification — prefer structured errors over string matching.
-                    if case let .planLimitReached(message) = error as? AgentModelClientError {
+                    // The account's allowance: every model draws on it, so
+                    // neither waiting nor another model helps.
+                    if case let .planLimit(message) = failure {
                         _ = try? await store.appendEvent(
                             sessionID: sessionID,
                             payload: .errorOccurred(ErrorEvent(message: message, isRecoverable: true))
@@ -901,97 +941,90 @@ public actor AgentOrchestrator {
                         return
                     }
 
-                    let isOverload: Bool
-                    let isQuotaExhausted: Bool
-                    if let clientError = error as? AgentModelClientError {
-                        switch clientError {
-                        case .rateLimited:
-                            isOverload = true
-                            isQuotaExhausted = false
-                        case .quotaExhausted:
-                            isOverload = true
-                            isQuotaExhausted = true
-                        case let .transport(message):
-                            let m = message.lowercased()
-                            isQuotaExhausted = m.contains("quota") || m.contains("exceeded your current quota")
-                            isOverload = isQuotaExhausted
-                                || m.contains("503")
-                                || m.contains("504")
-                                || m.contains("overloaded")
-                                || m.contains("high demand")
-                                || m.contains("timed out")
-                                || m.contains("timeout")
-                                || m.contains("rate limit")
-                        case .unauthorized, .invalidResponse, .planLimitReached:
-                            isOverload = false
-                            isQuotaExhausted = false
-                        }
-                    } else {
-                        let m = errorDesc.lowercased()
-                        isQuotaExhausted = m.contains("quota") || m.contains("exceeded your current quota")
-                        isOverload = isQuotaExhausted
-                            || m.contains("503")
-                            || m.contains("504")
-                            || m.contains("overloaded")
-                            || m.contains("high demand")
-                            || m.contains("timed out")
-                            || m.contains("timeout")
-                            || m.contains("rate limit")
-                    }
-
-                    if isOverload && !fallbackAttempted {
-                        if let fallback = await computeFallbackModel(for: activeModelID),
-                           fallback != activeModelID
-                        {
-                            fallbackAttempted = true
-                            modelRetriesLeft = 1
-                            let reason = isQuotaExhausted ? "quota is exhausted" : "is temporarily unavailable"
-                            _ = try? await store.appendEvent(
-                                sessionID: sessionID,
-                                payload: .errorOccurred(
-                                    ErrorEvent(
-                                        message: "Model '\(activeModelID)' \(reason). Switching to '\(fallback)' to continue.",
-                                        isRecoverable: true
-                                    )
-                                )
-                            )
-                            activeModelID = fallback
-                            try? await Task.sleep(nanoseconds: 500_000_000)
+                    // Too long for the window: the same request fails the
+                    // same way, a folded one may not. Once per step.
+                    if case .contextOverflow = failure, !overflowRecoveryUsed {
+                        overflowRecoveryUsed = true
+                        if await recoverFromContextOverflow() {
                             continue
                         }
                     }
 
-                    // On quota exhaustion without fallback, do not do a pointless retry on the exact same model!
-                    if isQuotaExhausted {
-                        modelRetriesLeft = 0
+                    // Worth waiting out on the same model: a limit, an
+                    // overload, a dropped connection.
+                    let retryLimit = failure.retryLimit(configuration.retryPolicy)
+                    if retryLimit > retries {
+                        retries += 1
+                        if let delay = configuration.retryPolicy.delay(
+                            forRetry: retries,
+                            retryAfter: failure.retryAfter,
+                            waited: waited,
+                            jitter: configuration.retryJitter()
+                        ) {
+                            waited += delay
+                            _ = try? await store.appendEvent(
+                                sessionID: sessionID,
+                                payload: .errorOccurred(
+                                    ErrorEvent(
+                                        message: "\(failure.sentence) Retrying in \(Self.seconds(delay)) (retry \(retries) of \(retryLimit)).",
+                                        isRecoverable: true
+                                    )
+                                )
+                            )
+                            do {
+                                try await configuration.retrySleep(delay)
+                            } catch {
+                                // Stopped while waiting: the top of the loop
+                                // ends the run as stopped.
+                                break
+                            }
+                            if Task.isCancelled { break }
+                            continue
+                        }
                     }
 
-                    if modelRetriesLeft > 0 {
-                        modelRetriesLeft -= 1
+                    // Waiting is spent or would not help. Another model — only
+                    // when the reader opted into fallback, which is when a
+                    // resolver exists — may still answer.
+                    if failure.warrantsFallback, !fallbackAttempted,
+                       let fallback = await computeFallbackModel(for: activeModelID),
+                       fallback != activeModelID
+                    {
+                        fallbackAttempted = true
+                        retries = 0
+                        waited = .zero
                         _ = try? await store.appendEvent(
                             sessionID: sessionID,
                             payload: .errorOccurred(
                                 ErrorEvent(
-                                    message: "Model turn failed, retrying: \(errorDesc)",
+                                    message: "\(failure.sentence) Switching from '\(activeModelID)' to '\(fallback)' to continue.",
                                     isRecoverable: true
                                 )
                             )
                         )
-                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        // Its own thinking setting: the reader's was chosen for
+                        // another model, and may be one this one rejects.
+                        activeReasoningEffort = fallbackResolver?.reasoningEffort(
+                            for: fallback,
+                            preferred: reasoningEffort
+                        )
+                        activeModelID = fallback
                         continue
                     }
+
                     _ = try? await store.appendEvent(
                         sessionID: sessionID,
                         payload: .errorOccurred(
                             ErrorEvent(
-                                message: "Model turn failed: \(shortDescription(error))",
+                                message: "Model turn failed: \(failure.sentence) \(shortDescription(error))",
                                 isRecoverable: false
                             )
                         )
                     )
+                    try? await store.saveConversation(sessionID: sessionID, messages: conversation)
                     await finish(
                         status: .failed,
-                        summary: "The model transport failed.",
+                        summary: failure.sentence,
                         filesChanged: filesChanged.count,
                         testsPassed: testsPassed,
                         startedAt: startedAt
@@ -1028,13 +1061,80 @@ public actor AgentOrchestrator {
             // The model's content goes into history now, minus its tool calls:
             // those are added only once the batch is committed to running, so
             // a steer that discards the proposal leaves no call unanswered.
-            conversation.append(contentsOf: turnItems.filter { $0.toolCallID == nil })
+            let narrative = turnItems.filter { $0.toolCallID == nil }
+            conversation.append(contentsOf: narrative)
             if !turnText.isEmpty {
                 lastAssistantText = turnText
                 _ = try? await store.appendEvent(
                     sessionID: sessionID,
                     payload: .assistantMessage(AssistantMessageEvent(text: turnText))
                 )
+            }
+
+            // The reply was cut off because the window is full. Nothing it
+            // says is kept for the model: the history is folded and the step
+            // asked again, once, and only then treated as a failure.
+            if stopReason == .contextWindowExceeded {
+                conversation.removeLast(narrative.count)
+                if !overflowRecoveryUsed {
+                    overflowRecoveryUsed = true
+                    if await recoverFromContextOverflow() { continue }
+                }
+                try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+                _ = try? await store.appendEvent(
+                    sessionID: sessionID,
+                    payload: .errorOccurred(
+                        ErrorEvent(
+                            message: "The conversation no longer fits the model's context window, even compacted.",
+                            isRecoverable: true
+                        )
+                    )
+                )
+                await finish(
+                    status: .failed,
+                    summary: "The conversation no longer fits the model's context window. Compact it or start a new session.",
+                    filesChanged: filesChanged.count,
+                    testsPassed: testsPassed,
+                    startedAt: startedAt
+                )
+                return
+            }
+            overflowRecoveryUsed = false
+
+            // The model declined. What it wrote is in the transcript for the
+            // reader, but not in its own history: a refused turn left there
+            // tends to be refused again when the conversation carries on.
+            if stopReason == .refusal {
+                conversation.removeLast(narrative.count)
+                try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+                _ = try? await store.appendEvent(
+                    sessionID: sessionID,
+                    payload: .errorOccurred(
+                        ErrorEvent(
+                            message: "The model declined to continue with this request.",
+                            isRecoverable: true
+                        )
+                    )
+                )
+                await finish(
+                    status: .failed,
+                    summary: "The model declined to continue. Rephrase the request, or rewind to before it.",
+                    filesChanged: filesChanged.count,
+                    testsPassed: testsPassed,
+                    startedAt: startedAt
+                )
+                return
+            }
+
+            // A paused turn is resumed by sending the conversation back as it
+            // stands, ending in the model's own message. Its calls, if it made
+            // any, are a normal tool turn.
+            if stopReason == .pauseTurn {
+                if toolCalls.isEmpty {
+                    try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+                    continue
+                }
+                stopReason = .toolUse
             }
 
             if stopReason == .maxTokens {
@@ -1307,6 +1407,34 @@ public actor AgentOrchestrator {
 
     private var hasPendingSteer: Bool {
         pendingInstructions.contains { $0.event.kind == .steer }
+    }
+
+    /// Folds the history after the provider found it longer than the window,
+    /// so the step can be asked again. False when there was nothing safe to
+    /// fold, and the failure stands.
+    private func recoverFromContextOverflow() async -> Bool {
+        _ = try? await store.appendEvent(
+            sessionID: sessionID,
+            payload: .errorOccurred(
+                ErrorEvent(
+                    message: "The conversation is longer than the model's context window. Compacting it, then trying again.",
+                    isRecoverable: true
+                )
+            )
+        )
+        guard await compactConversationIfNeeded(overflowed: true) else { return false }
+        conversation = ConversationIntegrity.repaired(conversation)
+        // The fold may have taken the last state block with it.
+        await appendSessionStateIfChanged()
+        return true
+    }
+
+    /// A wait, as the transcript says it: "800 ms", "4 s".
+    static func seconds(_ duration: Duration) -> String {
+        let milliseconds = duration.components.seconds * 1_000
+            + duration.components.attoseconds / 1_000_000_000_000_000
+        guard milliseconds >= 1_000 else { return "\(milliseconds) ms" }
+        return "\((milliseconds + 500) / 1_000) s"
     }
 
     /// Tells the model what changed about the session since it was last told:

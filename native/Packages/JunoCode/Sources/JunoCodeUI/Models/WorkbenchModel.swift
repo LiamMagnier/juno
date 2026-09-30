@@ -83,8 +83,10 @@ public struct UnconfiguredModelClient: AgentModelClient {
         _ request: ModelTurnRequest
     ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
         AsyncThrowingStream { continuation in
+            // Unavailable rather than a transport failure: nothing will
+            // answer however long the run waits, so it fails at once.
             continuation.finish(
-                throwing: AgentModelClientError.transport(
+                throwing: AgentModelClientError.unavailable(
                     message: "No model transport is configured. Sign in to Juno to run the agent."
                 )
             )

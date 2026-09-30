@@ -244,7 +244,7 @@ public struct BackendCodeModelClient: AgentModelClient {
             let relay = Task {
                 do {
                     guard let route = resolver.route(for: request.modelID) else {
-                        throw AgentModelClientError.invalidResponse(
+                        throw AgentModelClientError.unavailable(
                             message: "Model \(request.modelID) cannot run the Juno Code tool protocol."
                         )
                     }
@@ -315,28 +315,11 @@ public struct BackendCodeModelClient: AgentModelClient {
                         try await streamer.stream(bearer, for: accountID)
                     }
                     guard (200...299).contains(response.statusCode) else {
-                        let failure = try await Self.errorBody(from: response)
-                        let message = failure.message
-                        let lowerMessage = message.lowercased()
-                        if response.statusCode == 401 || response.statusCode == 403 {
-                            throw AgentModelClientError.unauthorized
-                        } else if response.statusCode == 402, failure.code == "QUOTA_EXCEEDED" {
-                            // The Juno proxy's budget and usage-window wall,
-                            // which it marks with this code. The proxy passes
-                            // a provider's own status through unchanged, so a
-                            // bare 402 is the provider's billing (DeepSeek's
-                            // "Insufficient Balance"), which another model can
-                            // still serve.
-                            throw AgentModelClientError.planLimitReached(message: message)
-                        } else if response.statusCode == 402
-                            || lowerMessage.contains("quota")
-                            || lowerMessage.contains("exceeded your current quota")
-                        {
-                            throw AgentModelClientError.quotaExhausted(message: message)
-                        } else if response.statusCode == 429 || lowerMessage.contains("rate limit") {
-                            throw AgentModelClientError.rateLimited
-                        }
-                        throw AgentModelClientError.transport(message: message)
+                        throw Self.classify(
+                            status: response.statusCode,
+                            headers: response.headers,
+                            failure: try await Self.errorBody(from: response)
+                        )
                     }
                     guard response.headers["content-type"]?.lowercased()
                         .hasPrefix("text/event-stream") == true
@@ -460,7 +443,18 @@ public struct BackendCodeModelClient: AgentModelClient {
     /// it when there was one.
     struct ErrorBody: Equatable {
         let message: String
+        /// The Juno proxy's own code, at the top level.
         let code: String?
+        /// The provider's error type or code: Anthropic's `error.type`
+        /// (`overloaded_error`), OpenAI's `error.code`
+        /// (`context_length_exceeded`).
+        let providerType: String?
+
+        init(message: String, code: String?, providerType: String? = nil) {
+            self.message = message
+            self.code = code
+            self.providerType = providerType
+        }
     }
 
     static func errorBody(from response: HTTPByteStreamResponse) async throws -> ErrorBody {
@@ -476,13 +470,111 @@ public struct BackendCodeModelClient: AgentModelClient {
                 ?? object["error"]?.stringValue
                 ?? object["message"]?.stringValue
             {
-                return ErrorBody(message: error, code: object["code"]?.stringValue)
+                return ErrorBody(
+                    message: error,
+                    code: object["code"]?.stringValue,
+                    providerType: object["error"]?["type"]?.stringValue
+                        ?? object["error"]?["code"]?.stringValue
+                )
             }
         }
         if let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
             return ErrorBody(message: text, code: nil)
         }
         return ErrorBody(message: "The model request failed (HTTP \(response.statusCode)).", code: nil)
+    }
+
+    /// A failed response as the error the agent loop acts on.
+    ///
+    /// The status decides first, then the provider's own type, then its
+    /// words — the same order the cloud runner settled on
+    /// (`runner/agent-core/src/providers/errors.ts`): labs disagree on the
+    /// status for "out of credit" and for "too long", but not on what they
+    /// call it.
+    static func classify(status: Int, headers: HTTPHeaders, failure: ErrorBody) -> AgentModelClientError {
+        let message = failure.message
+        let lowerMessage = message.lowercased()
+        let type = failure.providerType?.lowercased() ?? ""
+        let retryAfter = retryAfterSeconds(headers)
+        if status == 401 || status == 403 {
+            return .unauthorized
+        }
+        if status == 402, failure.code == "QUOTA_EXCEEDED" {
+            // The Juno proxy's budget and usage-window wall, which it marks
+            // with this code. The proxy passes a provider's own status through
+            // unchanged, so a bare 402 is the provider's billing (DeepSeek's
+            // "Insufficient Balance"), which another model can still serve.
+            return .planLimitReached(message: message)
+        }
+        if status == 402
+            || lowerMessage.contains("quota")
+            || lowerMessage.contains("insufficient balance")
+            || lowerMessage.contains("credit balance is too low")
+        {
+            return .quotaExhausted(message: message)
+        }
+        if status == 413 || isContextOverflow(type: type, message: lowerMessage) {
+            return .contextWindowExceeded(message: message)
+        }
+        if status == 429 || type == "rate_limit_error" || lowerMessage.contains("rate limit") {
+            return .rateLimited(retryAfter: retryAfter)
+        }
+        if status == 529 || status == 503 || type == "overloaded_error" || lowerMessage.contains("overloaded") {
+            return .overloaded(retryAfter: retryAfter)
+        }
+        return .transport(message: message)
+    }
+
+    /// "Too long for the window", in the words each lab uses: Anthropic's
+    /// "prompt is too long", OpenAI's `context_length_exceeded` and "maximum
+    /// context length", and the compatible labs' variations on both.
+    static func isContextOverflow(type: String, message: String) -> Bool {
+        type == "context_length_exceeded"
+            || type == "request_too_large"
+            || message.contains("prompt is too long")
+            || message.contains("maximum context length")
+            || message.contains("context_length_exceeded")
+            || message.contains("context window")
+            || message.contains("too many tokens")
+            || message.contains("input is too long")
+    }
+
+    /// How long the provider asked to be left alone: OpenAI's exact
+    /// `retry-after-ms` when present, else the standard `retry-after` in
+    /// seconds or as an HTTP date. The loop decides what it will honour.
+    static func retryAfterSeconds(_ headers: HTTPHeaders, now: Date = Date()) -> TimeInterval? {
+        if let raw = headers["retry-after-ms"], let milliseconds = Double(raw.trimmingCharacters(in: .whitespaces)),
+           milliseconds.isFinite, milliseconds >= 0
+        {
+            return milliseconds / 1_000
+        }
+        guard let raw = headers["retry-after"]?.trimmingCharacters(in: .whitespaces) else { return nil }
+        if let seconds = Double(raw), seconds.isFinite, seconds >= 0 {
+            return seconds
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        guard let date = formatter.date(from: raw) else { return nil }
+        return max(0, date.timeIntervalSince(now))
+    }
+
+    /// An error a provider reported inside an event stream, where there is no
+    /// status to go by.
+    static func streamError(type: String?, message: String) -> AgentModelClientError {
+        let lowerType = type?.lowercased() ?? ""
+        let lowerMessage = message.lowercased()
+        if lowerType == "overloaded_error" || lowerMessage.contains("overloaded") {
+            return .overloaded(retryAfter: nil)
+        }
+        if lowerType == "rate_limit_error" || lowerMessage.contains("rate limit") {
+            return .rateLimited(retryAfter: nil)
+        }
+        if isContextOverflow(type: lowerType, message: lowerMessage) {
+            return .contextWindowExceeded(message: message)
+        }
+        return .transport(message: message)
     }
 }
 
@@ -1300,7 +1392,7 @@ struct AnthropicStreamDecoder {
             return [.turnCompleted(stopReason ?? .endTurn)]
         case "error":
             let message = wire.error?.message ?? "The model returned an error."
-            throw AgentModelClientError.transport(message: message)
+            throw BackendCodeModelClient.streamError(type: wire.error?.type, message: message)
         default:
             return []
         }
@@ -1317,10 +1409,15 @@ struct AnthropicStreamDecoder {
         return value
     }
 
-    private static func mapStopReason(_ reason: String) -> ModelStopReason {
+    /// Each reason the loop must act on differently gets its own case; the
+    /// rest (`end_turn`, `stop_sequence`) are a finished reply.
+    static func mapStopReason(_ reason: String) -> ModelStopReason {
         switch reason {
         case "tool_use": return .toolUse
         case "max_tokens": return .maxTokens
+        case "refusal": return .refusal
+        case "pause_turn": return .pauseTurn
+        case "model_context_window_exceeded": return .contextWindowExceeded
         default: return .endTurn
         }
     }
@@ -1498,7 +1595,10 @@ struct OpenAIChatStreamDecoder {
         }
 
         if let error = root["error"]?["message"]?.stringValue ?? root["error"]?.stringValue {
-            throw AgentModelClientError.transport(message: error)
+            throw BackendCodeModelClient.streamError(
+                type: root["error"]?["type"]?.stringValue ?? root["error"]?["code"]?.stringValue,
+                message: error
+            )
         }
         // Read usage *before* the choices guard.
         //
@@ -1593,6 +1693,8 @@ struct OpenAIChatStreamDecoder {
                 switch finishReason {
                 case "tool_calls", "function_call": reason = .toolUse
                 case "length": reason = .maxTokens
+                // The provider's own filter stopped the reply part-way.
+                case "content_filter": reason = .refusal
                 default: reason = .endTurn
                 }
             }
@@ -1659,17 +1761,29 @@ private struct OpenAIResponsesStreamDecoder {
         case "response.incomplete":
             guard !completed else { return [] }
             completed = true
-            let reason = root["response"]?["incomplete_details"]?["reason"]?.stringValue
-            return [.turnCompleted(reason == "max_output_tokens" ? .maxTokens : .endTurn)]
+            switch root["response"]?["incomplete_details"]?["reason"]?.stringValue {
+            case "max_output_tokens":
+                return [.turnCompleted(.maxTokens)]
+            case "content_filter":
+                return [.turnCompleted(.refusal)]
+            default:
+                return [.turnCompleted(.endTurn)]
+            }
         case "response.failed":
             let message = root["response"]?["error"]?["message"]?.stringValue
                 ?? "The Responses API run failed."
-            throw AgentModelClientError.transport(message: message)
+            throw BackendCodeModelClient.streamError(
+                type: root["response"]?["error"]?["code"]?.stringValue,
+                message: message
+            )
         case "error":
             let message = root["message"]?.stringValue
                 ?? root["error"]?["message"]?.stringValue
                 ?? "The Responses API stream failed."
-            throw AgentModelClientError.transport(message: message)
+            throw BackendCodeModelClient.streamError(
+                type: root["code"]?.stringValue ?? root["error"]?["code"]?.stringValue,
+                message: message
+            )
         default:
             return []
         }

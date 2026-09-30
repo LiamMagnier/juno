@@ -786,7 +786,7 @@ final class WorkbenchModelTests: XCTestCase {
         let controller = await model.controller(for: session.id)!
         controller.composerText = "Do something"
         await controller.send()
-        // The orchestrator retries once then fails the session.
+        // Nothing can answer, so the session fails at once, without retrying.
         for _ in 0..<100 {
             try await Task.sleep(nanoseconds: 100_000_000)
             if controller.session.status == .failed { break }
