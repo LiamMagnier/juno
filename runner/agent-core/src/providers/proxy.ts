@@ -2,6 +2,7 @@ import type { ModelCapabilities, ProviderAdapter } from './types.js';
 import type { ProviderListing } from './registry.js';
 import { AnthropicAdapter } from './anthropic.js';
 import { OpenAICompatAdapter } from './openai-compat.js';
+import { OpenAIResponsesAdapter, routeResponsesModels } from './openai-responses.js';
 
 /**
  * Backend-proxy providers: instead of per-user API keys, requests route
@@ -24,6 +25,9 @@ export interface BackendCatalogModel {
   reason?: string;
   vision?: boolean;
   contextWindow?: number;
+  /** `responses` for a model that speaks only OpenAI's Responses API, which
+   *  the proxy serves at /api/agent/openai/responses. */
+  api?: 'chat' | 'responses';
 }
 
 export interface BackendConfig {
@@ -131,15 +135,19 @@ export function createProxyProvider(config: BackendConfig, backendProviderId: st
       ...(config.fetch ? { fetch: config.fetch } : {}),
     });
   }
-  return new OpenAICompatAdapter(
-    {
-      id: providerId,
-      name: entries[0].providerName ?? providerId,
-      baseUrl: base,
-      envVar: '',
-      defaultModel,
-      models,
-    },
-    { apiKey: 'proxy', headers, id, viaJunoProxy: true, ...(config.fetch ? { fetch: config.fetch } : {}) },
-  );
+  const compatConfig = {
+    id: providerId,
+    name: entries[0].providerName ?? providerId,
+    baseUrl: base,
+    envVar: '',
+    defaultModel,
+    models,
+  };
+  const options = { apiKey: 'proxy', headers, id, viaJunoProxy: true, ...(config.fetch ? { fetch: config.fetch } : {}) };
+  const chat = new OpenAICompatAdapter(compatConfig, options);
+  const responsesModels = new Set(entries.filter((m) => m.api === 'responses').map((m) => m.model));
+  if (responsesModels.size === 0) return chat;
+  // The proxy's `responses` path is the same base plus `/responses`, which is
+  // exactly what the SDK appends.
+  return routeResponsesModels(chat, new OpenAIResponsesAdapter(compatConfig, options), responsesModels);
 }

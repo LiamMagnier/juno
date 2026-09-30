@@ -38,13 +38,15 @@ export type UserContent =
  * Anthropic binds each thinking block to the conversation before it with a
  * signature, and a model continuing a tool loop reads its own earlier
  * reasoning only when those blocks come back unchanged and in the order they
- * streamed. `model` is the model that wrote the block: a signature means
- * nothing to any other model, so a block is replayed only to the one that
- * produced it and dropped when the run moves to another.
+ * streamed. OpenAI's Responses API does the same with an encrypted `reasoning`
+ * item. `model` is the model that wrote the block: a signature means nothing to
+ * any other model, so a block is replayed only to the one that produced it and
+ * dropped when the run moves to another.
  */
 export type ReasoningContent =
   | { type: 'thinking'; thinking: string; signature: string; model?: string }
-  | { type: 'redacted_thinking'; data: string; model?: string };
+  | { type: 'redacted_thinking'; data: string; model?: string }
+  | { type: 'reasoning'; id: string; encryptedContent: string; summary: string[]; model?: string };
 
 export type AssistantContent =
   | { type: 'text'; text: string }

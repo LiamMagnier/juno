@@ -2,6 +2,7 @@ export * from './types.js';
 export * from './providers/types.js';
 export { AnthropicAdapter, resolveAnthropicKey } from './providers/anthropic.js';
 export { OpenAICompatAdapter, COMPAT_PROVIDERS } from './providers/openai-compat.js';
+export { OpenAIResponsesAdapter, toResponsesInput } from './providers/openai-responses.js';
 export { createProvider, defaultProviderId, listProviders, type ProviderListing, type ModelListing } from './providers/registry.js';
 export { readCredentials, resolveKey } from './providers/credentials.js';
 export {

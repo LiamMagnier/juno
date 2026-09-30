@@ -126,6 +126,9 @@ export function estimateTokens(parts: {
         case 'redacted_thinking':
           characters += part.data.length;
           break;
+        case 'reasoning':
+          characters += part.encryptedContent.length + part.summary.join('').length;
+          break;
       }
     }
   }

@@ -74,11 +74,12 @@ function toAnthropicMessages(
       } else if (c.type === 'tool_call') {
         content.push({ type: 'tool_use', id: c.id, name: c.name, input: c.input ?? {} });
       } else if (replay.thinking && c.model === replay.model) {
-        content.push(
-          c.type === 'thinking'
-            ? { type: 'thinking', thinking: c.thinking, signature: c.signature }
-            : { type: 'redacted_thinking', data: c.data },
-        );
+        if (c.type === 'thinking') {
+          content.push({ type: 'thinking', thinking: c.thinking, signature: c.signature });
+        } else if (c.type === 'redacted_thinking') {
+          content.push({ type: 'redacted_thinking', data: c.data });
+        }
+        // An OpenAI reasoning item is sealed for OpenAI.
       }
     }
     return { role: 'assistant', content };

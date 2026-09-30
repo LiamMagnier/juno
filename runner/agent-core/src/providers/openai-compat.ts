@@ -22,7 +22,16 @@ export interface CompatProviderConfig {
   baseUrl: string;
   envVar: string;
   defaultModel: string;
-  models: Record<string, { label: string; capabilities: ModelCapabilities }>;
+  models: Record<
+    string,
+    {
+      label: string;
+      capabilities: ModelCapabilities;
+      /** The wire the model speaks. `responses` for the models that answer
+       *  only OpenAI's Responses API; see openai-responses.ts. */
+      api?: 'chat' | 'responses';
+    }
+  >;
   /**
    * True only for labs whose API actually defines OpenAI's top-level
    * `reasoning_effort`.

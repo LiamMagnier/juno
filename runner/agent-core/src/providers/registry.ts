@@ -1,6 +1,7 @@
 import type { ModelCapabilities, ProviderAdapter } from './types.js';
 import { AnthropicAdapter, resolveAnthropicKey } from './anthropic.js';
 import { COMPAT_PROVIDERS, OpenAICompatAdapter } from './openai-compat.js';
+import { OpenAIResponsesAdapter, routeResponsesModels } from './openai-responses.js';
 import { resolveKey } from './credentials.js';
 
 export interface ModelListing {
@@ -91,7 +92,8 @@ export interface ProviderSpec {
   /** Required for `openai`. On `anthropic` it means "go through a proxy". */
   baseUrl?: string;
   defaultModel: string;
-  models: Record<string, { label: string; capabilities: ModelCapabilities }>;
+  /** `api: 'responses'` marks a model that speaks only OpenAI's Responses API. */
+  models: Record<string, { label: string; capabilities: ModelCapabilities; api?: 'chat' | 'responses' }>;
   /** Only for labs whose API defines OpenAI's top-level `reasoning_effort`. */
   reasoningEffortParam?: boolean;
   timeoutMs?: number;
@@ -116,20 +118,25 @@ export function createProviderFromSpec(spec: ProviderSpec): ProviderAdapter {
   if (!spec.baseUrl) {
     throw new Error(`${spec.name} is an OpenAI-compatible provider with no base URL.`);
   }
-  return new OpenAICompatAdapter(
-    {
-      id: spec.id,
-      name: spec.name,
-      baseUrl: spec.baseUrl,
-      // Only consulted when no explicit key is passed, and one always is.
-      envVar: '',
-      defaultModel: spec.defaultModel,
-      models: spec.models,
-      ...(spec.reasoningEffortParam ? { reasoningEffortParam: true } : {}),
-      ...(spec.timeoutMs === undefined ? {} : { timeoutMs: spec.timeoutMs }),
-    },
-    { apiKey: spec.apiKey },
+  const config = {
+    id: spec.id,
+    name: spec.name,
+    baseUrl: spec.baseUrl,
+    // Only consulted when no explicit key is passed, and one always is.
+    envVar: '',
+    defaultModel: spec.defaultModel,
+    models: spec.models,
+    ...(spec.reasoningEffortParam ? { reasoningEffortParam: true } : {}),
+    ...(spec.timeoutMs === undefined ? {} : { timeoutMs: spec.timeoutMs }),
+  };
+  const chat = new OpenAICompatAdapter(config, { apiKey: spec.apiKey });
+  const responsesModels = new Set(
+    Object.entries(spec.models)
+      .filter(([, model]) => model.api === 'responses')
+      .map(([id]) => id),
   );
+  if (responsesModels.size === 0) return chat;
+  return routeResponsesModels(chat, new OpenAIResponsesAdapter(config, { apiKey: spec.apiKey }), responsesModels);
 }
 
 /** Instantiate an adapter, throwing a clear error when it can't work. */
