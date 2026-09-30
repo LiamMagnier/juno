@@ -7,33 +7,48 @@ import JunoCodeCore
 /// caller explicitly activates its ID. Scripts, hooks, and assets are not
 /// implicitly loaded or run.
 public struct SkillDefinition: Identifiable, Equatable, Codable, Sendable {
+    /// Derived from where the skill lives, not what it says: an edited skill
+    /// is the same skill, so switching it off in Settings keeps it off. (It
+    /// used to hash the instructions too, and an edit re-enabled a skill the
+    /// reader had disabled.) Whether the edit is *trusted* is a separate
+    /// question, answered by ``contentDigest``.
     public let id: String
     public let name: String
+    /// When to use it, from the `description:` line of the file's front
+    /// matter, or its first line of prose.
+    public let description: String?
+    /// The instructions, front matter removed.
     public let instructions: String
     public let source: ExtensibilitySource
     public let path: String
     public let trust: ExtensibilityTrust
+    /// SHA-256 of the whole file as read. The reader's trust is bound to it,
+    /// so a skill edited after it was trusted waits to be trusted again.
+    public let contentDigest: String
 
     public init(
         id: String? = nil,
         name: String,
+        description: String? = nil,
         instructions: String,
         source: ExtensibilitySource,
         path: String,
-        trust: ExtensibilityTrust = .untrustedWorkspace
+        trust: ExtensibilityTrust = .untrustedWorkspace,
+        contentDigest: String? = nil
     ) {
         self.name = name.lowercased()
+        self.description = description
         self.instructions = instructions
         self.source = source
         self.path = path
         self.trust = trust
-        // Where the skill lives, not what it says. The reader's switches are
-        // keyed by this id, and a content hash gave an edited skill a new
-        // one: a skill the reader had switched off came back on the moment
-        // anyone touched its file.
-        self.id = id ?? "skill-" + Digests.sha256Hex(
-            [source.rawValue, path].joined(separator: "\u{1f}")
-        )
+        self.id = id ?? Self.identifier(source: source, path: path)
+        self.contentDigest = contentDigest ?? Digests.sha256Hex(instructions)
+    }
+
+    /// The path-based identifier every surface agrees on.
+    public static func identifier(source: ExtensibilitySource, path: String) -> String {
+        "skill-" + Digests.sha256Hex([source.rawValue, path].joined(separator: "\u{1f}"))
     }
 
     /// The id earlier builds gave this skill, from its content, which the
@@ -116,7 +131,8 @@ public struct SkillDiscovery: Sendable {
 
                 do {
                     let contents = try Self.readBoundedText(from: skillURL)
-                    let instructions = contents.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let parsed = Self.parse(contents)
+                    let instructions = parsed.body
                     guard !instructions.isEmpty else {
                         diagnostics.append(
                             SkillDiagnostic(
@@ -128,9 +144,11 @@ public struct SkillDiscovery: Sendable {
                     }
                     let skill = SkillDefinition(
                         name: name,
+                        description: parsed.description,
                         instructions: instructions,
                         source: source,
-                        path: relative
+                        path: relative,
+                        contentDigest: Digests.sha256Hex(contents)
                     )
                     byName[skill.name] = skill
                 } catch {
@@ -146,6 +164,40 @@ public struct SkillDiscovery: Sendable {
 
         let skills = byName.values.sorted { $0.name < $1.name }
         return SkillDiscoveryResult(skills: skills, diagnostics: diagnostics)
+    }
+
+    /// Splits a SKILL.md into its front matter's description and its body.
+    ///
+    /// Only the `description:` line is read, as `key: value` with optional
+    /// quotes — the portable format's one field Juno needs. Without front
+    /// matter the first line of prose stands in.
+    static func parse(_ text: String) -> (description: String?, body: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var description: String?
+        var body = trimmed
+        if trimmed.hasPrefix("---") {
+            let lines = trimmed.components(separatedBy: "\n")
+            if let close = lines.dropFirst().firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "---" }) {
+                for line in lines[1..<close] {
+                    let parts = line.split(separator: ":", maxSplits: 1).map {
+                        $0.trimmingCharacters(in: .whitespaces)
+                    }
+                    guard parts.count == 2, parts[0].lowercased() == "description" else { continue }
+                    var value = parts[1]
+                    if value.count >= 2, let first = value.first, first == "\"" || first == "'", value.last == first {
+                        value = String(value.dropFirst().dropLast())
+                    }
+                    description = value.isEmpty ? nil : value
+                }
+                body = lines[(close + 1)...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        if description == nil {
+            description = body.components(separatedBy: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .first { !$0.isEmpty && !$0.hasPrefix("#") }
+        }
+        return (description.map { String($0.prefix(300)) }, body)
     }
 
     private static func isSafeSkillName(_ name: String) -> Bool {

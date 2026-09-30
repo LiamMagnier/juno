@@ -51,6 +51,26 @@ public enum CodeRelayEventProjection {
         {
             return restart
         }
+        // The checklist, questions and plan reviews have no legacy relay kind,
+        // and the relay refuses kinds it does not know. They go as the
+        // canonical typed event — everything a phone needs to draw the card
+        // and send the answer back under its id — with their text redacted
+        // and bounded as every other projection's is.
+        if let payload = canonicalInteraction(event.payload),
+           let typed = try? CodeRelayProtocolAdapter.relayEvent(
+               from: CodeSessionStoreProtocolAdapter.envelope(
+                   from: SessionEvent(
+                       id: event.id,
+                       sessionID: event.sessionID,
+                       sequence: event.sequence,
+                       timestamp: event.timestamp,
+                       payload: payload
+                   )
+               )
+           )
+        {
+            return typed
+        }
         let (kind, payload) = project(event.payload)
         return CodeRemoteSessionEvent(
             seq: event.sequence + 1,
@@ -93,6 +113,82 @@ public enum CodeRelayEventProjection {
         case .completed: "completed"
         case .failed: "failed"
         case .cancelled: "interrupted"
+        }
+    }
+
+    // MARK: - Interactions
+
+    /// A redacted, bounded copy of an interaction event, or nil for any other.
+    ///
+    /// Bounded in UTF-8 bytes, which is what the relay's 64 KB per event is
+    /// counted in, with room for JSON to double what it escapes: counted in
+    /// characters, fifty checklist items of 300 were 90 KB in a script of
+    /// three-byte letters, and the relay swapped the whole list for a notice.
+    static func canonicalInteraction(_ payload: SessionEventPayload) -> SessionEventPayload? {
+        func clean(_ value: String, _ bytes: Int = maximumSummaryCharacters) -> String {
+            OutputLimiter.apply(
+                OutputLimit(maximumBytes: bytes, truncationNotice: "\n… [shortened on the way to your phone]"),
+                to: redactor.redact(value)
+            ).text
+        }
+        switch payload {
+        case let .todosUpdated(list):
+            return .todosUpdated(TodoListEvent(items: list.items.prefix(50).map { item in
+                TodoItem(
+                    id: String(item.id.prefix(64)),
+                    content: clean(item.content, 250),
+                    status: item.status,
+                    activeForm: item.activeForm.map { clean($0, 200) }
+                )
+            }))
+        case let .questionRequested(request):
+            return .questionRequested(QuestionRequest(
+                id: request.id,
+                sessionID: request.sessionID,
+                toolCallID: request.toolCallID,
+                questions: request.questions.map { question in
+                    UserQuestion(
+                        id: question.id,
+                        question: clean(question.question),
+                        header: question.header.map { clean($0, 120) },
+                        options: question.options.map { option in
+                            UserQuestionOption(label: clean(option.label, 200), description: option.description.map { clean($0, 400) })
+                        },
+                        allowsMultipleSelection: question.allowsMultipleSelection
+                    )
+                },
+                requestedAt: request.requestedAt,
+                expiresAt: request.expiresAt
+            ))
+        case let .questionResolved(resolved):
+            guard case let .answered(answers) = resolved.resolution else { return payload }
+            return .questionResolved(QuestionResolvedEvent(
+                requestID: resolved.requestID,
+                resolution: .answered(answers.map { answer in
+                    QuestionAnswer(
+                        questionID: answer.questionID,
+                        selectedOptions: answer.selectedOptions.map { clean($0, 200) },
+                        text: answer.text.map { clean($0) }
+                    )
+                })
+            ))
+        case let .planSubmitted(request):
+            return .planSubmitted(PlanApprovalRequest(
+                id: request.id,
+                sessionID: request.sessionID,
+                toolCallID: request.toolCallID,
+                plan: clean(request.plan, 24_000),
+                requestedAt: request.requestedAt,
+                expiresAt: request.expiresAt
+            ))
+        case let .planResolved(resolved):
+            guard case let .keepPlanning(feedback?) = resolved.decision else { return payload }
+            return .planResolved(PlanResolvedEvent(
+                requestID: resolved.requestID,
+                decision: .keepPlanning(feedback: clean(feedback))
+            ))
+        default:
+            return nil
         }
     }
 
@@ -282,6 +378,12 @@ public enum CodeRelayEventProjection {
                     "detail": text(activity.message, limit: maximumSummaryCharacters),
                 ]
             )
+
+        case .todosUpdated, .questionRequested, .questionResolved, .planSubmitted, .planResolved:
+            // Sent as canonical events by `relayEvent(_:)`, which a phone can
+            // decode whole and answer by id; this only stands in their number
+            // should that encoding ever fail.
+            return ("heartbeat", [:])
         }
     }
 

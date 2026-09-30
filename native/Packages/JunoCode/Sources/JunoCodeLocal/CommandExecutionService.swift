@@ -3,7 +3,7 @@ import JunoCodeCore
 
 /// Local subprocess execution with a scrubbed environment, streamed bounded
 /// output, wall-clock timeout, and process-group termination.
-public final class CommandExecutionService: CommandExecuting, Sendable {
+public final class CommandExecutionService: DirectoryScopedCommandExecuting, Sendable {
     private let workspaceRootURL: URL
     private let classifier = CommandClassifier()
     private let redactor = SecretRedactor()
@@ -77,6 +77,115 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
     /// Whether commands from this executor are kernel-confined.
     public var isContained: Bool { sandbox != nil }
 
+    /// Everything a process needs to run a command under this executor's
+    /// rules: the sandbox wrapper, the scrubbed environment with the reader's
+    /// variables, and the folder it runs in.
+    ///
+    /// The one place those rules are applied, so a command run to completion
+    /// here and a long-lived one started by ``ShellSessionManager`` cannot
+    /// drift apart in what they may reach.
+    public struct PreparedCommand: Sendable {
+        public let executableURL: URL
+        public let arguments: [String]
+        public let environment: [String: String]
+        public let currentDirectoryURL: URL
+    }
+
+    /// - Throws: `CommandExecutionError.forbidden` for a command the
+    ///   classifier refuses, `ShellSessionError.invalidWorkingDirectory` for a
+    ///   folder that is not one inside the workspace.
+    public func prepare(
+        _ commandLine: String,
+        workingDirectory: WorkspacePath? = nil,
+        additionalEnvironment: [String: String] = [:]
+    ) throws -> PreparedCommand {
+        // Defense in depth: the runtime checks the classifier before
+        // proposing the command; refuse forbidden commands here too.
+        if case let .forbidden(reason) = classifier.classify(commandLine) {
+            throw CommandExecutionError.forbidden(reason: reason)
+        }
+        let directory = try resolve(workingDirectory)
+        let sandbox = effectiveSandbox
+        // Under a profile the kernel enforces the workspace boundary; the
+        // shell is still zsh, wrapped rather than replaced, so a command
+        // behaves identically right up to the point it tries to leave.
+        let invocation = sandbox?.wrap(command: commandLine)
+            ?? (executable: "/bin/zsh", arguments: ["-c", commandLine])
+        var environment = Self.minimalEnvironment(workspaceRoot: directory.path)
+        if let sandbox, sandbox.grantsCommandCache {
+            // Tools that would write binaries, configuration or extracted
+            // sources into the reader's own folders use Juno's instead,
+            // which the profile leaves writable and the reader's shell
+            // never builds from. Made here, not by the command: the folder
+            // above it is not the command's to write, and a cache cleaner
+            // may have removed it since the last run.
+            try? FileManager.default.createDirectory(
+                atPath: CommandSandboxProfile.commandCacheRoot(homeDirectory: sandbox.homeDirectory),
+                withIntermediateDirectories: true
+            )
+            environment.merge(
+                CommandSandboxProfile.commandCacheEnvironment(homeDirectory: sandbox.homeDirectory)
+            ) { _, juno in juno }
+        }
+        // The reader's own variables win over the defaults, except the two
+        // that would move the command out of its workspace or its toolchain.
+        for (name, value) in overrides?.environment ?? [:]
+        where name != "PWD" && name != "HOME" {
+            environment[name] = value
+        }
+        for (name, value) in additionalEnvironment {
+            environment[name] = value
+        }
+        return PreparedCommand(
+            executableURL: URL(fileURLWithPath: invocation.executable),
+            arguments: invocation.arguments,
+            environment: environment,
+            currentDirectoryURL: directory
+        )
+    }
+
+    public func validateWorkingDirectory(_ directory: WorkspacePath) throws {
+        _ = try resolve(directory)
+    }
+
+    /// The folder a command runs in: the root, or a folder inside it with
+    /// every link resolved, so a link cannot start a command outside.
+    private func resolve(_ directory: WorkspacePath?) throws -> URL {
+        guard let directory else { return workspaceRootURL }
+        let root = workspaceRootURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let url = workspaceRootURL.appendingPathComponent(directory.value, isDirectory: true)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        let prefix = root.hasSuffix("/") ? root : root + "/"
+        guard url.path == root || url.path.hasPrefix(prefix) else {
+            throw ShellSessionError.invalidWorkingDirectory("\(directory.value) leads outside the workspace.")
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+            throw ShellSessionError.invalidWorkingDirectory("\(directory.value) does not exist.")
+        }
+        guard isDirectory.boolValue else {
+            throw ShellSessionError.invalidWorkingDirectory("\(directory.value) is a file, not a folder.")
+        }
+        return url
+    }
+
+    public func stream(
+        _ commandLine: String,
+        timeoutSeconds: Double,
+        outputLimit: OutputLimit,
+        workingDirectory: WorkspacePath?
+    ) -> AsyncThrowingStream<CommandEvent, Error> {
+        stream(
+            commandLine,
+            timeoutSeconds: timeoutSeconds,
+            outputLimit: outputLimit,
+            standardInput: nil,
+            additionalEnvironment: [:],
+            workingDirectory: workingDirectory
+        )
+    }
+
     public func stream(
         _ commandLine: String,
         timeoutSeconds: Double,
@@ -105,54 +214,27 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
         timeoutSeconds: Double,
         outputLimit: OutputLimit,
         standardInput: Data?,
-        additionalEnvironment: [String: String]
+        additionalEnvironment: [String: String],
+        workingDirectory: WorkspacePath? = nil
     ) -> AsyncThrowingStream<CommandEvent, Error> {
         AsyncThrowingStream { continuation in
-            // Defense in depth: the runtime checks the classifier before
-            // proposing the command; refuse forbidden commands here too.
-            if case let .forbidden(reason) = classifier.classify(commandLine) {
-                continuation.finish(
-                    throwing: CommandExecutionError.forbidden(reason: reason)
+            let prepared: PreparedCommand
+            do {
+                prepared = try prepare(
+                    commandLine,
+                    workingDirectory: workingDirectory,
+                    additionalEnvironment: additionalEnvironment
                 )
+            } catch {
+                continuation.finish(throwing: error)
                 return
             }
 
             let process = Process()
-            let sandbox = effectiveSandbox
-            // Under a profile the kernel enforces the workspace boundary; the
-            // shell is still zsh, wrapped rather than replaced, so a command
-            // behaves identically right up to the point it tries to leave.
-            let invocation = sandbox?.wrap(command: commandLine)
-                ?? (executable: "/bin/zsh", arguments: ["-c", commandLine])
-            process.executableURL = URL(fileURLWithPath: invocation.executable)
-            process.arguments = invocation.arguments
-            process.currentDirectoryURL = workspaceRootURL
-            var environment = Self.minimalEnvironment(workspaceRoot: workspaceRootURL.path)
-            if let sandbox, sandbox.grantsCommandCache {
-                // Tools that would write binaries, configuration or extracted
-                // sources into the reader's own folders use Juno's instead,
-                // which the profile leaves writable and the reader's shell
-                // never builds from. Made here, not by the command: the folder
-                // above it is not the command's to write, and a cache cleaner
-                // may have removed it since the last run.
-                try? FileManager.default.createDirectory(
-                    atPath: CommandSandboxProfile.commandCacheRoot(homeDirectory: sandbox.homeDirectory),
-                    withIntermediateDirectories: true
-                )
-                environment.merge(
-                    CommandSandboxProfile.commandCacheEnvironment(homeDirectory: sandbox.homeDirectory)
-                ) { _, juno in juno }
-            }
-            // The reader's own variables win over the defaults, except the two
-            // that would move the command out of its workspace or its toolchain.
-            for (name, value) in overrides?.environment ?? [:]
-            where name != "PWD" && name != "HOME" {
-                environment[name] = value
-            }
-            for (name, value) in additionalEnvironment {
-                environment[name] = value
-            }
-            process.environment = environment
+            process.executableURL = prepared.executableURL
+            process.arguments = prepared.arguments
+            process.currentDirectoryURL = prepared.currentDirectoryURL
+            process.environment = prepared.environment
 
             let stdoutPipe = Pipe()
             let stderrPipe = Pipe()

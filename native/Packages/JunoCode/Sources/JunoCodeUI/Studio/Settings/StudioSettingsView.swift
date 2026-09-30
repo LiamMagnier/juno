@@ -914,22 +914,60 @@ struct StudioToolsSettings: View {
     }
 
     private func skillsSection(_ extensions: CodeWorkspaceExtensions) -> some View {
-        Section("Skills") {
+        Section {
             if extensions.skills.skills.isEmpty {
                 Text("No skills. Add folders with a SKILL.md under .juno/skills or .claude/skills.")
                     .foregroundStyle(Studio.Ink.tertiary)
             }
             ForEach(extensions.skills.skills) { skill in
-                Toggle(isOn: Binding(
-                    get: { defaults.isSkillEnabled(skill) },
-                    set: { defaults.setSkill(skill, enabled: $0) }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(skill.name)
-                        Text(skill.path).font(Studio.Font.monoSmall).foregroundStyle(Studio.Ink.tertiary)
+                let trust = extensions.skillTrust[skill.id] ?? .untrusted
+                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                    Toggle(isOn: Binding(
+                        get: { defaults.isSkillEnabled(skill) },
+                        set: { defaults.setSkill(skill, enabled: $0) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(skill.name)
+                            if let description = skill.description {
+                                Text(description).font(Studio.Font.meta).foregroundStyle(Studio.Ink.secondary)
+                            }
+                            Text(skill.path).font(Studio.Font.monoSmall).foregroundStyle(Studio.Ink.tertiary)
+                            switch trust {
+                            case .trusted:
+                                EmptyView()
+                            case .untrusted:
+                                Text("Not offered to Juno until you trust it.")
+                                    .font(Studio.Font.meta).foregroundStyle(Studio.Ink.tertiary)
+                            case .changedSinceTrusted:
+                                Text("Changed since you trusted it. Review it, then trust it again.")
+                                    .font(Studio.Font.meta).foregroundStyle(Studio.Ink.tertiary)
+                            }
+                        }
                     }
+                    .disabled(trust != .trusted)
+                    Button(trust == .trusted ? "Untrust" : "Trust") {
+                        setSkillTrusted(skill, trusted: trust != .trusted)
+                    }
+                    .help(trust == .trusted
+                        ? "Stop offering this skill to Juno"
+                        : "Offer this skill, as it reads now, to Juno in this project")
                 }
             }
+        } header: {
+            Text("Skills")
+        } footer: {
+            Text("A repository's skills are its own text. Juno offers one only after you trust it here, and an edited skill needs trusting again.")
+        }
+    }
+
+    /// Trusts exactly the skill the reader is looking at: if the file changed
+    /// after the page loaded, the new text is not what they approved.
+    private func setSkillTrusted(_ skill: SkillDefinition, trusted: Bool) {
+        guard let workbench, let project else { return }
+        Task {
+            guard let context = await workbench.context(for: project.id) else { return }
+            _ = try? context.setSkillTrusted(skill, trusted: trusted)
+            extensions = await CodeWorkspaceExtensions.discover(in: context)
         }
     }
 

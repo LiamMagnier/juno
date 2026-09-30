@@ -10,7 +10,7 @@ import JunoCodeCore
 public enum ToolRuleSubjects {
     public static func subject(toolName: String, input: JSONValue) -> PermissionRuleSubject? {
         switch toolName {
-        case "run_command", "run_tests":
+        case "run_command", "run_tests", "shell_start":
             return input["command"]?.stringValue.map(PermissionRuleSubject.command)
         case "git_status":
             return .command("git status")
@@ -21,13 +21,17 @@ public enum ToolRuleSubjects {
         case "git_commit":
             return .command("git commit")
         case "move_file":
-            // Both ends: the destination is where the write lands, and the
-            // source is where a file disappears from. Checking only the
-            // destination let a move carry a file out of a folder an
-            // `Edit(secrets/**)` deny was meant to protect.
-            let paths = [input["from"]?.stringValue, input["to"]?.stringValue].compactMap { $0 }
-            return paths.isEmpty ? nil : .paths(paths)
-        case "read_file", "write_file", "create_file", "apply_patch", "multi_edit",
+            // Both ends: the file leaves one folder and lands in another, and
+            // an `Edit(secrets/**)` deny speaks about either.
+            let ends = [input["from"]?.stringValue, input["to"]?.stringValue].compactMap { $0 }
+            return ends.isEmpty ? nil : .paths(ends)
+        case "apply_patch":
+            if let text = input["patch"]?.stringValue {
+                guard let paths = try? PatchEnvelope.parse(text).paths, !paths.isEmpty else { return nil }
+                return paths.count == 1 ? .path(paths[0]) : .paths(paths)
+            }
+            return input["path"]?.stringValue.map(PermissionRuleSubject.path)
+        case "read_file", "write_file", "create_file", "multi_edit",
              "delete_file", "list_directory", "grep", "glob", "find_files":
             return input["path"]?.stringValue.map(PermissionRuleSubject.path)
         case "web_fetch":

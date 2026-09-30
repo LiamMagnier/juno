@@ -24,10 +24,12 @@ public struct UpdateGoalTool: CodeTool {
     public let name = "update_goal"
     public let description = """
         Create or update the current session's durable goal, ordered steps, \
-        and lifecycle. Verification evidence is recorded only from trusted \
-        runtime results. Complete a goal only after all steps are completed \
-        and verification evidence has been recorded. Once a goal is complete, \
-        create starts the session's next one.
+        and lifecycle — only when the reader asks you to hold a goal across \
+        turns. For tracking the steps of the task at hand, use todo_write. \
+        Verification evidence is recorded only from trusted runtime results. \
+        Complete a goal only after all steps are completed and verification \
+        evidence has been recorded. Once a goal is complete, create starts \
+        the session's next one.
         """
 
     public var inputSchema: JSONValue {

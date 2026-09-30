@@ -220,7 +220,7 @@ struct StudioApprovalPrompt: View {
     /// The file tools stay inside the project, so a destructive one is a
     /// write to the project's policy files rather than a way out of it.
     private static func isFileTool(_ name: String) -> Bool {
-        ["create_file", "write_file", "apply_patch", "delete_file", "move_file"].contains(name)
+        ["create_file", "write_file", "apply_patch", "multi_edit", "delete_file", "move_file"].contains(name)
     }
 
     private func declineWithRedirect(_ request: ApprovalRequest) {
@@ -253,6 +253,21 @@ struct StudioApprovalCopy {
             subject = object
             icon = .terminal
             isCommand = true
+        case "shell_start":
+            question = "Run this in the background?"
+            subject = summary.hasPrefix("Start in background: ")
+                ? String(summary.dropFirst("Start in background: ".count))
+                : summary
+            icon = .terminal
+            isCommand = true
+        case "shell_write":
+            question = "Send this to the background process?"
+            subject = summary
+            icon = .terminal
+        case "shell_kill":
+            question = "Stop this background process?"
+            subject = summary
+            icon = .terminal
         case "run_tests":
             question = "Run the tests?"
             subject = object
@@ -270,6 +285,10 @@ struct StudioApprovalCopy {
             question = "Move this file?"
             subject = object
             icon = .fileCode
+        case "apply_patch" where summary.hasPrefix("Patch "):
+            question = "Apply this patch?"
+            subject = object
+            icon = .pencil
         case "write_file", "apply_patch", "multi_edit":
             question = "Edit this file?"
             subject = object

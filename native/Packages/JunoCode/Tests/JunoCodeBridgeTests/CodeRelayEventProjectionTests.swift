@@ -201,7 +201,104 @@ final class CodeRelayEventProjectionTests: XCTestCase {
             .hookActivity(HookActivityEvent(
                 hookEvent: "PreToolUse", hookName: "guard.sh", outcome: .blocked, message: "no force pushes"
             )),
+            .todosUpdated(TodoListEvent(items: [TodoItem(id: "1", content: "x", status: .pending)])),
+            .questionRequested(QuestionRequest(
+                sessionID: session, toolCallID: "t", questions: [], requestedAt: Date(), expiresAt: Date()
+            )),
+            .questionResolved(QuestionResolvedEvent(requestID: "q", resolution: .declined)),
+            .planSubmitted(PlanApprovalRequest(
+                sessionID: session, toolCallID: "t", plan: "p", requestedAt: Date(), expiresAt: Date()
+            )),
+            .planResolved(PlanResolvedEvent(requestID: "p", decision: .approved(permissionMode: .workspaceWrite))),
         ]
+    }
+
+    /// A question has no legacy relay kind, so it goes as the typed event a
+    /// phone can decode whole — and answer by its id later — with anything
+    /// that looks like a credential taken out on the way.
+    func testAQuestionTravelsAsTheTypedEventWithItsTextRedacted() throws {
+        let secret = "ghp_" + String(repeating: "a", count: 36)
+        let request = QuestionRequest(
+            id: "question-1",
+            sessionID: session,
+            toolCallID: "t-9",
+            questions: [
+                UserQuestion(
+                    id: "q1",
+                    question: "Use the token \(secret)?",
+                    header: "Auth",
+                    options: [UserQuestionOption(label: "Yes"), UserQuestionOption(label: "No", description: "Ask later")],
+                    allowsMultipleSelection: false
+                ),
+            ],
+            requestedAt: Date(timeIntervalSince1970: 10),
+            expiresAt: Date(timeIntervalSince1970: 1_810)
+        )
+        let relay = CodeRelayEventProjection.relayEvent(event(41, .questionRequested(request)))
+        XCTAssertEqual(relay.kind, "canonical_session_event")
+        XCTAssertEqual(relay.seq, 42)
+        XCTAssertFalse(String(describing: relay.payload).contains(secret))
+
+        let decoded = try XCTUnwrap(try CodeRelayProtocolAdapter.canonicalEvent(from: relay))
+        guard case let .questionRequested(typed) = decoded.payload else {
+            return XCTFail("\(decoded.payload)")
+        }
+        XCTAssertEqual(typed.id, "question-1")
+        XCTAssertEqual(typed.questions.first?.options.map(\.label), ["Yes", "No"])
+        XCTAssertEqual(typed.expiresAt, request.expiresAt)
+    }
+
+    /// The relay refuses a payload over 64 KB, counted in UTF-8 bytes: the
+    /// largest checklist and the largest question todo_write and ask_user
+    /// accept, in three-byte letters with quotes to escape, still fit.
+    func testTheLargestInteractionsFitOneRelayEvent() throws {
+        let wide = String(repeating: "語\"", count: 400)
+        let checklist = TodoListEvent(items: (1...50).map {
+            TodoItem(id: "item-\($0)", content: wide, status: .inProgress, activeForm: wide)
+        })
+        let question = UserQuestion(
+            id: "q",
+            question: wide + wide,
+            header: wide,
+            options: (1...4).map { UserQuestionOption(label: "\($0)" + wide, description: wide + wide) },
+            allowsMultipleSelection: true
+        )
+        let payloads: [SessionEventPayload] = [
+            .todosUpdated(checklist),
+            .questionRequested(QuestionRequest(
+                sessionID: session, toolCallID: "t", questions: Array(repeating: question, count: 4),
+                requestedAt: Date(), expiresAt: Date()
+            )),
+            .planSubmitted(PlanApprovalRequest(
+                sessionID: session, toolCallID: nil, plan: String(repeating: wide, count: 60),
+                requestedAt: Date(), expiresAt: Date()
+            )),
+        ]
+        for payload in payloads {
+            let relay = CodeRelayEventProjection.relayEvent(event(7, payload))
+            XCTAssertEqual(relay.kind, "canonical_session_event")
+            let bytes = try JSONEncoder().encode(relay.payload).count
+            XCTAssertLessThan(bytes, 64 * 1_024, String(describing: payload).prefix(60).description)
+        }
+    }
+
+    func testAPlanTravelsBoundedAndItsDecisionWithIt() throws {
+        let long = String(repeating: "step\n", count: 10_000)
+        let submitted = CodeRelayEventProjection.relayEvent(event(5, .planSubmitted(PlanApprovalRequest(
+            sessionID: session, toolCallID: nil, plan: long, requestedAt: Date(), expiresAt: Date()
+        ))))
+        guard case let .planSubmitted(plan)? = try CodeRelayProtocolAdapter.canonicalEvent(from: submitted)?.payload else {
+            return XCTFail("not a plan")
+        }
+        XCTAssertLessThan(plan.plan.count, long.count)
+
+        let decided = CodeRelayEventProjection.relayEvent(event(6, .planResolved(
+            PlanResolvedEvent(requestID: "p", decision: .approved(permissionMode: .askBeforeChanges))
+        )))
+        guard case let .planResolved(resolved)? = try CodeRelayProtocolAdapter.canonicalEvent(from: decided)?.payload else {
+            return XCTFail("not a decision")
+        }
+        XCTAssertEqual(resolved.decision, .approved(permissionMode: .askBeforeChanges))
     }
 
     /// The restart a rewind opens its transcript with reaches the phone as

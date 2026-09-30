@@ -6,9 +6,10 @@ public enum PermissionRuleSubject: Equatable, Sendable {
     case command(String)
     /// A workspace-relative path.
     case path(String)
-    /// Several paths one invocation touches, as a move does its source and
-    /// its destination. A deny or ask rule that matches any of them applies;
-    /// allow rules must cover every one.
+    /// Several workspace-relative paths one invocation touches — both ends of
+    /// a move, every file of a multi-file patch. A deny or ask rule matching
+    /// any of them applies; an allow rule vouches only when every path is
+    /// allowed.
     case paths([String])
     /// A host name, for tools that reach the network.
     case domain(String)
@@ -86,8 +87,8 @@ public struct PermissionRule: Hashable, Codable, Sendable, CustomStringConvertib
         // repository hook is a shell command too, asked about as one: the
         // reader's rule about `npm run lint` means the same when a hook runs
         // it.
-        "bash": ["run_command", "run_tests", "git_status", "git_diff", "git_log", "git_commit", "hook"],
-        "shell": ["run_command", "run_tests", "git_status", "git_diff", "git_log", "git_commit", "hook"],
+        "bash": ["run_command", "run_tests", "shell_start", "git_status", "git_diff", "git_log", "git_commit", "hook"],
+        "shell": ["run_command", "run_tests", "shell_start", "git_status", "git_diff", "git_log", "git_commit", "hook"],
         "read": ["read_file", "list_directory", "find_files", "glob", "grep"],
         "edit": ["create_file", "write_file", "apply_patch", "multi_edit", "delete_file", "move_file"],
         "write": ["create_file", "write_file", "apply_patch", "multi_edit", "delete_file", "move_file"],
@@ -136,9 +137,9 @@ public struct PermissionRule: Hashable, Codable, Sendable, CustomStringConvertib
         case let .path(path)?:
             return Self.pathMatches(pattern: specifier, path: path)
         case let .paths(paths)?:
-            // Matching all of them is the reading that is safe whichever list
-            // it is checked against; `evaluate` splits them to do better.
-            return !paths.isEmpty && paths.allSatisfy { Self.pathMatches(pattern: specifier, path: $0) }
+            // Answers "does this rule speak about any of them"; the set's
+            // evaluation decides what "any" means for allow.
+            return paths.contains { Self.pathMatches(pattern: specifier, path: $0) }
         case let .domain(host)?:
             guard specifier.lowercased().hasPrefix("domain:") else { return false }
             return Self.domainMatches(pattern: String(specifier.dropFirst(7)), host: host)
@@ -290,21 +291,25 @@ public struct PermissionRuleSet: Equatable, Sendable, Codable {
             return nil
         }
         if case let .paths(paths)? = subject {
+            // A path the reader denied or wants asked about is reason enough,
+            // whichever end of the operation it is on. An allow must cover
+            // every path: a rule for `src/**` says nothing about the file a
+            // patch also deletes from `secrets/`.
             let each = paths.map(PermissionRuleSubject.path)
-            // A deny or ask rule on either end applies: moving a file out of
-            // a denied folder is as much an edit there as writing into it.
             if let rule = deny.first(where: { rule in each.contains { rule.matches(toolName: toolName, subject: $0) } }) {
                 return .deny(rule)
             }
             if let rule = ask.first(where: { rule in each.contains { rule.matches(toolName: toolName, subject: $0) } }) {
                 return .ask(rule)
             }
-            // Allowed only when every path is covered by some allow rule.
-            let covering = each.map { path in allow.first { $0.matches(toolName: toolName, subject: path) } }
-            if !covering.isEmpty, covering.allSatisfy({ $0 != nil }), let rule = covering.first ?? nil {
-                return .allow(rule)
+            var first: PermissionRule?
+            for path in each {
+                guard let rule = allow.first(where: { $0.matches(toolName: toolName, subject: path) }) else {
+                    return nil
+                }
+                first = first ?? rule
             }
-            return nil
+            return first.map(PermissionRuleDecision.allow)
         }
         if let rule = deny.first(where: { $0.matches(toolName: toolName, subject: subject) }) {
             return .deny(rule)

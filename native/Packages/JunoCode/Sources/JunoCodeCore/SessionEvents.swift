@@ -56,6 +56,14 @@ public enum SessionEventPayload: Hashable, Codable, Sendable {
     /// A project hook changed the course of the run or failed, so the thread
     /// can say which hook it was and why.
     case hookActivity(HookActivityEvent)
+    /// The agent's working checklist, whole, as `todo_write` last set it.
+    case todosUpdated(TodoListEvent)
+    /// The agent asked the reader something and is waiting for the answer.
+    case questionRequested(QuestionRequest)
+    case questionResolved(QuestionResolvedEvent)
+    /// A Plan-mode run handed its plan to the reader for approval.
+    case planSubmitted(PlanApprovalRequest)
+    case planResolved(PlanResolvedEvent)
 
     /// Whether this event replaces everything before it in the stream, so a
     /// reader keeping its place by sequence drops what it holds and rebuilds

@@ -97,6 +97,83 @@ public struct CommandClassifier: Sendable {
         return .permitted(risk: worst, reason: worstReason)
     }
 
+    // MARK: - Programs on standard input
+
+    /// Whether a process started from this line runs what is later written to
+    /// its standard input as a program: an interpreter — a shell, `python3`,
+    /// `node`, the Swift REPL — started with neither a script nor an inline
+    /// program, or told to read one from its input.
+    ///
+    /// `run_command` never meets this, because its commands get no input. A
+    /// background shell keeps its input open, and text written to `bash`
+    /// there is an inline program by another route: opaque to every rule in
+    /// this file, which is why `-c "…"` is `destructive`. Errs toward yes —
+    /// a line that does not parse counts, and so does an interpreter named
+    /// anywhere in a segment with nothing after it (`nohup python3`,
+    /// `script -q /dev/null zsh`, `npx ts-node`).
+    public func readsProgramFromInput(_ commandLine: String) -> Bool {
+        guard let tokens = ShellTokenizer.tokenize(commandLine) else { return true }
+        for segment in Self.segments(from: tokens) {
+            let words = segment.filter { $0.kind == .word }.map(\.text)
+            for (position, word) in words.enumerated() {
+                let base = word.split(separator: "/").last.map(String.init) ?? word
+                // `python3.12` is python.
+                let program = base.range(of: #"^(python|pypy)[0-9.]*$"#, options: .regularExpression) != nil
+                    ? "python3"
+                    : base
+                guard Self.interpreterPrograms.contains(program) || program == "swift" else { continue }
+                if Self.interpreterReadsInput(program: program, arguments: Array(words[(position + 1)...])) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    /// Flags that make an interpreter read its program from standard input
+    /// or go interactive even with a script.
+    private static let standardInputFlags: Set<String> = ["-", "-s", "-i", "--interactive"]
+
+    /// Flags whose next word is their value, not a script: skipping them keeps
+    /// `python3 -W ignore` a REPL and `node -r dotenv/config` one too.
+    private static let flagsTakingValues: Set<String> = [
+        "-o", "+o", "-O", "+O", "--rcfile", "--init-file",
+        "-W", "-X", "-r", "--require", "--import", "--loader", "--experimental-loader",
+        "-C", "-I",
+    ]
+
+    private static func interpreterReadsInput(program: String, arguments: [String]) -> Bool {
+        if program == "swift" {
+            // `swift build`, `swift test`, `swift file.swift` run something
+            // named; bare `swift` and `swift repl` read what is typed.
+            guard let first = arguments.first(where: { !$0.hasPrefix("-") }) else { return true }
+            return first == "repl"
+        }
+        if arguments.contains(where: { standardInputFlags.contains($0) }) { return true }
+        if program == "php", arguments.contains("-a") { return true }
+        // An inline program is what runs, and starting one is already rated
+        // `destructive`; its input is that program's data.
+        if hasInlineProgramArgument(program: program, arguments: arguments) { return false }
+        var skipsValue = false
+        for (index, argument) in arguments.enumerated() {
+            if skipsValue {
+                skipsValue = false
+                continue
+            }
+            if argument == "--" { return index == arguments.count - 1 }
+            // `python3 -m pytest` runs a module.
+            if argument == "-m" { return false }
+            if flagsTakingValues.contains(argument) {
+                skipsValue = true
+                continue
+            }
+            if argument.hasPrefix("-") || argument.hasPrefix("+") { continue }
+            // A script, or a subcommand; `deno repl` and `bun repl` read input.
+            return argument == "repl"
+        }
+        return true
+    }
+
     // MARK: - Segments
 
     private static func segments(from tokens: [ShellToken]) -> [[ShellToken]] {
@@ -765,6 +842,12 @@ enum ShellTokenizer {
         var currentHasSubstitution = false
         var hasCurrent = false
         var redirectTargetPending = false
+        /// Set while the redirection being read is `<<` (false) or `<<-`
+        /// (true, tabs stripped): its target is a heredoc's delimiter.
+        var heredocTargetPending: Bool?
+        /// Heredocs opened on the current line. Their bodies begin after its
+        /// newline and are data for the command, never commands.
+        var pendingHeredocs: [(delimiter: String, stripsTabs: Bool)] = []
         let characters = Array(input)
         var index = 0
 
@@ -772,6 +855,10 @@ enum ShellTokenizer {
             guard hasCurrent || (redirectTargetPending && allowEmptyRedirect) else {
                 return
             }
+            if redirectTargetPending, let stripsTabs = heredocTargetPending, hasCurrent {
+                pendingHeredocs.append((current, stripsTabs))
+            }
+            heredocTargetPending = nil
             let kind: ShellTokenKind = redirectTargetPending ? .redirect : .word
             tokens.append(
                 ShellToken(
@@ -832,9 +919,47 @@ enum ShellTokenizer {
                 hasCurrent = true
                 current.append(characters[index + 1])
                 index += 2
-            case " ", "\t", "\n":
+            case " ", "\t":
                 flushWord()
                 index += 1
+            case "\n", "\r\n":
+                // A newline ends a command as `;` does. Read as a space, the
+                // command after it hid behind the one before: `true` then
+                // `killall Dock` on the next line classified as `true` with
+                // two arguments, while the shell ran both.
+                flushWord(allowEmptyRedirect: true)
+                tokens.append(ShellToken(text: ";", kind: .controlOperator, containsSubstitution: false))
+                index += 1
+                // Each heredoc opened on that line takes the lines after it,
+                // up to its delimiter, as its text: a commit message's
+                // `Co-Authored-By: A <a@b>` is not a command with redirects.
+                // Unterminated, it runs to the end, as the shell reads it.
+                for heredoc in pendingHeredocs {
+                    while index < characters.count {
+                        var end = index
+                        while end < characters.count, characters[end] != "\n", characters[end] != "\r\n" {
+                            end += 1
+                        }
+                        var line = Substring(String(characters[index..<end]))
+                        if heredoc.stripsTabs { line = line.drop { $0 == "\t" } }
+                        index = min(end + 1, characters.count)
+                        if line == heredoc.delimiter { break }
+                    }
+                }
+                pendingHeredocs.removeAll()
+            case "&" where index + 1 < characters.count && characters[index + 1] == ">":
+                // `&>file` and `&>>file` send both streams to a file: a
+                // redirection, not a background job followed by one.
+                flushWord(allowEmptyRedirect: true)
+                index += 1
+                while index < characters.count, characters[index] == ">" {
+                    index += 1
+                }
+                while index < characters.count, characters[index] == " " || characters[index] == "\t" {
+                    index += 1
+                }
+                redirectTargetPending = true
+                currentHasSubstitution = index < characters.count && characters[index] == "("
             case ";", "&", "|":
                 flushWord(allowEmptyRedirect: true)
                 // Collapse &&, ||, |&, ; into one control operator token.
@@ -861,18 +986,28 @@ enum ShellTokenizer {
                 index += 1
             case ">", "<":
                 flushWord(allowEmptyRedirect: true)
+                let operatorStart = index
                 index += 1
                 while index < characters.count,
                       [">", "<", "&"].contains(String(characters[index]))
                 {
                     index += 1
                 }
+                var heredoc: Bool?
+                if String(characters[operatorStart..<index]) == "<<" {
+                    // `<<-` strips leading tabs from the body and delimiter.
+                    heredoc = index < characters.count && characters[index] == "-"
+                    if heredoc == true { index += 1 }
+                }
+                // Not past a newline: the target is on this line or missing,
+                // never the next command.
                 while index < characters.count,
-                      [" ", "\t", "\n"].contains(String(characters[index]))
+                      [" ", "\t"].contains(String(characters[index]))
                 {
                     index += 1
                 }
                 redirectTargetPending = true
+                heredocTargetPending = heredoc
                 currentHasSubstitution =
                     index < characters.count && characters[index] == "("
             default:
@@ -883,5 +1018,17 @@ enum ShellTokenizer {
         }
         flushWord(allowEmptyRedirect: true)
         return tokens
+    }
+}
+
+/// Whether a command line sends something to the background with `&`.
+///
+/// Read from the tokens, not the text: `a && b`, `2>&1` and a quoted `"&"` are
+/// not background jobs, and a check for the substring "& " refused every one
+/// of them.
+public enum ShellBackgrounding {
+    public static func runsInBackground(_ line: String) -> Bool {
+        guard let tokens = ShellTokenizer.tokenize(line) else { return false }
+        return tokens.contains { $0.kind == .controlOperator && $0.text.hasPrefix("&") && !$0.text.hasPrefix("&&") }
     }
 }

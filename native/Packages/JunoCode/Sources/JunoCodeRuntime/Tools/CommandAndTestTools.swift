@@ -11,32 +11,49 @@ public struct RunCommandTool: CodeTool {
     /// root (inspection mode, tests with a stub executor). When it is absent
     /// the tool reports nothing about files rather than guessing.
     private let changes: (any WorkspaceChangeDetecting)?
+    /// Each session's current folder. Nil runs every command at the root.
+    private let directories: SessionWorkingDirectories?
+    /// The root's absolute path, so `cd /abs/inside/workspace` is understood.
+    private let workspaceRoot: String
 
     public init(
         executor: any CommandExecuting,
-        changes: (any WorkspaceChangeDetecting)? = nil
+        changes: (any WorkspaceChangeDetecting)? = nil,
+        directories: SessionWorkingDirectories? = nil,
+        workspaceRoot: String = ""
     ) {
         self.executor = executor
         self.changes = changes
+        self.directories = directories
+        self.workspaceRoot = workspaceRoot
     }
 
     public let name = "run_command"
     public let description = """
-        Run a finite shell command in the workspace root. Output is streamed; \
-        commands that exceed the timeout are terminated. Long output returns \
-        its start and its end, with a juno://command-output/ path to the whole \
-        of it that read_file pages with offset and limit.
+        Run a finite shell command. Output is streamed; commands that exceed \
+        the timeout are terminated. Long output returns its start and its \
+        end, with a juno://command-output/ path to the whole of it that \
+        read_file pages with offset and limit.
 
-        Do NOT run background commands (ending with &) or start long-running \
-        development/preview servers (such as `npm run dev`, `vite`, `next dev`, \
-        `python -m http.server`, `npx serve`) via run_command. For local website \
-        previews, use the open_preview tool instead.
+        Working directory: each call starts a fresh shell in the session's \
+        current folder — the workspace root until you change it. A command \
+        that is ONLY `cd <dir>` changes that folder for every later \
+        run_command and shell_start in this session (it cannot leave the \
+        workspace). A cd inside a longer command (`cd app && make`) applies to \
+        that command alone. "cwd" (workspace-relative) runs one command \
+        elsewhere without changing the current folder. Variables exported by \
+        one call do not reach the next.
+
+        Do NOT end a command with & or start dev servers, watchers or other \
+        long-running processes here: use shell_start, which keeps them \
+        running in the background, and read them with shell_output. For a \
+        website preview in Juno's browser, use open_preview.
 
         Files this command changes are NOT checkpointed: only the structured \
-        file tools (create_file, write_file, apply_patch, delete_file, \
-        move_file) can be undone from the transcript. Prefer those for edits \
-        you intend to be reviewable, and use a command when running one is the \
-        point.
+        file tools (create_file, write_file, apply_patch, multi_edit, \
+        delete_file, move_file) can be undone from the transcript. Prefer \
+        those for edits you intend to be reviewable, and use a command when \
+        running one is the point.
 
         Commands usually run in a sandbox that writes only inside the \
         workspace, the temporary folder and package-manager caches. Give \
@@ -48,6 +65,7 @@ public struct RunCommandTool: CodeTool {
             "properties": [
                 "command": ["type": "string"],
                 "timeout_seconds": ["type": "number"],
+                "cwd": ["type": "string", "description": "Workspace-relative folder for this command only"],
             ],
             "required": ["command"],
         ]
@@ -55,6 +73,12 @@ public struct RunCommandTool: CodeTool {
 
     public func assessRisk(input: JSONValue) -> ActionRisk {
         guard let command = input["command"]?.stringValue else { return .critical }
+        // A lone `cd` runs nothing: the tool resolves it itself and refuses
+        // any folder outside the workspace, so `cd ..` back up from a
+        // subfolder is not the escape its text would suggest.
+        if directories != nil, Self.wholeCommandDirectoryChange(command) != nil {
+            return .read
+        }
         switch classifier.classify(command) {
         case let .permitted(risk, _):
             return risk
@@ -89,6 +113,10 @@ public struct RunCommandTool: CodeTool {
         if case let .forbidden(reason) = classifier.classify(command) {
             throw ToolError.denied(reason: reason)
         }
+        if let target = Self.wholeCommandDirectoryChange(command) {
+            return try changeDirectory(to: target, sessionID: context.sessionID)
+        }
+        let directory = try commandDirectory(input, sessionID: context.sessionID)
         let timeout = min(
             max(input["timeout_seconds"]?.numberValue ?? Self.defaultTimeoutSeconds, 1),
             Self.maximumTimeoutSeconds
@@ -103,11 +131,25 @@ public struct RunCommandTool: CodeTool {
         )
         defer { capture.finish() }
         var result: CommandResult?
-        for try await event in executor.stream(
-            command,
-            timeoutSeconds: timeout,
-            outputLimit: CommandOutputCapture.outputLimit
-        ) {
+        let stream: AsyncThrowingStream<CommandEvent, Error>
+        if let directory {
+            guard let scoped = executor as? any DirectoryScopedCommandExecuting else {
+                throw ToolError.executionFailed(message: "This workspace runs commands only at its root.")
+            }
+            stream = scoped.stream(
+                command,
+                timeoutSeconds: timeout,
+                outputLimit: CommandOutputCapture.outputLimit,
+                workingDirectory: directory
+            )
+        } else {
+            stream = executor.stream(
+                command,
+                timeoutSeconds: timeout,
+                outputLimit: CommandOutputCapture.outputLimit
+            )
+        }
+        for try await event in stream {
             switch event {
             case let .stdout(chunk):
                 await capture.take(.stdout, chunk, context: context)
@@ -121,6 +163,7 @@ public struct RunCommandTool: CodeTool {
             throw ToolError.executionFailed(message: "Command stream ended unexpectedly.")
         }
         var footer = "\n[exit \(result.exitCode)"
+        if let directory { footer += ", in \(directory.value)" }
         if result.wasTimeout { footer += ", timed out" }
         if result.wasTruncated { footer += ", " + CommandOutputCapture.ceilingNote }
         footer += String(format: ", %.1fs]", result.durationSeconds)
@@ -182,11 +225,81 @@ public struct RunCommandTool: CodeTool {
         }
     }
 
+    // MARK: - Working directory
+
+    /// The target of a command that is nothing but `cd <dir>` (or bare `cd`,
+    /// the root), or nil for any other command.
+    static func wholeCommandDirectoryChange(_ command: String) -> String? {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed == "cd" || trimmed.hasPrefix("cd ") || trimmed.hasPrefix("cd\t") else { return nil }
+        let argument = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+        if argument.isEmpty { return "" }
+        // One argument: a single quoted string, or one word with no shell
+        // syntax in it. Anything more is a real command line and runs as one.
+        if let first = argument.first, first == "\"" || first == "'" {
+            guard argument.count >= 2, argument.last == first,
+                  !argument.dropFirst().dropLast().contains(first)
+            else { return nil }
+            return argument
+        }
+        let syntax = CharacterSet(charactersIn: " \t;&|<>()$`\\\"'*?[]{}!#")
+        guard argument.unicodeScalars.allSatisfy({ !syntax.contains($0) }) else { return nil }
+        return argument
+    }
+
+    private func changeDirectory(to target: String, sessionID: CodeSessionID) throws -> ToolResult {
+        guard let directories else {
+            throw ToolError.executionFailed(
+                message: "A lone cd has no effect here: every command runs at the workspace root. Chain it instead (cd dir && command)."
+            )
+        }
+        let previous = directories.current(for: sessionID)
+        let resolved: WorkspacePath?
+        do {
+            resolved = try SessionWorkingDirectories.resolve(target, from: previous, workspaceRoot: workspaceRoot)
+        } catch let error as ShellSessionError {
+            throw ToolError.executionFailed(message: error.description)
+        }
+        if let resolved {
+            guard let scoped = executor as? any DirectoryScopedCommandExecuting else {
+                throw ToolError.executionFailed(message: "This workspace runs commands only at its root.")
+            }
+            do {
+                try scoped.validateWorkingDirectory(resolved)
+            } catch {
+                throw ToolError.executionFailed(message: String(describing: error))
+            }
+        }
+        directories.set(resolved, for: sessionID)
+        let now = resolved?.value ?? "the workspace root"
+        let before = previous?.value ?? "the workspace root"
+        return ToolResult(
+            content: "Working directory for run_command and shell_start is now \(now) (was \(before))."
+        )
+    }
+
+    /// The folder this call runs in: its own `cwd`, else the session's.
+    private func commandDirectory(_ input: JSONValue, sessionID: CodeSessionID) throws -> WorkspacePath? {
+        guard let raw = input["cwd"]?.stringValue?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else {
+            return directories?.current(for: sessionID)
+        }
+        guard !raw.hasPrefix("/"), !raw.hasPrefix("~") else {
+            throw ToolError.invalidInput(message: "cwd is relative to the workspace root, not an absolute path.")
+        }
+        do {
+            return try SessionWorkingDirectories.resolve(raw, from: nil, workspaceRoot: workspaceRoot)
+        } catch {
+            throw ToolError.invalidInput(message: "cwd must be a folder inside the workspace, relative to its root.")
+        }
+    }
+
+    // MARK: - Refusals
+
     private func checkForUnmanagedPreviewServer(_ command: String) -> ToolError? {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.hasSuffix("&") || trimmed.contains(" & ") || trimmed.contains("& ") {
+        if ShellBackgrounding.runsInBackground(trimmed) {
             return .denied(
-                reason: "Background execution ('&') is not permitted in run_command. Long-running development servers must be launched through the open_preview tool."
+                reason: "run_command waits for its command to finish, so it does not run '&' background jobs. Start long-running processes with shell_start and read them with shell_output (open_preview for a website preview)."
             )
         }
         let lower = trimmed.lowercased()
@@ -198,7 +311,7 @@ public struct RunCommandTool: CodeTool {
             || lower.hasPrefix("vite") || lower.hasPrefix("next dev") || lower.hasPrefix("astro dev")
         {
             return .denied(
-                reason: "Long-running development servers must not be run through run_command. Use the open_preview tool to start and manage the workspace Preview server."
+                reason: "A development server never finishes, so run_command would wait on it until it timed out. Start it with shell_start and read it with shell_output, or use open_preview for a website preview in Juno's browser."
             )
         }
         return nil

@@ -487,7 +487,7 @@ public final class WorkbenchModel {
             self.selectedSessionID = nil
         }
         try? await workspaceDirectory.remove(id: id)
-        contexts.removeValue(forKey: id)
+        await contexts.removeValue(forKey: id)?.shells.terminateAll()
         workspaces = await workspaceDirectory.allWorkspaces()
     }
 
@@ -809,6 +809,11 @@ public final class WorkbenchModel {
         // Stopping appends the runs' last events; writing their summaries now
         // spares the next launch catching them up from the transcripts.
         await sessionStore.saveTranscriptSummaries()
+        // Every background shell of the account goes with it: nothing the
+        // agent started may keep running for a reader who has signed out.
+        for context in contexts.values {
+            await context.shells.terminateAll()
+        }
         contexts.removeAll()
         selectedSessionID = nil
         // Nothing of this account is running any more: whoever watches the
@@ -866,6 +871,10 @@ public final class WorkbenchModel {
         // snapshots of a working tree — so there is nothing to remove.
         if let workspaceID = session.workspaceID {
             if let context = contexts[workspaceID] {
+                // Its background shells end with it, whether or not a
+                // controller for it was ever opened this launch.
+                await context.shells.terminateAll(ownedBy: session.id)
+                context.workingDirectories.forget(session.id)
                 try await context.checkpoints.removeCheckpoints(for: session.id)
                 try await context.turnCheckpoints.removeSession(session.id)
             } else {

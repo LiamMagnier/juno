@@ -20,17 +20,38 @@ public struct ToolResult: Sendable {
     /// Structured transcript events produced by this call (file changes,
     /// test outcomes, …) beyond the generic tool events.
     public let sideEffects: [SessionEventPayload]
+    /// Set when this call is the end of the run: the batch is answered and
+    /// the run completes with this summary instead of asking the model for
+    /// another turn. `exit_plan` uses it — an approved plan is implemented in
+    /// a new Code turn, not by the read-only run that wrote it.
+    public let endsRun: String?
+    /// Context the call earned beyond its own answer — a folder's instruction
+    /// files — kept apart from `content` so the result's own bounds apply to
+    /// the tool's text alone. A read_file result is a header that vouches for
+    /// the lines after it; with instructions inside the same string, a cut
+    /// counted them as file lines, and cutting at all withdrew base_sha256.
+    /// The orchestrator puts it after the bounded content.
+    public let appendedContext: String?
 
     public init(
         content: String,
         isError: Bool = false,
         images: [ModelImage] = [],
-        sideEffects: [SessionEventPayload] = []
+        sideEffects: [SessionEventPayload] = [],
+        endsRun: String? = nil,
+        appendedContext: String? = nil
     ) {
         self.content = content
         self.isError = isError
         self.images = images
         self.sideEffects = sideEffects
+        self.endsRun = endsRun
+        self.appendedContext = appendedContext
+    }
+
+    /// The content with its appended context, as one text.
+    public var contentWithContext: String {
+        appendedContext.map { content + "\n\n" + $0 } ?? content
     }
 }
 

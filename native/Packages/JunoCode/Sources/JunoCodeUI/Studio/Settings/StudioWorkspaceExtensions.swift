@@ -19,6 +19,8 @@ public struct CodeWorkspaceExtensions: Equatable, Sendable {
     /// storage.
     public var hookPolicy: HookExecutionPolicy = .denyAll
     public var skills: SkillDiscoveryResult = SkillDiscoveryResult()
+    /// Whether the reader trusts each skill as it reads now, by identifier.
+    public var skillTrust: [String: SkillPolicyStore.TrustState] = [:]
     public var agents: [CustomAgentDefinition] = []
     /// Tools each connected MCP server reports, by server name, when a live
     /// session has connected to it. Nil means "not connected yet".
@@ -46,6 +48,9 @@ public struct CodeWorkspaceExtensions: Equatable, Sendable {
         // is allowed — so any will do.
         extensions.hookPolicy = context.hookPolicyStore.load(permissionMode: .readOnly)
         extensions.skills = SkillDiscovery(access: context.access).discover()
+        for skill in extensions.skills.skills {
+            extensions.skillTrust[skill.id] = context.skillPolicyStore.state(of: skill)
+        }
         extensions.agents = CustomAgentDiscovery(access: context.access).discover()
         if let registry = context.mcpRegistry {
             for server in extensions.mcpServers {

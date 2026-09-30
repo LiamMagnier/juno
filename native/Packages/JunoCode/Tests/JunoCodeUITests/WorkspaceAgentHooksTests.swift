@@ -249,6 +249,48 @@ final class WorkspaceAgentHooksTests: XCTestCase {
         XCTAssertEqual(shell.calls.first?.payload["tool_use_id"]?.stringValue, "call-1")
     }
 
+    func testEachFileOfAPatchMeetsTheEditGuardOnItsOwn() async {
+        let patch = """
+            *** Begin Patch
+            *** Update File: src/app.swift
+            @@
+            -a
+            +b
+            *** Add File: .env
+            +TOKEN=x
+            *** End Patch
+            """
+        let invocation = AgentToolHookInvocation(
+            sessionID: sessionID, toolCallID: "call-2", toolName: "apply_patch", input: ["patch": .string(patch)]
+        )
+        let allowing = HookShell { _ in (0, #"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}"#, "") }
+        let allowed = await adapter([hook(.preToolUse, "guard.sh", matcher: "Edit")], shell: allowing).beforeTool(invocation)
+        XCTAssertEqual(
+            allowing.calls.map { $0.payload["tool_input"]?["file_path"]?.stringValue },
+            ["/work/app/src/app.swift", "/work/app/.env"],
+            "a guard reading file_path sees every file, not just the first"
+        )
+        XCTAssertEqual(allowing.calls.first?.payload["tool_name"]?.stringValue, "Edit")
+        XCTAssertEqual(allowing.calls.first?.payload["tool_input"]?["file_paths"]?.arrayValue?.count, 2)
+        XCTAssertEqual(allowed.permission, .allow, "allowed file by file")
+
+        let blocking = HookShell { _ in (2, "", "No edits to secrets.\n") }
+        let blocked = await adapter([hook(.preToolUse, "guard.sh", matcher: "Edit")], shell: blocking).beforeTool(invocation)
+        XCTAssertEqual(blocked.blockReason, "No edits to secrets.")
+        XCTAssertEqual(blocking.calls.count, 1, "the first block stops the patch")
+
+        // One file: the envelope's file is the Edit's file_path.
+        let single = HookShell()
+        _ = await adapter([hook(.preToolUse, "guard.sh", matcher: "Edit")], shell: single).beforeTool(
+            AgentToolHookInvocation(
+                sessionID: sessionID,
+                toolName: "apply_patch",
+                input: ["patch": "*** Begin Patch\n*** Delete File: .env\n*** End Patch"]
+            )
+        )
+        XCTAssertEqual(single.calls.map { $0.payload["tool_input"]?["file_path"]?.stringValue }, ["/work/app/.env"])
+    }
+
     func testPermissionAnswersAndFailuresBecomeWhatTheRuntimeReads() async {
         let allowing = await adapter(
             [hook(.preToolUse, "echo allow")],

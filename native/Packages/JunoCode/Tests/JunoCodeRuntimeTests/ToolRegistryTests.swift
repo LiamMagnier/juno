@@ -50,7 +50,7 @@ final class ToolRegistryTests: XCTestCase {
         let names = Set(registry.allTools.map(\.name))
         let expected: Set<String> = [
             "read_file", "list_directory", "find_files", "glob", "grep",
-            "create_file", "write_file", "apply_patch", "delete_file", "move_file",
+            "create_file", "write_file", "apply_patch", "multi_edit", "delete_file", "move_file",
             "run_command", "git_status", "git_diff", "git_log", "git_commit",
             "run_tests", "web_fetch",
         ]
