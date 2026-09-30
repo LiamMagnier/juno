@@ -168,7 +168,13 @@ final class CompactionSummarizerTests: XCTestCase {
 
         XCTAssertEqual(
             attempt.usage,
-            ModelCallUsage(purpose: .compactionSummary, inputTokens: 9_000, outputTokens: 400)
+            ModelCallUsage(
+                purpose: .compactionSummary,
+                inputTokens: 9_000,
+                outputTokens: 400,
+                // Named, so the call is priced as that model's.
+                modelID: "anthropic:claude-sonnet-5"
+            )
         )
     }
 

@@ -150,13 +150,31 @@ public enum ModelCallPurpose: String, Equatable, Sendable {
 /// What one model call was billed for, as the provider reported it.
 public struct ModelCallUsage: Equatable, Sendable {
     public let purpose: ModelCallPurpose
+    /// The whole prompt: fresh input, cache reads and cache writes together.
     public let inputTokens: Int?
     public let outputTokens: Int?
+    /// The part of the prompt read from the provider's cache, billed at a
+    /// fraction of the input rate.
+    public let cacheReadTokens: Int?
+    /// The part written to the cache, billed at a premium (Anthropic).
+    public let cacheWriteTokens: Int?
+    /// The model that answered, which is what the call is priced by.
+    public let modelID: String?
 
-    public init(purpose: ModelCallPurpose, inputTokens: Int?, outputTokens: Int?) {
+    public init(
+        purpose: ModelCallPurpose,
+        inputTokens: Int?,
+        outputTokens: Int?,
+        cacheReadTokens: Int? = nil,
+        cacheWriteTokens: Int? = nil,
+        modelID: String? = nil
+    ) {
         self.purpose = purpose
         self.inputTokens = inputTokens
         self.outputTokens = outputTokens
+        self.cacheReadTokens = cacheReadTokens
+        self.cacheWriteTokens = cacheWriteTokens
+        self.modelID = modelID
     }
 }
 
@@ -166,19 +184,52 @@ public struct ModelCallUsage: Equatable, Sendable {
 /// newest turn replaces; this is what the session has spent, and a call that
 /// is not an agent step — the compaction summary — belongs in it as much as
 /// any turn does, but must never be mistaken for the size of the context.
-public struct ModelUsageTotals: Equatable, Sendable {
+public struct ModelUsageTotals: Equatable, Codable, Sendable {
+    /// Whole prompts, cache reads and writes included.
     public private(set) var inputTokens = 0
     public private(set) var outputTokens = 0
+    public private(set) var cacheReadTokens = 0
+    public private(set) var cacheWriteTokens = 0
     /// Calls that reported any usage at all.
     public private(set) var requests = 0
 
     public init() {}
 
+    /// Input billed at the full rate: the prompts less what the cache served
+    /// or stored. Counting cached prompt tokens as full input overstated a
+    /// cached session's spend about tenfold.
+    public var freshInputTokens: Int {
+        max(0, inputTokens - cacheReadTokens - cacheWriteTokens)
+    }
+
     public mutating func record(_ usage: ModelCallUsage) {
         guard usage.inputTokens != nil || usage.outputTokens != nil else { return }
         inputTokens += usage.inputTokens ?? 0
         outputTokens += usage.outputTokens ?? 0
+        cacheReadTokens += usage.cacheReadTokens ?? 0
+        cacheWriteTokens += usage.cacheWriteTokens ?? 0
         requests += 1
+    }
+
+    public mutating func add(_ other: ModelUsageTotals) {
+        inputTokens += other.inputTokens
+        outputTokens += other.outputTokens
+        cacheReadTokens += other.cacheReadTokens
+        cacheWriteTokens += other.cacheWriteTokens
+        requests += other.requests
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, requests
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        inputTokens = try container.decodeIfPresent(Int.self, forKey: .inputTokens) ?? 0
+        outputTokens = try container.decodeIfPresent(Int.self, forKey: .outputTokens) ?? 0
+        cacheReadTokens = try container.decodeIfPresent(Int.self, forKey: .cacheReadTokens) ?? 0
+        cacheWriteTokens = try container.decodeIfPresent(Int.self, forKey: .cacheWriteTokens) ?? 0
+        requests = try container.decodeIfPresent(Int.self, forKey: .requests) ?? 0
     }
 }
 
@@ -237,6 +288,10 @@ public enum ModelStreamEvent: Sendable {
     /// makes a context meter possible without Juno re-tokenizing anything itself.
     /// Either field is nil when the provider did not report it.
     case usage(inputTokens: Int?, outputTokens: Int?)
+    /// How much of the prompt the provider's cache served and stored, when it
+    /// said. Both are already inside `usage`'s `inputTokens`; this splits
+    /// them out so they are priced at their own rates.
+    case cacheUsage(readTokens: Int?, writeTokens: Int?)
     case turnCompleted(ModelStopReason)
 }
 

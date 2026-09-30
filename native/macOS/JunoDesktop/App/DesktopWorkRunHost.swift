@@ -292,7 +292,7 @@ actor DesktopWorkRunHost: WorkRunHosting {
                         )
                     case .turnCompleted(let reason):
                         stop = reason
-                    case .reasoningSummary, .thinkingBlock, .redactedThinking, .usage:
+                    case .reasoningSummary, .thinkingBlock, .redactedThinking, .usage, .cacheUsage:
                         // Neither belongs in a Work transcript: the summary is
                         // the model talking to itself, and usage is an account
                         // fact the relay already bills from its own side.

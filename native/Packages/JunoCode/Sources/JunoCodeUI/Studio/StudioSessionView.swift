@@ -162,7 +162,12 @@ public struct StudioSessionView: View {
                let window = controller.contextWindowTokens,
                window > 0
             {
-                StudioContextMeter(used: used, window: window, spent: controller.sessionUsage)
+                StudioContextMeter(
+                    used: used,
+                    window: window,
+                    spent: controller.sessionUsage,
+                    cost: controller.sessionCostEstimate
+                )
             }
             StudioModelChip(
                 models: models,

@@ -192,6 +192,11 @@ public actor AgentOrchestrator {
     private var usageObserver: (@Sendable (Int?, Int?) -> Void)?
     /// Every call this orchestrator made, turns and compaction summaries alike.
     public private(set) var usageTotals = ModelUsageTotals()
+    /// The same calls by model, which is how they are priced and what a
+    /// delegating session adds to its own ledger.
+    public private(set) var usageLedger = SessionUsageLedger()
+    /// Calls recorded since the store's ledger was last brought up to date.
+    private var unsavedUsage = SessionUsageLedger()
     private var callUsageObserver: (@Sendable (ModelCallUsage) -> Void)?
 
     /// True while a compaction is being written, from the first decision to
@@ -332,8 +337,29 @@ public actor AgentOrchestrator {
 
     private func recordCall(_ usage: ModelCallUsage) {
         guard usage.inputTokens != nil || usage.outputTokens != nil else { return }
+        let usage = usage.modelID == nil
+            ? ModelCallUsage(
+                purpose: usage.purpose,
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                cacheReadTokens: usage.cacheReadTokens,
+                cacheWriteTokens: usage.cacheWriteTokens,
+                modelID: activeModelID
+            )
+            : usage
         usageTotals.record(usage)
+        usageLedger.record(usage)
+        unsavedUsage.record(usage)
         callUsageObserver?(usage)
+    }
+
+    /// Adds the calls made since the last save to the session's ledger in
+    /// the store, which keeps it across launches and tells the window.
+    private func saveUsage() async {
+        guard !unsavedUsage.isEmpty else { return }
+        let batch = unsavedUsage
+        unsavedUsage = SessionUsageLedger()
+        _ = try? await store.recordUsage(batch, for: sessionID)
     }
 
     /// Releases the observer this orchestrator holds on the shared permission
@@ -798,6 +824,9 @@ public actor AgentOrchestrator {
         var iteration = 0
         while true {
             iteration += 1
+            // The last step's calls, and any summary since, reach the store's
+            // ledger before the next step begins.
+            await saveUsage()
             if iteration > configuration.maximumIterations {
                 await finish(
                     status: .failed,
@@ -903,13 +932,18 @@ public actor AgentOrchestrator {
                 // the session's totals once the call ends, however it ends.
                 var callInputTokens: Int?
                 var callOutputTokens: Int?
+                var callCacheReadTokens: Int?
+                var callCacheWriteTokens: Int?
 
                 do {
                     defer {
                         recordCall(ModelCallUsage(
                             purpose: .turn,
                             inputTokens: callInputTokens,
-                            outputTokens: callOutputTokens
+                            outputTokens: callOutputTokens,
+                            cacheReadTokens: callCacheReadTokens,
+                            cacheWriteTokens: callCacheWriteTokens,
+                            modelID: activeModelID
                         ))
                     }
                     for try await event in model.streamTurn(request) {
@@ -969,6 +1003,9 @@ public actor AgentOrchestrator {
                                 callOutputTokens = outputTokens
                             }
                             usageObserver?(contextTokens, lastOutputTokens)
+                        case let .cacheUsage(readTokens, writeTokens):
+                            if let readTokens { callCacheReadTokens = readTokens }
+                            if let writeTokens { callCacheWriteTokens = writeTokens }
                         case let .turnCompleted(reason):
                             stopReason = reason
                         }
@@ -1663,13 +1700,16 @@ public actor AgentOrchestrator {
         ) else { return nil }
         // The reader asked, so the model is asked too, however recently the
         // last compaction ran.
-        return await fold(
+        let event = await fold(
             plan,
             focus: focus,
             requestedByUser: true,
             allowModel: true,
             allowContinuation: true
         )
+        // Between runs nothing else saves the summary's cost.
+        await saveUsage()
+        return event
     }
 
     private func finishCompacting() {
@@ -1843,7 +1883,10 @@ public actor AgentOrchestrator {
         return ModelCallUsage(
             purpose: first.purpose,
             inputTokens: sum(\.inputTokens),
-            outputTokens: sum(\.outputTokens)
+            outputTokens: sum(\.outputTokens),
+            cacheReadTokens: sum(\.cacheReadTokens),
+            cacheWriteTokens: sum(\.cacheWriteTokens),
+            modelID: first.modelID
         )
     }
 
@@ -1965,6 +2008,7 @@ public actor AgentOrchestrator {
         // next prompt in this session reads the same prefix from the cache;
         // the store keeps only their text. See ``ImageRetention``.
         conversation = ConversationIntegrity.repaired(conversation)
+        await saveUsage()
         emitLiveText("", force: true)
         emitLiveReasoning("", force: true)
         _ = try? await store.appendEvent(

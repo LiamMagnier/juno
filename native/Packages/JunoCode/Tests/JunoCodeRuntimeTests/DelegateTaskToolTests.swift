@@ -397,6 +397,27 @@ final class DelegateTaskToolTests: XCTestCase {
 
     // MARK: - Harness
 
+    /// Every call a sub-agent makes is the delegating session's spend too:
+    /// summed into its ledger, where a child's cost used to reach nothing.
+    func testSubagentUsageIsSummedIntoTheDelegatingSessionsLedger() async throws {
+        let parent = try await makeParent()
+        _ = try await delegate(tasks: ["Map the callers", "Review the maths"], parent: parent)
+
+        let ledger = await store.usageLedger(for: parent.id)
+        XCTAssertEqual(ledger.total.requests, 2)
+        XCTAssertEqual(ledger.total.inputTokens, 2 * 1_200)
+        XCTAssertEqual(ledger.total.outputTokens, 2 * 42)
+        XCTAssertEqual(ledger.byModel["test-model"]?.requests, 2)
+        for child in await store.childSessions(of: parent.id) {
+            let own = await store.usageLedger(for: child.id)
+            XCTAssertEqual(own.total.inputTokens, 1_200, "each child keeps its own ledger too")
+        }
+        // And it survives a relaunch.
+        let reopened = CodeSessionStore(directoryURL: directory)
+        let persisted = await reopened.usageLedger(for: parent.id)
+        XCTAssertEqual(persisted, ledger)
+    }
+
     private func makeParent() async throws -> CodeSession {
         try await store.createSession(
             workspaceID: WorkspaceID(value: "workspace"),

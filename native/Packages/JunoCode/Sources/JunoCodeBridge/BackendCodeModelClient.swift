@@ -1320,7 +1320,7 @@ struct AnthropicStreamDecoder {
             // billed prompt — system, tools and the conversation so far — which is
             // exactly the number a context meter wants.
             guard let usage = wire.message?.usage else { return [] }
-            return [.usage(inputTokens: usage.promptTokens, outputTokens: usage.outputTokens)]
+            return usage.events
         case "ping":
             return []
         case "content_block_start":
@@ -1386,7 +1386,7 @@ struct AnthropicStreamDecoder {
                 stopReason = Self.mapStopReason(reason)
             }
             guard let usage = wire.usage else { return [] }
-            return [.usage(inputTokens: usage.promptTokens, outputTokens: usage.outputTokens)]
+            return usage.events
         case "message_stop":
             return [.turnCompleted(stopReason ?? .endTurn)]
         case "error":
@@ -1465,6 +1465,19 @@ private struct StreamEventWire: Decodable {
             else { return nil }
             return (inputTokens ?? 0) + (cacheReadInputTokens ?? 0)
                 + (cacheCreationInputTokens ?? 0)
+        }
+
+        /// The whole prompt and the reply, then how much of the prompt the
+        /// cache served and stored, which are priced apart.
+        var events: [ModelStreamEvent] {
+            var events: [ModelStreamEvent] = [.usage(inputTokens: promptTokens, outputTokens: outputTokens)]
+            if cacheReadInputTokens != nil || cacheCreationInputTokens != nil {
+                events.append(.cacheUsage(
+                    readTokens: cacheReadInputTokens,
+                    writeTokens: cacheCreationInputTokens
+                ))
+            }
+            return events
         }
     }
     struct Message: Decodable {
@@ -1600,6 +1613,13 @@ struct OpenAIChatStreamDecoder {
                 inputTokens: usage["prompt_tokens"]?.intValue,
                 outputTokens: usage["completion_tokens"]?.intValue
             ))
+            // Inside `prompt_tokens`: OpenAI's and most compatible labs'
+            // cached share, or DeepSeek's own name for it.
+            if let cached = usage["prompt_tokens_details"]?["cached_tokens"]?.intValue
+                ?? usage["prompt_cache_hit_tokens"]?.intValue
+            {
+                events.append(.cacheUsage(readTokens: cached, writeTokens: nil))
+            }
         }
         guard let choice = root["choices"]?.arrayValue?.first else { return events }
         if let delta = choice["delta"] {
@@ -1732,6 +1752,9 @@ private struct OpenAIResponsesStreamDecoder {
                     inputTokens: usage["input_tokens"]?.intValue,
                     outputTokens: usage["output_tokens"]?.intValue
                 ))
+                if let cached = usage["input_tokens_details"]?["cached_tokens"]?.intValue {
+                    events.append(.cacheUsage(readTokens: cached, writeTokens: nil))
+                }
             }
             events.append(.turnCompleted(sawToolCall ? .toolUse : .endTurn))
             return events

@@ -461,7 +461,10 @@ public enum CompactionSummarizer {
         let usage = ModelCallUsage(
             purpose: .compactionSummary,
             inputTokens: reply.inputTokens,
-            outputTokens: reply.outputTokens
+            outputTokens: reply.outputTokens,
+            cacheReadTokens: reply.cacheReadTokens,
+            cacheWriteTokens: reply.cacheWriteTokens,
+            modelID: request.modelID
         )
         func failed(_ failure: Failure) -> Attempt {
             Attempt(summary: nil, failure: failure, usage: usage)
@@ -487,6 +490,8 @@ public enum CompactionSummarizer {
         var stopReason: ModelStopReason?
         var inputTokens: Int?
         var outputTokens: Int?
+        var cacheReadTokens: Int?
+        var cacheWriteTokens: Int?
         var error: String?
         var wasCancelled = false
     }
@@ -505,6 +510,9 @@ public enum CompactionSummarizer {
                     // when the reply starts and the completion when it ends.
                     if let inputTokens { reply.inputTokens = inputTokens }
                     if let outputTokens { reply.outputTokens = outputTokens }
+                case let .cacheUsage(readTokens, writeTokens):
+                    if let readTokens { reply.cacheReadTokens = readTokens }
+                    if let writeTokens { reply.cacheWriteTokens = writeTokens }
                 case let .turnCompleted(reason):
                     reply.stopReason = reason
                 case .reasoningSummary, .thinkingBlock, .redactedThinking,

@@ -314,6 +314,8 @@ public final class WorkbenchRemoteBridge:
                 case .eventAppended(let event): self.journal.append(event)
                 case .sessionRemoved(let id): self.journal.forget(id)
                 case .sessionChanged: break
+                // Spend is not part of what the relay carries.
+                case .usageChanged: continue
                 }
                 await onChange()
             }

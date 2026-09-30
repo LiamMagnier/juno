@@ -265,6 +265,9 @@ public final class SessionController {
         /// unavailable. Nil falls back to no-op (the session fails rather than
         /// silently switching to a model the user did not choose).
         let fallbackResolver: (any ModelFallbackResolver)?
+        /// A model's published rates, from the manifest, for the session's
+        /// cost estimate; nil for a model without one.
+        let modelPricing: (String) -> CodeUsagePricing?
     }
 
     /// The part of the configuration an orchestrator cannot be changed on: its
@@ -513,10 +516,20 @@ public final class SessionController {
     public internal(set) var contextTokens: Int?
     /// The last turn's completion size, for the same reason.
     public internal(set) var lastOutputTokens: Int?
-    /// Every model call made for this session since it was opened — agent
-    /// turns and compaction summaries alike — as the provider billed them.
-    /// Held in memory, like the two figures above.
-    public internal(set) var sessionUsage = ModelUsageTotals()
+    /// Every model call this session has made — agent turns, compaction
+    /// summaries and its sub-agents' calls alike — by model, with the part
+    /// the prompt cache served kept apart. Kept by the store, so it survives
+    /// a relaunch; the store tells this controller as it grows.
+    public internal(set) var usageLedger = SessionUsageLedger()
+    /// ``usageLedger`` across models.
+    public var sessionUsage: ModelUsageTotals { usageLedger.total }
+    /// What the session's calls come to at the models' published rates, with
+    /// cache reads and writes priced as such; nil when no model it used has
+    /// a price. An estimate: the server bills from the providers' own usage.
+    public var sessionCostEstimate: Double? {
+        guard let live else { return nil }
+        return usageLedger.estimatedCost(pricing: live.modelPricing)
+    }
     /// True while the conversation is being compacted: a `/compact` the
     /// reader asked for, or the model writing a summary mid-run.
     public var isCompacting: Bool { isCompactingOnRequest || isWritingCompactionSummary }
@@ -650,7 +663,8 @@ public final class SessionController {
         modelSupportsVision: @escaping (String) -> Bool = { _ in false },
         modelTakesThinkingParameter: @escaping (String) -> Bool = { _ in true },
         modelContextWindowTokens: @escaping (String) -> Int? = { _ in nil },
-        fallbackResolver: (any ModelFallbackResolver)? = nil
+        fallbackResolver: (any ModelFallbackResolver)? = nil,
+        modelPricing: @escaping (String) -> CodeUsagePricing? = { _ in nil }
     ) {
         self.sessionID = session.id
         self.session = session
@@ -671,7 +685,8 @@ public final class SessionController {
             modelSupportsVision: modelSupportsVision,
             modelTakesThinkingParameter: modelTakesThinkingParameter,
             modelContextWindowTokens: modelContextWindowTokens,
-            fallbackResolver: fallbackResolver
+            fallbackResolver: fallbackResolver,
+            modelPricing: modelPricing
         )
         self.hookPolicy = context?.hookPolicyStore.load(
             permissionMode: context == nil
@@ -748,11 +763,6 @@ public final class SessionController {
             Task { @MainActor [weak self] in
                 if let context { self?.contextTokens = context }
                 if let output { self?.lastOutputTokens = output }
-            }
-        }
-        await next.observeCallUsage { [weak self] usage in
-            Task { @MainActor [weak self] in
-                self?.sessionUsage.record(usage)
             }
         }
         await next.observeCompaction { [weak self] writing in
@@ -1283,6 +1293,7 @@ public final class SessionController {
             }
         }
         let restored = await live.store.events(for: sessionID)
+        usageLedger = await live.store.usageLedger(for: sessionID)
         let delivered = eventsDeliveredWhileRestoring ?? []
         eventsDeliveredWhileRestoring = nil
         events = restored
@@ -3855,6 +3866,8 @@ public final class SessionController {
             if !changed.status.isActive {
                 runStartedAt = nil
             }
+        case let .usageChanged(changedID, ledger) where changedID == sessionID:
+            usageLedger = ledger
         case let .eventAppended(event) where event.sessionID == sessionID:
             guard eventsDeliveredWhileRestoring == nil else {
                 eventsDeliveredWhileRestoring?.append(event)
