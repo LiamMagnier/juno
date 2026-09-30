@@ -27,9 +27,19 @@ public struct SkillDefinition: Identifiable, Equatable, Codable, Sendable {
         self.source = source
         self.path = path
         self.trust = trust
+        // Where the skill lives, not what it says. The reader's switches are
+        // keyed by this id, and a content hash gave an edited skill a new
+        // one: a skill the reader had switched off came back on the moment
+        // anyone touched its file.
         self.id = id ?? "skill-" + Digests.sha256Hex(
-            [source.rawValue, path, instructions].joined(separator: "\u{1f}")
+            [source.rawValue, path].joined(separator: "\u{1f}")
         )
+    }
+
+    /// The id earlier builds gave this skill, from its content, which the
+    /// reader's saved switches may still name.
+    public var legacyContentID: String {
+        "skill-" + Digests.sha256Hex([source.rawValue, path, instructions].joined(separator: "\u{1f}"))
     }
 
     public var isUntrusted: Bool {

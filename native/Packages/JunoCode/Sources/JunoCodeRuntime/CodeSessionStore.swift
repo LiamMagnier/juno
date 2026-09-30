@@ -234,11 +234,14 @@ public actor CodeSessionStore {
         return session.goal
     }
 
-    /// Creates the one durable goal owned by a session.
+    /// Creates the session's durable goal, or its next one.
     ///
-    /// A goal starts active, with ordered pending steps. Replacing an existing
-    /// goal is deliberately rejected so an agent cannot erase its completion
-    /// contract or audit trail.
+    /// A goal starts active, with ordered pending steps. A goal that is still
+    /// open — active, paused or blocked — cannot be replaced, so an agent
+    /// cannot erase a completion contract it has not met. A completed goal
+    /// can: it has met its contract, its every transition is already in the
+    /// transcript, and a session that finished one task used to be told to
+    /// set a goal for the next that it could never create.
     @discardableResult
     public func createGoal(
         sessionID: CodeSessionID,
@@ -250,7 +253,7 @@ public actor CodeSessionStore {
         guard let session = sessions[sessionID] else {
             throw SessionStoreError.sessionNotFound(id: sessionID.value)
         }
-        guard session.goal == nil else {
+        if let existing = session.goal, existing.lifecycle != .completed {
             throw SessionStoreError.goalAlreadyExists(sessionID: sessionID.value)
         }
         let goal = SessionGoal(

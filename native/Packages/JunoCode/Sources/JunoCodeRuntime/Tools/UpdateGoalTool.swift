@@ -26,7 +26,8 @@ public struct UpdateGoalTool: CodeTool {
         Create or update the current session's durable goal, ordered steps, \
         and lifecycle. Verification evidence is recorded only from trusted \
         runtime results. Complete a goal only after all steps are completed \
-        and verification evidence has been recorded.
+        and verification evidence has been recorded. Once a goal is complete, \
+        create starts the session's next one.
         """
 
     public var inputSchema: JSONValue {
@@ -199,7 +200,7 @@ public struct UpdateGoalTool: CodeTool {
             switch error {
             case .goalAlreadyExists:
                 throw ToolError.invalidInput(
-                    message: "This session already has a goal; update it instead of replacing it."
+                    message: "This session's goal is still open; update it, or complete it before creating the next one."
                 )
             case .goalNotFound:
                 throw ToolError.invalidInput(

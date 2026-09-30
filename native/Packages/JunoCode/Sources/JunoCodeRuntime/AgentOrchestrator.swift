@@ -177,6 +177,9 @@ public actor AgentOrchestrator {
     private var pendingInstructions: [PendingInstruction] = []
     private let toolScheduler = ToolScheduler()
     private var approvalObserverToken: UUID?
+    /// Feeds the one task that writes approval updates, in order.
+    private var approvalUpdates: AsyncStream<PermissionCoordinator.ApprovalUpdate>.Continuation?
+    private var approvalWriter: Task<Void, Never>?
     private var restored = false
     private var liveTextObserver: (@Sendable (String) -> Void)?
     private var liveReasoningObserver: (@Sendable (String) -> Void)?
@@ -346,6 +349,10 @@ public actor AgentOrchestrator {
             await permissions.removeObserver(token)
             approvalObserverToken = nil
         }
+        // What was already announced is still written; the writer ends after.
+        approvalUpdates?.finish()
+        approvalUpdates = nil
+        approvalWriter = nil
         liveTextObserver = nil
         liveReasoningObserver = nil
         usageObserver = nil
@@ -690,58 +697,82 @@ public actor AgentOrchestrator {
             // observer must not capture the actor.
             let permissions = self.permissions
             let hooks = self.lifecycleHooks
+            // One writer, in the order the coordinator announced them. A task
+            // per update raced its neighbours: a resolution could be written
+            // before its request, and the waiting flag set after it was
+            // cleared, leaving the session marked as waiting on nothing.
+            let (updates, writer) = AsyncStream.makeStream(of: PermissionCoordinator.ApprovalUpdate.self)
+            approvalUpdates = writer
             approvalObserverToken = await permissions.addObserver { update in
+                writer.yield(update)
+            }
+            approvalWriter = Task {
+                for await update in updates {
+                    await Self.record(
+                        update,
+                        sessionID: sessionID,
+                        store: store,
+                        permissions: permissions,
+                        hooks: hooks
+                    )
+                }
+            }
+        }
+    }
+
+    /// Writes one approval update to the transcript and the session record.
+    private static func record(
+        _ update: PermissionCoordinator.ApprovalUpdate,
+        sessionID: CodeSessionID,
+        store: CodeSessionStore,
+        permissions: PermissionCoordinator,
+        hooks: (any AgentLifecycleHooks)?
+    ) async {
+        switch update {
+        case let .requested(request):
+            _ = try? await store.appendEvent(
+                sessionID: sessionID,
+                payload: .approvalRequested(request)
+            )
+            _ = try? await store.updateSession(id: sessionID) { session in
+                session.hasPendingApproval = true
+                session.status = .waitingForApproval
+            }
+            // A `Notification` hook is how a reader who has walked away hears
+            // that the run is waiting on them. A hook's own approval is left
+            // out: it would announce itself. Its own task, so a slow hook
+            // never holds up the next update's record.
+            if request.toolName != "hook", let hooks {
                 Task {
-                    switch update {
-                    case let .requested(request):
-                        _ = try? await store.appendEvent(
-                            sessionID: sessionID,
-                            payload: .approvalRequested(request)
-                        )
-                        _ = try? await store.updateSession(id: sessionID) { session in
-                            session.hasPendingApproval = true
-                            session.status = .waitingForApproval
-                        }
-                        // A `Notification` hook is how a reader who has walked
-                        // away hears that the run is waiting on them. A hook's
-                        // own approval is left out: it would announce itself.
-                        if request.toolName != "hook",
-                           let response = await hooks?.notify(
-                               sessionID: sessionID,
-                               kind: .permissionPrompt,
-                               message: "Juno needs your permission: \(request.summary)"
-                           )
-                        {
-                            await ToolScheduler.record(
-                                response.notices,
-                                sessionID: sessionID,
-                                store: store
-                            )
-                        }
-                    case let .resolved(id, decision):
-                        _ = try? await store.appendEvent(
-                            sessionID: sessionID,
-                            payload: .approvalResolved(
-                                ApprovalResolvedEvent(approvalID: id, decision: decision)
-                            )
-                        )
-                        // Only clear the waiting state once nothing is still waiting.
-                        //
-                        // Several tool calls in one turn can each be gated, and this
-                        // used to clear `hasPendingApproval` and flip the status back
-                        // to `.running` on the *first* resolution. The remaining
-                        // requests were still suspended and their cards still drawn,
-                        // but the session claimed to be running and the sidebar's
-                        // "waiting for approval" marker went out — so a run that was
-                        // blocked on the reader looked like a run that was working.
-                        let stillPending = await permissions.pendingApprovals.isEmpty == false
-                        _ = try? await store.updateSession(id: sessionID) { session in
-                            session.hasPendingApproval = stillPending
-                            if !stillPending, session.status == .waitingForApproval {
-                                session.status = .running
-                            }
-                        }
-                    }
+                    let response = await hooks.notify(
+                        sessionID: sessionID,
+                        kind: .permissionPrompt,
+                        message: "Juno needs your permission: \(request.summary)"
+                    )
+                    await ToolScheduler.record(response.notices, sessionID: sessionID, store: store)
+                }
+            }
+        case let .resolved(id, decision):
+            _ = try? await store.appendEvent(
+                sessionID: sessionID,
+                payload: .approvalResolved(
+                    ApprovalResolvedEvent(approvalID: id, decision: decision)
+                )
+            )
+            // Only clear the waiting state once nothing is still waiting.
+            //
+            // Several tool calls in one turn can each be gated, and this used
+            // to clear `hasPendingApproval` and flip the status back to
+            // `.running` on the *first* resolution. The remaining requests were
+            // still suspended and their cards still drawn, but the session
+            // claimed to be running and the sidebar's "waiting for approval"
+            // marker went out — so a run that was blocked on the reader looked
+            // like a run that was working.
+            let stillPending = await permissions.pendingApprovals.isEmpty == false
+            _ = try? await store.updateSession(id: sessionID) { session in
+                session.hasPendingApproval = stillPending
+                if !stillPending, session.status == .waitingForApproval {
+                    session.status = .running
                 }
             }
         }

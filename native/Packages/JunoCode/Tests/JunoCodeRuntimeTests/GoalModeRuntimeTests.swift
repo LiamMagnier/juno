@@ -110,6 +110,58 @@ final class GoalModeRuntimeTests: XCTestCase {
         XCTAssertEqual(restoredEvents, originalEvents)
     }
 
+    /// A goal still open cannot be replaced; a completed one can, so a
+    /// session that finished one task can set a goal for the next.
+    func testANewGoalFollowsACompletedOneButNeverAnOpenOne() async throws {
+        let directory = try temporaryStoreURL()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = CodeSessionStore(directoryURL: directory)
+        let session = try await createSession(in: store)
+        let first = try await store.createGoal(sessionID: session.id, objective: "First", steps: ["Do it"])
+
+        do {
+            _ = try await store.createGoal(sessionID: session.id, objective: "Second", steps: ["Later"])
+            XCTFail("an active goal cannot be replaced")
+        } catch SessionStoreError.goalAlreadyExists {
+            // As intended.
+        }
+        let tool = UpdateGoalTool(store: store)
+        let context = ToolContext(sessionID: session.id, toolCallID: "g", emitOutput: { _, _ in })
+        do {
+            _ = try await tool.execute(
+                input: ["action": "create", "objective": "Second", "steps": ["Later"]],
+                context: context
+            )
+            XCTFail("the tool refuses too")
+        } catch let ToolError.invalidInput(message) {
+            XCTAssertTrue(message.contains("complete it before creating the next one"))
+        }
+
+        _ = try await store.updateGoal(sessionID: session.id, mutation: .setStepStatus(id: first.steps[0].id, status: .completed))
+        _ = try await store.updateGoal(
+            sessionID: session.id,
+            mutation: .addVerificationEvidence(summary: "Tests passed", source: "swift test")
+        )
+        _ = try await store.updateGoal(sessionID: session.id, mutation: .setLifecycle(.completed))
+
+        let result = try await tool.execute(
+            input: ["action": "create", "objective": "Second", "steps": ["Later"]],
+            context: context
+        )
+        XCTAssertTrue(result.content.contains("\"objective\":\"Second\""))
+        let current = try await store.goal(for: session.id)
+        XCTAssertEqual(current?.objective, "Second")
+        XCTAssertEqual(current?.lifecycle, .active)
+        XCTAssertNotEqual(current?.id, first.id)
+        // The first goal's whole record is still in the transcript.
+        let kinds = await store.events(for: session.id).compactMap { event -> GoalUpdatedEvent.Kind? in
+            if case let .goalUpdated(update) = event.payload { return update.kind }
+            return nil
+        }
+        XCTAssertEqual(kinds.filter { $0 == .created }.count, 2)
+        XCTAssertTrue(kinds.contains(.lifecycleChanged))
+    }
+
     func testUpdateGoalToolRejectsPrematureCompletionAndPreservesState() async throws {
         let directory = try temporaryStoreURL()
         defer { try? FileManager.default.removeItem(at: directory) }

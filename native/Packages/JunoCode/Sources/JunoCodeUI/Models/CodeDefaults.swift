@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import JunoCodeCore
+import JunoCodeLocal
 
 /// Where a new task runs.
 ///
@@ -175,6 +176,30 @@ public final class CodeDefaults {
 
     public func setSkill(_ id: String, enabled: Bool) {
         if enabled { disabledSkills.remove(id) } else { disabledSkills.insert(id) }
+    }
+
+    /// Whether `skill` is on, honouring a switch saved under the id earlier
+    /// builds derived from its content.
+    public func isSkillEnabled(_ skill: SkillDefinition) -> Bool {
+        !disabledSkills.contains(skill.id) && !disabledSkills.contains(skill.legacyContentID)
+    }
+
+    public func setSkill(_ skill: SkillDefinition, enabled: Bool) {
+        disabledSkills.remove(skill.legacyContentID)
+        setSkill(skill.id, enabled: enabled)
+    }
+
+    /// Moves switches saved under the old content ids to the path ids, so a
+    /// skill the reader switched off stays off once its file is edited.
+    public func migrateSkillSwitches(for skills: [SkillDefinition]) {
+        let stale = skills.filter {
+            $0.legacyContentID != $0.id && disabledSkills.contains($0.legacyContentID)
+        }
+        guard !stale.isEmpty else { return }
+        for skill in stale {
+            disabledSkills.remove(skill.legacyContentID)
+            disabledSkills.insert(skill.id)
+        }
     }
 
     /// The configuration a new local task starts with, before the reader

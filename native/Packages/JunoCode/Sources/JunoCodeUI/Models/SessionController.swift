@@ -2900,6 +2900,7 @@ public final class SessionController {
         instructionFiles = await context.instructionFiles()
         reloadHooks(from: context)
         skillDiscoveryResult = SkillDiscovery(access: context.access).discover()
+        CodeDefaults.shared.migrateSkillSwitches(for: skillDiscoveryResult.skills)
         customAgents = CustomAgentDiscovery(access: context.access).discover()
         mcpConfigurationError = context.mcpConfigurationError
         if let registry = context.mcpRegistry {
@@ -3665,7 +3666,7 @@ public final class SessionController {
     /// is or what it may touch.
     func skillsStateSection() -> SessionStateSection {
         let defaults = CodeDefaults.shared
-        let skills = skillDiscoveryResult.skills.filter { defaults.isSkillEnabled($0.id) }
+        let skills = skillDiscoveryResult.skills.filter { defaults.isSkillEnabled($0) }
         guard !skills.isEmpty else {
             return SessionStateSection(name: "skills", body: "No skills are enabled.")
         }
