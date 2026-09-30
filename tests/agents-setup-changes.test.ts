@@ -2,16 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  appsAtApply,
   planSetupChange,
   routineActsWithoutAsking,
   scalarUndoIsCurrent,
+  setupChangeCallKey,
   setupChangeDigest,
+  setupChangeNextStep,
   setupDirectionSentence,
   undoAppsDelta,
   type SetupSnapshot,
 } from "@/lib/agents/setup-changes";
 import { classifyExternalAction, decideActionPolicy, ACTION_PERMISSION_POLICIES } from "@/lib/action-approval";
-import { SETUP_CHANGE_TOOL, createSetupChangeTool } from "@/lib/chat/setup-change-tool";
+import { SETUP_CHANGE_TOOL, createSetupChangeTool, setupApprovalOutcome } from "@/lib/chat/setup-change-tool";
 import { UNTRUSTED_CONFIG_REFUSAL_MESSAGE } from "@/lib/chat/agent-config-tools";
 
 /*
@@ -99,6 +102,11 @@ test("budget: a lower cap narrows, a higher or removed cap widens", () => {
   assert.equal(plan("budget", { noBudget: true }).direction, "widening");
   assert.equal(plan("budget", { budgetUsd: 3 }, { ...MIRA, budgetMicroUsd: null }).direction, "narrowing");
   assert.deepEqual(plan("budget", { budgetUsd: 2.5 }).after, { budgetMicroUsd: 2_500_000 });
+  // Above what the column holds: refused with a sentence, never quietly lowered.
+  const tooMuch = planSetupChange("budget", { budgetUsd: 5_000 }, MIRA);
+  assert.equal(tooMuch.ok, false);
+  if (!tooMuch.ok) assert.match(tooMuch.message, /^The largest weekly budget a crew member can have is \$2000\.00\./);
+  assert.deepEqual(plan("budget", { budgetUsd: 2_000 }).after, { budgetMicroUsd: 2_000_000_000 });
 });
 
 test("a model change always asks; \"learn how I triage\" is a draft skill that stays off", () => {
@@ -136,6 +144,49 @@ test("Undo restores the inverse and never overwrites a later decision", () => {
   assert.match(setupDirectionSentence("widening", "Mira"), /waits for your approval/);
 });
 
+test("a retried turn never inherits another request's row, and a decided change is only reported", () => {
+  const widen = plan("approval_mode", { mode: "permissive" });
+  const narrow = plan("approval_mode", { mode: "conservative" });
+  const key = (p: typeof widen, seq = 1) => setupChangeCallKey({ userMessageId: "msg_1", seq, plan: p });
+  assert.equal(key(widen), key(plan("approval_mode", { mode: "permissive" })), "the same request meets its row again");
+  assert.notEqual(key(widen), key(narrow), "a different request in the same place gets its own row");
+  assert.notEqual(key(widen, 1), key(widen, 2));
+
+  // Only an undecided change moves; widening on either side asks.
+  assert.equal(setupChangeNextStep({ rowStatus: "proposed", rowDirection: "narrowing", planDirection: "narrowing" }), "apply");
+  assert.equal(setupChangeNextStep({ rowStatus: "awaiting_approval", rowDirection: "widening", planDirection: "widening" }), "ask");
+  assert.equal(
+    setupChangeNextStep({ rowStatus: "awaiting_approval", rowDirection: "widening", planDirection: "narrowing" }),
+    "ask",
+    "a stored widening row is never applied because today's plan reads narrower"
+  );
+  assert.equal(setupChangeNextStep({ rowStatus: "proposed", rowDirection: "neutral", planDirection: "widening" }), "ask");
+  for (const rowStatus of ["declined", "undone", "applied", "failed"]) {
+    assert.equal(setupChangeNextStep({ rowStatus, rowDirection: "widening", planDirection: "narrowing" }), "report", rowStatus);
+    assert.equal(setupChangeNextStep({ rowStatus, rowDirection: "narrowing", planDirection: "narrowing" }), "report", rowStatus);
+  }
+});
+
+test("apps apply against what the member has now, and remember only what they changed", () => {
+  // Planned when Mira had gmail and slack; the person removed slack since.
+  assert.deepEqual(appsAtApply({ kind: "apps_add", current: ["gmail"], apps: ["linear"] }), {
+    connectorIds: ["gmail", "linear"],
+    added: ["linear"],
+    removed: [],
+  });
+  // Already there by hand: nothing for this change to add, or for its Undo to take.
+  assert.deepEqual(appsAtApply({ kind: "apps_add", current: ["gmail", "linear"], apps: ["linear"] }).added, []);
+  assert.deepEqual(appsAtApply({ kind: "apps_remove", current: ["gmail", "notion"], apps: ["gmail", "slack"] }), {
+    connectorIds: ["notion"],
+    added: [],
+    removed: ["gmail"],
+  });
+  const store = readFileSync("src/lib/agents/setup-changes-store.ts", "utf8");
+  const apply = store.slice(store.indexOf("export async function applySetupChange("), store.indexOf("function patchFor("));
+  assert.match(apply, /appsAtApply\(\{ kind, current: agent\.connectorIds, apps \}\)/);
+  assert.doesNotMatch(apply, /connectorIds: after\.connectorIds/, "the planned list is never written back");
+});
+
 test("a widening change asks under every chat policy short of block, and is never a standing approval", () => {
   const classification = classifyExternalAction({ connectorId: "juno_agents", toolName: "widen_setup", args: {} });
   assert.equal(classification.riskClass, "external_write");
@@ -169,7 +220,26 @@ test("a widening change only applies after the broker's yes, and the stale check
   assert.ok(flow.indexOf("requestActionApproval(") < flow.indexOf("applySetupChange(ctx.user, row, { approvalReceiptId"));
   assert.match(flow, /toolName: WIDEN_SETUP_APPROVAL_TOOL/);
   assert.match(flow, /allowAlways: false/);
+  // The step comes from the stored row (and today's plan), never the plan alone.
+  assert.match(flow, /setupChangeNextStep\(\{ rowStatus: row\.status, rowDirection: row\.direction, planDirection: plan\.direction \}\)/);
+  assert.match(flow, /setupChangeCallKey\(/);
   assert.match(flow, /latest\.updatedAt\.getTime\(\) !== agent\.updatedAt\.getTime\(\)/);
   const route = readFileSync("src/app/api/agents/[id]/setup-changes/[changeId]/route.ts", "utf8");
   assert.match(route, /parsed\.data\.digest !== current\.digest/);
+});
+
+test("a No on the approval card is recorded as declined, not as a timeout", () => {
+  // The broker's reason is a sentence ("Denied by user."); the outcome is read
+  // from the receipt's status instead.
+  assert.deepEqual(setupApprovalOutcome("denied"), { status: "declined", detail: "You declined this change." });
+  assert.equal(setupApprovalOutcome("blocked").status, "proposed");
+  assert.match(setupApprovalOutcome("blocked").detail, /approval settings block/);
+  for (const status of ["expired", "superseded", null]) {
+    assert.deepEqual(setupApprovalOutcome(status), {
+      status: "proposed",
+      detail: "Not approved in time. Apply it from this card if you still want it.",
+    });
+  }
+  const flow = readFileSync("src/lib/chat/setup-change-tool.ts", "utf8");
+  assert.doesNotMatch(flow, /approval\.reason === "denied"/);
 });

@@ -376,7 +376,16 @@ export function planSetupChange(
       if (!clear && (usd === null || usd < 0)) {
         return refuse("invalid_arguments", "Say the weekly budget in dollars, or that there should be none.");
       }
-      const next = clear ? null : Math.min(MAX_MEMBER_BUDGET_MICRO_USD, Math.round((usd ?? 0) * 1_000_000));
+      const asked = clear ? null : Math.round((usd ?? 0) * 1_000_000);
+      if (asked !== null && asked > MAX_MEMBER_BUDGET_MICRO_USD) {
+        // Refused rather than quietly lowered: the card must say what the
+        // person asked for, and the column cannot hold more.
+        return refuse(
+          "invalid_arguments",
+          `The largest weekly budget a crew member can have is ${formatBudget(MAX_MEMBER_BUDGET_MICRO_USD)}. For more, remove ${name}'s own budget so only your usage windows apply.`
+        );
+      }
+      const next = asked;
       if (next === snapshot.budgetMicroUsd) return refuse("unchanged", `${name}'s budget is already that.`);
       const label = (value: number | null) => (value === null ? "No budget of its own" : `${formatBudget(value)} a week`);
       // No cap is the widest; any cap narrows it; between two caps the bigger is wider.
@@ -475,6 +484,82 @@ function canonicalJson(value: unknown): string {
     .filter(([, v]) => v !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
+}
+
+/**
+ * The idempotency key of one `propose_setup_change` call: the user turn, the
+ * call's place in it, and exactly what the call asks to write.
+ *
+ * What it writes is part of the key on purpose. A retried turn that asks for
+ * the same change meets the row its first attempt recorded; a retried turn
+ * whose model asks for something else gets a row of its own. Keyed on the turn
+ * and the kind alone, the second request was answered with the first one's
+ * row, so a narrowing request could apply a widening change the person had
+ * just declined.
+ */
+export function setupChangeCallKey(input: {
+  userMessageId: string;
+  seq: number;
+  plan: Pick<SetupPlan, "kind" | "after">;
+}): string {
+  const digest = createHash("sha256")
+    .update("juno-setup-call-v1\0")
+    .update(canonicalJson({ kind: input.plan.kind, after: input.plan.after }))
+    .digest("hex")
+    .slice(0, 24);
+  return `setup:${input.userMessageId}:${input.seq}:${digest}`;
+}
+
+/** What the tool does next with a change it recorded, or found recorded for this call. */
+export type SetupChangeStep = "apply" | "ask" | "report";
+
+/**
+ * The tool's next step, read from the recorded row and today's plan, never
+ * from the model.
+ *
+ * Widening wins when either says so: a routine planned as neutral under an
+ * asking mode that has loosened since is asked about, not applied. Only a
+ * change nobody has decided yet moves. A row the person applied, declined or
+ * undid, or one that failed, is reported as it stands: a retried turn is not
+ * the person asking again, and the card's Apply is how they do that.
+ */
+export function setupChangeNextStep(input: {
+  rowStatus: string;
+  rowDirection: string;
+  planDirection: SetupDirection;
+}): SetupChangeStep {
+  const widening = input.rowDirection === "widening" || input.planDirection === "widening";
+  if (input.rowStatus === "proposed" || input.rowStatus === "awaiting_approval") return widening ? "ask" : "apply";
+  return "report";
+}
+
+/**
+ * The apps a change writes, worked out against the member's apps as they are
+ * when it applies, not as they were when it was planned: `apps_add` adds its
+ * apps to whatever is there, `apps_remove` takes its apps away.
+ *
+ * Writing the planned list instead reverted every app change made in between:
+ * a card applied a day later put back an app the person had removed that
+ * morning, a widening nobody approved. `added` and `removed` are only what this
+ * apply actually changed, so Undo takes back exactly that and nothing the
+ * person did by hand.
+ */
+export function appsAtApply(input: {
+  kind: "apps_add" | "apps_remove";
+  current: readonly string[];
+  apps: readonly string[];
+}): { connectorIds: string[]; added: string[]; removed: string[] } {
+  const current = [...new Set(input.current)];
+  if (input.kind === "apps_add") {
+    const added = [...new Set(input.apps)].filter((id) => !current.includes(id));
+    return { connectorIds: [...current, ...added], added, removed: [] };
+  }
+  const drop = new Set(input.apps);
+  return {
+    connectorIds: current.filter((id) => !drop.has(id)),
+    added: [],
+    removed: current.filter((id) => drop.has(id)),
+  };
 }
 
 /** What the card says about the direction, in one line. */

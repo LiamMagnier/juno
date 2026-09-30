@@ -32,7 +32,7 @@ import {
   AGENT_ROUTINE_CADENCES,
 } from "@/lib/agents/domain";
 import { WORK_PERMISSION_POLICIES } from "@/lib/work/domain";
-import { SETUP_CHANGE_KINDS } from "@/lib/agents/setup-changes";
+import { SETUP_CHANGE_KINDS, setupChangeCallKey, setupChangeNextStep } from "@/lib/agents/setup-changes";
 import {
   AGENT_CONFIG_RATE_LIMIT,
   PAUSED_CONFIG_REFUSAL_MESSAGE,
@@ -117,6 +117,23 @@ function refused(reason: string, message: string): ToolExecution {
   });
 }
 
+/**
+ * What a widening change becomes when its approval did not say yes, from the
+ * receipt's final status: the person's No is `declined`; a block by their own
+ * approval settings, an expiry or a stopped reply leave it `proposed`, which
+ * the card can still apply.
+ */
+export function setupApprovalOutcome(receiptStatus: string | null): { status: "proposed" | "declined"; detail: string } {
+  if (receiptStatus === "denied") return { status: "declined", detail: "You declined this change." };
+  if (receiptStatus === "blocked") {
+    return {
+      status: "proposed",
+      detail: "Your approval settings block changes like this, so nothing changed. Apply it from this card if you want it.",
+    };
+  }
+  return { status: "proposed", detail: "Not approved in time. Apply it from this card if you still want it." };
+}
+
 /** What the model is told after each outcome, so its reply matches the card. */
 export const SETUP_CHANGE_INSTRUCTIONS = {
   applied: "The change is saved and the person sees a card with Undo under your reply. Confirm it in one short sentence.",
@@ -141,6 +158,15 @@ export function createSetupChangeTool(ctx: SetupChangeToolContext): NativeChatTo
       import("@/lib/action-approval-store"),
       import("@/lib/rate-limit"),
     ]);
+    // Records how an approval ended, only while the change is still waiting on
+    // it: an Apply the person pressed on the card in the meantime stands.
+    const settle = async (id: string, data: { status: "proposed" | "declined"; detail: string }) => {
+      await prisma.agentSetupChange.updateMany({
+        where: { id, userId: ctx.user.id, status: { in: ["awaiting_approval", "proposed"] } },
+        data,
+      });
+      return (await store.findSetupChange(ctx.user.id, ctx.agent.id, id))!;
+    };
     const agent = await agents.findAgent(ctx.user.id, ctx.agent.id);
     if (!agent) return refused("not_found", "This crew member no longer exists.");
     if (agent.status !== "active") return refused("agent_paused", PAUSED_CONFIG_REFUSAL_MESSAGE);
@@ -164,8 +190,9 @@ export function createSetupChangeTool(ctx: SetupChangeToolContext): NativeChatTo
     const plan = planned.plan;
 
     seq += 1;
-    const callKey = `setup:${ctx.userMessageId}:${plan.kind}:${seq}`;
-    const widening = plan.direction === "widening";
+    // Bound to exactly what this call writes, so a retried turn asking for
+    // something else never inherits another request's row (`setupChangeCallKey`).
+    const callKey = setupChangeCallKey({ userMessageId: ctx.userMessageId, seq, plan });
     let row = await store.recordSetupChange({
       userId: ctx.user.id,
       agentId: agent.id,
@@ -173,12 +200,16 @@ export function createSetupChangeTool(ctx: SetupChangeToolContext): NativeChatTo
       userMessageId: ctx.userMessageId,
       callKey,
       plan,
-      status: widening ? "awaiting_approval" : "proposed",
+      status: plan.direction === "widening" ? "awaiting_approval" : "proposed",
     });
+    // Decided from the stored row as well as today's plan, never from the
+    // model: a row the person already applied, declined or undid is reported
+    // as it stands, and widening on either side asks.
+    const step = setupChangeNextStep({ rowStatus: row.status, rowDirection: row.direction, planDirection: plan.direction });
 
-    if (row.status === "applied") {
-      // A retried turn meeting the change its first attempt already applied.
-    } else if (!widening) {
+    if (step === "report") {
+      // A retried turn meeting a change that was already decided.
+    } else if (step === "apply") {
       const applied = await store.applySetupChange(ctx.user, row);
       if (applied.ok) row = applied.change;
       else row = (await store.findSetupChange(ctx.user.id, agent.id, row.id)) ?? row;
@@ -205,9 +236,9 @@ export function createSetupChangeTool(ctx: SetupChangeToolContext): NativeChatTo
         // approved against one setup is not applied over another.
         const latest = await agents.findAgent(ctx.user.id, agent.id);
         if (!latest || latest.updatedAt.getTime() !== agent.updatedAt.getTime()) {
-          row = await prisma.agentSetupChange.update({
-            where: { id: row.id, userId: ctx.user.id },
-            data: { status: "proposed", detail: `${agent.name} changed while you were asked. Apply it from this card if you still want it.` },
+          row = await settle(row.id, {
+            status: "proposed",
+            detail: `${agent.name} changed while you were asked. Apply it from this card if you still want it.`,
           });
         } else {
           const applied = await store.applySetupChange(ctx.user, row, { approvalReceiptId: approval.receiptId });
@@ -215,14 +246,19 @@ export function createSetupChangeTool(ctx: SetupChangeToolContext): NativeChatTo
           else row = (await store.findSetupChange(ctx.user.id, agent.id, row.id)) ?? row;
         }
       } else {
-        const declined = approval.reason === "denied";
-        row = await prisma.agentSetupChange.update({
-          where: { id: row.id, userId: ctx.user.id },
-          data: {
-            status: declined ? "declined" : "proposed",
-            detail: declined ? "You declined this change." : "Not approved in time. Apply it from this card if you still want it.",
-          },
-        });
+        // How the approval ended, from its receipt: the broker's `reason` is a
+        // sentence ("Denied by user."), so comparing it with "denied" never
+        // matched and a No read as "not approved in time" on the card and to
+        // the model.
+        const ended = approval.receiptId
+          ? (
+              await prisma.actionApprovalReceipt.findFirst({
+                where: { id: approval.receiptId, userId: ctx.user.id },
+                select: { status: true },
+              })
+            )?.status ?? null
+          : null;
+        row = await settle(row.id, setupApprovalOutcome(ended));
       }
     }
 

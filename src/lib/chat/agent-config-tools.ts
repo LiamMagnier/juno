@@ -328,6 +328,14 @@ export const THREAD_SETUP_PARAMS = [
   "removeApps",
 ] as const;
 
+/**
+ * Argument names that would set a member's own budget. No config tool declares
+ * them: `update_agent` refuses a call carrying one (see `guardAndApprove`)
+ * rather than pass it on to the agent patch, which accepts `budgetMicroUsd`
+ * for the person's own edits and has no approval rule for it.
+ */
+export const MEMBER_BUDGET_ARGS = ["budgetMicroUsd", "budgetUsd", "noBudget", "budget"] as const;
+
 /** A declaration without the named parameters. */
 export function withoutParameters(tool: ToolDefinition, names: readonly string[]): ToolDefinition {
   const parameters = tool.function.parameters as { properties?: Record<string, unknown> } & Record<string, unknown>;
@@ -864,6 +872,24 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
         }),
       };
     }
+    // A member's own budget is never written through update_agent, in any
+    // chat. `update_agent` hands its remaining arguments to the agent patch,
+    // which accepts `budgetMicroUsd`, and raising or removing a cap widens what
+    // the member may spend with no approval rule here to catch it: a model
+    // could lift its own cap without asking. It is a setup change
+    // (propose_setup_change, which asks) or the person's own edit.
+    if (toolName === UPDATE_AGENT_TOOL_NAME && MEMBER_BUDGET_ARGS.some((name) => rawArgs[name] !== undefined)) {
+      return {
+        ok: false,
+        response: jsonExecution({
+          status: "refused",
+          reason: ctx.agent ? "use_propose_setup_change" : "budget_not_editable_here",
+          message: ctx.agent
+            ? "A budget is changed with propose_setup_change, so the person approves a higher one and can undo any. Nothing was changed."
+            : "A crew member's budget is changed in its own thread or in its setup. Nothing was changed.",
+        }),
+      };
+    }
     // In a member's own thread, setup changes go through propose_setup_change,
     // which records them with a direction and Undo. Refused here rather than
     // quietly applied, so the model uses the tool that gives the person a card.
@@ -1041,10 +1067,11 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
           response: jsonExecution({
             status: "refused",
             reason: approval.reason,
-            message:
-              approval.reason === "denied"
-                ? "The user declined this configuration change."
-                : "The configuration change was not approved.",
+            // The broker's reason is a sentence ("Denied by user."), never the
+            // bare status, so an equality test here never matched.
+            message: /\bdenied\b/i.test(approval.reason)
+              ? "The user declined this configuration change."
+              : "The configuration change was not approved.",
           }),
         };
       }
@@ -1225,6 +1252,8 @@ export function createAgentConfigTools(ctx: AgentConfigToolsContext): NativeChat
         const {
           computer: _ignoredComputer,
           agent: _ignoredAgent,
+          // Refused above; never passed on, whatever reaches here.
+          budgetMicroUsd: _ignoredBudget,
           autonomy,
           addToInstructions,
           faceShape,

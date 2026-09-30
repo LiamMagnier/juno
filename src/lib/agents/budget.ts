@@ -26,8 +26,16 @@
 /** The window a member's cap applies to when the account has no weekly window (enforcement off). */
 export const MEMBER_BUDGET_ROLLING_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** The largest cap a person may set, in micro-USD: $10,000. Only there to bound the column. */
-export const MAX_MEMBER_BUDGET_MICRO_USD = 10_000 * 1_000_000;
+/**
+ * The largest cap a person may set, in micro-USD: $2,000 a week.
+ *
+ * Bounded by the column, which is a 32-bit `Int` (`Agent.budgetMicroUsd`, like
+ * every other micro-USD column on Work). The bound used to be $10,000, which
+ * the schema accepted and Postgres did not: any cap above $2,147.48 failed on
+ * write, a 500 from the profile and a "problem on Juno's side" from a setup
+ * change. A member that should spend more than this has no cap of its own.
+ */
+export const MAX_MEMBER_BUDGET_MICRO_USD = 2_000 * 1_000_000;
 
 export interface MemberBudgetVerdict {
   allowed: boolean;

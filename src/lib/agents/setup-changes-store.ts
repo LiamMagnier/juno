@@ -26,6 +26,7 @@ import {
   patchAgentSchema,
 } from "@/lib/agents/domain";
 import {
+  appsAtApply,
   planSetupChange,
   scalarUndoIsCurrent,
   setupChangeDigest,
@@ -63,6 +64,10 @@ export interface ClientSetupChange {
 
 function objectOf(value: Prisma.JsonValue): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 export function serializeSetupChange(row: AgentSetupChange, memberName: string): ClientSetupChange {
@@ -122,28 +127,37 @@ export async function recordSetupChange(input: {
   plan: SetupPlan;
   status: SetupChangeStatus;
 }): Promise<AgentSetupChange> {
-  if (input.callKey) {
-    const existing = await prisma.agentSetupChange.findFirst({
-      where: { userId: input.userId, callKey: input.callKey },
+  const existing = async () =>
+    input.callKey
+      ? prisma.agentSetupChange.findFirst({ where: { userId: input.userId, callKey: input.callKey } })
+      : null;
+  const found = await existing();
+  if (found) return found;
+  return prisma.agentSetupChange
+    .create({
+      data: {
+        userId: input.userId,
+        agentId: input.agentId,
+        conversationId: input.conversationId,
+        userMessageId: input.userMessageId,
+        callKey: input.callKey,
+        kind: input.plan.kind,
+        direction: input.plan.direction,
+        summary: input.plan.summary,
+        affects: input.plan.affects,
+        before: input.plan.before as Prisma.InputJsonValue,
+        after: input.plan.after as Prisma.InputJsonValue,
+        status: input.status,
+      },
+    })
+    .catch(async (err: unknown) => {
+      // Two attempts of the same call raced past the read above: the unique
+      // (userId, callKey) let one in, and the other answers with its row.
+      const code = (err as { code?: unknown } | null)?.code;
+      const winner = code === "P2002" ? await existing() : null;
+      if (winner) return winner;
+      throw err;
     });
-    if (existing) return existing;
-  }
-  return prisma.agentSetupChange.create({
-    data: {
-      userId: input.userId,
-      agentId: input.agentId,
-      conversationId: input.conversationId,
-      userMessageId: input.userMessageId,
-      callKey: input.callKey,
-      kind: input.plan.kind,
-      direction: input.plan.direction,
-      summary: input.plan.summary,
-      affects: input.plan.affects,
-      before: input.plan.before as Prisma.InputJsonValue,
-      after: input.plan.after as Prisma.InputJsonValue,
-      status: input.status,
-    },
-  });
 }
 
 export async function findSetupChange(userId: string, agentId: string, changeId: string): Promise<AgentSetupChange | null> {
@@ -190,8 +204,6 @@ export async function applySetupChange(
     switch (change.kind as SetupChangeKind) {
       case "notify":
       case "approval_mode":
-      case "apps_add":
-      case "apps_remove":
       case "budget":
       case "model": {
         const patch = patchFor(change.kind as SetupChangeKind, after);
@@ -199,11 +211,30 @@ export async function applySetupChange(
         if (!parsed.success) return markFailed(change, user.id, "That change could not be read.");
         const result = await agents.updateAgentForUser(user, agent.id, parsed.data);
         if (result.status !== 200) return markFailed(change, user.id, String(result.body.message ?? "It could not be saved."));
+        break;
+      }
+      case "apps_add":
+      case "apps_remove": {
+        // The change's own apps against the member's apps NOW, never the list
+        // it was planned against: a card applied later must not put back an
+        // app the person removed in between (`appsAtApply`).
+        const kind = change.kind as "apps_add" | "apps_remove";
+        const apps = stringList(kind === "apps_add" ? after.added : after.removed);
+        if (apps.length === 0) return markFailed(change, user.id, "That change could not be read.");
+        const delta = appsAtApply({ kind, current: agent.connectorIds, apps });
+        const parsed = patchAgentSchema.safeParse({ connectorIds: delta.connectorIds });
+        if (!parsed.success) return markFailed(change, user.id, "That change could not be read.");
+        const result = await agents.updateAgentForUser(user, agent.id, parsed.data);
+        if (result.status !== 200) return markFailed(change, user.id, String(result.body.message ?? "It could not be saved."));
         // What was actually saved: apps the account has not linked are left
-        // out by `updateAgentForUser`, and Undo must know which ones stuck.
-        if (change.kind === "apps_add" || change.kind === "apps_remove") {
-          written = { connectorIds: result.value?.connectorIds ?? [] };
-        }
+        // out by `updateAgentForUser`, and Undo must know which ones stuck and
+        // which this apply changed (not what was already there).
+        const stuck = result.value?.connectorIds ?? [];
+        written = {
+          connectorIds: stuck,
+          added: delta.added.filter((id) => stuck.includes(id)),
+          removed: delta.removed,
+        };
         break;
       }
       case "routine_add": {
@@ -265,14 +296,12 @@ function patchFor(kind: SetupChangeKind, after: Record<string, unknown>): Record
       return { notify: after.notify };
     case "approval_mode":
       return { approvalMode: after.approvalMode };
-    case "apps_add":
-    case "apps_remove":
-      return { connectorIds: after.connectorIds };
     case "budget":
       return { budgetMicroUsd: after.budgetMicroUsd ?? null };
     case "model":
       return { model: after.model ?? null, reasoningEffort: after.reasoningEffort ?? null };
     default:
+      // Apps are never written as a stored list: see `appsAtApply`.
       return {};
   }
 }
@@ -348,9 +377,14 @@ export async function undoSetupChange(user: AgentActor, change: AgentSetupChange
     }
     case "apps_add":
     case "apps_remove": {
-      const stuck = Array.isArray(applied.connectorIds) ? (applied.connectorIds as string[]) : [];
-      const added = Array.isArray(after.added) ? (after.added as string[]).filter((id) => stuck.includes(id)) : [];
-      const removed = Array.isArray(after.removed) ? (after.removed as string[]) : [];
+      // What this apply changed (`applied.added` / `applied.removed`), so an
+      // app the person already had, or added by hand since, is left alone.
+      // Rows applied before those were recorded fall back to the plan.
+      const stuck = stringList(applied.connectorIds);
+      const added = Array.isArray(applied.added)
+        ? stringList(applied.added)
+        : stringList(after.added).filter((id) => stuck.includes(id));
+      const removed = Array.isArray(applied.removed) ? stringList(applied.removed) : stringList(after.removed);
       const next = undoAppsDelta({ kind: change.kind as "apps_add" | "apps_remove", current: agent.connectorIds, added, removed });
       const result = await agents.updateAgentForUser(user, agent.id, { connectorIds: next });
       if (result.status !== 200) return { ok: false, status: result.status, code: "undo_failed", message: String(result.body.message ?? "It could not be put back.") };
