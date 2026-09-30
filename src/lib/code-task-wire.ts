@@ -1,9 +1,12 @@
 import type { CodeDevice, CodeTask, CodeTaskEvent } from "@prisma/client";
 
+import { chunkEventFrames } from "@/lib/code-remote-sessions";
+
 /*
  * THE CODE TASK WIRE: what every host and client is handed for a task.
  *
- * Its own module, with nothing but a type import, for two reasons. The PM2
+ * Its own module, with nothing but a type import and the relay's frame cutter
+ * (itself dependency-free), for two reasons. The PM2
  * workers and plain `tsx` scripts can import it without pulling in the request
  * helpers (next-auth, the Prisma client, env validation) that live beside it in
  * code-remote.ts, which re-exports all of it so route handlers are unchanged.
@@ -124,4 +127,31 @@ export function serializeTaskEvent(event: CodeTaskEvent) {
     payload: event.payload,
     createdAt: event.createdAt.toISOString(),
   };
+}
+
+/**
+ * The most a task stream's frame carries. Each frame is one `data:` line, and
+ * the iPhone's parser DISCARDS a frame past 2 MB (NativeCodeSSEParser) — no
+ * error, just nothing — so a page is cut well below that.
+ */
+export const TASK_EVENT_FRAME_BYTES = 512 * 1024;
+
+/**
+ * One page of a task's events as the stream's frames, in order: the first
+ * under `type`, the rest as `events`, each within `maxBytes`. A snapshot is
+ * always sent, even empty, because it is what tells a client it is attached.
+ *
+ * The stream sent a page — up to 500 rows — as one frame. Every row a host
+ * reports now arrives twice, as its protocol event and its legacy twin, so a
+ * run that changed a few dozen files (a diff of up to 40 KB each, in both)
+ * made the page a phone was handed on connect larger than it will read.
+ */
+export function taskEventFrames<T extends { seq: number }>(
+  type: "snapshot" | "events",
+  events: T[],
+  maxBytes: number = TASK_EVENT_FRAME_BYTES,
+): Array<{ type: "snapshot" | "events"; events: T[] }> {
+  const pages = chunkEventFrames(events, maxBytes);
+  if (pages.length === 0) return type === "snapshot" ? [{ type, events: [] }] : [];
+  return pages.map((page, index) => ({ type: index === 0 ? type : "events", events: page }));
 }

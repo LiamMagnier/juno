@@ -47,7 +47,10 @@
           "note": "agent-core has no compaction yet (audit C3); it lands with the engine lane."
         },
         "item.notice": "implemented",
-        "approval.requested": "implemented",
+        "approval.requested": {
+          "status": "implemented",
+          "note": "Held until the mode's answer and emitted right before it (the projector's approvalsAnsweredByMode), so no reader ever folds a cloud request as pending."
+        },
         "approval.resolved": {
           "status": "implemented",
           "note": "Always by `mode`: nobody is attached to a cloud run, so the permission mode answers and says so."

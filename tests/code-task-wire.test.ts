@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
+import { TASK_EVENT_FRAME_BYTES, taskEventFrames } from "../src/lib/code-task-wire";
 import {
   TASK_WIRE_FIXTURE_PATH,
   renderTaskWireFixtures,
@@ -65,4 +66,32 @@ test("every key the Mac decodes is one the server sends", () => {
   const legacyFallbacks = new Set(["modelId"]);
   const invented = swiftKeys.filter((key) => !serverKeys.has(key) && !legacyFallbacks.has(key));
   assert.deepEqual(invented, [], `the Mac decodes keys the server never sends: ${invented.join(", ")}`);
+});
+
+test("a page of task events reaches a phone in frames it will read", () => {
+  // Forty file changes with a 30 KB diff each, as a protocol row and its
+  // legacy twin: 2.4 MB, past the 2 MB at which the iPhone's parser silently
+  // discards a frame.
+  const diff = "x".repeat(30_000);
+  const rows = Array.from({ length: 80 }, (_, index) => ({
+    seq: index + 1,
+    kind: index % 2 === 0 ? "protocol" : "file_change",
+    payload: { diff },
+    createdAt: "2026-09-30T10:00:00.000Z",
+  }));
+  const frames = taskEventFrames("snapshot", rows);
+  assert.ok(frames.length > 1);
+  assert.equal(frames[0].type, "snapshot", "the first frame still says the client is attached");
+  assert.ok(frames.slice(1).every((frame) => frame.type === "events"));
+  assert.deepEqual(frames.flatMap((frame) => frame.events.map((row) => row.seq)), rows.map((row) => row.seq));
+  for (const frame of frames) {
+    assert.ok(Buffer.byteLength(JSON.stringify(frame.events)) <= TASK_EVENT_FRAME_BYTES + 2);
+  }
+  // An empty snapshot is still sent; an empty page of news is not.
+  assert.deepEqual(taskEventFrames("snapshot", []), [{ type: "snapshot", events: [] }]);
+  assert.deepEqual(taskEventFrames("events", []), []);
+
+  const route = readFileSync(join(root, "src/app/api/code/tasks/[id]/events/route.ts"), "utf8");
+  assert.equal((route.match(/sendPage\("(snapshot|events)"/g) ?? []).length, 3, "every page the stream sends is cut");
+  assert.doesNotMatch(route, /events: \w+\.map\(serializeTaskEvent\)/, "no page goes out as one frame");
 });
