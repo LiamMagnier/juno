@@ -133,6 +133,89 @@ final class CommandOutputSpillTests: XCTestCase {
         }
         XCTAssertNil(CommandOutputSpill.resolve("juno://command-output/x.log", in: nil), "no session folder, no reads")
     }
+
+    // MARK: - run_tests
+
+    /// A verbose suite is saved and summarised from its end like a command.
+    /// It used to go through the old 2 MB kill, and the kill's exit status
+    /// reported a passing run as failed.
+    func testALongTestRunIsSavedAndReadFromItsEnd() async throws {
+        let lines = (1...60_000).map { "Test Case 'Suite.test\($0)' passed (0.001 seconds)." }
+            + ["Executed 60000 tests, with 0 failures (0 unexpected) in 60.0 (60.1) seconds"]
+        let limits = LimitRecorder()
+        let tool = RunTestsTool(tests: TestRunnerService(
+            access: try WorkspaceAccess(workspaceID: WorkspaceID(), grantedURL: workspaceURL),
+            executor: StreamingExecutor(text: lines.joined(separator: "\n") + "\n", chunk: 4_096, limits: limits)
+        ))
+
+        let result = try await tool.execute(input: ["command": "swift test"], context: context("tests-1"))
+
+        XCTAssertFalse(result.isError, String(result.content.prefix(300)))
+        XCTAssertTrue(result.content.hasPrefix("Tests passed — 60000 run, 0 failed"), String(result.content.prefix(120)))
+        XCTAssertTrue(result.content.contains("read_file, path \"juno://command-output/tests-1.log\""))
+        XCTAssertTrue(result.content.hasSuffix(lines.last! + "\n"), "the counts at the end are in the result")
+        XCTAssertLessThan(result.content.utf8.count, 40 * 1_024)
+        let saved = try String(contentsOf: outputURL.appendingPathComponent("tests-1.log"), encoding: .utf8)
+        XCTAssertEqual(saved, lines.joined(separator: "\n") + "\n")
+        XCTAssertEqual(limits.values, [OutputLimit(maximumBytes: CommandOutputSpill.ceilingBytes)])
+    }
+
+    /// A real test command printing past the old 2 MB kill runs to its own
+    /// clean exit, so it passes.
+    func testARealTestCommandPastTwoMegabytesStillPasses() async throws {
+        let tool = RunTestsTool(tests: TestRunnerService(
+            access: try WorkspaceAccess(workspaceID: WorkspaceID(), grantedURL: workspaceURL),
+            executor: CommandExecutionService(workspaceRootURL: workspaceURL)
+        ))
+        let result = try await tool.execute(input: ["command": "seq 1 400000"], context: context("seq-tests"))
+        XCTAssertFalse(result.isError, String(result.content.prefix(300)))
+        XCTAssertTrue(result.content.hasPrefix("Tests passed"))
+        XCTAssertTrue(result.content.hasSuffix("400000\n"))
+    }
+
+    // MARK: - Disk
+
+    /// A call id a provider reuses gets a file of its own rather than
+    /// overwriting the output an earlier path pointed at.
+    func testAReusedCallIDNeverOverwritesAnEarlierOutput() throws {
+        try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: outputURL.appendingPathComponent("call_0.log").path, contents: Data("old".utf8))
+        let next = CommandOutputSpill(directory: outputURL, toolCallID: "call_0")
+        XCTAssertEqual(next.fileName, "call_0-2.log")
+        XCTAssertNotNil(CommandOutputSpill.resolve(next.modelPath, in: outputURL))
+    }
+
+    /// The session's saved outputs are kept within a budget, oldest first
+    /// to go, never the one being written.
+    func testTheOldestSavedOutputsGoPastTheSessionsBudget() throws {
+        try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
+        let now = Date()
+        for (index, name) in ["a.log", "b.log", "c.log", "current.log"].enumerated() {
+            let url = outputURL.appendingPathComponent(name)
+            FileManager.default.createFile(atPath: url.path, contents: Data(repeating: 0x41, count: 100))
+            try FileManager.default.setAttributes(
+                [.modificationDate: now.addingTimeInterval(Double(index - 10))],
+                ofItemAtPath: url.path
+            )
+        }
+        CommandOutputSpill.prune(outputURL, toFit: 150, sparing: outputURL.appendingPathComponent("current.log"))
+        let left = try FileManager.default.contentsOfDirectory(atPath: outputURL.path).sorted()
+        XCTAssertEqual(left, ["c.log", "current.log"])
+    }
+}
+
+private final class LimitRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [OutputLimit] = []
+
+    func record(_ limit: OutputLimit) {
+        lock.lock(); recorded.append(limit); lock.unlock()
+    }
+
+    var values: [OutputLimit] {
+        lock.lock(); defer { lock.unlock() }
+        return recorded
+    }
 }
 
 private final class TranscriptRecorder: @unchecked Sendable {
@@ -153,8 +236,10 @@ private final class TranscriptRecorder: @unchecked Sendable {
 private struct StreamingExecutor: CommandExecuting {
     let text: String
     let chunk: Int
+    var limits: LimitRecorder?
 
     func stream(_ commandLine: String, timeoutSeconds: Double, outputLimit: OutputLimit) -> AsyncThrowingStream<CommandEvent, Error> {
+        limits?.record(outputLimit)
         let text = self.text
         let chunk = self.chunk
         return AsyncThrowingStream { continuation in

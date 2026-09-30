@@ -63,6 +63,14 @@ public final class TestRunnerService: TestRunning, Sendable {
         command: String,
         timeoutSeconds: Double
     ) -> AsyncThrowingStream<CommandEvent, Error> {
-        executor.stream(command, timeoutSeconds: timeoutSeconds, outputLimit: .commandOutput)
+        stream(command: command, timeoutSeconds: timeoutSeconds, outputLimit: .commandOutput)
+    }
+
+    public func stream(
+        command: String,
+        timeoutSeconds: Double,
+        outputLimit: OutputLimit
+    ) -> AsyncThrowingStream<CommandEvent, Error> {
+        executor.stream(command, timeoutSeconds: timeoutSeconds, outputLimit: outputLimit)
     }
 }

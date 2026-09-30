@@ -22,15 +22,59 @@ public struct CommandOutputSpill: Sendable {
     /// The model-facing path for this output.
     public var modelPath: String { Self.pathPrefix + fileName }
 
-    /// A file for one call's output, in `directory`.
+    /// What a session's saved outputs may take on disk together. Past it the
+    /// oldest go as a new one starts, so a long session of long builds cannot
+    /// fill the disk a few hundred megabytes at a time; a path handed out
+    /// earlier then reads as no longer saved, which is the truth.
+    public static let sessionBudgetBytes = 512 * 1_024 * 1_024
+
+    /// A file for one call's output, in `directory`, named after the call.
+    ///
+    /// A provider that numbers its calls afresh each turn reuses an id, and a
+    /// later output must not overwrite one the model was already pointed at,
+    /// so a name that is taken gets a numeral.
     public init(directory: URL, toolCallID: String) {
         let safe = String(
             toolCallID.unicodeScalars
                 .map { CharacterSet.alphanumerics.contains($0) && $0.isASCII || $0 == "_" || $0 == "-" ? Character($0) : "_" }
                 .prefix(100)
         )
-        fileName = (safe.isEmpty ? "output" : safe) + ".log"
+        let base = safe.isEmpty ? "output" : safe
+        var name = base + ".log"
+        var numeral = 2
+        while FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path) {
+            name = "\(base)-\(numeral).log"
+            numeral += 1
+        }
+        fileName = name
         url = directory.appendingPathComponent(fileName)
+    }
+
+    /// Removes the oldest saved outputs in `directory`, `sparing` aside,
+    /// until the rest fit within `budget` bytes.
+    static func prune(_ directory: URL, toFit budget: Int, sparing: URL) {
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey]
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        let spared = sparing.standardizedFileURL.path
+        var saved = files.compactMap { file -> (url: URL, date: Date, size: Int)? in
+            guard file.pathExtension == "log",
+                  file.standardizedFileURL.path != spared,
+                  let values = try? file.resourceValues(forKeys: keys)
+            else { return nil }
+            return (file, values.contentModificationDate ?? .distantPast, values.fileSize ?? 0)
+        }
+        var total = saved.reduce(0) { $0 + $1.size }
+        guard total > budget else { return }
+        saved.sort { $0.date < $1.date }
+        for file in saved {
+            guard total > budget else { break }
+            try? FileManager.default.removeItem(at: file.url)
+            total -= file.size
+        }
     }
 
     /// The saved output `path` names, when it names one in `directory`:
@@ -55,9 +99,10 @@ public struct CommandOutputSpill: Sendable {
         private let handle: FileHandle?
         public private(set) var bytesWritten = 0
 
-        public init(spill: CommandOutputSpill) {
+        public init(spill: CommandOutputSpill, sessionBudgetBytes: Int = CommandOutputSpill.sessionBudgetBytes) {
             let directory = spill.url.deletingLastPathComponent()
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            CommandOutputSpill.prune(directory, toFit: sessionBudgetBytes, sparing: spill.url)
             FileManager.default.createFile(atPath: spill.url.path, contents: nil)
             handle = try? FileHandle(forWritingTo: spill.url)
         }
@@ -152,6 +197,73 @@ public struct CommandOutputSpill: Sendable {
 
     private static func jsonString(_ value: String) -> String {
         (try? JSONEncoder().encode(value)).flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
+    }
+}
+
+/// One command's output as it streams: every byte to the session's spill
+/// file, both ends in memory for the result, and the transcript up to its own
+/// budget. Shared by `run_command` and `run_tests`, so neither is stopped at
+/// the transcript's limit nor loses the end a failing build prints last.
+struct CommandOutputCapture {
+    let spill: CommandOutputSpill?
+    private let writer: CommandOutputSpill.Writer?
+    private(set) var ends: HeadTailBuffer
+    private var transcriptBytes = 0
+    private var transcriptFull = false
+
+    /// The limit the command itself runs under. The same with or without a
+    /// file to spill to: the ends are what the result needs, and memory holds
+    /// only those.
+    static let outputLimit = OutputLimit(maximumBytes: CommandOutputSpill.ceilingBytes)
+
+    /// What a result says when the command reached that limit and was stopped.
+    static let ceilingNote = "stopped after printing \(CommandOutputSpill.ceilingBytes / 1_024 / 1_024) MB"
+
+    init(context: ToolContext, headBytes: Int, tailBytes: Int) {
+        spill = context.commandOutputDirectory.map {
+            CommandOutputSpill(directory: $0, toolCallID: context.toolCallID)
+        }
+        writer = spill.map { CommandOutputSpill.Writer(spill: $0) }
+        ends = HeadTailBuffer(headBytes: headBytes, tailBytes: tailBytes)
+    }
+
+    /// Takes one chunk: to the file, to the ends, and to the transcript while
+    /// it has room.
+    mutating func take(_ channel: ToolOutputChannel, _ text: String, context: ToolContext) async {
+        writer?.write(text)
+        ends.append(text)
+        guard !transcriptFull else { return }
+        transcriptBytes += text.utf8.count
+        if transcriptBytes <= OutputLimit.commandOutput.maximumBytes {
+            await context.emitOutput(channel, text)
+        } else {
+            transcriptFull = true
+            await context.emitOutput(channel, "\n… [the rest of this output is not shown here]\n")
+        }
+    }
+
+    /// Closes the file, and removes it when the output fit the result whole:
+    /// there is nothing in it the model has not been given.
+    func finish() {
+        writer?.close()
+        if ends.isWhole, let spill {
+            try? FileManager.default.removeItem(at: spill.url)
+        }
+    }
+
+    /// The output for the tool result: whole when it fit, and otherwise its
+    /// two ends around a note of how much was left out and, when it was
+    /// saved, where to read it.
+    func rendered() -> String {
+        if ends.isWhole {
+            return ends.joined { _ in "" }
+        }
+        if let spill, writer?.isOpen == true {
+            return ends.joined { omitted in
+                "\n… [\(omitted) bytes omitted. The whole output (\(ends.totalBytes) bytes) is saved: read it with read_file, path \"\(spill.modelPath)\", paging with offset and limit.] …\n"
+            }
+        }
+        return ends.joined { omitted in "\n… [\(omitted) bytes omitted] …\n" }
     }
 }
 
