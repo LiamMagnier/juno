@@ -1,3 +1,4 @@
+import { mergeArtifactUpdate } from "@/lib/artifact-card-state";
 import type { ChatFinishReason, ClientArtifact, ClientMessage } from "@/types/chat";
 
 /**
@@ -75,6 +76,29 @@ export function applyTurnArtifacts(
   );
   for (const a of incoming) map.set(a.identifier, a);
   return Array.from(map.values());
+}
+
+/**
+ * One artifact came back from a route that changed it — a save, a restore
+ * from Recently deleted, a suggestion applied or dismissed — so it takes its
+ * place in the chat's list.
+ *
+ * By id, not identifier: the id is the artifact's identity, and the entry
+ * keeps its position so the transcript's cards and an open canvas do not
+ * shuffle. An id the list does not hold is ignored rather than appended: a
+ * route answering for an artifact this chat never had is not a reason to
+ * give the chat a new one.
+ *
+ * The fold is `mergeArtifactUpdate`, so a save response that did not read
+ * suggestions leaves a waiting one in place, and a restore clears `deletedAt`.
+ * Returns the same list when nothing matched, so a no-op sets no state.
+ */
+export function replaceArtifactById(current: ClientArtifact[], next: ClientArtifact): ClientArtifact[] {
+  const index = current.findIndex((a) => a.id === next.id);
+  if (index === -1) return current;
+  const out = current.slice();
+  out[index] = mergeArtifactUpdate(current[index], next);
+  return out;
 }
 
 /**
