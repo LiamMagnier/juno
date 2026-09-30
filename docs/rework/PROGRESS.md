@@ -44,7 +44,7 @@ agent-core build and `npm run i18n:extract`.
 | 6 | Crew | | | |
 | 7 | Work, Research, Voice | | | |
 | 8 | Artifacts lifecycle | | | |
-| 9 | Juno Code runtime correctness and architecture | integrated on `rf/code-integration`, not yet in `rework/refoundation` | merges `76e1accb` `90681ce7` `954fc35c` `84114901` | see Phase 9 below |
+| 9 | Juno Code runtime correctness and architecture | merged into `rework/refoundation` | lane merges `76e1accb` `90681ce7` `954fc35c` `84114901`; trunk merge `4c3e59f1` | see Phase 9 below |
 | 10 | Juno Code on Mac | | | |
 | 11 | Code on web and iOS: remote and cloud parity | | | |
 | 12 | Accessibility, motion, responsive polish | | | |
@@ -177,6 +177,33 @@ in the merge commits.
 | `npm run native:sync:check` | 14 of 15 | `design:tokens:check` and `native:parity:check` now pass; `native:parity:label` wants a PR label for `src/app/api/chat/route.ts`, changed by the base (`20c902ed`), not by this phase |
 | `code:remote:check`, `code:runtime:check`, `work:sandbox:check` | pass | |
 
+### Merged into the trunk (`4c3e59f1`, through `gate.sh`)
+
+`rf/code-integration` @ `c22d4016` merged with `--no-ff` into
+`rework/refoundation` @ `6ac9b383` (after artifacts-core, chat-context and the
+design round 3 commits). One conflict, `src/lib/serializers.ts`: both sides
+added an import beside `readToolDetail`; both kept, so an activity row carries
+the integration's `toolStatus` and the trunk's `contextReceipt`, each only when
+set. `package.json` auto-merged (the trunk's `artifacts:maintenance`, the
+integration's `agent:protocol` and `code:task-wire` scripts). No generated
+contract needed regenerating: chat wire, parity ledger, agent protocol and
+task-wire checks all passed on the merge as committed. `2adf8e75` then fixed
+the three JunoNativeKit failures that predate the refoundation.
+
+| Gate | Result | Notes |
+|---|---|---|
+| `npm run native:test JunoCode` | pass | 1,278 XCTests (12 skipped), 78 Swift Testing, 0 failures |
+| `npm run native:test JunoWork` | pass | 298 XCTests |
+| `npm run native:test JunoNativeKit` | pass | 1,673 XCTests, 58 Swift Testing, 0 failures with `2adf8e75`, which fixes the three pre-existing failures |
+| `xcodebuild … -scheme JunoDesktop -configuration Debug CODE_SIGNING_ALLOWED=NO build` | pass | DerivedData `/private/tmp/juno-rf-dd-trunk` |
+| `npm test --prefix runner/agent-core` | pass | 236 tests, after `npm run build --prefix runner/agent-core` (the test script runs `dist/`, which was stale: 176 tests) |
+| `npm run typecheck` | pass | 0 errors; the environment errors above went away with the trunk's Prisma client |
+| `npm test` | pass | 4,485 tests: 4,418 pass, 67 skipped, 0 failures (also re-run after the agent-core build) |
+| `npm run lint` | pass | 0 errors, 8 warnings, all in `src/app/dev/design/*` |
+| `agent:protocol:check`, `code:task-wire:check`, `native:wire:check`, `native:parity:check`, `native:contract:check` | pass | |
+| `npm run native:sync:check` | 14 of 15 | `native:parity:label` flags `src/app/api/chat/route.ts`, `src/lib/chat/request.ts` and `app-sidebar.tsx` against `origin/main`, all changed by earlier trunk work; on the merge's own diff (`--base 6ac9b383`) no watched file changed |
+| `code:remote:check`, `code:runtime:check`, `code:preview:check`, `work:sandbox:check` | pass | |
+
 ### Still open
 
 - No host accepts protocol commands yet (slice 2): a question or plan on the
@@ -188,9 +215,5 @@ in the merge commits.
   Responses adapter is unreachable until `isWorkCapableModel` and the catalog
   let Responses-only models through (a product decision).
 - The strict (warnings-as-errors) JunoDesktop build (as the swift-loop lane
-  reported it) and the three JunoNativeKit tests above are pre-existing
-  failures outside Phase 9.
-- `rework/refoundation` has moved on (artifacts-core, chat-context); merging
-  it into this branch conflicts only in `src/lib/serializers.ts`
-  (`git merge-tree`), and the two environment failures above go away with it
-  or with a fresh install.
+  reported it) is a pre-existing failure outside Phase 9. The three
+  JunoNativeKit tests above are fixed on the trunk (`2adf8e75`).
