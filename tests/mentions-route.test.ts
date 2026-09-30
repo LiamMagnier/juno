@@ -251,3 +251,32 @@ routeTest("rate-limited per account; signed-out callers are refused; bad input i
   assert.equal((await get(`?q=${"x".repeat(101)}`)).status, 400);
   assert.equal((await get("?limit=50")).status, 400);
 });
+
+routeTest("a row's label is the token label the chat request accepts, however long or odd the name", async () => {
+  const longName = `Zebra ${"quarterly board pack ".repeat(12)}\nfinal.pdf`;
+  tables.attachment.push({
+    id: "cfile000000009",
+    userId: ME,
+    fileName: longName,
+    mimeType: "application/pdf",
+    size: 1,
+    createdAt: when(9),
+    deletedAt: null,
+    libraryRemovedAt: null,
+  });
+  try {
+    const { body } = await get("?q=zebra&kinds=file");
+    const [row] = body.items;
+    assert.equal(row.id, "cfile000000009");
+    const label = String(row.label);
+    assert.ok(label.length <= 120, "bounded to a token label");
+    assert.ok(!label.includes("\n"), "one line");
+    const { mentionToToken } = await import("@/lib/mentions/types");
+    const { chatBodySchema } = await import("@/lib/chat/request");
+    const message = `Summarise ${label}`;
+    const token = mentionToToken(row as never, { start: message.indexOf(label), end: message.indexOf(label) + label.length });
+    assert.equal(chatBodySchema.safeParse({ message, context: [token] }).success, true, "inserting the row never refuses the send");
+  } finally {
+    tables.attachment.pop();
+  }
+});

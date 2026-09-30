@@ -59,6 +59,24 @@ export function isContextTokenId(kind: ContextTokenKind, id: string): boolean {
 /** No control characters: a label is a name written into a sentence, and a newline in one is a second line of prompt. */
 const LABEL = /^[^\u0000-\u001f\u007f]+$/;
 
+/**
+ * The words a token writes into a sentence for a thing's name.
+ *
+ * One line: control characters and runs of whitespace become one space, and a
+ * name longer than a label may be is cut to fit, ending in "…". The mention
+ * palette labels its rows with this and the resolver names what it resolved
+ * with it, so the words a chip inserts, the label the request schema accepts
+ * and the name the receipt records are the same words. A raw name would not
+ * be: a 200-character file name inserted as is fails the schema's label bound
+ * and refuses the whole send.
+ */
+export function contextTokenLabel(name: string): string {
+  const clean = name.replace(/[\u0000-\u001f\u007f\s]+/g, " ").trim();
+  return clean.length > MAX_CONTEXT_TOKEN_LABEL_CHARS
+    ? `${clean.slice(0, MAX_CONTEXT_TOKEN_LABEL_CHARS - 1).trimEnd()}…`
+    : clean;
+}
+
 export const contextTokenRangeSchema = z
   .object({
     start: z.number().int().min(0).max(MAX_CONTEXT_TOKEN_OFFSET),
@@ -315,6 +333,13 @@ export const contextTokenResolutionSchema = z.object({
   label: z.string().min(1).max(MAX_CONTEXT_TOKEN_LABEL_CHARS),
   /** Every place in the stored user message this token was drawn. */
   ranges: z.array(contextTokenRangeSchema).max(MAX_CONTEXT_TOKENS).optional(),
+  /**
+   * The words the chip covers at `ranges`, present only when they are not
+   * `label` — the thing was renamed between the palette and the send, or a
+   * client wrote its own words. The ranges frame these words, so a client
+   * drawing chips pairs the ranges with `text ?? label`.
+   */
+  text: z.string().min(1).max(MAX_CONTEXT_TOKEN_LABEL_CHARS).optional(),
   outcome: z.enum(["applied", "dropped"]),
   via: z.enum(CONTEXT_TOKEN_VIAS).optional(),
   code: z.enum(CONTEXT_TOKEN_CODES).optional(),
@@ -361,19 +386,29 @@ export function readContextReceipt(value: unknown): ContextReceipt | undefined {
  * again), and a client drawing the chips of a sent message from the reply's
  * receipt. Only APPLIED tokens come back: a token that was dropped last time
  * is not quietly retried. Ranges come back one token per range, since that is
- * how a request carries them.
+ * how a request carries them, each labelled with the words its range frames
+ * (`text` when the receipt has it), so `segmentWithTokens` over the stored
+ * message draws them where they were.
  */
 export function contextTokensFromReceipt(receipt: ContextReceipt | undefined): ContextToken[] {
   if (!receipt) return [];
   const out: ContextToken[] = [];
+  const clean = (value: string | undefined) => {
+    const label = (value ?? "").trim().slice(0, MAX_CONTEXT_TOKEN_LABEL_CHARS);
+    return label && LABEL.test(label) ? label : null;
+  };
   for (const entry of receipt.tokens) {
     if (entry.outcome !== "applied") continue;
     if (!isContextTokenId(entry.kind, entry.id)) continue;
-    const label = entry.label.trim().slice(0, MAX_CONTEXT_TOKEN_LABEL_CHARS);
-    if (!label || !LABEL.test(label)) continue;
     const ranges = entry.ranges ?? [];
-    if (ranges.length === 0) out.push({ kind: entry.kind, id: entry.id, label });
-    for (const range of ranges) out.push({ kind: entry.kind, id: entry.id, label, range });
+    if (ranges.length === 0) {
+      const label = clean(entry.label);
+      if (label) out.push({ kind: entry.kind, id: entry.id, label });
+      continue;
+    }
+    const written = clean(entry.text) ?? clean(entry.label);
+    if (!written) continue;
+    for (const range of ranges) out.push({ kind: entry.kind, id: entry.id, label: written, range });
   }
   return out.slice(0, MAX_CONTEXT_TOKENS);
 }

@@ -11,7 +11,7 @@
   },
   "x-native-summary": {
     "native": 159,
-    "planned": 97,
+    "planned": 98,
     "web-only": 32,
     "unclassified": 0
   },
@@ -1389,6 +1389,10 @@
                         "end"
                       ]
                     },
+                    "x-native": "planned"
+                  },
+                  "text": {
+                    "type": "string",
                     "x-native": "planned"
                   },
                   "via": {

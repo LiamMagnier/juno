@@ -6,9 +6,11 @@ import {
   contextRangeIssues,
   contextReceiptFromActivity,
   contextReceiptSchema,
+  contextTokenLabel,
   contextTokenSchema,
   contextTokensFromReceipt,
   contextTokensSchema,
+  MAX_CONTEXT_TOKEN_LABEL_CHARS,
   isContextTokenId,
   rangesForStoredText,
   readContextReceipt,
@@ -18,6 +20,7 @@ import {
 } from "@/lib/chat/context-tokens";
 import { chatBodySchema } from "@/lib/chat/request";
 import { hashFirstSubmission } from "@/lib/chat-first-submission";
+import { readFileSync } from "node:fs";
 
 /*
  * Typed context tokens: the shared shape every composer sends and the server
@@ -280,4 +283,73 @@ test("tokens are part of a first submission's identity, in any order, labels asi
     "the server reads names from rows, so a label is not identity"
   );
   assert.notEqual(hashFirstSubmission({ ...base, context: tokens.slice(1) }), withTokens);
+});
+
+// ---------------------------------------------------------------------------
+// Review fixes: labels, renamed things, and the web hook's trimmed text
+// ---------------------------------------------------------------------------
+
+test("a name becomes a token label the request accepts: one line, bounded, never empty words", () => {
+  const long = `${"Quarterly revenue forecast ".repeat(12)}.xlsx`;
+  const label = contextTokenLabel(long);
+  assert.ok(label.length <= MAX_CONTEXT_TOKEN_LABEL_CHARS);
+  assert.ok(label.endsWith("…"));
+  assert.equal(contextTokenLabel("Q3\n\tForecast\u0000  final.xlsx"), "Q3 Forecast final.xlsx");
+  assert.equal(contextTokenLabel("   "), "");
+  // The palette inserts exactly this label into the sentence, so a token
+  // built from it passes the schema however long or odd the name was.
+  const text = `Compare ${label} please`;
+  const parsed = chatBodySchema.safeParse({
+    message: text,
+    context: [{ kind: "file", id: FILE, label, range: at(text, label) }],
+  });
+  assert.equal(parsed.success, true);
+  // The raw name would not: the whole send would have been refused.
+  assert.equal(contextTokenSchema.safeParse({ kind: "file", id: FILE, label: long }).success, false);
+});
+
+test("a receipt for a thing renamed since the palette carries the chip's own words", () => {
+  const typed = "Compare Q3 draft.xlsx now";
+  const renamed: ContextReceipt = {
+    version: 1,
+    tokens: [
+      {
+        kind: "file",
+        id: FILE,
+        label: "Q3 Forecast (final).xlsx",
+        text: "Q3 draft.xlsx",
+        ranges: [at(typed, "Q3 draft.xlsx")],
+        outcome: "applied",
+        via: "attachment",
+      },
+    ],
+  };
+  assert.equal(contextReceiptSchema.safeParse(renamed).success, true);
+  const back = contextTokensFromReceipt(renamed);
+  assert.deepEqual(back, [{ kind: "file", id: FILE, label: "Q3 draft.xlsx", range: at(typed, "Q3 draft.xlsx") }]);
+  // So the chip is drawn over the words the person typed, not lost.
+  assert.deepEqual(
+    segmentWithTokens(typed, back).map((segment) => segment.kind),
+    ["text", "token", "text"]
+  );
+});
+
+test("the web hook moves ranges onto the trimmed text it sends, so a leading space cannot refuse the send", () => {
+  const draft = "\n  Compare Q3 Forecast.xlsx with Stripe  ";
+  const drawn: ContextToken[] = [
+    { kind: "file", id: FILE, label: "Q3 Forecast.xlsx", range: at(draft, "Q3 Forecast.xlsx") },
+    { kind: "app", id: "composio:stripe", label: "Stripe", range: at(draft, "Stripe") },
+  ];
+  // What the hook used to send: trimmed text, ranges over the draft.
+  assert.equal(chatBodySchema.safeParse({ message: draft.trim(), context: drawn }).success, false);
+  // What it sends now.
+  const sent = rangesForStoredText(draft, drawn);
+  assert.equal(chatBodySchema.safeParse({ message: draft.trim(), context: sent }).success, true);
+  // Moving them twice is a no-op, which is what lets the hook do it in `send`
+  // and again in `startGeneration`.
+  assert.deepEqual(rangesForStoredText(draft.trim(), sent), sent);
+
+  const hook = readFileSync(new URL("../src/hooks/use-chat.ts", import.meta.url), "utf8");
+  assert.match(hook, /context: rangesForStoredText\(text, sendOptions\.context\)/);
+  assert.match(hook, /rangesForStoredText\(input\.text, input\.context\)/);
 });

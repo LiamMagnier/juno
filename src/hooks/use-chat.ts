@@ -19,7 +19,7 @@ import { appendReasoningDelta, emptyReasoning } from "@/lib/reasoning-parts";
 import { resolveModel } from "@/lib/models";
 import type { ResearchEffort } from "@/lib/research/domain";
 import type { ArtifactEditRequest } from "@/lib/artifact-edit";
-import type { ContextToken } from "@/lib/chat/context-tokens";
+import { rangesForStoredText, type ContextToken } from "@/lib/chat/context-tokens";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import {
   formatPreflightClarificationVisibleMessage,
@@ -1329,8 +1329,13 @@ export function useChat(opts: UseChatOptions) {
           reasoningEffort: opts.reasoningEffort,
           connectors: input.connectors ?? opts.connectors,
           // Resolved server-side; never with a canvas edit (its context is the
-          // artifact) and absent rather than empty so an old server ignores it.
-          context: !input.artifactEdit && input.context?.length ? input.context : undefined,
+          // artifact), and absent rather than empty. The ranges are moved onto
+          // `trimmed`, the text actually sent: the server checks every range
+          // against `message` and refuses the send when one does not frame its
+          // label, so ranges drawn over a draft with a leading space or line
+          // would otherwise fail the whole message.
+          context:
+            !input.artifactEdit && input.context?.length ? rangesForStoredText(input.text, input.context) : undefined,
           preflightClarification: input.preflightClarification,
           // This client draws a task the model starts (the `work` frame and the
           // panel under the reply), so the route may offer `start_task`. Never
@@ -1382,10 +1387,16 @@ export function useChat(opts: UseChatOptions) {
   );
 
   const send = React.useCallback(
-    async (text: string, attachments: ClientAttachment[] = [], options?: SendOptions): Promise<SendResult> => {
+    async (text: string, attachments: ClientAttachment[] = [], sendOptions?: SendOptions): Promise<SendResult> => {
       if (pendingClarification) return { accepted: false };
       const trimmed = text.trim();
       if (!trimmed && attachments.length === 0) return { accepted: false };
+      // The composer draws token ranges over the draft as typed; everything
+      // below carries `trimmed`, so the ranges move with it once, here — the
+      // queue, the parked clarification and the send all hold trimmed text.
+      const options: SendOptions | undefined = sendOptions?.context?.length
+        ? { ...sendOptions, context: rangesForStoredText(text, sendOptions.context) }
+        : sendOptions;
       if (status !== "idle" && status !== "error") {
         // Busy: park it. Exactly one — a second message while one is already
         // waiting is refused, so the composer keeps the words (it clears the

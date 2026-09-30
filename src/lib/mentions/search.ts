@@ -8,7 +8,7 @@ import { isComposioConfigured } from "@/lib/env";
 import { normalizeAgentAvatar } from "@/lib/agents/avatar";
 import { actionPolicyFromSetting } from "@/lib/chat/app-approval-preview";
 import { connectHrefFor } from "@/lib/chat/app-connector-state";
-import type { ContextTokenKind } from "@/lib/chat/context-tokens";
+import { contextTokenLabel, type ContextTokenKind } from "@/lib/chat/context-tokens";
 import { appMentionCandidates } from "@/lib/mentions/apps";
 import { rankMentions, type MentionCandidate } from "@/lib/mentions/rank";
 import {
@@ -143,7 +143,7 @@ export async function searchMentions(input: MentionSearchInput): Promise<Mention
       item: {
         kind: "crew",
         id: agent.id,
-        label: agent.name,
+        label: tokenLabel(agent.name, "Crew member"),
         ...(agent.role.trim() ? { subtitle: agent.role.trim() } : {}),
         icon: "crew",
         avatar: normalizeAgentAvatar(agent.avatar, agent.id),
@@ -160,7 +160,7 @@ export async function searchMentions(input: MentionSearchInput): Promise<Mention
         item: {
           kind: "file",
           id: file.id,
-          label: file.fileName,
+          label: tokenLabel(file.fileName, "Untitled file"),
           ...(subtitle ? { subtitle } : {}),
           icon,
           mimeType: file.mimeType,
@@ -170,14 +170,20 @@ export async function searchMentions(input: MentionSearchInput): Promise<Mention
       };
     }),
     ...projects.map((project): MentionCandidate => ({
-      item: { kind: "project", id: project.id, label: project.name, icon: "project", updatedAt: project.updatedAt.toISOString() },
+      item: {
+        kind: "project",
+        id: project.id,
+        label: tokenLabel(project.name, "Untitled project"),
+        icon: "project",
+        updatedAt: project.updatedAt.toISOString(),
+      },
     })),
     ...apps,
     ...skills.map((skill): MentionCandidate => ({
       item: {
         kind: "skill",
         id: skill.id,
-        label: skill.name,
+        label: tokenLabel(skill.name, skill.slug),
         ...(skill.description.trim() ? { subtitle: clip(skill.description.trim(), 120) } : {}),
         icon: "skill",
         slug: skill.slug,
@@ -189,7 +195,7 @@ export async function searchMentions(input: MentionSearchInput): Promise<Mention
       item: {
         kind: "chat",
         id: chat.id,
-        label: chat.title,
+        label: tokenLabel(chat.title, "Untitled chat"),
         icon: "chat",
         projectId: chat.projectId,
         updatedAt: chat.lastMessageAt.toISOString(),
@@ -201,7 +207,7 @@ export async function searchMentions(input: MentionSearchInput): Promise<Mention
       item: {
         kind: "artifact",
         id: artifact.id,
-        label: artifact.title,
+        label: tokenLabel(artifact.title, "Untitled artifact"),
         subtitle: artifact.conversation.title,
         icon: `artifact:${artifact.type.toLowerCase()}`,
         updatedAt: artifact.updatedAt.toISOString(),
@@ -248,6 +254,15 @@ async function appRows(userId: string, only?: ReadonlySet<string>): Promise<Ment
     },
     only,
   });
+}
+
+/**
+ * A row's label is the words its token will write into the sentence, so it is
+ * the token label (one line, bounded) the request schema accepts; a name that
+ * cleans to nothing gets a plain noun rather than a chip with no words.
+ */
+function tokenLabel(name: string, fallback: string): string {
+  return contextTokenLabel(name) || contextTokenLabel(fallback) || "Untitled";
 }
 
 function clip(value: string, max: number): string {

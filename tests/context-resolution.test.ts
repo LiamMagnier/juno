@@ -542,3 +542,64 @@ test("the referenced block goes after the latest user turn, and nowhere else", (
   assert.deepEqual(appendToLastUserTurn(history, ""), history);
   assert.deepEqual(history[2].content, "second", "the input is not mutated");
 });
+
+// ---------------------------------------------------------------------------
+// Review fixes
+// ---------------------------------------------------------------------------
+
+test("a thing renamed since the palette keeps its chip where the person typed it", async () => {
+  const { port } = makePort({ apps: { github: connected("GitHub") } });
+  const typed = "Compare Q3 draft.xlsx and the Pricing chat with gh";
+  const at = (label: string) => ({ start: typed.indexOf(label), end: typed.indexOf(label) + label.length });
+  const turn = await TurnContext.begin(
+    [
+      { kind: "file", id: id("forecast"), label: "Q3 draft.xlsx", range: at("Q3 draft.xlsx") },
+      { kind: "chat", id: id("pricingcall"), label: "Pricing chat", range: at("Pricing chat") },
+      { kind: "app", id: "github", label: "gh", range: at("gh") },
+    ],
+    baseFacts,
+    port
+  );
+  turn.settleConnectors([{ id: "github", label: "GitHub" }]);
+  turn.settleFiles(new Set([id("forecast")]));
+  // The route fits ranges to the stored text before the references resolve;
+  // they are checked against the words typed, not the names found since.
+  turn.fitRanges(typed);
+  await turn.resolveReferences(referenceFacts, port);
+  turn.turnBlock({ handoffAvailable: false });
+  const receipt = turn.receipt()!;
+  for (const [tokenId, name, words] of [
+    [id("forecast"), "Q3 Forecast.xlsx", "Q3 draft.xlsx"],
+    [id("pricingcall"), "Pricing call notes", "Pricing chat"],
+    ["github", "GitHub", "gh"],
+  ] as const) {
+    const entry = receipt.tokens.find((candidate) => candidate.id === tokenId)!;
+    assert.equal(entry.label, name, "the account's own name");
+    assert.equal(entry.text, words, "and the words the chip covers");
+    assert.deepEqual(entry.ranges, [at(words)], `${words}: the range survives`);
+  }
+  // A token whose name did not change carries no second copy of it.
+  const same = await TurnContext.begin(
+    [{ kind: "file", id: id("brief"), label: "Brief.pdf", range: { start: 0, end: 9 } }],
+    baseFacts,
+    port
+  );
+  same.settleFiles(new Set([id("brief")]));
+  same.fitRanges("Brief.pdf please");
+  assert.equal(same.receipt()!.tokens[0].text, undefined);
+  assert.deepEqual(same.receipt()!.tokens[0].ranges, [{ start: 0, end: 9 }]);
+});
+
+test("a resolved name is written as a token label: one line, bounded", async () => {
+  const long = `${"Board pack ".repeat(20)}\nfinal.pdf`;
+  const { port } = makePort();
+  const withLong: ContextPort = {
+    ...port,
+    libraryFiles: async (ids) => ids.map((fileId) => ({ id: fileId, fileName: long, kind: "FILE" })),
+  };
+  const turn = await TurnContext.begin([token("file", id("forecast"))], baseFacts, withLong);
+  turn.settleFiles(new Set([id("forecast")]));
+  const label = outcome(turn, id("forecast")).label;
+  assert.ok(label.length <= 120);
+  assert.ok(!label.includes("\n"));
+});

@@ -16,6 +16,7 @@
  * Pure: the caller passes rows in.
  */
 import { appApprovalPreview } from "@/lib/chat/app-approval-preview";
+import { contextTokenLabel } from "@/lib/chat/context-tokens";
 import type { ActionPermissionPolicy } from "@/lib/action-approval";
 import type { MentionCandidate } from "@/lib/mentions/rank";
 
@@ -67,7 +68,7 @@ export function appMentionCandidates(input: AppRowsInput): MentionCandidate[] {
       item: {
         kind: "app",
         id: app.id,
-        label: app.label,
+        label: contextTokenLabel(app.label) || app.id,
         subtitle: row?.accountLabel?.trim() || app.description,
         icon: `app:${app.id}`,
         connectorId: app.id,
@@ -88,7 +89,7 @@ export function appMentionCandidates(input: AppRowsInput): MentionCandidate[] {
       const slug = row.provider.slice(input.composio.prefix.length);
       if (!slug) continue;
       const active = row.scope === input.composio.activeScope;
-      const label = row.accountLabel?.trim() || titleCase(slug);
+      const label = contextTokenLabel(row.accountLabel?.trim() || titleCase(slug)) || slug;
       out.push({
         item: {
           kind: "app",
@@ -115,7 +116,7 @@ export function appMentionCandidates(input: AppRowsInput): MentionCandidate[] {
       item: {
         kind: "app",
         id,
-        label: server.name,
+        label: contextTokenLabel(server.name) || "MCP server",
         subtitle: server.url,
         icon: `app:${id}`,
         connectorId: id,

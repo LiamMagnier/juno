@@ -50,6 +50,7 @@
  */
 import {
   contextTokenKey,
+  contextTokenLabel,
   type AppApprovalPreview,
   type ContextReceipt,
   type ContextToken,
@@ -250,6 +251,12 @@ interface Entry {
   id: string;
   /** The sent label until a row supplies the account's own name. */
   label: string;
+  /**
+   * The words the person's chip covers in the message — the label as sent.
+   * The ranges frame these, not `label`, which a rename since the palette
+   * can make different.
+   */
+  sentLabel: string;
   ranges: ContextTokenRange[];
   outcome: "applied" | "dropped" | "pending";
   via?: ContextTokenVia;
@@ -298,6 +305,7 @@ export class TurnContext {
         kind: token.kind,
         id: token.id,
         label: token.label,
+        sentLabel: token.label,
         ranges: token.range ? [token.range] : [],
         outcome: "pending",
       });
@@ -378,7 +386,7 @@ export class TurnContext {
 
     for (const entry of apps) {
       const state = states.get(entry.id) ?? { state: "unknown" as const };
-      if (state.state !== "unknown") entry.label = oneLine(state.label, 120) || entry.label;
+      if (state.state !== "unknown") entry.label = contextTokenLabel(state.label) || entry.label;
       const blocked = approvals.blockedConnectors.includes(entry.id);
       if (state.state !== "unknown" && state.state !== "unavailable") {
         entry.approval = appApprovalPreview({
@@ -454,7 +462,7 @@ export class TurnContext {
         this.drop(entry, "not_found");
         continue;
       }
-      entry.label = oneLine(row.fileName, 120) || entry.label;
+      entry.label = contextTokenLabel(row.fileName) || entry.label;
       if (room === 0) {
         this.drop(entry, "attachment_limit");
         continue;
@@ -477,7 +485,7 @@ export class TurnContext {
         this.drop(entry, "not_found");
         continue;
       }
-      entry.label = oneLine(row.name, 120) || entry.label;
+      entry.label = contextTokenLabel(row.name) || entry.label;
       const current = armed();
       if (current !== null && current !== row.slug) {
         this.drop(entry, "skill_conflict");
@@ -500,7 +508,7 @@ export class TurnContext {
     for (const entry of this.of("app")) {
       const connector = opened.get(entry.id);
       if (connector) {
-        entry.label = oneLine(connector.label, 120) || entry.label;
+        entry.label = contextTokenLabel(connector.label) || entry.label;
         this.apply(entry, "connector");
         continue;
       }
@@ -571,7 +579,7 @@ export class TurnContext {
       const row = rows.get(entry.id);
       if (!row) this.drop(entry, "not_found");
       else {
-        entry.label = oneLine(row.name, 120) || entry.label;
+        entry.label = contextTokenLabel(row.name) || entry.label;
         if (row.id === facts.conversationProjectId) this.apply(entry, "already_in_context");
         else found.push(entry);
       }
@@ -607,7 +615,7 @@ export class TurnContext {
       const row = rows.get(entry.id);
       if (!row) this.drop(entry, "not_found");
       else {
-        entry.label = oneLine(row.title, 120) || entry.label;
+        entry.label = contextTokenLabel(row.title) || entry.label;
         found.push(entry);
       }
     }
@@ -634,7 +642,7 @@ export class TurnContext {
       const row = rows.get(entry.id);
       if (!row) this.drop(entry, "not_found");
       else {
-        entry.label = oneLine(row.title, 120) || entry.label;
+        entry.label = contextTokenLabel(row.title) || entry.label;
         found.push(entry);
       }
     }
@@ -659,7 +667,7 @@ export class TurnContext {
       const row = rows.get(entry.id);
       if (!row) this.drop(entry, "not_found");
       else {
-        entry.label = oneLine(row.name, 120) || entry.label;
+        entry.label = contextTokenLabel(row.name) || entry.label;
         // The member whose thread this is is the one answering.
         if (row.id === facts.threadAgentId) this.apply(entry, "already_in_context");
         else found.push(entry);
@@ -784,6 +792,7 @@ export class TurnContext {
           // a wiring bug; it is reported as not used rather than as used.
           outcome: entry.outcome === "applied" ? "applied" : "dropped",
           ...(entry.ranges.length ? { ranges: entry.ranges } : {}),
+          ...(entry.ranges.length && entry.sentLabel !== entry.label ? { text: entry.sentLabel } : {}),
           ...(entry.via ? { via: entry.via } : {}),
           ...(entry.outcome === "pending" ? { code: "unavailable" as const } : entry.code ? { code: entry.code } : {}),
           ...(entry.message ? { message: entry.message } : {}),
@@ -795,11 +804,16 @@ export class TurnContext {
     };
   }
 
-  /** Stored ranges refitted to the user message the route actually read (a regenerate reads it back). */
+  /**
+   * Stored ranges refitted to the user message the route actually read (a
+   * regenerate reads it back). Against the words the person's chip wrote,
+   * not the account's current name: a file renamed since the palette still
+   * has its chip where it was.
+   */
   fitRanges(storedText: string) {
     for (const entry of this.entries.values()) {
       entry.ranges = entry.ranges.filter(
-        (range) => range.end <= storedText.length && storedText.slice(range.start, range.end) === entry.label
+        (range) => range.end <= storedText.length && storedText.slice(range.start, range.end) === entry.sentLabel
       );
     }
   }
