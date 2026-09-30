@@ -39,7 +39,7 @@ export function JunoStage({
         {scene === "home" ? <HomeScene focused={params.focus === "1"} panel={params.app} empty={params.empty === "1"} /> : null}
         {scene === "thread" ? <ThreadScene top={params.at === "top"} planOpen={params.plan === "1"} stage={params.stage} menu={params.menu === "1"} /> : null}
         {scene === "menus" ? <MenusScene /> : null}
-        {scene === "crew" ? params.member ? <MemberScene id={params.member} /> : <CrewScene /> : null}
+        {scene === "crew" ? params.member && !params.flow ? <MemberScene id={params.member} top={params.at === "top"} /> : <CrewScene flow={params.flow} member={params.member} /> : null}
         {scene === "code" ? params.state === "start" ? <CodeStartScene /> : <CodeScene /> : null}
         {scene === "library" ? <LibraryScene /> : null}
         {scene === "customize" ? <CustomizeScene app={params.app} /> : null}

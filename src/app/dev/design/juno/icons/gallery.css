@@ -37,15 +37,12 @@
 .jig-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
-  gap: 1px;
-  background: var(--line);
-  border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  overflow: hidden;
+  gap: 4px 16px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
 }
 .jig-cell {
-  background: var(--ground);
-  padding: 14px 14px 10px;
+  padding: 10px 4px 8px;
   display: grid;
   grid-template-columns: auto 1fr;
   grid-template-rows: auto auto;

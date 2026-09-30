@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { CrewFace } from "./crew/face";
+import { crewMember } from "./crew-bridge";
 import { ACCOUNT, CODE_SESSIONS, CREW, RECENT, WORKSPACES, type CrewRow, type SessionState } from "./fixtures";
 import { Icon } from "./icons";
 
@@ -14,7 +15,8 @@ import { Icon } from "./icons";
  *     lives in the face; there is no pill, badge or dot anywhere.
  */
 
-export const face = (m: CrewRow) => ({ id: m.id, name: m.name, role: m.role, seed: m.seed });
+/** A roster row as the character system sees it (the stored look when the member has one). */
+export const face = (m: CrewRow) => crewMember(m);
 
 export function Wordmark() {
   return <span className="jn-wordmark">Juno</span>;

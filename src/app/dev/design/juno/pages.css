@@ -81,27 +81,50 @@
   margin-top: 40px;
 }
 .jn .jn-portrait {
+  position: relative;
+}
+.jn .jn-portrait__link {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 18px 8px 16px;
-  border-radius: 20px;
+  padding: 14px 8px 16px;
+  border-radius: 22px;
   text-align: center;
   transition: background-color var(--d-fast) var(--e-out);
 }
 @media (hover: hover) and (pointer: fine) {
-  .jn .jn-portrait:hover {
+  .jn .jn-portrait__link:hover {
     background: var(--fill-hover);
   }
 }
-.jn .jn-portrait:active {
+.jn .jn-portrait__link:active {
   background: var(--fill-press);
+}
+/* Customize: present on hover and focus, never a permanent badge. */
+.jn .jn-portrait__edit {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  opacity: 0;
+  transition:
+    opacity var(--d-fast) var(--e-out),
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out);
+}
+.jn .jn-portrait:hover .jn-portrait__edit,
+.jn .jn-portrait:focus-within .jn-portrait__edit {
+  opacity: 1;
+}
+@media (hover: none) {
+  .jn .jn-portrait__edit {
+    display: none;
+  }
 }
 .jn .jn-portrait__face {
   display: grid;
   place-items: center;
-  width: 96px;
-  height: 96px;
+  width: 112px;
+  height: 112px;
 }
 .jn .jn-portrait__name {
   margin-top: 14px;
@@ -1089,8 +1112,8 @@
     gap: 4px;
   }
   .jn .jn-portrait__face {
-    width: 72px;
-    height: 72px;
+    width: 88px;
+    height: 88px;
   }
   .jn .jn-now {
     grid-template-columns: 24px minmax(0, 1fr) auto;

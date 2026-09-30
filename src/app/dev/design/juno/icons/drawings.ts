@@ -43,7 +43,7 @@ export type IconMove = {
   o?: [number, number];
   rest?: number;
   op?: number;
-  anim?: "swing" | "levels" | "wave" | "blink" | "draw" | "pop" | "nod";
+  anim?: "swing" | "levels" | "wave" | "blink" | "draw" | "pop" | "nod" | "spin";
   delay?: number;
 };
 
@@ -54,8 +54,14 @@ export type IconElement = {
   children?: IconElement[];
   /** On a `g`: how it moves when its control is hovered. */
   hover?: IconMove;
-  /** Cut this shape (grown by the stroke and a 1.5 unit gap) out of everything painted before it. */
-  knockout?: boolean;
+  /**
+   * Cut this shape out of everything painted before it: `true` grows the cut
+   * by the stroke and the house gap (1.5 units each side), so a shape in front
+   * stands clear of the one behind; "tight" cuts the shape and its own stroke
+   * only (the eyes of a filled crew member). The attrs carry the cut's fill
+   * and width too, so the native outliner subtracts the same region.
+   */
+  knockout?: boolean | "tight";
   /** Normalise the path length so the web can draw it in (check marks). */
   draw?: boolean;
 };
@@ -95,6 +101,8 @@ export type IconDrawing = {
   group: IconGroup;
   /** One line for the gallery: what moves and why. */
   motion?: string;
+  /** Drawn from a live value (progress): a control, not a symbol; the native projection skips it. */
+  live?: true;
 };
 
 /* —————————————————————————————— Numbers —————————————————————————————— */
@@ -187,20 +195,26 @@ export function pencil(tx: number, ty: number, deg: number, len: number, w: numb
 }
 
 /**
- * A crew pebble: the silhouette of a crew member's sculpted form. A soft
- * base, sides that rise and narrow into a domed top (the 3D crew's
- * three-quarter body, flattened to a line).
+ * A crew member, flattened to a line: the gumdrop the 3D crew is sculpted
+ * from (crew/forms.ts). A broad base with soft corners, sides that rise and
+ * narrow a little, a domed top. `soft` is the base corner as a share of the
+ * half width.
  */
-export function pebble(cx: number, top: number, bottom: number, w: number): string {
+export function gumdrop(cx: number, top: number, bottom: number, w: number, soft = 0.62): string {
   const hw = w / 2;
   const h = bottom - top;
-  const wide = bottom - h * 0.4;
-  return (
-    `M${P(cx, bottom)}C${P(cx + hw * 0.66, bottom)} ${P(cx + hw, bottom - h * 0.14)} ${P(cx + hw, wide)}` +
-    `C${P(cx + hw, top + h * 0.22)} ${P(cx + hw * 0.6, top)} ${P(cx, top)}` +
-    `C${P(cx - hw * 0.6, top)} ${P(cx - hw, top + h * 0.22)} ${P(cx - hw, wide)}` +
-    `C${P(cx - hw, bottom - h * 0.14)} ${P(cx - hw * 0.66, bottom)} ${P(cx, bottom)}Z`
-  );
+  const rb = Math.min(hw * soft, h * 0.34);
+  const k = 0.56;
+  const shoulder = bottom - rb;
+  const lift = (shoulder - top) * 0.56;
+  const crown = 0.72;
+  const right =
+    `C${P(cx + hw - rb + rb * k, bottom)} ${P(cx + hw, bottom - rb * k)} ${P(cx + hw, shoulder)}` +
+    `C${P(cx + hw, shoulder - lift)} ${P(cx + hw * crown, top)} ${P(cx, top)}`;
+  const left =
+    `C${P(cx - hw * crown, top)} ${P(cx - hw, shoulder - lift)} ${P(cx - hw, shoulder)}` +
+    `C${P(cx - hw, bottom - rb * k)} ${P(cx - hw + rb - rb * k, bottom)} ${P(cx - hw + rb, bottom)}`;
+  return `M${P(cx - hw + rb, bottom)}H${fmt(cx + hw - rb)}${right}${left}Z`;
 }
 
 /** A star of `n` points, outer radius R, inner radius r, point up. */
@@ -302,24 +316,34 @@ export function g(children: IconElement[], hover?: IconMove): IconElement {
   return { tag: "g", attrs: {}, children, hover };
 }
 
-/** Cut `d` (grown by the stroke and the house gap) out of everything painted before it. */
+/** The house gap: what stands in front is cut clear of what is behind by this much, each side. */
+export const GAP = 1.5;
+/** A gapped cut's width in grid units: the line plus the gap on both sides. */
+const CUT = 1.5 + GAP * 2;
+
+/** Cut `d` (its fill, grown by the stroke and the house gap) out of everything painted before it. */
 export function ko(d: string): IconElement {
-  return { tag: "path", attrs: { d }, knockout: true };
+  return { tag: "path", attrs: { d, fill: "black", strokeWidth: CUT }, knockout: true };
 }
 
 export function koCircle(cx: number, cy: number, r: number): IconElement {
-  return { tag: "circle", attrs: { cx: n3(cx), cy: n3(cy), r: n3(r) }, knockout: true };
+  return { tag: "circle", attrs: { cx: n3(cx), cy: n3(cy), r: n3(r), fill: "black", strokeWidth: CUT }, knockout: true };
+}
+
+/** Cut `d` and its own stroke (plus 0.75, so the hole stays open at 16 px), no gap: a hole in a filled drawing. */
+export function koTight(d: string): IconElement {
+  return { tag: "path", attrs: { d, fill: "black", strokeWidth: 2.25 }, knockout: "tight" };
 }
 
 /* —————————————————————————————— Transforms —————————————————————————————— */
 
 /**
- * Apply a point transform to an absolute path (M L H V C A Z). H and V become
+ * Apply a point transform to an absolute path (M L H V C Q A Z). H and V become
  * L; arcs keep their radii (every arc here is circular) and flip their sweep
  * when the transform mirrors.
  */
 export function xform(d: string, f: (x: number, y: number) => [number, number], mirror = false): string {
-  const tokens = d.match(/[MLHVCAZ]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
+  const tokens = d.match(/[MLHVCQAZ]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
   let i = 0;
   let cx = 0;
   let cy = 0;
@@ -332,7 +356,7 @@ export function xform(d: string, f: (x: number, y: number) => [number, number], 
   };
   while (i < tokens.length) {
     const t = tokens[i];
-    if (/[MLHVCAZ]/.test(t)) {
+    if (/[MLHVCQAZ]/.test(t)) {
       cmd = t;
       i++;
       if (cmd === "Z") {
@@ -359,6 +383,12 @@ export function xform(d: string, f: (x: number, y: number) => [number, number], 
       cx = num();
       cy = num();
       out += `C${put(x1, y1)} ${put(x2, y2)} ${put(cx, cy)}`;
+    } else if (cmd === "Q") {
+      const x1 = num();
+      const y1 = num();
+      cx = num();
+      cy = num();
+      out += `Q${put(x1, y1)} ${put(cx, cy)}`;
     } else if (cmd === "A") {
       const rx = num();
       const ry = num();
@@ -419,15 +449,23 @@ const ARROW_HEAD = head(19.5, 12, 0, 7.425);
 
 const BUBBLE = "M6.75 4.5H17.25A3 3 0 0 1 20.25 7.5V13.5A3 3 0 0 1 17.25 16.5H11.25L7.5 19.875V16.5H6.75A3 3 0 0 1 3.75 13.5V7.5A3 3 0 0 1 6.75 4.5Z";
 const FOLDER = "M3.75 7.5A2.25 2.25 0 0 1 6 5.25H9.19L11.44 7.5H18A2.25 2.25 0 0 1 20.25 9.75V16.5A2.25 2.25 0 0 1 18 18.75H6A2.25 2.25 0 0 1 3.75 16.5Z";
-const BELL = "M6.375 16.5V10.5A5.625 5.625 0 0 1 17.625 10.5V16.5";
+/** The bell's shoulders are round, its waist straight, and its lip flares a little: cast, not extruded. */
+const BELL = "M4.875 16.5C5.9 15.6 6.375 14.4 6.375 12.75V10.5A5.625 5.625 0 0 1 17.625 10.5V12.75C17.625 14.4 18.1 15.6 19.125 16.5";
 const MIC = "M9 6.75A3 3 0 0 1 15 6.75V11.25A3 3 0 0 1 9 11.25Z";
 const EYE = "M3 12C5.2 7.9 8.4 5.625 12 5.625C15.6 5.625 18.8 7.9 21 12C18.8 16.1 15.6 18.375 12 18.375C8.4 18.375 5.2 16.1 3 12Z";
 const BOOKMARK = "M6.75 5.25A1.5 1.5 0 0 1 8.25 3.75H15.75A1.5 1.5 0 0 1 17.25 5.25V20.25L12 16.5L6.75 20.25Z";
 const PIN = "M9.375 3.75V9L6.375 13.5H17.625L14.625 9V3.75";
 const THUMB = "M7.5 10.5L10.6 4.45A1.8 1.8 0 0 1 14 5.55L13.4 9H18.35A1.9 1.9 0 0 1 20.2 11.35L18.8 17.95A2 2 0 0 1 16.85 19.5H7.5Z";
 const CUFF = "M7.5 10.5H5.25A1.5 1.5 0 0 0 3.75 12V18A1.5 1.5 0 0 0 5.25 19.5H7.5";
-const CREW_FRONT = pebble(8.25, 8.625, 20.25, 9);
-const CREW_BACK = pebble(14.625, 3.75, 20.25, 10.5);
+/* The crew: two members standing on one ground line, the nearer one shorter and looking at you. */
+const CREW_FRONT = gumdrop(8.625, 9.75, 20.25, 11.25);
+const CREW_BACK = gumdrop(15.375, 5.25, 20.25, 11.25);
+/** A member's eyes: two short upright strokes, which the round caps make into the 3D crew's pill eyes. */
+const eyes = (cx: number, y: number, apart: number): string => `${poly(cx - apart / 2, y, cx - apart / 2, y + 1.5)}${poly(cx + apart / 2, y, cx + apart / 2, y + 1.5)}`;
+const CREW_EYES = eyes(8.625, 13.875, 3.75);
+const MEMBER = gumdrop(10.5, 5.625, 20.25, 14.25);
+const MEMBER_EYES = eyes(10.5, 10.875, 4.5);
+const blink = (cx: number, y: number) => ({ anim: "blink" as const, sy: 0.15, o: [cx, y + 0.75] as [number, number] });
 const SLASH = poly(4.5, 4.5, 19.5, 19.5);
 /** A cloud on a flat base: a right lobe, a tall middle lobe, a left lobe. */
 const CLOUD = "M7.125 18.75H17.25A3.75 3.75 0 0 0 17.9 11.31A5.625 5.625 0 0 0 7.05 10.6A4.125 4.125 0 0 0 7.125 18.75Z";
@@ -530,12 +568,18 @@ export const ICONS = {
     group: "Navigation",
     elements: [
       g([p(CREW_BACK)], { y: -0.75 }),
-      { ...ko(CREW_FRONT), hover: { x: -0.5 } },
-      g([p(CREW_FRONT)], { x: -0.5 }),
+      ko(CREW_FRONT),
+      p(CREW_FRONT),
+      g([p(CREW_EYES)], blink(8.625, 13.875)),
     ],
-    fill: [g([solid(CREW_BACK)], { y: -0.75 }), { ...ko(CREW_FRONT), hover: { x: -0.5 } }, g([solid(CREW_FRONT)], { x: -0.5 })],
+    fill: [
+      g([solid(CREW_BACK)], { y: -0.75 }),
+      ko(CREW_FRONT),
+      solid(CREW_FRONT),
+      { ...koTight(CREW_EYES), hover: blink(8.625, 13.875) },
+    ],
     on: { kind: "fill" },
-    motion: "The taller member rises; the one in front steps aside to make room.",
+    motion: "The one behind stands up; the one in front blinks at you, once.",
   }),
   bell: I({
     group: "Navigation",
@@ -723,7 +767,7 @@ export const ICONS = {
   "thumbs-up": I({
     group: "Message",
     elements: [p(THUMB), p(CUFF)],
-    fill: [solid(THUMB), solid(`${CUFF}Z`)],
+    fill: [solid(THUMB), solid(`${CUFF}Z`), koTight(poly(7.5, 11.25, 7.5, 18.75))],
     on: { kind: "fill" },
     hover: { r: -8, o: [7.5, 19.5] },
     motion: "The thumb tips up. Active: filled.",
@@ -731,7 +775,7 @@ export const ICONS = {
   "thumbs-down": I({
     group: "Message",
     elements: [p(flipY(THUMB)), p(flipY(CUFF))],
-    fill: [solid(flipY(THUMB)), solid(`${flipY(CUFF)}Z`)],
+    fill: [solid(flipY(THUMB)), solid(`${flipY(CUFF)}Z`), koTight(poly(7.5, 5.25, 7.5, 12.75))],
     on: { kind: "fill" },
     hover: { r: 8, o: [7.5, 4.5] },
     motion: "The thumb tips down. Active: filled.",
@@ -739,8 +783,8 @@ export const ICONS = {
   retry: I({
     group: "Message",
     elements: [p(arc(12, 12, 7.5, 130, -150)), p(head(...pt(12, 12, 7.5, -150), 120, 4.5))],
-    hover: { r: -60, o: [12, 12] },
-    motion: "Turns back a sixth, the way it points.",
+    hover: { r: -60, o: [12, 12], anim: "spin" },
+    motion: "Turns once, the way it points, and settles where it started.",
   }),
   edit: I({
     group: "Message",
@@ -780,7 +824,7 @@ export const ICONS = {
   hand: I({
     group: "States",
     elements: [p(HAND)],
-    fill: [solid(HAND)],
+    fill: [solid(HAND), koTight(`${poly(10.5, 6.75, 10.5, 12)}${poly(14.25, 6.375, 14.25, 12)}`)],
     on: { kind: "fill" },
     hover: { r: -8, o: [11.25, 20.25], anim: "nod" },
     motion: "A small wave from the wrist, once.",
@@ -823,6 +867,7 @@ export const ICONS = {
   }),
   progress: I({
     group: "States",
+    live: true,
     elements: [c(12, 12, 7.5, { attrs: { cx: 12, cy: 12, r: 7.5, opacity: 0.3 } }), c(12, 12, 7.5, { attrs: { cx: 12, cy: 12, r: 7.5, pathLength: 1, strokeDasharray: "0.3 1", transform: "rotate(-90 12 12)" } })],
     motion: "None: `value` sets the arc. It never spins.",
   }),
@@ -922,8 +967,13 @@ export const ICONS = {
   /* ——— Crew and time ——— */
   "add-member": I({
     group: "Crew and time",
-    elements: [p(pebble(10.125, 5.25, 19.875, 12.75)), ko(`${poly(17.25, 13.5, 17.25, 19.5)}${poly(14.25, 16.5, 20.25, 16.5)}`), g([p(poly(17.25, 13.5, 17.25, 19.5)), p(poly(14.25, 16.5, 20.25, 16.5))], { r: 90, o: [17.25, 16.5] })],
-    motion: "The plus turns a quarter.",
+    elements: [
+      p(MEMBER),
+      g([p(MEMBER_EYES)], blink(10.5, 10.875)),
+      ko(`${poly(18, 14.25, 18, 20.25)}${poly(15, 17.25, 21, 17.25)}`),
+      g([p(poly(18, 14.25, 18, 20.25)), p(poly(15, 17.25, 21, 17.25))], { r: 90, o: [18, 17.25] }),
+    ],
+    motion: "The plus turns a quarter and the new member blinks.",
   }),
   routine: I({
     group: "Crew and time",
@@ -1251,4 +1301,58 @@ export function resolveIcon(name: string): IconDrawing | undefined {
   const icons: Record<string, IconDrawing> = ICONS;
   const aliases: Record<string, string> = ICON_ALIASES;
   return icons[name] ?? icons[aliases[name] ?? ""];
+}
+
+/* —————————————————————————————— Native projection —————————————————————————————— */
+
+/**
+ * A drawing as the native pipeline reads one: `JunoGlyphDrawing`'s shape
+ * (`src/components/ui/juno-glyph-paths.ts`), so `scripts/generate-native-icons.mjs`
+ * can outline it with `scripts/outline-glyph-strokes.swift` unchanged.
+ */
+export type NativeDrawing = { viewBox: 24; line: 1.5; elements: IconElement[] };
+
+const MOTION_ONLY = new Set(["pathLength", "strokeDasharray", "className", "opacity", "transform"]);
+
+function stillElements(els: IconElement[]): IconElement[] {
+  const out: IconElement[] = [];
+  for (const el of els) {
+    if (el.tag === "g") {
+      // A part that is only there on hover (the mic's level ticks) is not in the symbol.
+      if (el.hover?.rest === 0) continue;
+      out.push(...stillElements(el.children ?? []));
+      continue;
+    }
+    const attrs: Record<string, string | number> = {};
+    for (const [k, v] of Object.entries(el.attrs)) if (!MOTION_ONLY.has(k)) attrs[k] = v;
+    out.push(el.knockout ? { tag: el.tag, attrs, knockout: true } : { tag: el.tag, attrs });
+  }
+  return out;
+}
+
+/**
+ * One cut of an icon as a static symbol: the rest pose with every part in
+ * place, groups flattened (a symbol has no moving parts), hover-only parts
+ * and motion-only attributes dropped. `fill` is the on drawing. A knockout
+ * keeps its fill and its cut width in `attrs` (4.5 units for the gap, 2.25
+ * for a tight hole), which is what the outliner subtracts. Undefined for a
+ * live control (progress) or a cut the icon does not have.
+ */
+export function nativeDrawing(name: string, cut: "regular" | "fill" = "regular"): NativeDrawing | undefined {
+  const d = resolveIcon(name);
+  if (!d || d.live) return undefined;
+  const els = cut === "fill" ? d.fill : d.elements;
+  if (!els) return undefined;
+  return { viewBox: 24, line: 1.5, elements: stillElements(els) };
+}
+
+/** Every symbol the native apps would ship: `juno.<name>`, and `juno.<name>.fill` where there is an on drawing. */
+export function nativeSymbolNames(): string[] {
+  const out: string[] = [];
+  for (const [name, d] of Object.entries(ICONS) as [string, IconDrawing][]) {
+    if (d.live) continue;
+    out.push(`juno.${name}`);
+    if (d.fill) out.push(`juno.${name}.fill`);
+  }
+  return out;
 }

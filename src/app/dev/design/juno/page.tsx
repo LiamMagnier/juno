@@ -10,6 +10,7 @@ import "./composer.css";
 import "./thread.css";
 import "./pages.css";
 import "./sheet.css";
+import "./member.css";
 
 /**
  * Juno, design round 3: the converged system (dev only; 404s in production).
@@ -22,7 +23,7 @@ import "./sheet.css";
  *   rm      1 renders the reduced-motion form
  *   home    focus=1 (focused composer), app=stripe (token panel open), empty=1
  *   thread  at=top, plan=1, stage=thinking|streaming
- *   crew    member=mira (the member's own thread)
+ *   crew    member=mira (the member's own thread), flow=add | flow=customize&member=mira (the editor)
  *   code    state=start
  *   customize  app=slack (the app's sheet open)
  *   motion  m=<moment id> (one moment, large, for recording)
@@ -35,7 +36,7 @@ const SCENES: { id: SceneId; label: string; extra?: string[] }[] = [
   { id: "home", label: "Home, Chat at rest", extra: ["focus=1", "app=stripe"] },
   { id: "thread", label: "Thread after send", extra: ["stage=thinking", "stage=streaming", "plan=1"] },
   { id: "menus", label: "@ palette, model, app panel" },
-  { id: "crew", label: "Crew roster and a member's thread", extra: ["member=mira"] },
+  { id: "crew", label: "Crew roster and a member's thread", extra: ["member=mira", "flow=add", "flow=customize&member=mira"] },
   { id: "code", label: "Juno Code, start and working session", extra: ["state=start"] },
   { id: "library", label: "Library" },
   { id: "customize", label: "Customize, Apps", extra: ["app=slack"] },

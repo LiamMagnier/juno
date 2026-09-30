@@ -54,6 +54,8 @@ export const SPRING = {
   interactive: { type: "spring", duration: 0.32, bounce: 0.15 },
   /** Two sites only: an approved action's receipt settling, and long work finishing on screen. */
   reward: { type: "spring", duration: 0.36, bounce: 0.15 },
+  /** Characters only (D-032): a member arriving over its own thread, a reaction landing. The one playful spring. */
+  character: { type: "spring", duration: 0.5, bounce: 0.24 },
 } satisfies Record<string, Transition>;
 
 export const T = {

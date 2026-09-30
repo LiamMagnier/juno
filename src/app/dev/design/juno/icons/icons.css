@@ -125,6 +125,14 @@
   --ji-anim: ji-wave;
   --ji-anim-dur: 260ms;
 }
+.ji .jp[data-anim="blink"] {
+  --ji-anim: ji-blink;
+  --ji-anim-dur: 240ms;
+}
+.ji .jp[data-anim="spin"] {
+  --ji-anim: ji-spin;
+  --ji-anim-dur: 360ms;
+}
 .ji .jp[data-anim="draw"] {
   --ji-anim: none;
 }
@@ -197,6 +205,24 @@
     translate: 0 0;
   }
 }
+@keyframes ji-blink {
+  0%,
+  100% {
+    scale: 1 1;
+  }
+  40%,
+  55% {
+    scale: 1 var(--hsy, 0.15);
+  }
+}
+@keyframes ji-spin {
+  from {
+    rotate: 0deg;
+  }
+  to {
+    rotate: -360deg;
+  }
+}
 @keyframes ji-draw {
   0% {
     stroke-dashoffset: 1.02;
@@ -243,10 +269,15 @@
     rotate 220ms var(--ji-inout);
 }
 
-/* fill: the on drawing grows into the outline (a pinned pin, a starred star) */
+/* fill: the on drawing grows into the outline (a pinned pin, a starred star)
+ * while the outline gives way, so holes cut in the fill (a member's eyes, the
+ * thumb's cuff) show the ground, not the outline under them. */
 .ji[data-state="active"] .jg-fill {
   opacity: 1;
   scale: 1;
+}
+.ji[data-state="active"][data-on="fill"] > .jsnap > .jl > .jg-base {
+  opacity: 0;
 }
 
 /* swap: the on glyph replaces the rest glyph (copy to check, send to stop, mic to meter) */

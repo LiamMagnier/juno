@@ -13,7 +13,7 @@ import "../tokens.css";
  *   /dev/design/juno/icons?view=context       sidebar, composer, message actions, menu, files
  *   /dev/design/juno/icons?view=states        on states, for the motion clips
  *   /dev/design/juno/icons?view=reel&group=composer   large, for recording hover
- *   /dev/design/juno/icons?view=focus&names=crew,bell   drawing review: 192 px on the grid, then 16/20/24
+ *   /dev/design/juno/icons?view=focus&names=crew,bell   drawing review: 192 px on the grid, then 16/20/24 (on=1: the big one in its on state)
  *   rm=1                                      the reduced-motion form
  */
 export const metadata = { title: "Juno icons" };
@@ -29,7 +29,7 @@ export default async function JunoIconsPage({ searchParams }: { searchParams: Pr
   const names = typeof sp.names === "string" ? sp.names : undefined;
   return (
     <div className={`jn ${JUNO_FONTS}`} data-theme={theme} data-rm={sp.rm === "1" ? "" : undefined}>
-      <IconGallery view={view} group={group} names={names} />
+      <IconGallery view={view} group={group} names={names} on={sp.on === "1"} />
     </div>
   );
 }

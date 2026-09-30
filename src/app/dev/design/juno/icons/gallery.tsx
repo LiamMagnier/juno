@@ -19,8 +19,8 @@ const byGroup = (group: IconGroup) => Object.entries(ICONS).filter(([, d]) => d.
 
 export type GalleryView = "sheet" | "proof" | "lab" | "context" | "reel" | "states" | "focus";
 
-export function IconGallery({ view = "sheet", group, names }: { view?: GalleryView; group?: string; names?: string }) {
-  if (view === "focus") return <Focus names={names} />;
+export function IconGallery({ view = "sheet", group, names, on }: { view?: GalleryView; group?: string; names?: string; on?: boolean }) {
+  if (view === "focus") return <Focus names={names} on={on} />;
   if (view === "proof") return <Proof />;
   if (view === "lab") return <StrokeLab />;
   if (view === "context") return <Context />;
@@ -87,23 +87,29 @@ function Cell({ name, d }: { name: string; d: IconDrawing }) {
 
 /* —————————————————————————————— Focus (drawing review) —————————————————————————————— */
 
-function Focus({ names }: { names?: string }) {
+function FocusGrid() {
+  return (
+    <svg className="jig-focusgrid" viewBox="0 0 24 24" aria-hidden>
+      {Array.from({ length: 25 }, (_, i) => (
+        <React.Fragment key={i}>
+          <line x1={i} y1={0} x2={i} y2={24} strokeWidth={i % 3 === 0 ? 0.04 : 0.015} />
+          <line x1={0} y1={i} x2={24} y2={i} strokeWidth={i % 3 === 0 ? 0.04 : 0.015} />
+        </React.Fragment>
+      ))}
+      <rect x={3} y={3} width={18} height={18} fill="none" strokeWidth={0.04} strokeDasharray="0.3 0.3" />
+    </svg>
+  );
+}
+
+function Focus({ names, on }: { names?: string; on?: boolean }) {
   const list = (names ?? "crew,research,auto,attach").split(",").filter(Boolean);
   return (
     <main className="jig jig--focus">
       {list.map((n) => (
         <div key={n} className="jig-focus">
           <div className="jig-focusbig">
-            <svg className="jig-focusgrid" viewBox="0 0 24 24" aria-hidden>
-              {Array.from({ length: 25 }, (_, i) => (
-                <React.Fragment key={i}>
-                  <line x1={i} y1={0} x2={i} y2={24} strokeWidth={i % 3 === 0 ? 0.04 : 0.015} />
-                  <line x1={0} y1={i} x2={24} y2={i} strokeWidth={i % 3 === 0 ? 0.04 : 0.015} />
-                </React.Fragment>
-              ))}
-              <rect x={3} y={3} width={18} height={18} fill="none" strokeWidth={0.04} strokeDasharray="0.3 0.3" />
-            </svg>
-            <Icon name={n} size={192} style={{ strokeWidth: 1.5 }} />
+            <FocusGrid />
+            <Icon name={n} size={192} line={1.5} state={on && ICONS[n as keyof typeof ICONS]?.on ? "active" : "rest"} />
           </div>
           <div className="jig-focussmall">
             <Icon name={n} size={16} />

@@ -2,33 +2,49 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CrewFace } from "./crew/face";
-import { CREW, crew, STATE_WORD, type CrewRow } from "./fixtures";
+import { CrewFace, type CrewMember } from "./crew/face";
+import { CREW, crew, type CrewRow, type Segment } from "./fixtures";
 import { Composer } from "./composer";
+import { LOOK, lookOf, MemberPeek, Reaction, threadColour, useMemberTheme, type Look } from "./crew-bridge";
 import { Icon } from "./icons";
-import { AppMark, FileMark } from "./marks";
-import { R, T, useReduced } from "./motion";
+import { FileMark } from "./marks";
+import { R, SPRING, T, useReduced } from "./motion";
 import { AppFrame, ChatSidebar, face, MobileBar, TopBar } from "./shell";
 
 /*
- * Crew. The roster opens on the team itself: a lineup of faces at a size where
- * form, material and state all read (the face is the status; the words under
- * it say the same), then what needs you, what is happening, and the standing
- * work. A member's page is their thread, with their name in the display serif.
+ * Crew (D-032). Crew members are characters: each has a body, a material, a
+ * colour and eyes the person chose, and that colour follows the member into
+ * its own thread (the person's bubbles, the send disc). The roster opens on
+ * the team itself, big enough for each look and state to read; a member's
+ * page is its thread, with the character peeking over the conversation.
+ *
+ *   /dev/design/juno?scene=crew                               roster
+ *   /dev/design/juno?scene=crew&flow=add                      add to crew
+ *   /dev/design/juno?scene=crew&flow=customize&member=mira    customize a member
+ *   /dev/design/juno?scene=crew&member=mira                   the member's thread
  */
 
-function Portrait({ m }: { m: CrewRow }) {
+/* ———————————————————————————— Roster ———————————————————————————— */
+
+function Portrait({ m, onCustomize }: { m: CrewRow; onCustomize: (id: string) => void }) {
+  const member = face(m);
+  const words = m.state === "waiting" ? "Needs your answer" : m.state === "available" ? "Free" : (m.roster ?? m.long);
   return (
-    <a href="#" className="jn-portrait" aria-label={`${m.name}, ${m.role}, ${m.long}`}>
-      <span className="jn-portrait__face">
-        <CrewFace member={face(m)} state={m.state} size={96} facing="front" />
-      </span>
-      <span className="jn-portrait__name">{m.name}</span>
-      <span className="jn-portrait__role">{m.role}</span>
-      <span className="jn-portrait__state" data-state={m.state}>
-        {m.state === "waiting" ? "Needs your answer" : m.state === "available" ? "Free" : (m.roster ?? m.long)}
-      </span>
-    </a>
+    <div className="jn-portrait" data-state={m.state}>
+      <a href="#" className="jn-portrait__link" aria-label={`${m.name}, ${m.role}. ${words}. Open thread`}>
+        <span className="jn-portrait__face">
+          <CrewFace member={member} state={m.state} size={112} facing="front" />
+        </span>
+        <span className="jn-portrait__name">{m.name}</span>
+        <span className="jn-portrait__role">{m.role}</span>
+        <span className="jn-portrait__state" data-state={m.state}>
+          {words}
+        </span>
+      </a>
+      <button type="button" className="jib jib--sm jicon-trigger jn-portrait__edit" aria-label={`Customize ${m.name}`} onClick={() => onCustomize(m.id)}>
+        <Icon name="edit" size={16} />
+      </button>
+    </div>
   );
 }
 
@@ -41,7 +57,7 @@ function NeedsYou() {
       <h2 className="jn-crewsec__label">Needs you</h2>
       <div className="jn-ask">
         <span className="jn-ask__face">
-          <CrewFace member={face(mira)} state={answer ? "working" : "waiting"} size={32} live={false} />
+          <CrewFace member={face(mira)} state={answer ? "working" : "waiting"} size={32} live={false} facing="front" />
         </span>
         <div className="jn-ask__main">
           <p className="jn-ask__who">
@@ -78,8 +94,10 @@ const ROUTINES = [
   { name: "Escalation digest to #support", owner: "rhea", when: "Fridays at 16:00, next Friday" },
 ];
 
-export function CrewScene() {
+export function CrewScene({ flow, member }: { flow?: string; member?: string }) {
   const now = CREW.filter((m) => m.state === "working" || m.state === "thinking");
+  const initial: Sheet = flow === "add" ? { kind: "add" } : flow === "customize" ? { kind: "customize", id: member ?? "mira" } : null;
+  const [sheet, setSheet] = React.useState<Sheet>(initial);
   return (
     <AppFrame sidebar={<ChatSidebar current="crew" />}>
       <MobileBar title="Crew" />
@@ -89,7 +107,7 @@ export function CrewScene() {
             <h1 className="t-title">Crew</h1>
             <p className="jn-page__lede">Six teammates. Each has its own thread, standing work and apps, and keeps working when you leave.</p>
           </div>
-          <button type="button" className="jb jb--secondary jicon-trigger">
+          <button type="button" className="jb jb--secondary jicon-trigger" onClick={() => setSheet({ kind: "add" })}>
             <Icon name="plus" size={16} />
             Add to crew
           </button>
@@ -98,7 +116,7 @@ export function CrewScene() {
         <div className="jn-lineup" role="list">
           {CREW.map((m) => (
             <div role="listitem" key={m.id}>
-              <Portrait m={m} />
+              <Portrait m={m} onCustomize={(id) => setSheet({ kind: "customize", id })} />
             </div>
           ))}
         </div>
@@ -138,17 +156,234 @@ export function CrewScene() {
           </ul>
         </section>
       </div>
+      <AnimatePresence>{sheet ? <CrewSheet key={sheet.kind === "add" ? "add" : sheet.id} sheet={sheet} onClose={() => setSheet(null)} /> : null}</AnimatePresence>
     </AppFrame>
   );
 }
 
-/* ———————————————————————— A member's own thread ———————————————————————— */
+/* ———————————————————————————— Add to crew / Customize ———————————————————————————— */
+
+type Sheet = { kind: "add" } | { kind: "customize"; id: string } | null;
+
+/** A labelled row of choices. Arrow keys move within it (radiogroup). */
+function Choice<V extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  render,
+  shape = "chip",
+  said,
+}: {
+  label: string;
+  value: V;
+  options: readonly V[];
+  onChange: (v: V) => void;
+  render: (v: V, on: boolean) => React.ReactNode;
+  shape?: "chip" | "tile" | "swatch";
+  /** The chosen option in words, beside the label (swatches have no text of their own). */
+  said?: string;
+}) {
+  const refs = React.useRef<(HTMLButtonElement | null)[]>([]);
+  const id = `choice-${label.toLowerCase().replace(/\s+/g, "-")}`;
+  const move = (i: number) => {
+    const n = (i + options.length) % options.length;
+    onChange(options[n]);
+    refs.current[n]?.focus();
+  };
+  return (
+    <div className="jn-choice">
+      <p className="jn-choice__label" id={id}>
+        {label}
+        {said ? <span className="jn-choice__said">{said}</span> : null}
+      </p>
+      <div className="jn-choice__row" data-shape={shape} role="radiogroup" aria-labelledby={id}>
+        {options.map((o, i) => {
+          const on = o === value;
+          return (
+            <button
+              key={o}
+              ref={(el) => {
+                refs.current[i] = el;
+              }}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              tabIndex={on ? 0 : -1}
+              className="jn-choice__opt jicon-trigger"
+              onClick={() => onChange(o)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+                  e.preventDefault();
+                  move(i + 1);
+                }
+                if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  move(i - 1);
+                }
+              }}
+            >
+              {render(o, on)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ThreadSample({ family, name }: { family: string; name: string }) {
+  return (
+    <div className="jn-tsample" style={threadColour(family)} data-member-theme={family}>
+      <span className="jn-tsample__bubble">Thanks, {name}. That saves me a morning.</span>
+      <span className="jn-tsample__disc" aria-hidden="true">
+        <Icon name="send" size={16} />
+      </span>
+    </div>
+  );
+}
+
+function CrewSheet({ sheet, onClose }: { sheet: NonNullable<Sheet>; onClose: () => void }) {
+  const reduced = useReduced();
+  const editing = sheet.kind === "customize" ? crew(sheet.id) : null;
+  const base: CrewMember = editing ? face(editing) : { id: "new", name: "Nova", role: "Product analytics", seed: "nova-3c1d" };
+  const [look, setLook] = React.useState<Look>(() => lookOf(base, editing ? undefined : "lagoon"));
+  const [name, setName] = React.useState(editing?.name ?? "Nova");
+  const [role, setRole] = React.useState(
+    editing ? "Watches renewals, reads Stripe and Salesforce, and posts to Slack when you allow it." : "Reads the product analytics every Monday and writes the digest for #product.",
+  );
+  const [spin, setSpin] = React.useState(0);
+  const member: CrewMember = { ...base, name: name || "Unnamed", avatar: look };
+  const set = (patch: Partial<Look>) => setLook((l) => ({ ...l, ...patch }));
+  const who = name.trim() || "Your teammate";
+
+  return (
+    <>
+      <motion.div className="jn-scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={reduced ? R : T.fade} onClick={onClose} />
+      <motion.div
+        className="jn-editor"
+        role="dialog"
+        aria-modal="true"
+        aria-label={editing ? `Customize ${editing.name}` : "Add to crew"}
+        initial={reduced ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.985 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={reduced ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.99 }}
+        transition={reduced ? R : T.slow}
+      >
+        <div className="jn-editor__stage">
+          <div className="jn-editor__char">
+            <CrewFace member={member} state="available" size={184} facing="front" focused morph arrive={!editing} />
+          </div>
+          <p className="jn-editor__name">{name.trim() || "Unnamed"}</p>
+          <p className="jn-editor__role">{editing ? editing.role : "New to the crew"}</p>
+          <button
+            type="button"
+            className="jb jb--secondary jb--sm jicon-trigger jn-editor__shuffle"
+            onClick={() => {
+              setSpin((s) => s + 1);
+              setLook(LOOK.shuffle(`${base.seed}-${spin + 1}`));
+            }}
+          >
+            <Icon name="retry" size={16} />
+            Surprise me
+          </button>
+        </div>
+
+        <div className="jn-editor__form">
+          <header className="jn-editor__head">
+            <h2 className="t-display">{editing ? `Customize ${editing.name}` : "Add to crew"}</h2>
+            <button type="button" className="jib jicon-trigger" aria-label="Close" onClick={onClose}>
+              <Icon name="close" size={20} />
+            </button>
+          </header>
+
+          <div className="jn-editor__body">
+            <div className="jn-editor__fields">
+              <label className="jn-flabel">
+                <span>Name</span>
+                <span className="jfield jn-flabel__field">
+                  <input value={name} onChange={(e) => setName(e.target.value)} />
+                </span>
+              </label>
+              <label className="jn-flabel">
+                <span>What {editing ? editing.name : "they"} do{editing ? "es" : ""}</span>
+                <span className="jfield jn-flabel__field">
+                  <input value={role} onChange={(e) => setRole(e.target.value)} />
+                </span>
+              </label>
+            </div>
+
+            <Choice
+              label="Body"
+              value={look.shape}
+              options={LOOK.shapes}
+              shape="tile"
+              onChange={(v) => set({ shape: v })}
+              render={(v) => (
+                <>
+                  <CrewFace member={{ ...member, avatar: { ...look, shape: v } }} state="available" size={44} facing="front" live={false} />
+                  <span className="jn-choice__text">{LOOK.shapeLabel(v)}</span>
+                </>
+              )}
+            />
+
+            <Choice
+              label="Colour"
+              value={look.color}
+              options={LOOK.colors}
+              shape="swatch"
+              said={LOOK.colorLabel(look.color)}
+              onChange={(v) => set({ color: v })}
+              render={(v) => (
+                <span className="jn-swatch" style={{ background: LOOK.colorFlat(v) }}>
+                  <span className="sr">{LOOK.colorLabel(v)}</span>
+                </span>
+              )}
+            />
+
+            <Choice label="Material" value={look.material} options={LOOK.materials} onChange={(v) => set(LOOK.withMaterial(v))} render={(v) => LOOK.materialLabel(v)} />
+
+            <Choice label="Eyes" value={look.eyes.style} options={LOOK.eyes} onChange={(v) => set({ eyes: { ...look.eyes, style: v } })} render={(v) => LOOK.eyeLabel(v)} />
+
+            <div className="jn-choice">
+              <p className="jn-choice__label">
+                Thread colour <span className="jn-choice__said">Follows {LOOK.colorLabel(look.color)}</span>
+              </p>
+              <p className="jn-editor__hint">Your messages to {editing ? editing.name : who} and the send button take this colour, so you always know whose thread you are in.</p>
+              <ThreadSample family={look.color} name={name.trim() || "Nova"} />
+            </div>
+          </div>
+
+          <footer className="jn-editor__foot">
+            {editing ? (
+              <button type="button" className="jb jb--link" onClick={() => setLook(lookOf(face(editing)))}>
+                Back to the original look
+              </button>
+            ) : (
+              <p className="t-meta jn-editor__next">{who} starts with no apps. You choose them next.</p>
+            )}
+            <span className="jn-editor__actions">
+              <button type="button" className="jb jb--ghost" onClick={onClose}>
+                Cancel
+              </button>
+              <button type="button" className="jb jb--primary" aria-disabled={!name.trim()}>
+                {editing ? "Save" : `Add ${name.trim() || "to crew"}`}
+              </button>
+            </span>
+          </footer>
+        </div>
+      </motion.div>
+    </>
+  );
+}
+
+/* ———————————————————————————— A member's own thread ———————————————————————————— */
 
 function CrewRun({ m, time, children }: { m: CrewRow; time: string; children: React.ReactNode }) {
   return (
     <div className="jn-cmsg">
       <p className="jn-cmsg__who">
-        <CrewFace member={face(m)} state="available" size={20} live={false} />
+        <CrewFace member={face(m)} state="available" size={20} live={false} facing="front" />
         <b>{m.name}</b> <span className="ink-3 num">{time}</span>
       </p>
       <div className="jn-cmsg__body">{children}</div>
@@ -156,51 +391,61 @@ function CrewRun({ m, time, children }: { m: CrewRow; time: string; children: Re
   );
 }
 
-export function MemberScene({ id }: { id: string }) {
+function Mine({ children, time, reaction }: { children: React.ReactNode; time?: string; reaction?: React.ReactNode }) {
+  return (
+    <div className="jn-umsg">
+      <div className="jn-umsg__bubble">
+        {reaction}
+        <span className="jn-sentence">{children}</span>
+      </div>
+      {time ? <p className="jn-receipt">{time}</p> : null}
+    </div>
+  );
+}
+
+const MEMBER_DRAFT: Segment[] = [{ t: "text", v: "When that’s done, draft the renewal email to Kari at Halvorsen" }];
+
+export function MemberScene({ id, top }: { id: string; top?: boolean }) {
   const m = crew(id);
-  const [choice, setChoice] = React.useState<string | null>(null);
+  const member = face(m);
+  const theme = useMemberTheme(member);
+  const reduced = useReduced();
+  const [answered, setAnswered] = React.useState(true);
+  const [sheet, setSheet] = React.useState<Sheet>(null);
+
+  React.useEffect(() => {
+    if (top) return;
+    const go = () => window.scrollTo(0, document.documentElement.scrollHeight);
+    go();
+    const ts = [150, 400, 900, 1500].map((ms) => window.setTimeout(go, ms));
+    return () => ts.forEach((t) => window.clearTimeout(t));
+  }, [top]);
+
   return (
     <AppFrame sidebar={<ChatSidebar current="crew" crewCurrent={m.id} />}>
-      <div className="jn-chat">
+      <div className="jn-chat jn-mthread" style={theme.style} data-member-theme={theme.family}>
         <MobileBar title={m.name} back />
         <TopBar>
-          <button type="button" className="jb jb--ghost jb--sm jicon-trigger">
-            <Icon name="edit" size={16} />
-            Appearance
+          <button type="button" className="jb jb--ghost jb--sm jicon-trigger" onClick={() => setSheet({ kind: "customize", id: m.id })}>
+            <Icon name="customize" size={16} />
+            Customize
           </button>
-          <button type="button" className="jb jb--ghost jb--sm jicon-trigger">
-            <Icon name="pause" size={16} />
-            Pause
+          <button type="button" className="jib jicon-trigger" aria-label={`Pause ${m.name}`}>
+            <Icon name="pause" size={20} />
           </button>
           <button type="button" className="jib jicon-trigger" aria-label="More">
             <Icon name="more" size={20} />
           </button>
         </TopBar>
-        <div className="jn-thread jn-member" role="log">
-          <header className="jn-member__head">
-            <span className="jn-member__face">
-              <CrewFace member={face(m)} state={m.state} size={64} facing="front" label />
-            </span>
-            <div className="jn-member__who">
-              <h1 className="t-title">{m.name}</h1>
-              <p className="jn-member__role">{m.role}. Watches renewals, reads Stripe and Salesforce, and posts to Slack when you allow it.</p>
-              <p className="jn-member__state">
-                {m.state === "waiting" ? <span className="jn-attn">Needs your answer on the Halvorsen renewal</span> : <span className="ink-2">{STATE_WORD[m.state]}</span>}
-              </p>
-            </div>
-          </header>
-          <div className="jn-member__facts">
-            <span>
-              <Icon name="routine" size={16} /> Renewal check, Mondays at 9:00
-            </span>
-            <span className="jn-member__apps">
-              <AppMark id="stripe" size={16} />
-              <AppMark id="slack" size={16} />
-              <AppMark id="notion" size={16} /> Uses 3 apps
-            </span>
-            <span>Asks before posting or changing anything</span>
-          </div>
 
+        <div className="jn-mthread__peek">
+          <MemberPeek member={member} state={answered ? "thinking" : "waiting"} arrive />
+        </div>
+
+        <div className="jn-thread jn-member" role="log" aria-label={`${m.name}’s thread`}>
+          <p className="jn-member__intro">
+            {m.name} joined your crew on 2 September. {m.role}: watches renewals, reads Stripe and Salesforce, and posts to Slack when you allow it.
+          </p>
           <div className="jn-daymark">Monday</div>
           <CrewRun m={m} time="9:04">
             <p>The weekly renewal check is done. Three accounts renew in the next 45 days and one of them looks at risk.</p>
@@ -212,51 +457,53 @@ export function MemberScene({ id }: { id: string }) {
               </span>
             </a>
           </CrewRun>
-          <div className="jn-umsg">
-            <div className="jn-umsg__bubble">
-              <span className="jn-sentence">Check usage on Halvorsen, Brightline and Oakridge and tell me which ones are worth a call.</span>
-            </div>
-          </div>
+          <Mine>Check usage on Halvorsen, Brightline and Oakridge and tell me which ones are worth a call.</Mine>
+
           <div className="jn-daymark">Today</div>
           <CrewRun m={m} time="13:52">
             <p>Brightline and Oakridge look fine. Usage is flat, and the Oakridge invoice is a billing error on our side, not churn.</p>
-            <p>Halvorsen has two Stripe customers and I can’t tell which one holds the annual plan.</p>
-            <div className="jn-cmsg__ask">
-              <p className="jn-task__ask">
-                <b className="jn-attn">Needs your answer:</b> which customer holds the annual plan?
-              </p>
-              <div className="jn-q" role="radiogroup" aria-label="Which customer holds the annual plan?">
-                {[
-                  ["Halvorsen AS", "Annual plan, €96,000, renews 30 November"],
-                  ["Halvorsen Group", "Monthly since August, €6,033 a month"],
-                ].map(([v, line], i) => (
-                  <button key={v} type="button" role="radio" aria-checked={choice === v} className="jn-q__opt" onClick={() => setChoice(v)}>
-                    <span className="jn-q__radio" aria-hidden="true" />
-                    <span className="jn-q__text">
-                      <span>{v}</span>
-                      <span className="jn-q__line">{line}</span>
-                    </span>
-                    <span className="jkbd jn-q__key" aria-hidden="true">
-                      {i + 1}
-                    </span>
+            <p>Halvorsen has two Stripe customers. Which one holds the annual plan?</p>
+            <AnimatePresence mode="wait" initial={false}>
+              {answered ? (
+                <motion.p key="done" className="jn-answered" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={reduced ? R : T.base}>
+                  <Icon name="check" size={16} state="active" />
+                  <span>
+                    You answered <b>Halvorsen AS</b>
+                  </span>
+                  <button type="button" className="jb jb--link" onClick={() => setAnswered(false)}>
+                    Change
                   </button>
-                ))}
-              </div>
-              <div className="jn-q__actions">
-                <button type="button" className="jb jb--ghost jb--sm">
-                  Skip
-                </button>
-                <button type="button" className="jb jb--primary jb--sm" aria-disabled={!choice}>
-                  Continue
-                </button>
-              </div>
-            </div>
+                </motion.p>
+              ) : (
+                <motion.div key="ask" className="jn-ask__options" exit={{ opacity: 0 }} transition={reduced ? R : T.exit}>
+                  {["Halvorsen AS", "Halvorsen Group"].map((o) => (
+                    <button key={o} type="button" className="jb jb--secondary jb--sm" onClick={() => setAnswered(true)}>
+                      {o}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </CrewRun>
+          <Mine time="Read 13:58" reaction={answered ? <Reaction member={member} /> : null}>
+            Halvorsen AS. Thanks {m.name}, that saves me a morning.
+          </Mine>
+
+          {answered ? (
+            <motion.div className="jn-mlive" initial={reduced ? false : { opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={reduced ? R : SPRING.layout}>
+              <CrewFace member={member} state="thinking" size={20} live={false} facing="front" />
+              <span className="jn-mlive__text">
+                <b>{m.name}</b> is reading 90 days of seat usage for Halvorsen AS in Stripe
+              </span>
+              <span className="jn-mlive__time num">14 s</span>
+            </motion.div>
+          ) : null}
         </div>
         <div className="jn-dock">
-          <Composer variant="dock" placeholder={`Message ${m.name}…`} label={`Message ${m.name}`} />
+          <Composer variant="dock" initial={MEMBER_DRAFT} placeholder={`Message ${m.name}…`} label={`Message ${m.name}`} />
         </div>
       </div>
+      <AnimatePresence>{sheet ? <CrewSheet key="customize" sheet={sheet} onClose={() => setSheet(null)} /> : null}</AnimatePresence>
     </AppFrame>
   );
 }

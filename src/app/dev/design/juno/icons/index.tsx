@@ -46,6 +46,8 @@ export interface IconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
   levels?: number[];
   /** Stills only: draw the hover or press pose without a pointer. */
   pose?: "hover" | "press";
+  /** The line in grid units, instead of the optical ladder: display sizes (a 192 px drawing review draws 1.5, as 24 px does). */
+  line?: number;
 }
 
 /* —————————————————————————————— Optical sizing —————————————————————————————— */
@@ -79,6 +81,8 @@ function snapUnits(size: number, strokePx: number): number {
 /* —————————————————————————————— Rendering —————————————————————————————— */
 
 const KNOCKOUT_GAP = 1.5;
+/** A tight cut grows a little past its own stroke, so a hole (a filled member's eyes) stays open at 16 px. */
+const TIGHT_GROW = 0.75;
 
 type Ctx = {
   uid: string;
@@ -150,9 +154,11 @@ function renderEl(el: IconElement, key: string, ctx: Ctx): React.ReactNode {
 }
 
 /**
- * Paint a list in order. A knockout element cuts itself (grown by the stroke
- * and the house gap) out of everything painted before it, through a mask;
- * its own hover moves the cut with the part it belongs to.
+ * Paint a list in order. A knockout element cuts itself (its fill and its
+ * stroke, grown by the house gap unless it is "tight") out of everything
+ * painted before it, through a mask; its own hover moves the cut with the
+ * part it belongs to. The gap follows the rendered line, so it stays 1.5
+ * units clear of the stroke at every size.
  */
 function renderList(els: IconElement[], ctx: Ctx, prefix: string): React.ReactNode[] {
   let painted: React.ReactNode[] = [];
@@ -163,10 +169,11 @@ function renderList(els: IconElement[], ctx: Ctx, prefix: string): React.ReactNo
       return;
     }
     const id = `${ctx.uid}-${key.replace(/\./g, "-")}`;
+    const grow = el.knockout === "tight" ? TIGHT_GROW : KNOCKOUT_GAP * 2;
     const shape = renderShape(el, "s", ctx, {
       fill: "black",
       stroke: "black",
-      strokeWidth: Math.round((ctx.sw + KNOCKOUT_GAP * 2) * 1000) / 1000,
+      strokeWidth: Math.round((ctx.sw + grow) * 1000) / 1000,
     });
     painted = [
       <mask key={`${key}m`} id={id} maskUnits="userSpaceOnUse" x={-4} y={-4} width={32} height={32}>
@@ -254,7 +261,7 @@ function turnBetween(from: string, to: string): number | null {
 
 const warned = new Set<string>();
 
-export function Icon({ name, size = 20, state = "rest", title, value, levels, pose, className, style, ...rest }: IconProps) {
+export function Icon({ name, size = 20, state = "rest", title, value, levels, pose, line, className, style, ...rest }: IconProps) {
   const rawId = React.useId();
   const uid = `ji${rawId.replace(/[^a-zA-Z0-9]/g, "")}`;
 
@@ -267,8 +274,8 @@ export function Icon({ name, size = 20, state = "rest", title, value, levels, po
   }
 
   const strokePx = iconStrokePx(size);
-  const sw = Math.round(((strokePx * 24) / size) * 1000) / 1000;
-  const snap = snapUnits(size, strokePx);
+  const sw = line ?? Math.round(((strokePx * 24) / size) * 1000) / 1000;
+  const snap = line ? 0 : snapUnits(size, strokePx);
   const d = resolveIcon(name);
   const ctx: Ctx = { uid, sw, value, levels, levelIndex: { i: 0 } };
 
