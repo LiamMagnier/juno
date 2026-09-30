@@ -162,11 +162,43 @@ struct WorkspaceAgentHooks: AgentLifecycleHooks, Sendable {
     }
 
     func beforeTool(_ invocation: AgentToolHookInvocation) async -> AgentHookResponse {
+        // Each file of a multi-file patch meets PreToolUse as an Edit of its
+        // own. As one call, a guard reading `tool_input.file_path` judged the
+        // first file and let the patch change the others unexamined. The
+        // first file a hook blocks stops the patch; a hook's allow skips the
+        // prompt only when every file got one.
+        let files = HookToolNames.patchFiles(toolName: invocation.toolName, input: invocation.input)
+        guard files.count > 1, var fields = invocation.input.objectValue else {
+            return await beforeOneTool(invocation, input: invocation.input)
+        }
+        var combined = AgentHookResponse.empty
+        var permissions: [AgentHookPermission?] = []
+        for file in files {
+            fields["path"] = .string(file)
+            let answer = await beforeOneTool(invocation, input: .object(fields))
+            combined.notices += answer.notices
+            combined.context += answer.context
+            combined.haltReason = combined.haltReason ?? answer.haltReason
+            if let block = answer.blockReason {
+                combined.blockReason = block
+                return combined
+            }
+            permissions.append(answer.permission)
+        }
+        if permissions.contains(.ask) {
+            combined.permission = .ask
+        } else if permissions.allSatisfy({ $0 == .allow }) {
+            combined.permission = .allow
+        }
+        return combined
+    }
+
+    private func beforeOneTool(_ invocation: AgentToolHookInvocation, input: JSONValue) async -> AgentHookResponse {
         let outcome = await run(.preToolUse, sessionID: invocation.sessionID) { base in
             base.with(
                 toolName: invocation.toolName,
                 toolUseID: invocation.toolCallID,
-                toolInput: invocation.input
+                toolInput: input
             )
         }
         var answer = response(outcome, toolCallID: invocation.toolCallID)
