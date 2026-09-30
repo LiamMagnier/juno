@@ -938,7 +938,7 @@ public final class SessionController {
         return AgentOrchestrator(
             sessionID: sessionID,
             model: live.modelClient,
-            registry: ToolRegistry(tools: tools),
+            registry: ToolRegistry(tools: tools, contextProvider: context.instructions),
             permissions: live.permissions,
             store: live.store,
             configuration: orchestratorConfiguration(
@@ -3971,6 +3971,18 @@ public final class SessionController {
             Task { await refreshWorkspacePanels() }
             if approvedPlanHandoff != nil {
                 Task { await self.beginApprovedPlan() }
+            }
+        case .compaction:
+            // What the model was told about folders may be gone from its
+            // history now; the next result re-establishes it.
+            if let instructions = live?.context?.instructions {
+                let sessionID = self.sessionID
+                Task { await instructions.noteCompaction(sessionID: sessionID) }
+            }
+        case .transcriptRewound:
+            if let instructions = live?.context?.instructions {
+                let sessionID = self.sessionID
+                Task { await instructions.forget(sessionID: sessionID) }
             }
         case let .questionRequested(request):
             if !pendingQuestions.contains(where: { $0.id == request.id }) {

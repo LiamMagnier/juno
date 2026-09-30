@@ -123,3 +123,14 @@ public protocol WorkspaceIndexing: Sendable {
     /// the per-match limit the way `grep` is.
     func grepCounts(_ query: GrepQuery) async throws -> [GrepFileCount]
 }
+
+/// Context a tool call earns by reaching somewhere new: the instruction files
+/// of the folders it touched, or the repository's state after the model's
+/// history was compacted. Appended to that call's result, so the fixed system
+/// prompt at the head of the cached prefix never has to change for it.
+public protocol ToolResultContextProviding: Sendable {
+    /// Text to append to a call's result, or nil when there is nothing new.
+    /// - Parameter touchedPaths: workspace paths the call read, wrote, listed
+    ///   or ran in.
+    func context(forTouchedPaths touchedPaths: [WorkspacePath], sessionID: CodeSessionID) async -> String?
+}

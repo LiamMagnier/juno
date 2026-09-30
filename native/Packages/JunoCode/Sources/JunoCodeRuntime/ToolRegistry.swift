@@ -5,6 +5,9 @@ import JunoCodeCore
 /// permission gate applied before any execution.
 public struct ToolRegistry: Sendable {
     private let tools: [String: any CodeTool]
+    /// Adds what a call earned by reaching somewhere new — a folder's
+    /// instruction file — to its result. Nil adds nothing.
+    private let contextProvider: (any ToolResultContextProviding)?
 
     /// Tools that can inspect a workspace without mutating it or starting a
     /// process. Ask and Plan sessions expose exactly this set.
@@ -19,12 +22,18 @@ public struct ToolRegistry: Sendable {
         "todo_write", "ask_user", "exit_plan", "use_skill",
     ]
 
-    public init(tools: [any CodeTool]) {
+    public init(tools: [any CodeTool], contextProvider: (any ToolResultContextProviding)? = nil) {
         var byName: [String: any CodeTool] = [:]
         for tool in tools {
             byName[tool.name] = tool
         }
         self.tools = byName
+        self.contextProvider = contextProvider
+    }
+
+    /// The same tools, with `provider` adding context to their results.
+    public func withContextProvider(_ provider: (any ToolResultContextProviding)?) -> ToolRegistry {
+        ToolRegistry(tools: allTools, contextProvider: provider)
     }
 
     /// The standard local tool set over the injected service protocols.
@@ -92,9 +101,10 @@ public struct ToolRegistry: Sendable {
     }
 
     public func inspectionOnly() -> ToolRegistry {
-        ToolRegistry(tools: allTools.filter {
-            Self.inspectionToolNames.contains($0.name)
-        })
+        ToolRegistry(
+            tools: allTools.filter { Self.inspectionToolNames.contains($0.name) },
+            contextProvider: contextProvider
+        )
     }
 
     /// Adds the tools advertised by configured MCP servers to this registry.
@@ -105,7 +115,7 @@ public struct ToolRegistry: Sendable {
         let mcpTools = try await mcpRegistry.allTools().map {
             MCPCodeTool(registry: mcpRegistry, reference: $0)
         }
-        return ToolRegistry(tools: allTools + mcpTools)
+        return ToolRegistry(tools: allTools + mcpTools, contextProvider: contextProvider)
     }
 
     /// Validates input shape; returns a message when invalid.
@@ -171,7 +181,21 @@ public struct ToolRegistry: Sendable {
             throw ToolError.unknownTool(name: toolName)
         }
         try Task.checkCancellation()
-        return try await tool.execute(input: input, context: context)
+        let result = try await tool.execute(input: input, context: context)
+        guard !result.isError,
+              let contextProvider,
+              let added = await contextProvider.context(
+                  forTouchedPaths: ToolTouchedPaths.paths(toolName: toolName, input: input),
+                  sessionID: context.sessionID
+              )
+        else { return result }
+        return ToolResult(
+            content: result.content + "\n\n" + added,
+            isError: result.isError,
+            images: result.images,
+            sideEffects: result.sideEffects,
+            endsRun: result.endsRun
+        )
     }
 
     /// Full gated invocation: validate → assess → authorize (suspending when
