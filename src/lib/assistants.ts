@@ -39,6 +39,11 @@ export interface JunoAssistantConfig {
   version: number;
   createdAt: string;
   updatedAt: string;
+  /**
+   * The crew member this assistant was moved to (D-007), when it was. A moved
+   * assistant stays readable by id and is left out of the list.
+   */
+  movedToAgentId?: string | null;
 }
 
 export interface CreateAssistantInput {
@@ -59,8 +64,9 @@ export interface CreateAssistantInput {
  * List all assistants owned by a user
  */
 export async function listUserAssistants(userId: string): Promise<JunoAssistantConfig[]> {
+  // A moved assistant is a crew member now (D-007): readable by id, not listed.
   const skills = await prisma.workSkill.findMany({
-    where: { userId, deletedAt: null, ...ASSISTANT },
+    where: { userId, deletedAt: null, movedToAgentId: null, ...ASSISTANT },
     include: {
       versions: {
         orderBy: { version: "desc" },
@@ -148,6 +154,7 @@ export async function getAssistantById(id: string, userId: string): Promise<Juno
     version: skill.currentVersion,
     createdAt: skill.createdAt.toISOString(),
     updatedAt: skill.updatedAt.toISOString(),
+    movedToAgentId: skill.movedToAgentId ?? null,
   };
 }
 

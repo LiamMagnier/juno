@@ -110,6 +110,23 @@ export default function AssistantsPage() {
     );
   };
 
+  // D-007: an assistant becomes a crew member with its prompt as the brief and
+  // its starter prompts as ideas. It then leaves this list and opens as the
+  // member's thread.
+  const moveToCrew = async (assistant: JunoAssistantConfig) => {
+    const response = await fetch(`/api/assistants/${assistant.id}/move-to-crew`, { method: "POST" }).catch(() => null);
+    const data = (await response?.json().catch(() => null)) as
+      | { agent?: { name?: string; conversationId?: string | null }; message?: string }
+      | null;
+    if (!response?.ok || !data?.agent) {
+      toast.error(data?.message ?? "Couldn’t move the assistant. Nothing changed.");
+      return;
+    }
+    setAssistants((current) => current.filter((item) => item.id !== assistant.id));
+    toast.success(`${data.agent.name ?? assistant.name} is in your crew now.`);
+    if (data.agent.conversationId) router.push(`/chat/${data.agent.conversationId}`);
+  };
+
   const filteredAssistants = React.useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return assistants;
@@ -295,6 +312,17 @@ export default function AssistantsPage() {
                       className="text-muted-foreground hover:text-foreground"
                     >
                       <ActionIcons.edit className="size-3.5" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => void moveToCrew(assistant)}
+                      aria-label={`Move ${assistant.name} to crew`}
+                      title="Move to crew"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <AppIcons.agents className="size-3.5" aria-hidden="true" />
                     </Button>
                     <Button
                       type="button"
