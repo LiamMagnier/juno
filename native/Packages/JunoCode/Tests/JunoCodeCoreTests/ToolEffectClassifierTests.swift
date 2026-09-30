@@ -53,9 +53,13 @@ final class ToolEffectClassifierTests: XCTestCase {
         XCTAssertFalse(todo.conflicts(with: effect("write_file", ["path": "a"])))
         XCTAssertTrue(effect("ask_user").conflicts(with: effect("exit_plan")))
 
-        XCTAssertTrue(effect("shell_write", ["id": "s1"]).conflicts(with: effect("shell_output", ["id": "s1"])))
-        XCTAssertFalse(effect("shell_write", ["id": "s1"]).conflicts(with: effect("shell_output", ["id": "s2"])))
+        XCTAssertTrue(effect("shell_kill", ["id": "s1"]).conflicts(with: effect("shell_output", ["id": "s1"])))
+        XCTAssertFalse(effect("shell_kill", ["id": "s1"]).conflicts(with: effect("shell_output", ["id": "s2"])))
         XCTAssertEqual(effect("shell_start", ["command": "npm run dev"]), .exclusive)
+        // Typed into a shell, text edits files and runs programs: a write
+        // keeps a command's place in the order, beside nothing.
+        XCTAssertEqual(effect("shell_write", ["id": "s1"]), .exclusive)
+        XCTAssertTrue(effect("shell_write", ["id": "s1"]).conflicts(with: effect("write_file", ["path": "a"])))
     }
 
     func testNamesThatNoToolUsesAreGone() {

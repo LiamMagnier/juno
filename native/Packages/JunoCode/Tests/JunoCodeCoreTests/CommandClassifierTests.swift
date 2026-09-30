@@ -344,4 +344,66 @@ final class CommandClassifierTests: XCTestCase {
         XCTAssertTrue(isForbidden("   "))
         XCTAssertTrue(isForbidden(String(repeating: "a", count: 20_000)))
     }
+
+    // MARK: - Lines
+
+    func testANewlineEndsACommandAsASemicolonDoes() {
+        // Each of these used to read as `true` or `echo` with arguments.
+        XCTAssertEqual(risk("true\nkillall Dock"), .destructive)
+        XCTAssertEqual(risk("true\r\nkillall Dock"), .destructive)
+        XCTAssertTrue(isForbidden("echo ok\nsudo id"))
+        XCTAssertTrue(isForbidden("ls\nrm -rf /"))
+        XCTAssertEqual(risk("ls\n\nswift build\n"), .execute)
+        // A newline inside quotes is part of the word.
+        XCTAssertEqual(risk("echo 'one\nsudo id'"), .execute)
+        XCTAssertEqual(risk("git commit -m \"Subject\n\nBody\""), classifier.classify("git commit -m Subject").risk)
+        // A redirection's target is on its own line or missing.
+        XCTAssertTrue(isForbidden("echo hi >\nls"))
+    }
+
+    func testAHeredocBodyIsDataNotCommands() {
+        XCTAssertEqual(risk("cat <<'EOF'\nCo-Authored-By: A <a@b.example>\nrm -rf /\nEOF"), .execute)
+        XCTAssertEqual(risk("cat <<-EOF\n\tsudo id\n\tEOF\nls"), .execute)
+        // What follows the delimiter is a command again.
+        XCTAssertEqual(risk("cat <<EOF\nhello\nEOF\nkillall Dock"), .destructive)
+        // Unterminated, the body runs to the end, as the shell reads it.
+        XCTAssertEqual(risk("cat <<EOF\nsudo id"), .execute)
+        // A commit message written through a heredoc, trailer and all.
+        XCTAssertFalse(isForbidden(
+            "git commit -m \"$(cat <<'EOF'\nFix the thing\n\nCo-Authored-By: Juno <juno@example.com>\nEOF\n)\""
+        ))
+        // A here-string is not a heredoc.
+        XCTAssertTrue(isForbidden("cat <<< hi\nsudo id"))
+    }
+
+    func testBothStreamsToAFileIsARedirectNotABackgroundJob() {
+        XCTAssertEqual(risk("swift build &> build.log"), .execute)
+        XCTAssertEqual(risk("swift build &>> build.log"), .execute)
+        XCTAssertEqual(risk("swift build &>/tmp/build.log"), .destructive)
+        XCTAssertFalse(ShellBackgrounding.runsInBackground("swift build &> build.log"))
+        XCTAssertTrue(ShellBackgrounding.runsInBackground("swift build & tail -f build.log"))
+    }
+
+    // MARK: - Programs on standard input
+
+    func testAnInterpreterWithNothingToRunReadsItsProgramFromInput() {
+        for line in [
+            "bash", "zsh -i", "sh -s", "/bin/bash --login", "python3", "python3 -W ignore", "python3.12 -u",
+            "python3 -i script.py", "node", "node -r dotenv/config", "ruby", "perl", "php -a", "swift",
+            "xcrun swift repl", "deno repl", "nohup python3", "script -q /dev/null zsh", "npx ts-node",
+            "cat | bash", "env FOO=1 bash", "bash -- ",
+        ] {
+            XCTAssertTrue(classifier.readsProgramFromInput(line), line)
+        }
+    }
+
+    func testAnInterpreterGivenAScriptOrProgramDoesNot() {
+        for line in [
+            "cat", "npm run dev", "bash scripts/serve.sh", "python3 server.py", "python3 -m pytest",
+            "node server.js", "node -r dotenv/config server.js", "swift build", "swift test --parallel",
+            "deno run main.ts", "bash -c 'read x; echo $x'", "tail -f log.txt", "grep bash notes.txt",
+        ] {
+            XCTAssertFalse(classifier.readsProgramFromInput(line), line)
+        }
+    }
 }

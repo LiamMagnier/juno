@@ -204,6 +204,44 @@ final class ShellToolsTests: XCTestCase {
         XCTAssertEqual(write.assessRisk(input: ["id": "sh-unknown", "text": "x"]), .execute)
     }
 
+    func testTextForAShellReadingItsProgramIsAlwaysAsked() async throws {
+        // `bash` starts at `critical`, which Full Access runs unasked; what is
+        // typed into it afterwards is a program nothing has read.
+        let start = try XCTUnwrap(registry.tool(named: "shell_start"))
+        XCTAssertEqual(start.assessRisk(input: ["command": "bash"]), .critical)
+        let shell = try await shells.start(
+            command: "bash", workingDirectory: nil, name: nil, ownerSessionID: sessionID, risk: .critical
+        )
+        let write = try XCTUnwrap(registry.tool(named: "shell_write"))
+        XCTAssertEqual(write.assessRisk(input: ["id": .string(shell.id), "text": "ls\n"]), .destructive)
+        XCTAssertEqual(PermissionPolicy.ruling(mode: .fullAccess, risk: .destructive), .requireApproval)
+        XCTAssertEqual(PermissionPolicy.ruling(mode: .fullAccess, risk: .critical), .allow)
+        // The whole text is what the reader is asked about.
+        let long = String(repeating: "x", count: 300) + "\nrm -rf build\n"
+        XCTAssertTrue(write.summary(input: ["id": .string(shell.id), "text": .string(long)]).hasSuffix("⏎rm -rf build⏎"))
+        XCTAssertNotNil(write.precheck(input: ["id": .string(shell.id), "text": ""]))
+        XCTAssertNotNil(write.precheck(input: [
+            "id": .string(shell.id),
+            "text": .string(String(repeating: "x", count: ShellWriteTool.maximumTextBytes + 1)),
+        ]))
+        XCTAssertNil(write.precheck(input: ["id": .string(shell.id), "text": "ls\n"]))
+        XCTAssertEqual(ToolEffectClassifier.classify(toolName: "shell_write", input: ["id": .string(shell.id)]), .exclusive)
+    }
+
+    func testAStartForARunAlreadyStoppedStartsNothing() async throws {
+        let tool = try XCTUnwrap(registry.tool(named: "shell_start"))
+        let context = ToolContext(sessionID: sessionID, toolCallID: "call", emitOutput: { _, _ in })
+        let task = Task { [tool, context] in
+            try await tool.execute(input: ["command": "sleep 30"], context: context)
+        }
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("expected a cancellation")
+        } catch is CancellationError {}
+        XCTAssertTrue(shells.sessions(ownedBy: sessionID).isEmpty)
+    }
+
     func testAPlanSessionCannotReachTheShellTools() {
         let names = Set(registry.inspectionOnly().allTools.map(\.name))
         for name in ["shell_start", "shell_write", "shell_kill", "run_command"] {

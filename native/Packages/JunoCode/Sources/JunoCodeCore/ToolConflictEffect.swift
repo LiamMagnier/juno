@@ -93,10 +93,16 @@ public enum ToolEffectClassifier {
             // Both wait on the reader; one card at a time, in the order asked.
             return .sessionMutation(keys: ["reader"])
 
-        case "shell_output", "shell_write", "shell_kill":
+        case "shell_output", "shell_kill":
             // In order per shell, so output read after a write sees its answer.
             let id = input["id"]?.stringValue ?? ""
             return .sessionMutation(keys: ["shell:" + id])
+
+        case "shell_write":
+            // What a process does with its input is anything it does: text
+            // typed into a shell edits files and runs programs as a command
+            // would, so it keeps a command's place in the order.
+            return .exclusive
 
         case "update_goal":
             // Goal updates mutate session metadata and lifecycle in the session store;

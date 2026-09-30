@@ -121,6 +121,9 @@ public struct ShellStartTool: CodeTool {
             throw ToolError.invalidInput(message: "Missing 'command'.")
         }
         let directory = try workingDirectory(input, sessionID: context.sessionID, directories: directories)
+        // A run stopped while this call waited for approval starts nothing:
+        // a process started now would outlive the Stop that meant to end it.
+        try Task.checkCancellation()
         let started = try await shells.start(
             command: command,
             workingDirectory: directory,
@@ -248,10 +251,15 @@ public struct ShellOutputTool: CodeTool {
 /// Sends text to a background shell's standard input.
 public struct ShellWriteTool: CodeTool {
     private let shells: any ShellSessionManaging
+    private let classifier = CommandClassifier()
 
     public init(shells: any ShellSessionManaging) {
         self.shells = shells
     }
+
+    /// The most one write sends: what the reader is asked about must be
+    /// something they can read.
+    public static let maximumTextBytes = 16 * 1_024
 
     public let name = "shell_write"
     public let description = """
@@ -273,16 +281,38 @@ public struct ShellWriteTool: CodeTool {
     }
 
     /// Input to a process can do whatever the process does with input, so it
-    /// is asked about at the tier the process was started at.
+    /// is asked about at least at the tier the process was started at.
+    ///
+    /// And to a shell or interpreter reading its program from its input —
+    /// `bash`, `python3`, `node` started bare — the text IS a program, one no
+    /// rule of the classifier ever reads: exactly the inline program
+    /// `bash -c "…"` is, rated `destructive` so every mode asks. At the start
+    /// tier instead (`critical` for a bare `bash`), Full Access ran whatever
+    /// was typed into it — `rm`, `osascript`, a `curl | sh` — unasked.
     public func assessRisk(input: JSONValue) -> ActionRisk {
         guard let id = input["id"]?.stringValue, let info = shells.info(id: id) else { return .execute }
-        return max(info.risk, .execute)
+        let started = max(info.risk, .execute)
+        return classifier.readsProgramFromInput(info.command) ? max(started, .destructive) : started
     }
 
+    public func precheck(input: JSONValue) -> ToolError? {
+        guard let id = input["id"]?.stringValue, !id.isEmpty else {
+            return .invalidInput(message: "Missing 'id'.")
+        }
+        guard let text = input["text"]?.stringValue, !text.isEmpty else {
+            return .invalidInput(message: "Missing non-empty 'text'.")
+        }
+        guard text.utf8.count <= Self.maximumTextBytes else {
+            return .invalidInput(message: "Send at most \(Self.maximumTextBytes / 1_024) KB per write.")
+        }
+        return nil
+    }
+
+    /// The text as it will be sent, whole, so an approval shows all of it;
+    /// line breaks read as ⏎.
     public func summary(input: JSONValue) -> String {
         let text = input["text"]?.stringValue ?? ""
-        let shown = text.count > 80 ? String(text.prefix(80)) + "…" : text
-        return "Send to \(input["id"]?.stringValue ?? "?"): \(shown.replacingOccurrences(of: "\n", with: "⏎"))"
+        return "Send to \(input["id"]?.stringValue ?? "?"): \(text.replacingOccurrences(of: "\n", with: "⏎"))"
     }
 
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
