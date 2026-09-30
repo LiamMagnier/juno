@@ -273,6 +273,37 @@ final class ShellSessionManagerTests: XCTestCase {
         XCTAssertEqual(chunk.nextOffset, chunk.info.outputBytes)
     }
 
+    func testOnlyTheNewestEndedShellsAreKept() async throws {
+        let allowance = ShellSessionManager.maximumEndedPerSession
+        var started: [ShellSessionInfo] = []
+        for _ in 0..<(allowance + 3) {
+            let shell = try await start("true")
+            _ = try await waitUntilEnded(shell.id)
+            started.append(shell)
+        }
+        // The last start saw every earlier shell ended and kept the newest.
+        XCTAssertLessThanOrEqual(manager.retainedShellCount(ownedBy: owner), allowance + 1)
+        XCTAssertNil(manager.info(id: started[0].id), "the oldest ended shell is released")
+        XCTAssertNotNil(manager.info(id: started[started.count - 1].id))
+        let logs = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("logs").path)
+        XCTAssertFalse(logs.contains("\(started[0].id).log"), "and its log with it")
+        XCTAssertLessThanOrEqual(logs.count, allowance + 1)
+    }
+
+    func testAnEndedSessionStartsNothingMore() async throws {
+        await manager.terminateAll(ownedBy: owner)
+        do {
+            _ = try await start("sleep 30")
+            XCTFail("expected a refusal")
+        } catch let error as ShellSessionError {
+            guard case .launchFailed = error else { return XCTFail("\(error)") }
+        }
+        XCTAssertTrue(manager.sessions(ownedBy: owner).isEmpty)
+        // Another session is unaffected.
+        let shell = try await start("sleep 30", owner: CodeSessionID())
+        XCTAssertTrue(shell.state.isRunning)
+    }
+
     func testDecoderHoldsBackASplitCharacter() {
         let decoder = UTF8StreamDecoder()
         let bytes = Array("é!".utf8)

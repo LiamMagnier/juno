@@ -13,6 +13,11 @@ import JunoCodeCore
 public final class ShellSessionManager: ShellSessionManaging, @unchecked Sendable {
     /// Running shells one session may hold at once.
     public static let maximumRunningPerSession = 8
+    /// Ended shells one session keeps, newest first, for their exit status
+    /// and last output. Each holds a log of up to `retainedBytes` on disk and
+    /// a few descriptors, so an agent starting short jobs in a loop must not
+    /// pile them up until the app runs out of either.
+    public static let maximumEndedPerSession = 16
     /// How much of one shell's output its spill file keeps. Past this the
     /// oldest half is dropped; offsets stay logical, so a reader holding an
     /// old offset learns how much it missed.
@@ -24,6 +29,10 @@ public final class ShellSessionManager: ShellSessionManaging, @unchecked Sendabl
     private let redactor = SecretRedactor()
     private let lock = NSLock()
     private var shells: [String: Shell] = [:]
+    /// Sessions whose shells were stopped because the session ended. A start
+    /// still under way for one of them stops its process instead of keeping
+    /// it, or it would run on with nothing left to stop it.
+    private var endedSessions: Set<CodeSessionID> = []
     private var nextNumber = 1
     private var terminationObserver: (any NSObjectProtocol)?
 
@@ -66,6 +75,9 @@ public final class ShellSessionManager: ShellSessionManaging, @unchecked Sendabl
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw ShellSessionError.launchFailed(message: "The command is empty.")
+        }
+        guard !lock.withLock({ endedSessions.contains(ownerSessionID) }) else {
+            throw ShellSessionError.launchFailed(message: "The session has ended.")
         }
         let running = sessions(ownedBy: ownerSessionID).filter(\.state.isRunning).count
         guard running < Self.maximumRunningPerSession else {
@@ -157,7 +169,22 @@ public final class ShellSessionManager: ShellSessionManaging, @unchecked Sendabl
         _ = fcntl(descriptor, F_SETFL, fcntl(descriptor, F_GETFL) | O_NONBLOCK)
         shell.setStateIfUnset(.running(processID: process.processIdentifier))
 
-        lock.withLock { shells[id] = shell }
+        let (admitted, evicted) = lock.withLock { () -> (Bool, [Shell]) in
+            guard !endedSessions.contains(ownerSessionID) else { return (false, []) }
+            shells[id] = shell
+            // The oldest ended shells past the allowance go, logs and all.
+            let ended = shells.values
+                .filter { $0.ownerSessionID == ownerSessionID && !$0.snapshot().state.isRunning }
+                .sorted { $0.startedAt > $1.startedAt }
+            let evicted = Array(ended.dropFirst(Self.maximumEndedPerSession))
+            for old in evicted { shells.removeValue(forKey: old.id) }
+            return (true, evicted)
+        }
+        for old in evicted { old.release() }
+        guard admitted else {
+            await stop([shell])
+            throw ShellSessionError.launchFailed(message: "The session ended while the process was starting.")
+        }
         return shell.snapshot()
     }
 
@@ -187,7 +214,7 @@ public final class ShellSessionManager: ShellSessionManaging, @unchecked Sendabl
             }
             let (data, start) = shell.log.tail(maximumBytes: budget)
             let text = Self.lastLines(String(decoding: data, as: UTF8.self), count: max(1, tailLines))
-            let end = shell.log.endOffset
+            let end = start + data.count
             shell.markRead(end)
             return ShellOutputChunk(
                 info: shell.snapshot(),
@@ -215,9 +242,10 @@ public final class ShellSessionManager: ShellSessionManaging, @unchecked Sendabl
                 droppedBytes: page.dropped
             )
         }
-        let end = shell.log.endOffset
         let available = shell.log.read(from: from, maximumBytes: .max)
-        shell.markRead(end)
+        // Marked up to what this read returned, not the log's end sampled
+        // apart from it: output landing in between is next read's news.
+        shell.markRead(available.start + available.data.count)
         guard available.data.count > budget else {
             return ShellOutputChunk(
                 info: shell.snapshot(),
@@ -275,21 +303,7 @@ public final class ShellSessionManager: ShellSessionManaging, @unchecked Sendabl
         let shell = try owned(id, by: ownerSessionID, forWriting: true)
         let data = Data(text.utf8)
         guard !data.isEmpty else { return 0 }
-        let written = data.withUnsafeBytes { buffer -> Int in
-            guard let base = buffer.baseAddress else { return 0 }
-            var total = 0
-            while total < buffer.count {
-                let result = Darwin.write(shell.input.fileDescriptor, base + total, buffer.count - total)
-                if result > 0 {
-                    total += result
-                } else if result < 0, errno == EINTR {
-                    continue
-                } else {
-                    break
-                }
-            }
-            return total
-        }
+        let written = shell.writeInput(data)
         guard written > 0 else { throw ShellSessionError.notReading(id: id) }
         return written
     }
@@ -323,6 +337,7 @@ public final class ShellSessionManager: ShellSessionManaging, @unchecked Sendabl
 
     public func terminateAll(ownedBy sessionID: CodeSessionID) async {
         let owned = lock.withLock {
+            endedSessions.insert(sessionID)
             let owned = shells.values.filter { $0.ownerSessionID == sessionID }
             for shell in owned { shells.removeValue(forKey: shell.id) }
             return owned
@@ -339,6 +354,11 @@ public final class ShellSessionManager: ShellSessionManaging, @unchecked Sendabl
         await stop(all)
     }
 
+    /// Ended shells a session still holds; for tests.
+    func retainedShellCount(ownedBy sessionID: CodeSessionID) -> Int {
+        lock.withLock { shells.values.filter { $0.ownerSessionID == sessionID }.count }
+    }
+
     /// SIGTERM to every group, a moment to exit cleanly, then SIGKILL.
     private func stop(_ targets: [Shell]) async {
         let running = targets.filter { $0.snapshot().state.isRunning }
@@ -350,10 +370,7 @@ public final class ShellSessionManager: ShellSessionManaging, @unchecked Sendabl
         for shell in running where shell.snapshot().state.isRunning {
             Self.signal(shell.process, SIGKILL)
         }
-        for shell in targets {
-            try? shell.input.close()
-            shell.log.remove()
-        }
+        for shell in targets { shell.release() }
     }
 
     /// For app termination and deinit, where nothing may be awaited.
@@ -372,7 +389,7 @@ public final class ShellSessionManager: ShellSessionManaging, @unchecked Sendabl
         for shell in all where shell.snapshot().state.isRunning {
             Self.signal(shell.process, SIGKILL)
         }
-        for shell in all { shell.log.remove() }
+        for shell in all { shell.release() }
     }
 
     /// The whole process group — a dev server's own children included — or
@@ -405,18 +422,62 @@ private final class Shell: @unchecked Sendable {
     private var info: ShellSessionInfo
     private var readOffset = 0
     let process: Process
-    let input: FileHandle
     let log: SpillLog
+    /// The process's standard input, written and closed only under
+    /// `inputLock`: a descriptor closed while a write was using it could be
+    /// reused by then for another file, which would receive the text.
+    private let input: FileHandle
+    private let inputLock = NSLock()
+    private var inputClosed = false
+    /// Copied out of `info` so reading them never races a state change.
+    let id: String
+    let ownerSessionID: CodeSessionID
+    let startedAt: Date
 
     init(info: ShellSessionInfo, process: Process, input: FileHandle, log: SpillLog) {
         self.info = info
         self.process = process
         self.input = input
         self.log = log
+        self.id = info.id
+        self.ownerSessionID = info.ownerSessionID
+        self.startedAt = info.startedAt
     }
 
-    var id: String { info.id }
-    var ownerSessionID: CodeSessionID { info.ownerSessionID }
+    /// Writes as much of `data` as the process takes without blocking.
+    func writeInput(_ data: Data) -> Int {
+        inputLock.lock()
+        defer { inputLock.unlock() }
+        guard !inputClosed else { return 0 }
+        let descriptor = input.fileDescriptor
+        return data.withUnsafeBytes { buffer -> Int in
+            guard let base = buffer.baseAddress else { return 0 }
+            var total = 0
+            while total < buffer.count {
+                let result = Darwin.write(descriptor, base + total, buffer.count - total)
+                if result > 0 {
+                    total += result
+                } else if result < 0, errno == EINTR {
+                    continue
+                } else {
+                    break
+                }
+            }
+            return total
+        }
+    }
+
+    /// Closes its input and deletes its log: the shell is gone from the
+    /// manager and nothing will read or write either again.
+    func release() {
+        inputLock.lock()
+        if !inputClosed {
+            inputClosed = true
+            try? input.close()
+        }
+        inputLock.unlock()
+        log.remove()
+    }
 
     var lastRead: Int {
         lock.lock()
