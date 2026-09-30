@@ -234,4 +234,18 @@ public protocol AgentModelClient: Sendable {
     func streamTurn(
         _ request: ModelTurnRequest
     ) -> AsyncThrowingStream<ModelStreamEvent, Error>
+
+    /// Whether the provider serving `modelID` reads a request's leading
+    /// system prompt, tools and messages from a cache when an earlier request
+    /// began the same way.
+    ///
+    /// Decides how a compaction summary is asked for: as a continuation of
+    /// the session's own request, which such a provider bills mostly at the
+    /// cached rate, or as a standalone transcript, which is cheaper wherever
+    /// nothing is cached.
+    func cachesPromptPrefix(for modelID: String) -> Bool
+}
+
+public extension AgentModelClient {
+    func cachesPromptPrefix(for _: String) -> Bool { false }
 }

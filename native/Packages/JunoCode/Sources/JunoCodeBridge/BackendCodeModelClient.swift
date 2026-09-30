@@ -222,6 +222,14 @@ public struct BackendCodeModelClient: AgentModelClient {
         self.timeouts = timeouts
     }
 
+    /// Anthropic reads the prefix up to the breakpoints this client marks;
+    /// OpenAI caches any long prefix on its own. The other labs' caching, where
+    /// they have any, is not something Juno can count on.
+    public func cachesPromptPrefix(for modelID: String) -> Bool {
+        guard let route = resolver.route(for: modelID) else { return false }
+        return route.wireProtocol == .anthropicMessages || route.providerID == "openai"
+    }
+
     public func streamTurn(
         _ request: ModelTurnRequest
     ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
@@ -612,18 +620,25 @@ enum AnthropicRequestBuilder {
         // Prompt caching. An agent loop resends the same prefix — tool schemas,
         // system prompt, every earlier turn — on each of its dozens of
         // requests, so without breakpoints every step is billed and processed
-        // from token zero. Three of the four allowed breakpoints:
+        // from token zero. All four allowed breakpoints:
         //
         // 1. the last tool: schemas change only when the tool set does;
-        // 2. the system prompt: changes with goal or skills, not per step;
+        // 2. the system prompt: fixed for the session, since everything that
+        //    changes during one rides in `<session_state>` blocks instead;
         // 3. the newest block of the conversation: each request writes the
         //    prefix the next one reads, which is the incremental pattern
-        //    Anthropic documents for multi-turn tool use.
+        //    Anthropic documents for multi-turn tool use;
+        // 4. the previous request's newest block, the end of the user turn
+        //    before the latest reply. A breakpoint finds an earlier write only
+        //    within about twenty blocks of itself, and a step with ten parallel
+        //    calls adds more than that between (3) and the last write; this
+        //    one lands exactly on it.
         //
         // Below the model's minimum cacheable length a breakpoint is a no-op,
         // so short sessions pay nothing for it.
         let ephemeral: JSONValue = .object(["type": .string("ephemeral")])
         Self.markLastCacheableBlock(in: &messages, with: ephemeral)
+        Self.markPreviousTail(in: &messages, with: ephemeral)
         var object: [String: JSONValue] = [
             "model": .string(providerModelID),
             "max_tokens": .number(Double(bits.maxTokens)),
@@ -707,7 +722,28 @@ enum AnthropicRequestBuilder {
     /// Walks back past blocks that cannot carry one — thinking blocks refuse
     /// `cache_control` — so a turn that ends in reasoning still caches.
     static func markLastCacheableBlock(in messages: inout [JSONValue], with marker: JSONValue) {
-        for messageIndex in messages.indices.reversed() {
+        markLastCacheableBlock(in: &messages, before: messages.count, with: marker)
+    }
+
+    /// Puts a breakpoint where the previous request's rolling one was: the
+    /// last block of the user message before the newest assistant message.
+    /// Nothing is marked when there is no such pair, as on a first request.
+    static func markPreviousTail(in messages: inout [JSONValue], with marker: JSONValue) {
+        func role(_ index: Int) -> String? { messages[index]["role"]?.stringValue }
+        guard let assistant = messages.indices.last(where: { role($0) == "assistant" }),
+              let user = messages[..<assistant].indices.last(where: { role($0) == "user" })
+        else { return }
+        markLastCacheableBlock(in: &messages, before: user + 1, with: marker)
+    }
+
+    /// Marks the last block that can carry a breakpoint among the messages
+    /// before `end`.
+    private static func markLastCacheableBlock(
+        in messages: inout [JSONValue],
+        before end: Int,
+        with marker: JSONValue
+    ) {
+        for messageIndex in messages[..<end].indices.reversed() {
             guard case var .object(message) = messages[messageIndex],
                   case var .array(blocks) = message["content"]
             else { continue }

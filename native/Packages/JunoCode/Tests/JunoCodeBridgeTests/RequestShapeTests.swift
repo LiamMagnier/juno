@@ -41,7 +41,49 @@ final class RequestShapeTests: XCTestCase {
         XCTAssertEqual(lastBlock["cache_control"]?["type"]?.stringValue, "ephemeral")
         let breakpoints = messages.flatMap { $0["content"]?.arrayValue ?? [] }
             .filter { $0["cache_control"] != nil }
-        XCTAssertEqual(breakpoints.count, 1)
+        // The newest block, and the previous request's newest: the prompt.
+        XCTAssertEqual(breakpoints.count, 2)
+        XCTAssertEqual(breakpoints.first?["text"]?.stringValue, "Look")
+    }
+
+    /// A step with ten parallel calls puts twenty-odd blocks between the
+    /// newest breakpoint and the last cache write, past the lookback a
+    /// breakpoint searches. The fourth breakpoint sits on that write itself.
+    func testAnthropicMarksThePreviousRequestsTailSoWideStepsStillHitTheCache() throws {
+        let calls = (0..<10).map { index in
+            ModelMessage.toolCall(id: "c\(index)", name: "grep", input: ["pattern": .string("p\(index)")])
+        }
+        let results = (0..<10).map { index in
+            ModelMessage.toolResult(id: "c\(index)", content: "r\(index)", isError: false)
+        }
+        let history: [ModelMessage] = [
+            .user("First"),
+            .assistant("One call."),
+            .toolCall(id: "a", name: "read_file", input: ["path": "a"]),
+            .toolResult(id: "a", content: "A", isError: false),
+            .user("<session_state from=\"juno\" sections=\"goal:1\">\n<goal>\nx\n</goal>\n</session_state>"),
+            .assistantThinking(text: "fan out", signature: "sig"),
+        ] + calls + results
+        let body = AnthropicRequestBuilder.body(
+            for: request(history),
+            providerModelID: "claude-sonnet-5",
+            maxTokens: 4_096
+        )
+        let messages = try XCTUnwrap(body["messages"]?.arrayValue)
+        XCTAssertEqual(messages.count, 5)
+        // The user turn before the wide step ends in the state block, which
+        // was the previous request's final block.
+        let previousTail = try XCTUnwrap(messages[2]["content"]?.arrayValue)
+        XCTAssertEqual(previousTail.map { $0["type"]?.stringValue }, ["tool_result", "text"])
+        XCTAssertNil(previousTail[0]["cache_control"])
+        XCTAssertEqual(previousTail[1]["cache_control"]?["type"]?.stringValue, "ephemeral")
+        let newest = try XCTUnwrap(messages[4]["content"]?.arrayValue)
+        XCTAssertEqual(newest.count, 10)
+        XCTAssertEqual(newest.last?["cache_control"]?["type"]?.stringValue, "ephemeral")
+
+        let marked = messages.flatMap { $0["content"]?.arrayValue ?? [] }
+            .filter { $0["cache_control"] != nil }
+        XCTAssertEqual(marked.count, 2, "two in the messages, plus tools and system: Anthropic's four")
     }
 
     func testAnthropicReplaysThinkingFirstInTheAssistantTurn() throws {

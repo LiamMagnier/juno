@@ -46,7 +46,18 @@ public actor AgentOrchestrator {
         /// How the session's own model is asked to write compaction summaries,
         /// or nil to write the structural summary alone.
         public var compactionSummary: CompactionSummarizer.Limits?
+        /// Fixed for the orchestrator's life, and kept free of anything that
+        /// changes during a session: it heads every request's cached prefix.
         public var systemPrompt: String
+        /// The session's volatile facts — date, branch, goal, skills — read
+        /// before each request and sent as a `<session_state>` block when
+        /// they changed. Nil sends none. See ``SessionState``.
+        public var sessionState: (@Sendable () async -> [SessionStateSection])?
+        /// How many images, and how many bytes of them, the history may carry
+        /// before the oldest are rewritten as text ahead of compaction. See
+        /// ``ImageRetention``.
+        public var maximumRetainedImages: Int
+        public var maximumRetainedImageBytes: Int
 
         public init(
             maximumIterations: Int = 200,
@@ -57,7 +68,10 @@ public actor AgentOrchestrator {
             contextCompactionTriggerFraction: Double = 0.80,
             maximumConversationBytes: Int = 4 * 1_024 * 1_024,
             compactionSummary: CompactionSummarizer.Limits? = .standard,
-            systemPrompt: String
+            systemPrompt: String,
+            sessionState: (@Sendable () async -> [SessionStateSection])? = nil,
+            maximumRetainedImages: Int = 20,
+            maximumRetainedImageBytes: Int = 12 * 1_024 * 1_024
         ) {
             self.compactionSummary = compactionSummary
             self.maximumIterations = maximumIterations
@@ -71,18 +85,27 @@ public actor AgentOrchestrator {
             )
             self.maximumConversationBytes = max(maximumConversationBytes, 16_384)
             self.systemPrompt = systemPrompt
+            self.sessionState = sessionState
+            self.maximumRetainedImages = max(1, maximumRetainedImages)
+            self.maximumRetainedImageBytes = max(1, maximumRetainedImageBytes)
         }
     }
 
     private let sessionID: CodeSessionID
     private let model: any AgentModelClient
     private let registry: ToolRegistry
+    /// The tool list every request sends, built once so each carries the
+    /// same bytes in the same order.
+    private let toolDescriptors: [ModelToolDescriptor]
     private let permissions: PermissionCoordinator
     private let store: CodeSessionStore
     private let configuration: Configuration
     private let modelID: String
     private var activeModelID: String
     private let reasoningEffort: ReasoningEffort?
+    /// The thinking setting sent with `activeModelID`: the reader's own
+    /// until a fallback model answers instead, which gets one of its own.
+    private var activeReasoningEffort: ReasoningEffort?
     private let lifecycleHooks: (any AgentLifecycleHooks)?
     private let fallbackResolver: (any ModelFallbackResolver)?
     /// Told when each of the reader's messages opens a turn, so the files the
@@ -142,7 +165,7 @@ public actor AgentOrchestrator {
     private var compactionWaiters: [CheckedContinuation<Void, Never>] = []
     /// The model summary in flight, so Stop can reach one that a `/compact`
     /// between runs started — no run task exists to cancel then.
-    private var summaryTask: Task<CompactionSummarizer.Attempt, Never>?
+    private var summaryTask: Task<[CompactionSummarizer.Attempt], Never>?
     private var compactionObserver: (@Sendable (Bool) -> Void)?
     /// Successful model turns since the last compaction. Starts at the
     /// threshold so the first compaction of a session may use the model.
@@ -186,12 +209,20 @@ public actor AgentOrchestrator {
         self.sessionID = sessionID
         self.model = model
         self.registry = registry
+        self.toolDescriptors = registry.allTools.map {
+            ModelToolDescriptor(
+                name: $0.name,
+                description: $0.description,
+                inputSchema: $0.inputSchema
+            )
+        }
         self.permissions = permissions
         self.store = store
         self.configuration = configuration
         self.modelID = modelID
         self.activeModelID = modelID
         self.reasoningEffort = reasoningEffort
+        self.activeReasoningEffort = reasoningEffort
         self.lifecycleHooks = lifecycleHooks
         self.fallbackResolver = fallbackResolver
         self.turnCheckpoints = turnCheckpoints
@@ -761,21 +792,25 @@ public actor AgentOrchestrator {
             // Every request goes out valid, whatever path left the history in
             // its current shape.
             conversation = ConversationIntegrity.repaired(conversation)
+            // Past the image budget, the oldest answered images become text in
+            // one go: one cache break instead of a request no provider takes.
+            if let bounded = ImageRetention.withinBudget(
+                conversation,
+                maximumImages: configuration.maximumRetainedImages,
+                maximumBytes: configuration.maximumRetainedImageBytes
+            ) {
+                conversation = bounded
+            }
+            await appendSessionStateIfChanged()
 
             while true {
                 let request = ModelTurnRequest(
                     sessionID: sessionID,
                     systemPrompt: configuration.systemPrompt,
                     messages: conversation,
-                    tools: registry.allTools.map {
-                        ModelToolDescriptor(
-                            name: $0.name,
-                            description: $0.description,
-                            inputSchema: $0.inputSchema
-                        )
-                    },
+                    tools: toolDescriptors,
                     modelID: activeModelID,
-                    reasoningEffort: reasoningEffort
+                    reasoningEffort: activeReasoningEffort
                 )
                 turnText = ""
                 turnReasoningSummary = ""
@@ -971,10 +1006,10 @@ public actor AgentOrchestrator {
             if Task.isCancelled { continue }
             consumeText(thinkingFilter.finish())
             modelTurnsSinceCompaction += 1
-            // Images are intentionally one-turn context. Once a successful
-            // model turn has consumed them, retain only the redacted tool
-            // result so subsequent turns do not resend screenshots.
-            conversation = conversation.map(\.persistenceSafe)
+            // Images the model has now seen stay exactly as they were sent:
+            // rewriting them here would change the prefix of every later
+            // request. They become text at compaction, or past the image
+            // budget above. The store never keeps their bytes either way.
 
             let normalizedReasoning = turnReasoningSummary.trimmingCharacters(
                 in: .whitespacesAndNewlines
@@ -1274,6 +1309,23 @@ public actor AgentOrchestrator {
         pendingInstructions.contains { $0.event.kind == .steer }
     }
 
+    /// Tells the model what changed about the session since it was last told:
+    /// a `<session_state>` block holding only the sections whose facts moved,
+    /// appended after the history and kept in it. See ``SessionState``.
+    ///
+    /// Skipped when the model wrote last — a turn it paused continues from
+    /// its own message — and the facts are simply read again next time.
+    private func appendSessionStateIfChanged() async {
+        guard let provider = configuration.sessionState,
+              let last = conversation.last,
+              !last.isAssistantSide
+        else { return }
+        let changed = SessionState.changedSections(await provider(), since: conversation)
+        guard let block = SessionState.render(changed) else { return }
+        conversation.append(.user(block))
+        try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+    }
+
     /// A tool result within the configured cap.
     ///
     /// Command output keeps both ends, because the error a build prints last
@@ -1342,9 +1394,17 @@ public actor AgentOrchestrator {
     /// Compacts before a provider request, never in the middle of a tool turn.
     /// This keeps the model-facing history valid while ensuring a resumed app
     /// sees the same bounded memory because the compacted messages are persisted.
-    private func compactConversationIfNeeded() async {
+    ///
+    /// - Parameter overflowed: the provider just refused the history as too
+    ///   long for the window. The fold is forced, and the summary is not asked
+    ///   as a continuation of that same history.
+    /// - Returns: whether the history was folded.
+    @discardableResult
+    private func compactConversationIfNeeded(overflowed: Bool = false) async -> Bool {
         let tokenTrigger: Bool
-        if let window = configuration.contextWindowTokens,
+        if overflowed {
+            tokenTrigger = true
+        } else if let window = configuration.contextWindowTokens,
            window > 0,
            let contextTokens
         {
@@ -1373,15 +1433,17 @@ public actor AgentOrchestrator {
             conversation,
             maximumBytes: contextSizedMaximum ?? configuration.maximumConversationBytes,
             force: tokenTrigger
-        ) else { return }
+        ) else { return false }
         isCompacting = true
         defer { finishCompacting() }
-        await fold(
+        let event = await fold(
             plan,
             focus: nil,
             requestedByUser: false,
-            allowModel: modelTurnsSinceCompaction >= Self.minimumTurnsBetweenModelSummaries
+            allowModel: modelTurnsSinceCompaction >= Self.minimumTurnsBetweenModelSummaries,
+            allowContinuation: !overflowed
         )
+        return event != nil
     }
 
     /// Folds the conversation down now, at the reader's request.
@@ -1409,7 +1471,13 @@ public actor AgentOrchestrator {
         ) else { return nil }
         // The reader asked, so the model is asked too, however recently the
         // last compaction ran.
-        return await fold(plan, focus: focus, requestedByUser: true, allowModel: true)
+        return await fold(
+            plan,
+            focus: focus,
+            requestedByUser: true,
+            allowModel: true,
+            allowContinuation: true
+        )
     }
 
     private func finishCompacting() {
@@ -1455,10 +1523,16 @@ public actor AgentOrchestrator {
         _ plan: ConversationCompactionPlan,
         focus: String?,
         requestedByUser: Bool,
-        allowModel: Bool
+        allowModel: Bool,
+        allowContinuation: Bool
     ) async -> CompactionEvent? {
         let planned = conversation.count
-        let outcome = await summarize(plan, focus: focus, allowModel: allowModel)
+        let outcome = await summarize(
+            plan,
+            focus: focus,
+            allowModel: allowModel,
+            allowContinuation: allowContinuation
+        )
         // Nothing appends to the history while it is being folded: a new run
         // waits for the fold and a steer waits for the next boundary. Should
         // that ever stop holding, installing this result would silently drop
@@ -1471,7 +1545,8 @@ public actor AgentOrchestrator {
     private func summarize(
         _ plan: ConversationCompactionPlan,
         focus: String?,
-        allowModel: Bool
+        allowModel: Bool,
+        allowContinuation: Bool
     ) async -> CompactionOutcome {
         guard allowModel, let limits = summaryLimits else {
             return CompactionOutcome(result: plan.structural, source: .structural, fallbackReason: nil, usage: nil)
@@ -1480,20 +1555,56 @@ public actor AgentOrchestrator {
         let model = self.model
         let sessionID = self.sessionID
         let modelID = activeModelID
+        // Asked as the session's own next request where the provider caches
+        // it and it fits the window; otherwise, or when that answer is not a
+        // summary, from the escaped transcript.
+        let prefix: CompactionSummarizer.CachedPrefix? =
+            allowContinuation && model.cachesPromptPrefix(for: modelID) && continuationFits(limits)
+                ? CompactionSummarizer.CachedPrefix(
+                    systemPrompt: configuration.systemPrompt,
+                    tools: toolDescriptors,
+                    messages: conversation,
+                    reasoningEffort: activeReasoningEffort
+                )
+                : nil
         // Its own task so Stop can reach it between runs; inside a run the
         // cancellation handler carries the run's own stop through to it.
-        let task = Task {
-            await CompactionSummarizer.summarize(
+        let task = Task { () -> [CompactionSummarizer.Attempt] in
+            var attempts: [CompactionSummarizer.Attempt] = []
+            if let prefix {
+                let continued = await CompactionSummarizer.summarize(
+                    request: CompactionSummarizer.continuationRequest(
+                        prefix: prefix,
+                        focus: focus,
+                        sessionID: sessionID,
+                        modelID: modelID,
+                        limits: limits
+                    ),
+                    model: model,
+                    limits: limits
+                )
+                attempts.append(continued)
+                // A stop or a deadline is not something a second request
+                // would change.
+                if continued.summary != nil
+                    || continued.failure == .cancelled
+                    || continued.failure == .timedOut
+                {
+                    return attempts
+                }
+            }
+            attempts.append(await CompactionSummarizer.summarize(
                 plan: plan,
                 focus: focus,
                 model: model,
                 sessionID: sessionID,
                 modelID: modelID,
                 limits: limits
-            )
+            ))
+            return attempts
         }
         summaryTask = task
-        let attempt = await withTaskCancellationHandler {
+        let attempts = await withTaskCancellationHandler {
             await task.value
         } onCancel: {
             task.cancel()
@@ -1501,20 +1612,46 @@ public actor AgentOrchestrator {
         summaryTask = nil
         compactionObserver?(false)
         // Billed whether or not the summary was usable.
-        recordCall(attempt.usage)
-        if let summary = attempt.summary {
+        attempts.forEach { recordCall($0.usage) }
+        let usage = Self.combined(attempts.map(\.usage))
+        if let summary = attempts.last?.summary {
             return CompactionOutcome(
                 result: plan.result(modelSummary: summary),
                 source: .model,
                 fallbackReason: nil,
-                usage: attempt.usage
+                usage: usage
             )
         }
         return CompactionOutcome(
             result: plan.structural,
             source: .structural,
-            fallbackReason: attempt.failure?.reason,
-            usage: attempt.usage
+            fallbackReason: attempts.last?.failure?.reason,
+            usage: usage
+        )
+    }
+
+    /// Whether the session's own request, with the summary instruction and
+    /// its reply, still fits the window. Estimated from the larger of the last
+    /// reported prompt and the history's weight, since what was added since
+    /// that report is not in it.
+    private func continuationFits(_ limits: CompactionSummarizer.Limits) -> Bool {
+        guard let window = configuration.contextWindowTokens, window > 0 else { return false }
+        let estimated = max(contextTokens ?? 0, ConversationCompactor.encodedByteCount(conversation) / 4)
+        return estimated + limits.maximumOutputTokens + 4_096 <= window
+    }
+
+    /// Several calls' usage as one, for the record that names one summary.
+    private static func combined(_ usages: [ModelCallUsage]) -> ModelCallUsage? {
+        guard let first = usages.first else { return nil }
+        guard usages.count > 1 else { return first }
+        func sum(_ field: (ModelCallUsage) -> Int?) -> Int? {
+            let values = usages.compactMap(field)
+            return values.isEmpty ? nil : values.reduce(0, +)
+        }
+        return ModelCallUsage(
+            purpose: first.purpose,
+            inputTokens: sum(\.inputTokens),
+            outputTokens: sum(\.outputTokens)
         )
     }
 
@@ -1538,7 +1675,10 @@ public actor AgentOrchestrator {
             summaryInputTokens: outcome.usage?.inputTokens,
             summaryOutputTokens: outcome.usage?.outputTokens
         )
-        conversation = outcome.result.messages
+        // The history is rewritten here anyway, so this is when the images
+        // the model has already answered become text. Any it has not seen
+        // yet stay for the request that follows.
+        conversation = ImageRetention.redactingAnswered(outcome.result.messages)
         modelTurnsSinceCompaction = 0
         // The next request will report a new prompt size. Keeping the old
         // number visible would make the UI claim the compacted request is still
@@ -1609,11 +1749,10 @@ public actor AgentOrchestrator {
         testsPassed: Bool?,
         startedAt: Date
     ) async {
-        // Image payloads are one-turn capabilities. Redact the reusable
-        // in-memory history on every terminal path as well as successful model
-        // turns, so a transport failure or cancellation cannot resend a stale
-        // screenshot when this orchestrator is reused.
-        conversation = ConversationIntegrity.repaired(conversation.map(\.persistenceSafe))
+        // Images stay in the in-memory history across runs, as sent, so the
+        // next prompt in this session reads the same prefix from the cache;
+        // the store keeps only their text. See ``ImageRetention``.
+        conversation = ConversationIntegrity.repaired(conversation)
         emitLiveText("", force: true)
         emitLiveReasoning("", force: true)
         _ = try? await store.appendEvent(

@@ -797,7 +797,11 @@ final class AgentOrchestratorTests: XCTestCase {
         XCTAssertTrue(modelPrompt.contains("let value = 1"))
     }
 
-    func testTerminalFailureRedactsScreenshotBeforeNextRun() async throws {
+    /// A screenshot stays in the model history as it was sent, across a
+    /// failed run, so the next prompt reads the same cached prefix; only the
+    /// store is ever denied its bytes. Compaction is what rewrites it (see
+    /// `SessionStateTests`).
+    func testAScreenshotOutlivesAFailedRunInContextButNeverReachesTheStore() async throws {
         let model = ScriptedModelClient(steps: [
             .toolCalls([("screen-1", "capture_test_image", [:])], text: ""),
             .failure(AgentModelClientError.transport(message: "offline")),
@@ -825,11 +829,16 @@ final class AgentOrchestratorTests: XCTestCase {
         await orchestrator.awaitCompletion()
 
         let followUp = try XCTUnwrap(model.receivedRequests.last)
-        XCTAssertFalse(followUp.messages.contains {
+        XCTAssertTrue(followUp.messages.contains {
+            guard case let .toolResultWithImages(id, _, isError, images) = $0 else { return false }
+            return id == "screen-1" && !isError && images.count == 1
+        })
+        let persisted = await store.loadConversation(sessionID: session.id)
+        XCTAssertFalse(persisted.contains {
             if case .toolResultWithImages = $0 { return true }
             return false
         })
-        XCTAssertTrue(followUp.messages.contains {
+        XCTAssertTrue(persisted.contains {
             guard case let .toolResult(id, content, isError) = $0 else { return false }
             return id == "screen-1"
                 && !isError

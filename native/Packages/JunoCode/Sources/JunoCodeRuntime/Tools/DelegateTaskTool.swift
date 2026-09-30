@@ -26,6 +26,9 @@ public struct DelegateTaskTool: CodeTool {
     private let modelID: String
     private let reasoningEffort: ReasoningEffort?
     private let parentSystemPrompt: String
+    /// The session state a child is told, as the parent is: date, branch and
+    /// skills. Nil sends none.
+    private let sessionState: (@Sendable () async -> [SessionStateSection])?
     /// Optional host-owned live controls. The runtime remains embeddable without
     /// a UI, while Desktop Code can expose the child's real approval and stop
     /// capabilities in its inspector.
@@ -78,6 +81,7 @@ public struct DelegateTaskTool: CodeTool {
         modelID: String,
         reasoningEffort: ReasoningEffort?,
         parentSystemPrompt: String,
+        sessionState: (@Sendable () async -> [SessionStateSection])? = nil,
         executionFactory: SubagentExecutionFactory? = nil,
         controls: SubagentControlRegistry? = nil,
         fallbackResolver: (any ModelFallbackResolver)? = nil,
@@ -92,6 +96,7 @@ public struct DelegateTaskTool: CodeTool {
         self.modelID = modelID
         self.reasoningEffort = reasoningEffort
         self.parentSystemPrompt = parentSystemPrompt
+        self.sessionState = sessionState
         self.executionFactory = executionFactory
         self.controls = controls
         self.fallbackResolver = fallbackResolver
@@ -469,7 +474,8 @@ public struct DelegateTaskTool: CodeTool {
                 \(childInstruction) Complete only the delegated task. Return a
                 concise result with concrete file references, verification
                 evidence, and uncertainties. You cannot delegate further.
-                """
+                """,
+                sessionState: sessionState
             ),
             modelID: childModelID,
             reasoningEffort: childReasoningEffort,

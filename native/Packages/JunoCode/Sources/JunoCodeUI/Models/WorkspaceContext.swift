@@ -270,10 +270,12 @@ public final class WorkspaceContext: Sendable {
     /// The system prompt for local sessions in this workspace. Behavior and
     /// role are launch-time contracts, not presentation labels.
     ///
-    /// Built once per orchestrator and then fixed, because it heads the cached
-    /// prefix: anything that changed on every turn here would make every turn
-    /// a cache miss. The facts in it — date, branch — are therefore the ones
-    /// true when the session's contract was last set.
+    /// Fixed for the session, because it heads the cached prefix and Anthropic
+    /// binds every replayed thinking block to it: a change here makes the
+    /// whole conversation a cache miss and drops the model's reasoning. So
+    /// nothing in it may change while a session runs. The date and branch are
+    /// facts of the moment and live in ``sessionStateEnvironment()``, which
+    /// the runtime sends as a `<session_state>` block instead.
     ///
     /// - Parameters:
     ///   - standingInstructions: the reader's own instructions from settings
@@ -314,21 +316,15 @@ public final class WorkspaceContext: Sendable {
                 "Work as a patient technical explainer: make the code and decisions easy to understand."
         }
 
-        // Read from `.git/HEAD`, not by running `git status`: this runs before
-        // the first request of a folder that may have just been cloned, and a
-        // subprocess here would run whatever the repository points Git at.
-        let branch = access.isGitRepository ? GitHeadReader.branch(atRepositoryRoot: access.rootURL) : nil
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE d MMMM yyyy"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
         let os = ProcessInfo.processInfo.operatingSystemVersion
         let environment = """
             <environment>
-            Date: \(formatter.string(from: Date()))
             Platform: macOS \(os.majorVersion).\(os.minorVersion), shell zsh
             Workspace: \(record.descriptor.displayName) (\(access.rootURL.path))
-            Git: \(access.isGitRepository ? "yes" + (branch.map { ", on branch \($0)" } ?? "") : "not a repository")
+            Git: \(access.isGitRepository ? "yes; the branch is in <session_state>" : "not a repository")
             </environment>
+
+            \(SessionState.systemPromptGuidance)
             """
 
         let userSection: String
@@ -419,6 +415,25 @@ public final class WorkspaceContext: Sendable {
         - Use Markdown sparingly: short paragraphs, brief explanatory snippets, \
         lists only for genuinely parallel items.\(userSection)\(repositorySection)
         """
+    }
+
+    /// The date and the branch, as the `environment` section of the
+    /// session's `<session_state>`: facts of the moment, read before every
+    /// request and sent only when they changed.
+    public func sessionStateEnvironment(now: Date = Date()) -> SessionStateSection {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE d MMMM yyyy"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        var lines = ["Date: \(formatter.string(from: now))"]
+        if access.isGitRepository {
+            // Read from `.git/HEAD`, not by running `git status`: this runs
+            // before the first request of a folder that may have just been
+            // cloned, and a subprocess here would run whatever the repository
+            // points Git at.
+            let branch = GitHeadReader.branch(atRepositoryRoot: access.rootURL)
+            lines.append("Git branch: \(branch ?? "none (detached HEAD)")")
+        }
+        return SessionStateSection(name: "environment", body: lines.joined(separator: "\n"))
     }
 
     /// Makes a reader-owned persistent terminal for this workspace. The

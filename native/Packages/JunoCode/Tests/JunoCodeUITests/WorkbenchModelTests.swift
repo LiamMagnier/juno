@@ -519,7 +519,13 @@ final class WorkbenchModelTests: XCTestCase {
         }
 
         let request = try XCTUnwrap(client.requests.first)
-        guard case let .user(modelPrompt)? = request.messages.last else {
+        // The prompt is the newest user turn; the session's state block,
+        // which is Juno's, follows it.
+        let prompts = request.messages.compactMap { message -> String? in
+            guard case let .user(text) = message, !text.hasPrefix("<session_state") else { return nil }
+            return text
+        }
+        guard let modelPrompt = prompts.last else {
             return XCTFail("Expected the explicit file context in the model request")
         }
         XCTAssertTrue(modelPrompt.contains("BEGIN EXPLICIT FILE CONTEXT"))
