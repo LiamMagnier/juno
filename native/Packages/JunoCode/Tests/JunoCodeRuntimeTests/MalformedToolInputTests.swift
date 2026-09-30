@@ -182,6 +182,55 @@ final class MalformedToolInputTests: XCTestCase {
         XCTAssertEqual(recorder.inputs, [["count": 5]])
         XCTAssertEqual(result.input, ["count": 5])
     }
+
+    /// The loop proposes and schedules a call with the arguments it will run
+    /// with, while the history keeps the call as the model wrote it. A
+    /// `read_file` whose arguments came as one JSON string was scheduled as
+    /// reading no path, beside a write to the very file it reads.
+    func testTheProposalAndTheScheduleReadTheConvertedArguments() async throws {
+        let recorder = CallRecorder()
+        let sent: JSONValue = .string(#"{"count": "7"}"#)
+        let model = ScriptedModelClient(steps: [
+            .toolCalls([("wrapped", "recording_tool", sent)], text: ""),
+            .text("Done."),
+        ])
+        let orchestrator = AgentOrchestrator(
+            sessionID: session.id,
+            model: model,
+            registry: ToolRegistry(tools: [RecordingTool(recorder: recorder)]),
+            permissions: PermissionCoordinator(sessionID: session.id, mode: .fullAccess),
+            store: store,
+            configuration: AgentOrchestrator.Configuration(systemPrompt: "sys"),
+            modelID: "test-model",
+            reasoningEffort: nil
+        )
+
+        try await orchestrator.submit(prompt: "Count")
+        await orchestrator.awaitCompletion()
+
+        XCTAssertEqual(recorder.inputs, [["count": 7]])
+        let proposed = await store.events(for: session.id).compactMap { event -> ToolProposedEvent? in
+            if case let .toolProposed(proposal) = event.payload { return proposal }
+            return nil
+        }
+        XCTAssertEqual(proposed.map(\.input), [["count": 7]])
+        let readSchema: JSONValue = ["type": "object", "properties": ["path": ["type": "string"]]]
+        let waves = ToolScheduler.partitionIntoWaves([
+            (
+                id: "r",
+                name: "read_file",
+                input: SchemaValidator.coerced(input: .string(#"{"path": "a.swift"}"#), against: readSchema),
+                extraContent: nil
+            ),
+            (id: "w", name: "write_file", input: ["path": "a.swift", "content": "x"], extraContent: nil),
+        ])
+        XCTAssertEqual(waves.count, 2, "a read and a write of one file never share a wave")
+        let followUp = try XCTUnwrap(model.receivedRequests.last)
+        XCTAssertTrue(
+            followUp.messages.contains(.toolCall(id: "wrapped", name: "recording_tool", input: sent)),
+            "the history keeps the call as the model sent it"
+        )
+    }
 }
 
 private final class CallRecorder: @unchecked Sendable {

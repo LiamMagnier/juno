@@ -1298,8 +1298,23 @@ public actor AgentOrchestrator {
                 return
             }
 
+            // The calls with the arguments they will run with: the schema's
+            // exact conversions applied once, here, so the proposal the reader
+            // sees and the waves the batch is cut into read the values the
+            // tool will. A `read_file` whose arguments came as one JSON string
+            // otherwise read as touching no path and shared a wave with a
+            // write to the same file. The history keeps each call as the model
+            // wrote it, which is what its replayed reasoning is bound to.
+            let proposedCalls = toolCalls.map { call in
+                (
+                    id: call.id,
+                    name: call.name,
+                    input: registry.coercedInput(toolName: call.name, input: call.input),
+                    extraContent: call.extraContent
+                )
+            }
             if stopReason == .toolUse {
-                for call in toolCalls {
+                for call in proposedCalls {
                     let tool = registry.tool(named: call.name)
                     let risk = tool?.assessRisk(input: call.input) ?? .destructive
                     let summary = tool?.summary(input: call.input) ?? call.name
@@ -1372,7 +1387,7 @@ public actor AgentOrchestrator {
             // as outcome unknown, the rest as never run.
             try? await store.saveConversation(sessionID: sessionID, messages: conversation)
 
-            let scheduledCalls = toolCalls
+            let scheduledCalls = proposedCalls
             var terminalGoalLifecycle: GoalLifecycle?
             // The goal as the batch found it, so a goal completed in an
             // earlier run is not mistaken for one completed by this batch.
