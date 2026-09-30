@@ -1,0 +1,563 @@
+/* —————————————————————————————— Chat surface —————————————————————————————— */
+
+.jn .jn-chat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 100dvh;
+}
+.jn .jn-top--clear {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+/* Home: the greeting, the composer, three suggestions, and air. */
+.jn .jn-home {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 32px;
+  margin-top: -52px;
+}
+.jn .jn-home__stack {
+  width: 100%;
+  max-width: 720px;
+  margin-top: max(22vh, 132px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.jn .jn-greet {
+  text-align: center;
+  margin-bottom: 28px;
+  font-variation-settings: "opsz" 44;
+}
+.jn .jn-suggest {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+.jn .jn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px 0 11px;
+  border-radius: var(--r-pill);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  font-size: 14px;
+  color: var(--ink-2);
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out),
+    box-shadow var(--d-fast) var(--e-out);
+}
+.jn .jn-chip > svg,
+.jn .jn-chip > span:first-child {
+  flex: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-chip:hover {
+    background: var(--fill-hover);
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--line-2);
+  }
+}
+.jn .jn-chip:active {
+  background: var(--fill-press);
+}
+
+/* —————————————————————————————— Thread —————————————————————————————— */
+
+.jn .jn-thread {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px 32px 40px;
+  box-sizing: content-box;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The person's message: the same sentence, tokens and all, in a quiet tone on the right. */
+.jn .jn-umsg {
+  display: flex;
+  justify-content: flex-end;
+  margin: 8px 0 26px;
+}
+.jn .jn-umsg__bubble {
+  position: relative;
+  max-width: 82%;
+  padding: 10px 16px 11px;
+  font-size: 16px;
+  line-height: 26px;
+  letter-spacing: -0.006em;
+}
+.jn .jn-umsg__bg {
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  background: var(--well);
+  z-index: 0;
+}
+.jn .jn-umsg__bubble .jn-sentence {
+  position: relative;
+  z-index: 1;
+}
+.jn .jn-umsg .jn-token {
+  background: light-dark(#ffffff, #3a3b3f);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+/* Presence: the caret in the presence colour, and one line of state. */
+.jn .jn-presence {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 26px;
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--ink-3);
+}
+.jn .jn-jcaret {
+  display: inline-block;
+  width: 2px;
+  height: 18px;
+  border-radius: 1px;
+  background: var(--presence);
+  vertical-align: -3px;
+  flex: none;
+}
+.jn .jn-jcaret[data-state="thinking"] {
+  animation: jn-breathe 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.jn .jn-jcaret[data-state="streaming"] {
+  margin-left: 2px;
+}
+@keyframes jn-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.28;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jn .jn-jcaret[data-state="thinking"] {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+.jn[data-rm] .jn-jcaret[data-state="thinking"] {
+  animation: none;
+  opacity: 0.7;
+}
+
+/* The answer: reading type, no bubble. */
+.jn .jn-answer {
+  font-size: 16px;
+  line-height: 27px;
+  letter-spacing: -0.006em;
+  color: var(--ink);
+  margin-top: 12px;
+}
+.jn .jn-answer > * + * {
+  margin-top: 14px;
+}
+.jn .jn-answer h3 {
+  font-size: 17px;
+  line-height: 26px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.jn .jn-answer h3 + * {
+  margin-top: 6px;
+}
+.jn .jn-answer strong {
+  font-weight: 500;
+}
+.jn .jn-answer ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jn .jn-answer li {
+  position: relative;
+  padding-left: 20px;
+}
+.jn .jn-answer li::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 12px;
+  width: 5px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--ink-3);
+}
+.jn .jn-w {
+  animation: jn-word 140ms var(--e-out) both;
+}
+@keyframes jn-word {
+  from {
+    opacity: 0;
+  }
+}
+
+.jn .jn-tablewrap {
+  margin-top: 18px !important;
+  margin-bottom: 4px;
+  overflow-x: auto;
+}
+.jn .jn-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 20px;
+}
+.jn .jn-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--ink-3);
+  padding: 0 12px 8px 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.jn .jn-table td {
+  padding: 10px 12px 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.jn .jn-table tr:last-child td {
+  border-bottom: 0;
+}
+.jn .jn-table .r {
+  text-align: right;
+  padding-right: 0;
+  padding-left: 12px;
+}
+.jn .jn-table td.r {
+  font-variant-numeric: tabular-nums;
+}
+.jn .jn-table td:last-child {
+  font-weight: 500;
+}
+
+/* What Juno did: one line, the verb quiet, the object in ink. */
+.jn .jn-activity__line {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  margin-left: -8px;
+  padding: 0 6px 0 8px;
+  border-radius: var(--r-row);
+  font-size: 14px;
+  color: var(--ink-3);
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-activity__line:hover {
+    color: var(--ink);
+    background: var(--fill-hover);
+  }
+}
+.jn .jn-activity__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0 4px 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+.jn .jn-activity__obj {
+  color: var(--ink-2);
+}
+
+.jn .jn-actions {
+  display: flex;
+  gap: 0;
+  margin: 10px 0 0 -6px;
+}
+
+/* ———————————————————————— A live task in the chat ———————————————————————— */
+
+.jn .jn-task {
+  margin-top: 26px;
+  border-radius: var(--r-card);
+  background: light-dark(#ffffff, #1e1f22);
+  box-shadow: 0 0 0 1px var(--line-2);
+  padding: 4px 0;
+}
+.jn .jn-task__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 12px 12px 16px;
+}
+.jn .jn-task__face {
+  margin-top: 2px;
+  flex: none;
+}
+.jn .jn-task__main {
+  flex: 1;
+  min-width: 0;
+}
+.jn .jn-task__what {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+  letter-spacing: -0.006em;
+}
+.jn .jn-task__progress {
+  margin-top: 1px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-3);
+}
+.jn .jn-task__need {
+  margin: 0 16px;
+  padding: 14px 0 16px;
+  border-top: 1px solid var(--line);
+}
+.jn .jn-task__needlabel {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--attn);
+}
+.jn .jn-task__question {
+  margin-top: 4px;
+  font-size: 15px;
+  line-height: 23px;
+}
+.jn .jn-task__options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.jn .jn-task__or {
+  font-size: 13px;
+  color: var(--ink-3);
+  margin-left: 4px;
+}
+.jn .jn-task__plan {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 16px);
+  margin: 0 8px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: var(--r-row);
+  font-size: 13px;
+  color: var(--ink-2);
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 10px 10px;
+  transition: background-color var(--d-fast) var(--e-out);
+}
+.jn .jn-task__plan > svg {
+  color: var(--ink-3);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-task__plan:hover {
+    background: var(--fill-hover);
+    color: var(--ink);
+  }
+}
+.jn .jn-plan {
+  padding: 2px 16px 10px 16px;
+  display: flex;
+  flex-direction: column;
+}
+.jn .jn-plan__step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+  font-size: 14px;
+  color: var(--ink-3);
+}
+.jn .jn-plan__step[data-state="active"] {
+  color: var(--ink);
+}
+.jn .jn-plan__step[data-state="done"] {
+  color: var(--ink-2);
+}
+.jn .jn-plan__mark {
+  width: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+}
+.jn .jn-plan__step[data-state="active"] .jn-plan__mark {
+  color: var(--ink);
+}
+
+/* ———————————— The approval, docked on the composer's top edge ———————————— */
+
+.jn .jn-approve {
+  padding: 16px 18px 16px;
+  border-bottom: 1px solid var(--line);
+  cursor: default;
+}
+.jn .jn-approve__head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.jn .jn-approve__mark {
+  margin-top: 2px;
+  flex: none;
+}
+.jn .jn-approve__title {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+  letter-spacing: -0.006em;
+}
+.jn .jn-approve__sub {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-3);
+}
+.jn .jn-approve__body {
+  margin: 12px 0 0 32px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--well);
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--ink-2);
+}
+.jn .jn-approve__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 0 32px;
+}
+.jn .jn-approve__instead {
+  margin-left: auto;
+  font-size: 13px;
+}
+.jn .jn-approve__outcome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 0 32px;
+  min-height: 32px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.jn .jn-approve__outcome .jb--link {
+  margin-left: 4px;
+  font-size: 13px;
+}
+
+/* —————————————————————————————— Dock —————————————————————————————— */
+
+.jn .jn-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  padding: 0 32px 10px;
+  background: linear-gradient(to bottom, transparent, var(--ground) 20px);
+}
+.jn .jn-dock::before {
+  content: "";
+  display: block;
+  height: 20px;
+}
+.jn .jn-dock__note {
+  text-align: center;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+  margin-top: 8px;
+}
+
+/* —————————————————————————————— Widths —————————————————————————————— */
+
+@media (max-width: 1200px) {
+  .jn .jn-home__stack {
+    max-width: 660px;
+  }
+  .jn .jn-home .jn-composer-wrap {
+    max-width: 660px;
+  }
+}
+
+@media (max-width: 760px) {
+  .jn .jn-home {
+    padding: 0 16px;
+    margin-top: 0;
+  }
+  .jn .jn-home__stack {
+    margin-top: 0;
+    flex: 1;
+    justify-content: flex-end;
+    padding-bottom: 12px;
+  }
+  .jn .jn-greet {
+    font-size: 32px;
+    line-height: 38px;
+    margin-bottom: auto;
+    margin-top: 28vh;
+    font-variation-settings: "opsz" 32;
+  }
+  .jn .jn-suggest {
+    order: -1;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin: 0 -16px 10px;
+    padding: 2px 16px;
+    scrollbar-width: none;
+  }
+  .jn .jn-chip {
+    flex: none;
+    height: 36px;
+  }
+  .jn .jn-thread {
+    padding: 12px 16px 24px;
+  }
+  .jn .jn-umsg__bubble {
+    max-width: 88%;
+  }
+  .jn .jn-dock {
+    padding: 0 12px 8px;
+  }
+  .jn .jn-dock__note {
+    display: none;
+  }
+  .jn .jn-approve {
+    padding: 14px 14px 14px;
+  }
+  .jn .jn-approve__body,
+  .jn .jn-approve__actions,
+  .jn .jn-approve__outcome {
+    margin-left: 0;
+  }
+  .jn .jn-approve__instead {
+    margin-left: 0;
+    width: 100%;
+    text-align: left;
+  }
+  .jn .jn-task__options .jb {
+    height: 36px;
+  }
+  .jn .jn-answer {
+    font-size: 16px;
+    line-height: 26px;
+  }
+}

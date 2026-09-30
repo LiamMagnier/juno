@@ -1,0 +1,518 @@
+/* ——————————————————————————————— Composer ——————————————————————————————— */
+
+.jn .jn-composer-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+/* No shadow. The surface and one crisp hairline define it; focus darkens the
+   hairline and lays a restrained presence ring outside it. */
+.jn .jn-composer {
+  position: relative;
+  background: var(--surface);
+  border-radius: var(--r-composer);
+  box-shadow: 0 0 0 1px var(--line-2);
+  transition: box-shadow var(--d-base) var(--e-out);
+  cursor: text;
+  overflow: clip;
+  overflow-clip-margin: 6px;
+}
+.jn .jn-composer[data-focus] {
+  box-shadow:
+    0 0 0 1px var(--line-3),
+    0 0 0 4px var(--presence-soft);
+}
+
+.jn .jn-field {
+  position: relative;
+  padding: 15px 20px 4px;
+  min-height: 70px;
+  font-size: 16px;
+  line-height: 26px;
+  letter-spacing: -0.006em;
+  color: var(--ink);
+  outline: none;
+  word-break: break-word;
+}
+.jn .jn-composer[data-variant="dock"] .jn-field,
+.jn .jn-composer[data-variant="code"] .jn-field {
+  min-height: 45px;
+  padding-top: 13px;
+}
+.jn .jn-field:focus-visible {
+  outline: none;
+}
+.jn .jn-field__placeholder {
+  color: var(--ink-3);
+  position: relative;
+}
+.jn .jn-field__query {
+  color: var(--ink-2);
+}
+
+/* The caret: steady ink, blinking like the system's. */
+.jn .jn-caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 20px;
+  margin-left: 1px;
+  vertical-align: -4px;
+  background: var(--ink);
+  border-radius: 1px;
+  animation: jn-blink 1.06s steps(1) infinite;
+}
+.jn .jn-caret[data-at-start] {
+  position: absolute;
+  left: 0;
+  top: 3px;
+  margin: 0;
+}
+@keyframes jn-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.jn[data-still] .jn-caret {
+  animation: none;
+}
+
+.jn .jn-sentence {
+  display: inline;
+}
+
+.jn .jn-crow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px 10px 10px;
+}
+.jn .jn-crow__spacer {
+  flex: 1;
+}
+.jn .jn-crow .jib {
+  width: 34px;
+  height: 34px;
+}
+.jn .jn-crow__add {
+  color: var(--ink-2);
+}
+
+.jn .jn-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 8px 0 11px;
+  margin-right: 2px;
+  border-radius: var(--r-pill);
+  font-size: 14px;
+  color: var(--ink-2);
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out);
+}
+.jn .jn-model__effort {
+  color: var(--ink-3);
+}
+.jn .jn-model > svg {
+  color: var(--ink-3);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-model:hover {
+    background: var(--fill-hover);
+    color: var(--ink);
+  }
+}
+.jn .jn-model[aria-expanded="true"],
+.jn .jn-model:active {
+  background: var(--fill-press);
+  color: var(--ink);
+}
+
+/* The one ink disc: voice when empty, send with words, stop while Juno works. */
+.jn .jn-disc {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-left: 4px;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: var(--on-ink);
+  flex: none;
+  transition: background-color var(--d-fast) var(--e-out);
+}
+.jn .jn-disc__glyph {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-disc:hover,
+  .jn .jn-disc[data-force="hover"] {
+    background: var(--ink-hover);
+  }
+}
+.jn .jn-disc:active,
+.jn .jn-disc[data-force="press"] {
+  background: var(--ink-press);
+  transition-duration: var(--d-press);
+}
+
+/* Code's quiet context row: repository, environment, mode. */
+.jn .jn-composer__context {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 10px 0;
+  min-height: 40px;
+}
+.jn .jn-ctx {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 9px 0 8px;
+  border-radius: var(--r-row);
+  font-size: 13px;
+  color: var(--ink-2);
+  transition: background-color var(--d-fast) var(--e-out);
+}
+.jn .jn-ctx > svg {
+  color: var(--ink-3);
+}
+.jn .jn-ctx .mono {
+  font-size: 12.5px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-ctx:hover {
+    background: var(--fill-hover);
+    color: var(--ink);
+  }
+}
+.jn .jn-ctx__sep {
+  width: 1px;
+  height: 14px;
+  background: var(--line-2);
+  margin: 0 4px;
+}
+.jn .jn-mode {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 1px;
+}
+.jn .jn-mode__opt {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  font-size: 13px;
+  color: var(--ink-3);
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-mode__opt:hover {
+    color: var(--ink);
+  }
+}
+.jn .jn-mode__opt[aria-checked="true"] {
+  background: var(--fill-selected);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* ——————————————————————————————— Tokens ——————————————————————————————— */
+
+/* An atomic object in the sentence: a neutral chip carrying the thing's own mark. */
+.jn .jn-token {
+  display: inline-block;
+  height: 24px;
+  line-height: 22px;
+  padding: 0 7px 0 4px;
+  margin: 0 1px;
+  border: 1px solid transparent;
+  border-radius: var(--r-token);
+  background: var(--well);
+  font-size: 15px;
+  letter-spacing: -0.004em;
+  color: var(--ink);
+  white-space: nowrap;
+  cursor: default;
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    box-shadow var(--d-fast) var(--e-out),
+    border-color var(--d-fast) var(--e-out);
+}
+.jn .jn-token__mark {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 5px;
+  vertical-align: -3px;
+}
+.jn .jn-token__mark > * {
+  width: 16px;
+  height: 16px;
+}
+.jn .jn-token__label {
+  display: inline;
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-token[role="button"]:hover {
+    background: var(--well-2);
+  }
+}
+.jn .jn-token[data-selected] {
+  background: var(--well-2);
+  box-shadow: 0 0 0 1.5px var(--ink-3);
+}
+.jn .jn-token[data-state="needs"] {
+  background: transparent;
+  border: 1px dashed var(--line-ui);
+  color: var(--ink-2);
+}
+.jn .jn-token[data-fresh] {
+  animation: jn-token-land 420ms var(--e-out);
+}
+@keyframes jn-token-land {
+  0% {
+    background-color: var(--presence-soft);
+  }
+  100% {
+    background-color: var(--well);
+  }
+}
+
+/* ——————————————————————————— Floating layers ——————————————————————————— */
+
+.jn .jn-pop {
+  position: absolute;
+  z-index: 40;
+  background: var(--raised);
+  border-radius: var(--r-pop);
+  box-shadow: var(--shadow-pop);
+  padding: 6px;
+  color: var(--ink);
+  cursor: default;
+}
+.jn .jn-pop__scroll {
+  max-height: 360px;
+  overflow: auto;
+  scrollbar-width: none;
+}
+.jn .jn-pop__group + .jn-pop__group {
+  margin-top: 4px;
+}
+.jn .jn-pop__label {
+  padding: 8px 10px 4px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.jn .jn-pop__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--r-row);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink);
+  text-align: left;
+  transition: background-color var(--d-fast) var(--e-out);
+}
+.jn .jn-pop__row--tall {
+  height: 50px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jn-pop__row:hover {
+    background: var(--fill-hover);
+  }
+}
+.jn .jn-pop__row[data-active],
+.jn .jn-pop__row[aria-checked="true"] {
+  background: var(--fill-selected);
+}
+.jn .jn-pop__mark {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.jn .jn-pop__mark > * {
+  width: 18px;
+  height: 18px;
+}
+.jn .jn-pop__mark--ink {
+  color: var(--ink-2);
+}
+.jn .jn-modelmark {
+  width: 17px;
+  height: 17px;
+}
+.jn .jn-pop__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.jn .jn-pop__stack {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.jn .jn-pop__line {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .jn-pop__detail {
+  flex: none;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.jn .jn-pop__detail[data-needs] {
+  color: var(--ink-2);
+}
+.jn .jn-pop__check {
+  width: 16px;
+  flex: none;
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+}
+.jn .jn-pop__sep {
+  height: 1px;
+  background: var(--line);
+  margin: 6px -6px;
+}
+.jn .jn-pop__foot {
+  display: flex;
+  gap: 16px;
+  margin: 6px -6px -6px;
+  padding: 9px 14px 10px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .jn-pop__foot > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Model */
+.jn .jn-modelpop {
+  width: 316px;
+}
+.jn .jn-modelpop__effort {
+  padding: 4px 8px 6px;
+}
+.jn .jn-modelpop__efforthead {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 2px 8px;
+  font-size: 13px;
+}
+.jn .jn-modelpop__seg {
+  width: 100%;
+}
+
+/* App panel: grows from its token, says in words what this message may do. */
+.jn .jn-apppanel {
+  padding: 14px 16px 12px;
+}
+.jn .jn-appanel__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.jn .jn-appanel__who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.jn .jn-appanel__name {
+  font-weight: 500;
+}
+.jn .jn-appanel__acct {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .jn-appanel__lede {
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-2);
+}
+.jn .jn-appanel__list {
+  margin-top: 6px;
+}
+.jn .jn-appanel__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 13px;
+  line-height: 18px;
+}
+.jn .jn-appanel__policy {
+  flex: none;
+  color: var(--ink-2);
+}
+.jn .jn-appanel__policy[data-policy="ask"] {
+  color: var(--ink);
+  font-weight: 500;
+}
+.jn .jn-appanel__policy[data-policy="off"] {
+  color: var(--ink-3);
+}
+.jn .jn-appanel__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px -16px -12px;
+  padding: 10px 16px 11px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .jn-appanel__foot .jb--link {
+  font-size: 12px;
+}
+
+/* —————————————————————————————— Phone —————————————————————————————— */
+
+@media (max-width: 760px) {
+  .jn .jn-composer {
+    border-radius: 20px;
+  }
+  .jn .jn-field {
+    padding: 13px 16px 2px;
+    min-height: 52px;
+  }
+  .jn .jn-crow {
+    padding: 4px 8px 8px;
+  }
+  .jn .jn-crow .jib {
+    width: 40px;
+    height: 40px;
+  }
+  .jn .jn-disc {
+    width: 40px;
+    height: 40px;
+  }
+}

@@ -1,0 +1,675 @@
+/*
+ * JUNO — design round 3, the converged system. Everything is scoped to `.jn`.
+ *
+ * One declaration per token, both appearances in it: `light-dark()` resolves
+ * against the element's colour scheme, which is `light dark` by default (so the
+ * OS decides) and pinned by `data-theme` when a scene asks for one.
+ *
+ * Light: a bright, clean neutral (no cream, no slate), deep graphite ink, the
+ * sidebar one whisper of tone below the content.
+ * Dark: designed, not inverted. Layered charcoal (never black), text that is
+ * not white, hairlines that barely show, elevation by lighter surfaces rather
+ * than shadows, the presence colour lifted and desaturated.
+ *
+ * Files: tokens.css (tokens, base, primitives), shell.css, composer.css,
+ * thread.css, pages.css (crew, code, library, customize), sheet.css (system,
+ * motion, index, labs).
+ */
+
+/* ————————————————————————————————— Tokens ————————————————————————————————— */
+
+.jn {
+  color-scheme: light dark;
+
+  /* Planes: the content is the brightest plane; chrome sits a step below. */
+  --ground: light-dark(#fcfcfd, #18191b);
+  --side: light-dark(#f5f6f7, #121314);
+  --surface: light-dark(#ffffff, #222326);
+  --raised: light-dark(#ffffff, #27282b);
+  --well: light-dark(#eff0f1, #2d2e31);
+  --well-2: light-dark(#e6e7e9, #37383c);
+  --scrim: light-dark(rgb(25 27 30 / 0.18), rgb(0 0 0 / 0.5));
+
+  /* Ink: graphite, four steps. ink-3 is the lowest step that carries text (4.5:1 on every plane). */
+  --ink: light-dark(#191b1e, #e8e9eb);
+  --ink-2: light-dark(#4e5054, #b4b6ba);
+  --ink-3: light-dark(#686b70, #95979c);
+  --ink-4: light-dark(#9a9ca0, #6c6e72);
+  --on-ink: light-dark(#fcfcfd, #18191b);
+  --ink-hover: light-dark(#34363a, #ffffff);
+  --ink-press: light-dark(#4a4c51, #d2d3d6);
+
+  /* Lines: hairlines are felt, not seen; line-ui is the 3:1 edge for fields and switches. */
+  --line: light-dark(rgb(25 27 30 / 0.085), rgb(255 255 255 / 0.07));
+  --line-2: light-dark(rgb(25 27 30 / 0.13), rgb(255 255 255 / 0.1));
+  --line-3: light-dark(rgb(25 27 30 / 0.3), rgb(255 255 255 / 0.24));
+  --line-ui: light-dark(#8e9094, #6a6c70);
+
+  /* Tonal states. Hover is tone only; press is one step darker. */
+  --fill-hover: light-dark(rgb(25 27 30 / 0.045), rgb(255 255 255 / 0.05));
+  --fill-press: light-dark(rgb(25 27 30 / 0.085), rgb(255 255 255 / 0.09));
+  --fill-selected: light-dark(rgb(25 27 30 / 0.06), rgb(255 255 255 / 0.068));
+
+  /* Presence: Juno's one colour. Thinking, voice, the composer's focus. Ultramarine,
+     oklch(0.47 0.20 268) in light; lifted to 0.75 and quieted to 0.10 chroma in dark. */
+  --presence: light-dark(#2d49c9, #97a6e6);
+  --presence-soft: light-dark(rgb(45 73 201 / 0.12), rgb(151 166 230 / 0.2));
+  --presence-wash: light-dark(rgb(45 73 201 / 0.06), rgb(151 166 230 / 0.09));
+
+  /* Attention: the words that say someone needs you. Nowhere else. */
+  --attn: light-dark(#8f5406, #e6bd7e);
+
+  /* Consequence colours, Code and destructive only. */
+  --add-ink: light-dark(#1b7a3a, #74c68a);
+  --add-bg: light-dark(rgb(27 122 58 / 0.075), rgb(116 198 138 / 0.1));
+  --del-ink: light-dark(#b3261e, #f0928a);
+  --del-bg: light-dark(rgb(179 38 30 / 0.065), rgb(240 146 138 / 0.09));
+  --danger: light-dark(#b3261e, #f0928a);
+
+  --focus: var(--ink);
+
+  /* Depth. The composer has none; popovers float over content, so they get a
+     two-layer shadow in light and a lighter surface plus a quiet edge in dark. */
+  --shadow-pop:
+    0 0 0 1px light-dark(rgb(25 27 30 / 0.075), rgb(255 255 255 / 0.085)),
+    0 2px 4px -1px light-dark(rgb(25 27 30 / 0.05), rgb(0 0 0 / 0.25)),
+    0 14px 36px -10px light-dark(rgb(25 27 30 / 0.16), rgb(0 0 0 / 0.55));
+  --shadow-sheet:
+    0 0 0 1px light-dark(rgb(25 27 30 / 0.07), rgb(255 255 255 / 0.08)),
+    0 24px 64px -16px light-dark(rgb(25 27 30 / 0.2), rgb(0 0 0 / 0.6));
+
+  /* Type */
+  --font-serif: var(--jn-serif), var(--jn-serif-cyr), "Iowan Old Style", Georgia, serif;
+  --font-sans: var(--jn-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--jn-mono), ui-monospace, "SF Mono", monospace;
+
+  /* Radius: containers are concentric, free-standing controls are capsules,
+     inline objects are small rounded rects. */
+  --r-kbd: 5px;
+  --r-token: 7px;
+  --r-row: 8px;
+  --r-pop: 14px;
+  --r-card: 16px;
+  --r-composer: 22px;
+  --r-pill: 999px;
+
+  /* Motion (motion.tsx mirrors these) */
+  --d-press: 80ms;
+  --d-fast: 120ms;
+  --d-base: 180ms;
+  --d-slow: 240ms;
+  --d-travel: 320ms;
+  --e-out: cubic-bezier(0.2, 0, 0, 1);
+  --e-in: cubic-bezier(0.4, 0, 1, 1);
+  --e-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-optical-sizing: auto;
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.jn[data-theme="light"] {
+  color-scheme: light;
+}
+.jn[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* The page behind the stage, for overscroll and the dev chrome. */
+html:has(.jn) body {
+  background: #fcfcfd;
+}
+html:has(.jn[data-theme="dark"]) body {
+  background: #18191b;
+}
+@media (prefers-color-scheme: dark) {
+  html:has(.jn:not([data-theme="light"])) body {
+    background: #18191b;
+  }
+}
+html:has(.jn) nextjs-portal {
+  display: none;
+}
+
+/* ————————————————————————————————— Base ————————————————————————————————— */
+
+:where(.jn) *,
+:where(.jn) *::before,
+:where(.jn) *::after {
+  box-sizing: border-box;
+}
+:where(.jn) :is(p, h1, h2, h3, h4, ul, ol, figure, blockquote) {
+  margin: 0;
+}
+:where(.jn) :is(ul, ol) {
+  padding: 0;
+  list-style: none;
+}
+:where(.jn) button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: default;
+  -webkit-tap-highlight-color: transparent;
+  text-align: inherit;
+}
+:where(.jn) a {
+  color: inherit;
+  text-decoration: none;
+}
+:where(.jn) input {
+  font: inherit;
+  color: inherit;
+}
+.jn :focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.jn ::selection {
+  background: var(--presence-soft);
+}
+
+.jn .num,
+.jn .tnum {
+  font-variant-numeric: tabular-nums;
+}
+.jn .mono {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  letter-spacing: 0;
+}
+.jn .ink-2 {
+  color: var(--ink-2);
+}
+.jn .ink-3 {
+  color: var(--ink-3);
+}
+.jn .sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ————————————————————————————————— Type ————————————————————————————————— */
+
+.jn .t-greet {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 44px;
+  line-height: 52px;
+  letter-spacing: -0.014em;
+  color: var(--ink);
+}
+.jn .t-title {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 32px;
+  line-height: 40px;
+  letter-spacing: -0.012em;
+}
+.jn .t-display {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 24px;
+  line-height: 30px;
+  letter-spacing: -0.008em;
+}
+.jn .t-h {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  letter-spacing: -0.006em;
+}
+.jn .t-body {
+  font-size: 15px;
+  line-height: 24px;
+  letter-spacing: -0.004em;
+}
+.jn .t-ui {
+  font-size: 14px;
+  line-height: 20px;
+}
+.jn .t-small {
+  font-size: 13px;
+  line-height: 18px;
+}
+.jn .t-meta {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+.jn .t-label {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+/* ——————————————————————————————— Buttons ——————————————————————————————— */
+
+.jn .jb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--ink);
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out),
+    box-shadow var(--d-fast) var(--e-out),
+    opacity var(--d-fast) var(--e-out);
+  user-select: none;
+}
+.jn .jb:disabled,
+.jn .jb[aria-disabled="true"] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.jn .jb--sm {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 13px;
+  gap: 5px;
+}
+.jn .jb--primary {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.jn .jb--secondary {
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.jn .jb--ghost {
+  color: var(--ink-2);
+}
+.jn .jb--danger {
+  color: var(--danger);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.jn .jb--link {
+  height: auto;
+  padding: 0;
+  font-weight: 400;
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--line-3);
+  text-underline-offset: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jb--primary:hover,
+  .jn .jb--primary[data-force="hover"] {
+    background: var(--ink-hover);
+  }
+  .jn :is(.jb--secondary, .jb--ghost, .jb--danger):hover,
+  .jn :is(.jb--secondary, .jb--ghost, .jb--danger)[data-force="hover"] {
+    background: var(--fill-hover);
+    color: var(--ink);
+  }
+  .jn .jb--danger:hover {
+    color: var(--danger);
+  }
+  .jn .jb--link:hover {
+    color: var(--ink);
+    text-decoration-color: var(--ink-3);
+  }
+}
+.jn .jb--primary:active,
+.jn .jb--primary[data-force="press"] {
+  background: var(--ink-press);
+  transition-duration: var(--d-press);
+}
+.jn :is(.jb--secondary, .jb--ghost, .jb--danger):active,
+.jn :is(.jb--secondary, .jb--ghost, .jb--danger)[data-force="press"] {
+  background: var(--fill-press);
+  transition-duration: var(--d-press);
+}
+.jn .jb[data-force="focus"] {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.jn .jb[data-loading] {
+  color: transparent;
+  position: relative;
+}
+.jn .jb[data-loading] > .jb__spin {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--on-ink);
+}
+.jn .jb--secondary[data-loading] > .jb__spin {
+  color: var(--ink-2);
+}
+
+/* Icon buttons: circles, 32px (28 small), the icon in the second ink. */
+.jn .jib {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-pill);
+  color: var(--ink-3);
+  flex: none;
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out);
+}
+.jn .jib--sm {
+  width: 28px;
+  height: 28px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jib:hover,
+  .jn .jib[data-force="hover"] {
+    background: var(--fill-hover);
+    color: var(--ink);
+  }
+}
+.jn .jib:active,
+.jn .jib[data-force="press"],
+.jn .jib[aria-pressed="true"],
+.jn .jib[aria-expanded="true"] {
+  background: var(--fill-press);
+  color: var(--ink);
+}
+.jn .jib[data-force="focus"] {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* A small in-button activity: three ticks that take turns. Only while waiting on a network answer. */
+.jn .jspin {
+  display: inline-flex;
+  gap: 3px;
+}
+.jn .jspin i {
+  width: 4px;
+  height: 4px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.35;
+  animation: jspin 900ms var(--e-out) infinite;
+}
+.jn .jspin i:nth-child(2) {
+  animation-delay: 150ms;
+}
+.jn .jspin i:nth-child(3) {
+  animation-delay: 300ms;
+}
+@keyframes jspin {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+/* ——————————————————————— Rows, segmented, kbd, switch ——————————————————————— */
+
+.jn .jrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: var(--r-row);
+  color: var(--ink);
+  width: 100%;
+  min-width: 0;
+  transition: background-color var(--d-fast) var(--e-out);
+}
+.jn .jrow > .jrow__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jn .jrow > .jrow__meta {
+  flex: none;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.jn .jrow > svg,
+.jn .jrow > .jrow__lead {
+  flex: none;
+  color: var(--ink-3);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jrow:hover {
+    background: var(--fill-hover);
+  }
+}
+.jn .jrow:active {
+  background: var(--fill-press);
+}
+.jn .jrow[aria-current="page"],
+.jn .jrow[data-selected] {
+  background: var(--fill-selected);
+}
+.jn .jrow[aria-current="page"] > svg {
+  color: var(--ink);
+}
+
+.jn .jseg {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 10px;
+  background: var(--well);
+}
+.jn .jseg__opt {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out),
+    box-shadow var(--d-fast) var(--e-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jseg__opt:hover {
+    color: var(--ink);
+  }
+}
+.jn .jseg__opt[aria-checked="true"],
+.jn .jseg__opt[aria-selected="true"] {
+  background: light-dark(#ffffff, #3a3b3f);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--line), 0 1px 2px light-dark(rgb(25 27 30 / 0.06), rgb(0 0 0 / 0.2));
+}
+
+/* A quiet text filter row: words, the chosen one in ink with a hairline under it. */
+.jn .jfilter {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.jn .jfilter__opt {
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--r-pill);
+  font-size: 13px;
+  color: var(--ink-3);
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .jn .jfilter__opt:hover {
+    color: var(--ink);
+    background: var(--fill-hover);
+  }
+}
+.jn .jfilter__opt[aria-pressed="true"] {
+  color: var(--ink);
+  background: var(--fill-selected);
+  font-weight: 500;
+}
+
+.jn .jkbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: var(--r-kbd);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1;
+  color: var(--ink-3);
+}
+
+/* Three-way policy control (Allow / Ask / Off): a small segmented. */
+.jn .jpolicy {
+  display: inline-grid;
+  grid-auto-flow: column;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 9px;
+  background: var(--well);
+}
+.jn .jpolicy__opt {
+  height: 24px;
+  min-width: 48px;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-3);
+  transition:
+    background-color var(--d-fast) var(--e-out),
+    color var(--d-fast) var(--e-out);
+}
+.jn .jpolicy__opt[aria-checked="true"] {
+  background: light-dark(#ffffff, #3a3b3f);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--line), 0 1px 2px light-dark(rgb(25 27 30 / 0.06), rgb(0 0 0 / 0.2));
+}
+
+/* Switch: the track edge meets 3:1; on is the ink. */
+.jn .jswitch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--well-2);
+  box-shadow: inset 0 0 0 1px var(--line-ui);
+  flex: none;
+  transition:
+    background-color var(--d-base) var(--e-out),
+    box-shadow var(--d-base) var(--e-out);
+}
+.jn .jswitch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--ink-2);
+  transition:
+    transform var(--d-base) var(--e-out),
+    background-color var(--d-base) var(--e-out);
+}
+.jn .jswitch[aria-checked="true"] {
+  background: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+.jn .jswitch[aria-checked="true"]::after {
+  transform: translateX(14px);
+  background: var(--on-ink);
+}
+
+/* Text field */
+.jn .jfield {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  color: var(--ink);
+  transition: box-shadow var(--d-fast) var(--e-out);
+}
+.jn .jfield > svg {
+  color: var(--ink-3);
+  flex: none;
+}
+.jn .jfield input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  font-size: 14px;
+}
+.jn .jfield input::placeholder {
+  color: var(--ink-3);
+}
+.jn .jfield:focus-within,
+.jn .jfield[data-force="focus"] {
+  box-shadow:
+    inset 0 0 0 1px var(--line-3),
+    0 0 0 3px var(--presence-soft);
+}
+
+/* ——————————————————————————————— Marks ——————————————————————————————— */
+
+.jn .jn-mark {
+  display: block;
+  flex: none;
+}
+.jn .jn-mark--ink {
+  color: var(--ink-2);
+}
+
+/* Motion off: every CSS transition and keyframe collapses to an instant or a fade. */
+.jn[data-rm] *,
+.jn[data-rm] *::before,
+.jn[data-rm] *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jn .jspin i {
+    animation: none;
+    opacity: 0.7;
+  }
+}
