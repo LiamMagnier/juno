@@ -20,6 +20,8 @@ const read = (rel: string) => fs.readFileSync(path.join(root, rel), "utf8");
 
 const serializers = read("src/lib/serializers.ts");
 const remote = read("src/lib/code-task-outcome.ts");
+// Both readers of a task's events build their rows here (the one fold).
+const transcript = read("src/lib/agent-protocol/code-task-transcript.ts");
 const hook = read("src/hooks/use-code-session.ts");
 const cards = read("src/components/code/code-run-cards.tsx");
 const activity = read("src/components/code/code-activity.tsx");
@@ -42,11 +44,25 @@ test("the diff a write row carries survives the read-back whitelist", () => {
   assert.match(remote, /\.\.\.\(keep \? \{ patch: keep \} : \{\}\)/);
 });
 
-test("a tool row's exit status survives the same way", () => {
+test("a tool row's exit status and typed outcome survive the same way", () => {
   assert.match(serializeActivity, /record\.exitCode/);
   assert.match(serializeActivity, /\.\.\.\(exitCode !== undefined \? \{ exitCode \} : \{\}\)/);
-  assert.match(remote, /payloadNum\(event\.payload, "exitCode"\)/, "persistCodeTaskOutcome does not fold exitCode");
-  assert.match(hook, /num\(event\.payload, "exitCode"\)/, "the live hook does not fold exitCode");
+  assert.match(serializeActivity, /isCodeToolStatus\(record\.toolStatus\)/, "serializeActivity does not read `toolStatus`");
+  assert.match(serializeActivity, /\.\.\.\(toolStatus \? \{ toolStatus \} : \{\}\)/);
+  // The rows carry both, and both readers build their rows from the fold.
+  assert.match(transcript, /toolStatus: item\.status,/, "the transcript's tool rows lost their typed status");
+  assert.match(transcript, /\.\.\.\(item\.exitCode !== undefined \? \{ exitCode: item\.exitCode \} : \{\}\)/);
+  assert.match(remote, /new CodeTaskTranscript\(task\.id/, "persistCodeTaskOutcome does not read through the fold");
+  assert.match(hook, /live\.transcript\.apply\(event\)/, "the live hook does not read through the fold");
+});
+
+test("no reader recovers a tool outcome from its title", () => {
+  // The outcome is the producer's typed status. Only the legacy adapter reads
+  // text, and only for rows written before producers typed it.
+  assert.doesNotMatch(activity, / — \(ok\|failed\)/);
+  assert.doesNotMatch(activity, /\^Denied /);
+  assert.doesNotMatch(activity, /Auto-allowed in sandbox/);
+  assert.match(activity, /codeToolStatus\(event\)/);
 });
 
 test("the whitelist stays additive: a chat row gains no key it did not have", () => {

@@ -34,6 +34,16 @@
         { "value": "unknown", "summary": "An effort this reader does not know." }
       ]
     },
+    "Behavior": {
+      "summary": "What the agent is instructed to do this turn, on engines that keep it apart from the permission mode (the Mac's Ask, Survey, Plan and Code).",
+      "values": [
+        { "value": "code", "summary": "Make the change: edits and commands, within the mode." },
+        { "value": "plan", "summary": "Work out what to do and propose it; change nothing." },
+        { "value": "ask", "summary": "Answer questions about the code; change nothing." },
+        { "value": "survey", "summary": "Map the repository before anyone commits to a change; change nothing." },
+        { "value": "unknown", "summary": "A behavior this reader does not know." }
+      ]
+    },
     "SessionState": {
       "summary": "What a session is doing, as one fact a list or a header can show.",
       "values": [
@@ -319,6 +329,7 @@
         "model": { "type": "string", "optional": true, "summary": "The model." },
         "effort": { "type": "enum:ReasoningEffort", "optional": true, "summary": "The thinking level." },
         "mode": { "type": "enum:PermissionMode", "optional": true, "summary": "The permission mode in force." },
+        "behavior": { "type": "enum:Behavior", "optional": true, "summary": "What the agent is instructed to do." },
         "title": { "type": "string", "optional": true, "summary": "A new title." }
       }
     },

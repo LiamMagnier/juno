@@ -1,5 +1,5 @@
 {"v":"1.0","id":"ap-1","sessionId":"mac_session_7","seq":1,"at":"2026-09-30T09:00:00.850Z","type":"session.created","target":"local","workspaceName":"juno","model":"gpt-5.2","mode":"ask"}
-{"v":"1.0","id":"ap-2","sessionId":"mac_session_7","seq":2,"at":"2026-09-30T09:00:01.700Z","type":"session.configured","model":"gpt-5.2","effort":"medium","mode":"ask"}
+{"v":"1.0","id":"ap-2","sessionId":"mac_session_7","seq":2,"at":"2026-09-30T09:00:01.700Z","type":"session.configured","model":"gpt-5.2","effort":"medium","mode":"ask","behavior":"code"}
 {"v":"1.0","id":"ap-3","sessionId":"mac_session_7","seq":3,"at":"2026-09-30T09:00:02.550Z","turnId":"turn:ap-3","type":"turn.started","origin":"user"}
 {"v":"1.0","id":"ap-4","sessionId":"mac_session_7","seq":4,"at":"2026-09-30T09:00:03.400Z","turnId":"turn:ap-3","type":"item.user_message","itemId":"u1","text":"Clean the build folder and bump the version.","delivery":"prompt"}
 {"v":"1.0","id":"ap-5","sessionId":"mac_session_7","seq":5,"at":"2026-09-30T09:00:04.250Z","turnId":"turn:ap-3","type":"item.tool_call","itemId":"call_a","toolName":"run_command","toolKind":"execute","title":"$ rm -rf build","risk":"destructive"}
