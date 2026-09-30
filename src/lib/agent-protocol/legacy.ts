@@ -95,6 +95,9 @@ export function legacyToolStatus(payload: unknown): AgentToolResultStatus {
   if (suffix === "ok") return "ok";
   if (suffix === "failed") return "error";
   if (/^Denied /.test(summary)) return "denied";
+  // The runner's automatic allow, persisted as a tool row before the fold made
+  // it a note; the transcript always drew it as a success.
+  if (AUTO_ALLOWED.test(summary)) return "ok";
   return "unknown";
 }
 

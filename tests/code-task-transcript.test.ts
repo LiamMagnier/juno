@@ -228,3 +228,11 @@ test("a rewind drops the rows it takes back, and what follows it is shown", () =
     ["$ make"],
   );
 });
+
+test("an automatic allow persisted before the fold still reads as a success", () => {
+  // Message.activity rows written by the old outcome writer: the runner's
+  // `Auto-allowed in sandbox:` row was drawn as a success receipt.
+  const persisted = { id: "evt-4", kind: "tool" as const, title: "Auto-allowed in sandbox: $ npm ci", createdAt: at(4) };
+  assert.equal(codeToolStatus(persisted), "ok");
+  assert.equal(legacyToolStatus({ summary: "Auto-allowed in sandbox: $ npm ci" }), "ok");
+});
