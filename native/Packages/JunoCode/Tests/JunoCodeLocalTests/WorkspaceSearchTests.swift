@@ -120,4 +120,32 @@ final class WorkspaceSearchTests: XCTestCase {
         let single = try await index.grep(GrepQuery(pattern: #"func start\(\) \{.*?\}"#, isRegex: true))
         XCTAssertTrue(single.isEmpty)
     }
+
+    func testAPatternThatMatchesEverythingStopsAtTheLimit() async throws {
+        // Every character of a near-megabyte file matches `.`. Gathering all
+        // of them, each counted back to the top for its line, never finished.
+        let row = String(repeating: "a", count: 63) + "\n"
+        try String(repeating: row, count: 15_000)
+            .write(to: workspaceURL.appendingPathComponent("big.txt"), atomically: true, encoding: .utf8)
+        let started = Date()
+        let everything = try await index.grep(GrepQuery(
+            pattern: ".", isRegex: true, maximumMatches: 50, path: WorkspacePath("big.txt"),
+            contextBefore: 20, contextAfter: 20, multiline: true
+        ))
+        XCTAssertEqual(everything.count, 50)
+        XCTAssertEqual(everything.last?.lineNumber, 1, "every match in the first line, numbered in one pass")
+        let spanning = try await index.grep(GrepQuery(
+            pattern: "a\na", maximumMatches: 3, path: WorkspacePath("big.txt"), multiline: true
+        ))
+        XCTAssertEqual(spanning.map(\.lineNumber), [1, 2, 3])
+        let lines = try await index.grep(GrepQuery(
+            pattern: "a", maximumMatches: 30, path: WorkspacePath("big.txt"), contextBefore: 20, contextAfter: 20
+        ))
+        XCTAssertEqual(lines.map(\.lineNumber), Array(1...30))
+        let count = try await index.grepCounts(GrepQuery(
+            pattern: "\n", maximumMatches: 5, path: WorkspacePath("big.txt"), multiline: true
+        ))
+        XCTAssertEqual(count.first?.count, 15_000)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 20)
+    }
 }

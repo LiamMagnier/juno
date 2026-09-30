@@ -105,11 +105,13 @@ public final class WorkspaceIndexService: WorkspaceIndexing, Sendable {
         let limit = max(1, query.maximumMatches)
         try await walkSearchable(query) { entry, content in
             let context = (before: query.contextBefore, after: query.contextAfter)
-            for match in matcher.matches(in: content, path: entry.path, context: context) {
-                matches.append(match)
-                if matches.count >= limit { return false }
-            }
-            return true
+            // Only as many as are still wanted: a pattern that hits every
+            // line of a large file must not build a match, with its context,
+            // for each of them first.
+            matches += matcher.matches(
+                in: content, path: entry.path, context: context, limit: limit - matches.count
+            )
+            return matches.count < limit
         }
         return matches
     }
@@ -334,11 +336,25 @@ private struct LineMatcher {
     }
 
     func count(in content: String) -> Int {
-        if query.multiline { return spans(in: content).count }
+        if query.multiline {
+            var count = 0
+            forEachMatch(in: content) { _ in
+                count += 1
+                return true
+            }
+            return count
+        }
         return Self.lines(of: content).reduce(0) { $0 + (lineMatches($1) ? 1 : 0) }
     }
 
-    func matches(in content: String, path: WorkspacePath, context: (before: Int, after: Int)) -> [GrepMatch] {
+    /// At most `limit` matches, in file order.
+    func matches(
+        in content: String,
+        path: WorkspacePath,
+        context: (before: Int, after: Int),
+        limit: Int
+    ) -> [GrepMatch] {
+        guard limit > 0 else { return [] }
         let lines = Self.lines(of: content)
         func bounded(_ text: String, bytes: Int = 512) -> String {
             OutputLimiter.apply(OutputLimit(maximumBytes: bytes, truncationNotice: "…"), to: text).text
@@ -350,7 +366,7 @@ private struct LineMatcher {
             return (before, after)
         }
         if query.multiline {
-            return spans(in: content).map { span in
+            return spans(in: content, limit: limit).map { span in
                 let (before, after) = surrounding(first: span.first, last: span.last)
                 return GrepMatch(
                     path: path,
@@ -372,17 +388,24 @@ private struct LineMatcher {
                 contextBefore: before,
                 contextAfter: after
             ))
+            if found.count >= limit { break }
         }
         return found
     }
 
-    /// Zero-based first and last line of each whole-content match.
-    private func spans(in content: String) -> [(first: Int, last: Int)] {
-        var ranges: [Range<String.Index>] = []
+    /// Visits each whole-content match in order until `visit` returns false.
+    /// One at a time, and no further than wanted: a pattern like `.` over a
+    /// large file matches every character, and gathering all of them first —
+    /// each then counted back to the top of the file for its line — took
+    /// hours.
+    private func forEachMatch(in content: String, _ visit: (Range<String.Index>) -> Bool) {
         if let regex {
             let whole = NSRange(content.startIndex..., in: content)
-            for result in regex.matches(in: content, options: [], range: whole) where result.range.length > 0 {
-                if let range = Range(result.range, in: content) { ranges.append(range) }
+            regex.enumerateMatches(in: content, options: [], range: whole) { result, _, stop in
+                guard let result, result.range.length > 0,
+                      let range = Range(result.range, in: content)
+                else { return }
+                if !visit(range) { stop.pointee = true }
             }
         } else {
             var searchStart = content.startIndex
@@ -390,20 +413,32 @@ private struct LineMatcher {
             while searchStart < content.endIndex,
                   let range = content.range(of: query.pattern, options: options, range: searchStart..<content.endIndex)
             {
-                ranges.append(range)
+                guard visit(range) else { return }
                 searchStart = range.upperBound > range.lowerBound ? range.upperBound : content.index(after: range.lowerBound)
             }
         }
-        // Line numbers by counting "\n" code units up to each bound.
+    }
+
+    /// Zero-based first and last line of the first `limit` whole-content
+    /// matches.
+    private func spans(in content: String, limit: Int) -> [(first: Int, last: Int)] {
+        // Matches come in order and do not overlap, so one pass down the file
+        // counts every line: "\n" code units from where the last match began.
         let utf8 = content.utf8
         let newline = UInt8(ascii: "\n")
-        return ranges.map { range in
-            let first = utf8[utf8.startIndex..<range.lowerBound].reduce(0) { $1 == newline ? $0 + 1 : $0 }
+        var position = content.startIndex
+        var line = 0
+        var spans: [(first: Int, last: Int)] = []
+        forEachMatch(in: content) { range in
+            line += utf8[position..<range.lowerBound].reduce(0) { $1 == newline ? $0 + 1 : $0 }
+            position = range.lowerBound
             // The last character matched, not the position after it: a match
             // ending with its newline still ends on that line.
             let lastIndex = content.index(before: range.upperBound)
             let inside = utf8[range.lowerBound..<lastIndex].reduce(0) { $1 == newline ? $0 + 1 : $0 }
-            return (first, first + inside)
+            spans.append((line, line + inside))
+            return spans.count < limit
         }
+        return spans
     }
 }
