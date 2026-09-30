@@ -650,12 +650,18 @@ public actor AgentOrchestrator {
     private func prepare() async throws {
         if !restored {
             restored = true
-            // Sessions saved before the integrity pass existed may carry an
-            // unanswered call; repairing on load is what un-bricks them.
-            conversation = ConversationIntegrity.repaired(
-                await store.loadConversation(sessionID: sessionID)
-            )
             let events = await store.events(for: sessionID)
+            // A batch is saved before it runs, so a history that ends in calls
+            // without results is one the app stopped in the middle of. The
+            // transcript says which of them began and which finished, and the
+            // model is told each one's truth: a call that started may have
+            // done its work, and must not be reported as never run. Sessions
+            // saved before the integrity pass existed may carry an unanswered
+            // call too; repairing on load is what un-bricks them.
+            conversation = ConversationIntegrity.repaired(
+                await store.loadConversation(sessionID: sessionID),
+                interrupted: ConversationIntegrity.interruptedCalls(in: events)
+            )
             let applied = Set(events.compactMap { event -> String? in
                 guard case let .userInstructionApplied(value) = event.payload else {
                     return nil
@@ -1270,6 +1276,13 @@ public actor AgentOrchestrator {
             // a reasoning block that fell between two calls keeps its place.
             conversation.removeLast(turnItems.filter { $0.toolCallID == nil }.count)
             conversation.append(contentsOf: turnItems)
+            // Saved before anything runs. Were the app to stop mid-batch, the
+            // store would otherwise hold a history without this turn at all,
+            // while its commits, installs and edits had happened; a resumed
+            // model would not know, and could do them twice. With the calls
+            // saved, restore answers each from the transcript: started calls
+            // as outcome unknown, the rest as never run.
+            try? await store.saveConversation(sessionID: sessionID, messages: conversation)
 
             let scheduledCalls = toolCalls
             var terminalGoalLifecycle: GoalLifecycle?
