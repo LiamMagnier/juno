@@ -267,7 +267,12 @@ export type ApprovalVerdict = (typeof APPROVAL_VERDICTS)[number];
 export const appApprovalPreviewSchema = z.object({
   /** Reading from the app (search, list, fetch). */
   reads: z.enum(APPROVAL_VERDICTS),
-  /** Changes that can be undone (label, archive, move, draft). */
+  /**
+   * Changes that can be undone (label, archive, move, draft). `allow` when at
+   * least some go ahead without asking — the policy allows them, or the
+   * person told Juno not to ask again about one of this app's actions — so it
+   * never says "ask" about a change that will not.
+   */
   changes: z.enum(APPROVAL_VERDICTS),
   /** Sending, posting, publishing, creating things other people see. */
   sends: z.enum(["ask", "block"]),

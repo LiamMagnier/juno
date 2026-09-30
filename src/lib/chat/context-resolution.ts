@@ -108,9 +108,9 @@ export interface ContextSkillRow {
  * MCP server).
  */
 export type AppConnectorState =
-  | { state: "connected"; label: string; connectHref: string | null }
-  | { state: "not_connected"; label: string; connectHref: string | null }
-  | { state: "disabled"; label: string; connectHref: string | null }
+  | { state: "connected"; label: string; connectHref: string | null; standingGrants?: boolean }
+  | { state: "not_connected"; label: string; connectHref: string | null; standingGrants?: boolean }
+  | { state: "disabled"; label: string; connectHref: string | null; standingGrants?: boolean }
   | { state: "unavailable"; label: string }
   | { state: "unknown" };
 
@@ -394,6 +394,7 @@ export class TurnContext {
           policy: approvals.policy,
           lockdown: approvals.lockdown,
           blocked,
+          standingGrants: !!state.standingGrants,
         });
       }
 

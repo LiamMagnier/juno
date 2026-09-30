@@ -7,7 +7,7 @@ import { COMPOSIO_APP_PREFIX } from "@/lib/composio";
 import { isComposioConfigured } from "@/lib/env";
 import { normalizeAgentAvatar } from "@/lib/agents/avatar";
 import { actionPolicyFromSetting } from "@/lib/chat/app-approval-preview";
-import { connectHrefFor } from "@/lib/chat/app-connector-state";
+import { connectHrefFor, connectorsWithStandingGrants } from "@/lib/chat/app-connector-state";
 import { contextTokenLabel, type ContextTokenKind } from "@/lib/chat/context-tokens";
 import { appMentionCandidates } from "@/lib/mentions/apps";
 import { rankMentions, type MentionCandidate } from "@/lib/mentions/rank";
@@ -221,7 +221,7 @@ export async function searchMentions(input: MentionSearchInput): Promise<Mention
 }
 
 async function appRows(userId: string, only?: ReadonlySet<string>): Promise<MentionCandidate[]> {
-  const [settings, connections, servers] = await Promise.all([
+  const [settings, connections, servers, granted] = await Promise.all([
     prisma.settings.findUnique({
       where: { userId },
       select: { actionApprovalPolicy: true, lockdownMode: true, blockedConnectors: true },
@@ -235,6 +235,7 @@ async function appRows(userId: string, only?: ReadonlySet<string>): Promise<Ment
       orderBy: { createdAt: "desc" },
       select: { id: true, name: true, enabled: true, url: true, createdAt: true },
     }),
+    connectorsWithStandingGrants(userId, only ? [...only] : undefined),
   ]);
   return appMentionCandidates({
     registry: listConnectors().map((def) => ({
@@ -251,6 +252,7 @@ async function appRows(userId: string, only?: ReadonlySet<string>): Promise<Ment
       policy: actionPolicyFromSetting(settings?.actionApprovalPolicy),
       lockdown: !!settings?.lockdownMode,
       blockedConnectors: settings?.blockedConnectors ?? [],
+      grantedConnectors: granted,
     },
     only,
   });

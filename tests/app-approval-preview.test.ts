@@ -11,15 +11,17 @@ import { appApprovalPreviewSchema } from "@/lib/chat/context-tokens";
  * always-confirm floor (src/lib/action-approval.ts, src/lib/work/domain.ts).
  */
 
-test("sending, posting and deleting ask under every policy that is not a block", () => {
+test("sending, posting and deleting ask under every policy that is not a block, standing grants or not", () => {
   for (const policy of ACTION_PERMISSION_POLICIES) {
     for (const lockdown of [false, true]) {
       for (const blocked of [false, true]) {
-        const preview = appApprovalPreview({ label: "Slack", policy, lockdown, blocked });
-        assert.ok(appApprovalPreviewSchema.safeParse(preview).success, `${policy} preview parses`);
-        const shutOff = lockdown || blocked || policy === "block";
-        assert.equal(preview.sends, shutOff ? "block" : "ask", `${policy} lockdown=${lockdown} blocked=${blocked}`);
-        assert.equal(preview.deletes, shutOff ? "block" : "ask");
+        for (const standingGrants of [false, true]) {
+          const preview = appApprovalPreview({ label: "Slack", policy, lockdown, blocked, standingGrants });
+          assert.ok(appApprovalPreviewSchema.safeParse(preview).success, `${policy} preview parses`);
+          const shutOff = lockdown || blocked || policy === "block";
+          assert.equal(preview.sends, shutOff ? "block" : "ask", `${policy} lockdown=${lockdown} blocked=${blocked}`);
+          assert.equal(preview.deletes, shutOff ? "block" : "ask");
+        }
       }
     }
   }
@@ -27,12 +29,47 @@ test("sending, posting and deleting ask under every policy that is not a block",
 
 test("each verdict is exactly what the broker decides for that risk class", () => {
   for (const policy of ACTION_PERMISSION_POLICIES) {
-    const preview = appApprovalPreview({ label: "Linear", policy, lockdown: false, blocked: false });
-    assert.equal(preview.reads, decideActionPolicy({ policy, riskClass: "read_only" }));
-    assert.equal(preview.changes, decideActionPolicy({ policy, riskClass: "reversible_write" }));
-    assert.equal(preview.sends, decideActionPolicy({ policy, riskClass: "external_write" }));
-    assert.equal(preview.deletes, decideActionPolicy({ policy, riskClass: "destructive_or_sensitive" }));
+    for (const hasStandingApproval of [false, true]) {
+      const preview = appApprovalPreview({ label: "Linear", policy, lockdown: false, blocked: false, standingGrants: hasStandingApproval });
+      assert.equal(preview.reads, decideActionPolicy({ policy, riskClass: "read_only", hasStandingApproval }));
+      assert.equal(preview.changes, decideActionPolicy({ policy, riskClass: "reversible_write", hasStandingApproval }));
+      assert.equal(preview.sends, decideActionPolicy({ policy, riskClass: "external_write", hasStandingApproval }));
+      assert.equal(preview.deletes, decideActionPolicy({ policy, riskClass: "destructive_or_sensitive", hasStandingApproval }));
+    }
   }
+});
+
+test("a standing grant is never hidden behind \"changing anything will ask you first\"", () => {
+  // Under allow_selected_low_risk the broker lets a granted change through
+  // without a card (findStandingGrant). The preview used to ignore grants and
+  // promise every change would ask.
+  const granted = appApprovalPreview({
+    label: "Linear",
+    policy: "allow_selected_low_risk",
+    lockdown: false,
+    blocked: false,
+    standingGrants: true,
+  });
+  assert.equal(granted.changes, "allow");
+  assert.doesNotMatch(granted.summary, /changing anything/);
+  assert.equal(
+    granted.summary,
+    "Sending, posting or deleting in Linear will ask you first, and so will changes, except the ones you've told Juno not to ask about again."
+  );
+  assert.ok(granted.summary.length <= 300);
+  const ungranted = appApprovalPreview({ label: "Linear", policy: "allow_selected_low_risk", lockdown: false, blocked: false });
+  assert.equal(ungranted.changes, "ask");
+  assert.equal(ungranted.summary, "Sending, posting or changing anything in Linear will ask you first.");
+  // Where the policy already allows changes, a grant changes nothing.
+  const important = (standingGrants: boolean) =>
+    appApprovalPreview({ label: "Linear", policy: "ask_for_important_actions", lockdown: false, blocked: false, standingGrants });
+  assert.deepEqual(important(true), important(false));
+  // And under a policy that asks for every change, a grant is not honoured
+  // by the broker, so the preview still says it asks.
+  assert.equal(
+    appApprovalPreview({ label: "Linear", policy: "ask_for_any_change", lockdown: false, blocked: false, standingGrants: true }).changes,
+    "ask"
+  );
 });
 
 test("the default policy asks before any change and reads freely", () => {

@@ -81,6 +81,11 @@ const tables: Record<string, Array<Record<string, unknown>>> = {
   ],
   userMcpServer: [{ id: "cserver0000001", userId: OTHER, name: "Their server", enabled: true, url: "https://x", createdAt: when(1) }],
   settings: [{ userId: ME, actionApprovalPolicy: "ask_for_any_change", lockdownMode: false, blockedConnectors: [] }],
+  actionApprovalGrant: [
+    { userId: ME, connectorId: "github", revokedAt: null, maxRiskClass: "reversible_write" },
+    { userId: ME, connectorId: "figma", revokedAt: when(3), maxRiskClass: "reversible_write" },
+    { userId: OTHER, connectorId: "composio:slack", revokedAt: null, maxRiskClass: "reversible_write" },
+  ],
 };
 
 const wheres: Record<string, Where[]> = {};
@@ -250,6 +255,26 @@ routeTest("rate-limited per account; signed-out callers are refused; bad input i
 
   assert.equal((await get(`?q=${"x".repeat(101)}`)).status, 400);
   assert.equal((await get("?limit=50")).status, 400);
+});
+
+routeTest("an app the person told Juno not to ask about again says so, and only the account's own grants count", async () => {
+  const settings = tables.settings[0];
+  const before = settings.actionApprovalPolicy;
+  settings.actionApprovalPolicy = "allow_selected_low_risk";
+  try {
+    for (const key of Object.keys(wheres)) delete wheres[key];
+    const { body } = await get("?kinds=app");
+    const byId = new Map(body.items.map((item) => [item.id, item.approval as { changes: string; sends: string; summary: string }]));
+    assert.equal(byId.get("github")!.changes, "allow", "an unrevoked grant of the account's own");
+    assert.match(byId.get("github")!.summary, /except the ones you've told Juno not to ask about again/);
+    assert.equal(byId.get("github")!.sends, "ask", "and still every send asks");
+    assert.equal(byId.get("figma")!.changes, "ask", "a revoked grant is no grant");
+    assert.equal(byId.get("composio:slack")!.changes, "ask", "another account's grant is not this account's");
+    for (const where of wheres.actionApprovalGrant ?? []) assert.equal(where.userId, ME);
+    assert.ok((wheres.actionApprovalGrant ?? []).length > 0, "the grants were read");
+  } finally {
+    settings.actionApprovalPolicy = before;
+  }
 });
 
 routeTest("a row's label is the token label the chat request accepts, however long or odd the name", async () => {

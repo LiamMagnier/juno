@@ -7,8 +7,8 @@
  * they are asking for will stop for an approval card. It is computed by
  * running the broker's own decision function (`decideActionPolicy`) over one
  * representative action of each risk class, with the account's policy,
- * Lockdown and block list — the exact inputs `authorizeExternalAction` reads
- * at call time. There is no second table of rules to drift from the first.
+ * Lockdown, block list and standing grants — the inputs `authorizeExternalAction`
+ * reads at call time. There is no second table of rules to drift from the first.
  *
  * What it cannot know is which class a particular tool call lands in: that is
  * decided per call, from the tool's name and arguments, deny-first. So the
@@ -48,6 +48,16 @@ export interface AppApprovalPreviewInput {
   lockdown: boolean;
   /** In Settings' block list. */
   blocked: boolean;
+  /**
+   * The person has told Juno not to ask again about at least one of this
+   * app's actions (an unrevoked `ActionApprovalGrant`). The broker lets that
+   * action through without a card under `allow_selected_low_risk`, so the
+   * preview must not say every change will ask. Grants are per action and per
+   * scope (the account, or one project); the preview is per app and does not
+   * know the chat's project, so any grant counts — the error it can make is
+   * "might not ask" about a change that will, never the reverse.
+   */
+  standingGrants?: boolean;
 }
 
 export class ApprovalFloorViolation extends Error {
@@ -63,10 +73,10 @@ function verdict(input: AppApprovalPreviewInput, riskClass: Parameters<typeof de
     riskClass,
     lockdown: input.lockdown,
     connectorBlocked: input.blocked,
-    // A standing grant is per action, and this preview is per app: no single
-    // grant speaks for "changes". `changes` below therefore reads as "asks"
-    // under allow_selected_low_risk, which is true until a grant exists.
-    hasStandingApproval: false,
+    // The broker asks the same question per call (findStandingGrant), and a
+    // grant only ever covers a reversible change (mayCreateStandingApproval):
+    // passing it for every class is what proves a grant cannot lift a send.
+    hasStandingApproval: !!input.standingGrants,
   });
 }
 
@@ -102,6 +112,9 @@ export function appApprovalPreview(input: AppApprovalPreviewInput): AppApprovalP
     summary = `Juno will ask you before anything it does in ${label}, even reading.`;
   } else if (changes === "ask") {
     summary = `Sending, posting or changing anything in ${label} will ask you first.`;
+  } else if (verdict({ ...input, standingGrants: false }, "reversible_write") === "ask") {
+    // Allowed only through a grant: the other changes still ask.
+    summary = `Sending, posting or deleting in ${label} will ask you first, and so will changes, except the ones you've told Juno not to ask about again.`;
   } else {
     summary = `Sending, posting or deleting in ${label} will ask you first. Changes you can undo won't.`;
   }

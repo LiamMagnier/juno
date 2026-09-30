@@ -40,6 +40,28 @@ export function connectHrefFor(connectorId: string): string {
 }
 
 /**
+ * The apps the person has told Juno not to ask again about for at least one
+ * action: an unrevoked standing grant, read the way the broker reads one
+ * (`findStandingGrant` in src/lib/action-approval-store.ts), in any scope.
+ * The approval preview needs it to avoid promising that every change asks.
+ * `ids` narrows the read; leave it out for every app the account has.
+ */
+export async function connectorsWithStandingGrants(userId: string, ids?: readonly string[]): Promise<Set<string>> {
+  if (ids && ids.length === 0) return new Set();
+  const rows = await prisma.actionApprovalGrant.findMany({
+    where: {
+      userId,
+      revokedAt: null,
+      maxRiskClass: "reversible_write",
+      ...(ids ? { connectorId: { in: [...new Set(ids)] } } : {}),
+    },
+    select: { connectorId: true },
+    distinct: ["connectorId"],
+  });
+  return new Set(rows.map((row) => row.connectorId));
+}
+
+/**
  * What each app id is for this account right now. Shared with the mention
  * search, which draws the same state in the palette.
  */
@@ -50,7 +72,7 @@ export async function appConnectorStates(userId: string, ids: readonly string[])
 
   const mcpRowIds = unique.map((id) => userMcpRowId(id)).filter((id): id is string => !!id);
   const providers = unique.filter((id) => !isUserMcpConnectorId(id));
-  const [servers, connections] = await Promise.all([
+  const [servers, connections, granted] = await Promise.all([
     mcpRowIds.length
       ? prisma.userMcpServer.findMany({
           where: { userId, id: { in: mcpRowIds } },
@@ -63,7 +85,9 @@ export async function appConnectorStates(userId: string, ids: readonly string[])
           select: { provider: true, accountLabel: true, scope: true },
         })
       : Promise.resolve([]),
+    connectorsWithStandingGrants(userId, unique),
   ]);
+  const standingGrants = (id: string) => (granted.has(id) ? { standingGrants: true } : {});
   const serverById = new Map(servers.map((row) => [row.id, row]));
   const connectionByProvider = new Map(connections.map((row) => [row.provider, row]));
 
@@ -73,7 +97,13 @@ export async function appConnectorStates(userId: string, ids: readonly string[])
       // Another account's server has no row here: unknown, never "disabled".
       const server = serverById.get(mcpId);
       if (!server) out.set(id, { state: "unknown" });
-      else out.set(id, { state: server.enabled ? "connected" : "disabled", label: server.name, connectHref: "/connections" });
+      else
+        out.set(id, {
+          state: server.enabled ? "connected" : "disabled",
+          label: server.name,
+          connectHref: "/connections",
+          ...standingGrants(id),
+        });
       continue;
     }
     if (isComposioAppId(id)) {
@@ -85,8 +115,9 @@ export async function appConnectorStates(userId: string, ids: readonly string[])
       const row = connectionByProvider.get(id);
       const label = row?.accountLabel?.trim() || titleCaseSlug(slug);
       if (!isComposioConfigured()) out.set(id, { state: "unavailable", label });
-      else if (row?.scope === "composio:active") out.set(id, { state: "connected", label, connectHref: connectHrefFor(id) });
-      else out.set(id, { state: "not_connected", label, connectHref: connectHrefFor(id) });
+      else if (row?.scope === "composio:active")
+        out.set(id, { state: "connected", label, connectHref: connectHrefFor(id), ...standingGrants(id) });
+      else out.set(id, { state: "not_connected", label, connectHref: connectHrefFor(id), ...standingGrants(id) });
       continue;
     }
     const def = getConnector(id);
@@ -101,8 +132,8 @@ export async function appConnectorStates(userId: string, ids: readonly string[])
     out.set(
       id,
       connectionByProvider.has(id)
-        ? { state: "connected", label: def.label, connectHref: connectHrefFor(id) }
-        : { state: "not_connected", label: def.label, connectHref: connectHrefFor(id) }
+        ? { state: "connected", label: def.label, connectHref: connectHrefFor(id), ...standingGrants(id) }
+        : { state: "not_connected", label: def.label, connectHref: connectHrefFor(id), ...standingGrants(id) }
     );
   }
   return out;

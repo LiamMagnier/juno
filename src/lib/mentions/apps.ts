@@ -34,7 +34,13 @@ export interface AppRowsInput {
   connections: readonly { provider: string; accountLabel: string | null; scope: string | null; createdAt: Date }[];
   servers: readonly { id: string; name: string; enabled: boolean; url: string; createdAt: Date }[];
   composio: { configured: boolean; prefix: string; activeScope: string };
-  approvals: { policy: ActionPermissionPolicy; lockdown: boolean; blockedConnectors: readonly string[] };
+  approvals: {
+    policy: ActionPermissionPolicy;
+    lockdown: boolean;
+    blockedConnectors: readonly string[];
+    /** Apps with an unrevoked standing grant (connectorsWithStandingGrants). */
+    grantedConnectors?: ReadonlySet<string>;
+  };
   /** Restrict to these ids (the `ids=` lookup). */
   only?: ReadonlySet<string>;
 }
@@ -58,6 +64,7 @@ export function appMentionCandidates(input: AppRowsInput): MentionCandidate[] {
       policy: approvals.policy,
       lockdown: approvals.lockdown,
       blocked: approvals.blockedConnectors.includes(id),
+      standingGrants: !!approvals.grantedConnectors?.has(id),
     });
 
   for (const app of input.registry) {

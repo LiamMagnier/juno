@@ -603,3 +603,27 @@ test("a resolved name is written as a token label: one line, bounded", async () 
   assert.ok(label.length <= 120);
   assert.ok(!label.includes("\n"));
 });
+
+test("an app the person told Juno not to ask about again does not promise that every change asks", async () => {
+  const { port } = makePort({
+    apps: { github: { state: "connected", label: "GitHub", connectHref: "/api/connectors/github/connect", standingGrants: true } },
+  });
+  const facts: ContextTurnFacts = {
+    ...baseFacts,
+    approvals: { ...baseFacts.approvals, policy: "allow_selected_low_risk" },
+  };
+  const turn = await TurnContext.begin([token("app", "github")], facts, port);
+  turn.settleConnectors([{ id: "github", label: "GitHub" }]);
+  const approval = outcome(turn, "github").approval!;
+  assert.equal(approval.changes, "allow", "some changes go ahead without a card");
+  assert.equal(approval.sends, "ask", "a grant never lifts a send");
+  assert.equal(approval.deletes, "ask");
+  assert.match(approval.summary, /except the ones you've told Juno not to ask about again/);
+
+  const without = await TurnContext.begin(
+    [token("app", "github")],
+    facts,
+    makePort({ apps: { github: connected("GitHub") } }).port
+  );
+  assert.equal(outcome(without, "github").approval?.changes, "ask");
+});
