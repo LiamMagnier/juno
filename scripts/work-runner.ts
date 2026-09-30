@@ -3771,6 +3771,21 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           kind: info.kind,
         });
       },
+      // Logged for the same reason: a run that folded its older steps into a
+      // summary reads differently afterwards, and until the transcript has a
+      // word for it the executor's log is the one place that can say so.
+      onCompaction: (info) => {
+        log("compacted the run's context", {
+          runId: input.runId,
+          model: run.effectiveModel ?? run.requestedModel,
+          reason: info.reason,
+          summary: info.summary,
+          ...(info.failure === undefined ? {} : { failure: info.failure }),
+          removedMessages: info.removedMessages,
+          tokensBefore: info.tokensBefore,
+          tokensAfter: info.tokensAfter,
+        });
+      },
       askQuestion: async (question) => {
         const waiting = await prisma.workRun.updateMany({
           where: {
