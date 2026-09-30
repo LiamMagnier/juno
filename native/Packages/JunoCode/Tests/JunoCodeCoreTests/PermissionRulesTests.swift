@@ -67,6 +67,29 @@ final class PermissionRulesTests: XCTestCase {
         )
     }
 
+    /// A move touches two paths. A deny or ask on either end applies, and an
+    /// allow must cover both.
+    func testAMoveIsJudgedByBothOfItsPaths() {
+        let rules = PermissionRuleSet(
+            allow: [PermissionRule(tool: "Edit", specifier: "src/**"), PermissionRule(tool: "Edit", specifier: "lib/**")],
+            deny: [PermissionRule(tool: "Edit", specifier: "secrets/**")]
+        )
+        XCTAssertEqual(
+            rules.evaluate(toolName: "move_file", subject: .paths(["secrets/key.pem", "public/key.pem"])),
+            .deny(PermissionRule(tool: "Edit", specifier: "secrets/**")),
+            "moving a file out of a denied folder is an edit there"
+        )
+        XCTAssertEqual(
+            rules.evaluate(toolName: "move_file", subject: .paths(["src/a.swift", "lib/a.swift"])),
+            .allow(PermissionRule(tool: "Edit", specifier: "src/**")),
+            "each end covered by some allow rule"
+        )
+        XCTAssertNil(
+            rules.evaluate(toolName: "move_file", subject: .paths(["src/a.swift", "docs/a.swift"])),
+            "one end no rule allows falls to the mode"
+        )
+    }
+
     /// A chained command is only as trusted as its least-trusted part.
     func testChainedCommandsAreCheckedPerSegment() {
         let rules = PermissionRuleSet(

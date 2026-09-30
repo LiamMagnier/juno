@@ -1,4 +1,5 @@
 import Foundation
+import JunoCodeCore
 import JunoCodeRuntime
 import JunoDesignSystem
 
@@ -21,6 +22,8 @@ public struct CatalogFallbackResolver: ModelFallbackResolver {
     /// This is a value type, so the resolver is Sendable and cheap to pass
     /// across actor boundaries.
     private let availableModelIDs: [(id: String, providerID: String, hasToolUse: Bool)]
+    /// Each model's catalog entry, for the thinking depths it offers.
+    private let options: [String: ModelOption]
 
     public init(availableModels: [ModelOption]) {
         self.availableModelIDs = availableModels.map { option in
@@ -30,6 +33,19 @@ public struct CatalogFallbackResolver: ModelFallbackResolver {
                 hasToolUse: option.catalog?.capabilities.contains(.tools) ?? true
             )
         }
+        self.options = Dictionary(
+            availableModels.map { ($0.modelID, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    /// The reader's depth where the fallback offers it, the nearest one it
+    /// does offer otherwise, and none at all for a model that publishes no
+    /// depths — or that the catalog does not know.
+    public func reasoningEffort(for modelID: String, preferred: ReasoningEffort?) -> ReasoningEffort? {
+        guard let option = options[modelID], option.takesThinkingParameter else { return nil }
+        let effort = preferred ?? .medium
+        return option.clampingReasoningEffort(effort) ?? effort
     }
 
     public func resolveFallback(for currentModelID: String) async -> String? {

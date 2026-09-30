@@ -126,7 +126,7 @@ test('sensitive command classifier flags the dangerous set', () => {
 
 test('permission engine matrix', () => {
   const cwd = tmpdir();
-  const eng = new PermissionEngine(cwd);
+  const eng = new PermissionEngine(cwd, { userSettingsFile: null });
   // ask mode: everything non-safe asks
   assert.equal(eng.decide('ask', 'read_file', 'safe'), 'allow');
   assert.equal(eng.decide('ask', 'edit_file', 'edit'), 'ask');
@@ -153,9 +153,13 @@ test('project rules: deny wins over everything', () => {
     path.join(cwd, '.juno', 'settings.json'),
     JSON.stringify({ allow: ['edit_file'], deny: ['bash'] }),
   );
-  const eng = new PermissionEngine(cwd);
+  const eng = new PermissionEngine(cwd, { userSettingsFile: null });
   assert.equal(eng.decide('full', 'bash', 'command'), 'deny');
-  assert.equal(eng.decide('ask', 'edit_file', 'edit'), 'allow');
+  // A repository's allow list is not the reader's: it waits for approval.
+  assert.equal(eng.decide('ask', 'edit_file', 'edit'), 'ask');
+  const approved = new PermissionEngine(cwd, { userSettingsFile: null, trustProjectSettings: true });
+  assert.equal(approved.decide('ask', 'edit_file', 'edit'), 'allow');
+  assert.equal(approved.decide('full', 'bash', 'command'), 'deny');
 });
 
 test('checkpoints: snapshot, diff, rollback across turns', () => {

@@ -77,13 +77,31 @@ public struct MCPCodeTool: CodeTool {
         )
     }
 
-    private static func safeName(_ value: String) -> String {
-        let mapped = value.map { character in
-            character.isLetter || character.isNumber || character == "_" || character == "-"
-                ? character
-                : "_"
+    /// One segment of the name, in the only characters providers accept:
+    /// ASCII letters and digits, `_` and `-` (`^[a-zA-Z0-9_-]{1,64}$`).
+    ///
+    /// `isLetter` used to let `é` or a CJK name through, and a request
+    /// declaring it was a 400 on every turn of every session in the
+    /// workspace. Anything else becomes `_`. Where a character outside ASCII
+    /// was replaced, a digest of the original follows, because two names in
+    /// another script would otherwise both come out as underscores and
+    /// collide.
+    static func safeName(_ value: String) -> String {
+        var replacedNonASCII = false
+        let mapped = value.unicodeScalars.map { scalar -> Character in
+            if scalar.isASCII,
+               CharacterSet.alphanumerics.contains(scalar) || scalar == "_" || scalar == "-"
+            {
+                return Character(scalar)
+            }
+            if !scalar.isASCII { replacedNonASCII = true }
+            return "_"
         }
-        let result = String(mapped)
-        return result.isEmpty ? "tool" : String(result.prefix(96))
+        var result = String(String(mapped).prefix(96))
+        if result.isEmpty { result = "tool" }
+        if replacedNonASCII {
+            result += "_" + String(Digests.sha256Hex(value).prefix(6))
+        }
+        return result
     }
 }

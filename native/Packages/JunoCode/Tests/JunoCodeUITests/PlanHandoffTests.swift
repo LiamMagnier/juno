@@ -1,0 +1,324 @@
+import XCTest
+import JunoCodeCore
+@testable import JunoCodeLocal
+@testable import JunoCodeRuntime
+@testable import JunoCodeUI
+
+/// Answers each turn from a list: a tool call, or text.
+private final class TurnScript: AgentModelClient, @unchecked Sendable {
+    enum Turn {
+        case call(id: String, name: String, input: JSONValue)
+        case text(String)
+    }
+
+    private let lock = NSLock()
+    private var turns: [Turn]
+    private var storage: [ModelTurnRequest] = []
+
+    init(_ turns: [Turn]) {
+        self.turns = turns
+    }
+
+    var requests: [ModelTurnRequest] { lock.withLock { storage } }
+
+    func streamTurn(_ request: ModelTurnRequest) -> AsyncThrowingStream<ModelStreamEvent, Error> {
+        let turn = lock.withLock { () -> Turn in
+            storage.append(request)
+            return turns.isEmpty ? .text("Done.") : turns.removeFirst()
+        }
+        return AsyncThrowingStream { continuation in
+            switch turn {
+            case let .call(id, name, input):
+                continuation.yield(.toolCallRequested(id: id, name: name, input: input))
+                continuation.yield(.turnCompleted(.toolUse))
+            case let .text(text):
+                continuation.yield(.textDelta(text))
+                continuation.yield(.turnCompleted(.endTurn))
+            }
+            continuation.finish()
+        }
+    }
+}
+
+/// Plan → approve → Code, questions and trusted skills, through the session controller the
+/// Studio drives.
+@MainActor
+final class PlanHandoffTests: XCTestCase {
+    private var root: URL!
+
+    override func setUp() async throws {
+        root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("juno-code-plan-handoff-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("project"),
+            withIntermediateDirectories: true
+        )
+    }
+
+    override func tearDown() async throws {
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    private func makeController(
+        behavior: AgentBehavior,
+        storedMode: PermissionMode,
+        model: TurnScript
+    ) async throws -> (SessionController, CodeSessionStore, CodeSessionID) {
+        let workspaceID = WorkspaceID()
+        let project = root.appendingPathComponent("project")
+        let context = WorkspaceContext(
+            record: WorkspaceRecord(
+                descriptor: WorkspaceDescriptor(
+                    id: workspaceID,
+                    displayName: "Project",
+                    localPathHint: project.path,
+                    isGitRepository: false,
+                    lastOpenedAt: Date()
+                ),
+                bookmarkData: Data()
+            ),
+            access: try WorkspaceAccess(workspaceID: workspaceID, grantedURL: project),
+            storageRoot: root.appendingPathComponent("storage"),
+            userSettingsDirectory: nil
+        )
+        let store = CodeSessionStore(directoryURL: root.appendingPathComponent("sessions"))
+        let session = try await store.createSession(
+            workspaceID: workspaceID,
+            workspaceName: "Project",
+            title: "Plan",
+            configuration: AgentConfiguration(
+                modelID: "test-model",
+                behavior: behavior,
+                permissionMode: storedMode
+            ),
+            gitBranch: nil
+        )
+        let controller = SessionController(session: session, context: context, store: store, modelClient: model)
+        await controller.attach()
+        return (controller, store, session.id)
+    }
+
+    private func eventually(_ condition: @MainActor () async -> Bool) async throws {
+        for _ in 0..<300 {
+            if await condition() { return }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTFail("the condition never held")
+    }
+
+    func testApprovingAPlanStartsACodeTurnAtExactlyThePickedLevel() async throws {
+        let plan = "1. Add `limit` to the query\n2. Test it"
+        let model = TurnScript([
+            .call(id: "p1", name: "exit_plan", input: ["plan": .string(plan)]),
+            .text("Implemented."),
+        ])
+        // The session held Full access before Plan; approving at Ask must
+        // not hand that back.
+        let (controller, store, sessionID) = try await makeController(
+            behavior: .plan, storedMode: .fullAccess, model: model
+        )
+        controller.composerText = "Plan the limit parameter"
+        await controller.send()
+        try await eventually { !model.requests.isEmpty }
+
+        let firstTools = Set(model.requests.first?.tools.map(\.name) ?? [])
+        XCTAssertTrue(firstTools.contains("exit_plan"))
+        XCTAssertTrue(firstTools.contains("todo_write"))
+        XCTAssertFalse(firstTools.contains("write_file"), "Plan is read-only by construction")
+
+        try await eventually { !controller.pendingPlans.isEmpty }
+        let request = try XCTUnwrap(controller.pendingPlans.first)
+        XCTAssertEqual(request.plan, plan)
+
+        await controller.approvePlan(request.id, mode: .askBeforeChanges)
+        try await eventually { model.requests.count == 2 }
+        try await eventually {
+            (try? await store.session(id: sessionID).status.isActive) == false
+        }
+
+        XCTAssertEqual(controller.session.configuration.behavior, .code)
+        XCTAssertEqual(controller.session.configuration.permissionMode, .askBeforeChanges)
+        let live = await controller.live?.permissions.permissionMode
+        XCTAssertEqual(live, .askBeforeChanges)
+
+        let second = try XCTUnwrap(model.requests.last)
+        let secondTools = Set(second.tools.map(\.name))
+        XCTAssertTrue(secondTools.contains("write_file"), "the implementation turn can edit")
+        XCTAssertFalse(secondTools.contains("exit_plan"), "and has no plan to hand over")
+        // The last user message the reader's side sent; a `<session_state>`
+        // block for the goal Code now carries may follow it.
+        let prompt = try XCTUnwrap(second.messages.last { message in
+            if case let .user(text) = message { return !text.hasPrefix("<session_state") }
+            return false
+        }.flatMap { message -> String? in
+            if case let .user(text) = message { return text }
+            return nil
+        }, "the turn opens with the plan")
+        XCTAssertTrue(prompt.contains("<approved_plan>\n\(plan)\n</approved_plan>"), prompt)
+
+        let prompts = controller.events.compactMap { event -> String? in
+            if case let .userPrompt(prompt) = event.payload { return prompt.text }
+            return nil
+        }
+        XCTAssertEqual(prompts, ["Plan the limit parameter", "Implement the approved plan."])
+    }
+
+    func testKeepPlanningStaysInPlan() async throws {
+        let model = TurnScript([
+            .call(id: "p1", name: "exit_plan", input: ["plan": "Rough"]),
+            .text("I will revise it."),
+        ])
+        let (controller, store, sessionID) = try await makeController(
+            behavior: .plan, storedMode: .workspaceWrite, model: model
+        )
+        controller.composerText = "Plan it"
+        await controller.send()
+        try await eventually { !controller.pendingPlans.isEmpty }
+        await controller.keepPlanning(try XCTUnwrap(controller.pendingPlans.first).id, feedback: "Add a rollback")
+        try await eventually {
+            (try? await store.session(id: sessionID).status.isActive) == false
+        }
+        XCTAssertEqual(model.requests.count, 2)
+        XCTAssertEqual(controller.session.configuration.behavior, .plan)
+        let mode = await controller.live?.permissions.permissionMode
+        XCTAssertEqual(mode, .readOnly)
+        XCTAssertTrue(controller.pendingPlans.isEmpty)
+    }
+
+    func testOnlyTrustedSkillsAreListedAndNoBodyIsInThePrompt() async throws {
+        let skills = root.appendingPathComponent("project/.claude/skills")
+        for (name, text) in [
+            ("deploy", "---\ndescription: Ship to staging\n---\nSECRET-DEPLOY-BODY"),
+            ("lint", "---\ndescription: Run the linters\n---\nSECRET-LINT-BODY"),
+        ] {
+            try FileManager.default.createDirectory(
+                at: skills.appendingPathComponent(name), withIntermediateDirectories: true
+            )
+            try text.write(to: skills.appendingPathComponent("\(name)/SKILL.md"), atomically: true, encoding: .utf8)
+        }
+        let model = TurnScript([.text("Ok.")])
+        let (controller, store, sessionID) = try await makeController(
+            behavior: .code, storedMode: .workspaceWrite, model: model
+        )
+        let context = try XCTUnwrap(controller.context)
+        let deploy = try XCTUnwrap(SkillDiscovery(access: context.access).discover().skills.first { $0.name == "deploy" })
+        try context.setSkillTrusted(deploy, trusted: true)
+
+        controller.composerText = "Ship it"
+        await controller.send()
+        try await eventually { !model.requests.isEmpty }
+        try await eventually {
+            (try? await store.session(id: sessionID).status.isActive) == false
+        }
+        let request = try XCTUnwrap(model.requests.first)
+        // The list is session state: trusting a skill never touches the
+        // system prompt at the head of the cached prefix.
+        let state = Self.sessionState(request)
+        XCTAssertTrue(state.contains("<skills>"), state)
+        XCTAssertTrue(state.contains("- deploy: Ship to staging"), state)
+        XCTAssertFalse(request.systemPrompt.contains("Ship to staging"))
+        XCTAssertFalse(state.contains("lint"), "an untrusted skill is not mentioned")
+        XCTAssertFalse(request.systemPrompt.contains("lint"), "an untrusted skill is not mentioned")
+        XCTAssertFalse(state.contains("SECRET-DEPLOY-BODY"), "bodies load on demand")
+        XCTAssertFalse(request.systemPrompt.contains("SECRET-DEPLOY-BODY"), "bodies load on demand")
+        XCTAssertTrue(request.tools.map(\.name).contains("use_skill"))
+    }
+
+    /// A skill trusted between turns is offered by the next session state and
+    /// loads through the tool the session already had: the system prompt and
+    /// the tool list stay byte for byte what they were.
+    func testASkillTrustedMidSessionLoadsWithoutChangingThePrefix() async throws {
+        let skills = root.appendingPathComponent("project/.claude/skills/deploy")
+        try FileManager.default.createDirectory(at: skills, withIntermediateDirectories: true)
+        try "---\ndescription: Ship to staging\n---\nSECRET-DEPLOY-BODY"
+            .write(to: skills.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        let model = TurnScript([
+            .call(id: "s0", name: "use_skill", input: ["name": "deploy"]),
+            .text("Not yet."),
+            .call(id: "s1", name: "use_skill", input: ["name": "deploy"]),
+            .text("Loaded."),
+        ])
+        let (controller, store, sessionID) = try await makeController(
+            behavior: .code, storedMode: .workspaceWrite, model: model
+        )
+        let context = try XCTUnwrap(controller.context)
+
+        controller.composerText = "Ship it"
+        await controller.send()
+        try await eventually { model.requests.count == 2 }
+        try await eventually {
+            (try? await store.session(id: sessionID).status.isActive) == false
+        }
+        XCTAssertTrue(Self.sessionState(model.requests[0]).contains("No skills are enabled."))
+        guard case let .toolResult(_, refused, true)? = model.requests[1].messages.last else {
+            return XCTFail("an untrusted skill does not load")
+        }
+        XCTAssertFalse(refused.contains("SECRET-DEPLOY-BODY"), refused)
+
+        let deploy = try XCTUnwrap(SkillDiscovery(access: context.access).discover().skills.first)
+        try context.setSkillTrusted(deploy, trusted: true)
+        controller.composerText = "Now ship it"
+        await controller.send()
+        try await eventually { model.requests.count == 4 }
+        try await eventually {
+            (try? await store.session(id: sessionID).status.isActive) == false
+        }
+        let requests = model.requests
+        XCTAssertTrue(Self.sessionState(requests[2]).contains("- deploy: Ship to staging"))
+        guard case let .toolResult(_, loaded, false)? = requests[3].messages.last else {
+            return XCTFail("the trusted skill loads")
+        }
+        XCTAssertTrue(loaded.contains("SECRET-DEPLOY-BODY"), loaded)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        for request in requests {
+            XCTAssertEqual(request.systemPrompt, requests[0].systemPrompt)
+            XCTAssertEqual(try encoder.encode(request.tools), try encoder.encode(requests[0].tools))
+        }
+    }
+
+    private static func sessionState(_ request: ModelTurnRequest) -> String {
+        request.messages.compactMap { message -> String? in
+            guard case let .user(text) = message, text.hasPrefix("<session_state") else { return nil }
+            return text
+        }.joined(separator: "\n")
+    }
+
+    func testAQuestionIsShownThenAnsweredFromTheController() async throws {
+        let model = TurnScript([
+            .call(id: "q1", name: "ask_user", input: [
+                "questions": [["question": "Tabs or spaces?", "options": [["label": "Tabs"], ["label": "Spaces"]]]],
+            ]),
+            .text("Spaces it is."),
+        ])
+        let (controller, store, sessionID) = try await makeController(
+            behavior: .ask, storedMode: .workspaceWrite, model: model
+        )
+        controller.composerText = "Format the file"
+        await controller.send()
+        try await eventually { !controller.pendingQuestions.isEmpty }
+        let request = try XCTUnwrap(controller.pendingQuestions.first)
+        XCTAssertEqual(request.questions.first?.question, "Tabs or spaces?")
+
+        await controller.answerQuestion(
+            request.id,
+            answers: [QuestionAnswer(questionID: "q1", selectedOptions: ["Spaces"])]
+        )
+        try await eventually {
+            (try? await store.session(id: sessionID).status.isActive) == false
+        }
+        XCTAssertTrue(controller.pendingQuestions.isEmpty)
+        guard case let .toolResult(_, content, _)? = model.requests.last?.messages.last else {
+            return XCTFail("the answer is the tool's result")
+        }
+        XCTAssertTrue(content.contains("→ Spaces"), content)
+
+        let items = StudioThreadItems.build(
+            events: controller.events,
+            groups: controller.narrativeGroups,
+            pendingApprovalIDs: [],
+            showReasoning: false
+        )
+        XCTAssertTrue(items.contains { if case .question = $0 { return true } else { return false } })
+    }
+}

@@ -16,12 +16,83 @@ public enum ConversationIntegrity {
     public static let notExecutedMessage =
         "Not executed: the run was interrupted before this tool ran."
 
+    /// The result recorded for a call that began and whose result was never
+    /// recorded: the app stopped while it ran. It may have finished, half
+    /// finished or not got far — a commit made, a migration applied, a file
+    /// half written — and "Not executed" would invite the model to run it
+    /// again blind.
+    public static let outcomeUnknownMessage =
+        "Outcome unknown: the app stopped while this was running; check the workspace before retrying."
+
+    /// What the transcript knows about a call whose result never reached the
+    /// model history, because the app stopped part-way through its batch.
+    public enum InterruptedCall: Equatable, Sendable {
+        /// It began executing and nothing more was recorded.
+        case started
+        /// It finished, and the transcript has the first line of its result;
+        /// the app stopped before the whole result was saved.
+        case finished(succeeded: Bool, summary: String)
+        /// It was refused or stopped before it ran.
+        case notRun(summary: String)
+    }
+
+    /// The state of every call in `events` that was proposed, from its latest
+    /// proposal on: a call id a later turn used again starts over.
+    public static func interruptedCalls(in events: [SessionEvent]) -> [String: InterruptedCall] {
+        var states: [String: InterruptedCall] = [:]
+        for event in events {
+            switch event.payload {
+            case let .toolProposed(proposed):
+                states.removeValue(forKey: proposed.toolCallID)
+            case let .toolStarted(started):
+                states[started.toolCallID] = .started
+            case let .toolCompleted(completed):
+                switch completed.status {
+                case .succeeded, .failed:
+                    states[completed.toolCallID] = .finished(
+                        succeeded: completed.status == .succeeded,
+                        summary: completed.resultSummary
+                    )
+                case .denied, .cancelled:
+                    states[completed.toolCallID] = .notRun(summary: completed.resultSummary)
+                }
+            default:
+                continue
+            }
+        }
+        return states
+    }
+
+    /// The result a call with no recorded result is given, from what the
+    /// transcript says became of it.
+    static func synthesizedResult(for id: String, state: InterruptedCall?) -> ModelMessage {
+        switch state {
+        case nil:
+            return .toolResult(id: id, content: notExecutedMessage, isError: true)
+        case .started:
+            return .toolResult(id: id, content: outcomeUnknownMessage, isError: true)
+        case let .finished(succeeded, summary):
+            return .toolResult(
+                id: id,
+                content: "The app stopped before this result was saved. The tool \(succeeded ? "finished" : "failed"); its output began: \(summary)\nCheck the workspace before relying on it.",
+                isError: !succeeded
+            )
+        case let .notRun(summary):
+            return .toolResult(id: id, content: "Not executed: \(summary)", isError: true)
+        }
+    }
+
     /// Returns `messages` with every tool-call run completed by its results.
     ///
-    /// - Missing results are synthesized as errors, in call order.
+    /// - Missing results are synthesized as errors, in call order: "Not
+    ///   executed" for a call that never ran, and — when `interrupted` says a
+    ///   call began or finished before the app stopped — what is known of it.
     /// - User turns found between a call run and its results move after them.
     /// - Results that answer no preceding call are dropped.
-    public static func repaired(_ messages: [ModelMessage]) -> [ModelMessage] {
+    public static func repaired(
+        _ messages: [ModelMessage],
+        interrupted: [String: InterruptedCall] = [:]
+    ) -> [ModelMessage] {
         var output: [ModelMessage] = []
         output.reserveCapacity(messages.count)
         var index = 0
@@ -66,7 +137,7 @@ public enum ConversationIntegrity {
 
             for id in callIDs {
                 output.append(
-                    results[id] ?? .toolResult(id: id, content: notExecutedMessage, isError: true)
+                    results[id] ?? synthesizedResult(for: id, state: interrupted[id])
                 )
             }
             output.append(contentsOf: deferred)

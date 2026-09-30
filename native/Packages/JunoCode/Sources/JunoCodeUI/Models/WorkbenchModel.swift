@@ -83,8 +83,10 @@ public struct UnconfiguredModelClient: AgentModelClient {
         _ request: ModelTurnRequest
     ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
         AsyncThrowingStream { continuation in
+            // Unavailable rather than a transport failure: nothing will
+            // answer however long the run waits, so it fails at once.
             continuation.finish(
-                throwing: AgentModelClientError.transport(
+                throwing: AgentModelClientError.unavailable(
                     message: "No model transport is configured. Sign in to Juno to run the agent."
                 )
             )
@@ -101,20 +103,17 @@ public final class WorkbenchModel {
         public let storageRootURL: URL
         public let modelClient: any AgentModelClient
         public let availableModels: [ModelOption]
-        public let remoteSessionProvider: (any RemoteSessionProviding)?
         public let webSearch: (any CodeWebSearching)?
 
         public init(
             storageRootURL: URL,
             modelClient: any AgentModelClient,
             availableModels: [ModelOption],
-            remoteSessionProvider: (any RemoteSessionProviding)? = nil,
             webSearch: (any CodeWebSearching)? = nil
         ) {
             self.storageRootURL = storageRootURL
             self.modelClient = modelClient
             self.availableModels = availableModels
-            self.remoteSessionProvider = remoteSessionProvider
             self.webSearch = webSearch
         }
 
@@ -131,7 +130,6 @@ public final class WorkbenchModel {
             accountID: String,
             modelClient: any AgentModelClient,
             availableModels: [ModelOption],
-            remoteSessionProvider: (any RemoteSessionProviding)? = nil,
             webSearch: (any CodeWebSearching)? = nil
         ) -> Dependencies {
             let base = FileManager.default.urls(
@@ -145,7 +143,6 @@ public final class WorkbenchModel {
                 storageRootURL: base,
                 modelClient: modelClient,
                 availableModels: availableModels,
-                remoteSessionProvider: remoteSessionProvider,
                 webSearch: webSearch
             )
         }
@@ -233,10 +230,6 @@ public final class WorkbenchModel {
     }
 
     public let dependencies: Dependencies
-    /// Authenticated Cloud/Remote execution, when the host composed it. The
-    /// Desktop Code Studio and the unified JunoMac Code composer share this
-    /// typed provider without fabricating local sessions for remote work.
-    public private(set) var remoteExecutionModel: RemoteExecutionModel?
     public let sessionStore: CodeSessionStore
     private let workspaceDirectory: WorkspaceDirectory
     private var contexts: [WorkspaceID: WorkspaceContext] = [:]
@@ -263,72 +256,12 @@ public final class WorkbenchModel {
     public init(dependencies: Dependencies) {
         self.dependencies = dependencies
         self.availableModels = dependencies.availableModels
-        self.remoteExecutionModel = dependencies.remoteSessionProvider.map {
-            RemoteExecutionModel(provider: $0)
-        }
         self.sessionStore = CodeSessionStore(
             directoryURL: dependencies.storageRootURL.appendingPathComponent("sessions-store")
         )
         self.workspaceDirectory = WorkspaceDirectory(
             directoryURL: dependencies.storageRootURL
         )
-    }
-
-    // MARK: - Cloud and Remote
-
-    /// Resolves the repositories used by the Cloud target picker.
-    ///
-    /// Remote work is intentionally not represented as a local `CodeSession`:
-    /// the server owns its task lifecycle and the authenticated Code task
-    /// surface is the source of truth. These small forwarding methods keep that
-    /// boundary out of the view while still letting the native JunoMac composer
-    /// use the provider that the host already authenticated.
-    public func loadRemoteRepositories() async -> Result<
-        [RemoteRepositoryReference], RemoteSessionProviderError
-    > {
-        guard let remoteExecutionModel else {
-            return .failure(.unavailable(.integrationNotComposed))
-        }
-        return await remoteExecutionModel.loadRepositories()
-    }
-
-    /// Resolves signed-in remote computers and their registered workspaces.
-    public func loadRemoteDevices() async -> Result<
-        [RemoteDeviceTarget], RemoteSessionProviderError
-    > {
-        guard let remoteExecutionModel else {
-            return .failure(.unavailable(.integrationNotComposed))
-        }
-        return await remoteExecutionModel.loadDevices()
-    }
-
-    /// Starts a real Cloud or Remote task and returns its server-owned handle.
-    ///
-    /// A remote run is not inserted into the local session store. Treating it as
-    /// local would make the transcript, permission state and workspace path lie
-    /// about where the code is executing. The native task list remains the
-    /// durable monitor for these runs.
-    public func startRemoteSession(
-        prompt: String,
-        at location: CodeExecutionLocation
-    ) async -> Result<RemoteSessionHandle, RemoteSessionProviderError> {
-        guard let remoteExecutionModel else {
-            return .failure(.unavailable(.integrationNotComposed))
-        }
-        guard location.isRemote else {
-            return .failure(.unavailable(.localExecutionManagedByWorkbench))
-        }
-        if let handle = await remoteExecutionModel.start(prompt: prompt, at: location) {
-            return .success(handle)
-        }
-        switch remoteExecutionModel.state {
-        case .unavailable(_, let reason):
-            return .failure(.unavailable(reason))
-        case .failed(_, let error):
-            return .failure(error)
-        default:
-            return .failure(.transport("The remote task did not return a task handle."))
-        }
     }
 
     // MARK: - Bootstrap
@@ -395,7 +328,7 @@ public final class WorkbenchModel {
                 // by.
                 selectedSessionID = visibleSessions.first?.id
             }
-        case .eventAppended:
+        case .eventAppended, .usageChanged:
             break
         }
     }
@@ -485,7 +418,7 @@ public final class WorkbenchModel {
             self.selectedSessionID = nil
         }
         try? await workspaceDirectory.remove(id: id)
-        contexts.removeValue(forKey: id)
+        await contexts.removeValue(forKey: id)?.shells.terminateAll()
         workspaces = await workspaceDirectory.allWorkspaces()
     }
 
@@ -718,7 +651,20 @@ public final class WorkbenchModel {
             // are actually available to this account, prefers a tool-capable
             // model from another provider, and refuses to invent an id the
             // catalog does not know.
-            fallbackResolver: CatalogFallbackResolver(availableModels: availableModels)
+            fallbackResolver: CatalogFallbackResolver(availableModels: availableModels),
+            // The manifest's published rates, with the cache multipliers the
+            // model's provider documents, for the session's cost estimate.
+            modelPricing: { [weak self] modelID in
+                guard let catalog = self?.availableModels.first(where: { $0.modelID == modelID })?.catalog,
+                      let price = catalog.price
+                else { return nil }
+                return CodeUsagePricing.forModel(
+                    modelID,
+                    providerID: catalog.providerID,
+                    inputPerMillion: price.inputPerMillion,
+                    outputPerMillion: price.outputPerMillion
+                )
+            }
         )
         controllers[sessionID] = controller
         await controller.attach()
@@ -794,6 +740,11 @@ public final class WorkbenchModel {
         // Stopping appends the runs' last events; writing their summaries now
         // spares the next launch catching them up from the transcripts.
         await sessionStore.saveTranscriptSummaries()
+        // Every background shell of the account goes with it: nothing the
+        // agent started may keep running for a reader who has signed out.
+        for context in contexts.values {
+            await context.shells.terminateAll()
+        }
         contexts.removeAll()
         selectedSessionID = nil
         // Nothing of this account is running any more: whoever watches the
@@ -851,6 +802,10 @@ public final class WorkbenchModel {
         // snapshots of a working tree — so there is nothing to remove.
         if let workspaceID = session.workspaceID {
             if let context = contexts[workspaceID] {
+                // Its background shells end with it, whether or not a
+                // controller for it was ever opened this launch.
+                await context.shells.terminateAll(ownedBy: session.id)
+                context.workingDirectories.forget(session.id)
                 try await context.checkpoints.removeCheckpoints(for: session.id)
                 try await context.turnCheckpoints.removeSession(session.id)
             } else {

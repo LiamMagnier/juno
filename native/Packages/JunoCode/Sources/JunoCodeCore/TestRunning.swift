@@ -43,6 +43,26 @@ public protocol TestRunning: Sendable {
     /// Streams a test run; the final `.completed` event carries the exit
     /// status the parser combines with the collected output.
     func stream(command: String, timeoutSeconds: Double) -> AsyncThrowingStream<CommandEvent, Error>
+
+    /// Streams a test run that is stopped once it has printed `outputLimit`:
+    /// the caller keeps what a long run prints somewhere other than memory,
+    /// and asks for a ceiling far above the transcript's own.
+    func stream(
+        command: String,
+        timeoutSeconds: Double,
+        outputLimit: OutputLimit
+    ) -> AsyncThrowingStream<CommandEvent, Error>
+}
+
+public extension TestRunning {
+    /// A runner that sets its own limit keeps it.
+    func stream(
+        command: String,
+        timeoutSeconds: Double,
+        outputLimit _: OutputLimit
+    ) -> AsyncThrowingStream<CommandEvent, Error> {
+        stream(command: command, timeoutSeconds: timeoutSeconds)
+    }
 }
 
 /// Pure parsing of well-known test-summary formats. Falls back to the exit

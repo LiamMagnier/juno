@@ -16,6 +16,7 @@ import {
   type ReceiptStatus,
 } from "@/lib/chat/tool-receipt";
 import type { CodeActivityEvent } from "@/hooks/use-code-session";
+import { codeToolLabel, codeToolStatus } from "@/lib/agent-protocol/code-task-transcript";
 import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
 
 /*
@@ -31,33 +32,32 @@ import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
  * rows on iOS. Keep the three in step.
  */
 
-/** What a tool row reports about how its process ended. */
+/** What a tool row reports about how its call ended. */
 export type ToolOutcome = "ok" | "failed" | "unknown";
 
-/** The runner's own suffix on a bash summary, kept for producers that predate `exitCode`. */
-const OUTCOME_SUFFIX = / — (ok|failed)$/;
-
-/** The `Auto-allowed in sandbox: …` row the cloud driver writes instead of a fake approval pair. */
-const AUTO_ALLOWED = /^Auto-allowed in sandbox: /;
-
 /**
- * The exit status of a tool row, read from the number first and the title's
- * suffix second. The number is what the runner now sends; the suffix is what
- * every row persisted before it exists as.
+ * How a tool row's call ended, from the producer's typed status — the agent
+ * protocol's tool_result, folded by CodeTaskTranscript. This used to be read
+ * out of the row's title with regexes (a ` — ok` suffix, a `Denied ` prefix);
+ * rows persisted before the status existed are read by the legacy adapter
+ * behind `codeToolStatus`, and nowhere here. A call that never ran, or whose
+ * end nobody saw, is neither ok nor failed.
  */
 export function toolOutcome(event: ClientActivityEvent): ToolOutcome {
-  const exit = (event as { exitCode?: unknown }).exitCode;
-  if (typeof exit === "number") return exit === 0 ? "ok" : "failed";
-  const suffix = OUTCOME_SUFFIX.exec(event.title)?.[1];
-  if (suffix === "ok") return "ok";
-  if (suffix === "failed") return "failed";
-  if (/^Denied /.test(event.title)) return "failed";
-  return "unknown";
+  switch (codeToolStatus(event)) {
+    case "ok":
+      return "ok";
+    case "error":
+    case "denied":
+      return "failed";
+    default:
+      return "unknown";
+  }
 }
 
-/** The title without the runner's ` — ok` / ` — failed` suffix. */
+/** The title to show for a tool row. */
 export function toolLabel(event: ClientActivityEvent): string {
-  return event.title.replace(OUTCOME_SUFFIX, "");
+  return codeToolLabel(event);
 }
 
 /** The exit code as a number, when the row carries one. */
@@ -79,7 +79,6 @@ export function codeLiveCopy(latest: ClientActivityEvent | undefined): string | 
   if (!latest) return null;
   if (latest.kind === "tool") {
     const title = toolLabel(latest);
-    if (AUTO_ALLOWED.test(title)) return title;
     if (title.startsWith("$ ")) return `Running ${title.slice(2)}`;
     if (title.startsWith("Read ")) return `Reading ${title.slice(5)}`;
     if (title.startsWith("Edit ")) return `Editing ${title.slice(5)}`;
@@ -127,12 +126,6 @@ function ToolRow({ event, live }: { event: ClientActivityEvent; live: boolean })
   const detail = event.detail?.trim() ?? "";
   const hasOutput = detail.length > 0;
   const [open, setOpen] = React.useState(outcome === "failed");
-
-  if (AUTO_ALLOWED.test(label)) {
-    return (
-      <ToolReceiptRow icon="success" label={label} status="ok" />
-    );
-  }
 
   const isCommand = label.startsWith("$ ");
   const toolId = toolIdFromTitle(label);

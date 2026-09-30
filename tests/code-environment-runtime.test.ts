@@ -39,7 +39,8 @@ const createRoute = read("src/app/api/code/tasks/route.ts");
 const runnerContext = read("src/app/api/code/tasks/[id]/runner-context/route.ts");
 const environmentsRoute = read("src/app/api/code/environments/route.ts");
 const environmentRoute = read("src/app/api/code/environments/[id]/route.ts");
-const serializer = read("src/lib/code-remote.ts");
+// serializeTask moved to a dependency-free module (re-exported by code-remote.ts).
+const serializer = read("src/lib/code-task-wire.ts");
 const driver = read("scripts/cloud-code-runner.mjs");
 const sandbox = read("runner/agent-core/src/tools/container-sandbox.ts");
 const workflow = read(".github/workflows/code-runner.yml");
@@ -227,10 +228,13 @@ test("a narrower mode refuses what it cannot ask about", () => {
   assert.ok(callback, "the driver no longer answers approvals");
   assert.match(callback, /const allowed = permissionMode === "full";/);
   assert.match(callback, /return allowed \? "allow" : "deny";/);
-  // And the refusal says which setting refused, on a row the transcript
-  // already renders as failed (`^Denied ` in code-activity.tsx).
-  assert.match(callback, /`Denied — this run is set to \$\{PERMISSION_MODE_LABELS\[permissionMode\]\}/);
-  assert.match(read("src/components/code/code-activity.tsx"), /\/\^Denied \//);
+  // And the answer is recorded as the MODE's, with the setting that refused
+  // as its reason — typed (`approval.resolved` by "mode"), so every reader
+  // renders the refusal from the decision rather than from how a sentence
+  // starts (tests/cloud-runner-protocol.test.ts runs it end to end).
+  assert.match(callback, /noteApprovalAnswer\(request\.callId, \{\s*by: "mode",/);
+  assert.match(callback, /feedback: `this run is set to \$\{PERMISSION_MODE_LABELS\[permissionMode\]\}`/);
+  assert.doesNotMatch(read("src/components/code/code-activity.tsx"), /\/\^Denied \//);
 });
 
 test("the environment's egress overrides the workflow's default", () => {
@@ -337,16 +341,20 @@ test("a denied tool produces one transcript row, and it is the honest one", () =
    * `tool_denied` whose reason is "The user declined this action."
    * (runner/agent-core/src/agent.ts). No user is attached to a cloud run, so
    * that sentence is the same invented human the callback's comment says it
-   * removed from the allow path — arriving as a second row right after the one
-   * that names the mode. The driver's row is the only one that survives.
+   * removed from the allow path. It used to be swallowed by counting denials;
+   * now the projector replaces it with the mode's reason for exactly the call
+   * the mode refused, and the legacy downcast writes the mode's row alone.
+   * Plan mode and project rules deny without reaching the callback, so their
+   * `tool_denied` keeps its own row. Both are run, not read, in
+   * runner/agent-core/src/test/protocol.test.ts and
+   * tests/cloud-runner-protocol.test.ts.
    */
-  assert.match(driver, /if \(!allowed\) sink\.denialsAnswered \+= 1;/);
-  const denied = /case "tool_denied":[\s\S]*?\n    case /.exec(driver)?.[0] ?? "";
-  assert.ok(denied, "onAgentEvent no longer handles tool_denied");
-  assert.match(denied, /if \(sink\.denialsAnswered > 0\) \{[\s\S]*?break;/);
-  // Plan mode and project rules deny without ever reaching the callback, so
-  // their rows must still be pushed.
-  assert.match(denied, /sink\.push\("tool", \{/);
+  const projector = read("runner/agent-core/src/protocol-projector.ts");
+  const downcast = read("runner/agent-core/src/protocol-legacy.ts");
+  assert.match(projector, /summary: answer\?\.feedback \?\? event\.reason,/);
+  assert.match(downcast, /if \(this\.answeredByMode\.has\(event\.itemId\)\) return \[\];/);
+  assert.match(downcast, /summary: `Denied \$\{call\.name\}: \$\{event\.summary \?\? ''\}`/);
+  assert.equal(driver.includes("denialsAnswered"), false, "the counter the projector replaced is back");
 });
 
 test("a chatty setup script is not killed for being chatty", () => {
@@ -368,7 +376,7 @@ test("a chatty setup script is not killed for being chatty", () => {
   assert.match(fn, /process\.kill\(-child\.pid, "SIGKILL"\)/);
   assert.match(fn, /SETUP_SCRIPT_TIMEOUT_MS/);
   // And the two are distinguishable in what the run reports.
-  assert.match(driver, /timedOut \? "timed out" : "failed"/);
+  assert.match(driver, /timedOut \? "Timed out" : "Failed"/);
   assert.match(driver, /ran longer than \$\{Math\.round\(SETUP_SCRIPT_TIMEOUT_MS \/ 60_000\)\} minutes/);
   assert.equal(/execFileAsync\("\/bin\/bash"/.test(driver), false);
 });

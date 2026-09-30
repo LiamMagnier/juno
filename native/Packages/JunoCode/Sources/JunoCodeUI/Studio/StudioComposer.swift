@@ -703,18 +703,38 @@ struct StudioModelChip: View {
 struct StudioContextMeter: View {
     let used: Int
     let window: Int
-    /// What the session's calls have been billed for since it was opened,
-    /// compaction summaries included.
+    /// What the session's calls have been billed for, compaction summaries
+    /// and sub-agents included.
     var spent: ModelUsageTotals?
+    /// Those calls at the models' published rates, when there are any.
+    var cost: Double?
 
     private var fraction: Double { min(1, Double(used) / Double(max(window, 1))) }
 
     private var help: String {
         let context = "Context: \(StudioFormat.tokens(used)) of \(StudioFormat.tokens(window)) tokens (\(Int(fraction * 100))%)"
         guard let spent, spent.requests > 0 else { return context }
-        return context
-            + "\nSince opening: \(StudioFormat.tokens(spent.inputTokens)) in, "
-            + "\(StudioFormat.tokens(spent.outputTokens)) out over \(StudioFormat.plural(spent.requests, "request"))"
+        return context + "\n" + Self.spendLine(spent, cost: cost)
+    }
+
+    /// The session's spend in one line: fresh input, what the prompt cache
+    /// served — counted apart, since it is billed at a fraction of input —
+    /// the output, and the estimate.
+    static func spendLine(_ spent: ModelUsageTotals, cost: Double?) -> String {
+        var parts = ["\(StudioFormat.tokens(spent.freshInputTokens)) in"]
+        if spent.cacheReadTokens > 0 {
+            parts.append("\(StudioFormat.tokens(spent.cacheReadTokens)) from cache")
+        }
+        if spent.cacheWriteTokens > 0 {
+            parts.append("\(StudioFormat.tokens(spent.cacheWriteTokens)) cached")
+        }
+        parts.append("\(StudioFormat.tokens(spent.outputTokens)) out")
+        var line = "This session: " + parts.joined(separator: ", ")
+            + " over \(StudioFormat.plural(spent.requests, "request"))"
+        if let cost {
+            line += cost < 0.01 ? ", under $0.01" : String(format: ", about $%.2f", cost)
+        }
+        return line
     }
 
     var body: some View {

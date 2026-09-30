@@ -223,7 +223,11 @@ final class AgentOrchestratorTests: XCTestCase {
             registry: registry,
             permissions: permissions,
             store: store,
-            configuration: AgentOrchestrator.Configuration(systemPrompt: "You are Juno Code."),
+            configuration: AgentOrchestrator.Configuration(
+                systemPrompt: "You are Juno Code.",
+                // Retries run without waiting; `ModelRetryTests` covers the waits.
+                retrySleep: { _ in }
+            ),
             modelID: "test-model",
             reasoningEffort: .medium
         )
@@ -627,6 +631,60 @@ final class AgentOrchestratorTests: XCTestCase {
         XCTAssertEqual(model.receivedRequests.count, 1)
     }
 
+    /// A goal completed in an earlier run is the session's history, not a
+    /// stop. Every later batch used to end before its first call — the
+    /// `update_goal` that would start the next goal included — so a session
+    /// that finished one goal could never do anything again.
+    func testAGoalCompletedInAnEarlierRunDoesNotStopTheNextRunsCalls() async throws {
+        let first = try await store.createGoal(sessionID: session.id, objective: "First", steps: ["Do it"])
+        _ = try await store.updateGoal(
+            sessionID: session.id,
+            mutation: .setStepStatus(id: first.steps[0].id, status: .completed)
+        )
+        _ = try await store.updateGoal(
+            sessionID: session.id,
+            mutation: .addVerificationEvidence(summary: "Tests passed", source: "swift test")
+        )
+        _ = try await store.updateGoal(sessionID: session.id, mutation: .setLifecycle(.completed))
+
+        let model = ScriptedModelClient(steps: [
+            .toolCalls(
+                [
+                    (
+                        "next-goal",
+                        "update_goal",
+                        ["action": "create", "objective": "Second", "steps": ["Write it"]]
+                    ),
+                    ("write-next", "write_file", ["path": "src/next.swift", "content": "// next\n"]),
+                ],
+                text: ""
+            ),
+            .text("Started the next goal."),
+        ])
+        let orchestrator = AgentOrchestrator(
+            sessionID: session.id,
+            model: model,
+            registry: ToolRegistry(tools: registry.allTools + [UpdateGoalTool(store: store)]),
+            permissions: PermissionCoordinator(sessionID: session.id, mode: .fullAccess),
+            store: store,
+            configuration: .init(systemPrompt: "sys"),
+            modelID: "test-model",
+            reasoningEffort: .medium
+        )
+
+        try await orchestrator.submit(prompt: "Now the next task")
+        await orchestrator.awaitCompletion()
+
+        let final = try await store.session(id: session.id)
+        XCTAssertEqual(final.status, .completed)
+        XCTAssertEqual(final.goal?.objective, "Second")
+        XCTAssertEqual(final.goal?.lifecycle, .active)
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent("src/next.swift").path)
+        )
+        XCTAssertEqual(model.receivedRequests.count, 2, "the run went on past the batch")
+    }
+
     /// Every call in a batch that ran gets its real result, even when a later
     /// wave paused the goal. Recording stopped at the first result read after
     /// the pause, so calls that had written files were reported to the model as
@@ -723,22 +781,29 @@ final class AgentOrchestratorTests: XCTestCase {
         XCTAssertFalse(content.contains("bytes omitted"), "a read is never cut through the middle")
     }
 
-    func testModelFailureRetriesOnceThenFails() async throws {
-        let model = ScriptedModelClient(steps: [
-            .failure(AgentModelClientError.transport(message: "boom")),
-            .failure(AgentModelClientError.transport(message: "boom again")),
-        ])
+    func testATransportFailureIsRetriedUpToThePolicyThenFails() async throws {
+        let retries = ModelRetryPolicy.standard.maximumRetries
+        let model = ScriptedModelClient(
+            steps: Array(
+                repeating: .failure(AgentModelClientError.transport(message: "boom")),
+                count: retries + 1
+            )
+        )
         let (orchestrator, _) = makeOrchestrator(model: model)
-        try await orchestrator.submit(prompt: "Fail twice")
+        try await orchestrator.submit(prompt: "Fail every time")
         await orchestrator.awaitCompletion()
         let final = try await store.session(id: session.id)
         XCTAssertEqual(final.status, .failed)
+        XCTAssertEqual(model.receivedRequests.count, retries + 1)
         let events = await payloads()
-        let errors = events.filter {
-            if case .errorOccurred = $0 { return true }
-            return false
+        let errors = events.compactMap { payload -> ErrorEvent? in
+            if case let .errorOccurred(event) = payload { return event }
+            return nil
         }
-        XCTAssertEqual(errors.count, 2)
+        // One notice per retry, then the failure.
+        XCTAssertEqual(errors.count, retries + 1)
+        XCTAssertTrue(errors.dropLast().allSatisfy { $0.isRecoverable && $0.message.contains("Retrying in") })
+        XCTAssertFalse(errors.last!.isRecoverable)
     }
 
     func testTransientFailureRecovers() async throws {
@@ -797,7 +862,11 @@ final class AgentOrchestratorTests: XCTestCase {
         XCTAssertTrue(modelPrompt.contains("let value = 1"))
     }
 
-    func testTerminalFailureRedactsScreenshotBeforeNextRun() async throws {
+    /// A screenshot stays in the model history as it was sent, across a
+    /// failed run, so the next prompt reads the same cached prefix; only the
+    /// store is ever denied its bytes. Compaction is what rewrites it (see
+    /// `SessionStateTests`).
+    func testAScreenshotOutlivesAFailedRunInContextButNeverReachesTheStore() async throws {
         let model = ScriptedModelClient(steps: [
             .toolCalls([("screen-1", "capture_test_image", [:])], text: ""),
             .failure(AgentModelClientError.transport(message: "offline")),
@@ -811,7 +880,11 @@ final class AgentOrchestratorTests: XCTestCase {
             registry: ToolRegistry(tools: [EphemeralImageTool()]),
             permissions: permissions,
             store: store,
-            configuration: AgentOrchestrator.Configuration(systemPrompt: "sys"),
+            configuration: AgentOrchestrator.Configuration(
+                systemPrompt: "sys",
+                retryPolicy: ModelRetryPolicy(maximumRetries: 1),
+                retrySleep: { _ in }
+            ),
             modelID: "vision-model",
             reasoningEffort: .medium
         )
@@ -825,11 +898,16 @@ final class AgentOrchestratorTests: XCTestCase {
         await orchestrator.awaitCompletion()
 
         let followUp = try XCTUnwrap(model.receivedRequests.last)
-        XCTAssertFalse(followUp.messages.contains {
+        XCTAssertTrue(followUp.messages.contains {
+            guard case let .toolResultWithImages(id, _, isError, images) = $0 else { return false }
+            return id == "screen-1" && !isError && images.count == 1
+        })
+        let persisted = await store.loadConversation(sessionID: session.id)
+        XCTAssertFalse(persisted.contains {
             if case .toolResultWithImages = $0 { return true }
             return false
         })
-        XCTAssertTrue(followUp.messages.contains {
+        XCTAssertTrue(persisted.contains {
             guard case let .toolResult(id, content, isError) = $0 else { return false }
             return id == "screen-1"
                 && !isError

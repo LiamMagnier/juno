@@ -1,4 +1,5 @@
 import Foundation
+import JunoCodeRuntime
 import JunoCore
 import JunoWorkCore
 import JunoWorkKit
@@ -187,5 +188,83 @@ struct DesktopWorkExecutorAdapterTests {
         let relayKinds = Set(JunoWorkCommandKind.allCases.map(\.rawValue))
         let localKinds = Set(WorkLocalCommandKind.allCases.map(\.rawValue))
         #expect(relayKinds.subtracting(localKinds).isEmpty)
+    }
+}
+
+/// The Mac's Work loop, driven by a scripted model: what it reports when a
+/// reply ends without saying why.
+struct DesktopWorkRunLoopTests {
+    /// Records every event the run reports.
+    private actor RecordingReporter: WorkRunReporting {
+        private(set) var events: [WorkRunEvent] = []
+
+        func appendRunEvents(
+            hostID _: String,
+            runID _: String,
+            afterSeq _: Int,
+            events: [WorkRunEvent],
+            for _: AccountID
+        ) async throws -> WorkRunOutboxReceipt {
+            self.events.append(contentsOf: events)
+            return WorkRunOutboxReceipt(acceptedThrough: events.last?.seq ?? 0, firstGap: nil)
+        }
+    }
+
+    /// Streams some text and then stops, without a completion.
+    private struct CutShortModel: AgentModelClient {
+        func streamTurn(_: ModelTurnRequest) -> AsyncThrowingStream<ModelStreamEvent, Error> {
+            AsyncThrowingStream { continuation in
+                continuation.yield(.textDelta("I moved the first half of the"))
+                continuation.finish()
+            }
+        }
+    }
+
+    /// A tool the run can hold, so it has something granted; never called.
+    private struct IdleTool: WorkTool {
+        let name = "idle"
+        let description = "Does nothing."
+        let schema = WorkToolSchema([])
+        func assessRisk(input _: WorkToolValue) -> WorkRiskLevel { .safe }
+        func irreversibleAction(input _: WorkToolValue) -> WorkIrreversibleAction? { nil }
+        func summary(input _: WorkToolValue) -> String { "Idle" }
+        func precheck(input _: WorkToolValue) -> WorkToolError? { nil }
+        func execute(input _: WorkToolValue, context _: WorkToolContext) async throws -> WorkToolResult {
+            WorkToolResult(content: "idle")
+        }
+    }
+
+    /// A reply cut off without a stop reason is not the task's result. It
+    /// used to finish the run as succeeded, with half a sentence as the
+    /// answer.
+    @Test func aReplyThatEndsWithoutAStopReasonFailsTheRun() async throws {
+        let reporter = RecordingReporter()
+        let host = DesktopWorkRunHost(dependencies: .init(
+            hostID: "host-1",
+            accountID: try AccountID("account-1"),
+            model: CutShortModel(),
+            reporter: reporter,
+            defaultModelID: "anthropic:claude-opus-5-5",
+            automationTools: { [IdleTool()] },
+            activityChanged: { _ in }
+        ))
+        try await host.startRun(WorkRunRequest(
+            runID: "run-1",
+            sessionID: "session-1",
+            commandID: "cmd-1",
+            grants: [],
+            approvals: WorkApprovalCoordinator(policy: .conservative),
+            payload: ["goal": .string("Tidy the downloads folder")]
+        ))
+
+        var finished: WorkRunEvent?
+        for _ in 0..<400 {
+            finished = await reporter.events.first { $0.kind == "run_finished" }
+            if finished != nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let outcome = try #require(finished)
+        #expect(outcome.payload["outcome"]?.stringValue == "failed")
+        #expect(outcome.payload["reason"]?.stringValue == "The model's reply ended before it finished.")
     }
 }

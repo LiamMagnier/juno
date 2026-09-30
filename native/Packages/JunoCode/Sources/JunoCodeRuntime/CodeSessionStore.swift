@@ -54,11 +54,16 @@ public actor CodeSessionStore {
     private let eventDecoder: SessionEventLineDecoder
     private var observers: [UUID: @Sendable (StoreUpdate) -> Void] = [:]
     private var loaded = false
+    /// Each session's spend as read from or written to `usage.json`, so a
+    /// session's ledger is read from disk once.
+    private var usageLedgers: [CodeSessionID: SessionUsageLedger] = [:]
 
     public enum StoreUpdate: Sendable {
         case sessionChanged(CodeSession)
         case sessionRemoved(CodeSessionID)
         case eventAppended(SessionEvent)
+        /// A session's spend grew: its own calls, or a sub-agent's.
+        case usageChanged(CodeSessionID, SessionUsageLedger)
     }
 
     public init(directoryURL: URL) {
@@ -234,11 +239,14 @@ public actor CodeSessionStore {
         return session.goal
     }
 
-    /// Creates the one durable goal owned by a session.
+    /// Creates the session's durable goal, or its next one.
     ///
-    /// A goal starts active, with ordered pending steps. Replacing an existing
-    /// goal is deliberately rejected so an agent cannot erase its completion
-    /// contract or audit trail.
+    /// A goal starts active, with ordered pending steps. A goal that is still
+    /// open — active, paused or blocked — cannot be replaced, so an agent
+    /// cannot erase a completion contract it has not met. A completed goal
+    /// can: it has met its contract, its every transition is already in the
+    /// transcript, and a session that finished one task used to be told to
+    /// set a goal for the next that it could never create.
     @discardableResult
     public func createGoal(
         sessionID: CodeSessionID,
@@ -250,7 +258,7 @@ public actor CodeSessionStore {
         guard let session = sessions[sessionID] else {
             throw SessionStoreError.sessionNotFound(id: sessionID.value)
         }
-        guard session.goal == nil else {
+        if let existing = session.goal, existing.lifecycle != .completed {
             throw SessionStoreError.goalAlreadyExists(sessionID: sessionID.value)
         }
         let goal = SessionGoal(
@@ -320,6 +328,7 @@ public actor CodeSessionStore {
         sessions.removeValue(forKey: id)
         transcripts.removeValue(forKey: id)
         unsavedTranscripts.remove(id)
+        usageLedgers.removeValue(forKey: id)
         notify(.sessionRemoved(id))
     }
 
@@ -629,6 +638,41 @@ public actor CodeSessionStore {
                 await store.adoptTranscriptIndex(loaded, for: entry.id)
             }
         }
+    }
+
+    // MARK: - Usage
+
+    /// What the session has spent, as recorded. Empty for a session that has
+    /// made no call, or was recorded before the ledger existed.
+    public func usageLedger(for id: CodeSessionID) -> SessionUsageLedger {
+        if let cached = usageLedgers[id] { return cached }
+        let ledger = (try? Data(contentsOf: usageURL(id)))
+            .flatMap { try? JSONDecoder().decode(SessionUsageLedger.self, from: $0) }
+            ?? SessionUsageLedger()
+        usageLedgers[id] = ledger
+        return ledger
+    }
+
+    /// Adds `usage` to the session's ledger and saves it.
+    @discardableResult
+    public func recordUsage(_ usage: SessionUsageLedger, for id: CodeSessionID) throws -> SessionUsageLedger {
+        try loadIfNeeded()
+        guard sessions[id] != nil else {
+            throw SessionStoreError.sessionNotFound(id: id.value)
+        }
+        guard !usage.isEmpty else { return usageLedger(for: id) }
+        var ledger = usageLedger(for: id)
+        ledger.add(usage)
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            try encoder.encode(ledger).write(to: usageURL(id), options: .atomic)
+        } catch {
+            throw SessionStoreError.persistenceFailed(message: String(describing: error))
+        }
+        usageLedgers[id] = ledger
+        notify(.usageChanged(id, ledger))
+        return ledger
     }
 
     // MARK: - Conversation persistence
@@ -948,6 +992,13 @@ public actor CodeSessionStore {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
+    /// Where a session's long command output is saved in full, so the model
+    /// can page through what did not fit its result. Inside the session's
+    /// folder, so it goes when the session does.
+    public nonisolated func commandOutputDirectory(for id: CodeSessionID) -> URL {
+        sessionDirectory(id).appendingPathComponent("command-output", isDirectory: true)
+    }
+
     private nonisolated func sessionDirectory(_ id: CodeSessionID) -> URL {
         directoryURL.appendingPathComponent("sessions").appendingPathComponent(id.value)
     }
@@ -962,5 +1013,9 @@ public actor CodeSessionStore {
 
     private func conversationURL(_ id: CodeSessionID) -> URL {
         sessionDirectory(id).appendingPathComponent("conversation.json")
+    }
+
+    private func usageURL(_ id: CodeSessionID) -> URL {
+        sessionDirectory(id).appendingPathComponent("usage.json")
     }
 }

@@ -125,8 +125,15 @@ test("the cloud driver takes a steer between steps and acks only when taken", ()
   assert.match(driver, /\/controls\?afterSeq=\$\{this\.afterControlSeq\}/);
   // A control is handled once, whichever path returned it.
   assert.match(driver, /ctl\.seq <= this\.afterControlSeq\) continue;/);
-  // The ack rides on the session having taken the text, never on receipt.
-  assert.match(driver, /session\.queueUserMessage\(steer\.text\)\.then\(\(\) => \{[\s\S]*?"steer_ack"/);
+  // The ack rides on the session having taken the text, never on receipt: the
+  // steer is reported as the reader's message, carrying the request as its
+  // command, only once taken — and its legacy twins are the echo and the
+  // `steer_ack` (runner/agent-core/src/protocol-legacy.ts).
+  assert.match(
+    driver,
+    /session\.queueUserMessage\(steer\.text\)\.then\(\(\) => \{[\s\S]*?delivery: "steer",\s*commandId: steer\.requestId,/,
+  );
+  assert.match(read("runner/agent-core/src/protocol-legacy.ts"), /\{ kind: 'steer_ack', payload: \{ requestId: event\.commandId \} \}/);
   // The composer offers the verb to a running cloud task, and to a queued one.
   assert.match(hook, /canSteerRun\(status, activeTask\?\.target\)/);
 });

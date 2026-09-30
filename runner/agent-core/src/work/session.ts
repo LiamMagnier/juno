@@ -25,6 +25,7 @@
 
 import crypto from 'node:crypto';
 import { runAgentLoop } from '../loop.js';
+import type { CompactionInfo, CompactionOptions } from '../compaction.js';
 import type { ProviderAdapter, ReasoningEffort } from '../providers/types.js';
 import type { ChatMessage, ToolSpec, UserContent } from '../types.js';
 import type { ToolContext } from '../tools/types.js';
@@ -296,6 +297,12 @@ export interface WorkSessionCallbacks {
     kind: string;
     reason: string;
   }): void;
+  /**
+   * Called after the run's older steps were folded into a summary to keep it
+   * inside the model's context window. Operator-facing, for the reason
+   * `onProviderRetry` gives: a new transcript kind is a native release.
+   */
+  onCompaction?(info: CompactionInfo): void;
 }
 
 /**
@@ -376,6 +383,13 @@ export interface WorkSessionOptions {
   approvalMode?: WorkPermissionPolicy;
   validate?: WorkValidator;
   env?: NodeJS.ProcessEnv;
+  /**
+   * How the run is kept inside the model's context window: on by default at
+   * 80% of it, `false` to turn it off. A Work run is the longest thing this
+   * engine runs — up to 200 steps of pages and documents — and without it a
+   * run that read enough simply ended when the provider refused the request.
+   */
+  compaction?: Pick<CompactionOptions, 'threshold' | 'keepRecentSteps' | 'modelSummary'> | false;
 }
 
 /** Everything needed to continue a paused run on another executor. */
@@ -677,6 +691,10 @@ export class WorkAgentSession {
         // now something the model rewrites on its first turn. See the field's
         // note in AgentLoopOptions for what a frozen prompt did.
         system: () => this.buildSystemPrompt(),
+        // The plan moves on every `update_plan`; in the system prompt that
+        // made every step after one a prompt-cache miss for the whole
+        // transcript. See `AgentLoopOptions.sessionState`.
+        sessionState: () => this.buildSessionState(),
         messages: this.messages,
         tools: [
           ...this.tools.map((tool) => tool.spec),
@@ -698,6 +716,15 @@ export class WorkAgentSession {
         executeToolCall: (call) => this.executeToolCall(call),
         onMessagesChanged: () => this.options.callbacks.onCheckpoint?.(this.checkpoint()),
         onProviderRetry: (info) => this.options.callbacks.onProviderRetry?.(info),
+        ...(this.options.compaction === false
+          ? {}
+          : {
+              compaction: {
+                ...this.options.compaction,
+                contextWindow: this.options.provider.capabilities(this.options.model).maxContext,
+                onCompaction: (info) => this.options.callbacks.onCompaction?.(info),
+              },
+            }),
       });
       this.finalText = result.finalText || this.finalText;
     } catch (err) {
@@ -1351,7 +1378,42 @@ export class WorkAgentSession {
     }
   }
 
+  /**
+   * The system prompt: the parts of the brief that hold for the whole run.
+   *
+   * Byte-stable from the first step to the last. What moves — the plan, and
+   * whether it is still the placeholder — is in `buildSessionState`, which the
+   * loop appends to the newest message only when it changes, so a plan update
+   * costs one short block instead of re-billing the transcript.
+   */
   private buildSystemPrompt(): string {
+    return [
+      'You are Juno, doing a piece of long-running work on the user\'s behalf. The user is not necessarily watching.',
+      '',
+      '# Goal',
+      '',
+      this.goal,
+      '',
+      'The current plan, with the id of every step, is in the latest <session_state> block.',
+      '',
+      '# Operating rules',
+      '',
+      `- Work the plan in order, and record it with ${WORK_PLAN_TOOL_NAME}: "active" before a step, then "done", "skipped" or "failed" when you leave it. The plan is what the user watches, and a run whose steps never move is reported as having done nothing regardless of what it wrote.`,
+      '- Say what you are doing before you do it, and what you found afterwards.',
+      `- When only the user can decide something, call ${WORK_ASK_TOOL_NAME} rather than guessing. Guessing produces a deliverable that is confidently wrong.`,
+      `- When a piece of this work would fill your context with material you will not need afterwards — reading a dozen pages to settle one question, or exploring a branch you may discard — hand it to ${WORK_DELEGATE_TOOL_NAME} and work from the report it brings back. It spends this task's budget and runs one at a time, so it is worth a fresh context or it is not worth delegating.`,
+      '- Cite the source of every fact that came from a tool, a connector or the web.',
+      '- Report what you could not establish. An unmentioned gap reads as an answer.',
+      '- Report the plan you followed, what you did, what you relied on, the choices you made and what you are unsure of. Do not narrate your intermediate reasoning; it is neither checkable nor stable, and the user needs the evidence rather than the story.',
+      tierPromptSection(),
+      '',
+      UNTRUSTED_CONTENT_RULE,
+      ...(this.options.systemSuffix ? ['', this.options.systemSuffix] : []),
+    ].join('\n');
+  }
+
+  /** The plan as it stands, for the loop's `<session_state>` block. */
+  private buildSessionState(): string {
     /*
      * The id is in the line, and it has to be.
      *
@@ -1368,38 +1430,16 @@ export class WorkAgentSession {
       .steps.map((step) => `- ${step.id}: ${step.title} [${step.status}]`)
       .join('\n');
     return [
-      'You are Juno, doing a piece of long-running work on the user\'s behalf. The user is not necessarily watching.',
-      '',
-      '# Goal',
-      '',
-      this.goal,
-      '',
       '# Plan',
       '',
       steps,
-      '',
-      this.planWrites === 0
-        ? 'That plan is a placeholder. It is the same three lines every task in this product starts with and it says nothing about yours.'
-        : '',
-      '',
-      '# Operating rules',
-      '',
       ...(this.planWrites === 0
         ? [
-            `- FIRST, before any other tool: call ${WORK_WRITE_PLAN_TOOL_NAME} with the real steps for this goal. Name concrete pieces of work in the user's own terms, not tool names. This is what the user reads to decide whether you understood them, and it is the only chance to be corrected before anything is touched.`,
+            '',
+            'That plan is a placeholder. It is the same three lines every task in this product starts with and it says nothing about yours.',
+            `FIRST, before any other tool: call ${WORK_WRITE_PLAN_TOOL_NAME} with the real steps for this goal. Name concrete pieces of work in the user's own terms, not tool names. This is what the user reads to decide whether you understood them, and it is the only chance to be corrected before anything is touched.`,
           ]
         : []),
-      `- Work the plan in order, and record it with ${WORK_PLAN_TOOL_NAME}: "active" before a step, then "done", "skipped" or "failed" when you leave it. The plan is what the user watches, and a run whose steps never move is reported as having done nothing regardless of what it wrote.`,
-      '- Say what you are doing before you do it, and what you found afterwards.',
-      `- When only the user can decide something, call ${WORK_ASK_TOOL_NAME} rather than guessing. Guessing produces a deliverable that is confidently wrong.`,
-      `- When a piece of this work would fill your context with material you will not need afterwards — reading a dozen pages to settle one question, or exploring a branch you may discard — hand it to ${WORK_DELEGATE_TOOL_NAME} and work from the report it brings back. It spends this task's budget and runs one at a time, so it is worth a fresh context or it is not worth delegating.`,
-      '- Cite the source of every fact that came from a tool, a connector or the web.',
-      '- Report what you could not establish. An unmentioned gap reads as an answer.',
-      '- Report the plan you followed, what you did, what you relied on, the choices you made and what you are unsure of. Do not narrate your intermediate reasoning; it is neither checkable nor stable, and the user needs the evidence rather than the story.',
-      tierPromptSection(),
-      '',
-      UNTRUSTED_CONTENT_RULE,
-      ...(this.options.systemSuffix ? ['', this.options.systemSuffix] : []),
     ].join('\n');
   }
 }

@@ -1,0 +1,694 @@
+{
+  "$comment": "The canonical Juno agent session protocol: one vocabulary for a coding or agent session, whichever engine runs it (the Swift runtime on a Mac, runner/agent-core in the cloud) and whichever surface shows it. Hand-authored; everything else is generated from it by scripts/generate-agent-protocol.mjs — runner/agent-core/src/protocol.generated.ts, src/lib/agent-protocol/protocol.generated.ts and native/Packages/JunoNativeKit/Sources/JunoAgentProtocol/Generated/JunoAgentProtocol.swift — and `npm run agent:protocol:check` fails on drift. Rules: a minor version only ever adds (an event, a command, an optional field, an enum value); a reader skips an event type it does not know and reads an enum value it does not know as `unknown`, which is why every enum lists one. Field types: string, integer, number, boolean, timestamp (ISO-8601 string), json (any JSON value), enum:<Name>, type:<Name>, array:<type>. Keys on the wire are exactly the field names here, in every language. Golden transcripts live in contracts/agent/fixtures; every reducer of this protocol must fold each one to its .folded.json.",
+  "protocol": "juno-agent-protocol",
+  "version": { "major": 1, "minor": 0 },
+  "enums": {
+    "SessionTarget": {
+      "summary": "Where a session runs.",
+      "values": [
+        { "value": "local", "summary": "On the machine showing it." },
+        { "value": "remote", "summary": "On one of the reader's own computers, driven from another device." },
+        { "value": "cloud", "summary": "On a cloud runner against a repository." },
+        { "value": "unknown", "summary": "A target this reader does not know." }
+      ]
+    },
+    "PermissionMode": {
+      "summary": "How much the agent may do before it has to ask. Swift maps its four internal modes onto these at the edge.",
+      "values": [
+        { "value": "plan", "summary": "Read and search only; every change is refused." },
+        { "value": "ask", "summary": "Every edit and every command asks first." },
+        { "value": "auto_edit", "summary": "Edits inside the workspace proceed; commands still ask." },
+        { "value": "full", "summary": "Most actions proceed; the most dangerous still ask." },
+        { "value": "unknown", "summary": "A mode this reader does not know." }
+      ]
+    },
+    "ReasoningEffort": {
+      "summary": "How hard the model was asked to think. Absent means no thinking parameter was sent.",
+      "values": [
+        { "value": "minimal", "summary": "The least thinking the provider offers." },
+        { "value": "low", "summary": "Light thinking." },
+        { "value": "medium", "summary": "Moderate thinking." },
+        { "value": "high", "summary": "Deep thinking." },
+        { "value": "xhigh", "summary": "Deeper than high, where the provider offers it." },
+        { "value": "max", "summary": "The most the provider offers." },
+        { "value": "unknown", "summary": "An effort this reader does not know." }
+      ]
+    },
+    "TurnBehavior": {
+      "summary": "What the agent is instructed to do this turn, on engines that keep it apart from the permission mode (the Mac's Ask, Survey, Plan and Code).",
+      "values": [
+        { "value": "code", "summary": "Make the change: edits and commands, within the mode." },
+        { "value": "plan", "summary": "Work out what to do and propose it; change nothing." },
+        { "value": "ask", "summary": "Answer questions about the code; change nothing." },
+        { "value": "survey", "summary": "Map the repository before anyone commits to a change; change nothing." },
+        { "value": "unknown", "summary": "A behavior this reader does not know." }
+      ]
+    },
+    "SessionState": {
+      "summary": "What a session is doing, as one fact a list or a header can show.",
+      "values": [
+        { "value": "idle", "summary": "Nothing is running; the session waits for a message." },
+        { "value": "running", "summary": "A turn is in progress." },
+        { "value": "awaiting_approval", "summary": "Blocked on an approval decision." },
+        { "value": "awaiting_input", "summary": "Blocked on an answer to a question." },
+        { "value": "completed", "summary": "Finished what it was given. Terminal for a one-shot run." },
+        { "value": "failed", "summary": "Stopped because something went wrong." },
+        { "value": "interrupted", "summary": "Ended before it finished, without anyone asking: a crash, a quit, a lost host." },
+        { "value": "cancelled", "summary": "Stopped because somebody asked it to." },
+        { "value": "unknown", "summary": "A state this reader does not know." }
+      ]
+    },
+    "TurnOrigin": {
+      "summary": "What started a turn.",
+      "values": [
+        { "value": "user", "summary": "A message the reader sent." },
+        { "value": "steer", "summary": "An instruction sent while the previous turn ran, taken at its next step." },
+        { "value": "queue", "summary": "A message queued behind a running turn, started when it ended." },
+        { "value": "hook", "summary": "A hook that asked the agent to keep going." },
+        { "value": "remote", "summary": "A message sent from another device." },
+        { "value": "schedule", "summary": "A routine that fired." },
+        { "value": "unknown", "summary": "An origin this reader does not know." }
+      ]
+    },
+    "StopReason": {
+      "summary": "Why a turn ended.",
+      "values": [
+        { "value": "end_turn", "summary": "The model finished its answer." },
+        { "value": "max_steps", "summary": "The turn reached its step limit." },
+        { "value": "max_tokens", "summary": "The model reached its output limit." },
+        { "value": "cancelled", "summary": "Somebody stopped it." },
+        { "value": "refusal", "summary": "The model declined." },
+        { "value": "hook", "summary": "A hook ended the run." },
+        { "value": "unknown", "summary": "A reason this reader does not know." }
+      ]
+    },
+    "UserDelivery": {
+      "summary": "How a user message reached the agent.",
+      "values": [
+        { "value": "prompt", "summary": "As the message that starts a turn." },
+        { "value": "steer", "summary": "Into a running turn, before its next step." },
+        { "value": "queue", "summary": "Held until the running turn ended." },
+        { "value": "unknown", "summary": "A delivery this reader does not know." }
+      ]
+    },
+    "ToolKind": {
+      "summary": "What kind of thing a tool call does. The Agent Client Protocol's kinds, so a bridge to it is a rename.",
+      "values": [
+        { "value": "read", "summary": "Reads a file or a directory." },
+        { "value": "edit", "summary": "Creates, changes, moves or deletes a file." },
+        { "value": "execute", "summary": "Runs a command." },
+        { "value": "search", "summary": "Searches files or code." },
+        { "value": "fetch", "summary": "Reaches the network: a web fetch or a web search." },
+        { "value": "think", "summary": "Plans, delegates or records state without touching the workspace." },
+        { "value": "other", "summary": "Anything else: an MCP tool, the screen, a test runner." },
+        { "value": "unknown", "summary": "A kind this reader does not know." }
+      ]
+    },
+    "Risk": {
+      "summary": "How dangerous an action is. The Swift runtime's five tiers; agent-core's safe/edit/command/sensitive map onto read/write/execute/destructive.",
+      "values": [
+        { "value": "read", "summary": "Reads or searches inside the workspace." },
+        { "value": "write", "summary": "Creates or changes files inside the workspace." },
+        { "value": "execute", "summary": "Runs a command whose effects stay in the workspace." },
+        { "value": "critical", "summary": "Reaches the network or runs arbitrary code, inside the workspace." },
+        { "value": "destructive", "summary": "Escapes the workspace or cannot be undone." },
+        { "value": "unknown", "summary": "A tier this reader does not know." }
+      ]
+    },
+    "ToolResultStatus": {
+      "summary": "How a tool call ended. Typed, so no reader ever parses an outcome out of a display string.",
+      "values": [
+        { "value": "ok", "summary": "It ran and succeeded." },
+        { "value": "error", "summary": "It ran and failed: a non-zero exit, a missing file, a refused write." },
+        { "value": "denied", "summary": "It never ran because an approval, a rule or the mode refused it." },
+        { "value": "not_executed", "summary": "It never ran: the turn was steered or stopped before its turn came." },
+        { "value": "unknown", "summary": "It may have run and nobody knows how it ended: the host went away mid-call." }
+      ]
+    },
+    "OutputChannel": {
+      "summary": "Which stream a chunk of live output came from.",
+      "values": [
+        { "value": "stdout", "summary": "Standard output." },
+        { "value": "stderr", "summary": "Standard error." },
+        { "value": "log", "summary": "The host's own log line about the call." },
+        { "value": "unknown", "summary": "A channel this reader does not know." }
+      ]
+    },
+    "FileChangeKind": {
+      "summary": "What happened to a file.",
+      "values": [
+        { "value": "created", "summary": "It did not exist before." },
+        { "value": "modified", "summary": "Its contents changed." },
+        { "value": "deleted", "summary": "It no longer exists." },
+        { "value": "moved", "summary": "It was renamed or moved." },
+        { "value": "unknown", "summary": "A change this reader does not know." }
+      ]
+    },
+    "SubagentStatus": {
+      "summary": "Where a delegated agent is in its life. The raw values are agent-core's and the Swift runtime's, character for character.",
+      "values": [
+        { "value": "queued", "summary": "Accepted, waiting for a slot." },
+        { "value": "preparing", "summary": "Its session and tools are being built." },
+        { "value": "running", "summary": "Working." },
+        { "value": "waiting_approval", "summary": "Blocked on an approval." },
+        { "value": "completed", "summary": "Finished its task." },
+        { "value": "failed", "summary": "Could not finish." },
+        { "value": "cancelled", "summary": "Stopped by somebody." },
+        { "value": "interrupted", "summary": "The process ended before it did." },
+        { "value": "unknown", "summary": "A status this reader does not know." }
+      ]
+    },
+    "ApprovalDecision": {
+      "summary": "The answer to an approval request. The Agent Client Protocol's option names, plus redirect.",
+      "values": [
+        { "value": "allow_once", "summary": "This action, this once." },
+        { "value": "allow_always", "summary": "This action, and every one the saved rule matches from now on." },
+        { "value": "deny", "summary": "Not this action." },
+        { "value": "redirect", "summary": "Not this action; do this instead (the feedback says what)." },
+        { "value": "unknown", "summary": "A decision this reader does not know." }
+      ]
+    },
+    "ApprovalResolver": {
+      "summary": "Who or what answered an approval. A cloud run's automatic answer is recorded as `mode` rather than written as a person's.",
+      "values": [
+        { "value": "user", "summary": "A person answered." },
+        { "value": "rule", "summary": "A saved permission rule answered." },
+        { "value": "mode", "summary": "The permission mode answered, with nobody asked." },
+        { "value": "hook", "summary": "A hook answered." },
+        { "value": "timeout", "summary": "Nobody answered in time." },
+        { "value": "host", "summary": "The host answered for its own reasons: the session ended, the request went stale." },
+        { "value": "unknown", "summary": "A resolver this reader does not know." }
+      ]
+    },
+    "PlanStepStatus": {
+      "summary": "Where one step of a plan or todo list stands.",
+      "values": [
+        { "value": "pending", "summary": "Not started." },
+        { "value": "in_progress", "summary": "Being worked on." },
+        { "value": "completed", "summary": "Done." },
+        { "value": "blocked", "summary": "Cannot move without something else." },
+        { "value": "cancelled", "summary": "Dropped." },
+        { "value": "unknown", "summary": "A status this reader does not know." }
+      ]
+    },
+    "PlanDecision": {
+      "summary": "The answer to a proposed plan.",
+      "values": [
+        { "value": "approved", "summary": "Go ahead and carry it out." },
+        { "value": "rejected", "summary": "Do not carry it out." },
+        { "value": "unknown", "summary": "A decision this reader does not know." }
+      ]
+    },
+    "NoticeSource": {
+      "summary": "Who a quiet note in the transcript is from.",
+      "values": [
+        { "value": "hook", "summary": "A project hook stepped in or failed." },
+        { "value": "runtime", "summary": "The agent runtime itself." },
+        { "value": "host", "summary": "The machine running the session: a setup step, a clone, a push." },
+        { "value": "unknown", "summary": "A source this reader does not know." }
+      ]
+    },
+    "CompactionSource": {
+      "summary": "Who wrote a compaction summary.",
+      "values": [
+        { "value": "model", "summary": "The session's own model." },
+        { "value": "structural", "summary": "The runtime's bounded fallback notes." },
+        { "value": "unknown", "summary": "A source this reader does not know." }
+      ]
+    },
+    "ErrorCode": {
+      "summary": "What class of failure an error is, so a reader can decide what to offer without reading the message.",
+      "values": [
+        { "value": "plan_limit", "summary": "The account's plan limit was reached." },
+        { "value": "rate_limited", "summary": "The provider throttled the request." },
+        { "value": "provider_overload", "summary": "The provider was overloaded or unavailable." },
+        { "value": "context_overflow", "summary": "The conversation no longer fits the model's context." },
+        { "value": "tool_error", "summary": "A tool failed in a way the turn could not recover from." },
+        { "value": "network", "summary": "The host lost its connection." },
+        { "value": "cancelled", "summary": "Stopped by somebody." },
+        { "value": "internal", "summary": "Anything else." },
+        { "value": "unknown", "summary": "A code this reader does not know." }
+      ]
+    },
+    "UsageScope": {
+      "summary": "Whose model calls a usage report counts.",
+      "values": [
+        { "value": "turn", "summary": "The session's own turn." },
+        { "value": "subagent", "summary": "A delegated agent's calls (the envelope's agentId says which)." },
+        { "value": "compaction", "summary": "The call that summarised older turns." },
+        { "value": "unknown", "summary": "A scope this reader does not know." }
+      ]
+    },
+    "CommandDisposition": {
+      "summary": "Where a command stands at the host.",
+      "values": [
+        { "value": "pending", "summary": "Stored, not yet claimed." },
+        { "value": "claimed", "summary": "A host has it and is acting on it." },
+        { "value": "completed", "summary": "Done." },
+        { "value": "rejected", "summary": "The host refused it; errorCode says why." },
+        { "value": "expired", "summary": "Nobody claimed it before expiresAt." },
+        { "value": "cancelled", "summary": "Withdrawn by its sender." },
+        { "value": "unknown", "summary": "A disposition this reader does not know." }
+      ]
+    }
+  },
+  "types": {
+    "RepositoryRef": {
+      "summary": "A repository a cloud session works on.",
+      "fields": {
+        "owner": { "type": "string", "summary": "The owner, as the forge names it." },
+        "name": { "type": "string", "summary": "The repository name." },
+        "baseRef": { "type": "string", "optional": true, "summary": "The branch the work starts from." }
+      }
+    },
+    "ErrorInfo": {
+      "summary": "One failure, typed.",
+      "fields": {
+        "code": { "type": "enum:ErrorCode", "summary": "The class of failure." },
+        "message": { "type": "string", "summary": "What went wrong, for a person." },
+        "retryable": { "type": "boolean", "summary": "Whether trying the same thing again could succeed." }
+      }
+    },
+    "Usage": {
+      "summary": "Model usage. Every count is what the provider reported; nothing is estimated.",
+      "fields": {
+        "inputTokens": { "type": "integer", "summary": "Uncached input tokens." },
+        "outputTokens": { "type": "integer", "summary": "Output tokens, including reasoning." },
+        "cacheReadTokens": { "type": "integer", "optional": true, "summary": "Input tokens read from the prompt cache." },
+        "cacheWriteTokens": { "type": "integer", "optional": true, "summary": "Input tokens written to the prompt cache." },
+        "reasoningTokens": { "type": "integer", "optional": true, "summary": "The part of outputTokens spent thinking, when the provider says." },
+        "costMicroUsd": { "type": "integer", "optional": true, "summary": "What these calls cost, in millionths of a US dollar, when the producer knows." }
+      }
+    },
+    "PlanStep": {
+      "summary": "One step of a plan or todo list.",
+      "fields": {
+        "id": { "type": "string", "summary": "Stable for the life of the plan." },
+        "text": { "type": "string", "summary": "What the step is." },
+        "status": { "type": "enum:PlanStepStatus", "summary": "Where it stands." }
+      }
+    },
+    "QuestionOption": {
+      "summary": "One offered answer to a question.",
+      "fields": {
+        "id": { "type": "string", "summary": "What the answer sends back." },
+        "label": { "type": "string", "summary": "What the reader sees." }
+      }
+    }
+  },
+  "envelope": {
+    "summary": "Every event carries these keys, beside its own.",
+    "fields": {
+      "v": { "type": "string", "summary": "The protocol version the producer wrote, \"<major>.<minor>\". A reader refuses a major it does not know." },
+      "id": { "type": "string", "summary": "Unique per event and stable across retries: readers drop an id they have already applied." },
+      "sessionId": { "type": "string", "summary": "The session this event belongs to." },
+      "seq": { "type": "integer", "summary": "1-based and increasing within one producer's stream of a session. Order, not identity; the id is the identity." },
+      "at": { "type": "timestamp", "summary": "When it happened, at the producer." },
+      "turnId": { "type": "string", "optional": true, "summary": "The turn it belongs to. Absent means the turn that is open, if any." },
+      "agentId": { "type": "string", "optional": true, "summary": "The delegated agent it belongs to. Absent means the session's own agent." }
+    }
+  },
+  "events": {
+    "session.created": {
+      "group": "session",
+      "summary": "A session began. The first event of every transcript.",
+      "fields": {
+        "target": { "type": "enum:SessionTarget", "summary": "Where it runs." },
+        "workspaceName": { "type": "string", "optional": true, "summary": "The folder's display name. Never an absolute path." },
+        "repository": { "type": "type:RepositoryRef", "optional": true, "summary": "The repository, for a cloud session." },
+        "model": { "type": "string", "optional": true, "summary": "The model it starts with." },
+        "effort": { "type": "enum:ReasoningEffort", "optional": true, "summary": "The thinking level it starts with." },
+        "mode": { "type": "enum:PermissionMode", "optional": true, "summary": "The permission mode it starts with." },
+        "title": { "type": "string", "optional": true, "summary": "Its title, when it has one." }
+      }
+    },
+    "session.configured": {
+      "group": "session",
+      "summary": "What the next turn runs with. Only the fields that are set changed.",
+      "fields": {
+        "model": { "type": "string", "optional": true, "summary": "The model." },
+        "effort": { "type": "enum:ReasoningEffort", "optional": true, "summary": "The thinking level." },
+        "mode": { "type": "enum:PermissionMode", "optional": true, "summary": "The permission mode in force." },
+        "behavior": { "type": "enum:TurnBehavior", "optional": true, "summary": "What the agent is instructed to do." },
+        "title": { "type": "string", "optional": true, "summary": "A new title." }
+      }
+    },
+    "session.state": {
+      "group": "session",
+      "summary": "The session's state changed.",
+      "fields": {
+        "state": { "type": "enum:SessionState", "summary": "The new state." },
+        "reason": { "type": "string", "optional": true, "summary": "Why, when there is more to say than the state." }
+      }
+    },
+    "turn.started": {
+      "group": "turn",
+      "summary": "A turn began. Carries the turnId every event of the turn may name.",
+      "fields": {
+        "origin": { "type": "enum:TurnOrigin", "summary": "What started it." }
+      }
+    },
+    "turn.completed": {
+      "group": "turn",
+      "summary": "A turn ended normally.",
+      "fields": {
+        "stopReason": { "type": "enum:StopReason", "summary": "Why it ended." },
+        "durationMs": { "type": "integer", "optional": true, "summary": "How long it took." },
+        "filesChanged": { "type": "integer", "optional": true, "summary": "How many files it changed." },
+        "summary": { "type": "string", "optional": true, "summary": "What it did, in a sentence, when the producer has one." }
+      }
+    },
+    "turn.failed": {
+      "group": "turn",
+      "summary": "A turn ended because something went wrong.",
+      "fields": {
+        "error": { "type": "type:ErrorInfo", "summary": "What went wrong." }
+      }
+    },
+    "turn.interrupted": {
+      "group": "turn",
+      "summary": "A turn ended without finishing and without failing: a stop, a quit, a lost host. Any tool call still running has an unknown outcome.",
+      "fields": {
+        "reason": { "type": "string", "optional": true, "summary": "What interrupted it." }
+      }
+    },
+    "transcript.restarted": {
+      "group": "transcript",
+      "summary": "The transcript was rewound. A reader drops every turn and item it holds and rebuilds from the events that follow.",
+      "fields": {
+        "rewoundToTurnId": { "type": "string", "optional": true, "summary": "The turn the session was rewound to, which is no longer in the transcript." }
+      }
+    },
+    "item.user_message": {
+      "group": "item",
+      "summary": "A message from the reader.",
+      "fields": {
+        "itemId": { "type": "string", "summary": "Stable for this message." },
+        "text": { "type": "string", "summary": "What they wrote, as they wrote it (attachments are not inlined)." },
+        "delivery": { "type": "enum:UserDelivery", "summary": "How it reached the agent." },
+        "commandId": { "type": "string", "optional": true, "summary": "The command that carried it, so the sender can mark it delivered." }
+      }
+    },
+    "item.assistant_text.delta": {
+      "group": "item",
+      "summary": "More of the agent's reply. Appended to the item's text.",
+      "fields": {
+        "itemId": { "type": "string", "summary": "The reply this belongs to." },
+        "text": { "type": "string", "summary": "The next piece." }
+      }
+    },
+    "item.assistant_text": {
+      "group": "item",
+      "summary": "The whole of one reply. Replaces whatever the deltas built.",
+      "fields": {
+        "itemId": { "type": "string", "summary": "The reply." },
+        "text": { "type": "string", "summary": "Its full text." }
+      }
+    },
+    "item.thinking.delta": {
+      "group": "item",
+      "summary": "More of the model's visible thinking. Appended to the item's text.",
+      "fields": {
+        "itemId": { "type": "string", "summary": "The thinking block this belongs to." },
+        "text": { "type": "string", "summary": "The next piece." }
+      }
+    },
+    "item.thinking": {
+      "group": "item",
+      "summary": "A summary of the model's thinking. Replaces whatever the deltas built. Never raw private chain of thought.",
+      "fields": {
+        "itemId": { "type": "string", "summary": "The thinking block." },
+        "summary": { "type": "string", "summary": "The summary." }
+      }
+    },
+    "item.tool_call": {
+      "group": "item",
+      "summary": "The agent called a tool. The call is running until its tool_result arrives.",
+      "fields": {
+        "itemId": { "type": "string", "summary": "The provider's call id, stable for the call." },
+        "toolName": { "type": "string", "summary": "The tool's own name (bash, run_command, read_file, …)." },
+        "toolKind": { "type": "enum:ToolKind", "summary": "What kind of thing it does." },
+        "title": { "type": "string", "summary": "One line for a person: `$ npm test`, `Read src/app.ts`." },
+        "inputSummary": { "type": "string", "optional": true, "summary": "A bounded, redacted summary of the input. Never a whole file." },
+        "risk": { "type": "enum:Risk", "optional": true, "summary": "How dangerous the call is." }
+      }
+    },
+    "item.tool_output": {
+      "group": "item",
+      "summary": "A chunk of a running call's live output.",
+      "fields": {
+        "itemId": { "type": "string", "summary": "The call." },
+        "channel": { "type": "enum:OutputChannel", "summary": "Which stream." },
+        "text": { "type": "string", "summary": "The chunk, bounded and redacted." }
+      }
+    },
+    "item.tool_result": {
+      "group": "item",
+      "summary": "How a tool call ended.",
+      "fields": {
+        "itemId": { "type": "string", "summary": "The call." },
+        "status": { "type": "enum:ToolResultStatus", "summary": "How it ended." },
+        "summary": { "type": "string", "optional": true, "summary": "One line on the outcome." },
+        "exitCode": { "type": "integer", "optional": true, "summary": "The process's exit status, when it ran one." },
+        "durationMs": { "type": "integer", "optional": true, "summary": "How long it ran." },
+        "output": { "type": "string", "optional": true, "summary": "The tail of its output, bounded and redacted." }
+      }
+    },
+    "item.file_change": {
+      "group": "item",
+      "summary": "A file changed.",
+      "fields": {
+        "itemId": { "type": "string", "summary": "Stable for this change." },
+        "path": { "type": "string", "summary": "Relative to the workspace. Never an absolute path." },
+        "change": { "type": "enum:FileChangeKind", "summary": "What happened to it." },
+        "linesAdded": { "type": "integer", "summary": "Lines added." },
+        "linesRemoved": { "type": "integer", "summary": "Lines removed." },
+        "patch": { "type": "string", "optional": true, "summary": "A unified diff, bounded. Absent means none was sent, never that the change was empty." },
+        "checkpointId": { "type": "string", "optional": true, "summary": "The checkpoint taken before it, which an undo names." },
+        "toolItemId": { "type": "string", "optional": true, "summary": "The tool call that made it." }
+      }
+    },
+    "item.test_run": {
+      "group": "item",
+      "summary": "A test run finished.",
+      "fields": {
+        "itemId": { "type": "string", "summary": "Stable for this run." },
+        "command": { "type": "string", "summary": "The command that ran the tests." },
+        "passed": { "type": "boolean", "summary": "Whether every test passed." },
+        "testsRun": { "type": "integer", "optional": true, "summary": "How many ran, when the runner said." },
+        "failures": { "type": "integer", "optional": true, "summary": "How many failed, when the runner said." },
+        "durationMs": { "type": "integer", "optional": true, "summary": "How long it took." }
+      }
+    },
+    "item.subagent": {
+      "group": "item",
+      "summary": "A delegated agent's state, sent whenever it changes. The latest one wins.",
+      "fields": {
+        "itemId": { "type": "string", "summary": "The agent's id, stable for its life." },
+        "title": { "type": "string", "summary": "What it was asked to do, in a few words." },
+        "status": { "type": "enum:SubagentStatus", "summary": "Where it is." },
+        "role": { "type": "string", "optional": true, "summary": "Its role (builder, reviewer, …)." },
+        "activity": { "type": "string", "optional": true, "summary": "What it is doing right now." },
+        "summary": { "type": "string", "optional": true, "summary": "Its result, bounded." },
+        "error": { "type": "string", "optional": true, "summary": "Why it failed." },
+        "toolItemId": { "type": "string", "optional": true, "summary": "The delegating tool call." },
+        "usage": { "type": "type:Usage", "optional": true, "summary": "Its own model usage so far." }
+      }
+    },
+    "item.compaction": {
+      "group": "item",
+      "summary": "Older turns now reach the model as a summary. The transcript keeps them; only what the model is sent shrank.",
+      "fields": {
+        "itemId": { "type": "string", "summary": "Stable for this compaction." },
+        "source": { "type": "enum:CompactionSource", "summary": "Who wrote the summary." },
+        "beforeMessages": { "type": "integer", "optional": true, "summary": "Model messages before." },
+        "afterMessages": { "type": "integer", "optional": true, "summary": "Model messages after." },
+        "requestedByUser": { "type": "boolean", "optional": true, "summary": "Whether the reader asked for it." }
+      }
+    },
+    "item.notice": {
+      "group": "item",
+      "summary": "A quiet line the reader is owed: a hook stepped in, a setup step ran, the context was folded.",
+      "fields": {
+        "itemId": { "type": "string", "summary": "Stable for this notice." },
+        "source": { "type": "enum:NoticeSource", "summary": "Who it is from." },
+        "text": { "type": "string", "summary": "The line." },
+        "detail": { "type": "string", "optional": true, "summary": "More, bounded." }
+      }
+    },
+    "approval.requested": {
+      "group": "approval",
+      "summary": "The agent is waiting for a yes or a no.",
+      "fields": {
+        "approvalId": { "type": "string", "summary": "What the answer names." },
+        "itemId": { "type": "string", "optional": true, "summary": "The tool call it is about." },
+        "action": { "type": "string", "summary": "The tool or action, by name." },
+        "summary": { "type": "string", "summary": "What would happen, for a person: the command, the path." },
+        "risk": { "type": "enum:Risk", "summary": "How dangerous it is." },
+        "digest": { "type": "string", "optional": true, "summary": "SHA-256 of the exact action, so an answer can only approve what was shown." },
+        "expiresAt": { "type": "timestamp", "optional": true, "summary": "When the request goes stale." },
+        "suggestedRule": { "type": "string", "optional": true, "summary": "The rule allow_always would save, in Tool(pattern) grammar." }
+      }
+    },
+    "approval.resolved": {
+      "group": "approval",
+      "summary": "An approval was answered.",
+      "fields": {
+        "approvalId": { "type": "string", "summary": "The request." },
+        "decision": { "type": "enum:ApprovalDecision", "summary": "The answer." },
+        "by": { "type": "enum:ApprovalResolver", "summary": "Who answered." },
+        "feedback": { "type": "string", "optional": true, "summary": "What to do instead, with redirect; why, with deny." }
+      }
+    },
+    "question.asked": {
+      "group": "question",
+      "summary": "The agent asked the reader something and is waiting.",
+      "fields": {
+        "questionId": { "type": "string", "summary": "What the answer names." },
+        "prompt": { "type": "string", "summary": "The question." },
+        "options": { "type": "array:type:QuestionOption", "optional": true, "summary": "Offered answers, when it is a choice." },
+        "multiSelect": { "type": "boolean", "optional": true, "summary": "Whether more than one option may be chosen." },
+        "expiresAt": { "type": "timestamp", "optional": true, "summary": "When the agent stops waiting." }
+      }
+    },
+    "question.answered": {
+      "group": "question",
+      "summary": "A question was answered.",
+      "fields": {
+        "questionId": { "type": "string", "summary": "The question." },
+        "answer": { "type": "string", "optional": true, "summary": "A written answer." },
+        "selected": { "type": "array:string", "optional": true, "summary": "The chosen option ids." }
+      }
+    },
+    "plan.updated": {
+      "group": "plan",
+      "summary": "The whole todo list, as it now stands. Each snapshot replaces the last.",
+      "fields": {
+        "steps": { "type": "array:type:PlanStep", "summary": "Every step, in order." },
+        "objective": { "type": "string", "optional": true, "summary": "What the list is for." }
+      }
+    },
+    "plan.proposed": {
+      "group": "plan",
+      "summary": "In plan mode, the agent proposes what it would do and waits for a decision before changing anything.",
+      "fields": {
+        "planId": { "type": "string", "summary": "What the decision names." },
+        "text": { "type": "string", "summary": "The plan, as Markdown." }
+      }
+    },
+    "plan.resolved": {
+      "group": "plan",
+      "summary": "A proposed plan was approved or rejected.",
+      "fields": {
+        "planId": { "type": "string", "summary": "The plan." },
+        "decision": { "type": "enum:PlanDecision", "summary": "The answer." }
+      }
+    },
+    "usage.updated": {
+      "group": "usage",
+      "summary": "Model usage incurred since the producer's previous usage report. Readers add them up.",
+      "fields": {
+        "usage": { "type": "type:Usage", "summary": "The counts." },
+        "model": { "type": "string", "optional": true, "summary": "The model the calls went to." },
+        "scope": { "type": "enum:UsageScope", "summary": "Whose calls these were." }
+      }
+    },
+    "session.error": {
+      "group": "session",
+      "summary": "Something went wrong that the reader should see. Whether the turn goes on is said by the turn events, not here.",
+      "fields": {
+        "error": { "type": "type:ErrorInfo", "summary": "What went wrong." }
+      }
+    },
+    "code.pull_request": {
+      "group": "code",
+      "summary": "Code extension: a cloud run pushed a branch, and opened or reused a pull request.",
+      "fields": {
+        "branch": { "type": "string", "summary": "The branch on origin." },
+        "prUrl": { "type": "string", "optional": true, "summary": "The pull request, when there is one." },
+        "prNumber": { "type": "integer", "optional": true, "summary": "Its number." },
+        "reused": { "type": "boolean", "optional": true, "summary": "Whether it already existed and this run added to it." }
+      }
+    }
+  },
+  "commandEnvelope": {
+    "summary": "Every command carries these keys, beside its own. A command may be delivered more than once; the host acts on an idempotencyKey once.",
+    "fields": {
+      "v": { "type": "string", "summary": "The protocol version the sender wrote." },
+      "id": { "type": "string", "summary": "Unique per command." },
+      "idempotencyKey": { "type": "string", "summary": "Stable across retries of the same intent." },
+      "sessionId": { "type": "string", "summary": "The session it is for." },
+      "issuedAt": { "type": "timestamp", "summary": "When the sender issued it." },
+      "expiresAt": { "type": "timestamp", "optional": true, "summary": "After this the host must not act on it, and reports it expired." }
+    }
+  },
+  "commands": {
+    "turn.send": {
+      "summary": "Start a turn with a message. Refused while a turn runs; steer or queue instead.",
+      "fields": {
+        "text": { "type": "string", "summary": "The message." },
+        "attachmentIds": { "type": "array:string", "optional": true, "summary": "Uploaded attachments to include." }
+      }
+    },
+    "turn.steer": {
+      "summary": "Give the running turn an instruction, taken before its next step.",
+      "fields": {
+        "text": { "type": "string", "summary": "The instruction." }
+      }
+    },
+    "turn.queue": {
+      "summary": "Hold a message until the running turn ends, then start a turn with it.",
+      "fields": {
+        "text": { "type": "string", "summary": "The message." }
+      }
+    },
+    "turn.cancel": {
+      "summary": "Stop the running turn.",
+      "fields": {
+        "reason": { "type": "string", "optional": true, "summary": "Why, for the transcript." }
+      }
+    },
+    "approval.decide": {
+      "summary": "Answer an approval request.",
+      "fields": {
+        "approvalId": { "type": "string", "summary": "The request." },
+        "decision": { "type": "enum:ApprovalDecision", "summary": "The answer." },
+        "digest": { "type": "string", "optional": true, "summary": "The digest that was shown, so a stale answer cannot approve a changed action." },
+        "feedback": { "type": "string", "optional": true, "summary": "With redirect, what to do instead." }
+      }
+    },
+    "question.answer": {
+      "summary": "Answer a question.",
+      "fields": {
+        "questionId": { "type": "string", "summary": "The question." },
+        "answer": { "type": "string", "optional": true, "summary": "A written answer." },
+        "selected": { "type": "array:string", "optional": true, "summary": "The chosen option ids." }
+      }
+    },
+    "plan.decide": {
+      "summary": "Approve or reject a proposed plan.",
+      "fields": {
+        "planId": { "type": "string", "summary": "The plan." },
+        "decision": { "type": "enum:PlanDecision", "summary": "The answer." }
+      }
+    },
+    "session.set_mode": {
+      "summary": "Change what the next turn runs with. The host caps a remote sender at its own ceiling.",
+      "fields": {
+        "mode": { "type": "enum:PermissionMode", "optional": true, "summary": "The permission mode." },
+        "model": { "type": "string", "optional": true, "summary": "The model." },
+        "effort": { "type": "enum:ReasoningEffort", "optional": true, "summary": "The thinking level." }
+      }
+    }
+  },
+  "receipt": {
+    "summary": "What a host reports about a command.",
+    "fields": {
+      "commandId": { "type": "string", "summary": "The command." },
+      "idempotencyKey": { "type": "string", "summary": "Its key." },
+      "disposition": { "type": "enum:CommandDisposition", "summary": "Where it stands." },
+      "errorCode": { "type": "string", "optional": true, "summary": "Why it was rejected." },
+      "at": { "type": "timestamp", "summary": "When the host said so." }
+    }
+  }
+}

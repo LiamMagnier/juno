@@ -5,20 +5,35 @@ import JunoCodeCore
 /// permission gate applied before any execution.
 public struct ToolRegistry: Sendable {
     private let tools: [String: any CodeTool]
+    /// Adds what a call earned by reaching somewhere new — a folder's
+    /// instruction file — to its result. Nil adds nothing.
+    private let contextProvider: (any ToolResultContextProviding)?
 
     /// Tools that can inspect a workspace without mutating it or starting a
     /// process. Ask and Plan sessions expose exactly this set.
+    ///
+    /// The session tools are here too — the todo list, a question for the
+    /// reader, a skill's instructions and the plan handoff change no file and
+    /// start nothing — though a session adds them itself, with its own
+    /// coordinators, rather than finding them in a workspace's registry.
     public static let inspectionToolNames: Set<String> = [
         "read_file", "list_directory", "find_files", "glob", "grep",
         "git_status", "git_diff", "git_log", "web_search",
+        "todo_write", "ask_user", "exit_plan", "use_skill",
     ]
 
-    public init(tools: [any CodeTool]) {
+    public init(tools: [any CodeTool], contextProvider: (any ToolResultContextProviding)? = nil) {
         var byName: [String: any CodeTool] = [:]
         for tool in tools {
             byName[tool.name] = tool
         }
         self.tools = byName
+        self.contextProvider = contextProvider
+    }
+
+    /// The same tools, with `provider` adding context to their results.
+    public func withContextProvider(_ provider: (any ToolResultContextProviding)?) -> ToolRegistry {
+        ToolRegistry(tools: allTools, contextProvider: provider)
     }
 
     /// The standard local tool set over the injected service protocols.
@@ -31,6 +46,9 @@ public struct ToolRegistry: Sendable {
         goalStore: CodeSessionStore? = nil,
         changes: (any WorkspaceChangeDetecting)? = nil,
         webSearch: (any CodeWebSearching)? = nil,
+        shells: (any ShellSessionManaging)? = nil,
+        workingDirectories: SessionWorkingDirectories? = nil,
+        workspaceRoot: String = "",
         additionalTools: [any CodeTool] = []
     ) -> ToolRegistry {
         var tools: [any CodeTool] = [
@@ -42,15 +60,27 @@ public struct ToolRegistry: Sendable {
             CreateFileTool(files: files),
             WriteFileTool(files: files),
             ApplyPatchTool(files: files),
+            MultiEditTool(files: files),
             DeleteFileTool(files: files),
             MoveFileTool(files: files),
-            RunCommandTool(executor: executor, changes: changes),
+            RunCommandTool(
+                executor: executor,
+                changes: changes,
+                directories: workingDirectories,
+                workspaceRoot: workspaceRoot
+            ),
             GitStatusTool(git: git),
             GitDiffTool(git: git),
             GitLogTool(git: git),
             GitCommitTool(git: git),
             RunTestsTool(tests: tests),
         ]
+        if let shells {
+            tools.append(ShellStartTool(shells: shells, directories: workingDirectories))
+            tools.append(ShellOutputTool(shells: shells))
+            tools.append(ShellWriteTool(shells: shells))
+            tools.append(ShellKillTool(shells: shells))
+        }
         if let goalStore {
             tools.append(UpdateGoalTool(store: goalStore))
         }
@@ -71,9 +101,10 @@ public struct ToolRegistry: Sendable {
     }
 
     public func inspectionOnly() -> ToolRegistry {
-        ToolRegistry(tools: allTools.filter {
-            Self.inspectionToolNames.contains($0.name)
-        })
+        ToolRegistry(
+            tools: allTools.filter { Self.inspectionToolNames.contains($0.name) },
+            contextProvider: contextProvider
+        )
     }
 
     /// Adds the tools advertised by configured MCP servers to this registry.
@@ -84,7 +115,15 @@ public struct ToolRegistry: Sendable {
         let mcpTools = try await mcpRegistry.allTools().map {
             MCPCodeTool(registry: mcpRegistry, reference: $0)
         }
-        return ToolRegistry(tools: allTools + mcpTools)
+        return ToolRegistry(tools: allTools + mcpTools, contextProvider: contextProvider)
+    }
+
+    /// `input` with the exact conversions the tool's schema allows applied:
+    /// `"3"` for an integer field and the like. See
+    /// ``SchemaValidator/coerced(input:against:)``.
+    public func coercedInput(toolName: String, input: JSONValue) -> JSONValue {
+        guard let tool = tools[toolName] else { return input }
+        return SchemaValidator.coerced(input: input, against: tool.inputSchema)
     }
 
     /// Validates input shape; returns a message when invalid.
@@ -150,7 +189,22 @@ public struct ToolRegistry: Sendable {
             throw ToolError.unknownTool(name: toolName)
         }
         try Task.checkCancellation()
-        return try await tool.execute(input: input, context: context)
+        let result = try await tool.execute(input: input, context: context)
+        guard !result.isError,
+              let contextProvider,
+              let added = await contextProvider.context(
+                  forTouchedPaths: ToolTouchedPaths.paths(toolName: toolName, input: input),
+                  sessionID: context.sessionID
+              )
+        else { return result }
+        return ToolResult(
+            content: result.content,
+            isError: result.isError,
+            images: result.images,
+            sideEffects: result.sideEffects,
+            endsRun: result.endsRun,
+            appendedContext: result.appendedContext.map { $0 + "\n\n" + added } ?? added
+        )
     }
 
     /// Full gated invocation: validate → assess → authorize (suspending when

@@ -1,0 +1,12 @@
+{"v":"1.0","id":"fc-1","sessionId":"mac_session_8","seq":1,"at":"2026-09-30T09:00:00.850Z","type":"session.created","target":"local","workspaceName":"juno","model":"claude-sonnet-5","mode":"ask"}
+{"v":"1.0","id":"fc-2","sessionId":"mac_session_8","seq":2,"at":"2026-09-30T09:00:01.700Z","turnId":"turn:fc-2","type":"turn.started","origin":"user"}
+{"v":"1.0","id":"fc-3","sessionId":"mac_session_8","seq":3,"at":"2026-09-30T09:00:02.550Z","turnId":"turn:fc-2","type":"item.user_message","itemId":"u1","text":"Beam the build to the phone.","delivery":"prompt"}
+{"v":"1.0","id":"fc-4","sessionId":"mac_session_8","seq":4,"at":"2026-09-30T09:00:03.400Z","turnId":"turn:fc-2","type":"item.hologram","itemId":"h1","frames":24,"projector":{"kind":"ambient"}}
+{"v":"1.0","id":"fc-5","sessionId":"mac_session_8","seq":5,"at":"2026-09-30T09:00:04.250Z","turnId":"turn:fc-2","type":"item.tool_call","itemId":"c1","toolName":"teleport","toolKind":"teleport","title":"Teleport build/","risk":"apocalyptic","colour":"teal"}
+{"v":"1.0","id":"fc-6","sessionId":"mac_session_8","seq":6,"at":"2026-09-30T09:00:05.100Z","turnId":"turn:fc-2","type":"item.tool_result","itemId":"c1","status":"ok","durationMs":"fast","exitCode":0}
+{"v":"1.0","id":"fc-6","sessionId":"mac_session_8","seq":6,"at":"2026-09-30T09:00:05.100Z","turnId":"turn:fc-2","type":"item.tool_result","itemId":"c1","status":"ok","durationMs":"fast","exitCode":0}
+{"v":"1.7","id":"fc-7","sessionId":"mac_session_8","seq":7,"at":"2026-09-30T09:00:06.000Z","turnId":"turn:fc-2","type":"item.assistant_text","itemId":"a1","text":"Beamed.","confidence":0.9}
+{"v":"1.0","id":"fc-8","sessionId":"mac_session_8","seq":8,"at":"2026-09-30T09:00:07.000Z","turnId":"turn:fc-2","type":"item.file_change","itemId":"f1","path":"build/app"}
+{"v":"2.0","id":"fc-9","sessionId":"mac_session_8","seq":9,"at":"2026-09-30T09:00:08.000Z","type":"turn.completed","stopReason":"end_turn"}
+{"hello":"world"}
+{"v":"1.0","id":"fc-11","sessionId":"mac_session_8","seq":10,"at":"2026-09-30T09:00:09.000Z","turnId":"turn:fc-2","type":"turn.completed","stopReason":"hyperspace"}

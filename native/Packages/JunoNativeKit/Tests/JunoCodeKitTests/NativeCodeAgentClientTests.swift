@@ -9,49 +9,21 @@ import XCTest
 final class NativeCodeAgentClientTests: XCTestCase {
     private let accountID = try! AccountID("account-a")
 
-    func testDeviceTaskUsesSharedRuntimeProfileAndExistingBearerRoute() async throws {
-        let sender = CodeQueueSender(responses: [
-            response(taskEnvelope),
-        ])
+    /// What the queue hands a Mac is the server's own serialization, decoded
+    /// with the model the submitter picked (see `code-task-wire.json`).
+    func testQueuedTaskDecodesTheServersTaskWithItsModel() async throws {
+        let sender = CodeQueueSender(responses: [response(try taskEnvelope)])
         let client = NativeCodeAgentClient(sender: sender)
 
-        let task = try await client.createDeviceTask(
-            deviceID: "device-1",
-            workspace: .init(
-                name: "Juno",
-                path: "/workspace/juno",
-                key: "workspace-key"
-            ),
-            prompt: "Review the sync layer",
-            conversationID: "conversation-1",
-            profile: CodeAgentProfile(
-                runtime: .claude,
-                permissionMode: .autoEdit,
-                modelID: "claude-sonnet-5",
-                reasoningEffort: "high",
-                computerUse: false,
-                subagentsEnabled: true
-            ),
-            for: accountID
-        )
+        let task = try await client.queuedTask(deviceID: "device-1", for: accountID)
 
-        XCTAssertEqual(task.agentRuntime, .claude)
-        XCTAssertEqual(task.permissionMode, .autoEdit)
+        XCTAssertEqual(task?.id, "task-device")
+        XCTAssertEqual(task?.modelId, "claude-sonnet-5")
+        XCTAssertEqual(task?.reasoningEffort, "high")
+        XCTAssertEqual(task?.acceptsAgentProtocol, true)
         let requests = await sender.requests
         let request = try XCTUnwrap(requests.first)
-        XCTAssertEqual(request.path, "/api/code/tasks")
-        XCTAssertEqual(request.method, .post)
-        let object = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: XCTUnwrap(request.body))
-                as? [String: Any]
-        )
-        XCTAssertEqual(object["agentRuntime"] as? String, "claude")
-        XCTAssertEqual(object["permissionMode"] as? String, "auto-edit")
-        XCTAssertEqual(object["modelId"] as? String, "claude-sonnet-5")
-        XCTAssertEqual(object["reasoningEffort"] as? String, "high")
-        XCTAssertEqual(object["computerUse"] as? Bool, false)
-        XCTAssertEqual(object["subagentsEnabled"] as? Bool, true)
-        XCTAssertEqual(object["target"] as? String, "device")
+        XCTAssertEqual(request.path, "/api/code/queue")
     }
 
     func testAppendPreservesControlEventsAndTypedServerFailure() async throws {
@@ -90,10 +62,20 @@ final class NativeCodeAgentClientTests: XCTestCase {
         }
     }
 
+    /// The server's own serialization of a device task, wrapped as the create
+    /// route returns it — see `NativeCodeAgentTaskDecodingTests`.
     private var taskEnvelope: String {
-        """
-        {"task":{"id":"task-1","deviceId":"device-1","workspacePath":"/workspace/juno","workspaceName":"Juno","workspaceKey":"workspace-key","title":"Review sync","prompt":"Review the sync layer","status":"queued","lastSeq":0,"conversationId":"conversation-1","target":"device","repoOwner":null,"repoName":null,"baseRef":null,"prUrl":null,"agentRuntime":"claude","permissionMode":"auto-edit","modelId":"claude-sonnet-5","reasoningEffort":"high","computerUse":false,"subagentsEnabled":true,"createdAt":"2026-07-26T00:00:00.000Z","updatedAt":"2026-07-26T00:00:00.000Z"}}
-        """
+        get throws {
+            let url = try XCTUnwrap(
+                Bundle.module.url(forResource: "code-task-wire", withExtension: "json", subdirectory: "Fixtures")
+            )
+            let all = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+            )
+            let task = try XCTUnwrap(all["deviceTaskWithModel"])
+            let data = try JSONSerialization.data(withJSONObject: ["task": task])
+            return String(decoding: data, as: UTF8.self)
+        }
     }
 
     private func response(_ body: String, statusCode: Int = 200) -> HTTPResponse {

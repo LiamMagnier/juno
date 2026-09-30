@@ -1,8 +1,8 @@
-import type { CodeTask, CodeTaskEvent, Prisma } from "@prisma/client";
+import type { CodeTask, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { encryptJsonField } from "@/lib/field-crypto";
-import type { ClientActivityEvent } from "@/types/chat";
+import { CodeTaskTranscript, type CodeActivityRow } from "@/lib/agent-protocol/code-task-transcript";
 
 /*
  * Folding a finished code task into its conversation's transcript.
@@ -34,17 +34,6 @@ export function codeTaskMessageId(taskId: string): string {
   return `codetask_${taskId}`;
 }
 
-type EventPayload = Record<string, unknown>;
-
-const payloadStr = (payload: Prisma.JsonValue, key: string): string | null => {
-  const value = (payload as EventPayload | null)?.[key];
-  return typeof value === "string" ? value : null;
-};
-const payloadNum = (payload: Prisma.JsonValue, key: string): number | null => {
-  const value = (payload as EventPayload | null)?.[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-};
-
 /*
  * THE UNIFIED DIFF A `file_change` EVENT MAY CARRY, AND WHAT IT COSTS.
  *
@@ -69,7 +58,6 @@ const payloadNum = (payload: Prisma.JsonValue, key: string): number | null => {
  * almost nobody scrolls to. A patch that does not fit is dropped ENTIRE rather
  * than sliced: a truncated-but-unlabelled hunk reads as the whole change.
  */
-type WriteActivityEvent = ClientActivityEvent & { patch?: string; exitCode?: number };
 const MAX_PERSISTED_PATCH_CHARS = 16_000;
 const MAX_PERSISTED_PATCH_BUDGET = 120_000;
 
@@ -94,145 +82,34 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
     orderBy: { seq: "asc" },
   });
 
-  const textParts: string[] = [];
-  const reasoningParts: string[] = [];
-  const activity: WriteActivityEvent[] = [];
-  const agentSnapshots = new Map<string, { event: CodeTaskEvent; agent: Record<string, unknown> }>();
-  let promptTokens: number | null = null;
-  let completionTokens: number | null = null;
-  let errorMessage: string | null = null;
+  /*
+   * ONE FOLD, THE SAME ONE THE LIVE VIEW USES. Protocol rows are read as
+   * canonical events, legacy rows are upgraded, and a tool row's outcome is the
+   * producer's typed status (`toolStatus`) — this switch used to rebuild the
+   * transcript from the legacy kinds by hand, and the renderer then recovered
+   * outcomes from titles. See src/lib/agent-protocol/code-task-transcript.ts.
+   */
+  const transcript = new CodeTaskTranscript(task.id, { includeAgentSummaries: true });
+  transcript.applyAll(
+    events.map((event) => ({
+      seq: event.seq,
+      kind: event.kind,
+      payload: event.payload,
+      createdAt: event.createdAt.toISOString(),
+    })),
+  );
+
   let patchBudget = MAX_PERSISTED_PATCH_BUDGET;
-  const push = (event: CodeTaskEvent, entry: Omit<WriteActivityEvent, "id" | "createdAt">) =>
-    activity.push({ id: `evt-${event.seq}`, createdAt: event.createdAt.toISOString(), ...entry });
-
-  for (const event of events) {
-    switch (event.kind) {
-      case "text": {
-        const text = payloadStr(event.payload, "text");
-        if (text) textParts.push(text);
-        break;
-      }
-      case "reasoning":
-      case "reasoning_delta": {
-        const text = payloadStr(event.payload, "text");
-        if (text) reasoningParts.push(event.kind === "reasoning" ? `${text}\n\n` : text);
-        break;
-      }
-      case "tool": {
-        const summary = payloadStr(event.payload, "summary") ?? payloadStr(event.payload, "name");
-        // The exit status rides as a number so the transcript can say a
-        // command failed without parsing its own display string.
-        const exitCode = payloadNum(event.payload, "exitCode");
-        if (summary) {
-          push(event, {
-            kind: "tool",
-            title: summary,
-            detail: payloadStr(event.payload, "detail") ?? undefined,
-            ...(exitCode !== null ? { exitCode } : {}),
-          });
-        }
-        break;
-      }
-      case "file_change": {
-        const path = payloadStr(event.payload, "path");
-        if (!path) break;
-        const changeKind = payloadStr(event.payload, "changeKind") ?? "edit";
-        const added = payloadNum(event.payload, "added") ?? 0;
-        const removed = payloadNum(event.payload, "removed") ?? 0;
-        // `patch` is the documented key; `diff` is the one the deployed cloud
-        // runner writes (scripts/cloud-code-runner.mjs). Both, or the hunks the
-        // only producer that sends any would be thrown away here.
-        const patch = payloadStr(event.payload, "patch") ?? payloadStr(event.payload, "diff");
-        const keep = patch && patch.length <= MAX_PERSISTED_PATCH_CHARS && patch.length <= patchBudget ? patch : null;
-        if (keep) patchBudget -= keep.length;
-        push(event, {
-          kind: "write",
-          title: `${changeKind} ${path}`,
-          detail: `+${added} −${removed}`,
-          ...(keep ? { patch: keep } : {}),
-        });
-        break;
-      }
-      case "approval_request": {
-        const summary = payloadStr(event.payload, "summary");
-        if (summary) push(event, { kind: "warning", title: "Approval requested", detail: summary });
-        break;
-      }
-      case "error": {
-        errorMessage = payloadStr(event.payload, "message") ?? errorMessage;
-        break;
-      }
-      case "done": {
-        promptTokens = payloadNum(event.payload, "promptTokens") ?? promptTokens;
-        completionTokens = payloadNum(event.payload, "completionTokens") ?? completionTokens;
-        break;
-      }
-      case "rollback_result": {
-        /*
-         * The OUTCOME is transcript; the request is not.
-         *
-         * `accept_change`/`reject_change`/`undo_change` are asks that may never
-         * have been acted on — a host can vanish between the ask and the answer
-         * — so persisting them would leave a reloaded transcript claiming a file
-         * was reverted on the strength of somebody having clicked. This row is
-         * the host's own report, and it is the one thing here that a reader
-         * coming back tomorrow can rely on. It sits beside the `write` rows it
-         * contradicts, which is the whole point: a file listed as edited and
-         * then listed as reverted has to read that way in history too.
-         */
-        const status = payloadStr(event.payload, "status");
-        const paths = Array.isArray((event.payload as EventPayload | null)?.paths)
-          ? ((event.payload as EventPayload).paths as unknown[]).filter(
-              (entry): entry is string => typeof entry === "string",
-            )
-          : [];
-        push(event, {
-          kind: status === "applied" ? "done" : "warning",
-          title:
-            status === "applied"
-              ? paths.length === 1
-                ? `Rolled back ${paths[0]}`
-                : `Rolled back ${paths.length} files`
-              : status === "unsupported"
-                ? "Nothing to roll back"
-                : "Rollback failed",
-          detail: payloadStr(event.payload, "message") ?? undefined,
-        });
-        break;
-      }
-      case "agent": {
-        // Keep only each agent's LATEST snapshot; folded below after the loop.
-        const agent = (event.payload as Record<string, unknown> | null)?.agent as
-          | Record<string, unknown>
-          | undefined;
-        if (agent && typeof agent.id === "string") {
-          agentSnapshots.set(agent.id, { event, agent });
-        }
-        break;
-      }
-      default:
-        // status/user/approval_response/cancel_request carry no transcript
-        // content, and neither do the rollback ASKS — see `rollback_result`
-        // above for why only the host's answer is persisted. A `steer` is not
-        // folded here either: the steer route persists the instruction as its
-        // own USER row, where a reader expects a turn of theirs to be.
-        break;
-    }
-  }
-
-  // One activity line per delegated agent (its final state) so the persisted
-  // transcript records who did what.
-  for (const { event, agent } of agentSnapshots.values()) {
-    const role = typeof agent.role === "string" ? agent.role : "agent";
-    const title = typeof agent.title === "string" ? agent.title : "";
-    const status = typeof agent.status === "string" ? agent.status : "";
-    const summary = typeof agent.summary === "string" ? agent.summary : undefined;
-    push(event, {
-      kind: "tool",
-      title: `Agent ${role}${title ? ` · ${title}` : ""} — ${status}`,
-      detail: summary ? summary.slice(0, 500) : undefined,
-    });
-  }
+  const activity: CodeActivityRow[] = transcript.activity().map((row) => {
+    if (row.kind !== "write" || !row.patch) return row;
+    const { patch, ...rest } = row;
+    const keep = patch.length <= MAX_PERSISTED_PATCH_CHARS && patch.length <= patchBudget ? patch : null;
+    if (keep) patchBudget -= keep.length;
+    return { ...rest, ...(keep ? { patch: keep } : {}) };
+  });
+  const errorMessage = transcript.errorMessage;
+  const tokens = transcript.tokens;
+  const reasoning = transcript.reasoning;
 
   if (task.status === "failed") {
     activity.push({
@@ -247,11 +124,11 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
   }
 
   const base = {
-    content: encryptMessageText(textParts.join("")),
-    reasoning: reasoningParts.length ? encryptMessageText(reasoningParts.join("").slice(-24_000)) : null,
+    content: encryptMessageText(transcript.content),
+    reasoning: reasoning ? encryptMessageText(reasoning.slice(-24_000)) : null,
     model: null,
-    promptTokens,
-    completionTokens,
+    promptTokens: tokens?.promptTokens ?? null,
+    completionTokens: tokens?.completionTokens ?? null,
     activity: encryptJsonField(activity) as unknown as Prisma.InputJsonValue,
   };
   await prisma.message.upsert({

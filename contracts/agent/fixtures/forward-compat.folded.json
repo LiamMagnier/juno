@@ -1,0 +1,58 @@
+{
+  "state": "idle",
+  "turns": [
+    {
+      "turnId": "turn:fc-2",
+      "origin": "user",
+      "status": "completed",
+      "itemIds": [
+        "u1",
+        "c1",
+        "a1"
+      ],
+      "stopReason": "unknown"
+    }
+  ],
+  "items": [
+    {
+      "kind": "user_message",
+      "itemId": "u1",
+      "text": "Beam the build to the phone.",
+      "delivery": "prompt",
+      "turnId": "turn:fc-2"
+    },
+    {
+      "kind": "tool",
+      "itemId": "c1",
+      "toolName": "teleport",
+      "toolKind": "unknown",
+      "title": "Teleport build/",
+      "status": "ok",
+      "turnId": "turn:fc-2",
+      "risk": "unknown",
+      "exitCode": 0
+    },
+    {
+      "kind": "assistant_text",
+      "itemId": "a1",
+      "text": "Beamed.",
+      "turnId": "turn:fc-2"
+    }
+  ],
+  "usage": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "cacheReadTokens": 0,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 0,
+    "costMicroUsd": 0
+  },
+  "lastSeq": 10,
+  "eventCount": 9,
+  "unknownEventCount": 2,
+  "sessionId": "mac_session_8",
+  "target": "local",
+  "workspaceName": "juno",
+  "model": "claude-sonnet-5",
+  "mode": "ask"
+}

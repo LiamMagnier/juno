@@ -73,6 +73,8 @@ public struct StudioSessionView: View {
             StudioThreadView(controller: controller, openReview: openReview)
             VStack(spacing: JunoSpace.snug) {
                 StudioApprovalPrompt(controller: controller)
+                StudioQuestionPrompt(controller: controller)
+                StudioPlanApprovalPrompt(controller: controller)
                 composer
             }
             .frame(maxWidth: Studio.Metrics.measure)
@@ -80,6 +82,7 @@ public struct StudioSessionView: View {
             .padding(.bottom, JunoSpace.regular)
             .frame(maxWidth: .infinity)
             .animation(JunoMotion.standard, value: controller.pendingApprovals.map(\.id))
+            .animation(JunoMotion.standard, value: controller.pendingQuestions.map(\.id) + controller.pendingPlans.map(\.id))
         }
         .background(Studio.Surface.canvas)
         .task(id: controller.sessionID) {
@@ -162,7 +165,12 @@ public struct StudioSessionView: View {
                let window = controller.contextWindowTokens,
                window > 0
             {
-                StudioContextMeter(used: used, window: window, spent: controller.sessionUsage)
+                StudioContextMeter(
+                    used: used,
+                    window: window,
+                    spent: controller.sessionUsage,
+                    cost: controller.sessionCostEstimate
+                )
             }
             StudioModelChip(
                 models: models,

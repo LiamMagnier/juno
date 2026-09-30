@@ -6,7 +6,7 @@ import type {
   ProviderStreamEvent,
   ReasoningEffort,
 } from './types.js';
-import type { ChatMessage } from '../types.js';
+import type { ChatMessage, Usage } from '../types.js';
 import { resolveKey } from './credentials.js';
 import { classifyProviderError } from './errors.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './timeouts.js';
@@ -22,7 +22,16 @@ export interface CompatProviderConfig {
   baseUrl: string;
   envVar: string;
   defaultModel: string;
-  models: Record<string, { label: string; capabilities: ModelCapabilities }>;
+  models: Record<
+    string,
+    {
+      label: string;
+      capabilities: ModelCapabilities;
+      /** The wire the model speaks. `responses` for the models that answer
+       *  only OpenAI's Responses API; see openai-responses.ts. */
+      api?: 'chat' | 'responses';
+    }
+  >;
   /**
    * True only for labs whose API actually defines OpenAI's top-level
    * `reasoning_effort`.
@@ -171,6 +180,12 @@ export interface CompatAdapterOptions {
   headers?: Record<string, string>;
   /** Override the reported provider id (e.g. "backend/zhipu"). */
   id?: string;
+  /** The base URL is Juno's `/api/agent` proxy, whose own 402 is the person's
+   *  plan limit rather than a lab out of credit. See providers/errors.ts. */
+  viaJunoProxy?: boolean;
+  /** The transport, for a host that has its own; tests replay recorded
+   *  streams through it. Defaults to the global `fetch`. */
+  fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 }
 
 export class OpenAICompatAdapter implements ProviderAdapter {
@@ -179,11 +194,13 @@ export class OpenAICompatAdapter implements ProviderAdapter {
   readonly defaultModel: string;
   private config: CompatProviderConfig;
   private client: OpenAI;
+  private readonly viaJunoProxy: boolean;
 
   constructor(config: CompatProviderConfig, opts?: CompatAdapterOptions | string) {
     // Back-compat: a bare string is the API key.
     const options: CompatAdapterOptions = typeof opts === 'string' ? { apiKey: opts } : (opts ?? {});
     this.config = config;
+    this.viaJunoProxy = options.viaJunoProxy === true;
     this.id = options.id ?? config.id;
     this.name = config.name;
     this.defaultModel = config.defaultModel;
@@ -199,6 +216,7 @@ export class OpenAICompatAdapter implements ProviderAdapter {
       // The SDK's own default is ten minutes; the explicit timeout still keeps
       // one provider attempt bounded. See timeouts.ts.
       timeout: config.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+      ...(options.fetch ? { fetch: options.fetch } : {}),
     });
   }
 
@@ -247,13 +265,13 @@ export class OpenAICompatAdapter implements ProviderAdapter {
       // signal itself, so passing the abort through unchanged keeps that the one
       // place cancellation is decided.
       if (req.signal?.aborted) throw err;
-      throw classifyProviderError(err, this.name);
+      throw classifyProviderError(err, this.name, { viaJunoProxy: this.viaJunoProxy });
     }
 
     // Streamed tool-call fragments accumulate per choice index.
     const calls = new Map<number, { id: string; name: string; args: string }>();
     let finishReason: string | undefined;
-    let usage = { inputTokens: 0, outputTokens: 0 };
+    let usage: Usage = { inputTokens: 0, outputTokens: 0 };
 
     // The same classification around the iteration, not only around the call
     // that opened it. A lab that accepts the connection and then fails — a 5xx
@@ -276,15 +294,24 @@ export class OpenAICompatAdapter implements ProviderAdapter {
         }
         if (choice?.finish_reason) finishReason = choice.finish_reason;
         if (chunk.usage) {
+          // `prompt_tokens` already includes the cached part, which is the
+          // convention Usage keeps; the cached share is broken out beside it.
+          // Most compatible labs report it where OpenAI does, and some (GLM,
+          // DeepSeek) put it at the top level instead.
+          const cached =
+            chunk.usage.prompt_tokens_details?.cached_tokens ??
+            (chunk.usage as { prompt_cache_hit_tokens?: number }).prompt_cache_hit_tokens ??
+            0;
           usage = {
             inputTokens: chunk.usage.prompt_tokens ?? usage.inputTokens,
             outputTokens: chunk.usage.completion_tokens ?? usage.outputTokens,
+            ...(cached > 0 ? { cacheReadTokens: cached } : {}),
           };
         }
       }
     } catch (err) {
       if (req.signal?.aborted) throw err;
-      throw classifyProviderError(err, this.name);
+      throw classifyProviderError(err, this.name, { viaJunoProxy: this.viaJunoProxy });
     }
 
     for (const [, call] of [...calls.entries()].sort((a, b) => a[0] - b[0])) {

@@ -155,6 +155,28 @@ final class CodeRemoteSessionSyncTests: XCTestCase {
         XCTAssertEqual(saved?.cursors["s1"], 250, "the cursor is saved as batches land")
     }
 
+    func testABatchOfLargeEventsIsCutToWhatTheRelayAccepts() async {
+        // A hundred 20 KB events is 2 MB: the relay refuses a body over 1 MB,
+        // and the fallback for a refusal is one POST per event.
+        let chunk = String(repeating: "x", count: 20_000)
+        let source = SyncSource([session("s1", events: 100)], text: { _ in chunk })
+        let relay = SyncRelay()
+        let sync = makeSync(source: source, relay: relay)
+
+        let outcome = await sync.syncOnce()
+
+        XCTAssertEqual(outcome, .complete)
+        let posts = await relay.posts
+        XCTAssertGreaterThan(posts.count, 1)
+        XCTAssertLessThan(posts.count, 10, "cut to fit, not sent one at a time")
+        for post in posts {
+            XCTAssertLessThanOrEqual(post.seqs.count * 20_000, CodeRemoteSessionSync.maximumBatchBytes)
+        }
+        let stored = await relay.storedSeqs(for: "s1")
+        XCTAssertEqual(stored, Array(1...100), "every event, once, in order")
+        XCTAssertEqual(CodeRemoteSessionSync.withinByteBudget([]).count, 0)
+    }
+
     func testOnlyNewEventsAreSentOnTheNextPass() async {
         let source = SyncSource([session("s1", events: 10)])
         let relay = SyncRelay()
@@ -459,11 +481,14 @@ private actor SyncSource: CodeRemoteSyncSource {
     private var sessions: [CodeRemoteSyncedSession]
     /// False plays a host whose sessions have not been read yet.
     private var isLoaded: Bool
+    /// The text each event carries; a long one plays a reply or a terminal tail.
+    private let text: @Sendable (Int) -> String
     private(set) var eventReads = 0
 
-    init(_ sessions: [CodeRemoteSyncedSession], loaded: Bool = true) {
+    init(_ sessions: [CodeRemoteSyncedSession], loaded: Bool = true, text: @escaping @Sendable (Int) -> String = { "e\($0)" }) {
         self.sessions = sessions
         self.isLoaded = loaded
+        self.text = text
     }
 
     func remoteVisibleSessions() async -> [CodeRemoteSyncedSession]? {
@@ -482,7 +507,7 @@ private actor SyncSource: CodeRemoteSyncSource {
         let end = min(count, afterSequence + limit)
         return ((afterSequence + 1)...end).map { seq in
             CodeRemoteSessionEvent(
-                seq: seq, kind: "text_delta", payload: ["text": .string("e\(seq)")],
+                seq: seq, kind: "text_delta", payload: ["text": .string(text(seq))],
                 createdAt: Date(timeIntervalSince1970: TimeInterval(seq))
             )
         }

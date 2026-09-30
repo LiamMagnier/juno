@@ -1,0 +1,96 @@
+{
+  "state": "failed",
+  "turns": [
+    {
+      "turnId": "turn:in-2",
+      "origin": "user",
+      "status": "interrupted",
+      "itemIds": [
+        "u1",
+        "c1"
+      ]
+    },
+    {
+      "turnId": "turn:in-7",
+      "origin": "user",
+      "status": "failed",
+      "itemIds": [
+        "u2",
+        "c2",
+        "error:in-9"
+      ],
+      "error": {
+        "code": "provider_overload",
+        "message": "The provider is overloaded. Try again in a minute.",
+        "retryable": true
+      }
+    }
+  ],
+  "items": [
+    {
+      "kind": "user_message",
+      "itemId": "u1",
+      "text": "Run the full test suite.",
+      "delivery": "prompt",
+      "turnId": "turn:in-2"
+    },
+    {
+      "kind": "tool",
+      "itemId": "c1",
+      "toolName": "run_tests",
+      "toolKind": "other",
+      "title": "Run npm test",
+      "status": "unknown",
+      "turnId": "turn:in-2",
+      "risk": "execute"
+    },
+    {
+      "kind": "user_message",
+      "itemId": "u2",
+      "text": "Try again.",
+      "delivery": "prompt",
+      "turnId": "turn:in-7"
+    },
+    {
+      "kind": "tool",
+      "itemId": "c2",
+      "toolName": "run_tests",
+      "toolKind": "other",
+      "title": "Run npm test",
+      "status": "unknown",
+      "turnId": "turn:in-7",
+      "risk": "execute"
+    },
+    {
+      "kind": "error",
+      "itemId": "error:in-9",
+      "error": {
+        "code": "provider_overload",
+        "message": "The provider is overloaded. Try again in a minute.",
+        "retryable": true
+      },
+      "turnId": "turn:in-7"
+    }
+  ],
+  "usage": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "cacheReadTokens": 0,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 0,
+    "costMicroUsd": 0
+  },
+  "lastSeq": 11,
+  "eventCount": 11,
+  "unknownEventCount": 0,
+  "sessionId": "mac_session_6",
+  "target": "local",
+  "workspaceName": "juno",
+  "model": "claude-sonnet-5",
+  "mode": "full",
+  "lastError": {
+    "code": "provider_overload",
+    "message": "The provider is overloaded. Try again in a minute.",
+    "retryable": true
+  }
+}

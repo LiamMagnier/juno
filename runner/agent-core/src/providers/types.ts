@@ -1,4 +1,4 @@
-import type { ChatMessage, ToolSpec, Usage } from '../types.js';
+import type { ChatMessage, ReasoningContent, ToolSpec, Usage } from '../types.js';
 
 /**
  * Capability descriptor reported by every provider adapter for a given model.
@@ -43,8 +43,24 @@ export function isReasoningEffort(value: unknown): value is ReasoningEffort {
 export type ProviderStreamEvent =
   | { type: 'text_delta'; text: string }
   | { type: 'thinking_delta'; text: string }
+  /**
+   * One complete, replayable reasoning block, yielded when it closes — after
+   * the `thinking_delta`s that showed it and before whatever the model wrote
+   * next — so the loop can record it in stream order. The loop stamps it with
+   * the model that wrote it.
+   */
+  | { type: 'reasoning_block'; block: ReasoningContent }
   | { type: 'tool_call'; id: string; name: string; input: unknown }
-  | { type: 'done'; stopReason: 'end_turn' | 'tool_use' | 'max_tokens' | 'other'; usage: Usage };
+  | {
+      type: 'done';
+      /**
+       * `context_window`: the model stopped because the conversation filled its
+       * window mid-answer. `refusal`: the model declined. Both used to read as
+       * `other`, which told a reader nothing about what to do next.
+       */
+      stopReason: 'end_turn' | 'tool_use' | 'max_tokens' | 'context_window' | 'refusal' | 'other';
+      usage: Usage;
+    };
 
 export interface ProviderRequest {
   model: string;
@@ -62,6 +78,13 @@ export interface ProviderRequest {
    * a preference the user expressed once into a run that cannot start at all.
    */
   reasoningEffort?: ReasoningEffort;
+  /**
+   * Whether to mark the request for the provider's prompt cache, where the
+   * provider needs telling (Anthropic). Absent means yes: every agent step
+   * re-sends the prefix the last one sent. A single side call — a compaction
+   * summary — passes false, because nothing will read what it would write.
+   */
+  cache?: boolean;
 }
 
 export interface ProviderAdapter {

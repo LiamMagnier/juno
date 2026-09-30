@@ -7,8 +7,21 @@ export type RiskLevel = 'safe' | 'edit' | 'command' | 'sensitive';
 export type ApprovalDecision = 'allow' | 'allow_always' | 'deny';
 
 export interface Usage {
+  /**
+   * Every input token the request consumed, cached or not.
+   *
+   * Inclusive on purpose, which is OpenAI's convention and not Anthropic's
+   * (whose `input_tokens` counts only the uncached tail): the token ceilings,
+   * the context meter and the billing floor all read this one number, and a
+   * cached prefix is still context the model read. The two fields below break
+   * it down for anything that prices a cache read differently.
+   */
   inputTokens: number;
   outputTokens: number;
+  /** Of `inputTokens`, how many were read from the provider's prompt cache. */
+  cacheReadTokens?: number;
+  /** Of `inputTokens`, how many were written to the prompt cache. */
+  cacheWriteTokens?: number;
 }
 
 /** Provider-neutral chat message format. Adapters translate to vendor wire formats. */
@@ -18,9 +31,27 @@ export type UserContent =
   /** Ephemeral vision input. Session persistence replaces this with a marker. */
   | { type: 'image'; mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; data: string };
 
+/**
+ * A reasoning block a provider signed or sealed, kept so it can be sent back
+ * byte for byte.
+ *
+ * Anthropic binds each thinking block to the conversation before it with a
+ * signature, and a model continuing a tool loop reads its own earlier
+ * reasoning only when those blocks come back unchanged and in the order they
+ * streamed. OpenAI's Responses API does the same with an encrypted `reasoning`
+ * item. `model` is the model that wrote the block: a signature means nothing to
+ * any other model, so a block is replayed only to the one that produced it and
+ * dropped when the run moves to another.
+ */
+export type ReasoningContent =
+  | { type: 'thinking'; thinking: string; signature: string; model?: string }
+  | { type: 'redacted_thinking'; data: string; model?: string }
+  | { type: 'reasoning'; id: string; encryptedContent: string; summary: string[]; model?: string };
+
 export type AssistantContent =
   | { type: 'text'; text: string }
-  | { type: 'tool_call'; id: string; name: string; input: unknown };
+  | { type: 'tool_call'; id: string; name: string; input: unknown }
+  | ReasoningContent;
 
 export type ChatMessage =
   | { role: 'user'; content: UserContent[] }
@@ -80,6 +111,21 @@ export type AgentEvent =
   | { type: 'approval_requested'; request: ApprovalRequest }
   | { type: 'approval_resolved'; callId: string; decision: ApprovalDecision; agentId?: string }
   | { type: 'files_changed'; turnIndex: number; paths: string[] }
+  /**
+   * The older steps of the conversation were folded into a summary to keep it
+   * inside the model's context window (see compaction.ts). `summary` says who
+   * wrote it: the model, or the structural notes when the model's attempt
+   * failed, which `failure` explains.
+   */
+  | {
+      type: 'context_compacted';
+      reason: 'threshold' | 'overflow';
+      summary: 'model' | 'structural';
+      failure?: string;
+      removedMessages: number;
+      tokensBefore: number;
+      tokensAfter: number;
+    }
   | { type: 'mode_changed'; mode: PermissionMode }
   | {
       type: 'turn_finished';
@@ -89,7 +135,13 @@ export type AgentEvent =
       /** Aggregated child-agent usage for the turn (absent when none ran). */
       subagentUsage?: Usage;
     }
-  | { type: 'error'; message: string }
+  | {
+      type: 'error';
+      message: string;
+      /** What kind of failure it was (`failureCodeOf` in loop.ts), when the
+       *  engine knows: a plan limit and a tool crash want different words. */
+      code?: string;
+    }
   | { type: 'subagent_update'; agent: SubagentSnapshot };
 
 /** Structural mirror of subagents.ts SubagentPublicState (kept loose here so

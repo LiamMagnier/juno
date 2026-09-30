@@ -24,17 +24,7 @@ public struct NativeCodeAgentDevice: Codable, Identifiable, Equatable, Sendable 
     public let online: Bool?
 }
 
-public struct NativeCodeAgentRepository: Codable, Identifiable, Equatable, Sendable {
-    public var id: String { fullName }
-    public let owner: String
-    public let name: String
-    public let fullName: String
-    public let `private`: Bool
-    public let defaultBranch: String
-    public let updatedAt: String
-}
-
-public struct NativeCodeAgentTask: Codable, Identifiable, Equatable, Sendable {
+public struct NativeCodeAgentTask: Decodable, Identifiable, Equatable, Sendable {
     public let id: String
     public let deviceId: String?
     public let workspacePath: String
@@ -50,26 +40,37 @@ public struct NativeCodeAgentTask: Codable, Identifiable, Equatable, Sendable {
     public let repoName: String?
     public let baseRef: String?
     public let prUrl: String?
-    public let agentRuntime: CodeAgentRuntime
     public let permissionMode: CodeAgentPermissionMode
+    /// The model the submitter picked, or nil for "no preference".
     public let modelId: String?
     public let reasoningEffort: String?
-    public let computerUse: Bool
-    public let subagentsEnabled: Bool
+    /// The canonical agent protocol version this server stores as `protocol`
+    /// task events, or nil for a server that predates it (and would refuse
+    /// the whole batch that carried one).
+    public let agentProtocol: String?
     public let createdAt: String
     public let updatedAt: String
 
+    /// Whether this server takes canonical agent protocol rows (major 1).
+    public var acceptsAgentProtocol: Bool {
+        agentProtocol?.split(separator: ".").first == "1"
+    }
+
+    /// Every key here is one `serializeTask` (src/lib/code-task-wire.ts)
+    /// sends, except `modelId`, which no server has ever sent and is read only
+    /// as a fallback. `tests/code-task-wire.test.ts` holds this list to the
+    /// server's key set, so a field the Mac waits for that the server never
+    /// writes fails there instead of silently decoding as nil.
     private enum CodingKeys: String, CodingKey {
         case id, deviceId, workspacePath, workspaceName, workspaceKey, title, prompt
         case status, lastSeq, conversationId, target, repoOwner, repoName, baseRef, prUrl
-        case agentRuntime, permissionMode, modelId, reasoningEffort, computerUse
-        case subagentsEnabled, createdAt, updatedAt
+        case permissionMode, model, modelId, reasoningEffort, agentProtocol, createdAt, updatedAt
     }
 
-    /// Lenient where the server is: `serializeTask` sends no runtime, model,
-    /// effort, Computer Use or sub-agent fields, leaves `permissionMode` null
-    /// on device tasks and omits `prompt` on list responses. Decoding those
-    /// strictly failed every queued task, so none ever started on the Mac.
+    /// Lenient where the server is: `serializeTask` leaves `permissionMode`,
+    /// `model` and `reasoningEffort` null on a task created without them and
+    /// omits `prompt` on list responses. Decoding those strictly failed every
+    /// queued task, so none ever started on the Mac.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -87,13 +88,14 @@ public struct NativeCodeAgentTask: Codable, Identifiable, Equatable, Sendable {
         repoName = try container.decodeIfPresent(String.self, forKey: .repoName)
         baseRef = try container.decodeIfPresent(String.self, forKey: .baseRef)
         prUrl = try container.decodeIfPresent(String.self, forKey: .prUrl)
-        agentRuntime = (try? container.decodeIfPresent(CodeAgentRuntime.self, forKey: .agentRuntime)) ?? .claude
         // Null means "no preference": the Mac's own gating, which asks.
         permissionMode = (try? container.decodeIfPresent(CodeAgentPermissionMode.self, forKey: .permissionMode)) ?? .ask
-        modelId = try container.decodeIfPresent(String.self, forKey: .modelId)
+        // `model` is the server's key. `modelId` is what this decoder used to
+        // read, and what no server ever wrote; it stays only as a fallback.
+        modelId = try container.decodeIfPresent(String.self, forKey: .model)
+            ?? container.decodeIfPresent(String.self, forKey: .modelId)
         reasoningEffort = try container.decodeIfPresent(String.self, forKey: .reasoningEffort)
-        computerUse = try container.decodeIfPresent(Bool.self, forKey: .computerUse) ?? false
-        subagentsEnabled = try container.decodeIfPresent(Bool.self, forKey: .subagentsEnabled) ?? false
+        agentProtocol = try? container.decodeIfPresent(String.self, forKey: .agentProtocol)
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
         updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt) ?? ""
     }
@@ -134,9 +136,11 @@ public enum NativeCodeAgentAPIError: Error, Equatable, LocalizedError, Sendable 
     }
 }
 
-/// Existing Juno bearer routes are the sole cross-device source of truth for
-/// Code sessions. The macOS shell uses this client for the same tasks the Web
-/// and iOS surfaces observe through the sync feed.
+/// The host half of the device-task queue: register this Mac, take a queued
+/// task, claim it, and stream its events back. Creating tasks is the task
+/// store's (`NativeCodeTaskClient`), which is what every composer calls; the
+/// create, repository and list methods that used to live here too were called
+/// only by a provider no app composed, and are gone with it.
 public struct NativeCodeAgentClient: Sendable {
     private let sender: any NativeAuthenticatedRequestSending
 
@@ -165,92 +169,6 @@ public struct NativeCodeAgentClient: Sendable {
         return try decode(DeviceResponse.self, from: response).device
     }
 
-    public func repositories(for accountID: AccountID) async throws
-        -> [NativeCodeAgentRepository]
-    {
-        let response = try await sender.send(
-            try NativeBearerRequest(path: "/api/code/github/repos"),
-            for: accountID
-        )
-        try requireSuccess(response)
-        return try decode(RepositoryResponse.self, from: response).repos
-    }
-
-    public func createCodeConversation(
-        workspace: NativeCodeWorkspaceRegistration?,
-        for accountID: AccountID
-    ) async throws -> String {
-        let body = ConversationRequest(
-            kind: "code",
-            codeWorkspaceName: workspace?.name,
-            codeWorkspacePath: workspace?.path,
-            codeWorkspaceKey: workspace?.key
-        )
-        let response = try await request(
-            path: "/api/conversations",
-            method: .post,
-            body: body,
-            accountID: accountID
-        )
-        let id = try decode(ConversationResponse.self, from: response).conversation.id
-        guard !id.isEmpty else { throw NativeCodeAgentAPIError.malformedResponse }
-        return id
-    }
-
-    public func createDeviceTask(
-        deviceID: String,
-        workspace: NativeCodeWorkspaceRegistration,
-        prompt: String,
-        conversationID: String?,
-        profile: CodeAgentProfile,
-        for accountID: AccountID
-    ) async throws -> NativeCodeAgentTask {
-        guard !deviceID.isEmpty, !workspace.path.isEmpty, !prompt.isEmpty else {
-            throw NativeCodeAgentAPIError.invalidInput
-        }
-        return try await createTask(
-            TaskRequest(
-                deviceId: deviceID,
-                workspacePath: workspace.path,
-                workspaceName: workspace.name,
-                workspaceKey: workspace.key,
-                prompt: prompt,
-                conversationId: conversationID,
-                target: "device",
-                repo: nil,
-                baseRef: nil,
-                profile: profile
-            ),
-            accountID: accountID
-        )
-    }
-
-    public func createCloudTask(
-        repository: NativeCodeAgentRepository,
-        baseRef: String?,
-        prompt: String,
-        conversationID: String?,
-        profile: CodeAgentProfile,
-        for accountID: AccountID
-    ) async throws -> NativeCodeAgentTask {
-        guard !prompt.isEmpty else { throw NativeCodeAgentAPIError.invalidInput }
-        return try await createTask(
-            TaskRequest(
-                deviceId: nil,
-                workspacePath: nil,
-                workspaceName: repository.name,
-                workspaceKey: nil,
-                prompt: prompt,
-                conversationId: conversationID,
-                target: "cloud",
-                repo: .init(owner: repository.owner, name: repository.name),
-                baseRef: baseRef ?? repository.defaultBranch,
-                profile: profile
-            ),
-            accountID: accountID
-        )
-    }
-
     public func queuedTask(
         deviceID: String,
         for accountID: AccountID
@@ -264,24 +182,6 @@ public struct NativeCodeAgentClient: Sendable {
         )
         try requireSuccess(response)
         return try decode(QueueResponse.self, from: response).task
-    }
-
-    public func tasks(
-        limit: Int = 30,
-        for accountID: AccountID
-    ) async throws -> [NativeCodeAgentTask] {
-        let safeLimit = min(max(limit, 1), 100)
-        let response = try await sender.send(
-            try NativeBearerRequest(
-                path: "/api/code/tasks",
-                queryItems: [
-                    URLQueryItem(name: "limit", value: String(safeLimit)),
-                ]
-            ),
-            for: accountID
-        )
-        try requireSuccess(response)
-        return try decode(TasksResponse.self, from: response).tasks
     }
 
     public func claim(
@@ -320,19 +220,6 @@ public struct NativeCodeAgentClient: Sendable {
             lastSequence: wire.lastSeq,
             control: wire.control
         )
-    }
-
-    private func createTask(
-        _ body: TaskRequest,
-        accountID: AccountID
-    ) async throws -> NativeCodeAgentTask {
-        let response = try await request(
-            path: "/api/code/tasks",
-            method: .post,
-            body: body,
-            accountID: accountID
-        )
-        return try decode(TaskResponse.self, from: response).task
     }
 
     private func request<Body: Encodable>(
@@ -384,20 +271,8 @@ private struct DeviceRequest: Encodable {
 }
 
 private struct DeviceResponse: Decodable { let device: NativeCodeAgentDevice }
-private struct RepositoryResponse: Decodable { let repos: [NativeCodeAgentRepository] }
-private struct ConversationRequest: Encodable {
-    let kind: String
-    let codeWorkspaceName: String?
-    let codeWorkspacePath: String?
-    let codeWorkspaceKey: String?
-}
-private struct ConversationResponse: Decodable {
-    struct Conversation: Decodable { let id: String }
-    let conversation: Conversation
-}
 private struct ClaimRequest: Encodable { let deviceId: String }
 private struct TaskResponse: Decodable { let task: NativeCodeAgentTask }
-private struct TasksResponse: Decodable { let tasks: [NativeCodeAgentTask] }
 private struct QueueResponse: Decodable { let task: NativeCodeAgentTask? }
 private struct EventsRequest: Encodable {
     let events: [NativeCodeTaskEventInput]
@@ -409,55 +284,3 @@ private struct EventsResponse: Decodable {
     let control: [NativeCodeControlEvent]
 }
 private struct ErrorResponse: Decodable { let error: String }
-
-private struct TaskRequest: Encodable {
-    struct Repository: Encodable {
-        let owner: String
-        let name: String
-    }
-
-    let deviceId: String?
-    let workspacePath: String?
-    let workspaceName: String?
-    let workspaceKey: String?
-    let prompt: String
-    let conversationId: String?
-    let target: String
-    let repo: Repository?
-    let baseRef: String?
-    let agentRuntime: CodeAgentRuntime
-    let permissionMode: CodeAgentPermissionMode
-    let modelId: String?
-    let reasoningEffort: String?
-    let computerUse: Bool
-    let subagentsEnabled: Bool
-
-    init(
-        deviceId: String?,
-        workspacePath: String?,
-        workspaceName: String?,
-        workspaceKey: String?,
-        prompt: String,
-        conversationId: String?,
-        target: String,
-        repo: Repository?,
-        baseRef: String?,
-        profile: CodeAgentProfile
-    ) {
-        self.deviceId = deviceId
-        self.workspacePath = workspacePath
-        self.workspaceName = workspaceName
-        self.workspaceKey = workspaceKey
-        self.prompt = prompt
-        self.conversationId = conversationId
-        self.target = target
-        self.repo = repo
-        self.baseRef = baseRef
-        agentRuntime = profile.runtime
-        permissionMode = profile.permissionMode
-        modelId = profile.modelID
-        reasoningEffort = profile.reasoningEffort
-        computerUse = profile.computerUse
-        subagentsEnabled = profile.subagentsEnabled
-    }
-}

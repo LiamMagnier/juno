@@ -197,12 +197,20 @@ public enum ConversationCompactor {
     }
 
     /// A user message, or the model's first item after tool results.
+    ///
+    /// A `<session_state>` block is neither: it belongs to the step it was
+    /// sent with, so it neither counts as a step of its own nor hides the
+    /// tool results in front of it.
     static func isBoundary(at index: Int, in messages: [ModelMessage]) -> Bool {
         switch messages[index] {
         case .user, .userWithImages:
-            return true
+            return !messages[index].isSessionState
         case .assistant, .assistantThinking, .assistantRedactedThinking, .toolCall, .toolCallWithExtra:
-            return messages[index - 1].toolResultID != nil
+            var previous = index - 1
+            while previous > 0, messages[previous].isSessionState {
+                previous -= 1
+            }
+            return messages[previous].toolResultID != nil
         case .toolResult, .toolResultWithImages:
             return false
         }
@@ -516,7 +524,15 @@ public enum ConversationCompactor {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func encodedByteCount(_ messages: [ModelMessage]) -> Int {
-        (try? JSONEncoder().encode(messages).count) ?? Int.max
+    /// The history's weight for the byte guard. Images count as what they
+    /// cost in the context, not as their base64: they stay in the history
+    /// until compaction now, and one screenshot's encoding alone would trip a
+    /// guard sized for text.
+    static func encodedByteCount(_ messages: [ModelMessage]) -> Int {
+        let images = messages.reduce(0) { $0 + $1.images.count }
+        guard let text = try? JSONEncoder().encode(messages.map(\.persistenceSafe)).count else {
+            return Int.max
+        }
+        return text + images * ImageRetention.contextBytesPerImage
     }
 }

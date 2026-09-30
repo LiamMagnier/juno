@@ -222,6 +222,14 @@ public struct BackendCodeModelClient: AgentModelClient {
         self.timeouts = timeouts
     }
 
+    /// Anthropic reads the prefix up to the breakpoints this client marks;
+    /// OpenAI caches any long prefix on its own. The other labs' caching, where
+    /// they have any, is not something Juno can count on.
+    public func cachesPromptPrefix(for modelID: String) -> Bool {
+        guard let route = resolver.route(for: modelID) else { return false }
+        return route.wireProtocol == .anthropicMessages || route.providerID == "openai"
+    }
+
     public func streamTurn(
         _ request: ModelTurnRequest
     ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
@@ -236,7 +244,7 @@ public struct BackendCodeModelClient: AgentModelClient {
             let relay = Task {
                 do {
                     guard let route = resolver.route(for: request.modelID) else {
-                        throw AgentModelClientError.invalidResponse(
+                        throw AgentModelClientError.unavailable(
                             message: "Model \(request.modelID) cannot run the Juno Code tool protocol."
                         )
                     }
@@ -302,33 +310,18 @@ public struct BackendCodeModelClient: AgentModelClient {
 
                     let response = try await Self.withTimeout(
                         seconds: timeouts.connectionSeconds,
-                        message: "The model connection timed out."
+                        // Nothing was sent back yet: an ordinary failed
+                        // connection, retried as one.
+                        failure: .transport(message: "The model connection timed out.")
                     ) {
                         try await streamer.stream(bearer, for: accountID)
                     }
                     guard (200...299).contains(response.statusCode) else {
-                        let failure = try await Self.errorBody(from: response)
-                        let message = failure.message
-                        let lowerMessage = message.lowercased()
-                        if response.statusCode == 401 || response.statusCode == 403 {
-                            throw AgentModelClientError.unauthorized
-                        } else if response.statusCode == 402, failure.code == "QUOTA_EXCEEDED" {
-                            // The Juno proxy's budget and usage-window wall,
-                            // which it marks with this code. The proxy passes
-                            // a provider's own status through unchanged, so a
-                            // bare 402 is the provider's billing (DeepSeek's
-                            // "Insufficient Balance"), which another model can
-                            // still serve.
-                            throw AgentModelClientError.planLimitReached(message: message)
-                        } else if response.statusCode == 402
-                            || lowerMessage.contains("quota")
-                            || lowerMessage.contains("exceeded your current quota")
-                        {
-                            throw AgentModelClientError.quotaExhausted(message: message)
-                        } else if response.statusCode == 429 || lowerMessage.contains("rate limit") {
-                            throw AgentModelClientError.rateLimited
-                        }
-                        throw AgentModelClientError.transport(message: message)
+                        throw Self.classify(
+                            status: response.statusCode,
+                            headers: response.headers,
+                            failure: try await Self.errorBody(from: response)
+                        )
                     }
                     guard response.headers["content-type"]?.lowercased()
                         .hasPrefix("text/event-stream") == true
@@ -340,7 +333,7 @@ public struct BackendCodeModelClient: AgentModelClient {
 
                     try await Self.withTimeout(
                         seconds: timeouts.overallSeconds,
-                        message: "The model turn exceeded its time limit."
+                        failure: .stalled(message: "The model turn exceeded its time limit.")
                     ) {
                         try await Self.consume(
                             response: response,
@@ -364,7 +357,7 @@ public struct BackendCodeModelClient: AgentModelClient {
     /// streams because leaving the losing task alive would leak its socket.
     private static func withTimeout<T: Sendable>(
         seconds: TimeInterval,
-        message: String,
+        failure: AgentModelClientError,
         operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
         guard seconds > 0 else { return try await operation() }
@@ -372,11 +365,11 @@ public struct BackendCodeModelClient: AgentModelClient {
             group.addTask { try await operation() }
             group.addTask {
                 try await Task.sleep(for: .seconds(seconds))
-                throw AgentModelClientError.transport(message: message)
+                throw failure
             }
             defer { group.cancelAll() }
             guard let value = try await group.next() else {
-                throw AgentModelClientError.transport(message: message)
+                throw failure
             }
             return value
         }
@@ -426,7 +419,7 @@ public struct BackendCodeModelClient: AgentModelClient {
                     while true {
                         try await Task.sleep(for: .seconds(idleSeconds))
                         if await activity.isIdle(for: idleSeconds) {
-                            throw AgentModelClientError.transport(
+                            throw AgentModelClientError.stalled(
                                 message: "The model stream became idle."
                             )
                         }
@@ -452,7 +445,18 @@ public struct BackendCodeModelClient: AgentModelClient {
     /// it when there was one.
     struct ErrorBody: Equatable {
         let message: String
+        /// The Juno proxy's own code, at the top level.
         let code: String?
+        /// The provider's error type or code: Anthropic's `error.type`
+        /// (`overloaded_error`), OpenAI's `error.code`
+        /// (`context_length_exceeded`).
+        let providerType: String?
+
+        init(message: String, code: String?, providerType: String? = nil) {
+            self.message = message
+            self.code = code
+            self.providerType = providerType
+        }
     }
 
     static func errorBody(from response: HTTPByteStreamResponse) async throws -> ErrorBody {
@@ -468,13 +472,126 @@ public struct BackendCodeModelClient: AgentModelClient {
                 ?? object["error"]?.stringValue
                 ?? object["message"]?.stringValue
             {
-                return ErrorBody(message: error, code: object["code"]?.stringValue)
+                return ErrorBody(
+                    message: error,
+                    code: object["code"]?.stringValue,
+                    providerType: object["error"]?["type"]?.stringValue
+                        ?? object["error"]?["code"]?.stringValue
+                )
             }
         }
         if let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
             return ErrorBody(message: text, code: nil)
         }
         return ErrorBody(message: "The model request failed (HTTP \(response.statusCode)).", code: nil)
+    }
+
+    /// A failed response as the error the agent loop acts on.
+    ///
+    /// The status decides first, then the provider's own type, then its
+    /// words — the same order the cloud runner settled on
+    /// (`runner/agent-core/src/providers/errors.ts`): labs disagree on the
+    /// status for "out of credit" and for "too long", but not on what they
+    /// call it.
+    static func classify(status: Int, headers: HTTPHeaders, failure: ErrorBody) -> AgentModelClientError {
+        let message = failure.message
+        let lowerMessage = message.lowercased()
+        let type = failure.providerType?.lowercased() ?? ""
+        let retryAfter = retryAfterSeconds(headers)
+        if status == 401 || status == 403 {
+            return .unauthorized
+        }
+        if status == 402, failure.code == "QUOTA_EXCEEDED" {
+            // The Juno proxy's budget and usage-window wall, which it marks
+            // with this code. The proxy passes a provider's own status through
+            // unchanged, so a bare 402 is the provider's billing (DeepSeek's
+            // "Insufficient Balance"), which another model can still serve.
+            return .planLimitReached(message: message)
+        }
+        if status == 402
+            || lowerMessage.contains("quota")
+            || lowerMessage.contains("insufficient balance")
+            || lowerMessage.contains("credit balance is too low")
+        {
+            return .quotaExhausted(message: message)
+        }
+        // A 429 is a limit whatever its words say; only a shortage of credit,
+        // above, outranks it.
+        if status == 429 {
+            return .rateLimited(retryAfter: retryAfter)
+        }
+        if status == 413 || isContextOverflow(type: type, message: lowerMessage) {
+            return .contextWindowExceeded(message: message)
+        }
+        if type == "rate_limit_error" || lowerMessage.contains("rate limit") {
+            return .rateLimited(retryAfter: retryAfter)
+        }
+        if status == 529 || status == 503 || type == "overloaded_error" || lowerMessage.contains("overloaded") {
+            return .overloaded(retryAfter: retryAfter)
+        }
+        // A timeout or a conflict on the way in, and any other 5xx: nothing
+        // says the next attempt meets the same.
+        if status == 408 || status == 409 || status >= 500 {
+            return .transport(message: message)
+        }
+        // Everything else below 500 is the provider refusing this request —
+        // a bad parameter, an unknown model, a block it will not replay. It
+        // used to be a transport failure, retried with backoff four times
+        // for a request that could only fail the same way each time; the
+        // cloud runner has never retried one.
+        return .rejected(message: message)
+    }
+
+    /// "Too long for the window", in the words each lab uses: Anthropic's
+    /// "prompt is too long", OpenAI's `context_length_exceeded` and "maximum
+    /// context length", and the compatible labs' variations on both.
+    static func isContextOverflow(type: String, message: String) -> Bool {
+        type == "context_length_exceeded"
+            || type == "request_too_large"
+            || message.contains("prompt is too long")
+            || message.contains("maximum context length")
+            || message.contains("context_length_exceeded")
+            || message.contains("context window")
+            || message.contains("too many tokens")
+            || message.contains("input is too long")
+    }
+
+    /// How long the provider asked to be left alone: OpenAI's exact
+    /// `retry-after-ms` when present, else the standard `retry-after` in
+    /// seconds or as an HTTP date. The loop decides what it will honour.
+    static func retryAfterSeconds(_ headers: HTTPHeaders, now: Date = Date()) -> TimeInterval? {
+        if let raw = headers["retry-after-ms"], let milliseconds = Double(raw.trimmingCharacters(in: .whitespaces)),
+           milliseconds.isFinite, milliseconds >= 0
+        {
+            return milliseconds / 1_000
+        }
+        guard let raw = headers["retry-after"]?.trimmingCharacters(in: .whitespaces) else { return nil }
+        if let seconds = Double(raw), seconds.isFinite, seconds >= 0 {
+            return seconds
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        guard let date = formatter.date(from: raw) else { return nil }
+        return max(0, date.timeIntervalSince(now))
+    }
+
+    /// An error a provider reported inside an event stream, where there is no
+    /// status to go by.
+    static func streamError(type: String?, message: String) -> AgentModelClientError {
+        let lowerType = type?.lowercased() ?? ""
+        let lowerMessage = message.lowercased()
+        if lowerType == "overloaded_error" || lowerMessage.contains("overloaded") {
+            return .overloaded(retryAfter: nil)
+        }
+        if lowerType == "rate_limit_error" || lowerMessage.contains("rate limit") {
+            return .rateLimited(retryAfter: nil)
+        }
+        if isContextOverflow(type: lowerType, message: lowerMessage) {
+            return .contextWindowExceeded(message: message)
+        }
+        return .transport(message: message)
     }
 }
 
@@ -558,7 +675,7 @@ enum AnthropicRequestBuilder {
                         "type": "tool_use",
                         "id": .string(id),
                         "name": .string(name),
-                        "input": input,
+                        "input": replayableToolInput(input),
                     ])
                 )
             case let .toolResult(id, content, isError):
@@ -612,18 +729,25 @@ enum AnthropicRequestBuilder {
         // Prompt caching. An agent loop resends the same prefix — tool schemas,
         // system prompt, every earlier turn — on each of its dozens of
         // requests, so without breakpoints every step is billed and processed
-        // from token zero. Three of the four allowed breakpoints:
+        // from token zero. All four allowed breakpoints:
         //
         // 1. the last tool: schemas change only when the tool set does;
-        // 2. the system prompt: changes with goal or skills, not per step;
+        // 2. the system prompt: fixed for the session, since everything that
+        //    changes during one rides in `<session_state>` blocks instead;
         // 3. the newest block of the conversation: each request writes the
         //    prefix the next one reads, which is the incremental pattern
-        //    Anthropic documents for multi-turn tool use.
+        //    Anthropic documents for multi-turn tool use;
+        // 4. the previous request's newest block, the end of the user turn
+        //    before the latest reply. A breakpoint finds an earlier write only
+        //    within about twenty blocks of itself, and a step with ten parallel
+        //    calls adds more than that between (3) and the last write; this
+        //    one lands exactly on it.
         //
         // Below the model's minimum cacheable length a breakpoint is a no-op,
         // so short sessions pay nothing for it.
         let ephemeral: JSONValue = .object(["type": .string("ephemeral")])
         Self.markLastCacheableBlock(in: &messages, with: ephemeral)
+        Self.markPreviousTail(in: &messages, with: ephemeral)
         var object: [String: JSONValue] = [
             "model": .string(providerModelID),
             "max_tokens": .number(Double(bits.maxTokens)),
@@ -707,7 +831,28 @@ enum AnthropicRequestBuilder {
     /// Walks back past blocks that cannot carry one — thinking blocks refuse
     /// `cache_control` — so a turn that ends in reasoning still caches.
     static func markLastCacheableBlock(in messages: inout [JSONValue], with marker: JSONValue) {
-        for messageIndex in messages.indices.reversed() {
+        markLastCacheableBlock(in: &messages, before: messages.count, with: marker)
+    }
+
+    /// Puts a breakpoint where the previous request's rolling one was: the
+    /// last block of the user message before the newest assistant message.
+    /// Nothing is marked when there is no such pair, as on a first request.
+    static func markPreviousTail(in messages: inout [JSONValue], with marker: JSONValue) {
+        func role(_ index: Int) -> String? { messages[index]["role"]?.stringValue }
+        guard let assistant = messages.indices.last(where: { role($0) == "assistant" }),
+              let user = messages[..<assistant].indices.last(where: { role($0) == "user" })
+        else { return }
+        markLastCacheableBlock(in: &messages, before: user + 1, with: marker)
+    }
+
+    /// Marks the last block that can carry a breakpoint among the messages
+    /// before `end`.
+    private static func markLastCacheableBlock(
+        in messages: inout [JSONValue],
+        before end: Int,
+        with marker: JSONValue
+    ) {
+        for messageIndex in messages[..<end].indices.reversed() {
             guard case var .object(message) = messages[messageIndex],
                   case var .array(blocks) = message["content"]
             else { continue }
@@ -820,7 +965,7 @@ enum OpenAIChatRequestBuilder {
                     "type": .string("function"),
                     "function": .object([
                         "name": .string(name),
-                        "arguments": .string(jsonString(input)),
+                        "arguments": .string(jsonString(replayableToolInput(input))),
                     ]),
                 ]))
             case let .toolCallWithExtra(id, name, input, extraContent):
@@ -829,7 +974,7 @@ enum OpenAIChatRequestBuilder {
                     "type": .string("function"),
                     "function": .object([
                         "name": .string(name),
-                        "arguments": .string(jsonString(input)),
+                        "arguments": .string(jsonString(replayableToolInput(input))),
                     ]),
                 ]
                 // Only pass extra_content to Google/Gemini endpoints when the payload is specifically
@@ -954,7 +1099,7 @@ enum OpenAIResponsesRequestBuilder {
                     "type": .string("function_call"),
                     "call_id": .string(id),
                     "name": .string(name),
-                    "arguments": .string(jsonString(arguments)),
+                    "arguments": .string(jsonString(replayableToolInput(arguments))),
                 ]))
             case let .toolResult(id, content, _):
                 input.append(.object([
@@ -1015,6 +1160,27 @@ enum OpenAIResponsesRequestBuilder {
         }
         return .object(object)
     }
+}
+
+/// A call's arguments as the object every provider's replay requires.
+///
+/// Claude writes an object, but the history may hold a call another lab's
+/// model made — before a fallback, or a switch of model mid-session — whose
+/// arguments came as one JSON string, which the runtime unwraps and runs, or
+/// as some other value. Anthropic refuses a `tool_use` whose input is not an
+/// object, and Gemini arguments that are not one, so replayed as they were
+/// every later request of the session was a 400. A string holding an object
+/// is sent as that object; anything else as an empty one, its result having
+/// already said what was wrong with it.
+func replayableToolInput(_ input: JSONValue) -> JSONValue {
+    if input.objectValue != nil { return input }
+    if case let .string(text) = input,
+       let parsed = try? JSONDecoder().decode(JSONValue.self, from: Data(text.utf8)),
+       parsed.objectValue != nil
+    {
+        return parsed
+    }
+    return .object([:])
 }
 
 private func jsonString(_ value: JSONValue) -> String {
@@ -1192,7 +1358,7 @@ struct AnthropicStreamDecoder {
             // billed prompt — system, tools and the conversation so far — which is
             // exactly the number a context meter wants.
             guard let usage = wire.message?.usage else { return [] }
-            return [.usage(inputTokens: usage.promptTokens, outputTokens: usage.outputTokens)]
+            return usage.events
         case "ping":
             return []
         case "content_block_start":
@@ -1252,39 +1418,32 @@ struct AnthropicStreamDecoder {
                 return [.thinkingBlock(text: thinking.text, signature: thinking.signature)]
             }
             guard let block = toolBlocks.removeValue(forKey: index) else { return [] }
-            let input = Self.parseToolInput(block.partialJSON)
-            return [.toolCallRequested(id: block.id, name: block.name, input: input)]
+            return [toolCallEvent(id: block.id, name: block.name, arguments: block.partialJSON)]
         case "message_delta":
             if let reason = wire.delta?.stopReason {
                 stopReason = Self.mapStopReason(reason)
             }
             guard let usage = wire.usage else { return [] }
-            return [.usage(inputTokens: usage.promptTokens, outputTokens: usage.outputTokens)]
+            return usage.events
         case "message_stop":
             return [.turnCompleted(stopReason ?? .endTurn)]
         case "error":
             let message = wire.error?.message ?? "The model returned an error."
-            throw AgentModelClientError.transport(message: message)
+            throw BackendCodeModelClient.streamError(type: wire.error?.type, message: message)
         default:
             return []
         }
     }
 
-    private static func parseToolInput(_ json: String) -> JSONValue {
-        let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return .object([:]) }
-        guard let data = trimmed.data(using: .utf8),
-              let value = try? JSONDecoder().decode(JSONValue.self, from: data)
-        else {
-            return .object([:])
-        }
-        return value
-    }
-
-    private static func mapStopReason(_ reason: String) -> ModelStopReason {
+    /// Each reason the loop must act on differently gets its own case; the
+    /// rest (`end_turn`, `stop_sequence`) are a finished reply.
+    static func mapStopReason(_ reason: String) -> ModelStopReason {
         switch reason {
         case "tool_use": return .toolUse
         case "max_tokens": return .maxTokens
+        case "refusal": return .refusal
+        case "pause_turn": return .pauseTurn
+        case "model_context_window_exceeded": return .contextWindowExceeded
         default: return .endTurn
         }
     }
@@ -1344,6 +1503,19 @@ private struct StreamEventWire: Decodable {
             else { return nil }
             return (inputTokens ?? 0) + (cacheReadInputTokens ?? 0)
                 + (cacheCreationInputTokens ?? 0)
+        }
+
+        /// The whole prompt and the reply, then how much of the prompt the
+        /// cache served and stored, which are priced apart.
+        var events: [ModelStreamEvent] {
+            var events: [ModelStreamEvent] = [.usage(inputTokens: promptTokens, outputTokens: outputTokens)]
+            if cacheReadInputTokens != nil || cacheCreationInputTokens != nil {
+                events.append(.cacheUsage(
+                    readTokens: cacheReadInputTokens,
+                    writeTokens: cacheCreationInputTokens
+                ))
+            }
+            return events
         }
     }
     struct Message: Decodable {
@@ -1462,7 +1634,10 @@ struct OpenAIChatStreamDecoder {
         }
 
         if let error = root["error"]?["message"]?.stringValue ?? root["error"]?.stringValue {
-            throw AgentModelClientError.transport(message: error)
+            throw BackendCodeModelClient.streamError(
+                type: root["error"]?["type"]?.stringValue ?? root["error"]?["code"]?.stringValue,
+                message: error
+            )
         }
         // Read usage *before* the choices guard.
         //
@@ -1476,6 +1651,13 @@ struct OpenAIChatStreamDecoder {
                 inputTokens: usage["prompt_tokens"]?.intValue,
                 outputTokens: usage["completion_tokens"]?.intValue
             ))
+            // Inside `prompt_tokens`: OpenAI's and most compatible labs'
+            // cached share, or DeepSeek's own name for it.
+            if let cached = usage["prompt_tokens_details"]?["cached_tokens"]?.intValue
+                ?? usage["prompt_cache_hit_tokens"]?.intValue
+            {
+                events.append(.cacheUsage(readTokens: cached, writeTokens: nil))
+            }
         }
         guard let choice = root["choices"]?.arrayValue?.first else { return events }
         if let delta = choice["delta"] {
@@ -1535,20 +1717,13 @@ struct OpenAIChatStreamDecoder {
                 where !block.id.isEmpty && !block.name.isEmpty
             {
                 sawTools = true
-                if let extra = block.extraContent, !extra.isNull {
-                    events.append(.toolCallRequestedWithExtra(
-                        id: block.id,
-                        name: block.name,
-                        input: parseToolInput(block.arguments),
-                        extraContent: extra
-                    ))
-                } else {
-                    events.append(.toolCallRequested(
-                        id: block.id,
-                        name: block.name,
-                        input: parseToolInput(block.arguments)
-                    ))
-                }
+                let extra = block.extraContent.flatMap { $0.isNull ? nil : $0 }
+                events.append(toolCallEvent(
+                    id: block.id,
+                    name: block.name,
+                    arguments: block.arguments,
+                    extraContent: extra
+                ))
             }
             let reason: ModelStopReason
             if sawTools {
@@ -1557,6 +1732,8 @@ struct OpenAIChatStreamDecoder {
                 switch finishReason {
                 case "tool_calls", "function_call": reason = .toolUse
                 case "length": reason = .maxTokens
+                // The provider's own filter stopped the reply part-way.
+                case "content_filter": reason = .refusal
                 default: reason = .endTurn
                 }
             }
@@ -1601,11 +1778,7 @@ private struct OpenAIResponsesStreamDecoder {
                   let name = item["name"]?.stringValue
             else { return [] }
             sawToolCall = true
-            return [.toolCallRequested(
-                id: id,
-                name: name,
-                input: parseToolInput(item["arguments"]?.stringValue ?? "{}")
-            )]
+            return [toolCallEvent(id: id, name: name, arguments: item["arguments"]?.stringValue ?? "")]
         case "response.completed":
             guard !completed else { return [] }
             completed = true
@@ -1617,23 +1790,38 @@ private struct OpenAIResponsesStreamDecoder {
                     inputTokens: usage["input_tokens"]?.intValue,
                     outputTokens: usage["output_tokens"]?.intValue
                 ))
+                if let cached = usage["input_tokens_details"]?["cached_tokens"]?.intValue {
+                    events.append(.cacheUsage(readTokens: cached, writeTokens: nil))
+                }
             }
             events.append(.turnCompleted(sawToolCall ? .toolUse : .endTurn))
             return events
         case "response.incomplete":
             guard !completed else { return [] }
             completed = true
-            let reason = root["response"]?["incomplete_details"]?["reason"]?.stringValue
-            return [.turnCompleted(reason == "max_output_tokens" ? .maxTokens : .endTurn)]
+            switch root["response"]?["incomplete_details"]?["reason"]?.stringValue {
+            case "max_output_tokens":
+                return [.turnCompleted(.maxTokens)]
+            case "content_filter":
+                return [.turnCompleted(.refusal)]
+            default:
+                return [.turnCompleted(.endTurn)]
+            }
         case "response.failed":
             let message = root["response"]?["error"]?["message"]?.stringValue
                 ?? "The Responses API run failed."
-            throw AgentModelClientError.transport(message: message)
+            throw BackendCodeModelClient.streamError(
+                type: root["response"]?["error"]?["code"]?.stringValue,
+                message: message
+            )
         case "error":
             let message = root["message"]?.stringValue
                 ?? root["error"]?["message"]?.stringValue
                 ?? "The Responses API stream failed."
-            throw AgentModelClientError.transport(message: message)
+            throw BackendCodeModelClient.streamError(
+                type: root["code"]?.stringValue ?? root["error"]?["code"]?.stringValue,
+                message: message
+            )
         default:
             return []
         }
@@ -1648,11 +1836,28 @@ private func decodeObject(_ payload: Data) throws -> JSONValue {
     }
 }
 
-private func parseToolInput(_ json: String) -> JSONValue {
-    let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty,
-          let data = trimmed.data(using: .utf8),
-          let value = try? JSONDecoder().decode(JSONValue.self, from: data)
-    else { return .object([:]) }
-    return value
+/// A finished tool call as the event the loop acts on: the call, or — when
+/// its streamed arguments are not JSON — the malformed call to answer with an
+/// error. Never `{}` in place of what the model wrote.
+func toolCallEvent(
+    id: String,
+    name: String,
+    arguments: String,
+    extraContent: JSONValue? = nil
+) -> ModelStreamEvent {
+    switch ToolArguments.parse(arguments) {
+    case let .value(input):
+        if let extraContent {
+            return .toolCallRequestedWithExtra(id: id, name: name, input: input, extraContent: extraContent)
+        }
+        return .toolCallRequested(id: id, name: name, input: input)
+    case let .malformed(error):
+        return .toolCallMalformed(
+            id: id,
+            name: name,
+            rawArguments: arguments,
+            error: error,
+            extraContent: extraContent
+        )
+    }
 }

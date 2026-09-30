@@ -1,0 +1,9 @@
+{"v":"1.0","id":"cmd-1","idempotencyKey":"key-1","sessionId":"mac_session_7","issuedAt":"2026-09-30T10:00:01.000Z","type":"turn.send","text":"Add a dark mode toggle.","attachmentIds":["att-1"]}
+{"v":"1.0","id":"cmd-2","idempotencyKey":"key-2","sessionId":"mac_session_7","issuedAt":"2026-09-30T10:00:02.000Z","type":"turn.steer","text":"Only touch Settings."}
+{"v":"1.0","id":"cmd-3","idempotencyKey":"key-3","sessionId":"mac_session_7","issuedAt":"2026-09-30T10:00:03.000Z","type":"turn.queue","text":"Then update the screenshots."}
+{"v":"1.0","id":"cmd-4","idempotencyKey":"key-4","sessionId":"mac_session_7","issuedAt":"2026-09-30T10:00:04.000Z","type":"turn.cancel","reason":"Wrong branch."}
+{"v":"1.0","id":"cmd-5","idempotencyKey":"key-5","sessionId":"mac_session_7","issuedAt":"2026-09-30T10:00:05.000Z","type":"approval.decide","approvalId":"apr-1","decision":"allow_once","digest":"9f2c1d4e5b6a7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"}
+{"v":"1.0","id":"cmd-6","idempotencyKey":"key-6","sessionId":"mac_session_7","issuedAt":"2026-09-30T10:00:06.000Z","type":"question.answer","questionId":"q1","selected":["both"]}
+{"v":"1.0","id":"cmd-7","idempotencyKey":"key-7","sessionId":"mac_session_7","issuedAt":"2026-09-30T10:00:07.000Z","type":"plan.decide","planId":"plan-1","decision":"approved"}
+{"v":"1.0","id":"cmd-8","idempotencyKey":"key-8","sessionId":"mac_session_7","issuedAt":"2026-09-30T10:00:08.000Z","type":"session.set_mode","mode":"auto_edit","model":"gpt-5.2","effort":"high"}
+{"v":"1.0","id":"cmd-9","idempotencyKey":"key-9","sessionId":"mac_session_7","issuedAt":"2026-09-30T10:00:09.000Z","expiresAt":"2026-09-30T10:30:09.000Z","type":"approval.decide","approvalId":"apr-2","decision":"redirect","feedback":"Use npm version patch."}

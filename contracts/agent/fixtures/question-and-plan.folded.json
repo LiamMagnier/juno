@@ -1,0 +1,101 @@
+{
+  "state": "idle",
+  "turns": [
+    {
+      "turnId": "turn:qp-2",
+      "origin": "user",
+      "status": "completed",
+      "itemIds": [
+        "u1",
+        "question:q1",
+        "plan:plan-1"
+      ],
+      "stopReason": "end_turn",
+      "durationMs": 12000
+    }
+  ],
+  "items": [
+    {
+      "kind": "user_message",
+      "itemId": "u1",
+      "text": "Plan the dark mode work.",
+      "delivery": "prompt",
+      "turnId": "turn:qp-2"
+    },
+    {
+      "kind": "question",
+      "itemId": "question:q1",
+      "questionId": "q1",
+      "prompt": "Should dark mode follow the system setting or be a toggle?",
+      "answered": true,
+      "turnId": "turn:qp-2",
+      "options": [
+        {
+          "id": "system",
+          "label": "Follow the system"
+        },
+        {
+          "id": "toggle",
+          "label": "A toggle in Settings"
+        },
+        {
+          "id": "both",
+          "label": "Both"
+        }
+      ],
+      "multiSelect": false,
+      "selected": [
+        "both"
+      ]
+    },
+    {
+      "kind": "plan_proposal",
+      "itemId": "plan:plan-1",
+      "planId": "plan-1",
+      "text": "1. Audit tokens\n2. Add dark values\n3. Add the toggle\n4. Screenshot every page",
+      "turnId": "turn:qp-2",
+      "decision": "approved"
+    }
+  ],
+  "usage": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "cacheReadTokens": 0,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 0,
+    "costMicroUsd": 0
+  },
+  "lastSeq": 10,
+  "eventCount": 10,
+  "unknownEventCount": 0,
+  "sessionId": "mac_session_5",
+  "target": "local",
+  "workspaceName": "site",
+  "model": "gpt-5.2",
+  "mode": "plan",
+  "plan": {
+    "steps": [
+      {
+        "id": "p1",
+        "text": "Audit colour tokens",
+        "status": "completed"
+      },
+      {
+        "id": "p2",
+        "text": "Add dark values",
+        "status": "pending"
+      },
+      {
+        "id": "p3",
+        "text": "Screenshot every page",
+        "status": "pending"
+      },
+      {
+        "id": "p4",
+        "text": "Add the Settings toggle",
+        "status": "pending"
+      }
+    ],
+    "objective": "Ship dark mode"
+  }
+}

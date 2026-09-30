@@ -24,6 +24,7 @@ import {
 import { backendAgentCatalog, loadAvailableModels } from "@/lib/model-catalog-api";
 import { catalogEntryMatchesModel } from "@/lib/models";
 import { loadModelCapabilityMap } from "@/lib/model-capability";
+import { AGENT_PROTOCOL_ACCEPTED } from "@/lib/code-task-wire";
 
 export const runtime = "nodejs";
 
@@ -407,6 +408,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   return NextResponse.json(
     {
+      // The agent protocol this server stores as `protocol` task events; the
+      // runner posts them only when this is present (see code-task-wire.ts).
+      agentProtocol: AGENT_PROTOCOL_ACCEPTED,
       prompt: task.prompt,
       repoOwner: task.repoOwner,
       repoName: task.repoName,

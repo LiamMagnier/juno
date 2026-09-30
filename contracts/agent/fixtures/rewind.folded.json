@@ -1,0 +1,57 @@
+{
+  "state": "idle",
+  "turns": [
+    {
+      "turnId": "turn:rw-11",
+      "origin": "user",
+      "status": "completed",
+      "itemIds": [
+        "u2",
+        "a1"
+      ],
+      "stopReason": "end_turn",
+      "durationMs": 4000
+    }
+  ],
+  "items": [
+    {
+      "kind": "user_message",
+      "itemId": "u2",
+      "text": "Convert them to bullet lists instead.",
+      "delivery": "prompt",
+      "turnId": "turn:rw-11"
+    },
+    {
+      "kind": "assistant_text",
+      "itemId": "a1",
+      "text": "Done: every table is now a bullet list.",
+      "turnId": "turn:rw-11"
+    }
+  ],
+  "usage": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "cacheReadTokens": 0,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 0,
+    "costMicroUsd": 0
+  },
+  "lastSeq": 13,
+  "eventCount": 13,
+  "unknownEventCount": 0,
+  "sessionId": "mac_session_3",
+  "target": "local",
+  "workspaceName": "notes",
+  "model": "claude-sonnet-5",
+  "mode": "auto_edit",
+  "plan": {
+    "steps": [
+      {
+        "id": "s1",
+        "text": "Convert the notes",
+        "status": "completed"
+      }
+    ],
+    "objective": "Tidy the notes"
+  }
+}

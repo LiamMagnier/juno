@@ -51,6 +51,25 @@ export type ProviderFailureKind =
    * true, unhelpful, and one HTTP status away from being actionable.
    */
   | 'insufficient_balance'
+  /**
+   * Juno refused the call because the person's own plan is spent: the proxy's
+   * `402 QUOTA_EXCEEDED`, from its budget wall or a rolling usage window.
+   *
+   * Not `insufficient_balance`, although both are a 402 about money, because
+   * the two want opposite things done. A lab out of credit is Juno's problem
+   * and another lab can run the task; a plan that is spent follows the person
+   * to every model, so failing over only spends another request to be told
+   * the same thing, and waiting inside a run cannot outlast a window that
+   * frees up in hours. Neither retried nor failed over.
+   */
+  | 'plan_limit'
+  /**
+   * The request was longer than the model can read at once. Waiting will not
+   * shorten it and the same request will fail again; the fix is to compact the
+   * conversation and send the shorter one, which `runAgentLoop` does when it
+   * has been given a compactor.
+   */
+  | 'context_overflow'
   /** The lab refused the request itself — a bad parameter, an unknown model. */
   | 'invalid_request'
   /** The model or the account is not allowed to do this. */
@@ -102,7 +121,7 @@ export class ProviderCallError extends Error {
    * `auth` is not, because the credential problem is ours and follows us.
    */
   get worthFailingOver(): boolean {
-    return this.kind !== 'auth';
+    return this.kind !== 'auth' && this.kind !== 'plan_limit';
   }
 }
 
@@ -181,6 +200,52 @@ function retryAfterFrom(error: { headers?: unknown }): number | null {
 const OUT_OF_CREDIT_RE =
   /insufficient balance|no credits remaining|credit balance is too low|insufficient credit|exceeded your current quota|billing hard limit/i;
 
+/**
+ * The proxy's own refusal code, wherever an SDK left it.
+ *
+ * The Anthropic SDK keeps the whole body on `error.error`, so the code is at
+ * `error.error.code`; the OpenAI SDK keeps only `body.error`, which for the
+ * proxy's body is the sentence, and drops the code on the floor — which is why
+ * `classifyProviderError` also takes the caller's word that it is talking to
+ * the proxy.
+ */
+const PLAN_LIMIT_CODE = 'QUOTA_EXCEEDED';
+
+function carriesPlanLimitCode(error: unknown): boolean {
+  if (error == null || typeof error !== 'object') return false;
+  const source = error as { code?: unknown; error?: unknown; message?: unknown };
+  if (source.code === PLAN_LIMIT_CODE) return true;
+  const body = source.error;
+  if (body !== null && typeof body === 'object' && (body as { code?: unknown }).code === PLAN_LIMIT_CODE) {
+    return true;
+  }
+  return typeof source.message === 'string' && source.message.includes(`"code":"${PLAN_LIMIT_CODE}"`);
+}
+
+/**
+ * The sentence the proxy wrote for a person, when an SDK kept it: "You've used
+ * up your 5-hour usage limit. It frees up at 3:00 PM UTC." says more than any
+ * sentence this file could compose, so it is passed through.
+ */
+function proxySentence(error: unknown): string | null {
+  if (error == null || typeof error !== 'object') return null;
+  const body = (error as { error?: unknown }).error;
+  if (typeof body === 'string' && body.trim()) return body.trim();
+  if (body !== null && typeof body === 'object') {
+    const inner = (body as { error?: unknown }).error;
+    if (typeof inner === 'string' && inner.trim()) return inner.trim();
+  }
+  return null;
+}
+
+/**
+ * "The prompt is longer than this model can read", in the words the labs use.
+ * Anthropic: `prompt is too long: 215000 tokens > 200000 maximum`; OpenAI and
+ * most compatible labs: `context_length_exceeded` / `maximum context length`.
+ */
+const CONTEXT_OVERFLOW_RE =
+  /prompt is too long|context[_ ]length[_ ]exceeded|maximum context length|exceeds? the (?:model'?s? )?context window|context window (?:is )?exceeded|input is too long|too many (?:input )?tokens/i;
+
 /** The provider's own words, from wherever this SDK happened to put them. */
 function messageOf(error: unknown): string {
   if (error == null || typeof error !== 'object') return '';
@@ -191,9 +256,26 @@ function messageOf(error: unknown): string {
   return parts.join(' ');
 }
 
-function kindForStatus(status: number | null, error: unknown): ProviderFailureKind {
+function kindForStatus(status: number | null, error: unknown, viaJunoProxy: boolean): ProviderFailureKind {
+  // Juno's own refusal first: it names itself, and it is the one money
+  // failure no other model can get round.
+  if (carriesPlanLimitCode(error)) return 'plan_limit';
   // Before the status, for the reason above.
-  if (OUT_OF_CREDIT_RE.test(messageOf(error))) return 'insufficient_balance';
+  const said = messageOf(error);
+  if (OUT_OF_CREDIT_RE.test(said)) return 'insufficient_balance';
+  // A 402 the proxy answered itself. An upstream lab's own 402 is relayed with
+  // its own body, which the phrase test above has already claimed.
+  if (status === 402 && viaJunoProxy) return 'plan_limit';
+  // 413 is the proxy refusing a body over its size limit, which is the same
+  // condition measured in bytes rather than tokens, with the same cure.
+  const code = (error as { code?: unknown } | null)?.code;
+  if (
+    status === 413 ||
+    ((status === 400 || status === 422 || status === null) &&
+      (code === 'context_length_exceeded' || CONTEXT_OVERFLOW_RE.test(said)))
+  ) {
+    return 'context_overflow';
+  }
 
   if (status === 429) return 'rate_limit';
   if (status === 401) return 'auth';
@@ -208,7 +290,6 @@ function kindForStatus(status: number | null, error: unknown): ProviderFailureKi
 
   // No status at all: a socket that never opened, a DNS failure, a timeout in
   // the client rather than the server. All are worth another go.
-  const code = (error as { code?: unknown } | null)?.code;
   if (typeof code === 'string') {
     if (/^(ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|EPIPE|ENOTFOUND)$/.test(code)) {
       return 'transient';
@@ -241,6 +322,10 @@ function sentenceFor(
       return `${providerLabel} rejected Juno's credentials, so this run could not start. This is a problem with the deployment rather than with the task.`;
     case 'insufficient_balance':
       return `${providerLabel} refused the request because the account Juno bills it to has run out of credit. Nothing is wrong with the task, and another model can run it.`;
+    case 'plan_limit':
+      return "You've used up your plan's usage limit, so this run stopped. Nothing is wrong with the task, and it can be run again once the limit frees up.";
+    case 'context_overflow':
+      return `The conversation grew longer than ${providerLabel} can read at once, so this turn could not be sent.`;
     case 'forbidden':
       return `${providerLabel} refused this request. The model may not be available to this account.`;
     case 'invalid_request':
@@ -262,20 +347,28 @@ function sentenceFor(
  * ever gets here. Passing it through unchanged keeps that check the single place
  * cancellation is decided.
  */
-export function classifyProviderError(error: unknown, providerLabel: string): ProviderCallError {
+export function classifyProviderError(
+  error: unknown,
+  providerLabel: string,
+  options: {
+    /**
+     * The adapter is talking to Juno's `/api/agent` proxy rather than to the
+     * lab, so a 402 without a lab's out-of-credit wording is the proxy's own
+     * plan limit. Needed because the OpenAI SDK discards the proxy's `code`.
+     */
+    viaJunoProxy?: boolean;
+  } = {},
+): ProviderCallError {
   if (error instanceof ProviderCallError) return error;
 
   const source = (error ?? {}) as { status?: unknown; headers?: unknown };
   const status = typeof source.status === 'number' ? source.status : null;
-  const kind = kindForStatus(status, error);
+  const kind = kindForStatus(status, error, options.viaJunoProxy === true);
   const retryAfterMs = retryAfterFrom(source);
+  const message =
+    kind === 'plan_limit'
+      ? (proxySentence(error) ?? sentenceFor(kind, providerLabel, retryAfterMs))
+      : sentenceFor(kind, providerLabel, retryAfterMs);
 
-  return new ProviderCallError(
-    kind,
-    status,
-    retryAfterMs,
-    providerLabel,
-    sentenceFor(kind, providerLabel, retryAfterMs),
-    error,
-  );
+  return new ProviderCallError(kind, status, retryAfterMs, providerLabel, message, error);
 }

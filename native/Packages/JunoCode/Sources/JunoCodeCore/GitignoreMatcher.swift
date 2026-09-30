@@ -55,7 +55,15 @@ public struct GitignoreMatcher: Sendable {
 
     /// Last matching rule wins, like git.
     public func isIgnored(_ relativePath: String, isDirectory: Bool) -> Bool {
-        var ignored = false
+        verdict(relativePath, isDirectory: isDirectory) ?? false
+    }
+
+    /// What the last matching rule says — ignored, or re-included by a `!`
+    /// rule — or nil when no rule speaks about the path. Layered files need
+    /// the difference: a nested `.gitignore` with nothing to say leaves the
+    /// outer file's answer standing.
+    public func verdict(_ relativePath: String, isDirectory: Bool) -> Bool? {
+        var ignored: Bool?
         for rule in rules {
             let matches: Bool
             if rule.directoryOnly, !isDirectory {

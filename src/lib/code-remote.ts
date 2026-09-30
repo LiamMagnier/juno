@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import type { CodeDevice, CodeTask, CodeTaskEvent } from "@prisma/client";
 import { prismaUnguarded } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { getCurrentUser, type SessionUser } from "@/lib/session";
@@ -12,6 +11,15 @@ export {
   readPendingControls,
   type TaskEventInput,
 } from "@/lib/code-task-events";
+
+// The task wire lives in its own dependency-free module so scripts and tests
+// can import it without next-auth; see the header of code-task-wire.ts.
+export {
+  serializeDevice,
+  serializeTask,
+  serializeTaskEvent,
+  type SerializeTaskOptions,
+} from "@/lib/code-task-wire";
 
 export const ONLINE_WINDOW_MS = 120_000;
 
@@ -92,6 +100,16 @@ export const EVENT_KINDS = [
    */
   "steer",
   "steer_ack",
+  /*
+   * THE CANONICAL AGENT PROTOCOL. `protocol` rows carry one event of
+   * contracts/agent/juno-agent-protocol-v1.json each, as the payload. A host
+   * posts them only when the task it was handed says this server stores them
+   * (`agentProtocol` on serializeTask and in runner-context), and posts the
+   * legacy kinds beside them — marked `protocolEventId` — so readers that
+   * predate the protocol keep rendering. Readers of the protocol fold the
+   * `protocol` rows and skip the marked ones (src/lib/agent-protocol).
+   */
+  "protocol",
 ] as const;
 
 /** The rollback verbs a client may ask for, and the only values the rollback
@@ -247,89 +265,4 @@ export async function requireOidcRunnerAuth(
   const task = await prismaUnguarded.codeTask.findUnique({ where: { id: taskId }, select: { userId: true } });
   if (!task) return { user: null, error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
   return { user: { id: task.userId }, error: null };
-}
-
-export function serializeDevice(device: CodeDevice, online?: boolean) {
-  const base = {
-    id: device.id,
-    name: device.name,
-    platform: device.platform,
-    appVersion: device.appVersion,
-    protocolVersion: device.protocolVersion,
-    workspaces: device.workspaces,
-    sessionCount: device.sessionCount,
-    activeCount: device.activeCount,
-    // Presence and capability are different facts. A client that reads
-    // `online` as "can run my work" is the bug this field exists to end: the
-    // Mac is online and signed in, and it still claims nothing.
-    servesQueuedTasks: device.servesQueuedTasks,
-    lastSeenAt: device.lastSeenAt.toISOString(),
-  };
-  return online === undefined ? base : { ...base, online };
-}
-
-/**
- * Per-call shape of `serializeTask`.
- *
- * `includePrompt` exists because `prompt` is the AGENT prompt — the composer
- * text plus up to 100 KB of extracted attachment text per task — and the run
- * list polled a hundred of them every six seconds for a screen that reads the
- * title. The list route now omits it unless asked (`?include=prompt`); every
- * single-task route and the host queue keep it, because the host is what runs
- * it. `changedFileCount` is the list's read-time derivation (see
- * `countChangedFiles`) and is absent wherever it was not computed.
- */
-export interface SerializeTaskOptions {
-  includePrompt?: boolean;
-  changedFileCount?: number;
-}
-
-export function serializeTask(task: CodeTask, opts: SerializeTaskOptions = {}) {
-  const includePrompt = opts.includePrompt ?? true;
-  return {
-    id: task.id,
-    deviceId: task.deviceId,
-    workspacePath: task.workspacePath,
-    workspaceName: task.workspaceName,
-    workspaceKey: task.workspaceKey,
-    title: task.title,
-    ...(includePrompt ? { prompt: task.prompt } : {}),
-    ...(opts.changedFileCount !== undefined ? { changedFileCount: opts.changedFileCount } : {}),
-    status: task.status,
-    lastSeq: task.lastSeq,
-    conversationId: task.conversationId,
-    parentSessionId: task.parentSessionId,
-    createsNewSession: task.createsNewSession,
-    origin: task.origin,
-    // Cloud Juno Code: "device" (default) runs on a registered host; "cloud"
-    // runs on a GitHub Actions runner against repoOwner/repoName and opens a PR.
-    target: task.target,
-    repoOwner: task.repoOwner,
-    repoName: task.repoName,
-    baseRef: task.baseRef,
-    // The branch a cloud run pushed to and the pull request it opened or
-    // reused — what a follow-up in the same conversation continues on.
-    branch: task.branch,
-    prUrl: task.prUrl,
-    prNumber: task.prNumber,
-    // What this cloud run was dispatched with: the environment (egress,
-    // variables, setup script) and how much the agent may do before it would
-    // have to ask. Both null on a device task and on anything created before
-    // the columns existed; a reader treats null as "the built-in shape", which
-    // is what such a run actually got. The variable VALUES are never here —
-    // only runner-context unseals them, and only for the runner.
-    environmentId: task.environmentId,
-    permissionMode: task.permissionMode,
-    createdAt: task.createdAt.toISOString(),
-    updatedAt: task.updatedAt.toISOString(),
-  };
-}
-
-export function serializeTaskEvent(event: CodeTaskEvent) {
-  return {
-    seq: event.seq,
-    kind: event.kind,
-    payload: event.payload,
-    createdAt: event.createdAt.toISOString(),
-  };
 }

@@ -28,6 +28,7 @@ import { estimateCostUsd } from "@/lib/pricing";
 import { coerceChatOrigin } from "@/lib/chat-origin";
 import { readToolDetail } from "@/lib/chat/tool-detail";
 import { readContextReceipt } from "@/lib/chat/context-tokens";
+import { isCodeToolStatus } from "@/lib/agent-protocol/code-task-transcript";
 
 const ACTIVITY_KINDS = new Set<ClientActivityEvent["kind"]>([
   "context",
@@ -102,6 +103,11 @@ function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
     const patch = typeof record.patch === "string" && record.patch.length > 0 ? record.patch : undefined;
     const exitCode =
       typeof record.exitCode === "number" && Number.isFinite(record.exitCode) ? record.exitCode : undefined;
+    // How a Code tool row's call ended, as the producer typed it (the agent
+    // protocol's tool_result status, folded in code-task-transcript.ts). Read
+    // additively like the two above: without it a reloaded row would fall back
+    // to reading its outcome out of its title, the thing it exists to end.
+    const toolStatus = isCodeToolStatus(record.toolStatus) ? record.toolStatus : undefined;
     const agentChange = readAgentChange(record.agentChange);
     // The context-token receipt: parsed against its schema, so a row that does
     // not match is dropped here rather than handed to a renderer that trusts it.
@@ -118,6 +124,7 @@ function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
         ...(tool ? { tool } : {}),
         ...(patch ? { patch } : {}),
         ...(exitCode !== undefined ? { exitCode } : {}),
+        ...(toolStatus ? { toolStatus } : {}),
         ...(agentChange ? { agentChange } : {}),
         ...(contextReceipt ? { contextReceipt } : {}),
       },

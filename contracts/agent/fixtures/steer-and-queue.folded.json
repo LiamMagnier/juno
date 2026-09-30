@@ -1,0 +1,142 @@
+{
+  "state": "idle",
+  "turns": [
+    {
+      "turnId": "turn:st-2",
+      "origin": "remote",
+      "status": "completed",
+      "itemIds": [
+        "u1",
+        "c1",
+        "c2",
+        "c3",
+        "u2",
+        "c4",
+        "u3"
+      ],
+      "stopReason": "end_turn",
+      "durationMs": 30550
+    },
+    {
+      "turnId": "turn:st-14",
+      "origin": "queue",
+      "status": "completed",
+      "itemIds": [
+        "c5",
+        "t1"
+      ],
+      "stopReason": "end_turn",
+      "durationMs": 44800
+    }
+  ],
+  "items": [
+    {
+      "kind": "user_message",
+      "itemId": "u1",
+      "text": "Rename the Settings view to Preferences everywhere.",
+      "delivery": "prompt",
+      "turnId": "turn:st-2"
+    },
+    {
+      "kind": "tool",
+      "itemId": "c1",
+      "toolName": "grep",
+      "toolKind": "search",
+      "title": "Grep /SettingsView/",
+      "status": "ok",
+      "turnId": "turn:st-2",
+      "risk": "read",
+      "summary": "14 matches in 6 files",
+      "durationMs": 48
+    },
+    {
+      "kind": "tool",
+      "itemId": "c2",
+      "toolName": "apply_patch",
+      "toolKind": "edit",
+      "title": "Edit 6 files",
+      "status": "not_executed",
+      "turnId": "turn:st-2",
+      "risk": "write",
+      "summary": "Not executed: a new instruction arrived first."
+    },
+    {
+      "kind": "tool",
+      "itemId": "c3",
+      "toolName": "run_command",
+      "toolKind": "execute",
+      "title": "$ swift build",
+      "status": "not_executed",
+      "turnId": "turn:st-2",
+      "risk": "execute",
+      "summary": "Not executed: a new instruction arrived first."
+    },
+    {
+      "kind": "user_message",
+      "itemId": "u2",
+      "text": "Keep the file names; only rename the type.",
+      "delivery": "steer",
+      "turnId": "turn:st-2",
+      "commandId": "cmd-steer-1"
+    },
+    {
+      "kind": "tool",
+      "itemId": "c4",
+      "toolName": "apply_patch",
+      "toolKind": "edit",
+      "title": "Edit 6 files",
+      "status": "ok",
+      "turnId": "turn:st-2",
+      "risk": "write",
+      "durationMs": 210
+    },
+    {
+      "kind": "user_message",
+      "itemId": "u3",
+      "text": "Then run the tests.",
+      "delivery": "queue",
+      "turnId": "turn:st-2",
+      "commandId": "cmd-queue-1"
+    },
+    {
+      "kind": "tool",
+      "itemId": "c5",
+      "toolName": "run_tests",
+      "toolKind": "other",
+      "title": "Run swift test",
+      "status": "ok",
+      "turnId": "turn:st-14",
+      "risk": "execute",
+      "output": "Building for debugging...\nTest Suite 'All tests' passed.\n",
+      "outputChannel": "stdout",
+      "exitCode": 0,
+      "durationMs": 42010
+    },
+    {
+      "kind": "test_run",
+      "itemId": "t1",
+      "command": "swift test",
+      "passed": true,
+      "turnId": "turn:st-14",
+      "testsRun": 214,
+      "failures": 0,
+      "durationMs": 42010
+    }
+  ],
+  "usage": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "cacheReadTokens": 0,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 0,
+    "costMicroUsd": 0
+  },
+  "lastSeq": 21,
+  "eventCount": 21,
+  "unknownEventCount": 0,
+  "sessionId": "mac_session_9",
+  "target": "remote",
+  "workspaceName": "juno",
+  "model": "claude-sonnet-5",
+  "mode": "auto_edit"
+}

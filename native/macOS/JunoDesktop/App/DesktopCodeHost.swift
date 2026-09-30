@@ -41,8 +41,15 @@ private final class DesktopQueuedCodeExecutor {
             throw DesktopQueuedCodeError.workspaceUnavailable(task.workspaceName)
         }
 
+        // The model picked where the task was created. The web stores the
+        // catalog's canonical `provider:model` id, which is what this Mac's
+        // catalog carries too; a bare model id from an older client matches
+        // on the part after the provider.
         let selectedModel = task.modelId.flatMap { requested in
-            workbench.availableModels.first(where: { $0.modelID == requested })?.modelID
+            workbench.availableModels.first(where: { option in
+                option.modelID == requested
+                    || option.modelID.split(separator: ":", maxSplits: 1).last.map(String.init) == requested
+            })?.modelID
         } ?? workbench.availableModels.first?.modelID
         guard let selectedModel else { throw DesktopQueuedCodeError.noModelAvailable }
 
@@ -216,14 +223,17 @@ private actor DesktopQueuedCodeHost {
             var localSequence = 0
             var controlSequence = 0
             var lastStatus: String?
+            // One projection for every wire this Mac speaks; protocol rows
+            // only to a server that said it stores them.
+            let wire = CodeTaskWireProjection(includesProtocol: task.acceptsAgentProtocol)
             while !Task.isCancelled {
                 let snapshot = try await executor.snapshot(
                     sessionID: sessionID,
                     after: localSequence
                 )
                 if let last = snapshot.events.last { localSequence = last.sequence }
-                let status = Self.taskStatus(snapshot.status)
-                var outbound = snapshot.events.compactMap(Self.remoteEvent)
+                let status = CodeTaskWireProjection.taskStatus(snapshot.status)
+                var outbound = snapshot.events.flatMap(wire.rows(for:))
                 if status != lastStatus {
                     outbound.insert(
                         NativeCodeTaskEventInput(
@@ -244,19 +254,25 @@ private actor DesktopQueuedCodeHost {
                         )
                     )
                 }
-                let ack = try await client.append(
-                    taskID: task.id,
-                    events: outbound,
-                    status: status,
-                    afterControlSequence: controlSequence,
-                    for: accountID
-                )
-                for control in ack.control {
-                    controlSequence = max(controlSequence, control.seq)
-                    try await apply(
-                        control,
-                        sessionID: sessionID
+                // In POSTs the route accepts, the status on the last: a
+                // terminal status is what writes the task's outcome, which
+                // must read every row before it.
+                let batches = CodeTaskWireProjection.batches(outbound)
+                for (index, batch) in batches.enumerated() {
+                    let ack = try await client.append(
+                        taskID: task.id,
+                        events: batch,
+                        status: index == batches.count - 1 ? status : nil,
+                        afterControlSequence: controlSequence,
+                        for: accountID
                     )
+                    for control in ack.control where control.seq > controlSequence {
+                        controlSequence = control.seq
+                        try await apply(
+                            control,
+                            sessionID: sessionID
+                        )
+                    }
                 }
                 // The prompt never became a turn, so no status will ever end
                 // this task: fail it, after the row saying which hook refused
@@ -300,167 +316,6 @@ private actor DesktopQueuedCodeHost {
             // and iOS surfaces therefore do not offer controls this runtime
             // cannot acknowledge truthfully.
             break
-        }
-    }
-
-    private static func taskStatus(_ status: SessionStatus) -> String {
-        switch status {
-        case .waitingForApproval: "awaiting_approval"
-        case .completed: "done"
-        case .failed: "failed"
-        case .cancelled: "cancelled"
-        case .idle, .planning, .running, .waitingForProvider, .degraded, .stopping:
-            "running"
-        }
-    }
-
-    private static func remoteEvent(_ event: SessionEvent) -> NativeCodeTaskEventInput? {
-        switch event.payload {
-        case .sessionCreated, .turnConfiguration:
-            nil
-        case .userPrompt(let prompt):
-            .init(kind: "user", payload: ["text": .string(prompt.text)])
-        case .userInstruction(let instruction):
-            .init(
-                kind: "user",
-                payload: [
-                    "text": .string(instruction.text),
-                    "delivery": .string(instruction.kind.rawValue),
-                ]
-            )
-        case .userInstructionApplied:
-            nil
-        // A rewind is refused while a run is active, and this relays one
-        // task's run; a restart never falls inside it.
-        case .transcriptRewound:
-            nil
-        case .compaction(let compaction):
-            .init(
-                kind: "status",
-                payload: [
-                    "status": .string("Context compacted"),
-                    "detail": .string(compaction.messageCountSummary),
-                ]
-            )
-        case .hookActivity(let activity):
-            // A status line, as the other quiet rows are: a phone watching
-            // the task learns a hook stepped in and why, in one line.
-            .init(
-                kind: "status",
-                payload: [
-                    "status": .string("\(activity.hookEvent) hook \(activity.outcome.rawValue)"),
-                    "detail": .string(activity.message),
-                ]
-            )
-        case .assistantMessage(let message):
-            .init(kind: "text", payload: ["text": .string(message.text)])
-        case .reasoningSummary(let reasoning):
-            .init(
-                kind: "tool",
-                payload: [
-                    "name": .string("Reasoning"),
-                    "summary": .string(reasoning.summary),
-                ]
-            )
-        case .toolProposed(let tool):
-            .init(
-                kind: "tool",
-                payload: [
-                    "name": .string(tool.toolName),
-                    "summary": .string(tool.summary),
-                    "detail": .string(tool.risk.rawValue),
-                ]
-            )
-        case .toolStarted(let tool):
-            .init(
-                kind: "status",
-                payload: ["status": .string("Running \(tool.toolCallID)")]
-            )
-        case .toolOutput(let output):
-            .init(
-                kind: "tool",
-                payload: [
-                    "name": .string(output.channel.rawValue),
-                    "summary": .string(output.text),
-                ]
-            )
-        case .toolCompleted(let tool):
-            .init(
-                kind: "tool",
-                payload: [
-                    "name": .string(tool.status.rawValue),
-                    "summary": .string(tool.resultSummary),
-                ]
-            )
-        case .approvalRequested(let approval):
-            .init(
-                kind: "approval_request",
-                payload: [
-                    "requestId": .string(approval.id),
-                    "summary": .string(approval.summary),
-                    "risk": .string(approval.risk.rawValue),
-                    "detail": .string(approval.toolName),
-                ]
-            )
-        case .approvalResolved(let approval):
-            .init(
-                kind: "approval_response",
-                payload: [
-                    "requestId": .string(approval.approvalID),
-                    "approve": .bool(approval.decision == .approved),
-                ]
-            )
-        case .fileChanged(let file):
-            .init(
-                kind: "file_change",
-                payload: [
-                    "path": .string(file.path.value),
-                    "changeKind": .string(file.kind.rawValue),
-                    "added": .number(Double(file.linesAdded)),
-                    "removed": .number(Double(file.linesRemoved)),
-                ]
-            )
-        case .testRunCompleted(let test):
-            .init(
-                kind: "tool",
-                payload: [
-                    "name": .string("Tests"),
-                    "summary": .string(test.passed ? "Tests passed" : "Tests failed"),
-                    "detail": .string(test.command),
-                ]
-            )
-        case .subagentUpdated(let update):
-            .init(
-                kind: "agent",
-                payload: [
-                    "agent": .object([
-                        "id": .string(update.agentID),
-                        "title": .string(update.title),
-                        "status": .string(update.status.rawValue),
-                        "activity": .string(update.currentActivity),
-                    ]),
-                ]
-            )
-        case .goalUpdated(let goal):
-            .init(
-                kind: "status",
-                payload: ["status": .string(goal.goal.objective)]
-            )
-        case .statusChanged(let status):
-            .init(
-                kind: "status",
-                payload: ["status": .string(taskStatus(status.status))]
-            )
-        case .errorOccurred(let error):
-            .init(kind: "error", payload: ["message": .string(error.message)])
-        case .runCompleted(let run):
-            .init(
-                kind: "done",
-                payload: [
-                    "summary": .string(run.summary),
-                    "filesChanged": .number(Double(run.filesChanged)),
-                ]
-            )
         }
     }
 }

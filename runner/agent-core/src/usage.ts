@@ -1,6 +1,27 @@
 import type { Usage } from './types.js';
 
 /**
+ * Two usage slices added together, the cache breakdown included.
+ *
+ * Every place that sums usage — the loop across steps, the subagent manager
+ * across children — used to add the two token counts by hand, which is fine
+ * until a field is added: the sum then silently drops it. One function is
+ * what keeps a turn's cache reads from vanishing between the step that
+ * reported them and the event that shows them.
+ */
+export function addUsage(a: Usage, b: Usage): Usage {
+  const sum: Usage = {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+  };
+  const read = (a.cacheReadTokens ?? 0) + (b.cacheReadTokens ?? 0);
+  const write = (a.cacheWriteTokens ?? 0) + (b.cacheWriteTokens ?? 0);
+  if (read > 0) sum.cacheReadTokens = read;
+  if (write > 0) sum.cacheWriteTokens = write;
+  return sum;
+}
+
+/**
  * Reports Code-mode usage to the Juno backend so it counts against the same
  * account/plan as website chat. `reserve()` runs at each turn's start
  * (consumes one message from the monthly quota — the same unit the website
