@@ -886,8 +886,11 @@ async function main() {
   fs.mkdirSync(junoHome, { recursive: true });
   process.env.JUNO_HOME = junoHome; // read by the driver's SessionStore (not a secret)
 
+  // `runId` rides every model call as `x-juno-run`, so spend can be joined to
+  // this task rather than only to its owner. Attribution only: the proxy
+  // bills each call from the provider's usage either way.
   const provider = createProxyProvider(
-    { baseUrl: agentBaseUrl, cookie: "", authorization: `Bearer ${freshToken}`, models },
+    { baseUrl: agentBaseUrl, cookie: "", authorization: `Bearer ${freshToken}`, models, runId: TASK_ID },
     `backend/${chosen.provider}`,
   );
 

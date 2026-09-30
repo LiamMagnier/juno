@@ -6,6 +6,7 @@ export { createProvider, defaultProviderId, listProviders, type ProviderListing,
 export { readCredentials, resolveKey } from './providers/credentials.js';
 export {
   BACKEND_PROVIDER_PREFIX,
+  RUN_HEADER,
   createProxyProvider,
   proxyProviderListings,
   type BackendConfig,
