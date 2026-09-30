@@ -141,6 +141,44 @@ if (!URL) {
     assert.equal(foreign.ok, false);
   });
 
+  test("a transfer never widens through the run's stamp, an unchosen app list, or a pause still in flight", async () => {
+    const { transferWorkSessionOwner } = await import("@/lib/work/ownership-store");
+    const ada = await member("Ada", { connectorIds: ["gmail", "linear", "slack"], approvalMode: "permissive" });
+    const bo = await member("Bo", { connectorIds: ["linear"], approvalMode: "balanced" });
+
+    // A paused task whose queued attempt was stamped permissive, and which never
+    // chose its apps (so it could reach every app the account has).
+    const { session, run } = await task({ agentId: ada.agent.id, conversationId: ada.conversationId, status: "paused" });
+    await db.workRun.update({
+      where: { id: run.id },
+      data: { status: "queued", permissionPolicy: { policy: "permissive", session: "permissive", host: null } },
+    });
+    const moved = await transferWorkSessionOwner({ userId: owner, sessionId: session.id, toAgentId: bo.agent.id, reason: "Bo has it.", by: { kind: "person" } });
+    assert.ok(moved.ok, moved.ok ? "" : moved.message);
+    const after = await db.workSession.findUniqueOrThrow({ where: { id: session.id }, include: { connectors: true } });
+    assert.equal(after.connectorsChosen, true, "the narrowing is written down as a choice");
+    assert.deepEqual(after.connectors.map((row) => row.connectorId), ["linear"], "the new owner's apps, not every app");
+    const restamped = (await db.workRun.findUniqueOrThrow({ where: { id: run.id } })).permissionPolicy as Record<string, unknown>;
+    assert.equal(restamped.policy, "balanced", "the queued attempt runs under the narrower mode");
+    assert.equal(restamped.session, "balanced");
+
+    // Paused by the person while a step is still running: the executor holds
+    // the lease until it parks the run, and the transfer waits for that.
+    const inFlight = await task({ agentId: ada.agent.id, conversationId: ada.conversationId, status: "paused" });
+    await db.workRun.update({
+      where: { id: inFlight.run.id },
+      data: { claimedBy: "exec-1", leaseExpiresAt: new Date(Date.now() + 60_000) },
+    });
+    const early = await transferWorkSessionOwner({ userId: owner, sessionId: inFlight.session.id, toAgentId: bo.agent.id, reason: "x", by: { kind: "person" } });
+    assert.equal(early.ok, false);
+    if (!early.ok) assert.equal(early.code, "not_at_safe_point");
+    assert.equal((await db.workSession.findUniqueOrThrow({ where: { id: inFlight.session.id } })).agentId, ada.agent.id);
+    // Once parked (lease released) it moves.
+    await db.workRun.update({ where: { id: inFlight.run.id }, data: { claimedBy: null, leaseExpiresAt: null } });
+    const later = await transferWorkSessionOwner({ userId: owner, sessionId: inFlight.session.id, toAgentId: bo.agent.id, reason: "x", by: { kind: "person" } });
+    assert.ok(later.ok, later.ok ? "" : later.message);
+  });
+
   test("a member's own budget: spent across its tasks in the window, refused with a sentence", async () => {
     const { checkMemberBudget } = await import("@/lib/agents/budget-store");
     const scout = await member("Scout", { budgetMicroUsd: 5_000_000 });
@@ -201,6 +239,79 @@ if (!URL) {
     assert.equal(skill.autoSelect, false);
     if (draft.ok) await setup.undoSetupChange(user, draft.change);
     assert.ok((await db.workSkill.findUniqueOrThrow({ where: { id: skillId } })).deletedAt);
+  });
+
+  test("a card applied later adds only its own apps, and Undo takes back only those", async () => {
+    const setup = await import("@/lib/agents/setup-changes-store");
+    for (const provider of ["gmail", "slack", "linear", "notion"]) {
+      await db.connection
+        .create({ data: { userId: owner, provider, accessToken: "enc:test", scope: "" } })
+        .catch(() => null);
+    }
+    const rex = await member("Rex", { connectorIds: ["gmail", "slack"] });
+    const user = { id: owner };
+    const apps = async () => (await db.agent.findUniqueOrThrow({ where: { id: rex.agent.id } })).connectorIds;
+    const planned = setup.planSetupChange("apps_add", { apps: ["linear"] }, await setup.setupSnapshot(owner, rex.agent), {
+      linkedApps: ["gmail", "slack", "linear", "notion"],
+    });
+    assert.ok(planned.ok);
+    if (!planned.ok) return;
+    const row = await setup.recordSetupChange({ userId: owner, agentId: rex.agent.id, conversationId: rex.conversationId, userMessageId: "m-rex", callKey: "k-rex", plan: planned.plan, status: "proposed" });
+    // The person removes slack by hand before pressing Apply on the old card.
+    await db.agent.update({ where: { id: rex.agent.id }, data: { connectorIds: ["gmail"] } });
+    const applied = await setup.applySetupChange(user, row);
+    assert.ok(applied.ok);
+    assert.deepEqual(await apps(), ["gmail", "linear"], "the card adds linear and does not bring slack back");
+    // Notion is added by hand since; Undo takes back linear and only linear.
+    await db.agent.update({ where: { id: rex.agent.id }, data: { connectorIds: ["gmail", "linear", "notion"] } });
+    const undone = applied.ok ? await setup.undoSetupChange(user, applied.change) : null;
+    assert.ok(undone?.ok);
+    assert.deepEqual(await apps(), ["gmail", "notion"]);
+  });
+
+  test("a retried turn cannot apply a widening change the person declined", async () => {
+    const setup = await import("@/lib/agents/setup-changes-store");
+    const { setupChangeCallKey } = await import("@/lib/agents/setup-changes");
+    const { createSetupChangeTool } = await import("@/lib/chat/setup-change-tool");
+    const kai = await member("Kai", { approvalMode: "balanced" });
+    const snapshot = await setup.setupSnapshot(owner, kai.agent);
+    const widen = setup.planSetupChange("approval_mode", { mode: "permissive" }, snapshot);
+    assert.ok(widen.ok);
+    if (!widen.ok) return;
+    // The first attempt of this turn asked to widen, and the person said no.
+    const declined = await setup.recordSetupChange({
+      userId: owner,
+      agentId: kai.agent.id,
+      conversationId: kai.conversationId,
+      userMessageId: "m-replay",
+      callKey: setupChangeCallKey({ userMessageId: "m-replay", seq: 1, plan: widen.plan }),
+      plan: widen.plan,
+      status: "declined",
+    });
+    const tool = () =>
+      createSetupChangeTool({
+        user: { id: owner },
+        conversation: { id: kai.conversationId, projectId: null },
+        agent: { id: kai.agent.id, name: "Kai" },
+        userMessageId: "m-replay",
+        untrustedContent: false,
+        generationId: "g-replay",
+      });
+    const mode = async () => (await db.agent.findUniqueOrThrow({ where: { id: kai.agent.id } })).approvalMode;
+
+    // Retried, the model asks for the same widening: the decision stands.
+    const same = JSON.parse((await tool().execute({ kind: "approval_mode", mode: "permissive" }, AbortSignal.timeout(5_000))).text);
+    assert.equal(same.status, "declined");
+    assert.equal(same.changeId, declined.id);
+    assert.equal(await mode(), "balanced");
+
+    // Retried, the model asks for something narrower in the same place: its
+    // own row, applied, and the declined widening is untouched.
+    const narrower = JSON.parse((await tool().execute({ kind: "approval_mode", mode: "conservative" }, AbortSignal.timeout(5_000))).text);
+    assert.equal(narrower.status, "applied");
+    assert.notEqual(narrower.changeId, declined.id);
+    assert.equal(await mode(), "conservative", "never the permissive change the person declined");
+    assert.equal((await db.agentSetupChange.findUniqueOrThrow({ where: { id: declined.id } })).status, "declined");
   });
 
   test("Move to crew makes one member, marks the assistant and keeps it readable", async () => {
@@ -288,6 +399,26 @@ if (!URL) {
     signedIn = { id: stranger, email: `${stranger}@example.invalid` };
     const other = (await (await GET(new Request("http://x/api"), { params: Promise.resolve({ id: ivy.conversationId }) })).json()) as { sessions: unknown[] };
     assert.deepEqual(other.sessions, []);
+    signedIn = null;
+  });
+
+  routeTest("the apps' one-task list puts the task waiting on the person before a newer running one", async () => {
+    const { GET } = await import("@/app/api/work/sessions/route");
+    const uma = await member("Uma");
+    const base = Date.now() - 3_600_000;
+    await task({ agentId: uma.agent.id, conversationId: uma.conversationId, status: "waiting_input", title: "Needs you", createdAt: new Date(base) });
+    await task({ agentId: uma.agent.id, conversationId: uma.conversationId, status: "running", title: "Newer routine", createdAt: new Date(base + 60_000) });
+    signedIn = { id: owner, email: `${owner}@example.invalid` };
+    const read = async (query: string) =>
+      ((await (await GET(new Request(`http://x/api/work/sessions?${query}`))).json()) as { sessions: Array<{ title: string }> }).sessions.map(
+        (s) => s.title
+      );
+    assert.deepEqual(await read(`conversationId=${uma.conversationId}&limit=1`), ["Needs you"]);
+    assert.deepEqual(await read(`conversationId=${uma.conversationId}&limit=5`), ["Needs you", "Newer routine"]);
+    // A caller that asked for a status gets exactly that.
+    assert.deepEqual(await read(`conversationId=${uma.conversationId}&status=running&limit=1`), ["Newer routine"]);
+    signedIn = { id: stranger, email: `${stranger}@example.invalid` };
+    assert.deepEqual(await read(`conversationId=${uma.conversationId}&limit=1`), []);
     signedIn = null;
   });
 
