@@ -107,7 +107,8 @@ public actor NestedInstructionLoader: ToolResultContextProviding {
 
     /// Every folder from the top of the workspace down to where `path` is —
     /// the path itself when it is a folder — the root excluded, since its
-    /// files are already in the system prompt.
+    /// files are already in the system prompt. So are `.juno/JUNO.md` and
+    /// `.claude/CLAUDE.md`: those two folders are the root's own.
     private func folders(reachedBy path: WorkspacePath) -> [String] {
         var components = path.components
         let isFolder: Bool = {
@@ -122,8 +123,10 @@ public actor NestedInstructionLoader: ToolResultContextProviding {
             current = current.isEmpty ? component : current + "/" + component
             folders.append(current)
         }
-        return folders
+        return folders.filter { !Self.rootConfigurationFolders.contains($0) }
     }
+
+    private static let rootConfigurationFolders: Set<String> = [".juno", ".claude"]
 
     private func read(_ path: WorkspacePath) -> String? {
         guard let url = try? access.resolveForReading(path),

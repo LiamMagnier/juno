@@ -72,6 +72,19 @@ final class NestedInstructionLoaderTests: XCTestCase {
         XCTAssertFalse(text.contains("Src: prefer structs."))
     }
 
+    func testTheRootsOwnConfigurationFoldersAreNotRepeated() async throws {
+        // `.juno/JUNO.md` and `.claude/CLAUDE.md` are root instructions, in the
+        // system prompt already.
+        for (path, text) in [".juno/JUNO.md": "Juno root rules.", ".claude/CLAUDE.md": "Claude root rules."] {
+            let url = workspaceURL.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        }
+        let loader = NestedInstructionLoader(access: access)
+        let loaded = try await load(loader, [".juno/settings.json", ".claude/skills/x/SKILL.md"])
+        XCTAssertNil(loaded)
+    }
+
     func testALongFileIsBounded() async throws {
         let long = String(repeating: "rule\n", count: 10_000)
         try long.write(to: workspaceURL.appendingPathComponent("docs/AGENTS.md"), atomically: true, encoding: .utf8)
