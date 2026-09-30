@@ -551,7 +551,7 @@ export const WORK_APPROVAL_MODE_SUMMARY: Record<WorkPermissionPolicy, string> = 
   conservative: "Juno asks before it changes a file or runs anything. Reading and research go ahead.",
   balanced: "Juno makes changes it can undo, and asks before running anything or touching anything private.",
   permissive:
-    "Juno gets on with the work without asking — except for the four things it cannot take back.",
+    "Juno gets on with the work without asking, except for what it cannot take back (sending, publishing, paying, deleting, account and security changes) and running commands or typing on a crew member's computer, which always ask.",
 };
 
 /**
@@ -764,8 +764,9 @@ export function approvalRuling(input: {
     return {
       ask: true,
       reason: "sensitive",
-      explanation:
-        "This reaches beyond what the task was given, or removes something from where you left it.",
+      explanation: input.action.startsWith("work.computer.")
+        ? "This runs a command or types on the computer, which can do anything a program can, so it asks every time. No setting turns this off."
+        : "This reaches beyond what the task was given, or removes something from where you left it.",
     };
   }
 
@@ -966,6 +967,12 @@ export const WORK_EVENT_KINDS = [
   "validation_result",
   "run_finished",
   "error",
+  /**
+   * The task changed hands between crew members, or back to the person
+   * (src/lib/work/ownership.ts). Written by the server, never by an executor,
+   * on the task's latest attempt.
+   */
+  "owner_transferred",
 ] as const;
 
 export type WorkEventKind = (typeof WORK_EVENT_KINDS)[number];
@@ -1015,6 +1022,7 @@ const EVENT_VISIBILITY: Partial<Record<WorkEventKind, "user" | "operator" | "int
   validation_result: "user",
   run_finished: "user",
   error: "user",
+  owner_transferred: "user",
 };
 
 export function defaultVisibilityFor(kind: string): "user" | "operator" | "internal" {

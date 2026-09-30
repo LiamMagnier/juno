@@ -118,10 +118,18 @@ const TERMINAL_PATCH = (to: ResearchState) =>
 export function createPrismaResearchStore(): ResearchStore {
   return {
     async createRun({ userId, goal, conversationId, budgetMicroUsd, plan }) {
+      // The crew member whose thread started it, like `WorkSession.agentId`:
+      // research asked for in a member's thread is that member's.
+      const owner = conversationId
+        ? await prisma.agent
+            .findFirst({ where: { userId, conversationId, deletedAt: null }, select: { id: true } })
+            .catch(() => null)
+        : null;
       const created = await prisma.researchRun.create({
         data: {
           userId,
           conversationId,
+          agentId: owner?.id ?? null,
           goal,
           state: "accepted",
           plan: { ...plan } as unknown as object,

@@ -10,7 +10,7 @@ public enum JunoWorkContract {
     /// Bumped whenever a value is added or its meaning changes.
     public static let version = 3
     /// SHA-256 of the contract this was generated from.
-    public static let digest = "e217178b6795ba2b963a78f4ddd16f82a270b480487aba74fea5f3418de6a5ad"
+    public static let digest = "037f9196659e3c9adf912ef9583eac42a58d61b72fccb0b2d3c6e6fc79cb506f"
 }
 
 /// Every state a Work session or run can be in.
@@ -433,6 +433,8 @@ public enum JunoWorkEventKind: String, CaseIterable, Codable, Sendable {
     case runFinished = "run_finished"
     /// Something went wrong, in language the user can act on.
     case error = "error"
+    /// The task changed hands between crew members, or back to the person: who moved it, from whom, to whom and why. Written by the server, never by an executor.
+    case ownerTransferred = "owner_transferred"
 
     /// Who sees this by default: user, operator or internal. A kind nobody classified is internal, so a forgotten entry hides rather than leaks.
     public var visibility: String {
@@ -468,6 +470,7 @@ public enum JunoWorkEventKind: String, CaseIterable, Codable, Sendable {
         case .validationResult: return "user"
         case .runFinished: return "user"
         case .error: return "user"
+        case .ownerTransferred: return "user"
         }
     }
 }

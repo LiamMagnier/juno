@@ -2378,6 +2378,13 @@ private enum JunoMobileWorkLog {
             return entry(
                 event, "You added an instruction", string(payload, "text"), "text.bubble", .quiet
             )
+        // Written by the server when the task changes hands; `summary` is the
+        // whole sentence ("You handed this from Mira to Otto: …").
+        case .ownerTransferred:
+            return entry(
+                event, string(payload, "summary") ?? "The task changed hands", string(payload, "reason"),
+                "arrow.left.arrow.right", .quiet
+            )
         case .approvalRequested:
             return entry(
                 event, string(payload, "summary") ?? "Asked for approval",

@@ -53,6 +53,7 @@ import {
 import { runBudgetForWindow } from "@/lib/work/budget";
 import { checkUsageWindows } from "@/lib/spend";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
+import { checkMemberBudget } from "@/lib/agents/budget-store";
 import { inferCapabilities, selectForInferred } from "@/lib/work/inference";
 import { planRunCommand, refusalBody, startCommandPayload } from "@/lib/work/relay";
 import { estimateWorkRunCost, type WorkCostEstimate } from "@/lib/work/preflight-cost";
@@ -922,6 +923,13 @@ function resolveRunModel(input: {
 }
 
 /** A refusal: nothing was started, so there is no run to describe. */
+/** The smaller of two remainders, where null means "no limit of this kind". */
+function narrowerRemaining(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.min(a, b);
+}
+
 function refused(status: number, body: Record<string, unknown>, preflight: WorkCostEstimate | null = null): StartWorkRunResponse {
   return { status, body, run: null, preflight };
 }
@@ -1000,6 +1008,27 @@ export async function startWorkRunForUser(
       message: `${windowLimitMessage(windows.bound, windows.resetsAtMs)} Nothing was started.`,
       window: windows.bound,
       resetsAtMs: windows.resetsAtMs,
+    });
+  }
+
+  /*
+   * The owning crew member's own cap, inside the window above
+   * (src/lib/agents/budget.ts). It can only narrow: a member with room left
+   * under its cap still meets the account's windows first. Its remainder also
+   * lowers the run's cost ceiling below, so the executor's guard stops at
+   * whichever runs out first.
+   */
+  const memberBudget = await checkMemberBudget({
+    userId: user.id,
+    agentId: session.agentId,
+    weekly: { startMs: windows.weekly.startMs, resetsAtMs: windows.weekly.resetsAtMs },
+    stage: "admission",
+  });
+  if (!memberBudget.ok) {
+    return refused(429, {
+      error: "member_budget_exhausted",
+      message: memberBudget.message,
+      resetsAtMs: memberBudget.resetsAtMs,
     });
   }
 
@@ -1323,7 +1352,7 @@ export async function startWorkRunForUser(
         // window twice would let a chat turn land between the two reads and
         // refuse a run against one number while the guard measured it against
         // another.
-        budget: runBudgetForWindow(windows.remainingMicroUsd),
+        budget: runBudgetForWindow(narrowerRemaining(windows.remainingMicroUsd, memberBudget.remainingMicroUsd)),
         // The plan, handed on to spend admission rather than left for it to
         // read again — a lapse between two reads would measure the run against
         // a plan it was not admitted under.
