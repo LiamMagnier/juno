@@ -21,7 +21,11 @@ final class PreviewWorldTests: XCTestCase {
             XCTAssertTrue(path.hasPrefix(FileManager.default.temporaryDirectory.path), path)
 
             // The synthetic session carries no real identity or token material.
-            XCTAssertEqual(world.session.profile.email, "preview@juno.local")
+            // The showcase names a fictional sample person for the product
+            // shots (PreviewWorld.init); every other scenario keeps the
+            // harness placeholder.
+            let expectedEmail = scenario == .showcase ? "maya@fieldnotes.app" : "preview@juno.local"
+            XCTAssertEqual(world.session.profile.email, expectedEmail, "\(scenario)")
             XCTAssertEqual(world.accountID.rawValue, "preview-account")
         }
     }

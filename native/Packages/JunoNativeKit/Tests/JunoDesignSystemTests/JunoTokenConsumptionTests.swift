@@ -310,6 +310,12 @@ final class JunoTokenConsumptionTests: XCTestCase {
                 "The artifact console's shell (#0b0b0e), which the web's sandbox-frame.tsx paints as a component literal.",
             "InlineDesignPreview.swift:deskColor":
                 "The desk an exported design sits on, light in both appearances; the same hex is written into the preview page's CSS beside it.",
+            "JunoMobileIncognito.swift:ground":
+                "The phone's incognito ink ground over a light app; the web states no incognito ground. Shipped (96ad8299); moves to a generated token in the iOS pass.",
+            "JunoMobileIncognito.swift:deep":
+                "The phone's incognito ink ground over a dark app, a step below the canvas; no web token. Shipped (96ad8299); moves with `ground`.",
+            "JunoMobilePremium.swift:shadow":
+                "The phone front door's umber shadow hue, warmer than the web's --shadow-ink. Shipped (42d77b79); moves to JunoGeneratedColors.shadowInk in the iOS pass.",
         ]
     }()
 
@@ -361,6 +367,7 @@ final class JunoTokenConsumptionTests: XCTestCase {
             "JunoGeneratedColors.sidebarHover": sidebar,
             "JunoGeneratedColors.sidebarSelectedBorder": sidebar,
             "JunoGeneratedType.hero": "The marketing site's rung; the apps have no marketing surface.",
+            "JunoGeneratedRadius.stage": "The front door's plates and product shots only (tailwind.config.ts); the apps have no marketing surface.",
             "JunoGeneratedType.nav": "The web's sidebar rows; the Mac sidebar uses system sizing (§8.6), the phone Dynamic Type.",
             "JunoGeneratedRadius.composerControl": "The web's per-component name for `control` (10), which the apps read as JunoRadius.control.",
             "JunoGeneratedRadius.composerAction": "The web's per-component name for `field` (12), which the apps read as JunoRadius.field.",
