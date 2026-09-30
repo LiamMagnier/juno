@@ -7,6 +7,7 @@ import { env } from "@/lib/env";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import type { ArtifactType } from "@/lib/message-content";
 import { shareIsServable } from "@/lib/share-policy";
+import { sharedVersionAt } from "@/lib/share-snapshot";
 
 /*
  * Public share links for chats and artifacts. A Share is a snapshot pointer:
@@ -286,6 +287,11 @@ export interface SharedArtifactSnapshot {
  * The artifact version current at snapshotAt. Versions created after the
  * share stay private; if none predates it (created in the same instant),
  * fall back to the earliest version rather than 404ing a fresh share.
+ *
+ * The choice is `sharedVersionAt` (src/lib/share-snapshot.ts), the same rule
+ * the design store reads before it folds an edit into a checkpoint in place —
+ * it never folds into a version a link resolves to, which is what keeps the
+ * body served here frozen.
  */
 export async function getSharedArtifactSnapshot(share: Share): Promise<SharedArtifactSnapshot | null> {
   if (share.kind !== "ARTIFACT" || !share.artifactId) return null;
@@ -296,15 +302,16 @@ export async function getSharedArtifactSnapshot(share: Share): Promise<SharedArt
   });
   if (!artifact) return null;
 
-  const version =
-    (await prisma.artifactVersion.findFirst({
-      where: { artifactId: share.artifactId, createdAt: { lte: share.snapshotAt } },
-      orderBy: { version: "desc" },
-    })) ??
-    (await prisma.artifactVersion.findFirst({
-      where: { artifactId: share.artifactId },
-      orderBy: { version: "asc" },
-    }));
+  // Stamps only, then the one body: a long history is never loaded whole.
+  const stamps = await prisma.artifactVersion.findMany({
+    where: { artifactId: share.artifactId },
+    select: { version: true, createdAt: true },
+  });
+  const served = sharedVersionAt(stamps, share.snapshotAt);
+  if (served === null) return null;
+  const version = await prisma.artifactVersion.findUnique({
+    where: { artifactId_version: { artifactId: share.artifactId, version: served } },
+  });
   if (!version) return null;
 
   return {
