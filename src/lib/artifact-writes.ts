@@ -125,6 +125,37 @@ export async function appendLocked(
 }
 
 /**
+ * THE PUBLISH FLOOR FOR JUNO'S OWN WRITES. Call on a LOCKED artifact right
+ * before appending a version Juno wrote without the person reviewing it (a
+ * chat re-emit, a targeted edit).
+ *
+ * A publication that follows the latest version (src/lib/artifact-publication.ts)
+ * would otherwise put that version on the public URL the moment it is written:
+ * Juno publishing on the person's behalf, with no approval, and on a turn that
+ * may have read a web page or a connector result written to steer it. So the
+ * publication is pinned to the version it serves now, and the new one stays
+ * private until the person publishes it (Update, in the Publish panel). The
+ * person's own saves, restores and Applies are not held: those are theirs, and
+ * following latest is what they chose for them.
+ *
+ * Returns how many publications were pinned (0 or 1).
+ */
+export async function holdPublicationForModelWrite(tx: ArtifactTx, locked: LockedArtifact): Promise<number> {
+  const db = asTx(tx);
+  const held = await db.artifactPublication.updateMany({
+    where: {
+      artifactId: locked.id,
+      ...(locked.userId ? { userId: locked.userId } : {}),
+      retiredAt: null,
+      publishedAt: { not: null },
+      pinnedVersion: null,
+    },
+    data: { pinnedVersion: locked.currentVersion },
+  });
+  return held.count;
+}
+
+/**
  * Seal the artifact's draft, if it has one, into the next version (origin
  * "edit": a draft is only ever the person's own editing). Returns the new
  * version number, or null when there was no draft.

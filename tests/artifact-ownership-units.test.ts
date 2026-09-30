@@ -159,6 +159,11 @@ test("the migration is additive (expand step) and keeps every change-capture bra
   assert.match(sql, /IF NOT EXISTS \(SELECT 1 FROM "User" WHERE id = account_id\) THEN RETURN NULL; END IF;/);
   assert.match(sql, /\$\$ LANGUAGE plpgsql SET search_path = public, pg_temp;\s*CREATE TRIGGER juno_change_artifact/);
   assert.equal(sql.match(/SET search_path = public, pg_temp/g)?.length, 3, "every function this migration defines pins its search_path");
+  // Closed to PostgREST like every user-owned table (20260921220000).
+  for (const table of ["ArtifactDraft", "ArtifactProposal", "ArtifactPublication"]) {
+    assert.match(sql, new RegExp(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY;`), `${table} has row level security`);
+  }
+  assert.doesNotMatch(sql, /FORCE ROW LEVEL SECURITY/);
 });
 
 // ─── The installed apps ──────────────────────────────────────────────────────
@@ -211,6 +216,28 @@ test("the chat read and a turn's done frame give the installed apps their projec
   const frames = [...chat.matchAll(/type: "done",[\s\S]*?\n\s*\}\);/g)].map((m) => m[0]).filter((f) => /\bartifacts\b/.test(f) && !/artifacts: \[\]/.test(f));
   assert.ok(frames.length >= 2, "both saved-turn done frames found");
   for (const frame of frames) assert.match(frame, /artifacts: doneArtifacts\(artifacts\)/);
+});
+
+test("Juno's own appends hold a page that follows latest; the person's saves do not", () => {
+  const store = read("src/lib/artifacts-store.ts");
+  // Both model write paths: the chat re-emit's append and the targeted edit.
+  const holds = [...store.matchAll(/await holdPublicationForModelWrite\((db|tx), locked\);\s*await appendLocked\(/g)];
+  assert.equal(holds.length, 2, "the re-emit append and the targeted edit both hold the page first");
+  // Apply is the person's decision, and the generic save is the person's own.
+  const apply = store.slice(store.indexOf("export async function applyArtifactProposal"));
+  assert.doesNotMatch(apply.slice(0, apply.indexOf("export async function dismissArtifactProposal")), /holdPublicationForModelWrite/);
+  const writes = read("src/lib/artifact-writes.ts");
+  const save = writes.slice(writes.indexOf("export async function saveArtifactVersion"), writes.indexOf("export async function sealArtifactDraft"));
+  assert.doesNotMatch(save, /holdPublicationForModelWrite/);
+  assert.match(writes, /pinnedVersion: null,[\s\S]*?data: \{ pinnedVersion: locked\.currentVersion \}/);
+});
+
+test("a takedown is checked along the Duplicate chain, for publishing and for sharing", () => {
+  assert.match(read("src/lib/artifact-publication.ts"), /artifactLineageTakenDown\(userId, artifactId\)/);
+  assert.match(read("src/lib/share.ts"), /artifactLineageTakenDown\(where\.userId, where\.artifactId\)/);
+  const lineage = read("src/lib/artifact-takedown.ts");
+  assert.match(lineage, /derivedFromId/);
+  assert.match(lineage, /category: \{ in: \["share_takedown", "share_restore"\] \}/, "a purged ancestor's takedown is read from the moderation record");
 });
 
 // ─── Publish vs Share ────────────────────────────────────────────────────────

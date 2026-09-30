@@ -109,6 +109,7 @@ CREATE TABLE "ArtifactPublication" (
     "userId" TEXT NOT NULL,
     "token" TEXT NOT NULL,
     "pinnedVersion" INTEGER,
+    "title" TEXT NOT NULL DEFAULT '',
     "publishedAt" TIMESTAMP(3),
     "unpublishedAt" TIMESTAMP(3),
     "retiredAt" TIMESTAMP(3),
@@ -210,12 +211,16 @@ CREATE TRIGGER juno_artifact_fill_owner BEFORE INSERT ON "Artifact"
 -- A version is what a publication pins, what a share froze and what every
 -- device synced as "version N". Rewriting one in place is how B1 leaked, so the
 -- database refuses it outright rather than trusting every writer to remember.
--- Deletes (the purge, account deletion) are unaffected.
+-- "createdAt" is covered because a legacy share serves the newest version
+-- created at or before its snapshot, and "origin" because the re-emit guard
+-- decides on it. Deletes (the purge, account deletion) are unaffected.
 CREATE OR REPLACE FUNCTION juno_artifact_version_immutable() RETURNS trigger AS $$
 BEGIN
   IF NEW."content" IS DISTINCT FROM OLD."content"
      OR NEW."version" IS DISTINCT FROM OLD."version"
-     OR NEW."artifactId" IS DISTINCT FROM OLD."artifactId" THEN
+     OR NEW."artifactId" IS DISTINCT FROM OLD."artifactId"
+     OR NEW."createdAt" IS DISTINCT FROM OLD."createdAt"
+     OR NEW."origin" IS DISTINCT FROM OLD."origin" THEN
     RAISE EXCEPTION 'ArtifactVersion % is immutable; write a new version instead', OLD."id"
       USING ERRCODE = 'check_violation';
   END IF;
@@ -312,5 +317,16 @@ $$ LANGUAGE plpgsql SET search_path = public, pg_temp;
 
 CREATE TRIGGER juno_change_artifact AFTER INSERT OR UPDATE OR DELETE ON "Artifact"
   FOR EACH ROW EXECUTE FUNCTION juno_record_account_change('artifact', 'artifact_owner');
+
+-- ─── Closed to PostgREST ─────────────────────────────────────────────────────
+-- Like every user-owned table since 20260921220000_lock_public_schema_from_postgrest:
+-- a draft is the owner's unsaved work, a proposal is Juno's unapplied work, and
+-- a publication row holds a public capability token. The default privileges
+-- already withhold grants from anon and authenticated; row level security
+-- means a grant restored by mistake later still reads nothing. ENABLE, not
+-- FORCE: the application connects as the tables' owner and must be unaffected.
+ALTER TABLE "ArtifactDraft" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "ArtifactProposal" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "ArtifactPublication" ENABLE ROW LEVEL SECURITY;
 
 COMMIT;

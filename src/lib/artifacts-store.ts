@@ -16,6 +16,7 @@ import {
   appendLocked,
   ArtifactVersionConflictError,
   asTx,
+  holdPublicationForModelWrite,
   isVersionRace,
   lockArtifact,
   sealArtifactDraft,
@@ -389,6 +390,9 @@ async function writeArtifact(
   // edit). With it off, the person's draft is sealed first so Juno's version
   // lands on top of it rather than replacing it.
   await sealDraftLocked(db, locked);
+  // A page following the latest version keeps serving what it serves now:
+  // Juno's version is not public until the person publishes it.
+  await holdPublicationForModelWrite(db, locked);
   await appendLocked(
     db,
     locked,
@@ -427,6 +431,8 @@ export async function persistTargetedArtifactEdit(
     if (!locked) throw new ArtifactVersionConflictError();
     await sealDraftLocked(tx, locked);
     if (locked.currentVersion !== baseVersion) throw new ArtifactVersionConflictError(locked.currentVersion);
+    // The person asked for the edit, not for it to go public unseen.
+    await holdPublicationForModelWrite(tx, locked);
     await appendLocked(tx, locked, { content, origin: "generated" });
     return tx.artifact.findFirst({ where: { id: artifactId, userId }, include: ARTIFACT_CLIENT_INCLUDE });
   });

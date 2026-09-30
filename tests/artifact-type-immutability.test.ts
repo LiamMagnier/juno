@@ -55,6 +55,10 @@ const prisma = {
   artifactDraft: {
     findFirst: async () => null,
   },
+  // Juno's append first holds a page that follows latest; nothing is published here.
+  artifactPublication: {
+    updateMany: async () => ({ count: 0 }),
+  },
   artifactVersion: {
     // The head was Juno's own, so the re-emit guard lets the re-emit append.
     findUnique: async () => ({ origin: "generated", content: "x" }),

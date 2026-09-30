@@ -6,6 +6,7 @@ import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { shareUrl } from "@/lib/share-url";
 import { shareIsServable } from "@/lib/share-policy";
 import { lockArtifact, sealDraftLocked } from "@/lib/artifact-writes";
+import { artifactLineageTakenDown } from "@/lib/artifact-takedown";
 import type { ArtifactType } from "@/lib/message-content";
 
 /*
@@ -32,7 +33,14 @@ import type { ArtifactType } from "@/lib/message-content";
  * The public page serves the pinned VERSION, and versions are immutable, so
  * what the public sees is exactly what the owner pinned: later edits, drafts
  * and suggestions never reach it until the owner moves the pin (or it follows
- * latest, which serves only SEALED versions). Content is shown statically: the
+ * latest, which serves only SEALED versions).
+ *
+ * Following latest carries the OWNER's saves to the page, never Juno's: a
+ * version Juno writes on its own (a chat re-emit, a targeted edit) first pins
+ * the page to what it serves (holdPublicationForModelWrite in
+ * src/lib/artifact-writes.ts), and goes public only when the owner publishes
+ * it. Publishing is on the always-confirm floor, and a model turn may have read
+ * text written to steer it. Content is shown statically: the
  * scripted `public` sandbox profile stays behind JUNO_PREVIEW_ORIGIN_PUBLIC and
  * publish-time screening (src/lib/sandbox-policy.ts), which this module does
  * not change.
@@ -124,14 +132,12 @@ export async function getPublication(
 
 /**
  * A takedown of this artifact's content on either kind of link blocks a new
- * publication: publishing again would put the same content back up.
+ * publication: publishing again would put the same content back up. So does
+ * one on an artifact this one was duplicated from (src/lib/artifact-takedown.ts),
+ * or Duplicate would walk straight around it.
  */
 async function assertPublishable(userId: string, artifactId: string) {
-  const [share, publication] = await Promise.all([
-    prisma.share.findFirst({ where: { userId, artifactId, takenDownAt: { not: null } }, select: { id: true } }),
-    prisma.artifactPublication.findFirst({ where: { userId, artifactId, takenDownAt: { not: null } }, select: { id: true } }),
-  ]);
-  if (share || publication) throw new PublicationTakenDownError();
+  if (await artifactLineageTakenDown(userId, artifactId)) throw new PublicationTakenDownError();
 }
 
 type PublishTarget = number | "latest";
@@ -162,18 +168,22 @@ export async function publishArtifact(
       });
       if (!exists) throw new PublicationVersionError();
     }
+    // The title as the owner sees it now: a pinned page keeps it, so a rename
+    // after publishing is as private as any other later edit.
+    const title = (await tx.artifact.findFirst({ where: { id: artifactId, userId }, select: { title: true } }))?.title ?? "";
     const existing = await livePublication(tx, userId, artifactId);
     const row = existing
       ? await tx.artifactPublication.update({
           where: { id: existing.id, userId },
           data: {
             pinnedVersion,
+            title,
             publishedAt: existing.publishedAt ?? now,
             unpublishedAt: null,
           },
         })
       : await tx.artifactPublication.create({
-          data: { artifactId, userId, token: newToken(), pinnedVersion, publishedAt: now },
+          data: { artifactId, userId, token: newToken(), pinnedVersion, title, publishedAt: now },
         });
     return serializePublication(row, locked.currentVersion);
   });
@@ -223,6 +233,7 @@ export async function resetPublicationLink(
         userId,
         token: newToken(),
         pinnedVersion: existing.pinnedVersion,
+        title: existing.title,
         publishedAt: existing.publishedAt,
         unpublishedAt: existing.unpublishedAt,
       },
@@ -279,7 +290,9 @@ export const findPublicPublication = cache(async (token: string): Promise<Public
     state: "live",
     publication,
     snapshot: {
-      title: artifact.title,
+      // Pinned: the title it was published under. Following latest: the live
+      // one, with the live content.
+      title: publication.pinnedVersion === null ? artifact.title : publication.title || artifact.title,
       type: artifact.type as ArtifactType,
       language: artifact.language,
       content: body.content,

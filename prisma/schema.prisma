@@ -1263,7 +1263,8 @@ model Artifact {
 }
 
 /// One saved version. IMMUTABLE: nothing rewrites a row once it exists (a
-/// BEFORE UPDATE trigger refuses any change to its body, number or artifact).
+/// BEFORE UPDATE trigger refuses any change to its body, number, artifact,
+/// origin or creation time).
 /// Work in progress lives in ArtifactDraft and becomes a new row when it is
 /// sealed, so what a publication, a share or a sync client read as version N
 /// is what version N will always be.
@@ -1358,6 +1359,11 @@ model ArtifactPublication {
   token          String    @unique
   /// The version the public sees. Null follows the artifact's latest version.
   pinnedVersion  Int?
+  /// The artifact's title when the owner last published, updated or rolled
+  /// back. A pinned page shows this one, so a rename after publishing stays
+  /// private like every other later edit; a page that follows the latest
+  /// version shows the live title.
+  title          String    @default("")
   /// Set while the page is up. Null before the first publish and after an
   /// unpublish.
   publishedAt    DateTime?

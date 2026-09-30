@@ -461,7 +461,8 @@ async function createPublicationReport(input: ShareReportInput): Promise<CreateR
     data: {
       publicationId: publication.id,
       shareToken: publication.token,
-      shareTitle: publication.artifact.title,
+      // What the reporter saw: a pinned page shows the title it was published under.
+      shareTitle: publication.pinnedVersion === null ? publication.artifact.title : publication.title || publication.artifact.title,
       shareOwnerId: publication.userId,
       reason: input.reason,
       detail: input.detail,

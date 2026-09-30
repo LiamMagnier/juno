@@ -7,6 +7,7 @@ import { shareUrl } from "@/lib/share-url";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import type { ArtifactType } from "@/lib/message-content";
 import { shareIsServable } from "@/lib/share-policy";
+import { artifactLineageTakenDown } from "@/lib/artifact-takedown";
 
 /*
  * Public share links for chats and artifacts. A Share is a snapshot pointer:
@@ -81,22 +82,19 @@ export class ShareTakenDownError extends Error {
 
 /**
  * Refuses a target that has a link Juno took down and has not restored — a
- * share, or for an artifact a publication of it.
+ * share, or for an artifact a publication of it, or a link to an artifact it
+ * was duplicated from (src/lib/artifact-takedown.ts).
  */
 async function assertNotTakenDown(where: { userId: string; conversationId?: string; artifactId?: string }) {
-  const [removed, unpublished] = await Promise.all([
-    prisma.share.findFirst({
-      where: { ...where, takenDownAt: { not: null } },
-      select: { id: true },
-    }),
-    where.artifactId
-      ? prisma.artifactPublication.findFirst({
-          where: { userId: where.userId, artifactId: where.artifactId, takenDownAt: { not: null } },
-          select: { id: true },
-        })
-      : null,
-  ]);
-  if (removed || unpublished) throw new ShareTakenDownError();
+  if (where.artifactId) {
+    if (await artifactLineageTakenDown(where.userId, where.artifactId)) throw new ShareTakenDownError();
+    return;
+  }
+  const removed = await prisma.share.findFirst({
+    where: { ...where, takenDownAt: { not: null } },
+    select: { id: true },
+  });
+  if (removed) throw new ShareTakenDownError();
 }
 
 /**

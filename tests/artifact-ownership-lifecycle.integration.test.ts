@@ -151,6 +151,16 @@ if (!DB_URL || !canMockModules) {
       /immutable/
     );
     assert.equal((await versionsOf(artifact.id))[0].content, "# v1");
+    // Its time and origin too: a legacy share serves by creation time, and the
+    // re-emit guard decides on origin.
+    await assert.rejects(
+      prisma.artifactVersion.updateMany({ where: { artifactId: artifact.id, version: 1 }, data: { createdAt: new Date(0) } }),
+      /immutable/
+    );
+    await assert.rejects(
+      prisma.artifactVersion.updateMany({ where: { artifactId: artifact.id, version: 1 }, data: { origin: "edit" } }),
+      /immutable/
+    );
   });
 
   // ─── Ownership: survives its chat; New design has none ───────────────────
@@ -728,6 +738,48 @@ if (!DB_URL || !canMockModules) {
 
   // ─── Review fixes ────────────────────────────────────────────────────────
 
+  test("a takedown follows its content into Duplicates, even past a purged original", async () => {
+    const owner = await signUp("takedown-lineage");
+    const { artifact } = await chatWithArtifact(owner.id, { bodies: ["# removed"] });
+    const { publication: pub } = (await (await (await publication(artifact.id)).publish("latest")).json()) as {
+      publication: { id: string };
+    };
+    const { takeDownShare, restoreShare } = await import("@/lib/share-moderation");
+    assert.ok((await takeDownShare({ shareId: pub.id, reason: "Spam", by: "admin@example.invalid", isProtectedOwner: () => false })).ok);
+    signedIn = { id: owner.id, email: owner.email!, name: owner.name! };
+
+    const duplicate = await import("@/app/api/artifacts/[id]/duplicate/route");
+    const copyOf = async (id: string) =>
+      ((await (await duplicate.POST(request("POST", "/api", {}), params({ id }))).json()) as { artifact: { id: string } }).artifact.id;
+    const copy = await copyOf(artifact.id);
+    const copyOfCopy = await copyOf(copy);
+    const shareRoute = await import("@/app/api/share/route");
+    for (const id of [copy, copyOfCopy]) {
+      assert.equal((await (await publication(id)).publish("latest")).status, 403, "a copy cannot put the removed page back up");
+      assert.equal((await shareRoute.POST(request("POST", "/api/share", { kind: "ARTIFACT", artifactId: id }))).status, 403);
+    }
+
+    // Deleting the original for good takes its link rows with it; the
+    // moderation record still stands against the copies.
+    await (await artifactRoute()).DELETE(request("DELETE"), params({ id: artifact.id }));
+    const purged = await (await artifactRoute()).DELETE(request("DELETE", `/api/artifacts/${artifact.id}?now=1`), params({ id: artifact.id }));
+    assert.equal(purged.status, 200);
+    assert.equal(await prisma.artifactPublication.count({ where: { id: pub.id } }), 0);
+    assert.equal((await (await publication(copyOfCopy)).publish("latest")).status, 403, "still refused after the purge");
+
+    // A lifted takedown lifts it for the copies too.
+    const other = await chatWithArtifact(owner.id, { bodies: ["# fine after all"] });
+    const { publication: second } = (await (await (await publication(other.artifact.id)).publish(1)).json()) as {
+      publication: { id: string };
+    };
+    await takeDownShare({ shareId: second.id, reason: "Mistake", by: "admin@example.invalid", isProtectedOwner: () => false });
+    signedIn = { id: owner.id, email: owner.email!, name: owner.name! };
+    const secondCopy = await copyOf(other.artifact.id);
+    assert.equal((await (await publication(secondCopy)).publish("latest")).status, 403);
+    await restoreShare({ shareId: second.id, by: "admin@example.invalid" });
+    assert.equal((await (await publication(secondCopy)).publish("latest")).status, 200);
+  });
+
   test("an installed app's chat read carries no trashed artifact and no web design draft", async () => {
     const user = await signUp("installed-app");
     const { conversation, artifact: trashed } = await chatWithArtifact(user.id, { bodies: ["# gone"] });
@@ -759,6 +811,59 @@ if (!DB_URL || !canMockModules) {
     assert.equal(nativeDesign.currentVersion, 1);
     assert.deepEqual(nativeDesign.versions.map((v) => v.version), [1]);
     assert.match(nativeDesign.content, /Sealed/);
+  });
+
+  test("Juno's own write never goes public by itself: a page following latest is held at what it serves", async () => {
+    const user = await signUp("publish-floor");
+    const { conversation, artifact } = await chatWithArtifact(user.id, { bodies: ["# mine"] });
+    const p = await publication(artifact.id);
+    const { publication: pub } = (await (await p.publish("latest")).json()) as { publication: { token: string } };
+    const { findPublicPublication } = await import("@/lib/artifact-publication");
+    const served = async () => {
+      const found = await findPublicPublication(pub.token);
+      return found?.state === "live" ? { version: found.snapshot.version, content: found.snapshot.content } : null;
+    };
+
+    // A chat re-emit (the head was Juno's, so the re-emit guard appends it).
+    const message = await prisma.message.create({ data: { conversationId: conversation.id, role: "ASSISTANT", content: "" } });
+    const { persistArtifacts, persistTargetedArtifactEdit } = await import("@/lib/artifacts-store");
+    await persistArtifacts(
+      conversation.id,
+      message.id,
+      [{ identifier: artifact.identifier, type: "MARKDOWN", title: "Launch plan", content: "# written after reading a web page" }],
+      { userId: user.id }
+    );
+    assert.equal((await prisma.artifact.findUniqueOrThrow({ where: { id: artifact.id } })).currentVersion, 2, "the version is written");
+    assert.deepEqual(await served(), { version: 1, content: "# mine" }, "but the public page does not move");
+    assert.equal((await p.get()).publication?.pinnedVersion, 1, "the page is held at what it served");
+
+    // The person publishes it; then a targeted edit is held the same way.
+    await p.publish("latest");
+    assert.equal((await served())?.version, 2);
+    await persistTargetedArtifactEdit(artifact.id, 2, "# Juno's targeted edit", user.id);
+    assert.equal((await served())?.version, 2);
+
+    // The person's own save still follows latest once they choose it again.
+    await p.publish("latest");
+    assert.equal((await save(artifact.id, { content: "# my own edit", baseVersion: 3 })).status, 200);
+    assert.deepEqual(await served(), { version: 4, content: "# my own edit" });
+  });
+
+  test("a pinned page keeps the title it was published under; one following latest shows the live title", async () => {
+    const user = await signUp("publish-title");
+    const { artifact } = await chatWithArtifact(user.id, { bodies: ["# v1"], title: "Offsite agenda" });
+    const p = await publication(artifact.id);
+    const { publication: pub } = (await (await p.publish(1)).json()) as { publication: { token: string } };
+    const rename = await (await artifactRoute()).PATCH(request("PATCH", "/api", { title: "Reorg plan" }), params({ id: artifact.id }));
+    assert.equal(rename.status, 200);
+    const { findPublicPublication } = await import("@/lib/artifact-publication");
+    const title = async () => {
+      const found = await findPublicPublication(pub.token);
+      return found?.state === "live" ? found.snapshot.title : null;
+    };
+    assert.equal(await title(), "Offsite agenda", "a rename after publishing stays private");
+    await p.publish("latest");
+    assert.equal(await title(), "Reorg plan");
   });
 
   test("clean up the throwaway accounts", async () => {
