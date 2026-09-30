@@ -138,6 +138,33 @@ final class AgentProtocolProjectionTests: XCTestCase {
         XCTAssertEqual(CodeTaskWireProjection.taskStatus(.completed), "done")
     }
 
+    func testTheDeviceTaskWireSplitsABurstIntoPostsTheRouteAccepts() throws {
+        // A burst of output between two polls, now twice over (protocol row and
+        // legacy twin): one body for all of it would pass the route's 256 KB
+        // refusal, and a refused POST failed the whole task.
+        let wire = CodeTaskWireProjection(includesProtocol: true)
+        let chunk = String(repeating: "x", count: 7_000)
+        let rows = (0..<40).flatMap { index in
+            wire.rows(for: event(index, .toolOutput(ToolOutputEvent(toolCallID: "t-1", channel: .stdout, text: chunk))))
+        }
+        XCTAssertEqual(rows.count, 80)
+        let batches = CodeTaskWireProjection.batches(rows)
+        XCTAssertGreaterThan(batches.count, 1)
+        XCTAssertEqual(batches.flatMap { $0 }, rows, "every row, once, in order")
+        let encoder = JSONEncoder()
+        for batch in batches {
+            let bytes = try batch.reduce(0) { $0 + (try encoder.encode($1).count) + 1 }
+            XCTAssertLessThanOrEqual(bytes, CodeTaskWireProjection.maximumBatchBytes)
+            XCTAssertLessThanOrEqual(batch.count, CodeTaskWireProjection.maximumBatchCount)
+        }
+
+        // The count limit holds for small rows too, and a quiet poll is still
+        // one POST — the one that carries the status and reads the controls.
+        let small = Array(repeating: NativeCodeTaskEventInput(kind: "status", payload: ["status": .string("running")]), count: 900)
+        XCTAssertEqual(CodeTaskWireProjection.batches(small).map(\.count), [400, 400, 100])
+        XCTAssertEqual(CodeTaskWireProjection.batches([]).count, 1)
+    }
+
     // MARK: - Helpers
 
     private func event(_ sequence: Int, _ payload: SessionEventPayload) -> SessionEvent {

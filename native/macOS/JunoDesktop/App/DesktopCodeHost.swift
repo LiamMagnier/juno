@@ -254,19 +254,25 @@ private actor DesktopQueuedCodeHost {
                         )
                     )
                 }
-                let ack = try await client.append(
-                    taskID: task.id,
-                    events: outbound,
-                    status: status,
-                    afterControlSequence: controlSequence,
-                    for: accountID
-                )
-                for control in ack.control {
-                    controlSequence = max(controlSequence, control.seq)
-                    try await apply(
-                        control,
-                        sessionID: sessionID
+                // In POSTs the route accepts, the status on the last: a
+                // terminal status is what writes the task's outcome, which
+                // must read every row before it.
+                let batches = CodeTaskWireProjection.batches(outbound)
+                for (index, batch) in batches.enumerated() {
+                    let ack = try await client.append(
+                        taskID: task.id,
+                        events: batch,
+                        status: index == batches.count - 1 ? status : nil,
+                        afterControlSequence: controlSequence,
+                        for: accountID
                     )
+                    for control in ack.control where control.seq > controlSequence {
+                        controlSequence = control.seq
+                        try await apply(
+                            control,
+                            sessionID: sessionID
+                        )
+                    }
                 }
                 // The prompt never became a turn, so no status will ever end
                 // this task: fail it, after the row saying which hook refused

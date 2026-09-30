@@ -38,12 +38,17 @@ public struct CodeTaskWireProjection: Sendable {
         let events = AgentProtocolProjection.events(for: event)
         var rows: [NativeCodeTaskEventInput] = []
         for projected in events {
+            // A twin is marked only beside the protocol row it names: a
+            // protocol reader skips marked rows, so marking one whose event
+            // could not be encoded would leave that reader with neither.
+            var carried = false
             if includesProtocol, let payload = Self.wirePayload(projected) {
                 rows.append(NativeCodeTaskEventInput(kind: Self.protocolKind, payload: payload))
+                carried = true
             }
             for (kind, body) in Self.legacy(projected.payload) {
                 var payload = body
-                if includesProtocol { payload[Self.derivedKey] = .string(projected.id) }
+                if carried { payload[Self.derivedKey] = .string(projected.id) }
                 rows.append(NativeCodeTaskEventInput(kind: kind, payload: payload))
             }
         }
@@ -53,6 +58,47 @@ public struct CodeTaskWireProjection: Sendable {
             rows.append(NativeCodeTaskEventInput(kind: "status", payload: ["status": .string("Running \(tool.toolCallID)")]))
         }
         return rows
+    }
+
+    /// The most rows one events POST carries. The route refuses more than 500.
+    public static let maximumBatchCount = 400
+    /// The most JSON one events POST carries, leaving the envelope room under
+    /// the route's 256 KB refusal.
+    public static let maximumBatchBytes = 200 * 1024
+
+    /// Rows split into the POSTs the events route accepts, in order: at most
+    /// `maximumBatchCount` rows and about `maximumBatchBytes` of JSON each. A
+    /// row larger than the budget on its own still travels, alone. Never empty:
+    /// a poll with nothing new is still one POST, which is how the host sends
+    /// its status and reads its controls.
+    ///
+    /// The host posted every row of a poll in one body, and a burst of output
+    /// between two polls — more likely now that each event also goes up as its
+    /// protocol row — could pass either limit. The refusal was fatal: the task
+    /// was marked failed while the session on this Mac went on running.
+    public static func batches(
+        _ rows: [NativeCodeTaskEventInput],
+        maximumCount: Int = maximumBatchCount,
+        maximumBytes: Int = maximumBatchBytes
+    ) -> [[NativeCodeTaskEventInput]] {
+        let encoder = JSONEncoder()
+        var batches: [[NativeCodeTaskEventInput]] = []
+        var current: [NativeCodeTaskEventInput] = []
+        var currentBytes = 0
+        for row in rows {
+            // A comma, and a generous guess for a row that will not encode
+            // here (it will not encode in the POST either, which says so).
+            let size = ((try? encoder.encode(row).count) ?? maximumBytes) + 1
+            if !current.isEmpty, current.count >= maximumCount || currentBytes + size > maximumBytes {
+                batches.append(current)
+                current = []
+                currentBytes = 0
+            }
+            current.append(row)
+            currentBytes += size
+        }
+        batches.append(current)
+        return batches
     }
 
     /// The task wire's word for a session status.
