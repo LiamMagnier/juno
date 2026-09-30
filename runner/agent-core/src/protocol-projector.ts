@@ -31,7 +31,7 @@ import {
   type AgentTurnOrigin,
   type AgentUsage,
 } from './protocol.generated.js';
-import type { AgentEvent, ApprovalDecision, PermissionMode, RiskLevel, Usage } from './types.js';
+import type { AgentEvent, ApprovalDecision, ApprovalRequest, PermissionMode, RiskLevel, Usage } from './types.js';
 
 export interface ProtocolProjectorOptions {
   /** The session every event belongs to (a cloud run uses its task id). */
@@ -52,6 +52,14 @@ export interface ProtocolProjectorOptions {
    * `session.created`.
    */
   announceSession?: boolean;
+  /**
+   * Set when the host answers every approval itself, by its permission mode,
+   * the moment the engine asks (the cloud runner). A request is then emitted
+   * together with its answer, never ahead of it: emitted alone it folds as a
+   * pending approval, and a reader shown one is offered a decision nobody is
+   * waiting for — for as long as a batch boundary falls between the two.
+   */
+  approvalsAnsweredByMode?: boolean;
   /** The clock, for tests. */
   now?: () => Date;
 }
@@ -88,6 +96,10 @@ export class AgentProtocolProjector {
   private lastError: string | undefined;
   private readonly calls = new Map<string, CallRecord>();
   private readonly answers = new Map<string, ProtocolApprovalAnswer>();
+  /** Requests held until their answer, with `approvalsAnsweredByMode`. */
+  private readonly heldRequests = new Map<string, ApprovalRequest>();
+  /** Set by `openTurn`: the engine's next turn is the one the host opened. */
+  private adoptNextTurn = false;
   private readonly now: () => Date;
   /** What starts the next turn. A host sets it before a turn a steer or a queued message caused. */
   nextTurnOrigin: AgentTurnOrigin = 'user';
@@ -105,8 +117,10 @@ export class AgentProtocolProjector {
 
   /**
    * Wraps a body in an envelope. For events the host itself originates: the
-   * clone, the setup step, the pull request. `turnId: null` places the event
-   * outside any turn even while one is open.
+   * clone, the setup step, the pull request. `turnId: null` leaves the turn
+   * off the envelope — which, to a reader, means "the turn that is open, if
+   * any" (the contract's envelope rule), so it keeps an event out of a turn
+   * only while none is open.
    */
   emit(body: AgentEventBody, extra: { turnId?: string | null; agentId?: string } = {}): ProtocolEvent {
     this.seq += 1;
@@ -136,6 +150,20 @@ export class AgentProtocolProjector {
    */
   queueTurnMessage(message: ProtocolTurnMessage): void {
     this.nextTurnMessages.push(message);
+  }
+
+  /**
+   * Opens the first turn now, before the engine exists, with the reader's
+   * words — for a host with work to report between being handed a prompt and
+   * starting the engine (a clone, a setup step). The prompt then comes first
+   * in the transcript, as it happened, and is there even when the run fails
+   * before the engine ever starts; the engine's first turn continues this one
+   * rather than opening a second.
+   */
+  openTurn(messages: ProtocolTurnMessage[], origin: AgentTurnOrigin = 'user'): ProtocolEvent[] {
+    this.openTurnId = `${this.options.runId}:turn:opening`;
+    this.adoptNextTurn = true;
+    return [this.emit({ type: 'turn.started', origin }), ...messages.map((message) => this.userMessage(message))];
   }
 
   /**
@@ -172,22 +200,19 @@ export class AgentProtocolProjector {
       case 'mode_changed':
         return [this.emit({ type: 'session.configured', mode: protocolMode(event.mode) })];
       case 'turn_started': {
-        this.openTurnId = `${this.options.runId}:turn:${event.turnIndex}`;
         this.textItemId = undefined;
         this.thinkingItemId = undefined;
-        const out = [this.emit({ type: 'turn.started', origin: this.nextTurnOrigin })];
-        this.nextTurnOrigin = 'user';
-        for (const message of this.nextTurnMessages.splice(0)) {
-          out.push(
-            this.emit({
-              type: 'item.user_message',
-              itemId: this.itemId('user'),
-              text: message.text,
-              delivery: message.delivery,
-              ...(message.commandId ? { commandId: message.commandId } : {}),
-            }),
-          );
+        const out: ProtocolEvent[] = [];
+        if (this.adoptNextTurn && this.openTurnId !== undefined) {
+          // The host opened this turn already (`openTurn`); it goes on.
+          this.adoptNextTurn = false;
+        } else {
+          this.adoptNextTurn = false;
+          this.openTurnId = `${this.options.runId}:turn:${event.turnIndex}`;
+          out.push(this.emit({ type: 'turn.started', origin: this.nextTurnOrigin }));
         }
+        this.nextTurnOrigin = 'user';
+        for (const message of this.nextTurnMessages.splice(0)) out.push(this.userMessage(message));
         return out;
       }
       case 'assistant_delta':
@@ -211,24 +236,23 @@ export class AgentProtocolProjector {
       case 'approval_requested': {
         const request = event.request;
         const out = this.announce(request.callId, request.toolName, request.input, request.risk, request.agentId);
-        out.push(
-          this.emit(
-            {
-              type: 'approval.requested',
-              approvalId: request.callId,
-              itemId: request.callId,
-              action: request.toolName,
-              summary: request.summary,
-              risk: protocolRisk(request.risk),
-            },
-            { agentId: request.agentId },
-          ),
-        );
+        if (this.options.approvalsAnsweredByMode) {
+          // Said with its answer, in `approval_resolved`.
+          this.heldRequests.set(request.callId, request);
+          return out;
+        }
+        out.push(this.approvalRequested(request));
         return out;
       }
       case 'approval_resolved': {
+        const out: ProtocolEvent[] = [];
+        const held = this.heldRequests.get(event.callId);
+        if (held) {
+          this.heldRequests.delete(event.callId);
+          out.push(this.approvalRequested(held));
+        }
         const answer = this.answers.get(event.callId);
-        return [
+        out.push(
           this.emit(
             {
               type: 'approval.resolved',
@@ -239,12 +263,14 @@ export class AgentProtocolProjector {
             },
             { agentId: event.agentId },
           ),
-        ];
+        );
+        return out;
       }
       case 'tool_started':
         return this.announce(event.callId, event.name, event.input, event.risk, event.agentId);
       case 'tool_finished': {
         const out = this.announce(event.callId, event.name, undefined, undefined, event.agentId);
+        this.answers.delete(event.callId);
         out.push(
           this.emit(
             {
@@ -263,6 +289,7 @@ export class AgentProtocolProjector {
       case 'tool_denied': {
         const out = this.announce(event.callId, event.name, undefined, undefined, event.agentId);
         const answer = this.answers.get(event.callId);
+        this.answers.delete(event.callId);
         out.push(
           this.emit(
             {
@@ -315,9 +342,13 @@ export class AgentProtocolProjector {
           out.push(this.emit({ type: 'turn.completed', stopReason: protocolStopReason(event.stopReason) }));
         }
         this.openTurnId = undefined;
+        this.adoptNextTurn = false;
         this.textItemId = undefined;
         this.thinkingItemId = undefined;
         this.lastError = undefined;
+        // A request whose answer never came (the host threw while answering)
+        // was never pending for anyone; it ends with the turn.
+        this.heldRequests.clear();
         return out;
       }
       case 'error':
@@ -343,6 +374,31 @@ export class AgentProtocolProjector {
         ];
       }
     }
+  }
+
+  /** A message of the reader's, as an item of the open turn. */
+  private userMessage(message: ProtocolTurnMessage): ProtocolEvent {
+    return this.emit({
+      type: 'item.user_message',
+      itemId: this.itemId('user'),
+      text: message.text,
+      delivery: message.delivery,
+      ...(message.commandId ? { commandId: message.commandId } : {}),
+    });
+  }
+
+  private approvalRequested(request: ApprovalRequest): ProtocolEvent {
+    return this.emit(
+      {
+        type: 'approval.requested',
+        approvalId: request.callId,
+        itemId: request.callId,
+        action: request.toolName,
+        summary: request.summary,
+        risk: protocolRisk(request.risk),
+      },
+      { agentId: request.agentId },
+    );
   }
 
   /** The tool call, announced once, by whichever event names it first. */

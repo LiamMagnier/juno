@@ -37,7 +37,8 @@ const helpers = [
 
 type Row = { kind: string; payload: Record<string, unknown> };
 interface Sink {
-  outbox: { peek(): Row[] };
+  outbox: { peek(): Row[]; size: number };
+  emitProtocol(events: unknown[]): void;
   scheduleFlush(): void;
   kick(): void;
   engineEvent(event: unknown): void;
@@ -72,6 +73,7 @@ function driver(negotiated: boolean) {
     target: "cloud",
     repository: { owner: "liam", name: "juno" },
     announceSession: false,
+    approvalsAnsweredByMode: true,
     now: () => new Date("2026-09-30T10:00:00.000Z"),
   });
   const sink = makeSink("token", {
@@ -92,11 +94,8 @@ function run(negotiated: boolean): Row[] {
     { turnId: null },
   );
   sink.hostEvent({ type: "session.state", state: "running" }, { turnId: null });
-  sink.hostEvent(
-    { type: "item.notice", itemId: projector.itemId("notice"), source: "host", text: "Cloud Code run started on liam/juno." },
-    { turnId: null },
-  );
-  projector.queueTurnMessage({ text: "Fix the test", delivery: "prompt" });
+  sink.emitProtocol(projector.openTurn([{ text: "Fix the test", delivery: "prompt" }]));
+  sink.hostEvent({ type: "item.notice", itemId: projector.itemId("notice"), source: "host", text: "Cloud Code run started on liam/juno." });
 
   sink.engineEvent({ type: "session_started", sessionId: "s", cwd: "/w", provider: "p", model: "claude-sonnet-5", mode: "auto-edit" });
   sink.engineEvent({ type: "turn_started", turnIndex: 0 });
@@ -193,4 +192,122 @@ test("the web's fold reads the negotiated stream once, with typed outcomes", () 
   assert.equal(transcript.view.pullRequest?.prNumber, 3);
   assert.equal(transcript.view.state, "completed");
   assert.equal(transcript.tokens?.completionTokens, 20);
+});
+
+test("a sub-agent's full snapshot still reaches the readers that draw its card", () => {
+  const snapshot = {
+    id: "agent-1",
+    title: "Write the tests",
+    role: "builder",
+    model: "claude-sonnet-5",
+    isolation: "worktree",
+    writes: true,
+    status: "running",
+    currentActivity: "Reading src/app.ts",
+    usage: { inputTokens: 10, outputTokens: 2 },
+    filesChanged: ["src/app.test.ts"],
+  };
+  for (const negotiated of [true, false]) {
+    const { sink } = driver(negotiated);
+    sink.engineEvent({ type: "subagent_update", agent: snapshot });
+    const rows = sink.outbox.peek().map((entry) => ({ kind: (entry as Row).kind, payload: (entry as Row).payload }));
+    // The web's agents panel and the iPhone's task view read `agent` rows, and
+    // want the whole snapshot — the model and the files are not in the protocol.
+    const agentRows = rows.filter((row) => row.kind === "agent");
+    assert.equal(agentRows.length, 1, `one agent row (negotiated: ${negotiated})`);
+    assert.deepEqual((agentRows[0].payload.agent as Record<string, unknown>).filesChanged, ["src/app.test.ts"]);
+    assert.equal((agentRows[0].payload.agent as Record<string, unknown>).model, "claude-sonnet-5");
+    if (negotiated) {
+      const source = rows.find((row) => row.kind === "protocol" && row.payload.type === "item.subagent");
+      assert.ok(source, "the protocol carries the sub-agent too");
+      assert.equal(agentRows[0].payload.protocolEventId, source.payload.id, "marked as its twin");
+      // …so the fold reads the sub-agent once, not once per vocabulary.
+      const transcript = new CodeTaskTranscript("task-1", { includeAgentSummaries: true });
+      transcript.applyAll(rows.map((row, index) => ({ seq: index + 1, ...row, createdAt: "2026-09-30T10:00:00.000Z" })));
+      assert.equal(transcript.view.items.filter((item) => item.kind === "subagent").length, 1);
+    } else {
+      assert.equal("protocolEventId" in agentRows[0].payload, false);
+    }
+  }
+});
+
+test("an approval the mode answers is never pending at any point a flush can run", () => {
+  const { sink, projector } = driver(true);
+  // A flush can run between any two engine events (the kick at FLUSH_AT_COUNT
+  // is a microtask, and the engine awaits the approval callback), never in
+  // the middle of one: the rows one engine event yields are queued together.
+  const boundaries: number[] = [];
+  const step = (fn: () => void) => {
+    fn();
+    boundaries.push(sink.outbox.size);
+  };
+  step(() => sink.emitProtocol(projector.openTurn([{ text: "Install", delivery: "prompt" }])));
+  step(() => sink.engineEvent({ type: "turn_started", turnIndex: 0 }));
+  const request = { callId: "t9", toolName: "bash", input: { command: "npm ci" }, risk: "command", summary: "npm ci" };
+  step(() => sink.engineEvent({ type: "approval_requested", request }));
+  step(() => {
+    projector.noteApprovalAnswer("t9", { by: "mode" });
+    sink.engineEvent({ type: "approval_resolved", callId: "t9", decision: "allow" });
+  });
+  step(() => sink.engineEvent({ type: "tool_started", callId: "t9", name: "bash", input: { command: "npm ci" }, risk: "command" }));
+  step(() =>
+    sink.engineEvent({ type: "tool_finished", callId: "t9", name: "bash", output: "ok", isError: false, durationMs: 5, exitCode: 0 }),
+  );
+
+  const rows = sink.outbox
+    .peek()
+    .map((entry, index) => ({ seq: index + 1, kind: (entry as Row).kind, payload: (entry as Row).payload, createdAt: "2026-09-30T10:00:00.000Z" }));
+  const types = rows.filter((row) => row.kind === "protocol").map((row) => row.payload.type);
+  const requested = types.indexOf("approval.requested");
+  assert.ok(requested >= 0, "the request is still on the record");
+  assert.equal(types[requested + 1], "approval.resolved", "and its answer is right behind it");
+  for (const end of boundaries) {
+    const transcript = new CodeTaskTranscript("task-1");
+    transcript.applyAll(rows.slice(0, end));
+    assert.equal(transcript.pendingApproval, null, `a reader handed ${end} row(s) is offered no decision`);
+  }
+});
+
+test("the prompt comes first, and survives a run that fails before the engine starts", () => {
+  for (const negotiated of [true, false]) {
+    const { sink, projector } = driver(negotiated);
+    sink.hostEvent({ type: "session.created", target: "cloud", repository: { owner: "liam", name: "juno" } }, { turnId: null });
+    sink.hostEvent({ type: "session.state", state: "running" }, { turnId: null });
+    sink.emitProtocol(projector.openTurn([{ text: "Fix the login bug", delivery: "prompt" }]));
+    sink.hostEvent({ type: "item.notice", itemId: projector.itemId("notice"), source: "host", text: "Cloud Code run started." });
+    // The clone fails: the fatal handler's rows.
+    sink.hostEvent({ type: "session.error", error: { code: "internal", message: "clone failed", retryable: false } }, { turnId: null });
+    sink.hostEvent({ type: "session.state", state: "failed", reason: "clone failed" }, { turnId: null });
+
+    const rows = sink.outbox.peek().map((entry, index) => ({
+      seq: index + 1,
+      kind: (entry as Row).kind,
+      payload: (entry as Row).payload,
+      createdAt: "2026-09-30T10:00:00.000Z",
+    }));
+    const legacy = rows.filter((row) => row.kind !== "protocol");
+    assert.equal(legacy[0]?.kind, "user", "an old reader's first row is the prompt, as it always was");
+    assert.equal(legacy[0]?.payload.text, "Fix the login bug");
+    if (negotiated) {
+      const transcript = new CodeTaskTranscript("task-1");
+      transcript.applyAll(rows);
+      const view = transcript.view;
+      assert.equal(view.turns.length, 1);
+      assert.equal(view.turns[0].status, "failed", "the turn the prompt opened ends with the run");
+      const first = view.items[0];
+      assert.equal(first?.kind, "user_message");
+      assert.equal(first?.kind === "user_message" ? first.text : null, "Fix the login bug");
+      assert.equal(transcript.errorMessage, "clone failed");
+    }
+  }
+});
+
+test("the engine's first turn continues the one the prompt opened", () => {
+  const rows = run(true).filter((row) => row.kind === "protocol");
+  const turns = rows.filter((row) => row.payload.type === "turn.started");
+  assert.equal(turns.length, 1, "one turn, not a host turn and an engine turn");
+  const prompt = rows.find((row) => row.payload.type === "item.user_message");
+  assert.equal(prompt?.payload.turnId, turns[0].payload.turnId);
+  const completed = rows.find((row) => row.payload.type === "turn.completed");
+  assert.equal(completed?.payload.turnId, turns[0].payload.turnId);
 });

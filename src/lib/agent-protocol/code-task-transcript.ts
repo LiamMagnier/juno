@@ -111,12 +111,17 @@ export class CodeTaskTranscript {
     const before = this.fold.view.items.length;
     applyAgentEvent(this.fold, event);
     const items = this.fold.view.items;
-    if (items.length < before || (event.type === "transcript.restarted")) {
+    const restarted = items.length < before || event.type === "transcript.restarted";
+    if (restarted) {
       // A rewind: the fold dropped its items, so their rows go too.
       this.slots = this.slots.filter((slot) => !("itemId" in slot));
       this.slotted.clear();
     }
-    for (const item of items) {
+    // The fold only appends items (or replaces one in place, under its id), so
+    // only those past `before` can be new. Scanning every item on every event
+    // made a long run's transcript quadratic in its length.
+    for (let index = restarted ? 0 : before; index < items.length; index++) {
+      const item = items[index];
       if (this.slotted.has(item.itemId)) continue;
       this.slotted.add(item.itemId);
       this.firstSeen.set(item.itemId, event.at);

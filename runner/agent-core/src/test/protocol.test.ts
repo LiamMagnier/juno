@@ -48,7 +48,7 @@ function scripted(turns: ProviderStreamEvent[][]): ProviderAdapter {
   };
 }
 
-async function run(mode: 'full' | 'auto-edit') {
+async function run(mode: 'full' | 'auto-edit', host: { answersByMode?: boolean; opensTurn?: boolean } = {}) {
   process.env.JUNO_HOME = tmpdir();
   const cwd = tmpdir();
   fs.writeFileSync(path.join(cwd, 'notes.txt'), 'hello');
@@ -57,9 +57,12 @@ async function run(mode: 'full' | 'auto-edit') {
     sessionId: 'task-1',
     runId: 'run-1',
     repository: { owner: 'liam', name: 'juno' },
+    ...(host.answersByMode ? { approvalsAnsweredByMode: true } : {}),
     now: () => new Date('2026-09-30T10:00:00.000Z'),
   });
   const events: ProtocolEvent[] = [];
+  /** How many events existed after each engine event: where a host's flush can fall. */
+  const boundaries: number[] = [];
   const session = AgentSession.create({
     provider: scripted([
       [
@@ -82,6 +85,7 @@ async function run(mode: 'full' | 'auto-edit') {
       onEvent: (event) => {
         engine.push(event);
         events.push(...projector.project(event));
+        boundaries.push(events.length);
       },
       // The cloud runner's answer: the mode decides, and says so.
       requestApproval: async (request) => {
@@ -94,9 +98,10 @@ async function run(mode: 'full' | 'auto-edit') {
       },
     },
   });
-  projector.queueTurnMessage({ text: 'Tidy the notes', delivery: 'prompt' });
+  if (host.opensTurn) events.push(...projector.openTurn([{ text: 'Tidy the notes', delivery: 'prompt' }]));
+  else projector.queueTurnMessage({ text: 'Tidy the notes', delivery: 'prompt' });
   await session.prompt('Tidy the notes');
-  return { engine, events };
+  return { engine, events, boundaries };
 }
 
 test('every projected event is valid, and outcomes are typed', async () => {
@@ -167,4 +172,41 @@ test('under full access the mode allows, and the row says it was automatic', asy
   const rows = events.flatMap((event) => downcast.rows(event));
   const allowed = rows.filter((row) => row.kind === 'tool' && row.payload.name === 'approval');
   assert.ok(allowed.every((row) => row.payload.autoAllowed === true));
+});
+
+test('a host that answers by its mode states each request together with its answer', async () => {
+  const { events, boundaries } = await run('auto-edit', { answersByMode: true });
+  for (const event of events) assert.deepEqual(validateAgentEvent(event), [], `${event.type} breaks the contract`);
+  const types = events.map((event) => event.type);
+  const requested = types.indexOf('approval.requested');
+  assert.ok(requested > 0, 'the request is still on the record');
+  assert.equal(types[requested + 1], 'approval.resolved', 'with its answer right behind it');
+  // No point at which a host could flush leaves a request without its answer.
+  for (const end of boundaries) {
+    const open = new Set<string>();
+    for (const event of events.slice(0, end)) {
+      if (event.type === 'approval.requested') open.add(event.approvalId);
+      if (event.type === 'approval.resolved') open.delete(event.approvalId);
+    }
+    assert.equal(open.size, 0, `after ${end} event(s) a request stands alone`);
+  }
+  // Without the option a request is emitted when the engine asks, as a host
+  // that waits for a person needs.
+  const asked = await run('auto-edit');
+  const alone = asked.boundaries.some((end) => asked.events[end - 1]?.type === 'approval.requested');
+  assert.ok(alone, 'a host that waits for a person shows the request as soon as it is made');
+});
+
+test('a turn the host opened is the one the engine continues', async () => {
+  const { events: all } = await run('full', { opensTurn: true });
+  const events = all.filter((event) => event.type !== 'session.created');
+  const types = events.map((event) => event.type);
+  assert.equal(types[0], 'turn.started', 'the host opened it, before the engine took the prompt');
+  assert.equal(types[1], 'item.user_message');
+  assert.equal(types.filter((type) => type === 'item.user_message').length, 1, 'the prompt is said once');
+  assert.equal(types.filter((type) => type === 'turn.started').length, 1, 'the engine did not open a second');
+  const turnId = events[0].turnId;
+  assert.ok(turnId);
+  assert.ok(events.every((event) => event.turnId === turnId), 'everything the engine did is inside it');
+  assert.equal(types.at(-1), 'turn.completed');
 });

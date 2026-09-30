@@ -320,13 +320,13 @@ class EventSink {
 
   /**
    * One row into the outbox, after any prose still buffered — so the stream
-   * keeps the order things happened in. Protocol rows are redacted all the way
-   * down, since their payloads nest.
+   * keeps the order things happened in. Protocol rows and sub-agent snapshots
+   * are redacted all the way down, since their payloads nest.
    */
   push(kind, payload) {
     if (kind !== "text") this.flushText();
     if (kind !== "reasoning_delta") this.flushReasoning();
-    this.outbox.add(kind, kind === PROTOCOL_KIND ? redactDeep(payload) : redactPayload(payload));
+    this.outbox.add(kind, kind === PROTOCOL_KIND || kind === "agent" ? redactDeep(payload) : redactPayload(payload));
     if (this.outbox.size >= FLUSH_AT_COUNT) this.kick();
     else this.scheduleFlush();
   }
@@ -354,7 +354,23 @@ class EventSink {
     }
     this.flushText();
     this.flushReasoning();
-    this.emitProtocol(this.protocol.projector.project(event));
+    const events = this.protocol.projector.project(event);
+    this.emitProtocol(events);
+    if (event.type === "subagent_update" && event.agent && typeof event.agent.id === "string") {
+      /*
+       * The sub-agent's whole snapshot, as the `agent` row every reader has
+       * always drawn its cards from — the web's agents panel, the iPhone's task
+       * view — and which the protocol's `item.subagent` does not replace for
+       * them: it carries the transcript's part (title, state, result), not the
+       * model, the worktree or the files. Marked like any twin when the server
+       * stores protocol rows, so the fold reads the sub-agent once.
+       */
+      const source = events.find((projected) => projected.type === "item.subagent");
+      this.push("agent", {
+        agent: event.agent,
+        ...(this.protocol.negotiated && source ? { protocolEventId: source.id } : {}),
+      });
+    }
   }
 
   /**
@@ -421,7 +437,10 @@ class EventSink {
    * decides whether the task shows as finished or as stuck forever.
    */
   async flush(finalStatus) {
+    // Prose waiting in a buffer goes up on the timer too, so a short reply is
+    // on screen within a flush interval rather than when the next tool starts.
     this.flushReasoning();
+    this.flushText();
     const notice = this.outbox.dropNotice();
     if (notice) {
       this.outbox.dropped = 0;
@@ -824,6 +843,9 @@ async function main() {
       // Announced below, at the claim, rather than when the engine starts
       // after the clone: the transcript has things to say before then.
       announceSession: false,
+      // This driver answers every approval by its mode the moment it is
+      // asked, so no request is ever pending for a reader.
+      approvalsAnsweredByMode: true,
     }),
     // Nobody is attached to a cloud run: every approval is the mode's answer,
     // and never a request a reader could act on.
@@ -853,19 +875,19 @@ async function main() {
     { turnId: null },
   );
   sink.hostEvent({ type: "session.state", state: "running" }, { turnId: null });
-  sink.hostEvent(
-    {
-      type: "item.notice",
-      itemId: protocol.projector.itemId("notice"),
-      source: "host",
-      text: `Cloud Code run started on ${repoOwner}/${repoName} with ${chosen.label ?? chosen.model}.`,
-    },
-    { turnId: null },
-  );
-  // The reader's words open the first turn, when the engine starts it. An
-  // instruction sent while this machine was starting is folded into the same
-  // opening prompt, and is shown as the steer it was.
-  protocol.projector.queueTurnMessage({ text: prompt, delivery: "prompt" });
+  // The reader's words open the run's turn now, first in the transcript as
+  // they have always been — and there even if the clone or the setup step
+  // fails before the engine exists. The engine's first turn continues it.
+  sink.emitProtocol(protocol.projector.openTurn([{ text: prompt, delivery: "prompt" }]));
+  sink.hostEvent({
+    type: "item.notice",
+    itemId: protocol.projector.itemId("notice"),
+    source: "host",
+    text: `Cloud Code run started on ${repoOwner}/${repoName} with ${chosen.label ?? chosen.model}.`,
+  });
+  // An instruction sent while this machine was starting is folded into the
+  // same opening prompt, and is shown as the steer it was when the engine
+  // takes it — "delivered" means the far side has the words.
   for (const steer of pendingSteers) {
     protocol.projector.queueTurnMessage({
       text: steer.displayText ?? steer.text,
