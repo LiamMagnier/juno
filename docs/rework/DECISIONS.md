@@ -197,3 +197,14 @@ two-dot rounded square goes. New shape grammar, states and motion rig.
 **D-030 · The composer has no drop shadow;** it is defined by surface and a
 crisp hairline. **Dark mode is designed, not derived:** it gets the same
 critique weight as light.
+
+**D-031 · Crew members are three-dimensional and texturable (owner, 2026-10-01).**
+"Make the crew shape 3D … with the ability to add texture … the best looking
+agents." Rendered with three.js (already a dependency): sculpted minimal forms
+in physically based materials (matte ceramic default; frosted glass, felt,
+stone/terrazzo, metal, wood), studio lighting, procedural textures and an
+uploaded image as a texture. One serialisable `AvatarConfig` drives web and
+native (RealityKit meshes and PhysicallyBasedMaterial on Mac/iOS). Performance
+is part of the design: one shared renderer, cached sprites at ≤ 28 px, on-demand
+rendering for live faces, zero GPU work when idle. Motion stays event-driven
+(INTERACTION_SPEC §2.9, amended P4).
