@@ -22,7 +22,7 @@ public enum JunoAgentProtocol {
     /// What a producer writes as `v`.
     public static let version = "1.0"
     /// SHA-256 of the contract this was generated from.
-    public static let digest = "956bf3805f740c5b7de754ecd1b4e0c1076483cbf83bcf0ae2a8eca9d130aabc"
+    public static let digest = "ed91c33cf7772a23b3201f1e86a8def0b0416cd3b7696030721a583009275651"
 
     /// The major version a "<major>.<minor>" string names, or nil.
     public static func major(of version: String) -> Int? {
@@ -98,7 +98,7 @@ public enum AgentReasoningEffort: String, Hashable, Sendable, Codable, CaseItera
 }
 
 /// What the agent is instructed to do this turn, on engines that keep it apart from the permission mode (the Mac's Ask, Survey, Plan and Code).
-public enum AgentBehavior: String, Hashable, Sendable, Codable, CaseIterable {
+public enum AgentTurnBehavior: String, Hashable, Sendable, Codable, CaseIterable {
     /// Make the change: edits and commands, within the mode.
     case code = "code"
     /// Work out what to do and propose it; change nothing.
@@ -1144,7 +1144,7 @@ public enum AgentEventPayload: Hashable, Sendable {
         /// The permission mode in force.
         public var mode: AgentPermissionMode?
         /// What the agent is instructed to do.
-        public var behavior: AgentBehavior?
+        public var behavior: AgentTurnBehavior?
         /// A new title.
         public var title: String?
 
@@ -1152,7 +1152,7 @@ public enum AgentEventPayload: Hashable, Sendable {
             model: String? = nil,
             effort: AgentReasoningEffort? = nil,
             mode: AgentPermissionMode? = nil,
-            behavior: AgentBehavior? = nil,
+            behavior: AgentTurnBehavior? = nil,
             title: String? = nil
         ) {
             self.model = model
@@ -1175,7 +1175,7 @@ public enum AgentEventPayload: Hashable, Sendable {
             self.model = try? container.decodeIfPresent(String.self, forKey: .model)
             self.effort = try? container.decodeIfPresent(AgentReasoningEffort.self, forKey: .effort)
             self.mode = try? container.decodeIfPresent(AgentPermissionMode.self, forKey: .mode)
-            self.behavior = try? container.decodeIfPresent(AgentBehavior.self, forKey: .behavior)
+            self.behavior = try? container.decodeIfPresent(AgentTurnBehavior.self, forKey: .behavior)
             self.title = try? container.decodeIfPresent(String.self, forKey: .title)
         }
 

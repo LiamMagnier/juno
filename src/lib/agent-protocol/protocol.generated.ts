@@ -14,7 +14,7 @@ export const AGENT_PROTOCOL = {
   /** What a producer writes as `v`. */
   v: "1.0",
   /** SHA-256 of the contract this was generated from. */
-  digest: "956bf3805f740c5b7de754ecd1b4e0c1076483cbf83bcf0ae2a8eca9d130aabc",
+  digest: "ed91c33cf7772a23b3201f1e86a8def0b0416cd3b7696030721a583009275651",
 } as const;
 
 // ── Enums ───────────────────────────────────────────────────────────────────
@@ -51,14 +51,14 @@ export const AGENT_REASONING_EFFORT_VALUES = [
 export type AgentReasoningEffort = (typeof AGENT_REASONING_EFFORT_VALUES)[number];
 
 /** What the agent is instructed to do this turn, on engines that keep it apart from the permission mode (the Mac's Ask, Survey, Plan and Code). */
-export const AGENT_BEHAVIOR_VALUES = [
+export const AGENT_TURN_BEHAVIOR_VALUES = [
   "code", // Make the change: edits and commands, within the mode.
   "plan", // Work out what to do and propose it; change nothing.
   "ask", // Answer questions about the code; change nothing.
   "survey", // Map the repository before anyone commits to a change; change nothing.
   "unknown", // A behavior this reader does not know.
 ] as const;
-export type AgentBehavior = (typeof AGENT_BEHAVIOR_VALUES)[number];
+export type AgentTurnBehavior = (typeof AGENT_TURN_BEHAVIOR_VALUES)[number];
 
 /** What a session is doing, as one fact a list or a header can show. */
 export const AGENT_SESSION_STATE_VALUES = [
@@ -386,7 +386,7 @@ export interface AgentSessionConfiguredEvent extends AgentEventEnvelope {
   /** The permission mode in force. */
   mode?: AgentPermissionMode;
   /** What the agent is instructed to do. */
-  behavior?: AgentBehavior;
+  behavior?: AgentTurnBehavior;
   /** A new title. */
   title?: string;
 }
@@ -950,7 +950,7 @@ const ENUM_VALUES: Record<string, readonly string[]> = {
   SessionTarget: AGENT_SESSION_TARGET_VALUES,
   PermissionMode: AGENT_PERMISSION_MODE_VALUES,
   ReasoningEffort: AGENT_REASONING_EFFORT_VALUES,
-  Behavior: AGENT_BEHAVIOR_VALUES,
+  TurnBehavior: AGENT_TURN_BEHAVIOR_VALUES,
   SessionState: AGENT_SESSION_STATE_VALUES,
   TurnOrigin: AGENT_TURN_ORIGIN_VALUES,
   StopReason: AGENT_STOP_REASON_VALUES,
@@ -1027,7 +1027,7 @@ const EVENT_FIELDS: Record<string, readonly FieldSpec[]> = {
     { key: "model", kind: "string", optional: true },
     { key: "effort", kind: "enum", optional: true, ref: "ReasoningEffort" },
     { key: "mode", kind: "enum", optional: true, ref: "PermissionMode" },
-    { key: "behavior", kind: "enum", optional: true, ref: "Behavior" },
+    { key: "behavior", kind: "enum", optional: true, ref: "TurnBehavior" },
     { key: "title", kind: "string", optional: true },
   ],
   "session.state": [

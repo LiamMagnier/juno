@@ -34,7 +34,7 @@
         { "value": "unknown", "summary": "An effort this reader does not know." }
       ]
     },
-    "Behavior": {
+    "TurnBehavior": {
       "summary": "What the agent is instructed to do this turn, on engines that keep it apart from the permission mode (the Mac's Ask, Survey, Plan and Code).",
       "values": [
         { "value": "code", "summary": "Make the change: edits and commands, within the mode." },
@@ -329,7 +329,7 @@
         "model": { "type": "string", "optional": true, "summary": "The model." },
         "effort": { "type": "enum:ReasoningEffort", "optional": true, "summary": "The thinking level." },
         "mode": { "type": "enum:PermissionMode", "optional": true, "summary": "The permission mode in force." },
-        "behavior": { "type": "enum:Behavior", "optional": true, "summary": "What the agent is instructed to do." },
+        "behavior": { "type": "enum:TurnBehavior", "optional": true, "summary": "What the agent is instructed to do." },
         "title": { "type": "string", "optional": true, "summary": "A new title." }
       }
     },
