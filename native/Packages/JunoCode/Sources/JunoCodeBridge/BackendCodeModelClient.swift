@@ -515,16 +515,31 @@ public struct BackendCodeModelClient: AgentModelClient {
         {
             return .quotaExhausted(message: message)
         }
+        // A 429 is a limit whatever its words say; only a shortage of credit,
+        // above, outranks it.
+        if status == 429 {
+            return .rateLimited(retryAfter: retryAfter)
+        }
         if status == 413 || isContextOverflow(type: type, message: lowerMessage) {
             return .contextWindowExceeded(message: message)
         }
-        if status == 429 || type == "rate_limit_error" || lowerMessage.contains("rate limit") {
+        if type == "rate_limit_error" || lowerMessage.contains("rate limit") {
             return .rateLimited(retryAfter: retryAfter)
         }
         if status == 529 || status == 503 || type == "overloaded_error" || lowerMessage.contains("overloaded") {
             return .overloaded(retryAfter: retryAfter)
         }
-        return .transport(message: message)
+        // A timeout or a conflict on the way in, and any other 5xx: nothing
+        // says the next attempt meets the same.
+        if status == 408 || status == 409 || status >= 500 {
+            return .transport(message: message)
+        }
+        // Everything else below 500 is the provider refusing this request —
+        // a bad parameter, an unknown model, a block it will not replay. It
+        // used to be a transport failure, retried with backoff four times
+        // for a request that could only fail the same way each time; the
+        // cloud runner has never retried one.
+        return .rejected(message: message)
     }
 
     /// "Too long for the window", in the words each lab uses: Anthropic's

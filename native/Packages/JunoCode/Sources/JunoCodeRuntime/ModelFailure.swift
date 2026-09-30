@@ -27,6 +27,9 @@ enum ModelFailure: Equatable {
     /// A response Juno could not read. Possibly garbled in transit, so tried
     /// once more, but no more than once.
     case malformed
+    /// The provider refused the request as one it cannot serve. The same
+    /// request fails the same way; another model may not.
+    case rejected(String)
 
     init(_ error: Error) {
         switch error as? AgentModelClientError {
@@ -48,6 +51,8 @@ enum ModelFailure: Equatable {
             self = .stalled
         case .invalidResponse?:
             self = .malformed
+        case let .rejected(message)?:
+            self = .rejected(message)
         case .transport?, nil:
             // An error of no known kind came from below the client — a
             // socket, a URL session — where another attempt is the fix.
@@ -62,7 +67,7 @@ enum ModelFailure: Equatable {
             policy.maximumRetries
         case .malformed, .stalled:
             min(1, policy.maximumRetries)
-        case .planLimit, .contextOverflow, .quota, .unauthorized, .unavailable:
+        case .planLimit, .contextOverflow, .quota, .unauthorized, .unavailable, .rejected:
             0
         }
     }
@@ -82,7 +87,9 @@ enum ModelFailure: Equatable {
     /// credentials, the window and the account's allowance follow the run.
     var warrantsFallback: Bool {
         switch self {
-        case .rateLimited, .overloaded, .quota, .transient, .stalled:
+        case .rateLimited, .overloaded, .quota, .transient, .stalled, .rejected:
+            // A rejected request is very often one model's quirk — a retired
+            // id, a parameter one lab refuses — that the next lab takes.
             true
         case .planLimit, .contextOverflow, .unauthorized, .unavailable, .malformed:
             false
@@ -112,6 +119,8 @@ enum ModelFailure: Equatable {
             "The model stopped responding."
         case .malformed:
             "The model sent a response Juno could not read."
+        case .rejected:
+            "The model's provider rejected the request as one it cannot serve."
         }
     }
 }

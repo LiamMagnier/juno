@@ -324,6 +324,11 @@ public enum AgentModelClientError: Error, Equatable, Sendable {
     /// within the turn's deadline. Each attempt costs the whole deadline, so
     /// it is tried again once, not waited out like a rate limit.
     case stalled(message: String)
+    /// The provider refused the request itself — a parameter it does not
+    /// take, a model it does not know, a replayed block it will not accept
+    /// (a 400, 404 or 422). Sent again it fails again, so it is not retried;
+    /// another lab's model may well take it.
+    case rejected(message: String)
 }
 
 /// How a failed model request is tried again.

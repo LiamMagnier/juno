@@ -178,6 +178,48 @@ final class ModelRetryTests: XCTestCase {
         XCTAssertEqual(final.status, .failed)
     }
 
+    /// A request the provider refused as such — a 400, a 404 — is not waited
+    /// out: sent again it fails again.
+    func testARejectedRequestIsNeverRetried() async throws {
+        let model = ScriptedModelClient(steps: [
+            .failure(AgentModelClientError.rejected(message: "model: claude-retired")),
+            .text("Never reached."),
+        ])
+        let sleeps = SleepRecorder()
+        let orchestrator = makeOrchestrator(model: model, sleeps: sleeps)
+
+        try await orchestrator.submit(prompt: "Hello")
+        await orchestrator.awaitCompletion()
+
+        XCTAssertEqual(model.receivedRequests.count, 1)
+        XCTAssertEqual(sleeps.values, [])
+        let final = try await store.session(id: session.id)
+        XCTAssertEqual(final.status, .failed)
+    }
+
+    /// Another lab's model may take what this one refused, when the reader
+    /// opted into fallback — at once, without backoff.
+    func testARejectedRequestGoesStraightToAnOptedInFallback() async throws {
+        let model = ScriptedModelClient(steps: [
+            .failure(AgentModelClientError.rejected(message: "model: claude-retired")),
+            .text("The fallback took it."),
+        ])
+        let sleeps = SleepRecorder()
+        let orchestrator = makeOrchestrator(
+            model: model,
+            sleeps: sleeps,
+            fallback: FixedFallback(model: "openai:gpt-6", effort: nil)
+        )
+
+        try await orchestrator.submit(prompt: "Hello")
+        await orchestrator.awaitCompletion()
+
+        XCTAssertEqual(model.receivedRequests.map(\.modelID), ["anthropic:claude-opus-5-5", "openai:gpt-6"])
+        XCTAssertEqual(sleeps.values, [])
+        let final = try await store.session(id: session.id)
+        XCTAssertEqual(final.status, .completed)
+    }
+
     func testAContextOverflowFoldsTheHistoryAndTriesOnce() async throws {
         try await store.saveConversation(sessionID: session.id, messages: longHistory())
         let model = ScriptedModelClient(steps: [

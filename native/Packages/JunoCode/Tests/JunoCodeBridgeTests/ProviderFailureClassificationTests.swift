@@ -65,6 +65,35 @@ final class ProviderFailureClassificationTests: XCTestCase {
         XCTAssertEqual(try classify(413, "Request too large"), .contextWindowExceeded(message: "Request too large"))
     }
 
+    /// A request the provider refuses outright is never retried: sent again
+    /// it fails the same way. Only a timeout, a conflict or a 5xx is.
+    func testARefusedRequestIsRejectedNotATransportFailure() throws {
+        XCTAssertEqual(
+            try classify(400, "thinking.budget_tokens: Input should be less than max_tokens", type: "invalid_request_error"),
+            .rejected(message: "thinking.budget_tokens: Input should be less than max_tokens")
+        )
+        XCTAssertEqual(try classify(404, "model: not-a-model"), .rejected(message: "model: not-a-model"))
+        XCTAssertEqual(try classify(422, "Unprocessable"), .rejected(message: "Unprocessable"))
+        XCTAssertEqual(try classify(408, "Request timeout"), .transport(message: "Request timeout"))
+        XCTAssertEqual(
+            try classify(502, "Upstream provider request failed."),
+            .transport(message: "Upstream provider request failed.")
+        )
+    }
+
+    /// A 429 is a limit to wait out whatever words come with it; only a
+    /// shortage of credit outranks the status.
+    func testA429IsARateLimitEvenWhenItsWordsSoundLikeAnOverflow() throws {
+        XCTAssertEqual(
+            try classify(429, "Too many tokens per minute for this context window", headers: ["retry-after": "4"]),
+            .rateLimited(retryAfter: 4)
+        )
+        XCTAssertEqual(
+            try classify(429, "You exceeded your current quota, please check your plan and billing details."),
+            .quotaExhausted(message: "You exceeded your current quota, please check your plan and billing details.")
+        )
+    }
+
     func testCreditAndCredentialsStayWhatTheyWere() throws {
         XCTAssertEqual(try classify(401, "bad key"), .unauthorized)
         XCTAssertEqual(
