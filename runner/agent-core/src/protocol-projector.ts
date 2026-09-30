@@ -346,9 +346,8 @@ export class AgentProtocolProjector {
         this.textItemId = undefined;
         this.thinkingItemId = undefined;
         this.lastError = undefined;
-        // A request whose answer never came (the host threw while answering)
-        // was never pending for anyone; it ends with the turn.
-        this.heldRequests.clear();
+        // Held requests are NOT dropped here: a sub-agent can still be between
+        // asking and being answered when the session's own turn ends.
         return out;
       }
       case 'error':
