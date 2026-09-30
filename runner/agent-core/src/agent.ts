@@ -84,6 +84,17 @@ export interface AgentOptions {
    */
   trustProjectSettings?: boolean;
   /**
+   * The reader's own settings file, whose allow rules apply without approval.
+   * Defaults to `$JUNO_HOME/settings.json`; null reads none.
+   *
+   * A host with no reader on the machine passes null. The cloud runner does:
+   * its JUNO_HOME is a directory the environment's setup script can write —
+   * and a setup script that runs `npm install` runs the repository's own
+   * lifecycle scripts — so reading a "reader's" file there would hand a cloned
+   * repository the very widening `trustProjectSettings` withholds.
+   */
+  userSettingsFile?: string | null;
+  /**
    * How the conversation is kept inside the model's context window. On by
    * default, at the Mac's threshold of 80% of the window; `false` turns it
    * off. See compaction.ts.
@@ -188,6 +199,7 @@ export class AgentSession {
     this.toolsByName = new Map(this.tools.map((t) => [t.spec.name, t]));
     this.permissions = new PermissionEngine(this.cwd, {
       trustProjectSettings: opts.trustProjectSettings === true,
+      ...(opts.userSettingsFile === undefined ? {} : { userSettingsFile: opts.userSettingsFile }),
     });
     this.checkpoints = new CheckpointStore(store.dir);
     this.messages = store.loadMessages();

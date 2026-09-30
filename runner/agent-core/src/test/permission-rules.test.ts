@@ -314,3 +314,40 @@ test('a cloud auto-edit run still asks before a command a repository allow-liste
   assert.deepEqual(approvals.map((request) => request.toolName), ['bash']);
   assert.ok(denied.some((line) => line.startsWith('delegate_tasks: Denied: blocked by the permission rule Agent')), denied.join('\n'));
 });
+
+test("a host with no reader reads no reader's file", async () => {
+  // The cloud runner's JUNO_HOME is writable by the environment's setup
+  // script, and so by any repository lifecycle script that script runs. A
+  // `settings.json` planted there must not count as the submitter's own.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'juno-rules-home-'));
+  fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ permissions: { allow: ['Bash'] } }));
+  process.env.JUNO_HOME = home;
+  const run = async (options: { userSettingsFile?: null }) => {
+    const approvals: string[] = [];
+    const session = AgentSession.create({
+      provider: scriptedProvider([
+        [
+          { type: 'tool_call', id: 'b1', name: 'bash', input: { command: 'echo hi' } },
+          { type: 'done', stopReason: 'tool_use', usage: { inputTokens: 1, outputTokens: 1 } },
+        ],
+      ]),
+      cwd: workspace(),
+      mode: 'auto-edit',
+      subagents: false,
+      ...options,
+      callbacks: {
+        onEvent: () => {},
+        requestApproval: async (request): Promise<ApprovalDecision> => {
+          approvals.push(request.toolName);
+          return 'deny';
+        },
+      },
+    });
+    await session.prompt('go');
+    return approvals;
+  };
+  // A local host: the file is the reader's, and its allow rule stands.
+  assert.deepEqual(await run({}), []);
+  // A host that says there is no reader: the command asks, as auto-edit does.
+  assert.deepEqual(await run({ userSettingsFile: null }), ['bash']);
+});

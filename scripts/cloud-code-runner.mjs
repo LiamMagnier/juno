@@ -988,6 +988,13 @@ async function main() {
     // hard-gates "sensitive" to requestApproval in every mode, including this
     // one; see the callback below for what each mode makes that mean.
     mode: permissionMode,
+    // No reader's own settings file on a runner. JUNO_HOME is in agentEnv, so
+    // the setup script above — and any repository lifecycle script it runs,
+    // `npm install` being the usual one — could write `$JUNO_HOME/settings.json`
+    // and have its allow rules read as the submitter's, raising the mode they
+    // chose. The repository's `.juno/settings*.json` still apply, and (with no
+    // `trustProjectSettings`) only ever to ask more or refuse.
+    userSettingsFile: null,
     // The bash tool spawns children with THIS env, not process.env — so agent
     // shell receives none of {exchange code, task token, clone token, JUNO_*,
     // GIT_ASKPASS, ACTIONS_*}. See runner/agent-core/VENDORED.md (divergence #3).
