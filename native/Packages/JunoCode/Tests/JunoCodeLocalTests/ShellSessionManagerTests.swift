@@ -304,6 +304,31 @@ final class ShellSessionManagerTests: XCTestCase {
         XCTAssertTrue(shell.state.isRunning)
     }
 
+    func testLogsALaunchThatEndedLeftBehindAreRemoved() throws {
+        let parent = root.appendingPathComponent("shell-sessions")
+        // A process that has certainly ended stands in for a crashed launch.
+        let ended = Process()
+        ended.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        try ended.run()
+        ended.waitUntilExit()
+        let names = [
+            "ws-\(ended.processIdentifier)-aaaa1111",
+            "ws-\(getpid())-bbbb2222",
+            "other-\(ended.processIdentifier)-cccc3333",
+        ]
+        for name in names {
+            let folder = parent.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try "output".write(to: folder.appendingPathComponent("sh-1.log"), atomically: true, encoding: .utf8)
+        }
+        ShellSessionManager.removeAbandonedLogs(in: parent, prefix: "ws")
+        let left = Set(try FileManager.default.contentsOfDirectory(atPath: parent.path))
+        XCTAssertEqual(left, [names[1], names[2]], "only the ended launch's logs, and only this workspace's")
+        XCTAssertTrue(
+            ShellSessionManager.logDirectory(in: parent, prefix: "ws").lastPathComponent.hasPrefix("ws-\(getpid())-")
+        )
+    }
+
     func testDecoderHoldsBackASplitCharacter() {
         let decoder = UTF8StreamDecoder()
         let bytes = Array("é!".utf8)

@@ -63,6 +63,37 @@ public final class ShellSessionManager: ShellSessionManaging, @unchecked Sendabl
         terminateAllNow()
     }
 
+    // MARK: - Log folders
+
+    /// A log folder for this launch under `parent`: `<prefix>-<pid>-<random>`,
+    /// so a later launch can tell whether the process that wrote it is gone.
+    public static func logDirectory(in parent: URL, prefix: String) -> URL {
+        parent.appendingPathComponent(
+            "\(prefix)-\(getpid())-\(UUID().uuidString.prefix(8).lowercased())",
+            isDirectory: true
+        )
+    }
+
+    /// Deletes the log folders under `parent` that launches which have ended
+    /// left behind. Quitting removes its own logs; a crash does not, and each
+    /// shell's log can hold 16 MB. A folder whose process is still alive —
+    /// this launch, or another Juno — is left alone.
+    public static func removeAbandonedLogs(in parent: URL, prefix: String) {
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: parent,
+            includingPropertiesForKeys: nil
+        ) else { return }
+        for entry in entries {
+            let name = entry.lastPathComponent
+            guard name.hasPrefix(prefix + "-"),
+                  let pidText = name.dropFirst(prefix.count + 1).split(separator: "-").first,
+                  let pid = Int32(pidText), pid > 0
+            else { continue }
+            if pid == getpid() || Darwin.kill(pid, 0) == 0 || errno == EPERM { continue }
+            try? FileManager.default.removeItem(at: entry)
+        }
+    }
+
     // MARK: - Starting
 
     public func start(

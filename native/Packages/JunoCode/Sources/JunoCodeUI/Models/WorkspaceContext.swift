@@ -120,11 +120,12 @@ public final class WorkspaceContext: Sendable {
             overrides: commandOverrides
         )
         self.executor = executor
+        let shellLogs = storageRoot.appendingPathComponent("shell-sessions", isDirectory: true)
+        // Quitting removes a launch's shell logs; a crash leaves them.
+        ShellSessionManager.removeAbandonedLogs(in: shellLogs, prefix: record.id.value)
         let shells = ShellSessionManager(
             executor: executor,
-            logDirectory: storageRoot
-                .appendingPathComponent("shell-sessions", isDirectory: true)
-                .appendingPathComponent(record.id.value + "-" + UUID().uuidString.prefix(8).lowercased(), isDirectory: true)
+            logDirectory: ShellSessionManager.logDirectory(in: shellLogs, prefix: record.id.value)
         )
         self.shells = shells
         // Kept across launches, per checkout: a worktree's context has its
