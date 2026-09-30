@@ -40,15 +40,21 @@ public struct ToolContext: Sendable {
     public let toolCallID: String
     /// Streams live output (command stdout/stderr) into the transcript.
     public let emitOutput: @Sendable (ToolOutputChannel, String) async -> Void
+    /// Where this session keeps command output too long to return whole, in
+    /// the session's own folder of the store. Nil where there is none, and
+    /// then long output keeps only its ends. See ``CommandOutputSpill``.
+    public let commandOutputDirectory: URL?
 
     public init(
         sessionID: CodeSessionID,
         toolCallID: String,
-        emitOutput: @escaping @Sendable (ToolOutputChannel, String) async -> Void
+        emitOutput: @escaping @Sendable (ToolOutputChannel, String) async -> Void,
+        commandOutputDirectory: URL? = nil
     ) {
         self.sessionID = sessionID
         self.toolCallID = toolCallID
         self.emitOutput = emitOutput
+        self.commandOutputDirectory = commandOutputDirectory
     }
 }
 

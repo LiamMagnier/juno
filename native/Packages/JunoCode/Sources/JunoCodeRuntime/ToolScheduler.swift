@@ -276,7 +276,8 @@ public actor ToolScheduler {
                         ToolOutputEvent(toolCallID: id, channel: channel, text: limited.text)
                     )
                 )
-            }
+            },
+            commandOutputDirectory: store.commandOutputDirectory(for: sessionID)
         )
 
         do {

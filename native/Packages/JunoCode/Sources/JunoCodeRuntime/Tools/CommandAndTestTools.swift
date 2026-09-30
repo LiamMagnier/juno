@@ -22,8 +22,10 @@ public struct RunCommandTool: CodeTool {
 
     public let name = "run_command"
     public let description = """
-        Run a finite shell command in the workspace root. Output is streamed and \
-        bounded; commands that exceed the timeout are terminated.
+        Run a finite shell command in the workspace root. Output is streamed; \
+        commands that exceed the timeout are terminated. Long output returns \
+        its start and its end, with a juno://command-output/ path to the whole \
+        of it that read_file pages with offset and limit.
 
         Do NOT run background commands (ending with &) or start long-running \
         development/preview servers (such as `npm run dev`, `vite`, `next dev`, \
@@ -92,22 +94,42 @@ public struct RunCommandTool: CodeTool {
             Self.maximumTimeoutSeconds
         )
         let before = await changes?.snapshot()
-        var collected = ""
+        // Every byte to the session's spill file; the ends in memory for the
+        // result; the transcript up to its own budget.
+        let spill = context.commandOutputDirectory.map {
+            CommandOutputSpill(directory: $0, toolCallID: context.toolCallID)
+        }
+        let writer = spill.map(CommandOutputSpill.Writer.init)
+        defer { writer?.close() }
+        var ends = HeadTailBuffer(headBytes: Self.resultHeadBytes, tailBytes: Self.resultTailBytes)
+        var transcriptBytes = 0
+        var transcriptFull = false
         var result: CommandResult?
         for try await event in executor.stream(
             command,
             timeoutSeconds: timeout,
-            outputLimit: .commandOutput
+            outputLimit: OutputLimit(maximumBytes: CommandOutputSpill.ceilingBytes)
         ) {
+            let channel: ToolOutputChannel
+            let text: String
             switch event {
-            case let .stdout(text):
-                collected += text
-                await context.emitOutput(.stdout, text)
-            case let .stderr(text):
-                collected += text
-                await context.emitOutput(.stderr, text)
+            case let .stdout(chunk):
+                (channel, text) = (.stdout, chunk)
+            case let .stderr(chunk):
+                (channel, text) = (.stderr, chunk)
             case let .completed(final):
                 result = final
+                continue
+            }
+            writer?.write(text)
+            ends.append(text)
+            guard !transcriptFull else { continue }
+            transcriptBytes += text.utf8.count
+            if transcriptBytes <= OutputLimit.commandOutput.maximumBytes {
+                await context.emitOutput(channel, text)
+            } else {
+                transcriptFull = true
+                await context.emitOutput(channel, "\n… [the rest of this output is not shown here]\n")
             }
         }
         guard let result else {
@@ -115,7 +137,9 @@ public struct RunCommandTool: CodeTool {
         }
         var footer = "\n[exit \(result.exitCode)"
         if result.wasTimeout { footer += ", timed out" }
-        if result.wasTruncated { footer += ", output truncated" }
+        if result.wasTruncated {
+            footer += ", stopped after printing \(CommandOutputSpill.ceilingBytes / 1_024 / 1_024) MB"
+        }
         footer += String(format: ", %.1fs]", result.durationSeconds)
 
         // What the command did to the workspace, as far as a before/after scan
@@ -129,13 +153,30 @@ public struct RunCommandTool: CodeTool {
             footer += "\n" + Self.changeSummary(report)
         }
 
-        let limited = OutputLimiter.applyKeepingEnds(.commandOutput, to: collected)
+        let output: String
+        if ends.isWhole {
+            output = ends.joined { _ in "" }
+            // Short output is in the result whole; nothing to keep.
+            if let spill { try? FileManager.default.removeItem(at: spill.url) }
+        } else if let spill, writer?.isOpen == true {
+            output = ends.joined { omitted in
+                "\n… [\(omitted) bytes omitted. The whole output (\(ends.totalBytes) bytes) is saved: read it with read_file, path \"\(spill.modelPath)\", paging with offset and limit.] …\n"
+            }
+        } else {
+            output = ends.joined { omitted in "\n… [\(omitted) bytes omitted] …\n" }
+        }
         return ToolResult(
-            content: limited.text + footer,
+            content: output + footer,
             isError: !result.succeeded,
             sideEffects: Self.changeEvents(report)
         )
     }
+
+    /// How much of a long output's start the result carries.
+    static let resultHeadBytes = 24 * 1_024
+    /// And of its end, where a failing build prints its error. Together they
+    /// stay under the orchestrator's tool-result cap, so it never cuts again.
+    static let resultTailBytes = 72 * 1_024
 
     static func changeSummary(_ report: WorkspaceChangeReport) -> String {
         var parts: [String] = []

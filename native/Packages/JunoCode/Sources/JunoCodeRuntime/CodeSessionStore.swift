@@ -948,6 +948,13 @@ public actor CodeSessionStore {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
+    /// Where a session's long command output is saved in full, so the model
+    /// can page through what did not fit its result. Inside the session's
+    /// folder, so it goes when the session does.
+    public nonisolated func commandOutputDirectory(for id: CodeSessionID) -> URL {
+        sessionDirectory(id).appendingPathComponent("command-output", isDirectory: true)
+    }
+
     private nonisolated func sessionDirectory(_ id: CodeSessionID) -> URL {
         directoryURL.appendingPathComponent("sessions").appendingPathComponent(id.value)
     }
