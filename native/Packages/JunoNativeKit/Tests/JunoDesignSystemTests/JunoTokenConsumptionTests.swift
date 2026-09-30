@@ -367,7 +367,6 @@ final class JunoTokenConsumptionTests: XCTestCase {
             "JunoGeneratedRadius.surface": "The web's per-component name for `card` (16), which the apps read as JunoRadius.card.",
             "JunoGeneratedSpace.all": "The whole ladder, for JunoDesignTokensTests.",
             "JunoGeneratedEasing.drawer": "The web's sheet curve; native sheets move on the system's own curve.",
-            "JunoGeneratedEasing.inOut": "The web's symmetric A-to-B move; native A-to-B moves are the system's.",
         ]
     }()
 

@@ -104,6 +104,7 @@ test("the native client names only routes the server has", () => {
     "/api/agents",
     "/api/agents/{id}",
     "/api/agents/{id}/starter",
+    "/api/agents/{id}/duplicate",
     "/api/agents/{id}/thread",
     "/api/agents/{id}/goals",
     "/api/agents/{id}/goals/{id}",

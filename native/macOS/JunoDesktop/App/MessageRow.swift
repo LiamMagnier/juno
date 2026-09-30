@@ -102,6 +102,7 @@ struct DesktopMessageRow: View {
     /// ⌘F's highlight for this message.
     @Environment(\.junoFindHighlight) private var findHighlight
     @Environment(\.junoActivityPanelMessageID) private var activityPanelMessageID
+    @Environment(\.desktopAgentThread) private var agentThread
     /// The pointer is over the turn: the web's `group-hover`.
     @State private var hovered = false
     /// Copy just happened; the copy mark is a check for two seconds.
@@ -589,7 +590,14 @@ struct DesktopMessageRow: View {
     private var assistantTurn: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                if !isVoice {
+                // In an agent's thread a reply speaks as the agent: its byline,
+                // and while nothing has happened yet, its face thinking.
+                if let agentThread, !isVoice, !shown.isPending {
+                    DesktopAgentByline(identity: agentThread)
+                }
+                if let agentThread, !isVoice, isAgentWaitingToStart {
+                    DesktopAgentPendingRow(identity: agentThread)
+                } else if !isVoice {
                     if isLiveInChatResearch {
                         // A research turn a profile-1 server answers in the
                         // chat: one research row while it works (SPEC §9.11.3).
@@ -667,6 +675,13 @@ struct DesktopMessageRow: View {
         } message: { _ in
             Text(artifactCount == 1 ? "Its 1 artifact will be replaced." : "Its \(artifactCount) artifacts will be replaced.")
         }
+    }
+
+    /// A reply in an agent's thread that has not started anything yet: no
+    /// activity, no words, no media. Its pending row is the agent's own.
+    private var isAgentWaitingToStart: Bool {
+        shown.isPending && shown.activity.isEmpty && parts.isEmpty
+            && shown.answerStartedAt == nil && shown.mediaProgress == nil && !isRecovering
     }
 
     /// A live research turn answered in the chat, whose report has not

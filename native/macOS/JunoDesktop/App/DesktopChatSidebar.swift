@@ -404,13 +404,14 @@ struct DesktopChatSidebar: View {
         )
     }
 
-    /// One agent: its face, its name, and a dot while it needs the person —
-    /// the row's one trailing signal. The sentence the roster says is the
-    /// hover text and half of what the row says aloud, so the face itself is
-    /// decorative here.
+    /// One agent: its face and its name. An agent waiting on the person is
+    /// set at medium weight, never marked with a coloured dot (the web's
+    /// `AgentRow`, owner directive 2026-09-26); its face's eyes say the rest.
+    /// The sentence the team page says is the hover text and half of what the
+    /// row says aloud, so the face itself is decorative here.
     ///
-    /// Lit while its page is open, and while its thread is the conversation on
-    /// screen: the thread is the agent too, as the web's row says.
+    /// The row opens the agent's thread, as the web's does; it is lit while
+    /// that thread is on screen, or while its page is.
     private func agentRow(_ agent: NativeAgent) -> some View {
         let sentence = NativeAgentFormat.stateSentence(for: agent)
         let spoken = "\(agent.name). \(sentence)"
@@ -422,14 +423,10 @@ struct DesktopChatSidebar: View {
         return HStack(spacing: JunoSpace.tight) {
             JunoAgentFace(avatar: agent.avatar, state: agent.state, size: JunoAgentFaceSize.xs)
             Text(agent.name)
+                .fontWeight(agent.state == .waiting ? .medium : nil)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: JunoSpace.hairline)
-            DesktopSidebarTrailingSlot {
-                if agent.state == .waiting {
-                    NativeAgentNeedsYouDot()
-                }
-            }
         }
         .padding(.leading, JunoSidebarMetrics.titleLeading)
         .junoSidebarRowInk()
@@ -437,7 +434,7 @@ struct DesktopChatSidebar: View {
         .help(sentence)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(spoken)
-        .tag(DesktopSidebarItem.agent(agent.id))
+        .tag(agent.conversationID.map { DesktopSidebarItem.conversation($0) } ?? DesktopSidebarItem.agent(agent.id))
         .contextMenu {
             Button("Message") { messageAgent?(agent.id) }
                 .disabled(messageAgent == nil)

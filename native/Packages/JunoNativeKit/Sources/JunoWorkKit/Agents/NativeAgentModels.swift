@@ -211,6 +211,9 @@ public struct NativeAgent: Identifiable, Equatable, Sendable {
     public let nextRoutine: NativeAgentRoutineGlance?
     /// Ideas it raised that nobody has started or dismissed.
     public let newIdeas: Int
+    /// When the person pinned it, nil when they have not. Pinned agents sort
+    /// ahead of the rest in their state on the team page.
+    public let pinnedAt: Date?
 
     public init(
         id: String,
@@ -237,7 +240,8 @@ public struct NativeAgent: Identifiable, Equatable, Sendable {
         task: NativeAgentTask?,
         needsYou: Int,
         nextRoutine: NativeAgentRoutineGlance?,
-        newIdeas: Int
+        newIdeas: Int,
+        pinnedAt: Date? = nil
     ) {
         self.id = id
         self.name = name
@@ -264,9 +268,18 @@ public struct NativeAgent: Identifiable, Equatable, Sendable {
         self.needsYou = needsYou
         self.nextRoutine = nextRoutine
         self.newIdeas = newIdeas
+        self.pinnedAt = pinnedAt
     }
 
     public var isPaused: Bool { status == .paused }
+
+    public var isPinned: Bool { pinnedAt != nil }
+
+    /// Whether it is waiting on the person: a task stopped at them, or a
+    /// state that says so. The web's `needsYou(agent)`.
+    public var needsPerson: Bool {
+        needsYou > 0 || state == .waiting || state == .blocked
+    }
 }
 
 /// `ClientAgentGoal`.
@@ -680,6 +693,7 @@ public struct NativeAgentPatch: Equatable, Sendable {
     public var connectorIDs: [String]?
     public var status: NativeAgentStatus?
     public var proactive: Bool?
+    public var pinned: Bool?
 
     public init(
         name: String? = nil,
@@ -690,7 +704,8 @@ public struct NativeAgentPatch: Equatable, Sendable {
         approvalMode: JunoWorkPermissionPolicy? = nil,
         connectorIDs: [String]? = nil,
         status: NativeAgentStatus? = nil,
-        proactive: Bool? = nil
+        proactive: Bool? = nil,
+        pinned: Bool? = nil
     ) {
         self.name = name
         self.role = role
@@ -701,12 +716,14 @@ public struct NativeAgentPatch: Equatable, Sendable {
         self.connectorIDs = connectorIDs
         self.status = status
         self.proactive = proactive
+        self.pinned = pinned
     }
 
     /// The server refuses an empty patch ("Nothing to change").
     public var isEmpty: Bool {
         name == nil && role == nil && avatar == nil && style == nil && instructions == nil
             && approvalMode == nil && connectorIDs == nil && status == nil && proactive == nil
+            && pinned == nil
     }
 }
 

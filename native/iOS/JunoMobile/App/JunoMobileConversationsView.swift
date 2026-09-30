@@ -134,6 +134,7 @@ struct JunoMobileChatDetailScreen: View {
           imageLoader: imageLoader,
           pendingPrompt: pendingPrompt,
           threadAgent: threadAgent,
+          agentsModel: agentsModel,
           openAgent: openAgent
         )
       } else {
@@ -462,6 +463,9 @@ private struct JunoMobileConversationDetail: View {
   var pendingPrompt: Binding<String?> = .constant(nil)
   /// The agent this thread belongs to, drawn as the row above it.
   var threadAgent: NativeAgent? = nil
+  /// The agents model, so the thread's presence bar can open the agent's
+  /// profile, its computer and its menu in place.
+  var agentsModel: NativeAgentsModel? = nil
   var openAgent: ((String) -> Void)? = nil
   /// The artifact the reader tapped in the transcript, presented over it.
   @State private var openArtifact: NativeArtifact?
@@ -1250,6 +1254,10 @@ private struct JunoMobileConversationDetail: View {
       NativeAgentThreadHeader(
         agent: threadAgent,
         state: threadAgentState,
+        model: agentsModel,
+        openThread: { model.selectedConversationID = $0 },
+        focusComposer: { composerFocused = true },
+        retired: { model.selectedConversationID = nil },
         openAgent: { openAgent(threadAgent.id) }
       )
       .padding(.horizontal, JunoSpace.regular)

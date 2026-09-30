@@ -2,34 +2,31 @@ import JunoCore
 import JunoWorkKit
 import SwiftUI
 
-/// The Agents destination on the page stack (Phase 4 C3): the roster, an
-/// agent's page (`.agent(id)`) and hiring (`.newAgent(template:)`) are the
-/// app's routes, pushed on the destination's one `NavigationStack` — the
-/// shared JunoWorkKit views draw them, restyled onto the page template on
-/// the Mac. These wrappers read the stack's push and replace, which exist
-/// only inside it.
+/// The Agents destination on the page stack: the team page, an agent's page
+/// (`.agent(id)`, its profile as a page) and New agent (`.newAgent`, the team
+/// page with its field focused) are the app's routes, pushed on the
+/// destination's one `NavigationStack`. A card, and a new agent once it
+/// exists, open the agent's thread in Chat.
 
-/// The roster, with its pushes routed.
+/// The team page.
 struct DesktopAgentsRoster: View {
     let model: NativeAgentsModel
     let apps: [NativeAgentAppChoice]
+    var personName: String? = nil
     let openConversation: (String) -> Void
-
-    @Environment(\.desktopPush) private var push
 
     var body: some View {
         NativeAgentsScreen(
             model: model,
             apps: apps,
             openConversation: openConversation,
-            openAgent: { push(.agent($0)) },
-            openHire: { push(.newAgent(template: $0)) }
+            personName: personName
         )
     }
 }
 
 /// An agent's page. "All agents", from a page whose agent is gone, pops back
-/// to the roster.
+/// to the team.
 struct DesktopAgentRoute: View {
     let model: NativeAgentsModel
     let agentID: String
@@ -59,16 +56,16 @@ struct DesktopAgentRoute: View {
     }
 }
 
-/// Hiring. On hire the page becomes the new agent's, with its welcome, so
-/// back returns to the roster rather than to a spent form.
+/// New agent: the team page with its field focused. Once the agent exists,
+/// its thread opens, where it sets itself up in conversation.
 struct DesktopAgentHireRoute: View {
     let model: NativeAgentsModel
     let apps: [NativeAgentAppChoice]
     let templateID: String?
+    var personName: String? = nil
     let openConversation: (String) -> Void
     @Binding var welcomedAgentID: String?
 
-    @Environment(\.desktopReplace) private var replace
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -76,14 +73,18 @@ struct DesktopAgentHireRoute: View {
             model: model,
             apps: apps,
             templateID: templateID,
+            personName: personName,
             onCancel: { dismiss() },
             onHired: { agent in
                 if let conversationID = agent.conversationID {
                     openConversation(conversationID)
                     return
                 }
-                welcomedAgentID = agent.id
-                replace(.agent(agent.id))
+                Task {
+                    if let conversationID = await model.threadConversationID(for: agent.id) {
+                        openConversation(conversationID)
+                    }
+                }
             }
         )
     }

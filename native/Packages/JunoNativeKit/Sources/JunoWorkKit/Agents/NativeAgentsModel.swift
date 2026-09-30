@@ -93,20 +93,11 @@ public final class NativeAgentsModel {
 
     // MARK: - Reading
 
-    /// The roster in the order a person scans it: the agents that need them
-    /// first, then the ones at work, then the rest as hired — the web's order.
+    /// The team in the order a person scans it: the agents that need them
+    /// first, then the busy ones, then the rest, pinned ahead within each.
+    /// The web's `sortRosterAgents`.
     public var orderedAgents: [NativeAgent] {
-        agents.enumerated()
-            .sorted { lhs, rhs in
-                let left = Self.rank(lhs.element.state)
-                let right = Self.rank(rhs.element.state)
-                if left != right { return left < right }
-                if lhs.element.sortOrder != rhs.element.sortOrder {
-                    return lhs.element.sortOrder < rhs.element.sortOrder
-                }
-                return lhs.offset < rhs.offset
-            }
-            .map { $0.element }
+        NativeAgentStarter.sorted(agents)
     }
 
     /// How many agents are waiting on the person, for a sidebar badge.
@@ -294,6 +285,63 @@ public final class NativeAgentsModel {
             lastMutationExplanation = paused ? "Paused." : "Resumed."
             await loadDetail(id: id)
         }
+    }
+
+    /// Pins it ahead of the rest in its state on the team page, or unpins it.
+    public func setPinned(id: String, pinned: Bool) async {
+        if await update(id: id, NativeAgentPatch(pinned: pinned)) {
+            lastMutationExplanation = pinned ? "Pinned." : "Unpinned."
+        }
+    }
+
+    /// A copy with a new name and a thread of its own. Returns it, so the
+    /// caller can open its thread.
+    @discardableResult
+    public func duplicate(id: String) async -> NativeAgent? {
+        guard let accountID else { return nil }
+        isMutating = true
+        defer { isMutating = false }
+        do {
+            let agent = try await client.duplicate(id: id, for: accountID)
+            guard self.accountID == accountID else { return nil }
+            replace(agent)
+            lastErrorDescription = nil
+            lastMutationExplanation = "Duplicated as \(agent.name)."
+            return agent
+        } catch {
+            guard self.accountID == accountID else { return nil }
+            record(error)
+            return nil
+        }
+    }
+
+    /// Pauses or resumes one of its routines, then rereads its page so the
+    /// next run time is the server's.
+    @discardableResult
+    public func setRoutineEnabled(agentID: String, routineID: String, enabled: Bool) async -> Bool {
+        guard let accountID else { return false }
+        isMutating = true
+        defer { isMutating = false }
+        do {
+            try await client.setRoutineEnabled(scheduleID: routineID, enabled: enabled, for: accountID)
+            guard self.accountID == accountID else { return false }
+            lastErrorDescription = nil
+        } catch {
+            guard self.accountID == accountID else { return false }
+            record(error)
+            return false
+        }
+        await loadDetail(id: agentID)
+        return true
+    }
+
+    /// Starts a new agent on a job described in words: the web's Agents home
+    /// composer. The name and face are the ones already shown beside the
+    /// field; `creationKey` makes a retry after a lost answer land on the
+    /// same agent. Returns it, so the caller can open its thread.
+    @discardableResult
+    public func start(job: String, name: String, avatar: JunoAgentAvatar, creationKey: String) async -> NativeAgent? {
+        await hire(NativeAgentStarter.draft(job: job, name: name, avatar: avatar, creationKey: creationKey))
     }
 
     /// Retires it. Its thread and its tasks stay, as ordinary chats and tasks.
@@ -998,15 +1046,4 @@ public final class NativeAgentsModel {
         return NativeFailureClassification.isConnectivityFailure(error) ? .offline : .failed
     }
 
-    /// The web roster's `RANK`: needs you, then at work, then settled, then
-    /// idle, then asleep.
-    private static func rank(_ state: JunoAgentState) -> Int {
-        switch state {
-        case .waiting: 0
-        case .working, .thinking, .listening: 1
-        case .done, .blocked: 2
-        case .idle: 3
-        case .sleeping: 4
-        }
-    }
 }

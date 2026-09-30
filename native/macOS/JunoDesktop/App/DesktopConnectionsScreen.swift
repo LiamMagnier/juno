@@ -74,7 +74,9 @@ struct DesktopConnectionsScreen: View {
                         }
                     }
                 }
+                .contentShape(.rect)
                 Button("Cancel", role: .cancel) { disconnectTarget = nil }
+                    .contentShape(.rect)
             } message: { target in
                 Text("Juno will lose access to your \(target.label) account. You can reconnect anytime.")
             }
@@ -115,6 +117,7 @@ struct DesktopConnectionsScreen: View {
                 } label: { Label("Add MCP server", icon: .plus) }
                 .buttonStyle(.junoProminent)
                 .accessibilityIdentifier("connections.add-mcp")
+                .contentShape(.rect)
                 // A Mac extra: the browser hand-off reports nothing back, so
                 // re-reading is the reader's to ask for. Also the way out of a
                 // stuck wait.
@@ -390,6 +393,7 @@ struct DesktopConnectionsScreen: View {
                 Spacer()
                 Button("Manage") { editingMCP = connector; showsMCP = true }
                     .buttonStyle(.bordered)
+                    .contentShape(.rect)
             }
         } else { switch state {
         case .connected:
@@ -440,20 +444,25 @@ struct DesktopConnectionsScreen: View {
     private func cardMenu(_ connector: NativeConnector, state: DesktopConnectorState) -> some View {
         if connector.isCustomMCP {
             Button("Manage MCP server") { editingMCP = connector; showsMCP = true }
+                .contentShape(.rect)
             Button("Remove server", role: .destructive) { disconnectTarget = connector }
                 .disabled(model.isMutating)
+                .contentShape(.rect)
         } else { switch state {
         case .connected:
             Button("Disconnect \(connector.label)", role: .destructive) {
                 disconnectTarget = connector
             }
             .disabled(model.isMutating)
+            .contentShape(.rect)
         case .available, .connecting:
             Button("Connect \(connector.label)") { beginAuthorization(connector) }
                 .disabled(state == .connecting)
+                .contentShape(.rect)
         case .setup:
             if let url = composioSetupURL(connector) {
                 Button("Set Up in Composio…") { NSWorkspace.shared.open(url) }
+                    .contentShape(.rect)
             }
         case .unavailable:
             EmptyView()
@@ -464,6 +473,7 @@ struct DesktopConnectionsScreen: View {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(connector.id, forType: .string)
         }
+        .contentShape(.rect)
     }
 
     private func wideButton(
@@ -477,6 +487,7 @@ struct DesktopConnectionsScreen: View {
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
+        .contentShape(.rect)
         // Neutral, as the web's secondary tile buttons are: the column's
         // accent tint would turn Connect and Disconnect coral (§0.4).
         .tint(nil)
@@ -505,6 +516,7 @@ struct DesktopConnectionsScreen: View {
                 .disabled(model.isLoadingCatalog)
                 .accessibilityLabel("Load more apps")
                 .accessibilityIdentifier("connections.load-more")
+                .contentShape(.rect)
                 Spacer()
             }
         }
@@ -929,6 +941,7 @@ private struct DesktopConnectionsNotice: View {
             if let actionLabel, let action {
                 Button(actionLabel, action: action)
                     .controlSize(.small)
+                    .contentShape(.rect)
             }
         }
         .padding(JunoSpace.cozy)
@@ -1003,6 +1016,7 @@ struct DesktopMCPServerSheet: View {
             HStack(spacing: JunoSpace.snug) {
                 Button(testing ? "Testing…" : "Test connection") { test() }
                     .disabled(busy || !validURL)
+                    .contentShape(.rect)
                 if testing { ProgressView().controlSize(.small) }
                 else if let probe {
                     Text(probe.ok ? "\(probe.toolNames?.count ?? 0) tools found" : "Connection failed")
@@ -1018,9 +1032,11 @@ struct DesktopMCPServerSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction).disabled(busy)
+                    .contentShape(.rect)
                 Button(saving ? "Saving…" : editing == nil ? "Add server" : "Save changes") { save() }
                     .buttonStyle(.junoProminent).keyboardShortcut(.defaultAction)
                     .disabled(busy || !validURL || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .contentShape(.rect)
             }
         }
         .padding(JunoSpace.roomy)

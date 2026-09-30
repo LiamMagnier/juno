@@ -746,3 +746,29 @@ struct NativeAgentAppPicker: View {
         )
     }
 }
+
+/// A starting point: its face, its name and its one-line promise.
+struct NativeAgentTemplateTile: View {
+    let template: NativeAgentTemplate
+    let selected: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: JunoSpace.cozy) {
+            JunoAgentFace(avatar: template.avatar, size: JunoAgentFaceSize.sm, live: false)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(template.label)
+                    .junoType(JunoType.ui.weight(.medium))
+                    .foregroundStyle(Color.junoForeground)
+                Text(template.promise)
+                    .junoType(.ui)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .nativeAgentTile(selected: selected)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : [.isButton])
+    }
+}

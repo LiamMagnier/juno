@@ -1,121 +1,73 @@
 import JunoDesignSystem
+import JunoVoiceKit
 import JunoWorkKit
 import SwiftUI
 
-/// What an agent's thread says about the agent (AGENTS.md §5.3, the web's
+/// What an agent's thread says about the agent (the web's
 /// `agent-thread-header.tsx`), as pure rules a test can hold still.
 enum DesktopAgentThread {
-    /// The header's second line: the thread's own state when it knows better
-    /// than the roster — "Thinking" while a reply streams, "Listening" while
-    /// a call is open — otherwise the roster's sentence, re-said locally when
-    /// it names a time. The web's `localStateSentence(agent, state)`.
+    /// The bar's second line: the thread's own state when it knows better
+    /// than the roster ("Thinking" while a reply streams, "Listening" while a
+    /// call is open), otherwise the roster's sentence, re-said locally when
+    /// it names a time.
     static func sentence(for agent: NativeAgent, state: JunoAgentState?) -> String {
-        guard let state, state != agent.state else {
-            return NativeAgentFormat.stateSentence(for: agent)
-        }
-        return state.label
+        NativeAgentThreadHeader.sentence(for: agent, state: state)
     }
 
-    /// The empty thread's second line, in the agent's own voice.
+    /// The empty thread's line, in the agent's own voice (`AgentGreeting`).
+    /// No chips: the composer below is the invitation.
     static func greetingLine(for agent: NativeAgent) -> String {
-        if agent.status == .paused {
-            return "I’m paused. Resume me from my page to start something new."
-        }
-        let role = agent.role.trimmingCharacters(in: .whitespacesAndNewlines)
-        return role.isEmpty ? "What should I take on?" : "\(role). What should I take on?"
+        agent.status == .paused
+            ? "I’m paused. Resume me from the menu above when you need me."
+            : "Tell me what to take care of. I’ll set myself up and start."
     }
 }
 
 // MARK: - Header
 
-/// The one row an agent's thread gains, above the transcript: the face in its
-/// live state, the name, what it is doing in words, and its page.
-///
-/// Chrome drawn as content — opaque, no glass — at the reading measure over
-/// the column's hairline (the host draws the rule). The face and "Agent page"
-/// both open the page, as on the web: the face is the thing a person reaches
-/// for, the words are the thing a keyboard finds.
-///
-/// "Agent page" is the web's quiet text button — the secondary ink, lifting
-/// to the foreground on a hover fill — not an accent link (Stage C notes).
+/// The presence bar an agent's thread gains, above the transcript: the
+/// shared ``NativeAgentThreadHeader`` (face on its halo, name, live sentence,
+/// a faint wash of its colour; Computer, Profile and More), at the chat
+/// column's measure. The host draws the hairline under it.
 struct DesktopAgentThreadHeader: View {
     let agent: NativeAgent
     /// The thread's own state, when it knows better than the roster.
     var state: JunoAgentState? = nil
+    /// While a call is open, the caller's voice level (0...1).
+    var level: CGFloat = 0
+    var model: NativeAgentsModel? = nil
+    var apps: [NativeAgentAppChoice] = []
+    var openThread: ((String) -> Void)? = nil
+    var focusComposer: (() -> Void)? = nil
+    var retired: (() -> Void)? = nil
+    /// False when the host draws the wash across the whole column.
+    var drawsWash = true
     let openAgent: () -> Void
 
-    @State private var isHoveringPage = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var sentence: String { DesktopAgentThread.sentence(for: agent, state: state) }
-
     var body: some View {
-        HStack(alignment: .center, spacing: JunoSpace.cozy) {
-            Button(action: openAgent) {
-                JunoAgentFace(avatar: agent.avatar, state: state ?? agent.state, size: JunoAgentFaceSize.sm)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .help("Open \(agent.name)’s page")
-            .accessibilityLabel("\(agent.name)’s page")
-
-            VStack(alignment: .leading, spacing: 0) {
-                Text(agent.name)
-                    .junoFont(size: 13, relativeTo: .callout, weight: .medium)
-                    .foregroundStyle(Color.junoForeground)
-                    .lineLimit(1)
-                Text(sentence)
-                    .junoFont(size: 11, relativeTo: .caption)
-                    .foregroundStyle(Color.junoSecondaryInk)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .contentTransition(.opacity)
-                    .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: sentence)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .combine)
-
-            Button(action: openAgent) {
-                Text("Agent page")
-                    .junoFont(size: 13, relativeTo: .callout)
-                    .foregroundStyle(isHoveringPage ? Color.junoForeground : Color.junoSecondaryInk)
-                    .padding(.horizontal, JunoSpace.snug)
-                    .frame(minHeight: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
-                            .fill(isHoveringPage ? Color.junoHover : Color.clear)
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .onHover { hovering in
-                withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint)) {
-                    isHoveringPage = hovering
-                }
-            }
-            .help("Open \(agent.name)’s page")
-        }
-        .frame(minHeight: 44)
-        // Said when it changes, as the web's `aria-live="polite"` line is.
-        .onChange(of: sentence) { _, now in
-            AccessibilityNotification.Announcement(now).post()
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("juno.agents.thread-header")
+        NativeAgentThreadHeader(
+            agent: agent,
+            state: state,
+            level: level,
+            model: model,
+            apps: apps,
+            openThread: openThread,
+            focusComposer: focusComposer,
+            retired: retired,
+            drawsWash: drawsWash,
+            openAgent: openAgent
+        )
     }
 }
 
 // MARK: - Greeting
 
 /// The empty thread greets in the agent's own voice instead of Juno's
-/// (`AgentGreeting`): the face at `lg`, then "Hi, I’m *Iris*." in the
-/// greeting's serif — the one serif site — with the name in its italic, then
-/// the role and "What should I take on?" in the secondary ink.
+/// (`AgentGreeting`): its face on its halo at 88, then "Hi, I’m *Iris*." in
+/// the greeting's serif with the name in its italic, then one line in the
+/// secondary ink. No chips.
 ///
-/// It replaces "How can I help, *Name*?" in an agent's empty thread only.
-/// The face is sleeping while the agent is paused and at rest otherwise: a
-/// greeting is not a live state, and an idle face never loops.
+/// The face is sleeping while the agent is paused and at rest otherwise.
 struct DesktopAgentGreeting: View {
     let agent: NativeAgent
     /// The chat column's width, which the display size is fluid against.
@@ -126,28 +78,94 @@ struct DesktopAgentGreeting: View {
     var body: some View {
         let size = ChatGreeting.size(forColumnWidth: columnWidth)
         VStack(spacing: 0) {
-            JunoAgentFace(
+            JunoAgentPresence(
                 avatar: agent.avatar,
                 state: agent.status == .paused ? .sleeping : .idle,
-                size: JunoAgentFaceSize.lg,
-                name: agent.name
+                size: 88,
+                name: agent.name,
+                spread: 0.6
             )
+            .junoAgentFaceTrigger()
             Text("Hi, I’m \(Text(agent.name).font(JunoType.displayItalic(size: size).font(scale: textScale))).")
                 .junoType(.display(size: size))
                 .foregroundStyle(Color.junoForeground)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
-                .padding(.top, JunoSpace.roomy)
+                .padding(.top, JunoSpace.region)
             Text(DesktopAgentThread.greetingLine(for: agent))
                 .junoBodyLarge()
                 .foregroundStyle(Color.junoSecondaryInk)
                 .fixedSize(horizontal: false, vertical: true)
                 // The web's `max-w-md`.
                 .frame(maxWidth: 448)
-                .padding(.top, JunoSpace.snug)
+                .padding(.top, JunoSpace.cozy)
         }
         .multilineTextAlignment(.center)
+        .junoAgentGazeField()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("juno.desktop.chat.agent-greeting")
+    }
+}
+
+/// Reads a call's voice level in a view of its own, so the level moving many
+/// times a second redraws the presence bar and not the whole chat column.
+struct DesktopAgentVoiceLevel<Content: View>: View {
+    let controller: JunoRealtimeVoiceController?
+    @ViewBuilder let content: (CGFloat) -> Content
+
+    var body: some View {
+        content(controller.map { $0.muted ? 0 : CGFloat($0.level) } ?? 0)
+    }
+}
+
+// MARK: - Whose thread
+
+/// Whose thread the transcript is, for the parts that speak as the agent
+/// rather than as Juno (the web's `AgentThreadContext`): the pending row
+/// ("Mira is thinking", with her face) and the byline on her replies. Nil in
+/// every other chat.
+struct DesktopAgentThreadIdentity: Equatable {
+    let name: String
+    let avatar: JunoAgentAvatar
+
+    init(_ agent: NativeAgent) {
+        name = agent.name
+        avatar = agent.avatar
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var desktopAgentThread: DesktopAgentThreadIdentity? = nil
+}
+
+/// A reply's byline in an agent's thread: its face at 20 and its name.
+struct DesktopAgentByline: View {
+    let identity: DesktopAgentThreadIdentity
+
+    var body: some View {
+        HStack(spacing: JunoSpace.snug) {
+            JunoAgentFace(avatar: identity.avatar, state: .idle, size: JunoAgentFaceSize.xs, live: false)
+            Text(identity.name)
+                .junoType(JunoType.ui.weight(.medium))
+                .foregroundStyle(Color.junoForeground)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// The pending row in an agent's thread, before any work shows: the agent's
+/// face thinking and "<Name> is thinking" with the slow light, in place of
+/// Juno's own.
+struct DesktopAgentPendingRow: View {
+    let identity: DesktopAgentThreadIdentity
+
+    var body: some View {
+        HStack(spacing: JunoSpace.cozy) {
+            JunoAgentFace(avatar: identity.avatar, state: .thinking, size: JunoAgentFaceSize.sm)
+            JunoAgentStatusLine("\(identity.name) is thinking", state: .thinking, type: .ui)
+        }
+        .frame(minHeight: 40)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(identity.name) is thinking")
     }
 }

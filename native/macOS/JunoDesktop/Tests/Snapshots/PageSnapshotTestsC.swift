@@ -80,6 +80,8 @@ enum PageFixturesC {
         "agents-first-hire",
         "agent-page",
         "agent-hire",
+        "agent-profile",
+        "agent-thread-bar",
         "automations-list-narrow",
         "window-automations",
         "window-agents",
@@ -218,8 +220,10 @@ enum PageFixturesC {
                 width: pageWidth,
                 view: {
                     AnyView(
-                        stack { DesktopAgentsRoster(model: model, apps: [], openConversation: { _ in }) }
-                            .frame(height: name == "agents-roster" ? 400 : 700)
+                        stack {
+                            DesktopAgentsRoster(model: model, apps: [], personName: "Liam Magnier", openConversation: { _ in })
+                        }
+                        .frame(height: name == "agents-roster" ? 820 : 700)
                     )
                 },
                 prepare: { await model.start(for: account) }
@@ -234,7 +238,7 @@ enum PageFixturesC {
                         stack {
                             NativeAgentRoutePage(model: model, agentID: "agent-wren", openConversation: { _ in })
                         }
-                        .frame(height: 620)
+                        .frame(height: 1_600)
                     )
                 },
                 prepare: {
@@ -252,10 +256,83 @@ enum PageFixturesC {
                         stack {
                             NativeAgentHirePage(model: model, templateID: nil, onCancel: {}, onHired: { _ in })
                         }
-                        .frame(height: 2_000)
+                        .frame(height: 820)
                     )
                 },
                 prepare: { await model.start(for: account) }
+            )
+        case "agent-profile":
+            // The profile as the thread's sheet draws it.
+            let model = agentsModel(.normal)
+            return FinalFixture(
+                name: name,
+                width: 480,
+                view: {
+                    AnyView(
+                        NativeAgentProfileView(model: model, agentID: "agent-wren", message: {}, openComputer: {}, close: {})
+                            .frame(width: 480, height: 1_560)
+                            .background(Color.junoCanvas)
+                            .junoAccentTint()
+                    )
+                },
+                prepare: {
+                    await model.start(for: account)
+                    await model.loadDetail(id: "agent-wren")
+                }
+            )
+        case "agent-thread-bar":
+            // The presence bar in each of its moods: waiting on you (with its
+            // computer), at work, and thinking while a reply streams.
+            let model = agentsModel(.normal)
+            return FinalFixture(
+                name: name,
+                width: pageWidth,
+                view: {
+                    AnyView(
+                        VStack(spacing: 0) {
+                            ForEach(
+                                [("agent-wren", JunoAgentState?.none), ("agent-quill", nil), ("agent-scout", .thinking)],
+                                id: \.0
+                            ) { id, state in
+                                if let agent = model.agent(id: id) {
+                                    DesktopAgentThreadHeader(agent: agent, state: state, model: model, drawsWash: false, openAgent: {})
+                                        .frame(maxWidth: DesktopChatMeasure.reading)
+                                        .padding(.horizontal, JunoSpace.section)
+                                        .padding(.vertical, JunoSpace.hairline)
+                                        .frame(maxWidth: .infinity)
+                                        .background { NativeAgentBarWash(avatar: agent.avatar) }
+                                    Rectangle().fill(Color.junoHairline).frame(height: 1)
+                                }
+                            }
+                            // In its transcript: the pending row, then a
+                            // reply's byline.
+                            if let scout = model.agent(id: "agent-scout") {
+                                VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                                    DesktopAgentPendingRow(identity: DesktopAgentThreadIdentity(scout))
+                                    DesktopAgentByline(identity: DesktopAgentThreadIdentity(scout))
+                                }
+                                .frame(maxWidth: DesktopChatMeasure.reading, alignment: .leading)
+                                .padding(.horizontal, JunoSpace.section)
+                                .padding(.top, JunoSpace.section)
+                                .frame(maxWidth: .infinity)
+                            }
+                            // The empty thread's greeting, in the agent's voice.
+                            if let wren = model.agent(id: "agent-wren") {
+                                DesktopAgentGreeting(agent: wren, columnWidth: DesktopChatMeasure.reading)
+                                    .padding(.top, JunoSpace.vast)
+                            }
+                        }
+                        .padding(.vertical, JunoSpace.regular)
+                        .background(Color.junoCanvas)
+                        .junoAccentTint()
+                    )
+                },
+                prepare: {
+                    await model.start(for: account)
+                    await model.loadDetail(id: "agent-wren")
+                    await model.loadDetail(id: "agent-quill")
+                    await model.loadDetail(id: "agent-scout")
+                }
             )
         case "window-automations":
             let model = automationModel(.normal)
@@ -304,6 +381,9 @@ enum PageFixturesC {
         }
         .junoToastHost(JunoToastCenter())
         .junoAccentTint()
+        // The Agents composer is Liquid Glass, which the window server
+        // composites; offscreen it is drawn with its opaque recipe.
+        .environment(\.junoSnapshotOpaqueGlass, true)
     }
 
     // MARK: Models over the stub
@@ -360,7 +440,10 @@ actor StageCPreviewServer: NativeWorkTransport {
         case "/api/agents":
             return Self.json(scenario == .empty ? #"{"agents":[]}"# : "{\"agents\":[\(Self.agents.joined(separator: ","))]}")
         case "/api/agents/agent-wren":
-            return Self.json("{\"agent\":\(Self.agents[0]),\"goals\":[\(Self.goal)],\"ideas\":[],\"notes\":[],\"routines\":[],\"tasks\":[]}")
+            return Self.json(Self.wrenDetail)
+        case "/api/agents/agent-quill", "/api/agents/agent-scout":
+            let index = path.hasSuffix("quill") ? 1 : 2
+            return Self.json("{\"agent\":\(Self.agents[index]),\"goals\":[],\"ideas\":[],\"notes\":[],\"routines\":[],\"tasks\":[]}")
         case "/api/agents/agent-wren/activity":
             return Self.json(#"{"activity":[]}"#)
         default:
@@ -510,45 +593,89 @@ actor StageCPreviewServer: NativeWorkTransport {
 
     private static func agent(
         id: String, name: String, role: String, state: String, sentence: String, needsYou: Int,
-        shape: String, tone: String, eyes: String, mark: String
+        shape: String, tone: String, eyes: String, mark: String, status: String = "active",
+        sortOrder: Int = 0, apps: String = "", extra: String = ""
     ) -> String {
         """
         {"id":"\(id)","name":"\(name)","role":"\(role)",
          "avatar":{"shape":"\(shape)","tone":"\(tone)","eyes":"\(eyes)","mark":"\(mark)"},
-         "style":"warm","instructions":"","approvalMode":"balanced","connectorIds":[],"status":"active",
-         "proactive":true,"sortOrder":0,"createdAt":"\(iso(-20 * day))","updatedAt":"\(iso(-1 * hour))",
-         "state":"\(state)","stateSentence":"\(sentence)","needsYou":\(needsYou),"newIdeas":0}
+         "style":"warm","instructions":"","approvalMode":"balanced","connectorIds":[\(apps)],"status":"\(status)",
+         "proactive":true,"sortOrder":\(sortOrder),"createdAt":"\(iso(-20 * day))","updatedAt":"\(iso(-1 * hour))",
+         "state":"\(state)","stateSentence":"\(sentence)","needsYou":\(needsYou),"newIdeas":0\(extra)}
         """
     }
 
+    /// The team: one waiting on you, one at work, one thinking, one pinned at
+    /// rest with a routine coming up, and one paused.
     private static var agents: [String] {
-        let shapes = JunoAgentShape.allCases.map(\.rawValue)
-        let tones = JunoAgentTone.allCases.map(\.rawValue)
-        let eyes = JunoAgentEyes.allCases.map(\.rawValue)
-        let marks = JunoAgentMark.allCases.map(\.rawValue)
-        return [
+        [
             agent(
                 id: "agent-wren", name: "Wren", role: "Inbox and calendar", state: "waiting",
                 sentence: "Wants your OK to send two replies.", needsYou: 1,
-                shape: shapes[0], tone: tones[min(2, tones.count - 1)], eyes: eyes[0], mark: marks[0]
+                shape: "orb", tone: "teal", eyes: "soft", mark: "none",
+                apps: #""composio:gmail","googlecalendar""#,
+                extra: #","conversationId":"conv-wren""#
             ),
             agent(
                 id: "agent-quill", name: "Quill", role: "Writer", state: "working",
-                sentence: "Drafting the October newsletter.", needsYou: 0,
-                shape: shapes[min(1, shapes.count - 1)], tone: tones[min(4, tones.count - 1)],
-                eyes: eyes[min(1, eyes.count - 1)], mark: marks[min(1, marks.count - 1)]
+                sentence: "Drafting the October newsletter", needsYou: 0,
+                shape: "pebble", tone: "amber", eyes: "round", mark: "ring", sortOrder: 1,
+                extra: ",\"task\":{\"sessionId\":\"s-quill\",\"title\":\"October newsletter\",\"status\":\"running\",\"lastActivityAt\":\"\(iso(-3 * 60))\"}"
             ),
             agent(
-                id: "agent-atlas", name: "Atlas", role: "Research", state: "idle",
-                sentence: "Ready for the next question.", needsYou: 0,
-                shape: shapes[min(2, shapes.count - 1)], tone: tones[min(6, tones.count - 1)],
-                eyes: eyes[min(2, eyes.count - 1)], mark: marks[0]
+                id: "agent-scout", name: "Scout", role: "Research", state: "thinking",
+                sentence: "Comparing three vendor quotes", needsYou: 0,
+                shape: "spark", tone: "violet", eyes: "tall", mark: "none", sortOrder: 2,
+                extra: ",\"task\":{\"sessionId\":\"s-scout\",\"title\":\"Vendor quotes\",\"status\":\"running\",\"lastActivityAt\":\"\(iso(-40))\"}"
+            ),
+            agent(
+                id: "agent-atlas", name: "Atlas", role: "Travel", state: "idle",
+                sentence: "Ready for the next trip.", needsYou: 0,
+                shape: "capsule", tone: "coral", eyes: "wide", mark: "antenna", sortOrder: 3,
+                extra: ",\"pinnedAt\":\"\(iso(-2 * day))\""
+            ),
+            agent(
+                id: "agent-iris", name: "Iris", role: "Weekly digest", state: "sleeping",
+                sentence: "Paused.", needsYou: 0,
+                shape: "tile", tone: "sage", eyes: "soft", mark: "leaf", status: "paused", sortOrder: 4
             ),
         ]
     }
 
     private static var goal: String {
-        #"{"id":"goal-1","agentId":"agent-wren","title":"Inbox under fifty by Friday","detail":"","status":"active","cadence":"weekly"}"#
+        """
+        {"id":"goal-1","agentId":"agent-wren","title":"Inbox under fifty by Friday","detail":"","status":"active","cadence":"weekly",
+         "lastCheckInNote":"Down to 64 from 112 on Monday."},
+        {"id":"goal-2","agentId":"agent-wren","title":"No invitation left unanswered for a day","detail":"","status":"active","cadence":"daily"}
+        """
+    }
+
+    private static var ideas: String {
+        """
+        {"id":"idea-1","agentId":"agent-wren","title":"Unsubscribe from the six newsletters you never open","detail":"They are a third of what arrives each week.","status":"new"},
+        {"id":"idea-2","agentId":"agent-wren","title":"Draft a holiday auto-reply for next week","detail":"","status":"new"}
+        """
+    }
+
+    private static var routines: String {
+        """
+        {"id":"sched-1","name":"Morning triage","enabled":true,"schedule":"Every weekday at 08:30","nextRunAt":"\(iso(18 * hour))"},
+        {"id":"sched-2","name":"Friday wrap-up","enabled":false,"schedule":"Fridays at 16:00"}
+        """
+    }
+
+    private static var notes: String {
+        """
+        {"id":"note-1","agentId":"agent-wren","content":"Replies to the board go out from the work address, never personal.","source":"user"},
+        {"id":"note-2","agentId":"agent-wren","content":"Liam prefers meetings after 10:00 and never on Fridays.","source":"agent"}
+        """
+    }
+
+    private static var wrenDetail: String {
+        """
+        {"agent":\(agents[0]),"goals":[\(goal)],"ideas":[\(ideas)],"notes":[\(notes)],"routines":[\(routines)],"tasks":[],
+         "computerConfigured":true,"computer":{"enabled":true,"status":"resting","hasPoster":false}}
+        """
     }
 }
 

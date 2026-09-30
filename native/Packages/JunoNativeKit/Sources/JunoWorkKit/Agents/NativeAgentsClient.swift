@@ -96,6 +96,26 @@ public struct NativeAgentsClient: Sendable {
         _ = try await send(.delete, "/api/agents/\(id)", body: nil, for: accountID)
     }
 
+    /// A copy of it with a new name, the same brief, face and apps, and a
+    /// thread of its own. The web's `duplicateAgent`.
+    public func duplicate(id: String, for accountID: AccountID) async throws -> NativeAgent {
+        try validate(id)
+        let response = try await send(.post, "/api/agents/\(id)/duplicate", body: .object([:]), for: accountID)
+        return try decodeAgent(try require(response, named: "agent"))
+    }
+
+    /// Pauses or resumes one of its routines. A routine is a Work schedule,
+    /// so this is the schedule's own route, as the web's `updateRoutine`.
+    public func setRoutineEnabled(scheduleID: String, enabled: Bool, for accountID: AccountID) async throws {
+        try validate(scheduleID)
+        _ = try await send(
+            .patch,
+            "/api/work/schedules/\(scheduleID)",
+            body: .object(["enabled": .bool(enabled)]),
+            for: accountID
+        )
+    }
+
     /// The agent's thread, created the first time anything asks for it. A
     /// POST, because the first call writes a conversation.
     public func thread(id: String, for accountID: AccountID) async throws -> String {
@@ -388,6 +408,7 @@ public struct NativeAgentsClient: Sendable {
         }
         if let status = patch.status { body["status"] = .string(status.rawValue) }
         if let proactive = patch.proactive { body["proactive"] = .bool(proactive) }
+        if let pinned = patch.pinned { body["pinned"] = .bool(pinned) }
         return body
     }
 
@@ -591,7 +612,8 @@ public struct NativeAgentsClient: Sendable {
             task: root["task"].flatMap { try? decodeTask($0) },
             needsYou: integer(root["needsYou"]),
             nextRoutine: root["nextRoutine"].flatMap { try? decodeRoutineGlance($0) },
-            newIdeas: integer(root["newIdeas"])
+            newIdeas: integer(root["newIdeas"]),
+            pinnedAt: root["pinnedAt"]?.date
         )
     }
 

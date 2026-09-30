@@ -56,11 +56,11 @@
     }
   },
   "targets": {
-    "total": 208,
+    "total": 197,
     "modules": {
-      "JunoNativeKit (shared)": 36,
+      "JunoNativeKit (shared)": 35,
       "JunoCode (shared)": 89,
-      "JunoDesktop (macOS)": 54,
+      "JunoDesktop (macOS)": 44,
       "JunoMobile (iOS)": 29
     },
     "files": {
@@ -97,7 +97,6 @@
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoVoiceAura.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoVoiceOrb.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/MermaidDiagramView.swift": 2,
-      "native/Packages/JunoNativeKit/Sources/JunoWorkKit/Agents/Views/NativeAgentPage.swift": 1,
       "native/iOS/JunoMobile/App/JunoMobileArchivedView.swift": 2,
       "native/iOS/JunoMobile/App/JunoMobileCodeRemote.swift": 5,
       "native/iOS/JunoMobile/App/JunoMobileDrawer.swift": 1,
@@ -112,9 +111,7 @@
       "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift": 1,
       "native/macOS/JunoDesktop/App/DesktopCodeStudio.swift": 11,
       "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift": 6,
-      "native/macOS/JunoDesktop/App/DesktopConnectionsScreen.swift": 9,
       "native/macOS/JunoDesktop/App/DesktopHostPage.swift": 3,
-      "native/macOS/JunoDesktop/App/DesktopVoice.swift": 1,
       "native/macOS/JunoDesktop/App/DesktopWorkSettings.swift": 8,
       "native/macOS/JunoDesktop/App/JunoDesktopRootView.swift": 3
     }

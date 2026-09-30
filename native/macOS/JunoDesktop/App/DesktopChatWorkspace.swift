@@ -181,8 +181,6 @@ struct DesktopChatWorkspace: View {
     /// ``ChatDetail``, posted to from the sidebar, the transcript and every
     /// page through `@Environment(\.junoToast)`.
     @State private var toasts = JunoToastCenter()
-    /// The Agents fold's "New agent": the hiring sheet, over the window.
-    @State private var isHiringAgent = false
     /// Whether this window is the key one, so a rise in tasks needing the
     /// reader is toasted here and not in a window behind it.
     @Environment(\.appearsActive) private var appearsActive
@@ -321,7 +319,9 @@ struct DesktopChatWorkspace: View {
                 openSearch: openSearch,
                 agentsModel: configuration.agentsModel,
                 messageAgent: messageAgent,
-                hireAgent: configuration.agentsModel == nil ? nil : { isHiringAgent = true },
+                hireAgent: configuration.agentsModel == nil
+                    ? nil
+                    : { pageRouter.open(.agents, route: .newAgent(template: nil)) },
                 runs: needsYouSignals.runs,
                 notificationsModel: configuration.notificationsModel,
                 showingNotifications: $showingNotifications,
@@ -352,23 +352,6 @@ struct DesktopChatWorkspace: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("It won't be saved.")
-        }
-        // The hiring flow from the column's "New agent" — the web's
-        // `/agents/new`, starting from the first job as the roster's own
-        // button does. Hired, the new agent's page opens.
-        .sheet(isPresented: $isHiringAgent) {
-            if let agentsModel = configuration.agentsModel {
-                NativeAgentHireView(
-                    model: agentsModel,
-                    apps: agentApps,
-                    template: NativeAgentTemplate.all[0],
-                    onCancel: { isHiringAgent = false },
-                    onHired: { agent in
-                        isHiringAgent = false
-                        selection.wrappedValue = .agent(agent.id)
-                    }
-                )
-            }
         }
         // The key window hosts the toast a rise in waiting tasks posts.
         .onChange(of: appearsActive, initial: true) { _, active in
@@ -1410,6 +1393,9 @@ struct DesktopConversationView: View {
     var forkPrivately: (([NativePrivateChatModel.Turn]) -> Void)? = nil
     /// Opens an agent's page by id, from the header its thread carries.
     var openAgent: ((String) -> Void)? = nil
+    /// Opens an agent's thread by id: a duplicate's new thread, from the
+    /// header's More.
+    var openAgentThread: ((String) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openSettings) private var openSettings
     @State private var voiceSession: DesktopVoiceSession?
@@ -2190,17 +2176,32 @@ struct DesktopConversationView: View {
     }
 
     /// Chrome, so it carries the hairline; the transcript under it stays flat.
+    /// The face and Profile open the agent's profile as a sheet over the
+    /// thread; More pauses, pins, duplicates or retires it.
     private func threadHeader(_ agent: NativeAgent) -> some View {
         VStack(spacing: 0) {
-            DesktopAgentThreadHeader(
-                agent: agent,
-                state: threadAgentState,
-                openAgent: { openAgent?(agent.id) }
-            )
+            DesktopAgentVoiceLevel(controller: threadAgentState == .listening ? voiceSession?.controller : nil) { level in
+                DesktopAgentThreadHeader(
+                    agent: agent,
+                    state: threadAgentState,
+                    level: level,
+                    model: configuration.agentsModel,
+                    apps: (configuration.connectorModel?.linked ?? [])
+                        .filter(\.connected)
+                        .map { NativeAgentAppChoice(id: $0.id, label: $0.label) },
+                    openThread: openAgentThread,
+                    focusComposer: { composerRequest = ChatComposerRequest(kind: .focus) },
+                    retired: { openDestination(.agents) },
+                    drawsWash: false,
+                    openAgent: { openAgent?(agent.id) }
+                )
+            }
             .frame(maxWidth: DesktopChatMeasure.reading)
             .padding(.horizontal, DesktopChatMeasure.gutter(forColumnWidth: columnWidth))
             .padding(.vertical, JunoSpace.hairline)
             .frame(maxWidth: .infinity)
+            // The wash runs the whole column, as the web bar's does.
+            .background { NativeAgentBarWash(avatar: agent.avatar) }
             Rectangle()
                 .fill(Color.junoHairline)
                 .frame(height: 1)
@@ -2251,6 +2252,11 @@ struct DesktopConversationView: View {
                     openTask: { sessionID in openTaskPanel(sessionID) }
                 )
                 .environment(\.junoTranscriptMediaActions, mediaActions)
+                // In an agent's thread its replies speak as the agent.
+                .environment(
+                    \.desktopAgentThread,
+                    privateChat == nil ? threadAgent.map(DesktopAgentThreadIdentity.init) : nil
+                )
             }
         }
     }

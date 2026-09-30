@@ -1039,6 +1039,7 @@ struct DesktopNewSkillPage: View {
                     Button(reading ? "Reading…" : "Import SKILL.md") { pickSkillFile() }
                         .buttonStyle(.bordered)
                         .disabled(saving || reading)
+                        .contentShape(.rect)
                     Text(imported == nil ? "Bring a skill from your computer, or write one below." : "File loaded. Review the instructions before saving. Attach referenced files separately.")
                         .junoType(.caption).foregroundStyle(Color.junoSecondaryInk)
                     if let imported, !imported.ignoredSettings.isEmpty {

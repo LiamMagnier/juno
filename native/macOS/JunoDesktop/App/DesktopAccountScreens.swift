@@ -186,6 +186,7 @@ struct DesktopDestinationView: View {
                     model: model,
                     apps: agentApps,
                     templateID: template,
+                    personName: session.profile.name,
                     openConversation: openAgentThread,
                     welcomedAgentID: $welcomedAgentID
                 )
@@ -239,7 +240,8 @@ struct DesktopDestinationView: View {
                 callActiveChanged: callActiveChanged,
                 shareConversation: shareConversation,
                 forkPrivately: forkPrivately,
-                openAgent: openAgent
+                openAgent: openAgent,
+                openAgentThread: openAgentThread
             )
         case .projects:
             if let model = configuration.projectModel {
@@ -275,6 +277,7 @@ struct DesktopDestinationView: View {
                 DesktopAgentsRoster(
                     model: model,
                     apps: agentApps,
+                    personName: session.profile.name,
                     openConversation: openAgentThread
                 )
             } else {
