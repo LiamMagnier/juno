@@ -30,7 +30,22 @@ function caps(overrides: Partial<ModelCapabilities>): ModelCapabilities {
   };
 }
 
-function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageParam[] {
+/**
+ * The transcript in Anthropic's shape.
+ *
+ * Reasoning blocks go back exactly as they streamed, in their place in the
+ * turn, but only to the model that wrote them and only on a request that has
+ * thinking switched on. A signature is bound to one model and one prefix: sent
+ * to another model it is a 400 at worst and noise at best, and a request with
+ * thinking off has no use for it. Dropping is always safe — the
+ * `drop_block` binding (see `bindingTolerantThinking`) already tolerates a
+ * missing or mismatched block — while keeping them is what lets a model on its
+ * fortieth tool step still read why it started down this path.
+ */
+function toAnthropicMessages(
+  messages: ChatMessage[],
+  replay: { model: string; thinking: boolean },
+): Anthropic.MessageParam[] {
   return messages.map((m): Anthropic.MessageParam => {
     if (m.role === 'user') {
       return {
@@ -52,15 +67,67 @@ function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageParam[] 
         }),
       };
     }
-    return {
-      role: 'assistant',
-      content: m.content.map((c): Anthropic.ContentBlockParam =>
-        c.type === 'text'
-          ? { type: 'text', text: c.text }
-          : { type: 'tool_use', id: c.id, name: c.name, input: c.input ?? {} },
-      ),
-    };
+    const content: Anthropic.ContentBlockParam[] = [];
+    for (const c of m.content) {
+      if (c.type === 'text') {
+        if (c.text) content.push({ type: 'text', text: c.text });
+      } else if (c.type === 'tool_call') {
+        content.push({ type: 'tool_use', id: c.id, name: c.name, input: c.input ?? {} });
+      } else if (replay.thinking && c.model === replay.model) {
+        if (c.type === 'thinking') {
+          content.push({ type: 'thinking', thinking: c.thinking, signature: c.signature });
+        } else if (c.type === 'redacted_thinking') {
+          content.push({ type: 'redacted_thinking', data: c.data });
+        }
+        // An OpenAI reasoning item is sealed for OpenAI.
+      }
+    }
+    return { role: 'assistant', content };
   });
+}
+
+const EPHEMERAL: Anthropic.CacheControlEphemeral = { type: 'ephemeral' };
+
+type CacheableBlock = Anthropic.ContentBlockParam & { cache_control?: Anthropic.CacheControlEphemeral | null };
+
+/** Put a breakpoint on the last block of `message` that can carry one.
+ *  Thinking blocks cannot; everything a user message holds can. */
+function markLastCacheable(message: Anthropic.MessageParam | undefined): void {
+  if (!message) return;
+  if (typeof message.content === 'string') {
+    if (message.content) message.content = [{ type: 'text', text: message.content, cache_control: EPHEMERAL }];
+    return;
+  }
+  for (let index = message.content.length - 1; index >= 0; index--) {
+    const block = message.content[index] as CacheableBlock;
+    if (block.type === 'thinking' || block.type === 'redacted_thinking') continue;
+    if (block.type === 'text' && !block.text) continue;
+    block.cache_control = EPHEMERAL;
+    return;
+  }
+}
+
+/**
+ * The two rolling cache breakpoints on a conversation.
+ *
+ * The newest block writes the whole prefix, so the next request reads it. The
+ * second sits where the previous request put its newest one — the last block
+ * of the user message before the latest assistant turn — because the cache
+ * looks back only about twenty blocks from a breakpoint for an earlier write:
+ * a step with ten parallel tool calls adds twenty blocks on its own, and with
+ * one rolling breakpoint the next request would miss the entry the last one
+ * paid 1.25x to write. With the tools and the system prompt that is four, the
+ * most a request may carry.
+ */
+function markConversationBreakpoints(messages: Anthropic.MessageParam[]): void {
+  const last = messages.length - 1;
+  if (last < 0) return;
+  markLastCacheable(messages[last]);
+  for (let index = last - 1; index > 0; index--) {
+    if (messages[index]!.role !== 'assistant') continue;
+    if (messages[index - 1]!.role === 'user') markLastCacheable(messages[index - 1]);
+    return;
+  }
 }
 
 /**
@@ -87,6 +154,12 @@ export interface AnthropicOverride {
   defaultModel?: string;
   /** Wall-clock ceiling for one request. See timeouts.ts for why it is set. */
   timeoutMs?: number;
+  /** The base URL is Juno's `/api/agent` proxy, whose own 402 is the person's
+   *  plan limit rather than a lab out of credit. See providers/errors.ts. */
+  viaJunoProxy?: boolean;
+  /** The transport, for a host that has its own; tests replay recorded
+   *  streams through it. Defaults to the global `fetch`. */
+  fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 }
 
 export const THINKING_BINDING_BETA = 'thinking-binding-controls-2026-08-01';
@@ -154,9 +227,11 @@ export class AnthropicAdapter implements ProviderAdapter {
   private client: Anthropic;
   private modelCaps: Record<string, ModelCapabilities>;
   private defaultHeaders?: Record<string, string>;
+  private readonly viaJunoProxy: boolean;
 
   constructor(apiKey?: string, override?: AnthropicOverride) {
     this.defaultHeaders = override?.headers;
+    this.viaJunoProxy = override?.viaJunoProxy === true;
     this.client = new Anthropic({
       // In proxy mode the key is a placeholder the proxy replaces server-side.
       apiKey: override?.baseURL ? (apiKey ?? 'proxy') : resolveAnthropicKey(apiKey),
@@ -165,6 +240,7 @@ export class AnthropicAdapter implements ProviderAdapter {
       // The SDK's own default is ten minutes, which is ten minutes of a run
       // looking alive and doing nothing when a host stops answering.
       timeout: override?.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+      ...(override?.fetch ? { fetch: override.fetch } : {}),
     });
     if (override?.id) this.id = override.id;
     if (override?.name) this.name = override.name;
@@ -184,17 +260,32 @@ export class AnthropicAdapter implements ProviderAdapter {
     const bits = anthropicThinkingBits(req.model, req.maxTokens ?? 8192, req.reasoningEffort);
     const thinking = bindingTolerantThinking(bits.thinking);
     const headers = anthropicRequestHeadersForThinking(thinking, this.defaultHeaders);
+    // Prompt caching, on by default: an agent step re-sends everything before
+    // it, and without breakpoints every step of a sixty-step run billed its
+    // whole prefix at the full input price. A one-off side call opts out,
+    // since a cache write costs more than it saves when nothing reads it.
+    const cache = req.cache !== false;
+    const tools: Anthropic.Tool[] = req.tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
+    }));
+    if (cache && tools.length > 0) tools[tools.length - 1]!.cache_control = EPHEMERAL;
+    const system: Anthropic.TextBlockParam[] = req.system
+      ? [{ type: 'text', text: req.system, ...(cache ? { cache_control: EPHEMERAL } : {}) }]
+      : [];
+    const messages = toAnthropicMessages(req.messages, {
+      model: req.model,
+      thinking: thinking !== undefined && thinking.type !== 'disabled',
+    });
+    if (cache) markConversationBreakpoints(messages);
     const stream = this.client.messages.stream(
       {
         model: req.model,
         max_tokens: bits.maxTokens,
-        system: req.system,
-        messages: toAnthropicMessages(req.messages),
-        tools: req.tools.map((t) => ({
-          name: t.name,
-          description: t.description,
-          input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
-        })),
+        ...(system.length > 0 ? { system } : {}),
+        messages,
+        tools,
         ...(thinking ? { thinking: thinking as unknown as Anthropic.ThinkingConfigParam } : {}),
         ...(bits.outputConfig ? { output_config: bits.outputConfig } : {}),
       } as Anthropic.MessageStreamParams,
@@ -208,26 +299,55 @@ export class AnthropicAdapter implements ProviderAdapter {
     // see providers/errors.ts. `messages.stream` defers its request, so a 429 or
     // a 529 overload surfaces from the iteration rather than from the call
     // above, and both live inside this one boundary.
+    //
+    // Reasoning blocks are assembled here, from the deltas, rather than read
+    // off the final message, because their place in the turn matters: they
+    // are yielded as each one closes, between the text before them and the
+    // text after, which is the order the loop records and the order Anthropic
+    // requires them back in. The SDK's own snapshot is no help for this — it
+    // runs ahead of this iteration and is cleared when the stream ends.
+    const open = new Map<number, { thinking: string; signature: string } | { data: string }>();
     let final: Anthropic.Message;
     try {
       for await (const event of stream) {
-        if (
-          event.type === 'content_block_delta' &&
-          event.delta.type === 'text_delta'
-        ) {
-          yield { type: 'text_delta', text: event.delta.text };
-        } else if (
-          event.type === 'content_block_delta' &&
-          event.delta.type === 'thinking_delta'
-        ) {
-          yield { type: 'thinking_delta', text: event.delta.thinking };
+        if (event.type === 'content_block_start') {
+          const block = event.content_block;
+          if (block.type === 'thinking') {
+            open.set(event.index, { thinking: block.thinking ?? '', signature: block.signature ?? '' });
+          } else if (block.type === 'redacted_thinking') {
+            open.set(event.index, { data: block.data });
+          }
+        } else if (event.type === 'content_block_delta') {
+          if (event.delta.type === 'text_delta') {
+            yield { type: 'text_delta', text: event.delta.text };
+          } else if (event.delta.type === 'thinking_delta') {
+            const block = open.get(event.index);
+            if (block && 'thinking' in block) block.thinking += event.delta.thinking;
+            yield { type: 'thinking_delta', text: event.delta.thinking };
+          } else if (event.delta.type === 'signature_delta') {
+            const block = open.get(event.index);
+            if (block && 'signature' in block) block.signature = event.delta.signature;
+          }
+        } else if (event.type === 'content_block_stop') {
+          const block = open.get(event.index);
+          open.delete(event.index);
+          if (block && 'data' in block) {
+            yield { type: 'reasoning_block', block: { type: 'redacted_thinking', data: block.data } };
+          } else if (block && block.signature) {
+            // An unsigned block cannot be sent back; it was shown, and that is
+            // all it can be.
+            yield {
+              type: 'reasoning_block',
+              block: { type: 'thinking', thinking: block.thinking, signature: block.signature },
+            };
+          }
         }
       }
       final = await stream.finalMessage();
     } catch (err) {
       // A stop the user asked for is not a provider failure.
       if (req.signal?.aborted) throw err;
-      throw classifyProviderError(err, this.name);
+      throw classifyProviderError(err, this.name, { viaJunoProxy: this.viaJunoProxy });
     }
 
     for (const block of final.content) {
@@ -236,6 +356,9 @@ export class AnthropicAdapter implements ProviderAdapter {
       }
     }
 
+    // `model_context_window_exceeded` is newer than this SDK's typing of the
+    // field, so the comparison is made on the string the API sends.
+    const reason: string | null = final.stop_reason;
     const stopReason =
       final.stop_reason === 'end_turn'
         ? 'end_turn'
@@ -243,14 +366,24 @@ export class AnthropicAdapter implements ProviderAdapter {
           ? 'tool_use'
           : final.stop_reason === 'max_tokens'
             ? 'max_tokens'
-            : 'other';
+            : reason === 'model_context_window_exceeded'
+              ? 'context_window'
+              : final.stop_reason === 'refusal'
+                ? 'refusal'
+                : 'other';
 
+    // Anthropic counts cached tokens apart from `input_tokens`; Usage counts
+    // them in it (see its note in types.ts) and breaks them out beside it.
+    const cacheRead = final.usage.cache_read_input_tokens ?? 0;
+    const cacheWrite = final.usage.cache_creation_input_tokens ?? 0;
     yield {
       type: 'done',
       stopReason,
       usage: {
-        inputTokens: final.usage.input_tokens,
+        inputTokens: final.usage.input_tokens + cacheRead + cacheWrite,
         outputTokens: final.usage.output_tokens,
+        ...(cacheRead > 0 ? { cacheReadTokens: cacheRead } : {}),
+        ...(cacheWrite > 0 ? { cacheWriteTokens: cacheWrite } : {}),
       },
     };
   }

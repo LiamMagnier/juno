@@ -10,6 +10,18 @@ import { ProviderCallError, type ProviderFailureKind } from './providers/errors.
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './providers/timeouts.js';
 import { decodeComputerScreenshot } from './computer.js';
 import { LeadingThinkingFilter } from './providers/leading-thinking.js';
+import { addUsage } from './usage.js';
+import {
+  TARGET_AFTER_COMPACTION,
+  clampThreshold,
+  compactedMessages,
+  estimateTokens,
+  modelMemory,
+  planCompaction,
+  requestModelSummary,
+  toolPairingIntact,
+  type CompactionOptions,
+} from './compaction.js';
 
 /**
  * How long the loop will listen to a stream that is saying nothing.
@@ -52,6 +64,24 @@ export interface AgentLoopOptions {
    * place it can be correct.
    */
   system: string | (() => string);
+  /**
+   * What changes between steps of a run, rendered for the model: the date, the
+   * permission mode, a Work run's plan.
+   *
+   * Kept out of `system` so the system prompt is byte-identical from the first
+   * step to the last. Everything a request sends before the first byte that
+   * differs from the previous request is read from the provider's prompt cache
+   * at a tenth of the price, and the system prompt comes before the whole
+   * conversation — so a plan rendered into it, as Work's used to be, made
+   * every `update_plan` call a cache miss for the entire transcript.
+   *
+   * Instead the text is appended, wrapped in `<session_state>`, to the user
+   * message the step is about to send — which no earlier request has seen — and
+   * only when it differs from the last block in the transcript. It stays there,
+   * so every later request carries the same bytes at the same place, and the
+   * model reads the newest block as the current state.
+   */
+  sessionState?: () => string | null | undefined;
   /** The transcript, mutated in place (assistant + tool-result messages). */
   messages: ChatMessage[];
   tools: ToolSpec[];
@@ -75,6 +105,17 @@ export interface AgentLoopOptions {
   takeQueuedUserText?: () => string[];
   /** Longest silence from a stream before it is judged dead, in ms. */
   silenceTimeoutMs?: number;
+  /**
+   * Keep the run inside the model's context window (see compaction.ts).
+   *
+   * Checked at the top of every step against the usage the provider last
+   * reported plus an estimate of what was appended since; past the threshold
+   * the older steps are folded into a model-written summary before the
+   * request goes out. And if the provider still refuses a request as too long,
+   * the step compacts and sends it again, once. Absent, the loop never folds
+   * anything — a subagent's fifteen steps do not need it.
+   */
+  compaction?: CompactionOptions;
   onAssistantDelta?: (text: string) => void;
   onAssistantMessage?: (text: string) => void;
   onThinkingDelta?: (text: string) => void;
@@ -131,6 +172,68 @@ export class ProviderSilenceError extends Error {
     );
     this.name = 'ProviderSilenceError';
   }
+}
+
+/**
+ * Raised when a tool's own code threw, as opposed to returning an error result.
+ *
+ * Kept apart from `ProviderCallError` and `ProviderSilenceError` because a
+ * caller does opposite things with them: a provider failure may be retried,
+ * failed over or reported as the lab's fault, and a tool that threw is none of
+ * those — it is this process's code (or the Work runner's deliberate pause) and
+ * trying the model again would only reach the same tool. The original throw is
+ * the `cause`, and the message is its message, so a caller that only reads the
+ * text sees what it always saw.
+ *
+ * Provider failures that surface through a tool — a delegated child's model
+ * call, for one — are passed through unwrapped: they are still provider
+ * failures, and wrapping them would hide the kind a caller decides on.
+ */
+export class ToolExecutionError extends Error {
+  override readonly name = 'ToolExecutionError';
+
+  constructor(
+    readonly toolName: string,
+    readonly callId: string,
+    override readonly cause: unknown,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause));
+  }
+}
+
+/**
+ * What kind of failure ended a turn, in the vocabulary the agent protocol's
+ * `error` event uses. One function so every host reports the same code for the
+ * same failure rather than each re-deriving it from the message.
+ */
+export type AgentFailureCode =
+  | 'plan_limit'
+  | 'rate_limited'
+  | 'provider_overload'
+  | 'context_overflow'
+  | 'provider_error'
+  | 'provider_silence'
+  | 'tool_error'
+  | 'internal';
+
+export function failureCodeOf(error: unknown): AgentFailureCode {
+  if (error instanceof ToolExecutionError) return 'tool_error';
+  if (error instanceof ProviderSilenceError) return 'provider_silence';
+  if (error instanceof ProviderCallError) {
+    switch (error.kind) {
+      case 'plan_limit':
+        return 'plan_limit';
+      case 'rate_limit':
+        return 'rate_limited';
+      case 'overloaded':
+        return 'provider_overload';
+      case 'context_overflow':
+        return 'context_overflow';
+      default:
+        return 'provider_error';
+    }
+  }
+  return 'internal';
 }
 
 /**
@@ -198,6 +301,43 @@ function normalizeToolResult(result: UserContent | UserContent[]): UserContent[]
 
 export const OMITTED_SCREENSHOT_MARKER = '[Screenshot omitted from the saved run]';
 
+/** Opens every block `AgentLoopOptions.sessionState` writes. */
+export const SESSION_STATE_OPEN = '<session_state>';
+const SESSION_STATE_CLOSE = '</session_state>';
+
+export function renderSessionState(state: string): string {
+  return `${SESSION_STATE_OPEN}\n${state.trim()}\n${SESSION_STATE_CLOSE}`;
+}
+
+export function isSessionStateText(text: string): boolean {
+  return text.startsWith(SESSION_STATE_OPEN);
+}
+
+/** The newest session-state block in the transcript, or null. */
+export function latestSessionState(messages: readonly ChatMessage[]): string | null {
+  for (let m = messages.length - 1; m >= 0; m--) {
+    const message = messages[m]!;
+    if (message.role !== 'user') continue;
+    for (let p = message.content.length - 1; p >= 0; p--) {
+      const part = message.content[p]!;
+      if (part.type === 'text' && isSessionStateText(part.text)) return part.text;
+    }
+  }
+  return null;
+}
+
+/** Appends the state block to the message the next request ends with, when it
+ *  says something the transcript does not already. True when it did. */
+function injectSessionState(messages: ChatMessage[], state: string | null | undefined): boolean {
+  if (!state || !state.trim()) return false;
+  const block = renderSessionState(state);
+  if (latestSessionState(messages) === block) return false;
+  const last = messages[messages.length - 1];
+  if (last && last.role === 'user') last.content.push({ type: 'text', text: block });
+  else messages.push({ role: 'user', content: [{ type: 'text', text: block }] });
+  return true;
+}
+
 /**
  * Keeps only the newest `keepLast` image parts in `messages`, replacing older
  * `{ type: 'image' }` parts with `OMITTED_SCREENSHOT_MARKER`.
@@ -232,6 +372,90 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
   let stopReason = 'end_turn';
   let finalText = '';
   const silenceMs = opts.silenceTimeoutMs ?? DEFAULT_STREAM_SILENCE_MS;
+  const systemText = () => (typeof opts.system === 'function' ? opts.system() : opts.system);
+  /**
+   * The window the threshold is measured against, or null when there is no
+   * usable one. A catalog entry that reports a window of 0 (or none that is a
+   * number) would otherwise put every step over the line and buy a summary
+   * call before each request; the overflow path still compacts such a run
+   * when the provider says it is too long.
+   */
+  const compactionWindow =
+    opts.compaction && Number.isFinite(opts.compaction.contextWindow) && opts.compaction.contextWindow > 0
+      ? opts.compaction.contextWindow
+      : null;
+
+  /**
+   * What the provider last said the context held, and how long the transcript
+   * was then: everything after that point is estimated, everything before it
+   * is known. Null before the first answer and after a compaction.
+   */
+  let reported: { tokens: number; messageCount: number } | null = null;
+  const contextTokens = (): number =>
+    reported !== null && reported.messageCount <= opts.messages.length
+      ? reported.tokens + estimateTokens({ messages: opts.messages.slice(reported.messageCount) })
+      : estimateTokens({ system: systemText(), tools: opts.tools, messages: opts.messages });
+
+  /**
+   * Fold the older steps into a summary. `stop` when the summary call's cost
+   * ended the run (the budget sees it like any other request); `unchanged`
+   * when there is nothing it could cut.
+   */
+  const compact = async (reason: 'threshold' | 'overflow'): Promise<'compacted' | 'unchanged' | 'stop'> => {
+    const options = opts.compaction;
+    if (!options) return 'unchanged';
+    const system = systemText();
+    const tokensBefore = contextTokens();
+    const plan = planCompaction(opts.messages, {
+      ...(options.keepRecentSteps === undefined ? {} : { keepRecentSteps: options.keepRecentSteps }),
+      targetTokens: Math.floor(options.contextWindow * TARGET_AFTER_COMPACTION),
+      system,
+      tools: opts.tools,
+    });
+    if (plan === null) return 'unchanged';
+    let memory = plan.structuralMemory;
+    let summary: 'model' | 'structural' = 'structural';
+    let failure: string | undefined;
+    let summaryUsage: Usage | undefined;
+    if (options.modelSummary !== false) {
+      const attempt = await requestModelSummary({
+        provider: opts.provider,
+        model: opts.model,
+        plan,
+        signal: opts.signal,
+        ...(options.summaryTimeoutMs === undefined ? {} : { timeoutMs: options.summaryTimeoutMs }),
+      });
+      summaryUsage = attempt.usage;
+      if (attempt.summary !== null) {
+        memory = modelMemory(plan, attempt.summary);
+        summary = 'model';
+      } else if (attempt.failure !== null) {
+        failure = attempt.failure;
+      }
+    }
+    const next = compactedMessages(plan, memory);
+    // The cut is placed so this cannot fail; if it ever did, sending a call
+    // without its answer is the one outcome worse than not compacting.
+    if (!toolPairingIntact(next)) return 'unchanged';
+    opts.messages.splice(0, opts.messages.length, ...next);
+    reported = null;
+    opts.onMessagesChanged?.();
+    options.onCompaction?.({
+      reason,
+      summary,
+      ...(failure === undefined ? {} : { failure }),
+      removedMessages: plan.folded.length,
+      keptMessages: plan.recent.length,
+      tokensBefore,
+      tokensAfter: contextTokens(),
+      ...(summaryUsage === undefined ? {} : { usage: summaryUsage }),
+    });
+    if (summaryUsage && (summaryUsage.inputTokens > 0 || summaryUsage.outputTokens > 0)) {
+      usage = addUsage(usage, summaryUsage);
+      if (opts.onStep?.(summaryUsage) === 'stop') return 'stop';
+    }
+    return 'compacted';
+  };
 
   for (let step = 0; step < opts.maxSteps; step++) {
     if (opts.signal.aborted) {
@@ -248,23 +472,54 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       else opts.messages.push({ role: 'user', content: parts });
       opts.onMessagesChanged?.();
     }
+    if (
+      compactionWindow !== null &&
+      contextTokens() >= compactionWindow * clampThreshold(opts.compaction?.threshold)
+    ) {
+      const outcome = await compact('threshold');
+      if (outcome === 'stop') {
+        stopReason = 'budget';
+        break;
+      }
+      // The summary call is the one wait between the abort check at the top of
+      // this step and the request below. A Stop pressed during it ends the run
+      // here; otherwise the request would go out anyway (see `turn` below).
+      if (opts.signal.aborted) {
+        stopReason = 'aborted';
+        break;
+      }
+    }
+    // After compaction, which may have folded the last state block away.
+    if (injectSessionState(opts.messages, opts.sessionState?.())) opts.onMessagesChanged?.();
     pruneOldMessageImages(opts.messages, 3);
-    const assistantContent: AssistantContent[] = [];
+    /**
+     * The assistant turn as it streamed: text, signed reasoning blocks and
+     * tool calls, in arrival order. Order is the point — a provider that
+     * signs its reasoning takes it back only in the place it was written.
+     */
+    let assistantContent: AssistantContent[] = [];
     let toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
     let textAcc = '';
     let stepUsage: Usage = { inputTokens: 0, outputTokens: 0 };
     /** Retries spent on THIS step. Each step starts with a full allowance. */
     let retries = 0;
     let waitedMs = 0;
+    /** Whether this step already compacted because its request was too long;
+     *  a second refusal after that is a real failure. */
+    let compactedForOverflow = false;
 
     for (;;) {
       textAcc = '';
       toolCalls = [];
+      assistantContent = [];
       stepUsage = { inputTokens: 0, outputTokens: 0 };
 
       const turn = new AbortController();
       const chain = () => turn.abort();
       opts.signal.addEventListener('abort', chain, { once: true });
+      // A listener added to a signal that has already fired never runs, so a
+      // Stop that landed before this attempt began has to be passed on here.
+      if (opts.signal.aborted) turn.abort();
       let silent = false;
       let deadline: ReturnType<typeof setTimeout> | undefined;
       const listen = () => {
@@ -276,11 +531,15 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       };
 
       let retryable: ProviderCallError | null = null;
+      let overflow: ProviderCallError | null = null;
       const thinkingFilter = new LeadingThinkingFilter();
       let thinkingAcc = '';
       const deliver = (parts: { text: string; thinking: string }) => {
         if (parts.text) {
           textAcc += parts.text;
+          const last = assistantContent[assistantContent.length - 1];
+          if (last?.type === 'text') last.text += parts.text;
+          else assistantContent.push({ type: 'text', text: parts.text });
           opts.onAssistantDelta?.(parts.text);
         }
         if (parts.thinking) {
@@ -304,18 +563,21 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
             deliver(thinkingFilter.push(ev.text));
           } else if (ev.type === 'thinking_delta') {
             deliver({ text: '', thinking: ev.text });
+          } else if (ev.type === 'reasoning_block') {
+            // Stamped with the model that wrote it: the adapter replays a
+            // block only to that model, and drops it for any other.
+            assistantContent.push({ ...ev.block, model: opts.model });
           } else if (ev.type === 'tool_call') {
-            toolCalls.push({
+            const call = {
               id: ev.id,
               name: ev.name,
               input: (ev.input ?? {}) as Record<string, unknown>,
-            });
+            };
+            toolCalls.push(call);
+            assistantContent.push({ type: 'tool_call', ...call });
           } else if (ev.type === 'done') {
             stepUsage = ev.usage;
-            usage = {
-              inputTokens: usage.inputTokens + ev.usage.inputTokens,
-              outputTokens: usage.outputTokens + ev.usage.outputTokens,
-            };
+            usage = addUsage(usage, ev.usage);
             stopReason = ev.stopReason;
           }
         }
@@ -329,6 +591,15 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
           stopReason = 'aborted';
         } else if (
           err instanceof ProviderCallError &&
+          err.kind === 'context_overflow' &&
+          opts.compaction !== undefined &&
+          !compactedForOverflow &&
+          textAcc === '' && thinkingAcc === '' && assistantContent.length === 0
+        ) {
+          // Too long to send: fold the older steps and send the shorter one.
+          overflow = err;
+        } else if (
+          err instanceof ProviderCallError &&
           err.retryable &&
           // NOTHING may have been shown yet. This is the load-bearing condition:
           // `onAssistantDelta` has already streamed `textAcc` to whoever is
@@ -337,7 +608,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
           // A rate limit — the failure this retry exists for — is refused before
           // the first token, so the case that matters is always the clean one.
           textAcc === '' && thinkingAcc === '' &&
-          toolCalls.length === 0 &&
+          toolCalls.length === 0 && assistantContent.length === 0 &&
           retries < MAX_TURN_RETRIES &&
           waitedMs < MAX_TURN_RETRY_WAIT_MS
         ) {
@@ -353,6 +624,23 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       deliver(thinkingFilter.finish());
       if (thinkingAcc) opts.onThinkingMessage?.(thinkingAcc);
 
+      if (overflow !== null) {
+        compactedForOverflow = true;
+        const outcome = await compact('overflow');
+        // As at the top of the step: Stop during the summary call is a stop.
+        if (opts.signal.aborted) {
+          stopReason = 'aborted';
+          break;
+        }
+        if (outcome === 'unchanged') throw overflow;
+        if (outcome === 'stop') {
+          stopReason = 'budget';
+          break;
+        }
+        // Straight back to the request: not a provider retry, and no wait.
+        if (injectSessionState(opts.messages, opts.sessionState?.())) opts.onMessagesChanged?.();
+        continue;
+      }
       if (retryable === null) break;
 
       // What the lab asked for, when it said, and an exponential back-off when
@@ -392,17 +680,20 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
     }
 
     if (textAcc) {
-      assistantContent.push({ type: 'text', text: textAcc });
       opts.onAssistantMessage?.(textAcc);
       finalText = textAcc;
     }
-    for (const call of toolCalls) {
-      assistantContent.push({ type: 'tool_call', id: call.id, name: call.name, input: call.input });
-    }
-    if (assistantContent.length > 0) {
+    // Recorded only when the model said or asked for something. Reasoning on
+    // its own — a stream stopped between a thinking block and the text it led
+    // to — is not a turn, and an assistant message of nothing but thinking is
+    // one no provider accepts back.
+    if (textAcc || toolCalls.length > 0) {
       opts.messages.push({ role: 'assistant', content: assistantContent });
     }
     opts.onMessagesChanged?.();
+    if (stepUsage.inputTokens > 0) {
+      reported = { tokens: stepUsage.inputTokens + stepUsage.outputTokens, messageCount: opts.messages.length };
+    }
 
     if (opts.onStep?.(stepUsage) === 'stop') {
       stopReason = 'budget';
@@ -446,7 +737,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       try {
         results.content.push(...normalizeToolResult(await opts.executeToolCall(call)));
       } catch (err) {
-        toolFailure = { error: err };
+        toolFailure = {
+          error:
+            err instanceof ProviderCallError || err instanceof ProviderSilenceError || err instanceof ToolExecutionError
+              ? err
+              : new ToolExecutionError(call.name, call.id, err),
+        };
         results.content.push({
           type: 'tool_result',
           toolCallId: call.id,

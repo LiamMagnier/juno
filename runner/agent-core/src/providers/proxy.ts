@@ -2,6 +2,7 @@ import type { ModelCapabilities, ProviderAdapter } from './types.js';
 import type { ProviderListing } from './registry.js';
 import { AnthropicAdapter } from './anthropic.js';
 import { OpenAICompatAdapter } from './openai-compat.js';
+import { OpenAIResponsesAdapter, routeResponsesModels } from './openai-responses.js';
 
 /**
  * Backend-proxy providers: instead of per-user API keys, requests route
@@ -24,6 +25,9 @@ export interface BackendCatalogModel {
   reason?: string;
   vision?: boolean;
   contextWindow?: number;
+  /** `responses` for a model that speaks only OpenAI's Responses API, which
+   *  the proxy serves at /api/agent/openai/responses. */
+  api?: 'chat' | 'responses';
 }
 
 export interface BackendConfig {
@@ -39,7 +43,26 @@ export interface BackendConfig {
    */
   authorization?: string;
   models: BackendCatalogModel[];
+  /**
+   * The run these calls belong to — a Cloud Code task id — sent as
+   * `x-juno-run` on every proxied request.
+   *
+   * Attribution only, never billing: the proxy still bills every call it
+   * relays from the provider's own usage, and nothing about what is charged
+   * may depend on a header the caller chose. What it adds is the answer to
+   * "which run spent this", which the proxy could not otherwise tell apart
+   * from any other call on the same account.
+   */
+  runId?: string;
+  /** The transport, for a host that has its own; tests replay through it. */
+  fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 }
+
+/** The header the proxy reads a run's id from. */
+export const RUN_HEADER = 'x-juno-run';
+
+/** Ids are the server's own (cuids, UUIDs); anything else is not sent. */
+const RUN_ID = /^[A-Za-z0-9_.:-]{1,128}$/;
 
 export const BACKEND_PROVIDER_PREFIX = 'backend/';
 
@@ -93,6 +116,7 @@ export function createProxyProvider(config: BackendConfig, backendProviderId: st
   const headers: Record<string, string> = config.authorization
     ? { Authorization: config.authorization }
     : { Cookie: config.cookie };
+  if (config.runId && RUN_ID.test(config.runId)) headers[RUN_HEADER] = config.runId;
   const id = BACKEND_PROVIDER_PREFIX + providerId;
   const defaultModel = (entries.find((m) => m.available) ?? entries[0]).model;
   const models = Object.fromEntries(
@@ -107,17 +131,23 @@ export function createProxyProvider(config: BackendConfig, backendProviderId: st
       headers,
       models: Object.fromEntries(entries.map((m) => [m.model, capsFor(m)])),
       defaultModel,
+      viaJunoProxy: true,
+      ...(config.fetch ? { fetch: config.fetch } : {}),
     });
   }
-  return new OpenAICompatAdapter(
-    {
-      id: providerId,
-      name: entries[0].providerName ?? providerId,
-      baseUrl: base,
-      envVar: '',
-      defaultModel,
-      models,
-    },
-    { apiKey: 'proxy', headers, id },
-  );
+  const compatConfig = {
+    id: providerId,
+    name: entries[0].providerName ?? providerId,
+    baseUrl: base,
+    envVar: '',
+    defaultModel,
+    models,
+  };
+  const options = { apiKey: 'proxy', headers, id, viaJunoProxy: true, ...(config.fetch ? { fetch: config.fetch } : {}) };
+  const chat = new OpenAICompatAdapter(compatConfig, options);
+  const responsesModels = new Set(entries.filter((m) => m.api === 'responses').map((m) => m.model));
+  if (responsesModels.size === 0) return chat;
+  // The proxy's `responses` path is the same base plus `/responses`, which is
+  // exactly what the SDK appends.
+  return routeResponsesModels(chat, new OpenAIResponsesAdapter(compatConfig, options), responsesModels);
 }

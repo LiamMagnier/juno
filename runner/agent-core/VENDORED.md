@@ -111,6 +111,50 @@ copy of `juno-app/core/src`, including the subagent orchestration layer
   epoch anti-repetition signatures. Re-apply when re-syncing.
 
 
+## Refoundation, Phase 9 (runtime parity with the Swift engine)
+
+There is no `juno-app` checkout any more and the Mac runs the Swift engine, so
+this copy is the cloud engine's source of truth. These changes bring it level
+with the Swift runtime; each has tests in `src/test/`.
+
+- **Permission rules** (`src/permission-rules.ts`, `src/permissions.ts`): the
+  Mac's grammar and precedence — `permissions.{allow,ask,deny}` rules such as
+  `Bash(npm run *)`, `Edit(src/**)`, `Read(.env)`, `WebFetch(domain:…)`,
+  `mcp__server`; deny > ask > allow; per-segment command checks with
+  substitutions opened; destructive always asks; plan refuses. The project's
+  settings files only narrow unless a host passes `trustProjectSettings`
+  (the cloud runner never does); the older top-level tool-name lists are still
+  read. `contracts/agent/permission-rules.fixtures.json` is run by both
+  `src/test/permission-rules.test.ts` and the Swift
+  `PermissionRuleFixtureTests.swift`, family table included.
+- **Prompt caching** (`src/providers/anthropic.ts`): breakpoints on the last
+  tool, the system prompt, the previous request's newest block and the newest
+  block. `AgentLoopOptions.sessionState` keeps the system prompt byte-stable by
+  moving what changes (date, mode, Work's plan) into `<session_state>` blocks
+  appended to the newest user message. `Usage` gains `cacheReadTokens` /
+  `cacheWriteTokens`; `inputTokens` stays inclusive of them.
+- **Thinking continuity** (`src/providers/anthropic.ts`, `src/loop.ts`,
+  `src/providers/openai-responses.ts`): signed `thinking` / `redacted_thinking`
+  blocks and sealed OpenAI `reasoning` items are recorded in stream order,
+  stamped with their model, and replayed unchanged to that model only. The
+  thinking-binding beta (above) is still sent: it is what makes dropping a
+  block, on a model change or after compaction, safe.
+- **OpenAI Responses** (`src/providers/openai-responses.ts`): `store: false`
+  plus `include: ["reasoning.encrypted_content"]`, selected per model with
+  `api: "responses"` on a catalog entry or provider spec model.
+- **Compaction** (`src/compaction.ts`): a port of the Mac's
+  ConversationCompactor / CompactionSummarizer — model-written summary with a
+  structural fallback, step-boundary cuts that never split a call from its
+  result, earlier memories folded rather than stacked, and compact-and-retry
+  when a request is refused as too long. On for Code and Work sessions.
+- **Failure typing** (`src/providers/errors.ts`, `src/loop.ts`): the proxy's
+  402 `QUOTA_EXCEEDED` is `plan_limit` (never retried, never failed over),
+  over-long prompts are `context_overflow`, and a tool that throws surfaces as
+  `ToolExecutionError`. `failureCodeOf` maps any of them to the protocol's
+  error codes.
+- **Attribution** (`src/providers/proxy.ts`): `BackendConfig.runId` is sent as
+  `x-juno-run` on every proxied call; the cloud runner passes its task id.
+
 ## Build
 
 ```sh

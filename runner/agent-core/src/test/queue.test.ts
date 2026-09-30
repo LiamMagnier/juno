@@ -79,7 +79,13 @@ test('seedHistory puts the earlier turns ahead of the first prompt, and refuses 
   assert.equal(first.length, 3, 'two seeded turns (the blank one dropped) and the live prompt');
   assert.deepEqual(first[0], { role: 'user', content: [{ type: 'text', text: 'add a login form' }] });
   assert.deepEqual(first[1], { role: 'assistant', content: [{ type: 'text', text: 'Added LoginForm.tsx.' }] });
-  assert.deepEqual(first[2], { role: 'user', content: [{ type: 'text', text: 'now add tests for it' }] });
+  // The live prompt, then the session's state (date, mode) beside it rather
+  // than in the system prompt, which stays byte-identical across turns.
+  assert.equal(first[2].role, 'user');
+  assert.deepEqual(first[2].content[0], { type: 'text', text: 'now add tests for it' });
+  const state = first[2].content[1];
+  assert.ok(state?.type === 'text' && state.text.startsWith('<session_state>'));
+  assert.equal(first[2].content.length, 2);
 
   assert.throws(() => session.seedHistory([{ role: 'user', text: 'too late' }]), /already has messages/);
 });
