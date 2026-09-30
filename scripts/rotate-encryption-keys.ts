@@ -79,14 +79,45 @@ async function rotateAccounts(): Promise<Tally> {
   return { changed, failed };
 }
 
+/**
+ * User MCP servers keep their Authorization header sealed in `authHeader`.
+ * This table was missed when it shipped, so a rotation that then retired the
+ * old key left those headers unreadable, and the server was dialled without
+ * one (src/lib/mcp.ts now skips such a row instead).
+ */
+async function rotateUserMcpServers(): Promise<Tally> {
+  const rows = await prismaUnguarded.userMcpServer.findMany({
+    where: { authHeader: { not: null } },
+    select: { id: true, authHeader: true },
+  });
+  let changed = 0,
+    failed = 0;
+  for (const row of rows) {
+    try {
+      const authHeader = rotate(row.authHeader);
+      if (!authHeader) continue;
+      changed++;
+      if (!DRY) await prismaUnguarded.userMcpServer.update({ where: { id: row.id }, data: { authHeader } });
+    } catch (err) {
+      failed++;
+      console.error(`  ✗ user MCP server ${row.id}: ${(err as Error).message}`);
+    }
+  }
+  return { changed, failed };
+}
+
 async function main() {
   console.log(DRY ? "Rotation dry-run (no writes)…" : "Rotating secrets onto the primary key…");
   const connections = await rotateConnections();
   const accounts = await rotateAccounts();
+  const userMcpServers = await rotateUserMcpServers();
   const verb = DRY ? "would be re-sealed" : "re-sealed";
   console.log(`Connections ${verb}: ${connections.changed}` + (connections.failed ? ` (${connections.failed} FAILED)` : ""));
   console.log(`Accounts ${verb}:    ${accounts.changed}` + (accounts.failed ? ` (${accounts.failed} FAILED)` : ""));
-  const failed = connections.failed + accounts.failed;
+  console.log(
+    `User MCP servers ${verb}: ${userMcpServers.changed}` + (userMcpServers.failed ? ` (${userMcpServers.failed} FAILED)` : "")
+  );
+  const failed = connections.failed + accounts.failed + userMcpServers.failed;
   if (failed > 0) {
     console.error(`\n${failed} row(s) could not be rotated — keep every old key in TOKEN_ENCRYPTION_KEYS until this reports 0 failures, then re-run.`);
     process.exitCode = 1;

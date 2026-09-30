@@ -15,6 +15,7 @@ import {
   userMcpConnectorId,
   userMcpRowId,
 } from "@/lib/user-mcp";
+import { safeMcpFetch, userMcpUrlProblem } from "@/lib/mcp-safe-fetch";
 import { truncateConnectorResult, type TruncatedForModel } from "@/lib/work/connectors";
 import { classifyToolAccess, type ToolAccess, type ToolAccessHints } from "@/lib/tool-access";
 import { recordToolInvocation, settleToolInvocation } from "@/lib/tool-audit";
@@ -108,7 +109,18 @@ export async function getActiveConnectors(userId: string, requestedIds?: string[
       // A broken row is skipped quietly here on purpose: one dead connector
       // must not fail the chat. `lastError` on the row (written by /test) is
       // how the person finds out; see UserMcpServer.lastError.
+      //
+      // The stored URL is judged again under TODAY's rules, not trusted
+      // because it passed when it was saved: rows written before the SSRF fix
+      // (http://localhost in production, a private https host) must stop
+      // resolving rather than keep dialling.
+      if (userMcpUrlProblem(server.url)) continue;
       const authHeader = decryptAuthHeader(server.authHeader);
+      // A sealed header that no longer opens (its key was retired before
+      // rotation reached it) is skipped, never dialled without: connecting
+      // anonymously would fail at best and, at worst, succeed with whatever an
+      // anonymous caller may do while the person believes their access is in use.
+      if (server.authHeader && !authHeader) continue;
       out.push({
         id: userMcpConnectorId(server.id),
         label: server.name,
@@ -381,8 +393,17 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
   await Promise.all(
     active.map(async (c) => {
       try {
+        // A user MCP server is a URL somebody typed into a form. Every request
+        // to one, the handshake, tools/list, each tool call and the SSE
+        // stream, goes through the SSRF-safe fetcher, and its URL is checked
+        // again here because callers rebuild ActiveConnector from parts (the
+        // Work runner does) and the id is the one thing they all keep. Built-in
+        // and Composio connectors dial hosts Juno chose and keep plain fetch.
+        const userServer = isUserMcpConnectorId(c.id);
+        if (userServer && userMcpUrlProblem(c.mcpUrl)) return;
         const transport = new StreamableHTTPClientTransport(new URL(c.mcpUrl), {
           requestInit: { headers: c.headers },
+          ...(userServer ? { fetch: safeMcpFetch } : {}),
         });
         const client = new Client({ name: "juno", version: "1.0.0" });
         await client.connect(transport);

@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { probeMcpEndpoint, type McpProbeResult } from "@/lib/mcp-probe";
+import { safeMcpFetch, userMcpUrlProblem } from "@/lib/mcp-safe-fetch";
 
 /*
  * User-registered remote MCP servers (URL + optional Authorization header).
@@ -36,24 +37,18 @@ export function userMcpRowId(connectorId: string): string | null {
   return rowId.length > 0 ? rowId : null;
 }
 
+export { userMcpUrlProblem };
+
 /**
- * Accept https anywhere, and http only on loopback so local dev can point at
- * `http://localhost:3001/mcp` without opening the product to cleartext
- * credential exfiltration on the open internet. The auth header is a live
- * credential; sending it over plain http to a remote host is the bug this
- * check exists to refuse.
+ * Whether a URL may be saved or dialled as a user MCP server: https to a
+ * public host, and `http://localhost` only in development. The rules, and
+ * why each exists, live with the fetcher that enforces them again on every
+ * request (`userMcpUrlProblem`, src/lib/mcp-safe-fetch.ts). This used to check
+ * the scheme alone and accepted `http://localhost` in production, which made
+ * the Test button a way to reach the VM's own services.
  */
 export function isAllowedMcpUrl(raw: string): boolean {
-  let u: URL;
-  try {
-    u = new URL(raw);
-  } catch {
-    return false;
-  }
-  if (u.protocol === "https:") return true;
-  if (u.protocol !== "http:") return false;
-  const host = u.hostname.toLowerCase();
-  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  return userMcpUrlProblem(raw) === null;
 }
 
 /** Build the request headers for one server. Empty means "connect anonymous". */
@@ -139,10 +134,9 @@ export async function testUserMcpConnection(input: {
   authHeader?: string | null;
 }): Promise<UserMcpTestResult> {
   const url = input.url.trim();
-  if (!isAllowedMcpUrl(url)) {
-    return { ok: false, error: "Use an https URL, or http only on localhost." };
-  }
-  return probeMcpEndpoint({ url, headers: headersForServer(input.authHeader) });
+  const problem = userMcpUrlProblem(url);
+  if (problem) return { ok: false, error: problem };
+  return probeMcpEndpoint({ url, headers: headersForServer(input.authHeader), fetch: safeMcpFetch });
 }
 
 /**

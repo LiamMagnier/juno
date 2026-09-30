@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
+import { rateLimit } from "@/lib/rate-limit";
 import {
   decryptAuthHeader,
   encryptAuthHeader,
-  isAllowedMcpUrl,
   serializeUserMcpServer,
   testUserMcpConnection,
+  userMcpUrlProblem,
 } from "@/lib/user-mcp";
 
 export const runtime = "nodejs";
@@ -37,12 +38,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   const data = parsed.data;
 
-  if (data.url !== undefined && !isAllowedMcpUrl(data.url)) {
-    return NextResponse.json(
-      { error: "Server URL must be https, or http only on localhost for development." },
-      { status: 400 }
-    );
-  }
+  const urlProblem = data.url !== undefined ? userMcpUrlProblem(data.url) : null;
+  if (urlProblem) return NextResponse.json({ error: urlProblem }, { status: 400 });
 
   if (data.name !== undefined && data.name !== existing.name) {
     const duplicate = await prisma.userMcpServer.findUnique({
@@ -58,6 +55,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // definition rather than the old one. A pure enable toggle must not open a
   // network connection (flipping a switch offline would look like a failure).
   const identityChanged = data.url !== undefined || data.authHeader !== undefined;
+  if (identityChanged) {
+    // That re-probe dials the URL, so it spends the Test button's budget.
+    // Unmetered, PATCH was a way around /test's limit: re-point, read
+    // status/lastError, repeat.
+    const limit = await rateLimit({ key: `user-mcp:test:${user.id}`, limit: 60, windowSec: 3600 });
+    if (!limit.success) {
+      return NextResponse.json({ error: "Too many connection tests just now. Try again later." }, { status: 429 });
+    }
+  }
   const nextUrl = data.url ?? existing.url;
   const nextAuthHeader =
     data.authHeader === undefined ? existing.authHeader : data.authHeader === null ? null : encryptAuthHeader(data.authHeader);
