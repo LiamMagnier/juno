@@ -39,26 +39,18 @@ function read(relativePath) {
 /*
  * WHERE "START A REMOTE TASK" ACTUALLY LIVES.
  *
- * This used to assert against JunoCodeUI's NewSessionSheet, which 8720ffbd
- * deleted along with WorkbenchView, AgentCanvasView and GitAndFilesTabs. The
- * obvious reading of that deletion — the one this file itself argued for until
- * now — was that starting a remote task had been broken outright, because
- * WorkbenchModel still exports startRemoteSession/loadRemoteRepositories/
- * loadRemoteDevices and nothing calls any of the three.
+ * `NativeCodeModel.startTask(prompt:)` picks cloud or device and calls
+ * `createCloudTask`/`createDeviceTask` on the task store's client — and it is
+ * driven from both apps: JunoMobileCodeView on iPhone and StudioLanding on the
+ * Mac. The assertions below follow that live surface.
  *
- * That reading was wrong, and it is worth writing down why so the next person
- * does not re-derive it. Those three are the OLD path: WorkbenchModel reaches a
- * remote run through `remoteExecutionModel`, and the only UI that ever drove it
- * was the deleted sheet. The path a person actually uses today is
- * `NativeCodeModel.startTask(prompt:)`, which picks cloud or device and calls
- * `createCloudTask`/`createDeviceTask` on the client — and it is driven from
- * both apps: JunoMobileCodeView on iPhone and StudioLanding on the Mac.
- * The capability moved packages; it did not go away.
- *
- * So the assertions below follow the live surface. The WorkbenchModel entries
- * are kept because `NativeCodeTaskRemoteSessionProvider` still backs that path
- * and is still composed, but they are no longer what proves a human can start a
- * run — these three are.
+ * They used to also require WorkbenchModel's startRemoteSession /
+ * loadRemoteRepositories / loadRemoteDevices and the
+ * NativeCodeTaskRemoteSessionProvider behind them, on the claim that the
+ * provider "still backs that path and is still composed". It was not: no app
+ * ever supplied `remoteSessionProvider`, so the whole path was unreachable, and
+ * this gate was the only thing keeping it in the tree. It is deleted, and the
+ * gate now fails if it comes back without a caller (see `retired` below).
  */
 const nativeCodeModel = read(
   "native/Packages/JunoNativeKit/Sources/JunoCodeKit/NativeCodeModel.swift",
@@ -66,9 +58,6 @@ const nativeCodeModel = read(
 const mobileCode = read("native/iOS/JunoMobile/App/JunoMobileCodeView.swift");
 const model = read(
   "native/Packages/JunoCode/Sources/JunoCodeUI/Models/WorkbenchModel.swift",
-);
-const provider = read(
-  "native/Packages/JunoCode/Sources/JunoCodeUI/Remote/NativeCodeTaskRemoteSessionProvider.swift",
 );
 const monitor = read(
   "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Remote/CodeRemoteTaskDetailView.swift",
@@ -117,11 +106,6 @@ const required = [
   [nativeCodeModel, "createDeviceTask("],
   [mobileCode, "model.startTask(prompt:"],
   [landing, "code.startTask(prompt:"],
-  [model, "public func loadRemoteRepositories()"],
-  [model, "public func loadRemoteDevices()"],
-  [model, "public func startRemoteSession("],
-  [provider, "public func repositories() async throws"],
-  [provider, "public func devices() async throws"],
   [monitor, "NativeCodeModel"],
   [monitor, "model.events"],
   [monitor, "respondToApproval"],
@@ -154,6 +138,9 @@ const required = [
   // The phone is shown what this Mac has, never an unread workbench as empty.
   [remoteBridge, "await model.loadIfNeeded()"],
   [remoteBridge, "CodeRelayEventProjection.relayEvents("],
+  // Both wires this Mac speaks are spelled from the one protocol projection.
+  [read("native/Packages/JunoCode/Sources/JunoCodeBridge/CodeRelayEventProjection.swift"), "AgentProtocolProjection.events(for: event)"],
+  [desktopHost, "CodeTaskWireProjection(includesProtocol: task.acceptsAgentProtocol)"],
   // A phone's create_session and a remote prompt that leaves the draft alone.
   [remoteAdapter, '"workspaceKey"'],
   [remoteAdapter, '"prompt"'],
@@ -161,6 +148,26 @@ const required = [
 ];
 
 const unmet = required.filter(([source, fragment]) => !source.includes(fragment));
+
+/*
+ * RETIRED PATHS STAY RETIRED. The remote-session provider, the model state
+ * behind it and the two sandbox clients were dead for months while a gate
+ * pinned them in place; nothing composed them and nothing could reach them.
+ * If one returns, it has to arrive with a caller and an assertion above.
+ */
+const retired = [
+  "native/Packages/JunoCode/Sources/JunoCodeUI/Remote/NativeCodeTaskRemoteSessionProvider.swift",
+  "native/Packages/JunoCode/Sources/JunoCodeUI/Remote/RemoteExecutionModel.swift",
+  "native/Packages/JunoCode/Sources/JunoCodeRuntime/CloudCodeSandboxClient.swift",
+  "native/Packages/JunoCode/Sources/JunoCodeRuntime/LocalPythonSandboxClient.swift",
+].filter((relativePath) => fs.existsSync(path.join(root, relativePath)));
+if (retired.length > 0 || model.includes("remoteSessionProvider")) {
+  throw new Error(
+    `[code-remote] a retired remote path is back without a caller: ${
+      [...retired, ...(model.includes("remoteSessionProvider") ? ["WorkbenchModel.remoteSessionProvider"] : [])].join(", ")
+    }`,
+  );
+}
 
 /*
  * A DELETED FILE IS REPORTED AS ONE FACT, NOT AS FIVE ORPHANED FRAGMENTS.
