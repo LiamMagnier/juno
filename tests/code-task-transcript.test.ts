@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   CodeTaskTranscript,
+  MAX_TOOL_OUTPUT_CHARS,
   codeToolLabel,
   codeToolStatus,
   type TaskEventRow,
@@ -187,4 +188,43 @@ test("a persisted row reads its typed status, and an old one goes through the ad
   assert.equal(codeToolLabel(old), "$ npm test");
   assert.equal(codeToolStatus({ ...old, title: "$ ls", exitCode: 0 } as typeof old), "ok");
   assert.equal(legacyToolStatus({ name: "cancelled", summary: "Not executed" }), "not_executed");
+});
+
+test("a long-running command's streamed output is one row holding its end", () => {
+  seq = 0;
+  const transcript = new CodeTaskTranscript("task-1");
+  const chunk = "y".repeat(8_000);
+  transcript.applyAll([
+    protocolRow("turn.started", { origin: "user" }, { turnId: "t1" }),
+    protocolRow("item.tool_call", { itemId: "c1", toolName: "run_command", toolKind: "execute", title: "Run swift build" }),
+    // A Mac streams output in 8,000-character chunks; a long build is hundreds.
+    ...Array.from({ length: 50 }, () => protocolRow("item.tool_output", { itemId: "c1", channel: "stdout", text: chunk })),
+    protocolRow("item.tool_output", { itemId: "c1", channel: "stdout", text: "error: the reason it stopped" }),
+    protocolRow("item.tool_result", { itemId: "c1", status: "error", summary: "exit 1" }),
+  ]);
+  const rows = transcript.activity();
+  assert.equal(rows.length, 1, "one call, one row");
+  const detail = rows[0]?.detail ?? "";
+  assert.ok(detail.length <= MAX_TOOL_OUTPUT_CHARS + 40, "bounded, not the whole 400 KB");
+  assert.ok(detail.endsWith("error: the reason it stopped"), "the end of the output, where the failure is");
+  assert.equal(rows[0]?.toolStatus, "error");
+});
+
+test("a rewind drops the rows it takes back, and what follows it is shown", () => {
+  seq = 0;
+  const transcript = new CodeTaskTranscript("task-1");
+  transcript.applyAll([
+    protocolRow("turn.started", { origin: "user" }, { turnId: "t1" }),
+    protocolRow("item.tool_call", { itemId: "c1", toolName: "bash", toolKind: "execute", title: "$ rm build" }),
+    protocolRow("item.tool_result", { itemId: "c1", status: "ok" }),
+    protocolRow("turn.completed", { stopReason: "end_turn" }),
+    protocolRow("transcript.restarted", { rewoundToTurnId: "t1" }),
+    protocolRow("turn.started", { origin: "user" }, { turnId: "t2" }),
+    protocolRow("item.tool_call", { itemId: "c2", toolName: "bash", toolKind: "execute", title: "$ make" }),
+    protocolRow("item.tool_result", { itemId: "c2", status: "ok" }),
+  ]);
+  assert.deepEqual(
+    transcript.activity().map((entry) => entry.title),
+    ["$ make"],
+  );
 });

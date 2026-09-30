@@ -224,7 +224,7 @@ export class CodeTaskTranscript {
     switch (item.kind) {
       case "tool": {
         if (item.status === "denied" && answeredByMode.has(item.itemId)) return [];
-        const detail = item.output ?? item.summary;
+        const detail = item.output !== undefined ? outputTail(item.output) : item.summary;
         return [
           {
             id,
@@ -338,6 +338,20 @@ export class CodeTaskTranscript {
         return [];
     }
   }
+}
+
+/**
+ * The most of a call's output one row carries: its end, which is where a
+ * build or a test run says why it stopped. A Mac streams a command's output as
+ * chunks the fold joins into one item, and a long build is megabytes — which
+ * the old one-row-per-chunk transcript spread over hundreds of rows, and which
+ * one row must not hold whole, least of all in the persisted message.
+ */
+export const MAX_TOOL_OUTPUT_CHARS = 24_000;
+
+function outputTail(output: string): string {
+  if (output.length <= MAX_TOOL_OUTPUT_CHARS) return output;
+  return `… [earlier output omitted]\n${output.slice(-MAX_TOOL_OUTPUT_CHARS)}`;
 }
 
 /** The web's word for a change kind, as write rows have always carried it. */
