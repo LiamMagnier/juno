@@ -75,22 +75,25 @@ test("\"Connect Linear\" widens, and an app the account never linked is refused 
   assert.deepEqual(remove.after, { connectorIds: [], removed: ["gmail"] });
 });
 
-test("\"Every weekday at 8, summarise escalations\" is a schedule under an asking mode, and new reach under Just do it", () => {
+test("\"Every weekday at 8, summarise escalations\" asks under every approval mode: each run spends", () => {
   const args = { name: "Escalations", instructions: "Summarise today's escalations.", cadence: "weekdays", hour: 8, minute: 0, timezone: "Europe/London" };
   const asking = plan("routine_add", args);
-  assert.equal(asking.direction, "neutral");
+  // Spending is reach (PRODUCT_REFOUNDATION §7), and agent_routine always asked.
+  assert.equal(asking.direction, "widening");
   assert.match(asking.summary, /Every weekday at 08:00 \(Europe\/London\)/);
+  assert.match(asking.affects, /asks before it changes anything\. Each run spends/);
   const unattended = plan("routine_add", args, { ...MIRA, approvalMode: "permissive" });
   assert.equal(unattended.direction, "widening");
+  assert.match(unattended.affects, /can change things without asking/);
   assert.equal(routineActsWithoutAsking("permissive"), true);
   assert.equal(routineActsWithoutAsking("balanced"), false);
   assert.equal(planSetupChange("routine_add", { ...args, name: "Weekly digest" }, MIRA).ok, false, "no duplicate names");
   assert.equal(planSetupChange("routine_add", { name: "x" }, MIRA).ok, false);
 });
 
-test("pausing a routine narrows; resuming one widens only when it can act without asking", () => {
+test("pausing a routine narrows; resuming one starts the spending again, so it asks", () => {
   assert.equal(plan("routine_pause", { routine: "weekly digest" }).direction, "narrowing");
-  assert.equal(plan("routine_resume", { routine: "Old sweep" }).direction, "neutral");
+  assert.equal(plan("routine_resume", { routine: "Old sweep" }).direction, "widening");
   assert.equal(plan("routine_resume", { routine: "Old sweep" }, { ...MIRA, approvalMode: "permissive" }).direction, "widening");
   assert.equal(planSetupChange("routine_pause", { routine: "Old sweep" }, MIRA).ok, false, "already paused");
   assert.equal(planSetupChange("routine_pause", { routine: "Nope" }, MIRA).ok, false);

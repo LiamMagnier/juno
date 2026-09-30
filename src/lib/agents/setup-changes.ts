@@ -10,11 +10,11 @@
  *   narrowing  fewer notifications, a stricter approval mode, an app removed, a
  *              routine paused, a lower budget. Applies at once; Undo restores.
  *   widening   an app added, a looser approval mode, a higher (or no) budget, a
- *              routine that can act without asking, a different model. Applies
- *              only after the person answers a deterministic approval card.
- *   neutral    more notifications, a routine under an approval mode that asks,
- *              a draft skill (off until the person turns it on). Applies at
- *              once; Undo restores.
+ *              routine added or resumed (it spends on every run, whatever its
+ *              approval mode), a different model. Applies only after the person
+ *              answers a deterministic approval card.
+ *   neutral    more notifications, a draft skill (off until the person turns it
+ *              on). Applies at once; Undo restores.
  *
  * The direction is decided HERE, from the member's current setup and the
  * request, never by the model: a model that calls "Connect Linear" narrowing
@@ -190,7 +190,9 @@ function clock(input: Pick<CreateRoutineInput, "cadence" | "hour" | "minute" | "
  * Whether a routine can act without asking: its tasks run under the member's
  * approval mode, and only "Just do it" lets a step that changes something go
  * ahead unattended. Under the other two, anything that changes something waits
- * for the person, so a new routine is a schedule, not new reach.
+ * for the person. That decides what the card says a routine affects, not its
+ * direction: a routine spends on every run under any mode, and spending is
+ * reach (PRODUCT_REFOUNDATION §7), so adding or resuming one always asks.
  */
 export function routineActsWithoutAsking(mode: WorkPermissionPolicy): boolean {
   return mode === "permissive";
@@ -333,7 +335,9 @@ export function planSetupChange(
         ok: true,
         plan: {
           kind,
-          direction: unattended ? "widening" : "neutral",
+          // Always asks: every run spends, whatever the approval mode, and
+          // spending is reach (as `agent_routine` always asked before it).
+          direction: "widening",
           summary: `${name} will run "${routine.name}": ${when}.`,
           affects: unattended
             ? `A task that runs on its own and can change things without asking (approval: ${WORK_APPROVAL_MODE_LABEL[snapshot.approvalMode]}). Each run spends from ${name}'s budget and your usage windows.`
@@ -357,7 +361,8 @@ export function planSetupChange(
         ok: true,
         plan: {
           kind,
-          direction: pausing ? "narrowing" : unattended ? "widening" : "neutral",
+          // Resuming starts the spending again, so it asks like adding one.
+          direction: pausing ? "narrowing" : "widening",
           summary: pausing ? `"${routine.name}" will stop running until you resume it.` : `"${routine.name}" will run again on its schedule.`,
           affects: pausing
             ? `Only this routine. ${name} keeps everything else.`
@@ -517,8 +522,8 @@ export type SetupChangeStep = "apply" | "ask" | "report";
  * The tool's next step, read from the recorded row and today's plan, never
  * from the model.
  *
- * Widening wins when either says so: a routine planned as neutral under an
- * asking mode that has loosened since is asked about, not applied. Only a
+ * Widening wins when either says so: a change recorded under one setup and
+ * planned wider under today's is asked about, not applied. Only a
  * change nobody has decided yet moves. A row the person applied, declined or
  * undid, or one that failed, is reported as it stands: a retried turn is not
  * the person asking again, and the card's Apply is how they do that.

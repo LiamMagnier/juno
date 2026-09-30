@@ -4077,7 +4077,7 @@ model AgentComputerHandoff {
 ///
 /// Narrowing changes (fewer notifications, stricter approval, an app removed,
 /// a routine paused) apply at once. Widening ones (an app added, a looser
-/// approval mode, a raised budget, a routine that can act without asking)
+/// approval mode, a raised budget, a routine added or resumed, a model)
 /// apply only after the person answers a deterministic approval card. Either
 /// way `before` holds what Undo restores, and Undo is always available on an
 /// applied change.
