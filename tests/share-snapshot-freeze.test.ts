@@ -1,288 +1,299 @@
-/**
- * A public link to a design stays frozen at the version it was made on
- * (audit docs/rework/audit/artifacts.md, B1).
- *
- * The Share dialog promises "Later edits stay private", and a link serves the
- * version current at its `snapshotAt`. The design store used to fold every
- * edit inside the 30 s checkpoint window into the newest version by rewriting
- * that row in place, so an edit made up to ~30 s after sharing landed in the
- * very version the link serves, and went public.
- *
- * The rule both sides now read is `sharedVersionAt` / `versionIsShared`
- * (src/lib/share-snapshot.ts), checked directly first. Then the real
- * `commitTransaction` (src/lib/design/store.ts) and the real public resolver
- * `getSharedArtifactSnapshot` (src/lib/share.ts) run against one stand-in
- * Prisma client, so each case asserts what the store wrote and what the link
- * shows afterwards.
- *
- * Run: NODE_OPTIONS=--conditions=react-server npx tsx --test --experimental-test-module-mocks tests/share-snapshot-freeze.test.ts
- */
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
-import type { Share } from "@prisma/client";
+import { randomBytes } from "node:crypto";
+import { PrismaClient, type Share } from "@prisma/client";
 
-import { sharedVersionAt, versionIsShared } from "@/lib/share-snapshot";
-import { serializeDesignDocument } from "@/lib/design/migrations";
-import type { DesignDocument } from "@/lib/design/types";
-import { run, signInDocument, transaction } from "./design-fixtures";
+/*
+ * A public page never shows an edit its owner did not publish (audit
+ * docs/rework/audit/artifacts.md, B1).
+ *
+ * The security hotfix closed B1 on the old design store, which folded a quick
+ * run of edits into the newest checkpoint by rewriting that row in place: an
+ * edit made seconds after sharing landed in the very version the link served.
+ * The artifact lifecycle (src/lib/artifact-writes.ts) replaced that store:
+ * versions are immutable (the database refuses a rewrite), design gestures go
+ * to a draft that is sealed as a NEW version, and publishing is its own thing
+ * (src/lib/artifact-publication.ts). These are the hotfix's cases, ported to
+ * that model and run against Postgres through the real store, routes and
+ * public resolvers:
+ *
+ *   - a legacy share link serves the newest version created at or before its
+ *     snapshot, and a later edit (draft, sealed draft, Juno's change) is a
+ *     newer row it cannot see;
+ *   - a revoked link never serves again; a taken-down one that an admin
+ *     restores still shows exactly what it froze;
+ *   - a publication made without naming a version is pinned to what the owner
+ *     sees, so a later edit reaches it only through Update, and following the
+ *     latest version is something the owner asks for.
+ *
+ * Skipped unless ARTIFACT_TEST_DATABASE_URL names a throwaway, migrated
+ * database (never DATABASE_URL):
+ *
+ *   ARTIFACT_TEST_DATABASE_URL=postgresql:///juno_share_freeze \
+ *   NODE_OPTIONS=--conditions=react-server \
+ *   npx tsx --test --experimental-test-module-mocks tests/share-snapshot-freeze.test.ts
+ */
 
-// ---------------------------------------------------------------------------
-// The rule
-// ---------------------------------------------------------------------------
-
-const at = (seconds: number) => new Date(Date.UTC(2026, 8, 30, 12, 0, 0) + seconds * 1_000);
-const history = [
-  { version: 1, createdAt: at(0) },
-  { version: 2, createdAt: at(10) },
-  { version: 3, createdAt: at(20) },
-];
-
-test("a link serves the newest version that existed when it was made", () => {
-  assert.equal(sharedVersionAt(history, at(15)), 2);
-  assert.equal(sharedVersionAt(history, at(20)), 3, "a version made in the same instant counts");
-  assert.equal(sharedVersionAt(history, at(99)), 3);
-  assert.equal(sharedVersionAt([...history].reverse(), at(15)), 2, "the order rows arrive in is irrelevant");
-});
-
-test("a link older than every version serves the first; no versions serve nothing", () => {
-  assert.equal(sharedVersionAt(history, at(-5)), 1);
-  assert.equal(sharedVersionAt([], at(5)), null);
-});
-
-test("a version is shared exactly when some link resolves to it", () => {
-  assert.equal(versionIsShared(3, history, []), false, "no links, nothing shared");
-  assert.equal(versionIsShared(3, history, [at(15)]), false, "a link frozen at v2 cannot see v3");
-  assert.equal(versionIsShared(2, history, [at(15)]), true);
-  assert.equal(versionIsShared(3, history, [at(15), at(25)]), true, "the newer link can");
-  assert.equal(versionIsShared(1, history.slice(0, 1), [at(-5)]), true, "the first-version fallback is covered too");
-  // The first edit after sharing gets a version the link cannot see, and the
-  // run is free to fold into that one.
-  const afterShare = [...history, { version: 4, createdAt: at(30) }];
-  assert.equal(versionIsShared(4, afterShare, [at(15), at(25)]), false);
-});
-
-// ---------------------------------------------------------------------------
-// The store and the public page, against one stand-in database
-// ---------------------------------------------------------------------------
-
-const OWNER = "user-owner";
-const ARTIFACT_ID = "art-design-1";
-
-type VersionRow = { id: string; artifactId: string; version: number; content: string; origin: string | null; createdAt: Date };
-type ShareRow = { id: string; userId: string; kind: "ARTIFACT"; artifactId: string; snapshotAt: Date; revokedAt: Date | null; takenDownAt: Date | null };
-
-const db = {
-  artifact: {
-    id: ARTIFACT_ID,
-    conversationId: "c1",
-    messageId: null,
-    identifier: "sign-in",
-    title: "Sign in",
-    type: "DESIGN",
-    language: null,
-    currentVersion: 1,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-  versions: [] as VersionRow[],
-  shares: [] as ShareRow[],
-};
-const shareQueries: Record<string, unknown>[] = [];
-
-const withVersions = () => ({
-  ...db.artifact,
-  versions: [...db.versions].sort((a, b) => a.version - b.version).map((v) => ({ ...v })),
-});
-
-const prisma = {
-  artifact: {
-    findFirst: async (args: { where: { id: string } }) => (args.where.id === db.artifact.id ? withVersions() : null),
-    findUnique: async (args: { where: { id: string } }) =>
-      args.where.id === db.artifact.id ? { title: db.artifact.title, type: db.artifact.type, language: db.artifact.language } : null,
-    update: async (args: { where: { id: string }; data: { currentVersion: number } }) => {
-      Object.assign(db.artifact, args.data, { updatedAt: new Date() });
-      return withVersions();
-    },
-  },
-  artifactVersion: {
-    create: async (args: { data: { artifactId: string; version: number; content: string; origin?: string } }) => {
-      if (db.versions.some((v) => v.version === args.data.version)) throw Object.assign(new Error("unique"), { code: "P2002" });
-      const row = { id: `v${args.data.version}`, origin: null, ...args.data, createdAt: new Date() };
-      db.versions.push(row);
-      return row;
-    },
-    // The fold's compare-and-swap, as Postgres would run it.
-    updateMany: async (args: { where: { artifactId: string; version: number; content: string }; data: { content: string } }) => {
-      const hit = db.versions.filter(
-        (v) => v.artifactId === args.where.artifactId && v.version === args.where.version && v.content === args.where.content
-      );
-      for (const v of hit) v.content = args.data.content;
-      return { count: hit.length };
-    },
-    findMany: async (args: { where: { artifactId: string } }) =>
-      db.versions.filter((v) => v.artifactId === args.where.artifactId).map((v) => ({ version: v.version, createdAt: v.createdAt })),
-    findUnique: async (args: { where: { artifactId_version: { artifactId: string; version: number } } }) =>
-      db.versions.find(
-        (v) => v.artifactId === args.where.artifactId_version.artifactId && v.version === args.where.artifactId_version.version
-      ) ?? null,
-  },
-  share: {
-    findMany: async (args: { where: Record<string, unknown> }) => {
-      shareQueries.push(args.where);
-      const where = args.where;
-      return db.shares
-        .filter(
-          (s) =>
-            s.userId === where.userId &&
-            s.artifactId === where.artifactId &&
-            s.kind === where.kind &&
-            (where.revokedAt === null ? s.revokedAt === null : true)
-        )
-        .map((s) => ({ snapshotAt: s.snapshotAt }));
-    },
-  },
-  $transaction: async (arg: unknown): Promise<unknown> =>
-    typeof arg === "function" ? (arg as (tx: typeof prisma) => Promise<unknown>)(prisma) : Promise.all(arg as Promise<unknown>[]),
-};
-
-// `mock.module` needs --experimental-test-module-mocks. `npm test` runs this
-// directory without it, so these cases skip there rather than failing: the
-// store and the resolver both reach Prisma.
+const DB_URL = process.env.ARTIFACT_TEST_DATABASE_URL;
 const canMockModules = typeof (mock as { module?: unknown }).module === "function";
-const storeTest = canMockModules ? test : test.skip;
 
-if (canMockModules) mock.module("@/lib/prisma", { namedExports: { prisma, prismaUnguarded: prisma } });
+if (!DB_URL || !canMockModules) {
+  test("share freeze database suite is skipped without ARTIFACT_TEST_DATABASE_URL and module mocks", { skip: true }, () => {});
+} else {
+  process.env.DATABASE_URL = DB_URL;
+  process.env.DIRECT_URL = DB_URL;
+  process.env.DATA_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+  delete process.env.DATA_ENCRYPTION_KEYRING;
+  process.env.AUTH_SECRET ??= "share-freeze-test-secret";
 
-const secondsAgo = (s: number) => new Date(Date.now() - s * 1_000);
+  const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
+  let signedIn: { id: string; email: string; name: string } | null = null;
 
-/** One design, its versions made `ago` seconds back by a person editing. */
-function seed(versions: Array<{ body: string; ago: number; origin?: string }>) {
-  db.versions = versions.map((v, i) => ({
-    id: `v${i + 1}`,
-    artifactId: ARTIFACT_ID,
-    version: i + 1,
-    content: v.body,
-    origin: v.origin ?? "edit",
-    createdAt: secondsAgo(v.ago),
-  }));
-  db.artifact.currentVersion = versions.length;
-  db.shares = [];
-  shareQueries.length = 0;
+  test("stand in for the session", () => {
+    mock.module("@/lib/session", {
+      namedExports: { getCurrentUser: async () => signedIn, requireUser: async () => signedIn },
+    });
+  });
+
+  const params = <T extends Record<string, string>>(value: T) => ({ params: Promise.resolve(value) });
+  const request = (method: string, body?: unknown) =>
+    new Request("http://juno.test/api", {
+      method,
+      headers: { "content-type": "application/json", "x-real-ip": "203.0.113.9" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+
+  async function signUp(label: string) {
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const user = await prisma.user.create({
+      data: { email: `share-freeze-${label}-${suffix}@example.invalid`, name: "Link owner", emailVerified: new Date() },
+    });
+    signedIn = { id: user.id, email: user.email!, name: user.name! };
+    return user;
+  }
+
+  async function designBody(name: string) {
+    const { serializeDesignDocument } = await import("../src/lib/design/migrations");
+    const { signInDocument } = await import("./design-fixtures");
+    return serializeDesignDocument({ ...signInDocument(), name });
+  }
+
+  /** One design, its versions made at the given instants (default: now). */
+  async function design(userId: string, versions: Array<{ name: string; createdAt?: Date }>) {
+    const bodies = await Promise.all(versions.map((v) => designBody(v.name)));
+    return prisma.artifact.create({
+      data: {
+        userId,
+        identifier: `sign-in-${Math.random().toString(16).slice(2, 8)}`,
+        title: "Sign in",
+        type: "DESIGN",
+        currentVersion: versions.length,
+        versions: {
+          create: versions.map((v, i) => ({
+            version: i + 1,
+            content: bodies[i],
+            origin: i === 0 ? "generated" : "edit",
+            ...(v.createdAt ? { createdAt: v.createdAt } : {}),
+          })),
+        },
+      },
+    });
+  }
+
+  /** One design gesture through the real transactions route. */
+  async function edit(artifactId: string, name: string, author: "user" | "juno" = "user") {
+    const { parseStoredDesignDocument } = await import("../src/lib/design/migrations");
+    const current = await prisma.artifact.findUniqueOrThrow({ where: { id: artifactId }, include: { draft: true } });
+    const content =
+      current.draft?.content ??
+      (await prisma.artifactVersion.findUniqueOrThrow({
+        where: { artifactId_version: { artifactId, version: current.currentVersion } },
+      })).content;
+    const route = await import("@/app/api/design/[artifactId]/transactions/route");
+    const res = await route.POST(
+      request("POST", {
+        origin: "edit",
+        transaction: {
+          id: `tx-${Math.random().toString(16).slice(2)}`,
+          baseRevision: parseStoredDesignDocument(content).revision,
+          operations: [{ op: "renameDocument", name }],
+          author,
+          summary: `Rename to ${name}`,
+          createdAt: new Date().toISOString(),
+        },
+      }),
+      params({ artifactId })
+    );
+    assert.equal(res.status, 200, `the edit lands: ${await res.clone().text()}`);
+  }
+
+  async function seal(artifactId: string, userId: string) {
+    const { sealArtifactDraft } = await import("@/lib/artifact-writes");
+    return sealArtifactDraft(artifactId, userId);
+  }
+
+  /** What the public page of a legacy share link shows, or null when it serves nothing. */
+  async function linkShows(token: string) {
+    const { getPublicShare, getSharedArtifactSnapshot } = await import("@/lib/share");
+    const share = await getPublicShare(token);
+    if (!share) return null;
+    const snapshot = await getSharedArtifactSnapshot(share);
+    return snapshot ? { version: snapshot.version, name: (JSON.parse(snapshot.content) as { name: string }).name } : null;
+  }
+
+  async function shareOf(userId: string, artifactId: string) {
+    const { createShare } = await import("@/lib/share");
+    const share = await createShare(userId, "ARTIFACT", artifactId);
+    assert.ok(share);
+    return share;
+  }
+
+  // ─── The rule a link resolves with ──────────────────────────────────────
+
+  test("a link serves the newest version that existed when it was made", async () => {
+    const user = await signUp("rule");
+    const base = Date.now() - 60 * 60_000;
+    const at = (seconds: number) => new Date(base + seconds * 1_000);
+    const artifact = await design(user.id, [
+      { name: "One", createdAt: at(0) },
+      { name: "Two", createdAt: at(10) },
+      { name: "Three", createdAt: at(20) },
+    ]);
+    const { getSharedArtifactSnapshot } = await import("@/lib/share");
+    const servedAt = async (snapshotAt: Date) =>
+      (await getSharedArtifactSnapshot({ kind: "ARTIFACT", artifactId: artifact.id, userId: user.id, snapshotAt } as Share))?.version ?? null;
+
+    assert.equal(await servedAt(at(15)), 2);
+    assert.equal(await servedAt(at(20)), 3, "a version made in the same instant counts");
+    assert.equal(await servedAt(at(99)), 3);
+    assert.equal(await servedAt(at(-5)), 1, "a link older than every version serves the first");
+  });
+
+  // ─── The store and the public page ──────────────────────────────────────
+
+  test("without a link, a quick run of edits folds into the draft, never a version", async () => {
+    const user = await signUp("fold");
+    const artifact = await design(user.id, [{ name: "Original" }]);
+    await edit(artifact.id, "Edit one");
+    await edit(artifact.id, "Edit two");
+    assert.equal(await prisma.artifactVersion.count({ where: { artifactId: artifact.id } }), 1);
+    const draft = await prisma.artifactDraft.findUniqueOrThrow({ where: { artifactId: artifact.id } });
+    assert.match(draft.content, /"name":"Edit two"/);
+  });
+
+  test("an edit made seconds after sharing never reaches the link, sealed or not (B1)", async () => {
+    const user = await signUp("b1");
+    const artifact = await design(user.id, [{ name: "Shared state" }]);
+    const link = await shareOf(user.id, artifact.id);
+    assert.deepEqual(await linkShows(link.token), { version: 1, name: "Shared state" });
+
+    // Inside the old checkpoint window, where the old store rewrote v1 in place.
+    await edit(artifact.id, "Private edit");
+    assert.deepEqual(await linkShows(link.token), { version: 1, name: "Shared state" }, "a draft is not a version");
+
+    assert.equal(await seal(artifact.id, user.id), 2, "the run seals as a version of its own");
+    assert.deepEqual(await linkShows(link.token), { version: 1, name: "Shared state" }, "sealed after the link, so still private");
+
+    // The run carries on, sealed again, and the link still cannot see it.
+    await edit(artifact.id, "Private edit two");
+    await seal(artifact.id, user.id);
+    assert.deepEqual(await linkShows(link.token), { version: 1, name: "Shared state" });
+    const v1 = await prisma.artifactVersion.findUniqueOrThrow({ where: { artifactId_version: { artifactId: artifact.id, version: 1 } } });
+    assert.match(v1.content, /"name":"Shared state"/, "the shared version is untouched");
+  });
+
+  test("a link frozen at an older version is untouched by edits to the newest", async () => {
+    const user = await signUp("older");
+    const artifact = await design(user.id, [
+      { name: "First", createdAt: new Date(Date.now() - 20_000) },
+      { name: "Moved", createdAt: new Date(Date.now() - 10_000) },
+    ]);
+    const link = await prisma.share.create({
+      data: { token: randomBytes(24).toString("base64url"), userId: user.id, kind: "ARTIFACT", artifactId: artifact.id, title: "Sign in", snapshotAt: new Date(Date.now() - 15_000) },
+    });
+    await edit(artifact.id, "Newest");
+    await seal(artifact.id, user.id);
+    assert.deepEqual(await linkShows(link.token), { version: 1, name: "First" });
+  });
+
+  test("a revoked link never serves again; a taken-down one that is restored still shows what it froze", async () => {
+    const user = await signUp("standing");
+    const artifact = await design(user.id, [{ name: "Original" }]);
+    const { revokeShare } = await import("@/lib/share");
+
+    const revoked = await shareOf(user.id, artifact.id);
+    assert.equal(await revokeShare(user.id, revoked.id), true);
+    assert.equal(await linkShows(revoked.token), null);
+
+    // An admin takedown, then edits, then the admin's restore.
+    const link = await shareOf(user.id, artifact.id);
+    assert.notEqual(link.token, revoked.token, "a revoked link is never reused");
+    await prisma.share.update({ where: { id: link.id }, data: { takenDownAt: new Date(), takedownReason: "test" } });
+    assert.equal(await linkShows(link.token), null);
+    await edit(artifact.id, "Edited while down");
+    await seal(artifact.id, user.id);
+    await prisma.share.update({ where: { id: link.id }, data: { takenDownAt: null, takedownReason: null } });
+    assert.deepEqual(await linkShows(link.token), { version: 1, name: "Original" });
+  });
+
+  test("a change Juno authors gets a version of its own, which the link cannot see", async () => {
+    const user = await signUp("juno");
+    const artifact = await design(user.id, [{ name: "Mine" }]);
+    const link = await shareOf(user.id, artifact.id);
+    await edit(artifact.id, "Juno's", "juno");
+    assert.equal((await prisma.artifact.findUniqueOrThrow({ where: { id: artifact.id } })).currentVersion, 2);
+    assert.deepEqual(await linkShows(link.token), { version: 1, name: "Mine" });
+  });
+
+  test("the database refuses to rewrite a version a link serves", async () => {
+    const user = await signUp("immutable");
+    const artifact = await design(user.id, [{ name: "Shared" }]);
+    await shareOf(user.id, artifact.id);
+    await assert.rejects(
+      prisma.artifactVersion.update({
+        where: { artifactId_version: { artifactId: artifact.id, version: 1 } },
+        data: { content: await designBody("Rewritten") },
+      })
+    );
+  });
+
+  // ─── Publishing ─────────────────────────────────────────────────────────
+
+  test("Publish without a version pins what the owner sees; later edits reach the page only through Update", async () => {
+    const user = await signUp("publish");
+    const artifact = await design(user.id, [{ name: "Head" }]);
+    await edit(artifact.id, "Looking at this");
+    const route = await import("@/app/api/artifacts/[id]/publication/route");
+    const publish = async (body: unknown) => {
+      const res = await route.POST(request("POST", body), params({ id: artifact.id }));
+      assert.equal(res.status, 200, await res.clone().text());
+      return ((await res.json()) as { publication: { token: string; pinnedVersion: number | null; servedVersion: number } }).publication;
+    };
+    const { findPublicPublication } = await import("@/lib/artifact-publication");
+    const pageShows = async (token: string) => {
+      const found = await findPublicPublication(token);
+      return found?.state === "live" ? { version: found.snapshot.version, name: (JSON.parse(found.snapshot.content) as { name: string }).name } : null;
+    };
+
+    const first = await publish({});
+    assert.deepEqual([first.pinnedVersion, first.servedVersion], [2, 2], "the draft was sealed and pinned: what the owner saw");
+    assert.deepEqual(await pageShows(first.token), { version: 2, name: "Looking at this" });
+
+    await edit(artifact.id, "Later edit");
+    await seal(artifact.id, user.id);
+    assert.deepEqual(await pageShows(first.token), { version: 2, name: "Looking at this" }, "a sealed later edit stays private");
+
+    const updated = await publish({ version: "current" });
+    assert.equal(updated.token, first.token, "Update keeps the URL");
+    assert.deepEqual(await pageShows(first.token), { version: 3, name: "Later edit" });
+
+    // Following later saves is asked for, by name.
+    const following = await publish({ version: "latest" });
+    assert.equal(following.pinnedVersion, null);
+  });
+
+  test("clean up the throwaway accounts", async () => {
+    await prisma.user.deleteMany({ where: { email: { startsWith: "share-freeze-" } } });
+    await prisma.$disconnect();
+  });
 }
-
-function share(snapshotAt: Date, standing: Partial<Pick<ShareRow, "revokedAt" | "takenDownAt">> = {}): Share {
-  const row: ShareRow = {
-    id: `s${db.shares.length + 1}`,
-    userId: OWNER,
-    kind: "ARTIFACT",
-    artifactId: ARTIFACT_ID,
-    snapshotAt,
-    revokedAt: null,
-    takenDownAt: null,
-    ...standing,
-  };
-  db.shares.push(row);
-  return { ...row, conversationId: null, token: `token-${row.id}`, title: "Sign in", views: 0, takenDownBy: null, takedownReason: null, createdAt: snapshotAt } as Share;
-}
-
-async function edit(doc: DesignDocument, x: number) {
-  const { commitTransaction, loadOwnedDesignArtifact } = await import("@/lib/design/store");
-  const artifact = await loadOwnedDesignArtifact(ARTIFACT_ID, OWNER);
-  assert.ok(artifact);
-  const outcome = await commitTransaction(
-    artifact,
-    transaction([{ op: "updateNode", nodeId: "screen", patch: { x } }], { baseRevision: doc.revision }),
-    "edit",
-    OWNER
-  );
-  assert.ok(outcome.ok, outcome.ok ? "" : outcome.message);
-  return outcome;
-}
-
-async function linkShows(link: Share) {
-  const { getSharedArtifactSnapshot } = await import("@/lib/share");
-  const snapshot = await getSharedArtifactSnapshot(link);
-  assert.ok(snapshot);
-  return { version: snapshot.version, content: snapshot.content };
-}
-
-const bodyOf = (version: number) => db.versions.find((v) => v.version === version)?.content;
-
-storeTest("without a link, a quick run of edits still folds into one checkpoint", async () => {
-  const doc = signInDocument();
-  const original = serializeDesignDocument(doc);
-  seed([{ body: original, ago: 5 }]);
-
-  const outcome = await edit(doc, 40);
-  assert.equal(outcome.artifact.currentVersion, 1, "folded, as before");
-  assert.equal(db.versions.length, 1);
-  assert.notEqual(bodyOf(1), original, "the checkpoint holds the edit");
-});
-
-storeTest("an edit made seconds after sharing never reaches the link (B1)", async () => {
-  const doc = signInDocument();
-  const shared = serializeDesignDocument(doc);
-  seed([{ body: shared, ago: 10 }]);
-  const link = share(secondsAgo(5));
-  assert.deepEqual(await linkShows(link), { version: 1, content: shared });
-
-  // Inside the checkpoint window, where the old store rewrote v1 in place.
-  const first = await edit(doc, 40);
-  assert.equal(first.artifact.currentVersion, 2, "the edit got a checkpoint of its own");
-  assert.equal(bodyOf(1), shared, "the shared version is untouched");
-  assert.deepEqual(await linkShows(link), { version: 1, content: shared }, "the link still shows what was shared");
-
-  // The run carries on in the new checkpoint, which the link cannot see.
-  const second = await edit(first.document, 80);
-  assert.equal(second.artifact.currentVersion, 2, "folded into v2");
-  assert.equal(db.versions.length, 2);
-  assert.equal(bodyOf(2), serializeDesignDocument(second.document));
-  assert.deepEqual(await linkShows(link), { version: 1, content: shared });
-
-  // Scoped to the signed-in owner, like every other read of their links.
-  assert.deepEqual(shareQueries[0], { userId: OWNER, kind: "ARTIFACT", artifactId: ARTIFACT_ID, revokedAt: null });
-});
-
-storeTest("a link frozen at an older version leaves the newest checkpoint free to fold", async () => {
-  const doc = signInDocument();
-  const v1 = serializeDesignDocument(doc);
-  const moved = run(doc, [{ op: "updateNode", nodeId: "screen", patch: { x: 10 } }]).document;
-  seed([
-    { body: v1, ago: 20 },
-    { body: serializeDesignDocument(moved), ago: 10 },
-  ]);
-  const link = share(secondsAgo(15));
-
-  const outcome = await edit(moved, 60);
-  assert.equal(outcome.artifact.currentVersion, 2, "folded into v2, which the link cannot see");
-  assert.equal(db.versions.length, 2);
-  assert.deepEqual(await linkShows(link), { version: 1, content: v1 });
-});
-
-storeTest("a revoked link does not hold a checkpoint; a taken-down one does", async () => {
-  const doc = signInDocument();
-  const original = serializeDesignDocument(doc);
-
-  seed([{ body: original, ago: 10 }]);
-  share(secondsAgo(5), { revokedAt: secondsAgo(2) });
-  const afterRevoke = await edit(doc, 40);
-  assert.equal(afterRevoke.artifact.currentVersion, 1, "a revoked link never serves again, so the run folds");
-
-  // An admin restore brings a taken-down link back with its old snapshot.
-  seed([{ body: original, ago: 10 }]);
-  const link = share(secondsAgo(5), { takenDownAt: secondsAgo(2) });
-  const afterTakedown = await edit(doc, 40);
-  assert.equal(afterTakedown.artifact.currentVersion, 2);
-  assert.equal(bodyOf(1), original);
-  assert.deepEqual(await linkShows(link), { version: 1, content: original });
-});
-
-storeTest("an edit that takes a new checkpoint anyway never asks about links", async () => {
-  const doc = signInDocument();
-  // Juno's output is never folded into, so no share lookup is needed.
-  seed([{ body: serializeDesignDocument(doc), ago: 5, origin: "generated" }]);
-  share(secondsAgo(2));
-  const outcome = await edit(doc, 40);
-  assert.equal(outcome.artifact.currentVersion, 2);
-  assert.equal(shareQueries.length, 0);
-});

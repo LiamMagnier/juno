@@ -133,10 +133,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ artifac
     );
   }
 
-  const conversation = await prisma.conversation.findFirst({
-    where: { id: artifact.conversationId },
-    select: { model: true },
-  });
+  // The chat's sticky model, when the design still has a chat; a design made
+  // outside one (or whose chat was deleted) falls back to the plan's default.
+  const conversation = artifact.conversationId
+    ? await prisma.conversation.findFirst({
+        where: { id: artifact.conversationId, userId: user.id },
+        select: { model: true },
+      })
+    : null;
   const model = pickEditModel(plan, conversation?.model ?? null);
   if (!model) {
     return NextResponse.json(

@@ -24,6 +24,9 @@ interface MessageListProps {
   status?: GenerationStatus;
   artifacts: ClientArtifact[];
   onOpenArtifact: (identifier: string, opts?: { fullscreen?: boolean }) => void;
+  /** A card changed its artifact (restore, suggestion applied or dismissed) —
+   *  see MessageItemProps.onArtifactChanged. Must be stable. */
+  onArtifactChanged?: (artifact: ClientArtifact) => void;
   /** Chat-only turn actions — optional so non-chat surfaces (code sessions)
    *  reuse the rendering without dead buttons. See MessageItemProps. */
   onRegenerate?: (options?: RegenerateOptions) => void;
@@ -354,6 +357,7 @@ export function MessageList(props: MessageListProps) {
               animateIn={i >= animateFrom}
               artifactsByIdentifier={artifactsByIdentifier}
               onOpenArtifact={props.onOpenArtifact}
+              onArtifactChanged={props.onArtifactChanged}
               onRegenerate={props.onRegenerate}
               onContinue={props.onContinue}
               onEdit={props.onEdit}

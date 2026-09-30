@@ -1,4 +1,5 @@
 import "server-only";
+import { syncConversationIdFor } from "@/lib/artifact-access";
 import { prisma } from "@/lib/prisma";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import { decryptField } from "@/lib/field-crypto";
@@ -225,15 +226,32 @@ const loaders: Record<string, EntityLoader> = {
     return new Map(entries);
   },
   artifact: async (accountId, ids) => {
+    // Owned by the artifact's own userId (src/lib/artifact-access.ts). A
+    // trashed row is omitted, which `buildEntityEnvelopes` turns into a
+    // tombstone at its current revision (trash is an UPDATE, so it bumps the
+    // revision); restoring it is another UPDATE, which delivers it again.
+    // Versions are deliberately NOT projected out: a restored artifact must
+    // come back with its history, and no version change is announced on
+    // restore.
     const rows = await prisma.artifact.findMany({
-      where: { id: { in: ids }, conversation: { userId: accountId } },
+      where: { id: { in: ids }, userId: accountId, deletedAt: null },
     });
     return new Map(
       rows.map((row) => [
         row.id,
         {
           id: row.id,
-          conversationId: row.conversationId,
+          // Never null on the wire: the installed apps decode it as a required
+          // non-empty string and fail the whole library without one. A
+          // detached artifact carries a stable placeholder that names no chat
+          // (syncConversationIdFor); `detached` and `ownerConversationId` say
+          // the truth to builds that read them.
+          conversationId: syncConversationIdFor(row),
+          ownerConversationId: row.conversationId,
+          detached: row.conversationId === null,
+          projectId: row.projectId,
+          derivedFromId: row.derivedFromId,
+          derivedFromVersion: row.derivedFromVersion,
           messageId: row.messageId,
           identifier: row.identifier,
           title: row.title,
@@ -248,7 +266,7 @@ const loaders: Record<string, EntityLoader> = {
   },
   artifact_version: async (accountId, ids) => {
     const rows = await prisma.artifactVersion.findMany({
-      where: { id: { in: ids }, artifact: { conversation: { userId: accountId } } },
+      where: { id: { in: ids }, artifact: { userId: accountId } },
     });
     return new Map(
       rows.map((row) => [

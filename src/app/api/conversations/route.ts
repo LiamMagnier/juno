@@ -6,6 +6,10 @@ import { listConversations } from "@/lib/queries";
 import { serializeConversation } from "@/lib/serializers";
 import { codeWorkspaceAttributionShape } from "@/lib/code-workspaces";
 import { DEFAULT_CODE_SESSION_TITLE } from "@/lib/title-ownership";
+import { deleteConversationsKeepingArtifacts } from "@/lib/artifact-follow";
+
+/** Chats deleted per transaction by DELETE (all). */
+const DELETE_CHUNK = 100;
 
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -73,9 +77,13 @@ export async function DELETE() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  await prisma.conversation.deleteMany({
-    where: { userId: user.id },
-  });
+  // Every chat goes; every artifact stays (detached, with the files it uses).
+  // In chunks, so a large account never becomes one long transaction.
+  const ids = (await prisma.conversation.findMany({ where: { userId: user.id }, select: { id: true } })).map((c) => c.id);
+  let deleted = 0;
+  for (let i = 0; i < ids.length; i += DELETE_CHUNK) {
+    deleted += await deleteConversationsKeepingArtifacts(user.id, ids.slice(i, i + DELETE_CHUNK));
+  }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, deleted });
 }

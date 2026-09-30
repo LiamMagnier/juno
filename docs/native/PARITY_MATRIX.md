@@ -22,7 +22,7 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 
 ## Summary
 
-273 routes: 176 native, 34 planned, 50 web only, 13 internal. 44 pages: on the Mac 33 native, 2 partial, 2 planned, 7 web only; on iOS 17 native, 6 partial, 14 planned, 7 web only.
+286 routes: 176 native, 46 planned, 51 web only, 13 internal. 44 pages: on the Mac 33 native, 2 partial, 2 planned, 7 web only; on iOS 17 native, 6 partial, 14 planned, 7 web only.
 
 | Feature | Pages (Mac) | Pages (iOS) | Routes native | Planned | Web only | Internal |
 |---|---|---|---|---|---|---|
@@ -32,8 +32,8 @@ Pages (`src/app/(app)/**/page.tsx`), per app (Mac, iPhone and iPad):
 | [Conversations, messages and sharing](#conversations) | – | – | 9 | 2 | 3 | 0 |
 | [Search and recents](#search) | – | – | 2 | 0 | 0 | 0 |
 | [Projects](#projects) | 2/2 | 2/2 | 1 | 1 | 1 | 0 |
-| [Library, files and knowledge](#library) | 1/2 | 1/2 | 12 | 4 | 2 | 0 |
-| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 5 | 2 | 2 | 0 |
+| [Library, files and knowledge](#library) | 1/2 | 1/2 | 12 | 5 | 2 | 0 |
+| [Artifacts and Design](#artifacts) | 4/4 | 3/4 (+1 partial) | 5 | 13 | 3 | 0 |
 | [Memory](#memory) | 1/1 | 1/1 | 12 | 0 | 0 | 0 |
 | [Connections](#connections) | 1/1 | 1/1 | 10 | 1 | 3 | 2 |
 | [Skills](#skills) | 4/4 | 0/4 | 10 | 0 | 0 | 0 |
@@ -198,6 +198,7 @@ The Mac's ⌘K panel searches chats, messages, projects, files and artifacts on 
 | `/api/knowledge/documents/[id]` | GET | Planned |  | As /api/knowledge/documents. |
 | `/api/library` | GET | Native | JunoChatKit |  |
 | `/api/library/[id]` | DELETE | Native | JunoChatKit |  |
+| `/api/library/made` | GET | Planned |  | Everything Juno made in one paged list: chat artifacts and task deliverables (docx, xlsx, pptx…), each with a kind and a type. The apps list artifacts from sync and deliverables from /api/work/artifacts. |
 | `/api/library/attach` | POST | Native | JunoChatKit |  |
 | `/api/prompts` | GET, POST | Planned |  | The saved-prompt library (insert, use counts); the apps read saved prompts through sync but have no library dialog. |
 | `/api/prompts/[id]` | POST, PATCH, DELETE | Planned |  | As /api/prompts. |
@@ -221,8 +222,20 @@ Design is a type of artifact (register #73).
 |---|---|---|---|---|
 | `/api/artifacts` | GET | Web only |  | The apps list artifacts from sync; the web's grid asks for previews here. |
 | `/api/artifacts/[id]` | GET, POST, PATCH, DELETE | Native | JunoChatKit |  |
+| `/api/artifacts/[id]/download` | GET | Planned |  | Download one version as a file, or a design (or any artifact, format=zip) as a ZIP bundle with a README and optional history. The apps still share a design's source through the system share sheet. |
+| `/api/artifacts/[id]/draft` | POST | Web only |  | Seals or discards the web design editor's working copy (ArtifactDraft). The Mac and iPhone hosted editors keep their own draft and save a whole document through /api/artifacts/[id] with a base version. |
+| `/api/artifacts/[id]/duplicate` | POST | Planned |  | Duplicate an artifact into a new one in the same project, with derivedFrom provenance. No Duplicate command in the apps yet. |
 | `/api/artifacts/[id]/export` | GET | Native | JunoChatKit |  |
 | `/api/artifacts/[id]/poster` | GET | Native | JunoChatKit |  |
+| `/api/artifacts/[id]/proposals/[proposalId]` | GET | Planned |  | Compare a held re-emit (the re-emit guard's suggestion) with the current version. The apps show neither the suggestion bar nor Compare yet; a held tag draws no card there. |
+| `/api/artifacts/[id]/proposals/[proposalId]/apply` | POST | Planned |  | Apply a held re-emit as the next version, against the version the person compared. |
+| `/api/artifacts/[id]/proposals/[proposalId]/dismiss` | POST | Planned |  | Dismiss a held re-emit. |
+| `/api/artifacts/[id]/proposals/[proposalId]/poster` | GET | Planned |  | The picture of a suggested design, for Compare. |
+| `/api/artifacts/[id]/publication` | GET, POST, DELETE | Planned |  | Publish (pinned to a version or to latest), Update, Roll back, Unpublish. The apps still make the legacy snapshot link through /api/share; the Publish panel is web-only until the native lane adds it. |
+| `/api/artifacts/[id]/publication/reset` | POST | Planned |  | Reset a published link: the old token answers link gone, a new token serves. |
+| `/api/artifacts/[id]/restore` | POST | Planned |  | Restore from Recently deleted. A delete from the apps now moves the artifact to Recently deleted (the sync feed tombstones it); the apps have no Recently deleted view yet. |
+| `/api/artifacts/[id]/versions` | GET | Planned |  | Paginated version history (newest first, bodies on request). The apps read versions from sync and the windowed /api/artifacts/[id]. |
+| `/api/artifacts/[id]/versions/[version]` | GET | Planned |  | One version's body, for paged history. |
 | `/api/design` | POST | Native | JunoDesktop |  |
 | `/api/design/[artifactId]` | GET | Web only |  | The Mac reads a design's document from its artifact and hands it to the hosted editor. |
 | `/api/design/[artifactId]/edit` | POST | Planned |  | Ask Juno to change the selected layers of a design; the Mac's hosted editor has no Ask Juno yet. |

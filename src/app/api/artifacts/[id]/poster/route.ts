@@ -62,10 +62,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     }
   }
 
-  // An artifact id alone must never grant access — join through the owning
-  // conversation, as every other artifact route does.
+  // An artifact id alone must never grant access: it must be the reader's own.
+  // A trashed design still draws, so its tile in Recently deleted is a picture.
   const artifact = await prisma.artifact.findFirst({
-    where: { id, type: "DESIGN", conversation: { userId: user.id } },
+    where: { id, type: "DESIGN", userId: user.id },
     select: { currentVersion: true },
   });
   if (!artifact) return notFound();

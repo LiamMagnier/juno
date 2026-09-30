@@ -225,6 +225,32 @@ export function useDesignDocument(opts: Options) {
     [opts.transport, opts.artifactId]
   );
 
+  // The website's edits land in the design's working copy (a draft), which the
+  // server seals into a version on a pause, on the next non-editor write, or
+  // when its maintenance sweep finds it idle (src/lib/artifact-writes.ts).
+  // Leaving the page seals it now, so the last run of edits becomes a version
+  // the apps and a published link can see without waiting for the sweep. A
+  // beacon, because it must survive the page going away; best effort, since
+  // the sweep is the backstop. Hosted editors (a custom transport) save their
+  // own way and have no draft.
+  const usesHttp = !opts.transport;
+  const artifactIdForSeal = opts.artifactId;
+  React.useEffect(() => {
+    if (!usesHttp || typeof window === "undefined") return;
+    const seal = () => {
+      try {
+        navigator.sendBeacon?.(`/api/artifacts/${encodeURIComponent(artifactIdForSeal)}/draft`);
+      } catch {
+        // Best effort: the sweep seals it within minutes.
+      }
+    };
+    window.addEventListener("pagehide", seal);
+    return () => {
+      window.removeEventListener("pagehide", seal);
+      seal();
+    };
+  }, [usesHttp, artifactIdForSeal]);
+
   /** Give up on everything queued and put the canvas back on the stored
    *  document, so the editor never keeps drawing a state that was refused. */
   const rollback = React.useCallback((stored: DesignDocument | null, message: string) => {

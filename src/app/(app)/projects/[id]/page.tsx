@@ -176,7 +176,7 @@ export default function ProjectDetailPage() {
   /** The project's artifacts as the route found them, each with the chat it
    *  was made in. Kept whole and narrowed below, because the project's chats
    *  arrive from another request and can change while the page is open. */
-  const [accountArtifacts, setAccountArtifacts] = React.useState<(ProjectArtifactItem & { conversationId: string })[]>([]);
+  const [accountArtifacts, setAccountArtifacts] = React.useState<(ProjectArtifactItem & { conversationId: string | null })[]>([]);
 
   // Composer states. `null` model = not chosen yet → fall back to account default
   // without overwriting a pick the user already made (that overwrite was sending
@@ -326,7 +326,7 @@ export default function ProjectDetailPage() {
               identifier: String(a.identifier || a.id),
               title: String(a.title || "Untitled artifact"),
               type: String(a.type || "CODE"),
-              conversationId: String(a.conversationId ?? ""),
+              conversationId: a.conversationId == null ? null : String(a.conversationId),
               updatedAt: String(a.updatedAt || ""),
             }))
           );
@@ -1268,7 +1268,8 @@ export default function ProjectDetailPage() {
           <DialogHeader>
             <DialogTitle>Delete this chat?</DialogTitle>
             <DialogDescription>
-              “{chatToDelete?.title}” and its messages are removed for good. This can’t be undone.
+              “{chatToDelete?.title}” and its messages are removed for good. Anything Juno made in it stays in your
+              Library. This can’t be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

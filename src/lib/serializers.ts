@@ -2,11 +2,14 @@ import "server-only";
 import type {
   Attachment,
   Artifact,
+  ArtifactProposal,
   ArtifactVersion,
   Conversation,
   Message,
   MessageVersion,
+  Prisma,
 } from "@prisma/client";
+import { artifactVersionWindow } from "@/lib/artifact-access";
 import { getViewUrl } from "@/lib/storage";
 import type {
   ClientActivityEvent,
@@ -259,22 +262,105 @@ function normalizeVersionOrigin(raw: string | null): "generated" | "edit" | "res
   return raw === "generated" || raw === "edit" || raw === "restore" ? raw : null;
 }
 
-export function serializeArtifact(art: Artifact & { versions: ArtifactVersion[] }): ClientArtifact {
+/**
+ * What an owner's artifact read includes: the newest window of versions, the
+ * newest PENDING suggestion (the re-emit guard) as a label and never its
+ * content, and the design editor's working copy.
+ *
+ * `take: 1` on proposals because only the newest can be applied: writing a
+ * suggestion marks every earlier PENDING one for that artifact STALE.
+ *
+ * Sync does not use this; neither suggestions nor drafts are ever synced.
+ */
+export const ARTIFACT_CLIENT_INCLUDE = {
+  versions: artifactVersionWindow,
+  proposals: {
+    where: { status: "PENDING" },
+    orderBy: { createdAt: "desc" },
+    take: 1,
+    select: { id: true, baseVersion: true, messageId: true, summary: true, createdAt: true },
+  },
+  draft: { select: { content: true, updatedAt: true } },
+} satisfies Prisma.ArtifactInclude;
+
+/**
+ * The same read without the working copy: what the generic REST route answers.
+ * The installed Mac and iPhone builds read it, and they must see sealed
+ * versions only — a draft is the web editor's, and a "version" that is not a
+ * row yet would be cached under a number whose body can still change.
+ */
+export const ARTIFACT_SEALED_INCLUDE = {
+  versions: artifactVersionWindow,
+  proposals: ARTIFACT_CLIENT_INCLUDE.proposals,
+} satisfies Prisma.ArtifactInclude;
+
+type SerializableSuggestion = Pick<ArtifactProposal, "id" | "baseVersion" | "messageId" | "summary" | "createdAt">;
+
+/**
+ * Typed by what it reads, so a narrower select or an older fixture still
+ * type-checks; a full row satisfies it unchanged.
+ */
+type SerializableArtifact = Pick<
+  Artifact,
+  "id" | "identifier" | "type" | "title" | "language" | "currentVersion" | "messageId" | "createdAt" | "updatedAt"
+> &
+  Partial<Pick<Artifact, "deletedAt">> & {
+    versions: Pick<ArtifactVersion, "version" | "content" | "origin" | "createdAt">[];
+    proposals?: SerializableSuggestion[];
+    draft?: { content: string; updatedAt: Date } | null;
+  };
+
+/**
+ * `hasOlderVersions`, `deletedAt`, `pendingSuggestion` and the draft entry are
+ * added ONLY WHEN SET, so a live artifact with a short history, nothing
+ * waiting and no draft serializes to exactly the object it always did.
+ *
+ * A draft is presented as the version it will become when sealed
+ * (`currentVersion + 1`, marked `draft: true`), because that is what the
+ * editor is showing and what a save based on it will find: every write seals
+ * the draft first, so the draft becomes exactly that version.
+ */
+export function serializeArtifact(art: SerializableArtifact): ClientArtifact {
   const sorted = [...art.versions].sort((a, b) => a.version - b.version);
-  const latest = sorted[sorted.length - 1];
-  return {
+  const head = sorted.find((v) => v.version === art.currentVersion) ?? sorted[sorted.length - 1];
+  const out: ClientArtifact = {
     id: art.id,
     identifier: art.identifier,
     type: art.type as ArtifactType,
     title: art.title,
     language: art.language,
     currentVersion: art.currentVersion,
-    content: latest?.content ?? "",
+    content: head?.content ?? "",
     versions: sorted.map((v) => ({ version: v.version, content: v.content, origin: normalizeVersionOrigin(v.origin), createdAt: v.createdAt.toISOString() })),
     messageId: art.messageId,
     createdAt: art.createdAt.toISOString(),
     updatedAt: art.updatedAt.toISOString(),
   };
+  if (sorted.length > 0 && sorted[0].version > 1) out.hasOlderVersions = true;
+  if (art.draft) {
+    const working = art.currentVersion + 1;
+    out.versions.push({
+      version: working,
+      content: art.draft.content,
+      origin: "edit",
+      createdAt: art.draft.updatedAt.toISOString(),
+      draft: true,
+    });
+    out.currentVersion = working;
+    out.content = art.draft.content;
+  }
+  if (art.deletedAt) out.deletedAt = art.deletedAt.toISOString();
+  const suggestion = art.proposals?.[0];
+  if (suggestion) {
+    out.pendingSuggestion = {
+      id: suggestion.id,
+      baseVersion: suggestion.baseVersion,
+      messageId: suggestion.messageId,
+      summary: suggestion.summary,
+      createdAt: suggestion.createdAt.toISOString(),
+    };
+  }
+  return out;
 }
 
 /**

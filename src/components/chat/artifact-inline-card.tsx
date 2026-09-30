@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import nextDynamic from "next/dynamic";
+import { toast } from "sonner";
 import { Code2, FileCode2, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, Terminal } from "@/components/ui/icons";
-import { AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Markdown } from "@/components/chat/markdown";
 import type { ConsoleEntry, RunStatus } from "@/components/canvas/sandbox-frame";
 
@@ -34,10 +35,14 @@ const SandboxFrame = nextDynamic(
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { runtimeFor } from "@/lib/artifact-runtime";
 import { DesignPoster } from "@/components/artifacts/artifact-preview";
+import { SuggestionBar } from "@/components/artifacts/suggestion-bar";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
+import { artifactRestoreUrl, placeholderNote, restoredArtifact } from "@/lib/artifact-card-state";
 import { cn } from "@/lib/utils";
 import type { ArtifactType } from "@/lib/message-content";
+import type { ClientArtifact, ClientArtifactSuggestion } from "@/types/chat";
 
 type ArtifactView = "code" | "console" | "preview";
 
@@ -197,12 +202,49 @@ function DesignNote({ children }: { children: React.ReactNode }) {
 }
 
 /**
+ * The body of a card whose artifact is in Recently deleted.
+ *
+ * No preview under it. The canvas will not open a trashed artifact (every
+ * route behind it answers 404), so a live sandbox here would be a preview of
+ * something the reader cannot reach, running code for nothing. What the card
+ * owes the transcript is where the thing went and the way back — the same two
+ * facts Artifacts' Recently deleted row gives — at the size of a notice, so a
+ * long chat that made something since deleted does not keep a 360px hole for
+ * it. The header above still names it.
+ */
+function TrashedNote({ onRestore, restoring }: { onRestore?: () => void; restoring: boolean }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3.5 py-2.5 text-ui text-muted-foreground motion-safe:animate-fade-in">
+      <ActionIcons.delete className="size-4 shrink-0" aria-hidden />
+      <span className="min-w-0 flex-1">In Recently deleted</span>
+      {onRestore && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onRestore}
+          loading={restoring}
+          className="h-7 px-2.5 text-caption"
+        >
+          <ActionIcons.restore className="size-3.5" aria-hidden />
+          Restore
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
  * An artifact living inline in the transcript: live preview first (a website
  * runs, a document reads, a program's output streams, a design shows its
  * picture), with Code and Console a view-switch away for the types that have
  * them, and one labeled action that hands off to the Canvas.
  * The chrome stays quiet — hairline frame, flat header, mono metadata — so the
  * artifact's own content is the visual event, not the card.
+ *
+ * Three R1 states ride on it, each a strip rather than a second card:
+ *   a waiting suggestion, under the header (suggestion-bar.tsx);
+ *   Recently deleted, in place of the body;
+ *   pictures that became placeholders, as a footnote under the body.
  */
 export function ArtifactInlineCard({
   artifactId,
@@ -214,6 +256,10 @@ export function ArtifactInlineCard({
   updated,
   version,
   onOpen,
+  suggestion,
+  trashed,
+  placeholderCount = 0,
+  onArtifactChanged,
 }: {
   /** The stored row's id. Absent while the block is still being written, and
    *  until the finished turn delivers its artifacts. A design needs it for its
@@ -229,6 +275,23 @@ export function ArtifactInlineCard({
   /** Current version number — shown once the artifact has history (v2+). */
   version?: number;
   onOpen?: () => void;
+  /**
+   * Juno's held re-emit, when THIS message made it (`cardSuggestion`). The
+   * preview keeps showing the current version; the bar says the newer one is
+   * waiting and lets the person take it or leave it.
+   */
+  suggestion?: ClientArtifactSuggestion | null;
+  /** The artifact is in Recently deleted: the body becomes the way back. */
+  trashed?: boolean;
+  /** Pictures verification turned into placeholders in this turn. */
+  placeholderCount?: number;
+  /**
+   * A route changed the artifact from this card (a restore, a suggestion
+   * applied or dismissed). Absent where the card cannot report back — a dev
+   * gallery — which hides the controls that would need it rather than letting
+   * them change the server behind a card that never updates.
+   */
+  onArtifactChanged?: (artifact: ClientArtifact) => void;
 }) {
   const Icon = ICONS[type] ?? FileCode2;
   const rt = runtimeFor(type, language);
@@ -305,6 +368,36 @@ export function ArtifactInlineCard({
     setConsoleEntries((prev) => (prev.length > 150 ? [...prev.slice(-120), entry] : [...prev, entry]));
   }, []);
 
+  // Recently deleted → back. The card turns back into itself when the
+  // restored row lands in the chat's list; the toast is for the reader who
+  // was not looking at the card when it did (and for a screen reader, which
+  // hears nothing from a card changing shape).
+  const [restoring, setRestoring] = React.useState(false);
+  const canRestore = !!(trashed && artifactId && onArtifactChanged);
+  const restore = async () => {
+    if (!artifactId || !onArtifactChanged || restoring) return;
+    setRestoring(true);
+    try {
+      const res = await fetch(artifactRestoreUrl(artifactId), { method: "POST" });
+      const restored = restoredArtifact(res.status, await res.json().catch(() => null));
+      if (!restored) throw new Error("restore failed");
+      onArtifactChanged(restored);
+      toast.success(`Restored “${title || "artifact"}”.`);
+    } catch {
+      toast.error("Couldn’t restore this artifact.");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  // Everything the bar needs, or null: it only shows on a saved, settled,
+  // live card that can report the outcome back.
+  const waiting =
+    suggestion && artifactId && version != null && onArtifactChanged && !streaming && !trashed
+      ? { suggestion, artifactId, version, onArtifactChanged }
+      : null;
+  const placeholders = streaming || trashed ? null : placeholderNote(placeholderCount);
+
   // Identity block — doubles as a second, larger open target when the canvas
   // is available.
   const identity = (
@@ -328,7 +421,9 @@ export function ArtifactInlineCard({
         <Icon className={cn("size-4", streaming && "motion-safe:animate-icon-breathe")} aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-ui font-medium leading-5">{title || "Untitled artifact"}</span>
+        <span className={cn("block truncate text-ui font-medium leading-5", trashed && "text-muted-foreground")}>
+          {title || "Untitled artifact"}
+        </span>
         <span className="flex min-w-0 items-center gap-1.5 pt-0.5 font-mono text-micro text-muted-foreground">
           <span className="truncate">{rt.label}</span>
           {!streaming && version != null && version > 1 && (
@@ -394,7 +489,7 @@ export function ArtifactInlineCard({
 
         <div className="flex shrink-0 items-center gap-1 self-end @[24rem]:self-auto">
           {/* View switcher — hidden while streaming (the write-in IS the view). */}
-          {!isDesign && !streaming && hasContent && viewOptions.length > 1 && (
+          {!isDesign && !streaming && !trashed && hasContent && viewOptions.length > 1 && (
             <SegmentedControl
               value={view}
               onChange={setView}
@@ -435,7 +530,20 @@ export function ArtifactInlineCard({
         )}
       </div>
 
-      {designFace && designFace !== "missing" ? (
+      {waiting && (
+        <SuggestionBar
+          variant="card"
+          artifactId={waiting.artifactId}
+          type={type}
+          currentVersion={waiting.version}
+          suggestion={waiting.suggestion}
+          onResolved={waiting.onArtifactChanged}
+        />
+      )}
+
+      {trashed ? (
+        <TrashedNote onRestore={canRestore ? () => void restore() : undefined} restoring={restoring} />
+      ) : designFace && designFace !== "missing" ? (
         /* The same stable height and the same mat as a sandbox preview, so a
            design card does not change size when its picture replaces the
            glyph, and sits in the transcript at the size every other card does.
@@ -548,6 +656,19 @@ export function ArtifactInlineCard({
           // tonal signal, and a full-bleed block would clip it against the card.
           className="m-3 min-h-[140px]"
         />
+      )}
+
+      {/* What verification changed without refusing anything: a photo the
+          model asked for became a grey box. Said once, under the picture it
+          is about, in the footnote register — information, not an error; the
+          design saved and is exactly what the card shows. The layer names the
+          notes quote stay in the activity log (they are the owner's words);
+          the card only needs the count. */}
+      {placeholders && (
+        <p className="flex items-center gap-1.5 border-t border-border/60 px-3.5 py-2 text-caption text-muted-foreground">
+          <StatusIcons.info className="size-3.5 shrink-0" aria-hidden />
+          {placeholders}
+        </p>
       )}
     </article>
   );

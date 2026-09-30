@@ -50,7 +50,8 @@ interface Props {
   /** The current version's document JSON, read on the server. */
   content: string;
   /** The conversation that owns the artifact, for the way back into chat. */
-  conversationId: string;
+  /** Null for a design with no chat (made outside one, or its chat was deleted). */
+  conversationId: string | null;
 }
 
 export function DesignWorkspace({ artifactId, title, version, content, conversationId }: Props) {
@@ -152,7 +153,7 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
       const res = await fetch(`/api/artifacts/${artifactId}`, { method: "DELETE" });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Couldn’t delete this design.");
-      toast.success("Design deleted.");
+      toast.success("Moved to Recently deleted.");
       // Back to where designs are listed now: Artifacts, filtered to designs.
       // `/design` would get there too, through one redirect more.
       router.replace(DESIGNS_HOME);
@@ -182,12 +183,14 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
 
         <div className="flex-1" />
 
-        <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground">
-          <Link href={`/chat/${conversationId}`}>
-            <MessagesSquare className="size-3.5" aria-hidden />
-            Chat
-          </Link>
-        </Button>
+        {conversationId && (
+          <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground">
+            <Link href={`/chat/${conversationId}`}>
+              <MessagesSquare className="size-3.5" aria-hidden />
+              Chat
+            </Link>
+          </Button>
+        )}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -245,7 +248,8 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
           <DialogHeader>
             <DialogTitle>Delete {name}?</DialogTitle>
             <DialogDescription>
-              Every version of this design and its history will be permanently removed. This cannot be undone.
+              It moves to Recently deleted for 30 days with every version, and any public link to it stops
+              working until it is restored.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

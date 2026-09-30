@@ -137,7 +137,7 @@ export interface ArtifactRow {
   id: string;
   identifier: string;
   title: string;
-  conversationId: string;
+  conversationId: string | null;
   projectId: string | null;
   version: number;
   snippetSource: string;
@@ -323,8 +323,11 @@ export function knowledgeSearchSql(o: SearchSqlOptions): Prisma.Sql {
  * carries its number so the destination opens that version rather than
  * whichever is current — which is the whole point of searching history.
  *
- * Artifact has no `userId` of its own; it is owned through its conversation,
- * so the scope is the join.
+ * Scoped on the artifact's own owner (`Artifact.userId`): an artifact whose
+ * chat was deleted, or that never had one, is still the owner's and still
+ * findable. Trashed artifacts are left out, as everywhere else. The project is
+ * the artifact's own, falling back to its chat's for a row the previous release
+ * wrote without one.
  */
 export function artifactSearchSql(o: SearchSqlOptions): Prisma.Sql {
   const body = Prisma.sql`(coalesce(a."title", '') || ' ' || v."content")`;
@@ -335,18 +338,19 @@ export function artifactSearchSql(o: SearchSqlOptions): Prisma.Sql {
              a."identifier",
              a."title",
              a."conversationId",
-             c."projectId",
+             COALESCE(a."projectId", c."projectId") AS "projectId",
              v."version",
              ${snippetOf(Prisma.sql`v."content"`, o.firstTerm)} AS "snippetSource",
              v."createdAt" AS "updatedAt",
              ts_rank(to_tsvector('simple', ${body}), ${query(o.tsquery)}) AS rank
         FROM "ArtifactVersion" v
         JOIN "Artifact" a ON a."id" = v."artifactId"
-        JOIN "Conversation" c ON c."id" = a."conversationId"
-       WHERE c."userId" = ${o.userId}
+        LEFT JOIN "Conversation" c ON c."id" = a."conversationId"
+       WHERE a."userId" = ${o.userId}
+         AND a."deletedAt" IS NULL
          AND to_tsvector('simple', ${body}) @@ ${query(o.tsquery)}${optional(
            o.since ? Prisma.sql`v."createdAt" >= ${o.since}` : null
-         )}${optional(o.projectId ? Prisma.sql`c."projectId" = ${o.projectId}` : null)}
+         )}${optional(o.projectId ? Prisma.sql`COALESCE(a."projectId", c."projectId") = ${o.projectId}` : null)}
        ORDER BY v."artifactId", rank DESC, v."version" DESC
     ) best
      ORDER BY best.rank DESC, best."updatedAt" DESC

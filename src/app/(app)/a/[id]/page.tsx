@@ -51,7 +51,7 @@ export default async function ArtifactPage({
   if (view.kind === "missing") notFound();
   if (view.kind === "redirect") redirect(view.to);
 
-  const body = await loadArtifactVersion(artifact.id, view.version);
+  const body = await loadArtifactVersion(artifact, view.version, user.id);
   // Deleted between the two reads. Rare, and a 404 is the truth of it.
   if (!body) notFound();
 
@@ -81,7 +81,9 @@ export default async function ArtifactPage({
       // A design's older version is drawn from its poster, so its document —
       // up to 200 000 characters of JSON — never rides into the page payload.
       content={type === "DESIGN" ? "" : body.content}
-      chatHref={chatArtifactPath(artifact.conversationId, artifact.identifier)}
+      // Null when the artifact has no chat (made outside one, or its chat was
+      // deleted): it is still its owner's, and there is nothing to open.
+      chatHref={artifact.conversationId ? chatArtifactPath(artifact.conversationId, artifact.identifier) : null}
     />
   );
 }

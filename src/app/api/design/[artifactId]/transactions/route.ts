@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/session";
-import { commitTransaction, documentFromArtifact, loadOwnedDesignArtifact, serializeDesignArtifact } from "@/lib/design/store";
+import { commitTransaction, documentFromArtifact, loadOwnedDesignArtifact, serializeDesignArtifact, workingVersionOf } from "@/lib/design/store";
 import { designTransactionSchema } from "@/lib/design/operations";
+import { artifactWriteLimited } from "@/lib/artifact-rate-limit";
 import { DesignValidationError } from "@/lib/design/schema";
 
 export const runtime = "nodejs";
@@ -17,13 +18,16 @@ const bodySchema = z.object({
 /**
  * Apply one validated transaction to a design document.
  *
- * This is the editor's only write path. There is deliberately no design-only
- * "replace the document" endpoint: the undo stack would have nothing to
- * invert. Every change — a drag, a keyboard nudge, an accepted AI proposal —
- * arrives here as operations against a named `baseRevision`. (The generic
- * artifact save, `POST /api/artifacts/[id]`, still appends a whole document —
- * restore, and the Mac and iPhone Save — but only one that passes the same
- * validation every design read applies; see src/lib/design/document-save.ts.)
+ * This is the web editor's write path. It lands in the design's working copy
+ * (`ArtifactDraft`), which is sealed into an immutable version on a pause, a
+ * checkpoint, or before any other write (src/lib/design/store.ts). There is
+ * deliberately no "replace the document" endpoint here: a client that could
+ * PUT a whole scene could also PUT one the operation layer never checked, and
+ * the undo stack would have nothing to invert. (The apps' whole-document Save
+ * and a restore go through POST /api/artifacts/[id], which holds a design
+ * body to the parser every design read uses: src/lib/artifact-content.ts.)
+ * Every change — a drag, a keyboard nudge, an accepted AI proposal — arrives
+ * here as operations against a named `baseRevision`.
  *
  * A stale `baseRevision` returns 409 with the current document, so the client
  * can show what changed rather than silently clobbering it.
@@ -31,6 +35,9 @@ const bodySchema = z.object({
 export async function POST(req: Request, { params }: { params: Promise<{ artifactId: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const limited = await artifactWriteLimited(user, "transaction");
+  if (limited) return limited;
 
   const { artifactId } = await params;
   const artifact = await loadOwnedDesignArtifact(artifactId, user.id);
@@ -45,11 +52,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ artifac
   }
 
   try {
-    const outcome = await commitTransaction(artifact, parsed.data.transaction, parsed.data.origin, user.id);
+    const outcome = await commitTransaction(artifact, parsed.data.transaction, parsed.data.origin);
     if (!outcome.ok) {
       return NextResponse.json(
         { error: outcome.message, code: outcome.code, document: outcome.document ?? null },
-        { status: outcome.code === "conflict" ? 409 : outcome.code === "too-large" ? 413 : 400 }
+        {
+          status:
+            outcome.code === "conflict" ? 409 : outcome.code === "too-large" ? 413 : outcome.code === "not-found" ? 404 : 400,
+        }
       );
     }
     return NextResponse.json({
@@ -81,7 +91,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ artifac
 
   try {
     const document = documentFromArtifact(artifact);
-    return NextResponse.json({ revision: document.revision, currentVersion: artifact.currentVersion });
+    return NextResponse.json({ revision: document.revision, currentVersion: workingVersionOf(artifact) });
   } catch (error) {
     if (error instanceof DesignValidationError) {
       return NextResponse.json({ error: error.message }, { status: 422 });

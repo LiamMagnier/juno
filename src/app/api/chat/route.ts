@@ -39,7 +39,11 @@ import {
   detachArtifactsFromMessage,
   persistArtifacts,
   persistTargetedArtifactEdit,
+  planHeldReemits,
 } from "@/lib/artifacts-store";
+import { UNTRUSTED_INPUT_TAINT } from "@/lib/artifact-proposals";
+import { sealArtifactDraft } from "@/lib/artifact-writes";
+import { artifactsForInstalledApps, isInstalledAppRequest } from "@/lib/artifact-access";
 import {
   applyArtifactPatch,
   ArtifactPatchError,
@@ -48,7 +52,15 @@ import {
   parseArtifactPatch,
   type ArtifactSourceForEdit,
 } from "@/lib/artifact-edit";
-import { parseArtifacts, parseForgets, parseMemories, rewriteArtifactMarkup } from "@/lib/message-content";
+import {
+  describeHeldArtifactsForModel,
+  holdArtifactBodies,
+  parseArtifacts,
+  parseForgets,
+  parseMemories,
+  rewriteArtifactMarkup,
+  type ParsedArtifact,
+} from "@/lib/message-content";
 import {
   artifactRefusalNotice,
   artifactVerificationDetail,
@@ -215,7 +227,7 @@ import { isGemini3OrLater } from "@/lib/gemini-core";
 import type { ClientActionApproval } from "@/lib/action-approval";
 import { REQUEST_ID_HEADER } from "@/lib/request-id";
 import { DRAIN_RETRY_AFTER_SECONDS, DRAINING_RESPONSE, isDraining, SHUTDOWN_USER_MESSAGE } from "@/lib/shutdown";
-import type { ChatFinishReason, ClientActivityEvent, ClientToolDetail, StreamChunk } from "@/types/chat";
+import type { ChatFinishReason, ClientActivityEvent, ClientArtifact, ClientToolDetail, StreamChunk } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 
 export const runtime = "nodejs";
@@ -495,6 +507,27 @@ function prepareChatArtifactOutput(
 }
 
 /**
+ * The re-emit guard's plan for a turn: which re-emits will be held as a
+ * suggestion rather than appended (src/lib/artifact-proposals.ts), decided
+ * before the message is saved so the message is saved in its held form.
+ *
+ * A failure costs only that form, never the turn: `persistArtifacts` decides
+ * again inside its own write and still holds what it must, so the message
+ * keeps its full bodies and the store logs `held_unplanned`.
+ */
+async function planTurnHolds(conversationId: string, artifacts: ParsedArtifact[], userId: string): Promise<Map<string, string>> {
+  try {
+    return await planHeldReemits(conversationId, artifacts, userId);
+  } catch (err) {
+    console.error("[chat] could not plan held re-emits", {
+      conversationId,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return new Map();
+  }
+}
+
+/**
  * The database side of idempotent submission recovery.
  *
  * Account-scoped by construction: the user id is bound once, here, rather than
@@ -611,6 +644,12 @@ async function handleChat(req: Request) {
   }
 
   const legacyClient = legacyChatClientForOrigin(input);
+  // A `done` frame's artifacts go to an installed app without trashed rows or
+  // web design drafts (artifactsForInstalledApps): those builds keep every row
+  // they are handed until sync catches up with it.
+  const doneArtifacts = isInstalledAppRequest(req)
+    ? (rows: ClientArtifact[]) => artifactsForInstalledApps(rows)
+    : (rows: ClientArtifact[]) => rows;
 
   const admissible = privateAttachmentsRefusal(input) ?? emptySubmissionRefusal(input);
   if (admissible) return refuse(admissible);
@@ -1530,12 +1569,18 @@ async function handleChat(req: Request) {
     if (!conversation) {
       return NextResponse.json({ error: "Open the saved canvas before editing a selection." }, { status: 400 });
     }
+    // The selection was made on what the canvas showed, which presents a
+    // design's unsealed draft as the version it will become. Seal it first so
+    // that version exists and the base check below compares like with like.
+    await sealArtifactDraft(input.artifactEdit.artifactId, user.id).catch(() => null);
     const artifact = await prisma.artifact.findFirst({
       where: {
         id: input.artifactEdit.artifactId,
         identifier: input.artifactEdit.identifier,
         conversationId: conversation.id,
-        conversation: { userId: user.id },
+        userId: user.id,
+        // A trashed artifact is not a canvas to edit.
+        deletedAt: null,
       },
       include: {
         versions: { where: { version: input.artifactEdit.baseVersion }, take: 1 },
@@ -1934,9 +1979,12 @@ async function handleChat(req: Request) {
     include: { attachments: { where: { deletedAt: null } } },
     skip: historyWindowStart(totalMessages),
   });
+  // A held re-emit is saved as an empty tag (the body waits in its
+  // suggestion); the model reads a line that says so instead, or it would take
+  // the empty tag for "I wrote nothing" or for a change that landed.
   const history = recent
     .filter((m) => m.id !== staleAssistantId)
-    .map((m) => ({ ...m, content: decryptMessageText(m.content) }));
+    .map((m) => ({ ...m, content: describeHeldArtifactsForModel(decryptMessageText(m.content)) }));
   // The window before project reference files are added — `modelHistory`
   // below is what the provider receives. Kept apart so the memory query, the
   // knowledge query and the attachment scan read the user's words alone.
@@ -2686,14 +2734,22 @@ async function handleChat(req: Request) {
           // and share links survive and a re-emission appends to the same row.
           // Atomic with the overwrite so a crash can't leave a duplicate
           // version behind.
-          const [, , updated] = await prisma.$transaction([
+          const [, , , updated] = await prisma.$transaction([
             prisma.messageVersion.create({
               data: versionSnapshot({
                 ...stale,
                 sources: stale.sources as unknown as Prisma.InputJsonValue | null,
               }),
             }),
-            detachArtifactsFromMessage(stale.id),
+            detachArtifactsFromMessage(stale.id, user.id),
+            // A suggestion lives as long as the reply that made it. The reply
+            // is overwritten in place here, so no cascade fires: the old
+            // answer's waiting suggestions are retired explicitly, and the new
+            // answer's own are written after this under the same message id.
+            prisma.artifactProposal.updateMany({
+              where: { messageId: stale.id, status: "PENDING" },
+              data: { status: "STALE", resolvedAt: new Date() },
+            }),
             prisma.message.update({
               where: { id: stale.id },
               data: {
@@ -3313,9 +3369,23 @@ async function handleChat(req: Request) {
             ? await persistTargetedArtifactEdit(
                 artifactEditTarget.id,
                 artifactEditTarget.version,
-                targetedArtifactContent
+                targetedArtifactContent,
+                user.id
               )
             : null;
+        // The re-emit guard: a re-emit over a person's edit, or one that would
+        // drop a design's structure, is saved as an empty tag naming its
+        // suggestion, and its body goes into the suggestion instead of the
+        // transcript (holdArtifactBodies). A targeted edit is never held: it
+        // names its base, and the person asked for it.
+        const heldReemits = artifactEditTarget
+          ? new Map<string, string>()
+          : await planTurnHolds(
+              conversationId,
+              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete),
+              user.id
+            );
+        if (heldReemits.size > 0) acc.replaceText(holdArtifactBodies(acc.text, heldReemits));
         const assistant = await persistAssistantTurn({
           content: acc.text,
           reasoning: acc.reasoning,
@@ -3341,7 +3411,8 @@ async function handleChat(req: Request) {
           : await persistArtifacts(
               conversationId,
               assistant.id,
-              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete)
+              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete),
+              { heldIds: heldReemits, taint: untrustedContentInTurn ? UNTRUSTED_INPUT_TAINT : null, userId: user.id }
             );
         if (targetedArtifact) send({ type: "delta", text: acc.text });
         let memoryUpdated = false;
@@ -3423,7 +3494,7 @@ async function handleChat(req: Request) {
           // now a column, and `serializeMessage` reads it back off the row that
           // was just written. Same numbers live and on reload, from one source.
           message: { ...(await serializeMessage(assistantWithActivity)), finishReason, costUsd: usage.cost + researchCostUsd || undefined },
-          artifacts,
+          artifacts: doneArtifacts(artifacts),
           memoryUpdated,
           quota: consumed.quota,
           finishReason,
@@ -3503,6 +3574,14 @@ async function handleChat(req: Request) {
             );
             const preparedArtifacts = prepareChatArtifactOutput(acc.text, sendActivity);
             if (preparedArtifacts) acc.replaceText(preparedArtifacts.text);
+            // Held exactly as on the success path: a finished block before the
+            // Stop is a re-emit like any other.
+            const heldReemits = await planTurnHolds(
+              conversationId,
+              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete),
+              user.id
+            );
+            if (heldReemits.size > 0) acc.replaceText(holdArtifactBodies(acc.text, heldReemits));
             // Same version-preserving persistence as the success path — a
             // partial answer still supersedes (never destroys) the previous one.
             if (!(await renewDurableReceiptLease())) throw new DurableReceiptLeaseLostError();
@@ -3524,7 +3603,8 @@ async function handleChat(req: Request) {
             const artifacts = await persistArtifacts(
               conversationId,
               assistant.id,
-              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete)
+              (preparedArtifacts?.result.artifacts ?? []).filter((artifact) => !artifact.incomplete),
+              { heldIds: heldReemits, taint: untrustedContentInTurn ? UNTRUSTED_INPUT_TAINT : null, userId: user.id }
             );
             await prisma.conversation.updateMany({
               where: { id: conversationId, userId: user.id },
@@ -3549,7 +3629,7 @@ async function handleChat(req: Request) {
               type: "done",
               // Read back off the persisted row, same as the success path.
               message: { ...(await serializeMessage(assistantWithActivity)), finishReason: reason, costUsd: partialUsage.cost + researchCostUsd || undefined },
-              artifacts,
+              artifacts: doneArtifacts(artifacts),
               memoryUpdated: false,
               quota: consumed.quota,
               finishReason: reason,
@@ -3825,7 +3905,7 @@ async function handleChat(req: Request) {
          * delivered draft stays in the artifact's history exactly as the run's
          * own `reportRevision` keeps it in the run.
          */
-        await persistArtifacts(conversationId, auditedMessageId, parseArtifacts(audit.report)).catch((err) => {
+        await persistArtifacts(conversationId, auditedMessageId, parseArtifacts(audit.report), { userId: user.id }).catch((err) => {
           console.error("[chat] could not persist the audited research artifact", {
             messageId: auditedMessageId,
             message: err instanceof Error ? err.message : String(err),

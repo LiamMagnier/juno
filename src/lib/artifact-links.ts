@@ -175,18 +175,20 @@ export const ARTIFACT_NOUN: Record<ArtifactType, string> = {
 };
 
 /**
- * The artifacts made in a set of conversations.
+ * A project's artifacts, as its page shows them.
  *
- * A project's artifacts are the ones made in its chats until an artifact
- * carries its own `projectId` (04-MERGE-PLAN.md §2.6, M0). `/api/artifacts
- * ?projectId=` already answers only those; the project page narrows again to
- * the chats it has on screen, so a chat moved out of the project while the
- * page is open takes its artifacts with it without a refetch.
+ * `/api/artifacts?projectId=` answers the project's own artifacts (an artifact
+ * carries its own `projectId` and follows its chat when the chat moves). The
+ * page narrows the ones that still have a chat to the chats it has on screen,
+ * so a chat moved out of the project while the page is open takes its
+ * artifacts with it without a refetch. One with no chat (made outside one, or
+ * its chat was deleted) is the project's by its own `projectId` alone, and
+ * stays.
  */
-export function madeInConversations<T extends { conversationId: string }>(
+export function madeInConversations<T extends { conversationId: string | null }>(
   items: readonly T[],
   conversationIds: Iterable<string>
 ): T[] {
   const ids = new Set(conversationIds);
-  return items.filter((item) => ids.has(item.conversationId));
+  return items.filter((item) => item.conversationId === null || ids.has(item.conversationId));
 }

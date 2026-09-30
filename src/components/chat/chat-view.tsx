@@ -75,6 +75,8 @@ import { MAX_CHAT_CONNECTORS } from "@/lib/connector-intent";
 import { VOICE_ATTACHMENT_LIMIT } from "@/lib/voice-attachment-context";
 import { voicePhaseOf } from "@/lib/voice-phase";
 import { cn } from "@/lib/utils";
+import { liveArtifacts } from "@/lib/artifact-card-state";
+import { replaceArtifactById } from "@/lib/chat-client-state";
 import { serializeQuote, type ComposerQuote, type DocumentQuote } from "@/lib/quote-context";
 import { fileExtension } from "@/lib/documents/viewer-kind";
 import type { DocumentAsk } from "@/components/documents/types";
@@ -968,9 +970,23 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPrompt]);
 
+  /*
+   * What this chat can OPEN: its artifacts minus Recently deleted.
+   *
+   * The transcript keeps the trashed ones — `chat.artifacts` still carries
+   * them, so a card can say where its artifact went and offer it back — but
+   * every way INTO an artifact reads this list instead: the canvas, the
+   * `?artifact=` deep link, opening by identifier, and SessionOutputs. Each
+   * route behind the canvas answers 404 for a trashed row, and a canvas that
+   * cannot save is a trap. Deriving the canvas from it also closes one whose
+   * artifact is trashed while it is open, the same self-heal the transcript
+   * gets from `openArtifact` being derived at all.
+   */
+  const openableArtifacts = React.useMemo(() => liveArtifacts(chat.artifacts), [chat.artifacts]);
+
   const openArtifact = React.useMemo(
-    () => chat.artifacts.find((a) => a.id === openArtifactId) ?? null,
-    [chat.artifacts, openArtifactId]
+    () => openableArtifacts.find((a) => a.id === openArtifactId) ?? null,
+    [openableArtifacts, openArtifactId]
   );
 
   // Every file in the transcript, once each, in the order it arrived — the
@@ -1009,12 +1025,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   }, [conversationId]);
   React.useEffect(() => {
     if (!initialArtifactIdentifier || deepLinkConsumedRef.current === initialArtifactIdentifier) return;
-    const a = chat.artifacts.find((x) => x.identifier === initialArtifactIdentifier);
+    const a = openableArtifacts.find((x) => x.identifier === initialArtifactIdentifier);
     if (!a) return;
     deepLinkConsumedRef.current = initialArtifactIdentifier;
     setOpenArtifactId(a.id);
     setThoughtOpenId(null);
-  }, [chat.artifacts, initialArtifactIdentifier]);
+  }, [openableArtifacts, initialArtifactIdentifier]);
 
   /**
    * ?m= deep link — global search landing on the exact message it matched.
@@ -1071,7 +1087,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       toast.error("End voice mode before opening an artifact on this screen, so the microphone controls stay visible.");
       return;
     }
-    const a = chat.artifacts.find((x) => x.identifier === identifier);
+    const a = openableArtifacts.find((x) => x.identifier === identifier);
     if (a) {
       setOpenArtifactId(a.id);
       setFullscreen(!!opts?.fullscreen);
@@ -1351,8 +1367,25 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     [closeDocument]
   );
 
+  /*
+   * A card changed its artifact through a route: restored from Recently
+   * deleted, or Juno's suggestion applied or dismissed. Folded in by id with
+   * the same merge a canvas save uses (replaceArtifactById). Stable, because
+   * it rides every MessageItem and must not break that memo; it touches only
+   * the list, never the canvas — a card restoring or applying is not the
+   * reader asking to open anything.
+   */
+  const setChatArtifacts = chat.setArtifacts;
+  const handleArtifactChanged = React.useCallback(
+    (changed: ClientArtifact) => setChatArtifacts((prev) => replaceArtifactById(prev, changed)),
+    [setChatArtifacts]
+  );
+
   const handleArtifactUpdated = (updated: ClientArtifact) => {
-    chat.setArtifacts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    // `replaceArtifactById`, not a bare swap: a save response that did not
+    // read suggestions must not erase one that is still waiting (see
+    // mergeArtifactUpdate).
+    chat.setArtifacts((prev) => replaceArtifactById(prev, updated));
     // Re-point the canvas at the saved artifact, but never RE-OPEN it. This
     // fires from fetch closures in CanvasPanel that resolve independently of
     // CanvasPanel's lifetime, so by the time a save lands the user may have
@@ -2050,7 +2083,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           nothing. */}
       {!privateMode && (
         <SessionOutputs
-          artifacts={chat.artifacts}
+          artifacts={openableArtifacts}
           messages={chat.messages}
           onOpenArtifact={(identifier) => openArtifactByIdentifier(identifier)}
           onOpenAttachment={openAttachment}
@@ -2420,6 +2453,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 status={chat.status}
                 artifacts={chat.artifacts}
                 onOpenArtifact={openArtifactByIdentifier}
+                onArtifactChanged={handleArtifactChanged}
                 onRegenerate={chat.regenerate}
                 onContinue={chat.continueResponse}
                 onEdit={chat.editAndResend}

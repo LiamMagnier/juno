@@ -295,9 +295,26 @@ export interface ClientActivityEvent {
     refused: string[];
     problems: Array<{ identifier: string; code: string; detail: string; repairable: boolean }>;
     repairs: Array<{ identifier: string; code: string; detail: string; repairable: boolean }>;
+    /**
+     * What verification changed without it being a problem — a picture that
+     * became a placeholder. Optional so every report persisted before notes
+     * existed still decodes, and a note never moves `status`.
+     */
+    notes?: ClientArtifactVerificationNote[];
   };
   /** Structured receipt for conversational agent setup or self-configuration edits. */
   agentChange?: ClientAgentChange;
+}
+
+/**
+ * One thing verification did to an artifact that the person should hear about.
+ * `detail` can quote a layer name the owner wrote, so a note lives only in the
+ * encrypted activity log — never in a server log line.
+ */
+export interface ClientArtifactVerificationNote {
+  identifier: string;
+  code: "image_placeholder";
+  detail: string;
 }
 
 /** How an artifact version came to be. Null on rows older than the column. */
@@ -308,6 +325,12 @@ export interface ClientArtifactVersion {
   content: string;
   origin?: ArtifactVersionOrigin;
   createdAt: string;
+  /**
+   * The design editor's working copy, shown as the version it will become when
+   * it is sealed (src/lib/artifact-writes.ts). Present only on that one entry
+   * of an owner read; every sealed version leaves it out.
+   */
+  draft?: true;
 }
 
 export interface ClientArtifact {
@@ -318,10 +341,41 @@ export interface ClientArtifact {
   language?: string | null;
   currentVersion: number;
   content: string; // latest version content
+  /**
+   * The newest ARTIFACT_VERSION_WINDOW versions, oldest first. Older ones page
+   * in from GET /api/artifacts/[id]/versions; `hasOlderVersions` says there are.
+   */
   versions: ClientArtifactVersion[];
   messageId?: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Set only when `versions` is a window of a longer history. */
+  hasOlderVersions?: true;
+  /**
+   * Set only while the artifact is in Recently deleted (ISO time it was
+   * trashed). Absent on every live artifact, so live payloads are unchanged.
+   */
+  deletedAt?: string | null;
+  /**
+   * Juno's newest re-emit that was held back rather than appended as a version
+   * (the re-emit guard). Present only when one is PENDING; absent means none is
+   * waiting.
+   */
+  pendingSuggestion?: ClientArtifactSuggestion | null;
+}
+
+/**
+ * A held re-emit, as a card or bar needs it: enough to label it and to call
+ * the proposal routes, never the proposed content (fetched on Compare).
+ */
+export interface ClientArtifactSuggestion {
+  id: string;
+  /** The version the suggestion was written against; Apply's stale check. */
+  baseVersion: number;
+  /** The assistant message that made it; its card carries the bar. */
+  messageId: string | null;
+  summary: string;
+  createdAt: string;
 }
 
 export interface ClientConversation {

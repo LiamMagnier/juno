@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import JSZip from "jszip";
 import { prisma } from "@/lib/prisma";
@@ -14,6 +15,16 @@ export const runtime = "nodejs";
 
 /** Hard cap on exported message rows — keeps the response to a few MB at most. */
 const MAX_MESSAGE_ROWS = 50_000;
+
+/**
+ * Caps on exported artifact versions. Each body can be 200 000 characters, so
+ * the history is read in pages and stops at a character budget as well as a
+ * row cap, which bounds the export's memory whatever the account holds; a
+ * truncated export says so, as the message cap does.
+ */
+const MAX_ARTIFACT_VERSION_ROWS = 20_000;
+const MAX_ARTIFACT_VERSION_CHARS = 50_000_000;
+const ARTIFACT_VERSION_PAGE = 200;
 
 /**
  * RFC 4180 quoting, plus CSV-injection neutralization: a leading =, +, -, @,
@@ -226,6 +237,144 @@ export async function GET(req: Request) {
         select: { projectId: true, content: true, entryCount: true, createdAt: true, updatedAt: true },
       }),
     ]);
+
+  // Artifacts are the person's own (PRODUCT_REFOUNDATION §10): every one,
+  // including those whose chat was deleted and those in Recently deleted, with
+  // their versions, an unsealed design draft, and their public links
+  // (publications and legacy share links). Suggestions Juno is holding are
+  // included with their status: they are Juno's work on the person's artifact.
+  const artifactRows = await prisma.artifact.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      identifier: true,
+      title: true,
+      type: true,
+      language: true,
+      currentVersion: true,
+      conversationId: true,
+      messageId: true,
+      projectId: true,
+      derivedFromId: true,
+      derivedFromVersion: true,
+      deletedAt: true,
+      createdAt: true,
+      updatedAt: true,
+      // Bodies (the draft's content, a suggestion's payload) are read below,
+      // in pages under the same budget as the history: each can be a whole
+      // document, and there is one per artifact or more.
+      draft: { select: { baseVersion: true, updatedAt: true } },
+      publications: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          token: true,
+          pinnedVersion: true,
+          publishedAt: true,
+          unpublishedAt: true,
+          retiredAt: true,
+          views: true,
+          takenDownAt: true,
+          createdAt: true,
+        },
+      },
+      shares: {
+        orderBy: { createdAt: "asc" },
+        select: { token: true, snapshotAt: true, views: true, revokedAt: true, takenDownAt: true, createdAt: true },
+      },
+      proposals: {
+        orderBy: { createdAt: "asc" },
+        select: { id: true, baseVersion: true, status: true, summary: true, createdAt: true, resolvedAt: true },
+      },
+    },
+  });
+  const versionsByArtifact = new Map<string, object[]>();
+  let artifactVersionsTruncated = false;
+  let exportedVersionRows = 0;
+  let exportedVersionChars = 0;
+  let versionCursor: { artifactId: string; version: number } | null = null;
+  pages: for (;;) {
+    const page: Array<{ artifactId: string; version: number; content: string; origin: string | null; createdAt: Date }> =
+      await prisma.artifactVersion.findMany({
+        where: {
+          artifact: { userId: user.id },
+          ...(versionCursor
+            ? {
+                OR: [
+                  { artifactId: { gt: versionCursor.artifactId } },
+                  { artifactId: versionCursor.artifactId, version: { gt: versionCursor.version } },
+                ],
+              }
+            : {}),
+        },
+        orderBy: [{ artifactId: "asc" }, { version: "asc" }],
+        take: ARTIFACT_VERSION_PAGE,
+        select: { artifactId: true, version: true, content: true, origin: true, createdAt: true },
+      });
+    for (const row of page) {
+      if (exportedVersionRows >= MAX_ARTIFACT_VERSION_ROWS || exportedVersionChars + row.content.length > MAX_ARTIFACT_VERSION_CHARS) {
+        artifactVersionsTruncated = true;
+        break pages;
+      }
+      exportedVersionRows++;
+      exportedVersionChars += row.content.length;
+      const { artifactId, ...version } = row;
+      const list = versionsByArtifact.get(artifactId);
+      if (list) list.push(version);
+      else versionsByArtifact.set(artifactId, [version]);
+    }
+    if (page.length < ARTIFACT_VERSION_PAGE) break;
+    const last = page[page.length - 1];
+    versionCursor = { artifactId: last.artifactId, version: last.version };
+  }
+
+  // Unsealed design drafts, then Juno's suggestions, after the history and
+  // under what is left of the same character budget.
+  const draftBodies = new Map<string, string>();
+  const suggestionBodies = new Map<string, Prisma.JsonValue>();
+  if (!artifactVersionsTruncated) {
+    let draftCursor: string | null = null;
+    drafts: for (;;) {
+      const page: Array<{ artifactId: string; content: string }> = await prisma.artifactDraft.findMany({
+        where: { userId: user.id, ...(draftCursor ? { artifactId: { gt: draftCursor } } : {}) },
+        orderBy: { artifactId: "asc" },
+        take: ARTIFACT_VERSION_PAGE,
+        select: { artifactId: true, content: true },
+      });
+      for (const row of page) {
+        if (exportedVersionChars + row.content.length > MAX_ARTIFACT_VERSION_CHARS) {
+          artifactVersionsTruncated = true;
+          break drafts;
+        }
+        exportedVersionChars += row.content.length;
+        draftBodies.set(row.artifactId, row.content);
+      }
+      if (page.length < ARTIFACT_VERSION_PAGE) break;
+      draftCursor = page[page.length - 1].artifactId;
+    }
+  }
+  if (!artifactVersionsTruncated) {
+    let suggestionCursor: string | null = null;
+    suggestions: for (;;) {
+      const page: Array<{ id: string; payload: Prisma.JsonValue }> = await prisma.artifactProposal.findMany({
+        where: { artifact: { userId: user.id }, ...(suggestionCursor ? { id: { gt: suggestionCursor } } : {}) },
+        orderBy: { id: "asc" },
+        take: ARTIFACT_VERSION_PAGE,
+        select: { id: true, payload: true },
+      });
+      for (const row of page) {
+        const size = JSON.stringify(row.payload ?? null).length;
+        if (exportedVersionChars + size > MAX_ARTIFACT_VERSION_CHARS) {
+          artifactVersionsTruncated = true;
+          break suggestions;
+        }
+        exportedVersionChars += size;
+        suggestionBodies.set(row.id, row.payload);
+      }
+      if (page.length < ARTIFACT_VERSION_PAGE) break;
+      suggestionCursor = page[page.length - 1].id;
+    }
+  }
 
   const truncated = rawMessages.length > MAX_MESSAGE_ROWS;
   const messages = (truncated ? rawMessages.slice(0, MAX_MESSAGE_ROWS) : rawMessages).map((m) => ({
@@ -452,6 +601,26 @@ export async function GET(req: Request) {
     ...(truncated
       ? { truncationNote: `Message export is capped at ${MAX_MESSAGE_ROWS.toLocaleString("en-US")} rows; older messages are included first.` }
       : {}),
+    artifacts: {
+      versionsTruncated: artifactVersionsTruncated,
+      ...(artifactVersionsTruncated
+        ? {
+            truncationNote: `Artifact history, drafts and suggestions are capped at ${MAX_ARTIFACT_VERSION_ROWS.toLocaleString("en-US")} versions and ${MAX_ARTIFACT_VERSION_CHARS.toLocaleString("en-US")} characters; the rest stays in your account.`,
+          }
+        : {}),
+      items: artifactRows.map(({ draft, publications, shares, proposals, ...artifact }) => ({
+        ...artifact,
+        conversationId: artifact.conversationId ? stableConversationId.get(artifact.conversationId) ?? artifact.conversationId : null,
+        messageId: artifact.messageId ? stableMessageId.get(artifact.messageId) ?? artifact.messageId : null,
+        projectId: artifact.projectId ? stableProjectId.get(artifact.projectId) ?? artifact.projectId : null,
+        versions: versionsByArtifact.get(artifact.id) ?? [],
+        // A body left out by the budget is null; the truncation note says so.
+        draft: draft ? { ...draft, content: draftBodies.get(artifact.id) ?? null } : null,
+        publications,
+        shareLinks: shares,
+        suggestions: proposals.map((proposal) => ({ ...proposal, payload: suggestionBodies.get(proposal.id) ?? null })),
+      })),
+    },
     conversations: conversations.map((c) => ({
       id: c.id,
       sourceId: stableConversationId.get(c.id) ?? c.id,

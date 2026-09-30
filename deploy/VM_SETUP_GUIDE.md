@@ -258,6 +258,15 @@ If you prefer standard subdomains (e.g., frontend on `app.yourdomain.com` and ba
 
 ---
 
+## Maintenance: artifact drafts and trash
+
+PM2 runs `juno-artifact-maintenance` (`npm run artifacts:maintenance -- --daemon`, `scripts/artifact-maintenance.ts`). Every minute it seals design drafts idle for two minutes into versions; every six hours it purges artifacts that have been in Recently deleted for 30 days, with their versions and links. The purge only logs `[artifact-purge] eligible=… purged=0 dry=unarmed` until you set `JUNO_ARTIFACTS_PURGE=1` in the release env and `pm2 restart juno-artifact-maintenance --update-env`.
+
+```bash
+npm run artifacts:maintenance -- --dry          # one pass; the purge only reports
+npm run artifacts:maintenance -- --days 45      # a longer trash window (never under 7)
+```
+
 ## Maintenance: sync log retention
 
 The device-sync change log (`AccountChange`) and mutation idempotency ledger (`MutationReceipt`) grow forever unless pruned. Run the pruner periodically (weekly is plenty):

@@ -2,9 +2,13 @@
  * `GET /api/artifacts` — the list behind the Artifacts home and a project's
  * Sources tab.
  *
- *  - `?projectId=` scopes the list to the project's chats in the query itself
- *    (X-21), still inside the user's own conversations, so a project whose
- *    artifacts are older than the account's latest 200 is not read short.
+ *  - The list is the user's own artifacts by the artifact's own owner
+ *    (PRODUCT_REFOUNDATION §10): one whose chat was deleted, or that never had
+ *    one, is listed like any other, and a trashed one is not (unless the
+ *    Recently deleted view asks for them).
+ *  - `?projectId=` scopes the list to the project in the query itself (X-21),
+ *    still inside the user's own artifacts, so a project whose artifacts are
+ *    older than the account's latest 200 is not read short.
  *  - A design's JSON never rides along as a tile preview: every surface draws
  *    a design from its poster (X-20).
  *
@@ -22,10 +26,13 @@ type Row = {
   type: string;
   language: string | null;
   currentVersion: number;
-  conversationId: string;
+  conversationId: string | null;
+  projectId: string | null;
+  derivedFromId: string | null;
+  deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
-  conversation: { title: string };
+  conversation: { title: string; projectId: string | null } | null;
 };
 
 const when = new Date("2026-09-24T10:00:00Z");
@@ -37,9 +44,12 @@ const row = (id: string, type: string): Row => ({
   language: null,
   currentVersion: 2,
   conversationId: "c1",
+  projectId: null,
+  derivedFromId: null,
+  deletedAt: null,
   createdAt: when,
   updatedAt: when,
-  conversation: { title: "Chat" },
+  conversation: { title: "Chat", projectId: null },
 });
 
 let rows: Row[] = [];
@@ -78,24 +88,48 @@ async function list(query = "") {
   return { status: res.status, body: (await res.json()) as { items: Array<{ id: string; type: string; preview: string | null }> } };
 }
 
-routeTest("the whole account's list is scoped to the user's conversations", async () => {
+routeTest("the whole account's list is scoped to the user's own live artifacts", async () => {
   rows = [row("page", "HTML")];
   wheres.length = 0;
   const { status } = await list();
   assert.equal(status, 200);
-  assert.deepEqual(wheres[0], { conversation: { userId: "u1" } });
+  assert.deepEqual(wheres[0], { userId: "u1", deletedAt: null });
 });
 
-routeTest("?projectId= scopes the query to the project's chats, still the user's own (X-21)", async () => {
+routeTest("?projectId= scopes the query to the project, still the user's own (X-21)", async () => {
   rows = [row("page", "HTML")];
   wheres.length = 0;
   await list("?projectId=proj_1");
-  assert.deepEqual(wheres[0], { conversation: { userId: "u1", projectId: "proj_1" } });
+  assert.deepEqual(wheres[0], {
+    OR: [{ projectId: "proj_1" }, { projectId: null, conversation: { projectId: "proj_1" } }],
+    userId: "u1",
+    deletedAt: null,
+  });
 
   // An empty value is no scope, not a scope to nothing.
   wheres.length = 0;
   await list("?projectId=");
-  assert.deepEqual(wheres[0], { conversation: { userId: "u1" } });
+  assert.deepEqual(wheres[0], { userId: "u1", deletedAt: null });
+});
+
+routeTest("an artifact with no chat is listed, with no chat title", async () => {
+  rows = [{ ...row("design-1", "DESIGN"), conversationId: null, conversation: null, projectId: "proj_1" }];
+  const { body } = await list();
+  const item = body.items[0] as unknown as { conversationId: string | null; conversationTitle: string | null; projectId: string | null };
+  assert.equal(item.conversationId, null);
+  assert.equal(item.conversationTitle, null);
+  assert.equal(item.projectId, "proj_1");
+});
+
+routeTest("?deleted=1 lists Recently deleted, each with the day it may be purged", async () => {
+  const trashedAt = new Date("2026-09-20T10:00:00Z");
+  rows = [{ ...row("old", "HTML"), deletedAt: trashedAt }];
+  wheres.length = 0;
+  const { body } = await list("?deleted=1");
+  assert.deepEqual(wheres[0], { userId: "u1", deletedAt: { not: null } });
+  const item = body.items[0] as unknown as { deletedAt: string; purgeAt: string };
+  assert.equal(item.deletedAt, trashedAt.toISOString());
+  assert.equal(item.purgeAt, "2026-10-20T10:00:00.000Z");
 });
 
 routeTest("a design is listed without its JSON as a preview (X-20)", async () => {
