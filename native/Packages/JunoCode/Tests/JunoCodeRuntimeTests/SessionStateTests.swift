@@ -224,6 +224,21 @@ final class SessionStateTests: XCTestCase {
         XCTAssertEqual(kept, ["c4", "c5"])
     }
 
+    /// The images the history keeps by default travel as base64, a third
+    /// larger than their bytes. With the text the byte guard allows they
+    /// must leave room inside the 16 MB body the agent proxy accepts
+    /// (`MAX_AGENT_BODY_BYTES` in `src/lib/agent-proxy.ts`) for the images a
+    /// new step brings; at 12 MB they alone filled it.
+    func testTheDefaultImageBudgetFitsTheProxysBodyWithRoomForANewStep() {
+        let configuration = AgentOrchestrator.Configuration(systemPrompt: "sys")
+        let proxyBodyLimit = 16 * 1_024 * 1_024
+        let retainedOnTheWire = configuration.maximumRetainedImageBytes * 4 / 3
+        XCTAssertLessThanOrEqual(
+            retainedOnTheWire + configuration.maximumConversationBytes,
+            proxyBodyLimit - 2 * 1_024 * 1_024
+        )
+    }
+
     func testACompactionSummaryReusesTheSessionsOwnPrefixWhereItIsCached() async throws {
         let model = PrefixCachingModelClient(turns: [
             .toolCalls([("r1", "noop_state_tool", [:])], text: "Step one."),

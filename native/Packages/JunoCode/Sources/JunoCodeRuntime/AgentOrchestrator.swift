@@ -75,6 +75,12 @@ public actor AgentOrchestrator {
         /// before the oldest are rewritten as text ahead of compaction. See
         /// ``ImageRetention``.
         public var maximumRetainedImages: Int
+        /// In the images' own bytes, which travel as base64, a third larger.
+        /// The default keeps them, with the text the byte guard allows, well
+        /// inside the 16 MB body the agent proxy accepts
+        /// (`MAX_AGENT_BODY_BYTES` in `src/lib/agent-proxy.ts`): at 12 MB
+        /// they alone filled it, and every request past that was a 413 that
+        /// only a forced compaction could clear.
         public var maximumRetainedImageBytes: Int
         /// How a failed model request is tried again. See ``ModelRetryPolicy``.
         public var retryPolicy: ModelRetryPolicy
@@ -98,7 +104,7 @@ public actor AgentOrchestrator {
             systemPrompt: String,
             sessionState: (@Sendable () async -> [SessionStateSection])? = nil,
             maximumRetainedImages: Int = 20,
-            maximumRetainedImageBytes: Int = 12 * 1_024 * 1_024,
+            maximumRetainedImageBytes: Int = 6 * 1_024 * 1_024,
             retryPolicy: ModelRetryPolicy = .standard,
             retrySleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
             retryJitter: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) }
