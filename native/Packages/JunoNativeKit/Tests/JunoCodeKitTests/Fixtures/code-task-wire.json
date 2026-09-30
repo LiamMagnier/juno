@@ -24,6 +24,7 @@
     "reasoningEffort": "high",
     "environmentId": null,
     "permissionMode": null,
+    "agentProtocol": "1.0",
     "createdAt": "2026-09-30T10:00:00.000Z",
     "updatedAt": "2026-09-30T10:00:00.000Z"
   },
@@ -52,6 +53,7 @@
     "reasoningEffort": null,
     "environmentId": null,
     "permissionMode": null,
+    "agentProtocol": "1.0",
     "createdAt": "2026-09-30T10:00:00.000Z",
     "updatedAt": "2026-09-30T10:00:00.000Z"
   },
@@ -80,6 +82,7 @@
     "reasoningEffort": "medium",
     "environmentId": "env-1",
     "permissionMode": "auto-edit",
+    "agentProtocol": "1.0",
     "createdAt": "2026-09-30T10:00:00.000Z",
     "updatedAt": "2026-09-30T10:00:00.000Z"
   },
@@ -108,6 +111,7 @@
     "reasoningEffort": null,
     "environmentId": null,
     "permissionMode": null,
+    "agentProtocol": "1.0",
     "createdAt": "2026-09-30T10:00:00.000Z",
     "updatedAt": "2026-09-30T10:00:00.000Z"
   }

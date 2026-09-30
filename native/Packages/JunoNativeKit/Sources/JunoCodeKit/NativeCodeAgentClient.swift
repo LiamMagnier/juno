@@ -54,8 +54,17 @@ public struct NativeCodeAgentTask: Decodable, Identifiable, Equatable, Sendable 
     /// The model the submitter picked, or nil for "no preference".
     public let modelId: String?
     public let reasoningEffort: String?
+    /// The canonical agent protocol version this server stores as `protocol`
+    /// task events, or nil for a server that predates it (and would refuse
+    /// the whole batch that carried one).
+    public let agentProtocol: String?
     public let createdAt: String
     public let updatedAt: String
+
+    /// Whether this server takes canonical agent protocol rows (major 1).
+    public var acceptsAgentProtocol: Bool {
+        agentProtocol?.split(separator: ".").first == "1"
+    }
 
     /// Every key here is one `serializeTask` (src/lib/code-task-wire.ts)
     /// sends, except `modelId`, which no server has ever sent and is read only
@@ -65,7 +74,7 @@ public struct NativeCodeAgentTask: Decodable, Identifiable, Equatable, Sendable 
     private enum CodingKeys: String, CodingKey {
         case id, deviceId, workspacePath, workspaceName, workspaceKey, title, prompt
         case status, lastSeq, conversationId, target, repoOwner, repoName, baseRef, prUrl
-        case permissionMode, model, modelId, reasoningEffort, createdAt, updatedAt
+        case permissionMode, model, modelId, reasoningEffort, agentProtocol, createdAt, updatedAt
     }
 
     /// Lenient where the server is: `serializeTask` leaves `permissionMode`,
@@ -96,6 +105,7 @@ public struct NativeCodeAgentTask: Decodable, Identifiable, Equatable, Sendable 
         modelId = try container.decodeIfPresent(String.self, forKey: .model)
             ?? container.decodeIfPresent(String.self, forKey: .modelId)
         reasoningEffort = try container.decodeIfPresent(String.self, forKey: .reasoningEffort)
+        agentProtocol = try? container.decodeIfPresent(String.self, forKey: .agentProtocol)
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
         updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt) ?? ""
     }

@@ -34,6 +34,17 @@ final class NativeCodeAgentTaskDecodingTests: XCTestCase {
         XCTAssertEqual(task.permissionMode, .ask)
     }
 
+    func testTheServerSaysWhetherItStoresProtocolEvents() throws {
+        let task = try fixture("deviceTaskWithModel")
+        XCTAssertEqual(task.agentProtocol, "1.0")
+        XCTAssertTrue(task.acceptsAgentProtocol)
+        // An older server says nothing, and a host must then post legacy rows only.
+        let older = try JSONDecoder().decode(
+            NativeCodeAgentTask.self, from: Data(#"{"id":"t1","status":"queued"}"#.utf8)
+        )
+        XCTAssertFalse(older.acceptsAgentProtocol)
+    }
+
     func testNoPreferenceDecodesAsNil() throws {
         let task = try fixture("deviceTaskWithoutPreferences")
         XCTAssertNil(task.modelId)

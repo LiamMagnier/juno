@@ -35,3 +35,23 @@ export {
   type SubagentPublicState,
 } from './subagents.js';
 export { startSidecarServer, type SidecarOptions } from './server.js';
+// The canonical agent session protocol (contracts/agent), namespaced because
+// its `AgentEvent` is the protocol's and this module's is the engine's.
+export * as protocol from './protocol.generated.js';
+export {
+  AgentProtocolProjector,
+  protocolMode,
+  protocolRisk,
+  protocolUsage,
+  toolKind,
+  toolTitle,
+  type ProtocolApprovalAnswer,
+  type ProtocolProjectorOptions,
+  type ProtocolTurnMessage,
+} from './protocol-projector.js';
+export {
+  LegacyTaskDowncast,
+  DERIVED_FROM_PROTOCOL_KEY,
+  type LegacyTaskDowncastOptions,
+  type LegacyTaskRow,
+} from './protocol-legacy.js';

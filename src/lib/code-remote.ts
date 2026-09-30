@@ -100,6 +100,16 @@ export const EVENT_KINDS = [
    */
   "steer",
   "steer_ack",
+  /*
+   * THE CANONICAL AGENT PROTOCOL. `protocol` rows carry one event of
+   * contracts/agent/juno-agent-protocol-v1.json each, as the payload. A host
+   * posts them only when the task it was handed says this server stores them
+   * (`agentProtocol` on serializeTask and in runner-context), and posts the
+   * legacy kinds beside them — marked `protocolEventId` — so readers that
+   * predate the protocol keep rendering. Readers of the protocol fold the
+   * `protocol` rows and skip the marked ones (src/lib/agent-protocol).
+   */
+  "protocol",
 ] as const;
 
 /** The rollback verbs a client may ask for, and the only values the rollback

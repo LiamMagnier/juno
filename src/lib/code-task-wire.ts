@@ -19,6 +19,15 @@ import type { CodeDevice, CodeTask, CodeTaskEvent } from "@prisma/client";
  * fixture written from memory tests the memory.
  */
 
+/**
+ * The version of the canonical agent session protocol
+ * (contracts/agent/juno-agent-protocol-v1.json) this server stores as
+ * `protocol` task events. Handed to every host with the task it runs, so a host
+ * posts protocol rows only to a server that will take them: an older server
+ * checks `kind` against a closed list and refuses the whole batch.
+ */
+export const AGENT_PROTOCOL_ACCEPTED = "1.0";
+
 export function serializeDevice(device: CodeDevice, online?: boolean) {
   const base = {
     id: device.id,
@@ -99,6 +108,10 @@ export function serializeTask(task: CodeTask, opts: SerializeTaskOptions = {}) {
     // only runner-context unseals them, and only for the runner.
     environmentId: task.environmentId,
     permissionMode: task.permissionMode,
+    // Which agent protocol this server stores as `protocol` events. A fact
+    // about the server, stated on the task because the task is the only thing
+    // a host reads before it starts posting.
+    agentProtocol: AGENT_PROTOCOL_ACCEPTED,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
   };
