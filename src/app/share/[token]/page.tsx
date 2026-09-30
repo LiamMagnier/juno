@@ -8,17 +8,33 @@ import { Plate } from "@/components/landing/plate";
 import { SharedChatTranscript } from "@/components/share/shared-chat-transcript";
 import { SharedArtifactViewer } from "@/components/share/shared-artifact-viewer";
 import { ReportShareButton } from "@/components/share/report-share-dialog";
+import { ShareGone } from "@/components/share/share-gone";
 import { SandboxProfileProvider } from "@/components/canvas/sandbox-document-frame";
 import { publicShareProfile } from "@/lib/sandbox-policy";
 import { sharedDesignPosterUrl } from "@/lib/design/poster-url";
-import { getPublicShare, getSharedArtifactSnapshot, getSharedChatSnapshot, peekPublicShare } from "@/lib/share";
+import {
+  getPublicShare,
+  getSharedArtifactSnapshot,
+  getSharedChatSnapshot,
+  peekPublicShare,
+  sharedArtifactIsTrashed,
+} from "@/lib/share";
+import { countPublicationView, findPublicPublication } from "@/lib/artifact-publication";
 import { cn } from "@/lib/utils";
+import type { ArtifactType } from "@/lib/message-content";
 
 /*
- * Public share page — no auth, works signed out. Renders the frozen snapshot
- * behind an unguessable token; revoked, taken-down, banned-owner or unknown
- * tokens 404. Every share page is noindex/nofollow: sharing is link-visibility,
- * never search-visibility.
+ * Public share page — no auth, works signed out. Serves two kinds of token:
+ *
+ *   - a legacy SHARE: the frozen snapshot of a chat or an artifact;
+ *   - an artifact PUBLICATION (src/lib/artifact-publication.ts): the version
+ *     the owner pinned, or the latest sealed version when it follows latest.
+ *
+ * Revoked, taken-down, banned-owner or unknown tokens 404. A real token that
+ * no longer serves — its artifact is in Recently deleted, the owner
+ * unpublished it, or the owner reset the link — renders `<ShareGone />` (the
+ * poster beside it answers a true 410). Every share page is noindex/nofollow:
+ * sharing is link-visibility, never search-visibility.
  *
  * What is on it was written by someone the visitor does not know. So previews
  * below run no scripts at all (the `static` sandbox profile) until publish-time
@@ -33,10 +49,17 @@ export const dynamic = "force-dynamic";
 
 const SHARE_DESCRIPTION = "Shared from Juno — a thoughtful AI assistant for chat, code, and creativity.";
 
+const GONE_METADATA: Metadata = { title: "Not shared any more", robots: { index: false, follow: false } };
+
 export async function generateMetadata({ params }: { params: Promise<{ token: string }> }): Promise<Metadata> {
   const { token } = await params;
   const share = await peekPublicShare(token);
-  const title = share?.title.trim() || "Shared from Juno";
+  // A dark link keeps its title to itself, in the tab and in any unfurl: the
+  // owner took the thing down, and its name is part of it.
+  if (share && (await sharedArtifactIsTrashed(share))) return GONE_METADATA;
+  const publication = share ? null : await findPublicPublication(token);
+  if (publication?.state === "gone") return GONE_METADATA;
+  const title = (share?.title ?? (publication?.state === "live" ? publication.snapshot.title : "")).trim() || "Shared from Juno";
   return {
     title,
     description: SHARE_DESCRIPTION,
@@ -51,17 +74,52 @@ function formatSharedDate(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+/** What the page draws, from either kind of token. */
+interface PageSubject {
+  title: string;
+  /** "Shared Sep 30, 2026" or "Published Sep 30, 2026". */
+  dateLine: string;
+  chat: Awaited<ReturnType<typeof getSharedChatSnapshot>>;
+  artifact: { type: ArtifactType; language: string | null; content: string; version: number } | null;
+}
+
+async function resolveSubject(token: string): Promise<PageSubject | "gone" | null> {
+  // The gone check runs on the peek, before the lookup that counts a view: a
+  // visitor to a dark link has viewed nothing. The lookup is request-cached,
+  // so the peek and the counting call share one query.
+  const peeked = await peekPublicShare(token);
+  if (peeked) {
+    if (await sharedArtifactIsTrashed(peeked)) return "gone";
+    const share = await getPublicShare(token);
+    if (!share) return null;
+    const chat = share.kind === "CHAT" ? await getSharedChatSnapshot(share) : null;
+    const artifact = share.kind === "ARTIFACT" ? await getSharedArtifactSnapshot(share) : null;
+    if (!chat && !artifact) return null;
+    return {
+      title: share.title.trim() || "Shared from Juno",
+      dateLine: `Shared ${formatSharedDate(share.snapshotAt)}`,
+      chat,
+      artifact,
+    };
+  }
+  const publication = await findPublicPublication(token);
+  if (!publication) return null;
+  if (publication.state === "gone") return "gone";
+  countPublicationView(publication.publication.id);
+  return {
+    title: publication.snapshot.title.trim() || "Shared from Juno",
+    dateLine: `Published ${formatSharedDate(new Date(publication.snapshot.publishedAt))}`,
+    chat: null,
+    artifact: publication.snapshot,
+  };
+}
+
 export default async function SharePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const share = await getPublicShare(token);
-  if (!share) notFound();
-
-  const chat = share.kind === "CHAT" ? await getSharedChatSnapshot(share) : null;
-  const artifact = share.kind === "ARTIFACT" ? await getSharedArtifactSnapshot(share) : null;
-  if (!chat && !artifact) notFound();
-
-  const title = share.title.trim() || "Shared from Juno";
-  const sharedOn = formatSharedDate(share.snapshotAt);
+  const subject = await resolveSubject(token);
+  if (subject === "gone") return <ShareGone />;
+  if (!subject) notFound();
+  const { chat, artifact, title } = subject;
 
   return (
     // Chat scrolls as a document; the artifact sandbox fills a fixed viewport.
@@ -80,7 +138,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
           </Link>
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-ui font-medium">{title}</h1>
-            <p className="truncate font-mono text-caption text-muted-foreground">Shared {sharedOn}</p>
+            <p className="truncate font-mono text-caption text-muted-foreground">{subject.dateLine}</p>
           </div>
           <Button size="sm" asChild>
             <Link href="/">Open in Juno</Link>

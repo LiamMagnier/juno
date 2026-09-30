@@ -3,7 +3,7 @@ import { randomBytes } from "crypto";
 import { cache } from "react";
 import type { Share, ShareKind } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
-import { env } from "@/lib/env";
+import { shareUrl } from "@/lib/share-url";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import type { ArtifactType } from "@/lib/message-content";
 import { shareIsServable } from "@/lib/share-policy";
@@ -20,6 +20,21 @@ import { shareIsServable } from "@/lib/share-policy";
  * takedown of one link (`takenDownAt`, src/lib/share-moderation.ts), and a ban
  * of its owner, which the lookup below reads on every request — so a banned
  * account's pages stop serving at once and come back if the ban is lifted.
+ *
+ * An artifact link also goes dark while its artifact is in Recently deleted
+ * (`sharedArtifactIsTrashed`). That is read from the artifact, never written
+ * onto the Share row, so a restore brings the same token back with nothing to
+ * undo, and a purge takes the row with it through the cascade.
+ *
+ * Versions are immutable (src/lib/artifact-writes.ts), so "the newest version
+ * created at or before snapshotAt" is exactly what existed when the link was
+ * made: a later edit — including a design draft sealed after the link — is a
+ * newer row and stays private. (Audit B1 leaked because a design checkpoint
+ * used to be rewritten in place under its old timestamp.)
+ *
+ * Publishing an artifact (a stable URL pinned to a version) is a separate
+ * thing: src/lib/artifact-publication.ts. The web no longer makes artifact
+ * share links; POST /api/share still does, for the installed apps.
  */
 
 export interface ClientShare {
@@ -33,10 +48,7 @@ export interface ClientShare {
   createdAt: string;
 }
 
-/** Absolute public URL for a share token. */
-export function shareUrl(token: string): string {
-  return `${env.appUrl.replace(/\/+$/, "")}/share/${token}`;
-}
+export { shareUrl };
 
 export function serializeShare(share: Share): ClientShare {
   return {
@@ -67,13 +79,24 @@ export class ShareTakenDownError extends Error {
   }
 }
 
-/** Refuses a target that has a link Juno took down and has not restored. */
+/**
+ * Refuses a target that has a link Juno took down and has not restored — a
+ * share, or for an artifact a publication of it.
+ */
 async function assertNotTakenDown(where: { userId: string; conversationId?: string; artifactId?: string }) {
-  const removed = await prisma.share.findFirst({
-    where: { ...where, takenDownAt: { not: null } },
-    select: { id: true },
-  });
-  if (removed) throw new ShareTakenDownError();
+  const [removed, unpublished] = await Promise.all([
+    prisma.share.findFirst({
+      where: { ...where, takenDownAt: { not: null } },
+      select: { id: true },
+    }),
+    where.artifactId
+      ? prisma.artifactPublication.findFirst({
+          where: { userId: where.userId, artifactId: where.artifactId, takenDownAt: { not: null } },
+          select: { id: true },
+        })
+      : null,
+  ]);
+  if (removed || unpublished) throw new ShareTakenDownError();
 }
 
 /**
@@ -110,8 +133,10 @@ export async function createShare(userId: string, kind: ShareKind, targetId: str
     });
   }
 
+  // A trashed artifact is not shareable: its link must not come back by the
+  // side door of sharing it again.
   const artifact = await prisma.artifact.findFirst({
-    where: { id: targetId, conversation: { userId } },
+    where: { id: targetId, userId, deletedAt: null },
     select: { id: true, title: true },
   });
   if (!artifact) return null;
@@ -154,11 +179,38 @@ export async function revokeShare(userId: string, shareId: string): Promise<bool
  * — it no longer opens — and the owner was told why in a notification
  * (src/lib/share-moderation.ts).
  */
-export async function listShares(userId: string): Promise<Share[]> {
+export async function listShares(
+  userId: string,
+  target: { conversationId?: string; artifactId?: string } = {}
+): Promise<Share[]> {
   return prisma.share.findMany({
-    where: { userId, revokedAt: null, takenDownAt: null },
+    where: {
+      userId,
+      ...(target.conversationId ? { conversationId: target.conversationId } : {}),
+      ...(target.artifactId ? { artifactId: target.artifactId } : {}),
+      revokedAt: null,
+      takenDownAt: null,
+      // A link whose artifact is in Recently deleted is not live; it comes
+      // back into the list with the artifact.
+      OR: [{ artifactId: null }, { artifact: { deletedAt: null } }],
+    },
     orderBy: { createdAt: "desc" },
   });
+}
+
+/**
+ * True when an ARTIFACT link's artifact is in Recently deleted: the page shows
+ * "isn't shared any more" and the poster answers 410, until a restore. Read
+ * through the unguarded client for the same reason as the lookup: the token is
+ * the capability and the visitor has no account.
+ */
+export async function sharedArtifactIsTrashed(share: Share): Promise<boolean> {
+  if (share.kind !== "ARTIFACT" || !share.artifactId) return false;
+  const artifact = await prismaUnguarded.artifact.findUnique({
+    where: { id: share.artifactId },
+    select: { deletedAt: true },
+  });
+  return !!artifact?.deletedAt;
 }
 
 // Request-scoped lookup so generateMetadata and the page share one query.
@@ -252,7 +304,12 @@ export async function getSharedChatSnapshot(share: Share): Promise<SharedChatSna
       select: { id: true, role: true, content: true, model: true, createdAt: true },
     }),
     prisma.artifact.findMany({
-      where: { conversationId: share.conversationId, createdAt: { lte: share.snapshotAt } },
+      where: {
+        conversationId: share.conversationId,
+        userId: share.userId,
+        deletedAt: null,
+        createdAt: { lte: share.snapshotAt },
+      },
       select: { identifier: true, title: true, type: true },
     }),
   ]);
@@ -290,8 +347,8 @@ export interface SharedArtifactSnapshot {
 export async function getSharedArtifactSnapshot(share: Share): Promise<SharedArtifactSnapshot | null> {
   if (share.kind !== "ARTIFACT" || !share.artifactId) return null;
 
-  const artifact = await prisma.artifact.findUnique({
-    where: { id: share.artifactId },
+  const artifact = await prisma.artifact.findFirst({
+    where: { id: share.artifactId, userId: share.userId, deletedAt: null },
     select: { title: true, type: true, language: true },
   });
   if (!artifact) return null;

@@ -1,5 +1,5 @@
 import "server-only";
-import type { Share } from "@prisma/client";
+import type { ArtifactPublication, Share } from "@prisma/client";
 import { prismaUnguarded } from "@/lib/prisma";
 import { banUser } from "@/lib/moderation";
 import { createNotification } from "@/lib/notifications";
@@ -28,6 +28,13 @@ import type { ShareReportInput } from "@/lib/share-schemas";
  * someone else's link, or an anonymous visitor's report — so it goes through
  * prismaUnguarded and the routes that call it gate on the owner (admin) or on
  * the share token (report).
+ *
+ * Published artifacts (ArtifactPublication, src/lib/artifact-publication.ts)
+ * are public links too, under the same `/share/{token}` path, so every
+ * function here covers them: a lookup finds them by token or owner, a
+ * takedown or restore by id falls through to them, and a report on one is
+ * filed with `publicationId`. They appear to the admin tools as ARTIFACT rows
+ * with `publication: true`.
  */
 
 export interface AdminShareRow {
@@ -46,6 +53,8 @@ export interface AdminShareRow {
   takedownReason: string | null;
   owner: { id: string; email: string; name: string | null; bannedAt: string | null };
   openReports: number;
+  /** Set for a published artifact (ArtifactPublication) rather than a share. */
+  publication?: true;
 }
 
 const ADMIN_SHARE_INCLUDE = {
@@ -87,6 +96,49 @@ function toAdminRow(share: ShareWithOwner): AdminShareRow {
   };
 }
 
+const ADMIN_PUBLICATION_INCLUDE = {
+  user: { select: { id: true, email: true, name: true, bannedAt: true } },
+  artifact: { select: { title: true } },
+  _count: { select: { reports: { where: { status: "open" } } } },
+} as const;
+
+type PublicationWithOwner = ArtifactPublication & {
+  user: { id: string; email: string; name: string | null; bannedAt: Date | null };
+  artifact: { title: string };
+  _count: { reports: number };
+};
+
+/**
+ * A publication as the admin tools read a link. Unpublishing and a reset link
+ * are the owner's own ways of taking it down, so both read as "revoked".
+ */
+function publicationToAdminRow(row: PublicationWithOwner): AdminShareRow {
+  const revokedAt = row.retiredAt ?? (row.publishedAt ? null : row.unpublishedAt ?? row.createdAt);
+  return {
+    id: row.id,
+    token: row.token,
+    url: shareUrl(row.token),
+    kind: "ARTIFACT",
+    title: row.artifact.title,
+    status: shareStatus({ revokedAt, takenDownAt: row.takenDownAt, ownerBannedAt: row.user.bannedAt }),
+    views: row.views,
+    createdAt: row.createdAt.toISOString(),
+    snapshotAt: (row.publishedAt ?? row.createdAt).toISOString(),
+    revokedAt: revokedAt?.toISOString() ?? null,
+    takenDownAt: row.takenDownAt?.toISOString() ?? null,
+    takenDownBy: row.takenDownBy,
+    takedownReason: row.takedownReason,
+    owner: {
+      id: row.user.id,
+      email: row.user.email,
+      name: row.user.name,
+      bannedAt: row.user.bannedAt?.toISOString() ?? null,
+    },
+    openReports: row._count.reports,
+    publication: true,
+  };
+}
+
 /**
  * Find links by what an admin has in hand: a share URL or token, an account's
  * email, or an account id. Newest first, capped — this is a lookup, not a list
@@ -99,19 +151,34 @@ export async function findSharesForAdmin(query: string): Promise<AdminShareRow[]
   if (token) {
     const share = await prismaUnguarded.share.findUnique({ where: { token }, include: ADMIN_SHARE_INCLUDE });
     if (share) return [toAdminRow(share)];
+    const publication = await prismaUnguarded.artifactPublication.findUnique({
+      where: { token },
+      include: ADMIN_PUBLICATION_INCLUDE,
+    });
+    if (publication) return [publicationToAdminRow(publication)];
   }
   const user = await prismaUnguarded.user.findFirst({
     where: q.includes("@") ? { email: { equals: q, mode: "insensitive" } } : { id: q },
     select: { id: true },
   });
   if (!user) return [];
-  const shares = await prismaUnguarded.share.findMany({
-    where: { userId: user.id },
-    include: ADMIN_SHARE_INCLUDE,
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
-  return shares.map(toAdminRow);
+  const [shares, publications] = await Promise.all([
+    prismaUnguarded.share.findMany({
+      where: { userId: user.id },
+      include: ADMIN_SHARE_INCLUDE,
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }),
+    prismaUnguarded.artifactPublication.findMany({
+      where: { userId: user.id },
+      include: ADMIN_PUBLICATION_INCLUDE,
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }),
+  ]);
+  return [...shares.map(toAdminRow), ...publications.map(publicationToAdminRow)]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 100);
 }
 
 export type TakedownResult = { ok: true; share: AdminShareRow } | { ok: false; error: "not_found" | "owner_protected" };
@@ -141,7 +208,7 @@ export async function takeDownShare({
     where: { id: shareId },
     include: { user: { select: { id: true, email: true } } },
   });
-  if (!share) return { ok: false, error: "not_found" };
+  if (!share) return takeDownPublication({ publicationId: shareId, reason, by, banOwner, isProtectedOwner });
   if (banOwner && isProtectedOwner(share.user)) return { ok: false, error: "owner_protected" };
 
   const now = new Date();
@@ -203,10 +270,124 @@ export async function takeDownShare({
   return { ok: true, share: toAdminRow(row) };
 }
 
+/**
+ * Take one publication down: the same record, notification and optional ban
+ * as a share. The page stops serving, and the artifact cannot be published
+ * again until an admin restores it (`assertPublishable`).
+ */
+async function takeDownPublication({
+  publicationId,
+  reason,
+  by,
+  banOwner = false,
+  isProtectedOwner,
+}: {
+  publicationId: string;
+  reason: string;
+  by: string;
+  banOwner?: boolean;
+  isProtectedOwner: (owner: { id: string; email: string }) => boolean;
+}): Promise<TakedownResult> {
+  const publication = await prismaUnguarded.artifactPublication.findUnique({
+    where: { id: publicationId },
+    include: { user: { select: { id: true, email: true } }, artifact: { select: { title: true } } },
+  });
+  if (!publication) return { ok: false, error: "not_found" };
+  if (banOwner && isProtectedOwner(publication.user)) return { ok: false, error: "owner_protected" };
+
+  const now = new Date();
+  if (!publication.takenDownAt) {
+    await prismaUnguarded.$transaction([
+      prismaUnguarded.artifactPublication.update({
+        where: { id: publication.id },
+        data: { takenDownAt: now, takenDownBy: by, takedownReason: reason },
+      }),
+      prismaUnguarded.shareReport.updateMany({
+        where: { publicationId: publication.id, status: "open" },
+        data: { status: "actioned", resolvedAt: now, resolvedBy: by },
+      }),
+      prismaUnguarded.moderationFlag.create({
+        data: {
+          userId: publication.userId,
+          source: "manual",
+          severity: "high",
+          category: "share_takedown",
+          detail: reason.slice(0, 500),
+          messagePreview: publication.artifact.title.slice(0, 200) || null,
+          artifactId: publication.artifactId,
+          action: "flagged",
+          reviewedAt: now,
+          reviewedBy: by,
+        },
+      }),
+    ]);
+    const why = reason.trim().replace(/[.!?]+$/, "");
+    try {
+      await createNotification({
+        userId: publication.userId,
+        type: "system_alert",
+        priority: "high",
+        title: "A published page was removed",
+        body:
+          `Juno removed your published page for “${publication.artifact.title || "Untitled"}”. ` +
+          `Reason: ${why}. The page no longer opens, and this item can’t be published again. ` +
+          `If you think this is a mistake, contact Juno support.`,
+        sourceType: "share",
+        sourceId: publication.id,
+      });
+    } catch (err) {
+      console.error("[share-moderation] publication takedown notification failed", {
+        publicationId: publication.id,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  if (banOwner) await banUser(publication.userId, `Published page taken down: ${reason}`, by);
+
+  const row = await prismaUnguarded.artifactPublication.findUniqueOrThrow({
+    where: { id: publication.id },
+    include: ADMIN_PUBLICATION_INCLUDE,
+  });
+  return { ok: true, share: publicationToAdminRow(row) };
+}
+
+/** Undo a publication takedown. */
+async function restorePublication({ publicationId, by }: { publicationId: string; by: string }): Promise<AdminShareRow | null> {
+  const publication = await prismaUnguarded.artifactPublication.findUnique({ where: { id: publicationId } });
+  if (!publication) return null;
+  if (publication.takenDownAt) {
+    await prismaUnguarded.$transaction([
+      prismaUnguarded.artifactPublication.update({
+        where: { id: publication.id },
+        data: { takenDownAt: null, takenDownBy: null, takedownReason: null },
+      }),
+      prismaUnguarded.moderationFlag.create({
+        data: {
+          userId: publication.userId,
+          source: "manual",
+          severity: "low",
+          category: "share_restore",
+          detail: `Takedown lifted (was: ${publication.takedownReason ?? "no reason recorded"}).`.slice(0, 500),
+          artifactId: publication.artifactId,
+          action: "flagged",
+          reviewedAt: new Date(),
+          reviewedBy: by,
+        },
+      }),
+    ]);
+  }
+  const row = await prismaUnguarded.artifactPublication.findUniqueOrThrow({
+    where: { id: publication.id },
+    include: ADMIN_PUBLICATION_INCLUDE,
+  });
+  return publicationToAdminRow(row);
+}
+
 /** Undo a takedown. The link opens again unless its owner is banned or revoked it. */
 export async function restoreShare({ shareId, by }: { shareId: string; by: string }): Promise<AdminShareRow | null> {
   const share = await prismaUnguarded.share.findUnique({ where: { id: shareId } });
-  if (!share) return null;
+  if (!share) return restorePublication({ publicationId: shareId, by });
   if (share.takenDownAt) {
     await prismaUnguarded.$transaction([
       prismaUnguarded.share.update({
@@ -244,7 +425,8 @@ export async function createShareReport(input: ShareReportInput): Promise<Create
     where: { token: input.token },
     include: { user: { select: { bannedAt: true } } },
   });
-  if (!share || shareStatus({ revokedAt: share.revokedAt, takenDownAt: share.takenDownAt, ownerBannedAt: share.user.bannedAt }) !== "live") {
+  if (!share) return createPublicationReport(input);
+  if (shareStatus({ revokedAt: share.revokedAt, takenDownAt: share.takenDownAt, ownerBannedAt: share.user.bannedAt }) !== "live") {
     return { ok: false, error: "not_found" };
   }
   await prismaUnguarded.shareReport.create({
@@ -259,6 +441,34 @@ export async function createShareReport(input: ShareReportInput): Promise<Create
     },
   });
   console.log(`[share-report] ${input.reason} on share ${share.id}`);
+  return { ok: true };
+}
+
+/** A report on a published artifact's page. Only a page that is up can be reported. */
+async function createPublicationReport(input: ShareReportInput): Promise<CreateReportResult> {
+  const publication = await prismaUnguarded.artifactPublication.findUnique({
+    where: { token: input.token },
+    include: { user: { select: { bannedAt: true } }, artifact: { select: { title: true, deletedAt: true } } },
+  });
+  const live =
+    publication &&
+    !publication.retiredAt &&
+    publication.publishedAt &&
+    !publication.artifact.deletedAt &&
+    shareStatus({ revokedAt: null, takenDownAt: publication.takenDownAt, ownerBannedAt: publication.user.bannedAt }) === "live";
+  if (!publication || !live) return { ok: false, error: "not_found" };
+  await prismaUnguarded.shareReport.create({
+    data: {
+      publicationId: publication.id,
+      shareToken: publication.token,
+      shareTitle: publication.artifact.title,
+      shareOwnerId: publication.userId,
+      reason: input.reason,
+      detail: input.detail,
+      contact: input.contact ?? null,
+    },
+  });
+  console.log(`[share-report] ${input.reason} on publication ${publication.id}`);
   return { ok: true };
 }
 
@@ -293,7 +503,7 @@ export async function listShareReports({
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
-      include: { share: { include: ADMIN_SHARE_INCLUDE } },
+      include: { share: { include: ADMIN_SHARE_INCLUDE }, publication: { include: ADMIN_PUBLICATION_INCLUDE } },
     }),
     prismaUnguarded.shareReport.count({ where }),
   ]);
@@ -309,7 +519,7 @@ export async function listShareReports({
       resolvedBy: r.resolvedBy,
       shareToken: r.shareToken,
       shareTitle: r.shareTitle,
-      share: r.share ? toAdminRow(r.share) : null,
+      share: r.share ? toAdminRow(r.share) : r.publication ? publicationToAdminRow(r.publication) : null,
     })),
     total,
     page,

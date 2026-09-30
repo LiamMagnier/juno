@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ipFromHeaders, rateLimit } from "@/lib/rate-limit";
-import { getSharedArtifactSnapshot, peekPublicShare } from "@/lib/share";
+import { getSharedArtifactSnapshot, peekPublicShare, sharedArtifactIsTrashed } from "@/lib/share";
+import { findPublicPublication } from "@/lib/artifact-publication";
 import { designPosterSvg, posterResponse, POSTER_CACHE_PUBLIC } from "@/lib/design/poster";
 
 // The renderer is plain TypeScript, but the ETag uses Node's crypto.
@@ -14,7 +15,17 @@ function notFound() {
 }
 
 /**
- * GET /share/{token}/poster — the picture a shared design is.
+ * The token is real but no longer serves (artifact in Recently deleted,
+ * unpublished, or a reset link). 410 rather than 404 because the page beside
+ * it says "isn't shared any more", and `no-store` so no cache keeps the answer
+ * once the owner restores or republishes it.
+ */
+function gone() {
+  return NextResponse.json({ error: "Gone" }, { status: 410, headers: { "Cache-Control": "no-store" } });
+}
+
+/**
+ * GET /share/{token}/poster — the picture a shared (or published) design is.
  *
  * It lives here rather than under `/api/` because it answers people who are
  * not signed in — the visitor on the share page — and it belongs to the share,
@@ -44,9 +55,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
 
   const { token } = await params;
   const share = await peekPublicShare(token);
-  if (!share || share.kind !== "ARTIFACT") return notFound();
-
-  const snapshot = await getSharedArtifactSnapshot(share);
+  let snapshot: { type: string; content: string } | null;
+  if (share) {
+    if (share.kind !== "ARTIFACT") return notFound();
+    if (await sharedArtifactIsTrashed(share)) return gone();
+    snapshot = await getSharedArtifactSnapshot(share);
+  } else {
+    // A publication draws exactly the version its page serves: the pin, or
+    // the latest sealed version.
+    const publication = await findPublicPublication(token);
+    if (!publication) return notFound();
+    if (publication.state === "gone") return gone();
+    snapshot = publication.snapshot;
+  }
   if (!snapshot || snapshot.type !== "DESIGN") return notFound();
 
   const svg = designPosterSvg(snapshot.content);
