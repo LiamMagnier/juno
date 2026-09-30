@@ -16,11 +16,14 @@ export const runtime = "nodejs";
 const MAX_MESSAGE_ROWS = 50_000;
 
 /**
- * Hard cap on exported artifact version rows. Each can be 200 000 characters,
- * so the cap is on rows, newest artifacts' history first; a truncated export
- * says so, as the message cap does.
+ * Caps on exported artifact versions. Each body can be 200 000 characters, so
+ * the history is read in pages and stops at a character budget as well as a
+ * row cap, which bounds the export's memory whatever the account holds; a
+ * truncated export says so, as the message cap does.
  */
 const MAX_ARTIFACT_VERSION_ROWS = 20_000;
+const MAX_ARTIFACT_VERSION_CHARS = 50_000_000;
+const ARTIFACT_VERSION_PAGE = 200;
 
 /**
  * RFC 4180 quoting, plus CSV-injection neutralization: a leading =, +, -, @,
@@ -239,63 +242,86 @@ export async function GET(req: Request) {
   // their versions, an unsealed design draft, and their public links
   // (publications and legacy share links). Suggestions Juno is holding are
   // included with their status: they are Juno's work on the person's artifact.
-  const [artifactRows, artifactVersionRows] = await Promise.all([
-    prisma.artifact.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: "asc" },
-      select: {
-        id: true,
-        identifier: true,
-        title: true,
-        type: true,
-        language: true,
-        currentVersion: true,
-        conversationId: true,
-        messageId: true,
-        projectId: true,
-        derivedFromId: true,
-        derivedFromVersion: true,
-        deletedAt: true,
-        createdAt: true,
-        updatedAt: true,
-        draft: { select: { baseVersion: true, content: true, updatedAt: true } },
-        publications: {
-          orderBy: { createdAt: "asc" },
-          select: {
-            token: true,
-            pinnedVersion: true,
-            publishedAt: true,
-            unpublishedAt: true,
-            retiredAt: true,
-            views: true,
-            takenDownAt: true,
-            createdAt: true,
-          },
-        },
-        shares: {
-          orderBy: { createdAt: "asc" },
-          select: { token: true, snapshotAt: true, views: true, revokedAt: true, takenDownAt: true, createdAt: true },
-        },
-        proposals: {
-          orderBy: { createdAt: "asc" },
-          select: { id: true, baseVersion: true, status: true, summary: true, payload: true, createdAt: true, resolvedAt: true },
+  const artifactRows = await prisma.artifact.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      identifier: true,
+      title: true,
+      type: true,
+      language: true,
+      currentVersion: true,
+      conversationId: true,
+      messageId: true,
+      projectId: true,
+      derivedFromId: true,
+      derivedFromVersion: true,
+      deletedAt: true,
+      createdAt: true,
+      updatedAt: true,
+      draft: { select: { baseVersion: true, content: true, updatedAt: true } },
+      publications: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          token: true,
+          pinnedVersion: true,
+          publishedAt: true,
+          unpublishedAt: true,
+          retiredAt: true,
+          views: true,
+          takenDownAt: true,
+          createdAt: true,
         },
       },
-    }),
-    prisma.artifactVersion.findMany({
-      where: { artifact: { userId: user.id } },
-      orderBy: [{ artifactId: "asc" }, { version: "asc" }],
-      take: MAX_ARTIFACT_VERSION_ROWS + 1,
-      select: { artifactId: true, version: true, content: true, origin: true, createdAt: true },
-    }),
-  ]);
-  const artifactVersionsTruncated = artifactVersionRows.length > MAX_ARTIFACT_VERSION_ROWS;
+      shares: {
+        orderBy: { createdAt: "asc" },
+        select: { token: true, snapshotAt: true, views: true, revokedAt: true, takenDownAt: true, createdAt: true },
+      },
+      proposals: {
+        orderBy: { createdAt: "asc" },
+        select: { id: true, baseVersion: true, status: true, summary: true, payload: true, createdAt: true, resolvedAt: true },
+      },
+    },
+  });
   const versionsByArtifact = new Map<string, object[]>();
-  for (const row of artifactVersionsTruncated ? artifactVersionRows.slice(0, MAX_ARTIFACT_VERSION_ROWS) : artifactVersionRows) {
-    const { artifactId, ...version } = row;
-    const list = versionsByArtifact.get(artifactId);
-    if (list) list.push(version);
-    else versionsByArtifact.set(artifactId, [version]);
+  let artifactVersionsTruncated = false;
+  let exportedVersionRows = 0;
+  let exportedVersionChars = 0;
+  let versionCursor: { artifactId: string; version: number } | null = null;
+  pages: for (;;) {
+    const page: Array<{ artifactId: string; version: number; content: string; origin: string | null; createdAt: Date }> =
+      await prisma.artifactVersion.findMany({
+        where: {
+          artifact: { userId: user.id },
+          ...(versionCursor
+            ? {
+                OR: [
+                  { artifactId: { gt: versionCursor.artifactId } },
+                  { artifactId: versionCursor.artifactId, version: { gt: versionCursor.version } },
+                ],
+              }
+            : {}),
+        },
+        orderBy: [{ artifactId: "asc" }, { version: "asc" }],
+        take: ARTIFACT_VERSION_PAGE,
+        select: { artifactId: true, version: true, content: true, origin: true, createdAt: true },
+      });
+    for (const row of page) {
+      if (exportedVersionRows >= MAX_ARTIFACT_VERSION_ROWS || exportedVersionChars + row.content.length > MAX_ARTIFACT_VERSION_CHARS) {
+        artifactVersionsTruncated = true;
+        break pages;
+      }
+      exportedVersionRows++;
+      exportedVersionChars += row.content.length;
+      const { artifactId, ...version } = row;
+      const list = versionsByArtifact.get(artifactId);
+      if (list) list.push(version);
+      else versionsByArtifact.set(artifactId, [version]);
+    }
+    if (page.length < ARTIFACT_VERSION_PAGE) break;
+    const last = page[page.length - 1];
+    versionCursor = { artifactId: last.artifactId, version: last.version };
   }
 
   const truncated = rawMessages.length > MAX_MESSAGE_ROWS;
@@ -526,7 +552,9 @@ export async function GET(req: Request) {
     artifacts: {
       versionsTruncated: artifactVersionsTruncated,
       ...(artifactVersionsTruncated
-        ? { truncationNote: `Artifact history is capped at ${MAX_ARTIFACT_VERSION_ROWS.toLocaleString("en-US")} versions.` }
+        ? {
+            truncationNote: `Artifact history is capped at ${MAX_ARTIFACT_VERSION_ROWS.toLocaleString("en-US")} versions and ${MAX_ARTIFACT_VERSION_CHARS.toLocaleString("en-US")} characters; the rest stays in your account.`,
+          }
         : {}),
       items: artifactRows.map(({ draft, publications, shares, proposals, ...artifact }) => ({
         ...artifact,

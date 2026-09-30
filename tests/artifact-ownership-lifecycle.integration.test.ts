@@ -364,6 +364,30 @@ if (!DB_URL || !canMockModules) {
     assert.match((await versionsOf(artifact.id))[3].content, /"name":"Juno's"/);
   });
 
+  test("the sweep seals a draft left idle, and trashing a design seals its draft first", async () => {
+    const user = await signUp("sweep");
+    const idle = await chatWithArtifact(user.id, { type: "DESIGN", bodies: [await designBody()] });
+    const fresh = await chatWithArtifact(user.id, { type: "DESIGN", bodies: [await designBody()] });
+    const trashed = await chatWithArtifact(user.id, { type: "DESIGN", bodies: [await designBody()] });
+    await transact(idle.artifact.id, "Left for lunch");
+    await transact(fresh.artifact.id, "Still editing");
+    await transact(trashed.artifact.id, "Then deleted");
+    await prisma.$executeRaw`UPDATE "ArtifactDraft" SET "updatedAt" = (now() AT TIME ZONE 'UTC') - interval '1 hour' WHERE "artifactId" = ${idle.artifact.id}`;
+
+    // Trash seals the draft, so it waits in the trash as a version.
+    const route = await artifactRoute();
+    assert.equal((await route.DELETE(request("DELETE"), params({ id: trashed.artifact.id }))).status, 200);
+    assert.equal(await prisma.artifactDraft.count({ where: { artifactId: trashed.artifact.id } }), 0);
+    assert.match((await versionsOf(trashed.artifact.id)).at(-1)!.content, /Then deleted/);
+
+    const { sealIdleDrafts } = await import("@/lib/artifact-writes");
+    const sealed = await sealIdleDrafts({ idleMs: 30 * 60_000 });
+    assert.ok(sealed >= 1);
+    assert.equal(await prisma.artifactDraft.count({ where: { artifactId: idle.artifact.id } }), 0, "the idle draft is a version now");
+    assert.match((await versionsOf(idle.artifact.id)).at(-1)!.content, /Left for lunch/);
+    assert.equal(await prisma.artifactDraft.count({ where: { artifactId: fresh.artifact.id } }), 1, "a draft in use is left alone");
+  });
+
   test("a native save meets the web's unsealed draft as a newer version: 409, and the draft is kept as a version", async () => {
     const user = await signUp("native-draft");
     const { artifact } = await chatWithArtifact(user.id, { type: "DESIGN", bodies: [await designBody()] });

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 // export only `prisma`.
 import { prismaUnguarded } from "@/lib/db";
 import { artifactPurgeArmed } from "@/lib/artifact-flags";
+import { sealArtifactDraft } from "@/lib/artifact-writes";
 
 /**
  * Recently deleted: an artifact the person deletes is hidden, not destroyed,
@@ -79,6 +80,10 @@ export async function trashArtifact(userId: string, artifactId: string, now: Dat
   });
   if (!owned) return null;
   if (owned.deletedAt) return { deletedAt: owned.deletedAt, purgeAt: purgeAtFor(owned.deletedAt) };
+
+  // A design's unsealed draft becomes a version first, so it waits in the
+  // trash with everything else and comes back on restore.
+  await sealArtifactDraft(owned.id, userId);
 
   const stamped = await prisma.$executeRaw`
     UPDATE "Artifact" SET "deletedAt" = ${utcTimestamp(now)}

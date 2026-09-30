@@ -212,8 +212,11 @@ export const ARTIFACT_DRAFT_IDLE_MS = 2 * 60_000;
 export async function sealIdleDrafts(opts: { now?: Date; idleMs?: number; limit?: number } = {}): Promise<number> {
   const now = opts.now ?? new Date();
   const cutoff = new Date(now.getTime() - (opts.idleMs ?? ARTIFACT_DRAFT_IDLE_MS));
+  // Only live artifacts: a trashed one's draft was sealed when it was trashed,
+  // and one that is not could never be sealed here (the lock refuses a
+  // trashed row), so listing it would starve every other draft behind it.
   const idle = await prismaUnguarded.artifactDraft.findMany({
-    where: { updatedAt: { lte: cutoff } },
+    where: { updatedAt: { lte: cutoff }, artifact: { deletedAt: null } },
     select: { artifactId: true, userId: true },
     orderBy: { updatedAt: "asc" },
     take: opts.limit ?? 200,
