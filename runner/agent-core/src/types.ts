@@ -31,9 +31,25 @@ export type UserContent =
   /** Ephemeral vision input. Session persistence replaces this with a marker. */
   | { type: 'image'; mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; data: string };
 
+/**
+ * A reasoning block a provider signed or sealed, kept so it can be sent back
+ * byte for byte.
+ *
+ * Anthropic binds each thinking block to the conversation before it with a
+ * signature, and a model continuing a tool loop reads its own earlier
+ * reasoning only when those blocks come back unchanged and in the order they
+ * streamed. `model` is the model that wrote the block: a signature means
+ * nothing to any other model, so a block is replayed only to the one that
+ * produced it and dropped when the run moves to another.
+ */
+export type ReasoningContent =
+  | { type: 'thinking'; thinking: string; signature: string; model?: string }
+  | { type: 'redacted_thinking'; data: string; model?: string };
+
 export type AssistantContent =
   | { type: 'text'; text: string }
-  | { type: 'tool_call'; id: string; name: string; input: unknown };
+  | { type: 'tool_call'; id: string; name: string; input: unknown }
+  | ReasoningContent;
 
 export type ChatMessage =
   | { role: 'user'; content: UserContent[] }

@@ -368,7 +368,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
     }
     if (injectSessionState(opts.messages, opts.sessionState?.())) opts.onMessagesChanged?.();
     pruneOldMessageImages(opts.messages, 3);
-    const assistantContent: AssistantContent[] = [];
+    /**
+     * The assistant turn as it streamed: text, signed reasoning blocks and
+     * tool calls, in arrival order. Order is the point — a provider that
+     * signs its reasoning takes it back only in the place it was written.
+     */
+    let assistantContent: AssistantContent[] = [];
     let toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
     let textAcc = '';
     let stepUsage: Usage = { inputTokens: 0, outputTokens: 0 };
@@ -379,6 +384,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
     for (;;) {
       textAcc = '';
       toolCalls = [];
+      assistantContent = [];
       stepUsage = { inputTokens: 0, outputTokens: 0 };
 
       const turn = new AbortController();
@@ -400,6 +406,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       const deliver = (parts: { text: string; thinking: string }) => {
         if (parts.text) {
           textAcc += parts.text;
+          const last = assistantContent[assistantContent.length - 1];
+          if (last?.type === 'text') last.text += parts.text;
+          else assistantContent.push({ type: 'text', text: parts.text });
           opts.onAssistantDelta?.(parts.text);
         }
         if (parts.thinking) {
@@ -423,12 +432,18 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
             deliver(thinkingFilter.push(ev.text));
           } else if (ev.type === 'thinking_delta') {
             deliver({ text: '', thinking: ev.text });
+          } else if (ev.type === 'reasoning_block') {
+            // Stamped with the model that wrote it: the adapter replays a
+            // block only to that model, and drops it for any other.
+            assistantContent.push({ ...ev.block, model: opts.model });
           } else if (ev.type === 'tool_call') {
-            toolCalls.push({
+            const call = {
               id: ev.id,
               name: ev.name,
               input: (ev.input ?? {}) as Record<string, unknown>,
-            });
+            };
+            toolCalls.push(call);
+            assistantContent.push({ type: 'tool_call', ...call });
           } else if (ev.type === 'done') {
             stepUsage = ev.usage;
             usage = addUsage(usage, ev.usage);
@@ -453,7 +468,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
           // A rate limit — the failure this retry exists for — is refused before
           // the first token, so the case that matters is always the clean one.
           textAcc === '' && thinkingAcc === '' &&
-          toolCalls.length === 0 &&
+          toolCalls.length === 0 && assistantContent.length === 0 &&
           retries < MAX_TURN_RETRIES &&
           waitedMs < MAX_TURN_RETRY_WAIT_MS
         ) {
@@ -508,14 +523,14 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
     }
 
     if (textAcc) {
-      assistantContent.push({ type: 'text', text: textAcc });
       opts.onAssistantMessage?.(textAcc);
       finalText = textAcc;
     }
-    for (const call of toolCalls) {
-      assistantContent.push({ type: 'tool_call', id: call.id, name: call.name, input: call.input });
-    }
-    if (assistantContent.length > 0) {
+    // Recorded only when the model said or asked for something. Reasoning on
+    // its own — a stream stopped between a thinking block and the text it led
+    // to — is not a turn, and an assistant message of nothing but thinking is
+    // one no provider accepts back.
+    if (textAcc || toolCalls.length > 0) {
       opts.messages.push({ role: 'assistant', content: assistantContent });
     }
     opts.onMessagesChanged?.();

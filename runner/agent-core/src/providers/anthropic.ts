@@ -30,7 +30,22 @@ function caps(overrides: Partial<ModelCapabilities>): ModelCapabilities {
   };
 }
 
-function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageParam[] {
+/**
+ * The transcript in Anthropic's shape.
+ *
+ * Reasoning blocks go back exactly as they streamed, in their place in the
+ * turn, but only to the model that wrote them and only on a request that has
+ * thinking switched on. A signature is bound to one model and one prefix: sent
+ * to another model it is a 400 at worst and noise at best, and a request with
+ * thinking off has no use for it. Dropping is always safe — the
+ * `drop_block` binding (see `bindingTolerantThinking`) already tolerates a
+ * missing or mismatched block — while keeping them is what lets a model on its
+ * fortieth tool step still read why it started down this path.
+ */
+function toAnthropicMessages(
+  messages: ChatMessage[],
+  replay: { model: string; thinking: boolean },
+): Anthropic.MessageParam[] {
   return messages.map((m): Anthropic.MessageParam => {
     if (m.role === 'user') {
       return {
@@ -52,14 +67,21 @@ function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageParam[] 
         }),
       };
     }
-    return {
-      role: 'assistant',
-      content: m.content.map((c): Anthropic.ContentBlockParam =>
-        c.type === 'text'
-          ? { type: 'text', text: c.text }
-          : { type: 'tool_use', id: c.id, name: c.name, input: c.input ?? {} },
-      ),
-    };
+    const content: Anthropic.ContentBlockParam[] = [];
+    for (const c of m.content) {
+      if (c.type === 'text') {
+        if (c.text) content.push({ type: 'text', text: c.text });
+      } else if (c.type === 'tool_call') {
+        content.push({ type: 'tool_use', id: c.id, name: c.name, input: c.input ?? {} });
+      } else if (replay.thinking && c.model === replay.model) {
+        content.push(
+          c.type === 'thinking'
+            ? { type: 'thinking', thinking: c.thinking, signature: c.signature }
+            : { type: 'redacted_thinking', data: c.data },
+        );
+      }
+    }
+    return { role: 'assistant', content };
   });
 }
 
@@ -251,7 +273,10 @@ export class AnthropicAdapter implements ProviderAdapter {
     const system: Anthropic.TextBlockParam[] = req.system
       ? [{ type: 'text', text: req.system, ...(cache ? { cache_control: EPHEMERAL } : {}) }]
       : [];
-    const messages = toAnthropicMessages(req.messages);
+    const messages = toAnthropicMessages(req.messages, {
+      model: req.model,
+      thinking: thinking !== undefined && thinking.type !== 'disabled',
+    });
     if (cache) markConversationBreakpoints(messages);
     const stream = this.client.messages.stream(
       {
@@ -273,19 +298,48 @@ export class AnthropicAdapter implements ProviderAdapter {
     // see providers/errors.ts. `messages.stream` defers its request, so a 429 or
     // a 529 overload surfaces from the iteration rather than from the call
     // above, and both live inside this one boundary.
+    //
+    // Reasoning blocks are assembled here, from the deltas, rather than read
+    // off the final message, because their place in the turn matters: they
+    // are yielded as each one closes, between the text before them and the
+    // text after, which is the order the loop records and the order Anthropic
+    // requires them back in. The SDK's own snapshot is no help for this — it
+    // runs ahead of this iteration and is cleared when the stream ends.
+    const open = new Map<number, { thinking: string; signature: string } | { data: string }>();
     let final: Anthropic.Message;
     try {
       for await (const event of stream) {
-        if (
-          event.type === 'content_block_delta' &&
-          event.delta.type === 'text_delta'
-        ) {
-          yield { type: 'text_delta', text: event.delta.text };
-        } else if (
-          event.type === 'content_block_delta' &&
-          event.delta.type === 'thinking_delta'
-        ) {
-          yield { type: 'thinking_delta', text: event.delta.thinking };
+        if (event.type === 'content_block_start') {
+          const block = event.content_block;
+          if (block.type === 'thinking') {
+            open.set(event.index, { thinking: block.thinking ?? '', signature: block.signature ?? '' });
+          } else if (block.type === 'redacted_thinking') {
+            open.set(event.index, { data: block.data });
+          }
+        } else if (event.type === 'content_block_delta') {
+          if (event.delta.type === 'text_delta') {
+            yield { type: 'text_delta', text: event.delta.text };
+          } else if (event.delta.type === 'thinking_delta') {
+            const block = open.get(event.index);
+            if (block && 'thinking' in block) block.thinking += event.delta.thinking;
+            yield { type: 'thinking_delta', text: event.delta.thinking };
+          } else if (event.delta.type === 'signature_delta') {
+            const block = open.get(event.index);
+            if (block && 'signature' in block) block.signature = event.delta.signature;
+          }
+        } else if (event.type === 'content_block_stop') {
+          const block = open.get(event.index);
+          open.delete(event.index);
+          if (block && 'data' in block) {
+            yield { type: 'reasoning_block', block: { type: 'redacted_thinking', data: block.data } };
+          } else if (block && block.signature) {
+            // An unsigned block cannot be sent back; it was shown, and that is
+            // all it can be.
+            yield {
+              type: 'reasoning_block',
+              block: { type: 'thinking', thinking: block.thinking, signature: block.signature },
+            };
+          }
         }
       }
       final = await stream.finalMessage();
@@ -301,6 +355,9 @@ export class AnthropicAdapter implements ProviderAdapter {
       }
     }
 
+    // `model_context_window_exceeded` is newer than this SDK's typing of the
+    // field, so the comparison is made on the string the API sends.
+    const reason: string | null = final.stop_reason;
     const stopReason =
       final.stop_reason === 'end_turn'
         ? 'end_turn'
@@ -308,7 +365,11 @@ export class AnthropicAdapter implements ProviderAdapter {
           ? 'tool_use'
           : final.stop_reason === 'max_tokens'
             ? 'max_tokens'
-            : 'other';
+            : reason === 'model_context_window_exceeded'
+              ? 'context_window'
+              : final.stop_reason === 'refusal'
+                ? 'refusal'
+                : 'other';
 
     // Anthropic counts cached tokens apart from `input_tokens`; Usage counts
     // them in it (see its note in types.ts) and breaks them out beside it.
